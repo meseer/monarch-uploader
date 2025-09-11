@@ -1,0 +1,56 @@
+version: 2
+updates:
+  # Enable version updates for npm
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Vancouver"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps-dev"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "automated"
+    # Group patch updates together to reduce PR spam
+    groups:
+      patch-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
+      # Keep major and minor updates separate for careful review
+      development-dependencies:
+        patterns:
+          - "@babel/*"
+          - "eslint*"
+          - "jest*"
+          - "webpack*"
+        dependency-type: "development"
+    # Auto-merge patch updates for production dependencies
+    # (You can enable this manually in GitHub settings)
+    ignore:
+      # Ignore updates for packages that might break userscript compatibility
+      - dependency-name: "webpack"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "babel*"
+        update-types: ["version-update:semver-major"]
+
+  # Enable version updates for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Vancouver"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "github-actions"
+      - "automated"
