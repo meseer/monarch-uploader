@@ -1,0 +1,188 @@
+/**
+ * CanadaLife UI Manager
+ * Responsible for initializing and managing UI components on CanadaLife website
+ */
+
+import { debugLog } from '../../core/utils';
+import { STORAGE, COLORS } from '../../core/config';
+import stateManager from '../../core/state';
+import canadalife from '../../api/canadalife';
+import monarchApi from '../../api/monarch';
+import toast from '../toast';
+import { createConnectionStatus } from './components/connectionStatus';
+import { createCanadaLifeUploadButton } from './components/uploadButton';
+
+/**
+ * Creates and appends the main UI container to CanadaLife navigation
+ * @returns {HTMLElement|null} Created container element
+ */
+function createUIContainer() {
+  // Find the .ims-navigation insertion point
+  const targetContainer = document.querySelector('.ims-navigation');
+  if (!targetContainer) {
+    debugLog('Could not find .ims-navigation insertion point');
+    return null;
+  }
+
+  // Check if container already exists
+  let container = document.getElementById('canadalife-balance-uploader-container');
+  if (container) {
+    return container;
+  }
+
+  // Create main container
+  container = document.createElement('div');
+  container.id = 'canadalife-balance-uploader-container';
+  container.style.cssText = `
+    position: relative;
+    margin: 10px 0;
+    padding: 12px;
+    background-color: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+  `;
+
+  // Create header
+  const header = document.createElement('div');
+  header.style.cssText = `
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  `;
+
+  const title = document.createElement('div');
+  title.textContent = 'Balance Uploader';
+  title.style.cssText = `
+    font-weight: 600;
+    color: ${COLORS.CANADALIFE_BRAND};
+    font-size: 16px;
+  `;
+  header.appendChild(title);
+
+  const subtitle = document.createElement('div');
+  subtitle.textContent = 'CanadaLife → Monarch Money';
+  subtitle.style.cssText = 'font-size: 12px; color: #666; font-weight: 500;';
+  header.appendChild(subtitle);
+
+  container.appendChild(header);
+
+  // Append to navigation
+  targetContainer.appendChild(container);
+  
+  debugLog('CanadaLife UI container created and appended to .ims-navigation');
+  return container;
+}
+
+/**
+ * Initialize UI for CanadaLife website
+ */
+export async function initCanadaLifeUI() {
+  try {
+    debugLog('Initializing CanadaLife UI...');
+
+    // Create main container
+    const container = createUIContainer();
+    if (!container) {
+      debugLog('Failed to create UI container');
+      return;
+    }
+
+    // Clear existing dynamic content (keep header)
+    const header = container.querySelector('div:first-child');
+    const existingContent = Array.from(container.children).slice(1);
+    existingContent.forEach(child => child.remove());
+
+    // Create connection status component
+    const connectionStatus = createConnectionStatus();
+    container.appendChild(connectionStatus);
+
+    // Create upload button
+    const uploadButton = createCanadaLifeUploadButton();
+    container.appendChild(uploadButton);
+
+    // Set up status monitoring
+    setupStatusMonitoring(connectionStatus);
+
+    // Update status immediately
+    updateConnectionStatus(connectionStatus);
+
+    debugLog('CanadaLife UI initialized successfully');
+    
+    // Show initialization toast
+    toast.show('CanadaLife Balance Uploader initialized', 'info', 2000);
+
+  } catch (error) {
+    debugLog('Error initializing CanadaLife UI:', error);
+    toast.show('Failed to initialize Balance Uploader', 'error');
+  }
+}
+
+/**
+ * Set up status monitoring for connection indicators
+ * @param {HTMLElement} connectionStatus - Connection status container
+ */
+function setupStatusMonitoring(connectionStatus) {
+  // Set up periodic status checks
+  const statusInterval = setInterval(() => {
+    updateConnectionStatus(connectionStatus);
+  }, 10000); // Check every 10 seconds
+
+  // Store interval ID for cleanup if needed
+  connectionStatus.statusInterval = statusInterval;
+
+  // Listen for state changes
+  stateManager.addListener('auth', () => {
+    updateConnectionStatus(connectionStatus);
+  });
+}
+
+/**
+ * Update connection status indicators
+ * @param {HTMLElement} connectionStatus - Connection status container
+ */
+function updateConnectionStatus(connectionStatus) {
+  if (!connectionStatus) return;
+
+  try {
+    // Get current auth status
+    const canadalifeAuth = canadalife.checkAuth();
+    const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN);
+
+    // Update CanadaLife status
+    const canadalifeIndicator = connectionStatus.querySelector('.canadalife-status');
+    if (canadalifeIndicator) {
+      if (canadalifeAuth.authenticated) {
+        canadalifeIndicator.textContent = 'CanadaLife: Connected';
+        canadalifeIndicator.style.color = '#28a745';
+      } else {
+        canadalifeIndicator.textContent = 'CanadaLife: Not connected';
+        canadalifeIndicator.style.color = '#dc3545';
+      }
+    }
+
+    // Update Monarch status
+    const monarchIndicator = connectionStatus.querySelector('.monarch-status');
+    if (monarchIndicator) {
+      if (monarchToken) {
+        monarchIndicator.textContent = 'Monarch: Connected';
+        monarchIndicator.style.color = '#28a745';
+      } else {
+        monarchIndicator.textContent = 'Monarch: Not connected';
+        monarchIndicator.style.color = '#dc3545';
+      }
+    }
+
+    debugLog('Connection status updated');
+  } catch (error) {
+    debugLog('Error updating connection status:', error);
+  }
+}
+
+export default {
+  initCanadaLifeUI,
+  createUIContainer,
+  updateConnectionStatus,
+};
