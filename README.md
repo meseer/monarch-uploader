@@ -140,4 +140,14 @@ Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduc
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License - see the [LICENSE](LICENSE) file for details.
+
+[![License: CC BY-NC-SA 4.0](https://licensebuttons.net/l/by-nc-sa/4.0/80x15.png)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
+
+**What this means:**
+- ✅ **Attribution**: You must give appropriate credit when using this code
+- ✅ **NonCommercial**: You may not use this code for commercial purposes
+- ✅ **ShareAlike**: If you modify this code, you must distribute your contributions under the same license
+- ✅ **Free for personal and open-source projects**: Perfect for learning, contributing, or building non-commercial tools
+
+This license prevents commercial use while encouraging collaboration in the open-source community.
