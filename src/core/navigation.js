@@ -86,7 +86,7 @@ class NavigationManager {
 
       if (pageTypeChanged || accountIdChanged) {
         debugLog(`Navigation detected - Page Type: ${this.currentPageType} → ${newPageType}, Account ID: ${this.currentAccountId} → ${newAccountId}`);
-        
+
         // Update stored state
         this.currentAccountId = newAccountId;
         this.currentPageType = newPageType;
@@ -115,11 +115,10 @@ class NavigationManager {
   getCurrentPageType() {
     if (isQuestradeAllAccountsPage()) {
       return 'all-accounts';
-    } else if (this.extractAccountIdFromUrl()) {
+    } if (this.extractAccountIdFromUrl()) {
       return 'account';
-    } else {
-      return 'other';
     }
+    return 'other';
   }
 
   /**
@@ -176,14 +175,14 @@ class NavigationManager {
   async forceRefresh() {
     const accountId = this.extractAccountIdFromUrl();
     const pageType = this.getCurrentPageType();
-    
+
     // Update stored state
     this.currentAccountId = accountId;
     this.currentPageType = pageType;
-    
+
     // Handle page transition to refresh UI
     await this.handlePageTransition(pageType, accountId);
-    
+
     debugLog('Force refresh completed');
   }
 }

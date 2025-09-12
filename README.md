@@ -1,6 +1,6 @@
 # Monarch Money Balance Uploader
 
-A Tampermonkey userscript for uploading balance history from Questrade and EQBank to Monarch Money.
+A Tampermonkey userscript for uploading balance history from Questrade and Canada Life to Monarch Money.
 
 ## Features
 
@@ -98,41 +98,6 @@ After building, the userscript will be available in the `dist` folder. To instal
 3. Create a new script or import from file
 4. Copy-paste the content from `dist/questrade-account-balance-uploader.user.js`
 5. Save the script
-
-## Refactoring Plan
-
-This project is being refactored following this phased approach:
-
-### Phase 1: Foundation Setup
-- Create configuration object
-- Set up utility functions wrapper
-- Establish basic structure
-
-### Phase 2: Extract UI Components
-- Create UI helper objects
-- Separate toast and modal components
-
-### Phase 3: Separate API Clients
-- Create API wrapper objects for Questrade and Monarch
-
-### Phase 4: State Management
-- Implement central state manager
-- Migrate from global variables
-
-### Phase 5: Service Layer
-- Extract business logic to services
-- Add error handling wrappers
-
-### Phase 6: CSS Extraction
-- Move inline styles to central style objects
-
-### Phase 7: Module Structure
-- Complete modular architecture
-
-### Phase 8-10: Testing, Cleanup, Documentation
-- Test all functionality
-- Remove duplicate code
-- Document new structure
 
 ## Contributing
 

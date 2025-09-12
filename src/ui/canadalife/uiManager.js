@@ -7,7 +7,6 @@ import { debugLog } from '../../core/utils';
 import { STORAGE, COLORS } from '../../core/config';
 import stateManager from '../../core/state';
 import canadalife from '../../api/canadalife';
-import monarchApi from '../../api/monarch';
 import toast from '../toast';
 import { createConnectionStatus } from './components/connectionStatus';
 import { createCanadaLifeUploadButton } from './components/uploadButton';
@@ -71,7 +70,7 @@ function createUIContainer() {
 
   // Append to navigation
   targetContainer.appendChild(container);
-  
+
   debugLog('CanadaLife UI container created and appended to .ims-navigation');
   return container;
 }
@@ -91,9 +90,8 @@ export async function initCanadaLifeUI() {
     }
 
     // Clear existing dynamic content (keep header)
-    const header = container.querySelector('div:first-child');
     const existingContent = Array.from(container.children).slice(1);
-    existingContent.forEach(child => child.remove());
+    existingContent.forEach((child) => child.remove());
 
     // Create connection status component
     const connectionStatus = createConnectionStatus();
@@ -110,10 +108,9 @@ export async function initCanadaLifeUI() {
     updateConnectionStatus(connectionStatus);
 
     debugLog('CanadaLife UI initialized successfully');
-    
+
     // Show initialization toast
     toast.show('CanadaLife Balance Uploader initialized', 'info', 2000);
-
   } catch (error) {
     debugLog('Error initializing CanadaLife UI:', error);
     toast.show('Failed to initialize Balance Uploader', 'error');

@@ -6,7 +6,7 @@
 import { debugLog } from '../../core/utils';
 import stateManager from '../../core/state';
 import toast from '../toast';
-import accountService from '../../services/account';
+import { getDateRange, processAccountBalanceHistory } from '../../services/account';
 
 /**
  * Creates a styled button
@@ -112,12 +112,12 @@ export function createSingleAccountUploadButton(fallbackAccountId, fallbackAccou
     // Always get current state when button is clicked
     const currentState = stateManager.getState();
     const currentAccountId = currentState.currentAccount.id || fallbackAccountId;
-    const currentAccountName = currentState.currentAccount.nickname !== 'unknown' 
-      ? currentState.currentAccount.nickname 
+    const currentAccountName = currentState.currentAccount.nickname !== 'unknown'
+      ? currentState.currentAccount.nickname
       : fallbackAccountName;
 
     // Get date range for current account
-    const { fromDate, toDate } = accountService.getDateRange(currentAccountId);
+    const { fromDate, toDate } = getDateRange(currentAccountId);
     try {
       // Create modal form
       const modal = document.createElement('div');
@@ -173,7 +173,7 @@ export function createSingleAccountUploadButton(fallbackAccountId, fallbackAccou
         modal.remove();
 
         // Process upload
-        await accountService.processAccountBalanceHistory(
+        await processAccountBalanceHistory(
           currentAccountId,
           currentAccountName,
           selectedFromDate,
@@ -206,8 +206,8 @@ export function createBulkUploadButton(accounts) {
 
   return createButton(`Upload All ${accounts.length} Accounts`, async () => {
     // Import balance service dynamically to avoid circular imports
-    const { uploadAllAccountsToMonarch } = await import('../../services/balance.js');
-    
+    const { uploadAllAccountsToMonarch } = await import('../../services/balance');
+
     try {
       // Call the comprehensive upload function
       await uploadAllAccountsToMonarch();

@@ -130,7 +130,6 @@ function createAccountSelector() {
   return container;
 }
 
-
 /**
  * Creates a date selector input
  * @returns {HTMLElement} Date selector container
@@ -315,7 +314,7 @@ function updateAccountSelector(accounts) {
   });
 
   accountsLoadingState = 'loaded';
-  
+
   toast.show(`Loaded ${accounts.length} Canada Life accounts`, 'success');
 }
 
@@ -355,30 +354,30 @@ async function autoLoadAccounts() {
 
   try {
     updateAccountSelectorLoadingState('loading');
-    
+
     debugLog('Auto-loading Canada Life accounts...');
     const accounts = await canadalife.loadCanadaLifeAccounts();
-    
+
     updateAccountSelector(accounts);
     loadAccountsRetryCount = 0; // Reset retry count on success
-    
+
     return accounts;
   } catch (error) {
     debugLog('Error auto-loading Canada Life accounts:', error);
-    
-    loadAccountsRetryCount++;
-    
+
+    loadAccountsRetryCount += 1;
+
     if (loadAccountsRetryCount < MAX_RETRY_COUNT) {
       updateAccountSelectorLoadingState('loading', `Retrying... (${loadAccountsRetryCount}/${MAX_RETRY_COUNT})`);
-      
+
       // Retry with exponential backoff
-      const delay = Math.pow(2, loadAccountsRetryCount) * 1000; // 2s, 4s, 8s
+      const delay = 2 ** loadAccountsRetryCount * 1000; // 2s, 4s, 8s
       setTimeout(() => autoLoadAccounts(), delay);
     } else {
       updateAccountSelectorLoadingState('error', 'Failed to load accounts. Please refresh page.');
       toast.show(`Failed to load accounts after ${MAX_RETRY_COUNT} attempts: ${error.message}`, 'error');
     }
-    
+
     return null;
   }
 }
@@ -416,9 +415,9 @@ function getSelectedDateRange() {
 
   const startDate = startDateSelectorElement.value;
   const endDate = endDateSelectorElement.value;
-  
+
   if (!startDate || !endDate) return null;
-  
+
   return { startDate, endDate };
 }
 
@@ -429,11 +428,13 @@ function getSelectedDateRange() {
 function displayHistoricalBalanceResult(historicalData) {
   if (!historicalBalanceResultElement) return;
 
-  const { data, account, dateRange, totalDays, apiCallsMade } = historicalData;
-  
+  const {
+    data, account, dateRange, totalDays, apiCallsMade,
+  } = historicalData;
+
   // Calculate optimization stats
   const optimizationRatio = Math.round((1 - apiCallsMade / totalDays) * 100);
-  
+
   // Create table
   let tableHTML = `
     <div style="margin-bottom: 12px;">
@@ -449,29 +450,34 @@ function displayHistoricalBalanceResult(historicalData) {
   // Add table headers and rows
   data.forEach((row, index) => {
     const isHeader = index === 0;
-    const rowStyle = isHeader 
-      ? 'background-color: #e9ecef; font-weight: 600;' 
-      : index % 2 === 1 ? 'background-color: #f8f9fa;' : '';
+    let rowStyle;
+    if (isHeader) {
+      rowStyle = 'background-color: #e9ecef; font-weight: 600;';
+    } else if (index % 2 === 1) {
+      rowStyle = 'background-color: #f8f9fa;';
+    } else {
+      rowStyle = '';
+    }
 
     tableHTML += `<tr style="${rowStyle}">`;
-    
+
     row.forEach((cell, cellIndex) => {
       const cellTag = isHeader ? 'th' : 'td';
       const cellStyle = 'padding: 8px; border: 1px solid #dee2e6; text-align: left;';
-      
+
       let cellContent = cell;
-      
+
       // Format currency values (balance column)
       if (!isHeader && cellIndex === 1 && typeof cell === 'number') {
         cellContent = new Intl.NumberFormat('en-CA', {
           style: 'currency',
-          currency: 'CAD'
+          currency: 'CAD',
         }).format(cell);
       }
-      
+
       tableHTML += `<${cellTag} style="${cellStyle}">${cellContent}</${cellTag}>`;
     });
-    
+
     tableHTML += '</tr>';
   });
 
@@ -497,18 +503,18 @@ function displayBalanceResult(balanceData) {
 
   const formattedOpeningBalance = new Intl.NumberFormat('en-CA', {
     style: 'currency',
-    currency: 'CAD'
+    currency: 'CAD',
   }).format(balanceData.openingBalance);
 
   const formattedClosingBalance = new Intl.NumberFormat('en-CA', {
     style: 'currency',
-    currency: 'CAD'
+    currency: 'CAD',
   }).format(balanceData.closingBalance);
 
   const formattedChange = new Intl.NumberFormat('en-CA', {
     style: 'currency',
     currency: 'CAD',
-    signDisplay: 'always'
+    signDisplay: 'always',
   }).format(balanceData.change);
 
   const changeColor = balanceData.change >= 0 ? '#28a745' : '#dc3545';
@@ -550,7 +556,7 @@ export function createCanadaLifeUploadButton() {
 
   // Check authentication status
   const authStatus = canadalife.checkAuth();
-  
+
   if (!authStatus.authenticated) {
     // Show message if not authenticated
     const message = document.createElement('div');
@@ -574,12 +580,11 @@ export function createCanadaLifeUploadButton() {
       // Disable button while uploading
       uploadAllButton.disabled = true;
       uploadAllButton.textContent = 'Uploading...';
-      
+
       debugLog('Starting upload all Canada Life accounts to Monarch...');
-      
+
       // Call the comprehensive upload function
       await uploadAllCanadaLifeAccountsToMonarch();
-      
     } catch (error) {
       debugLog('Error in upload all Canada Life accounts:', error);
       toast.show(`Upload failed: ${error.message}`, 'error');
@@ -596,12 +601,11 @@ export function createCanadaLifeUploadButton() {
       // Disable button while uploading
       uploadCustomRangeButton.disabled = true;
       uploadCustomRangeButton.textContent = 'Uploading...';
-      
+
       debugLog('Starting custom range upload for Canada Life account...');
-      
+
       // Call the custom range upload function
       await uploadCanadaLifeAccountWithDateRange();
-      
     } catch (error) {
       debugLog('Error in custom range upload:', error);
       toast.show(`Upload failed: ${error.message}`, 'error');
@@ -646,7 +650,7 @@ export function createCanadaLifeUploadButton() {
 
   const testingTitle = document.createElement('span');
   testingTitle.textContent = '🧪 Testing (for development only)';
-  
+
   const testingToggle = document.createElement('span');
   testingToggle.textContent = '▼';
   testingToggle.style.cssText = 'transition: transform 0.2s ease; font-size: 12px; transform: rotate(-90deg);';
@@ -667,12 +671,12 @@ export function createCanadaLifeUploadButton() {
       // Get selected account and date
       const selectedAccount = getSelectedAccount();
       const selectedDate = getSelectedDate();
-      
+
       if (!selectedAccount) {
         toast.show('Please select an account', 'warning');
         return;
       }
-      
+
       if (!selectedDate) {
         toast.show('Please select a date', 'warning');
         return;
@@ -681,15 +685,14 @@ export function createCanadaLifeUploadButton() {
       // Disable button while loading
       loadBalanceButton.disabled = true;
       loadBalanceButton.textContent = 'Loading...';
-      
+
       debugLog('Loading account balance...', { account: selectedAccount.EnglishShortName, date: selectedDate });
-      
+
       // Load balance from Canada Life API
       const balanceData = await canadalife.loadAccountBalance(selectedAccount, selectedDate);
-      
+
       // Display the balance result
       displayBalanceResult(balanceData);
-      
     } catch (error) {
       debugLog('Error loading account balance:', error);
       toast.show(`Failed to load balance: ${error.message}`, 'error');
@@ -706,12 +709,12 @@ export function createCanadaLifeUploadButton() {
       // Get selected account and date range
       const selectedAccount = getSelectedAccount();
       const selectedDateRange = getSelectedDateRange();
-      
+
       if (!selectedAccount) {
         toast.show('Please select an account', 'warning');
         return;
       }
-      
+
       if (!selectedDateRange) {
         toast.show('Please select a date range', 'warning');
         return;
@@ -725,29 +728,28 @@ export function createCanadaLifeUploadButton() {
       // Disable button while loading
       loadHistoricalBalanceButton.disabled = true;
       loadHistoricalBalanceButton.textContent = 'Loading...';
-      
-      debugLog('Loading historical account balance...', { 
-        account: selectedAccount.EnglishShortName, 
+
+      debugLog('Loading historical account balance...', {
+        account: selectedAccount.EnglishShortName,
         startDate: selectedDateRange.startDate,
-        endDate: selectedDateRange.endDate
+        endDate: selectedDateRange.endDate,
       });
-      
+
       // Create progress callback for historical balance load
       const progressCallback = (current, total, percentage) => {
         loadHistoricalBalanceButton.textContent = `Loaded ${current}/${total} (${percentage}%)`;
       };
-      
+
       // Load historical balance from Canada Life API with progress tracking
       const historicalData = await canadalife.loadAccountBalanceHistory(
-        selectedAccount, 
-        selectedDateRange.startDate, 
+        selectedAccount,
+        selectedDateRange.startDate,
         selectedDateRange.endDate,
-        progressCallback
+        progressCallback,
       );
-      
+
       // Display the historical balance result
       displayHistoricalBalanceResult(historicalData);
-      
     } catch (error) {
       debugLog('Error loading historical account balance:', error);
       toast.show(`Failed to load historical balance: ${error.message}`, 'error');

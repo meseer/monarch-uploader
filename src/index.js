@@ -5,24 +5,24 @@
  */
 
 // Import core modules
-import config from './core/config';
+import { STORAGE } from './core/config';
 import { debugLog, clearAllGmStorage } from './core/utils';
 import stateManager from './core/state';
 import navigationManager from './core/navigation';
 
 // Import API clients
-import questradeApi from './api/questrade';
+import { checkTokenStatus } from './api/questrade';
 import monarchApi from './api/monarch';
-import canadalife from './api/canadalife';
+import { setupTokenMonitoring, checkTokenStatus as checkCanadaLifeTokenStatus } from './api/canadalife';
 
 // Import UI components
 import toast from './ui/toast';
-import uiManager from './ui/uiManager';
-import canadalifUIManager from './ui/canadalife/uiManager';
-import accountService from './services/account';
+import { initUI, updateStatusIndicators } from './ui/uiManager';
+import { initCanadaLifeUI } from './ui/canadalife/uiManager';
+import { loadCurrentAccountInfo } from './services/account';
 
 // Main IIFE - application entry point
-(function () {
+(function initMonarchUploader() {
   debugLog('Initializing Questrade to Monarch balance uploader...');
   GM_registerMenuCommand('Clear All Cached Data', clearAllGmStorage);
 
@@ -101,18 +101,13 @@ import accountService from './services/account';
       checkStatus();
 
       // Initialize UI
-      uiManager.initUI()
+      initUI()
         .then(() => debugLog('UI initialized successfully'))
         .catch((err) => debugLog('Error initializing UI:', err));
 
-      // Fetch accounts data
-      questradeApi.fetchAccounts()
-        .then(() => debugLog('Successfully fetched accounts data'))
-        .catch((err) => debugLog('Failed to fetch accounts data:', err));
-
       // Load current account info if on an account page
       if (window.location.pathname.match(/\/accounts\/([^/]+)/)) {
-        accountService.loadCurrentAccountInfo()
+        loadCurrentAccountInfo()
           .then((account) => {
             if (account) {
               debugLog('Current account loaded:', account.nickname || account.name);
@@ -136,16 +131,15 @@ import accountService from './services/account';
       debugLog('Initializing CanadaLife application components...');
 
       // Set up token monitoring
-      canadalife.setupTokenMonitoring();
+      setupTokenMonitoring();
 
       // Check auth status immediately
       checkCanadaLifeStatus();
 
       // Initialize CanadaLife UI
-      canadalifUIManager.initCanadaLifeUI()
+      initCanadaLifeUI()
         .then(() => debugLog('CanadaLife UI initialized successfully'))
         .catch((err) => debugLog('Error initializing CanadaLife UI:', err));
-
     } catch (error) {
       debugLog('Error initializing CanadaLife application:', error);
     }
@@ -157,15 +151,15 @@ import accountService from './services/account';
   function checkStatus() {
     try {
       // Check Questrade token status
-      const questradeToken = questradeApi.checkTokenStatus();
+      checkTokenStatus();
 
       // Check if we have a Monarch token
-      const monarchToken = GM_getValue(config.STORAGE.MONARCH_TOKEN);
+      const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN);
       stateManager.setMonarchAuth(monarchToken);
 
       // Update UI with status
       const { indicators } = stateManager.getState().ui;
-      uiManager.updateStatusIndicators(indicators);
+      updateStatusIndicators(indicators);
     } catch (error) {
       debugLog('Error checking status:', error);
     }
@@ -177,12 +171,11 @@ import accountService from './services/account';
   function checkCanadaLifeStatus() {
     try {
       // Check CanadaLife token status
-      canadalife.checkTokenStatus();
+      checkCanadaLifeTokenStatus();
 
       // Check if we have a Monarch token
-      const monarchToken = GM_getValue(config.STORAGE.MONARCH_TOKEN);
+      const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN);
       stateManager.setMonarchAuth(monarchToken);
-
     } catch (error) {
       debugLog('Error checking CanadaLife status:', error);
     }

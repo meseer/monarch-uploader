@@ -3,8 +3,6 @@
  * Shared utilities for handling keyboard navigation in modal components
  */
 
-import { debugLog } from '../core/utils';
-
 /**
  * Adds keyboard navigation support to a modal overlay
  * @param {HTMLElement} overlay - The modal overlay element
@@ -27,11 +25,14 @@ export function addModalKeyboardHandlers(overlay, onEscape, onEnter = null) {
           onEnter();
         }
         break;
+      default:
+        // No action needed for other keys
+        break;
     }
   };
 
   overlay.addEventListener('keydown', handleKeyDown);
-  
+
   // Return cleanup function
   return () => {
     overlay.removeEventListener('keydown', handleKeyDown);
@@ -47,7 +48,7 @@ export function addModalKeyboardHandlers(overlay, onEscape, onEnter = null) {
  */
 export function makeItemsKeyboardNavigable(items, onSelect, initialFocusIndex = 0) {
   if (!items || items.length === 0) return () => {};
-  
+
   let currentFocusIndex = Math.max(0, Math.min(initialFocusIndex, items.length - 1));
   const cleanupFunctions = [];
 
@@ -84,6 +85,9 @@ export function makeItemsKeyboardNavigable(items, onSelect, initialFocusIndex = 
           event.preventDefault();
           event.stopPropagation();
           if (onSelect) onSelect(item, index);
+          break;
+        default:
+          // No action needed for other keys
           break;
       }
     };
@@ -124,7 +128,7 @@ export function makeItemsKeyboardNavigable(items, onSelect, initialFocusIndex = 
 
   function moveFocus(direction) {
     const newIndex = currentFocusIndex + direction;
-    
+
     if (newIndex >= 0 && newIndex < items.length) {
       currentFocusIndex = newIndex;
       items[currentFocusIndex].focus();
@@ -133,7 +137,7 @@ export function makeItemsKeyboardNavigable(items, onSelect, initialFocusIndex = 
 
   // Return cleanup function
   return () => {
-    cleanupFunctions.forEach(cleanup => cleanup());
+    cleanupFunctions.forEach((cleanup) => cleanup());
   };
 }
 
@@ -146,7 +150,7 @@ export function makeItemsKeyboardNavigable(items, onSelect, initialFocusIndex = 
 export function addButtonKeyboardHandlers(buttons, onActivate) {
   const cleanupFunctions = [];
 
-  buttons.forEach(button => {
+  buttons.forEach((button) => {
     const handleKeyDown = (event) => {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
@@ -156,14 +160,14 @@ export function addButtonKeyboardHandlers(buttons, onActivate) {
     };
 
     button.addEventListener('keydown', handleKeyDown);
-    
+
     cleanupFunctions.push(() => {
       button.removeEventListener('keydown', handleKeyDown);
     });
   });
 
   return () => {
-    cleanupFunctions.forEach(cleanup => cleanup());
+    cleanupFunctions.forEach((cleanup) => cleanup());
   };
 }
 
@@ -174,9 +178,9 @@ export function addButtonKeyboardHandlers(buttons, onActivate) {
  */
 export function trapFocus(container) {
   const focusableElements = container.querySelectorAll(
-    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
   );
-  
+
   const firstFocusable = focusableElements[0];
   const lastFocusable = focusableElements[focusableElements.length - 1];
 
@@ -188,18 +192,15 @@ export function trapFocus(container) {
           event.preventDefault();
           lastFocusable.focus();
         }
-      } else {
-        // Tab
-        if (document.activeElement === lastFocusable) {
-          event.preventDefault();
-          firstFocusable.focus();
-        }
+      } else if (document.activeElement === lastFocusable) {
+        event.preventDefault();
+        firstFocusable.focus();
       }
     }
   };
 
   container.addEventListener('keydown', handleKeyDown);
-  
+
   return () => {
     container.removeEventListener('keydown', handleKeyDown);
   };
@@ -212,10 +213,10 @@ export function trapFocus(container) {
  */
 function isInputElement(element) {
   if (!element) return false;
-  
+
   const inputTags = ['input', 'textarea', 'select'];
-  return inputTags.includes(element.tagName.toLowerCase()) ||
-         element.contentEditable === 'true';
+  return inputTags.includes(element.tagName.toLowerCase())
+         || element.contentEditable === 'true';
 }
 
 export default {

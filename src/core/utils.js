@@ -34,7 +34,7 @@ export function formatDate(date) {
     const fallbackDate = new Date(Date.now() - 12096e5); // Fallback to 2 weeks ago
     date = fallbackDate;
   }
-  
+
   // Use local timezone methods to avoid UTC conversion
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -52,7 +52,7 @@ export function parseLocalDate(dateString) {
     debugLog('Invalid date string passed to parseLocalDate:', dateString);
     return getLocalToday();
   }
-  
+
   const [year, month, day] = dateString.split('-').map(Number);
   // Create date in local timezone (month is 0-indexed)
   return new Date(year, month - 1, day);
@@ -165,12 +165,12 @@ export function stringSimilarity(str1, str2) {
   const matrix = Array(len1 + 1).fill().map(() => Array(len2 + 1).fill(0));
 
   // Initialize first row and column
-  for (let i = 0; i <= len1; i++) matrix[i][0] = i;
-  for (let j = 0; j <= len2; j++) matrix[0][j] = j;
+  for (let i = 0; i <= len1; i += 1) matrix[i][0] = i;
+  for (let j = 0; j <= len2; j += 1) matrix[0][j] = j;
 
   // Fill the matrix
-  for (let i = 1; i <= len1; i++) {
-    for (let j = 1; j <= len2; j++) {
+  for (let i = 1; i <= len1; i += 1) {
+    for (let j = 1; j <= len2; j += 1) {
       const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
       matrix[i][j] = Math.min(
         matrix[i - 1][j] + 1, // deletion
@@ -194,7 +194,7 @@ export function stringSimilarity(str1, str2) {
  * @returns {string|null} Account ID from URL or null if not found
  */
 export function getAccountIdFromUrl() {
-  const matches = window.location.pathname.match(/\/accounts\/([^\/]+)/);
+  const matches = window.location.pathname.match(/\/accounts\/([^/]+)/);
   return matches ? matches[1] : null;
 }
 
@@ -206,7 +206,7 @@ export function isQuestradeAllAccountsPage() {
   // Check that we're on the Questrade domain
   const isQuestradeDomain = window.location.hostname.endsWith('questrade.com');
   // Match the 'all accounts' page URL path (with or without trailing slash)
-  const pathname = window.location.pathname;
+  const { pathname } = window.location;
   const isAllAccountsPath = pathname === '/investing/summary' || pathname === '/investing/summary/';
 
   return isQuestradeDomain && isAllAccountsPath;

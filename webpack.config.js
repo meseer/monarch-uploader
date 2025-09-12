@@ -7,7 +7,7 @@ const createBanner = () => {
   // Import metadata from our embedded file
   const metadataPath = path.resolve(__dirname, 'src', 'userscript-metadata.js');
   delete require.cache[metadataPath]; // Clear cache to get fresh metadata
-  const metadata = require(metadataPath).default;
+  const metadata = require(metadataPath);
   return metadata + '\n\n';
 };
 

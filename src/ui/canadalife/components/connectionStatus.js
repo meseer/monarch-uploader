@@ -3,8 +3,6 @@
  * Creates and manages connection status indicators
  */
 
-import { COLORS } from '../../../core/config';
-
 /**
  * Creates connection status indicators container
  * @returns {HTMLElement} Connection status container

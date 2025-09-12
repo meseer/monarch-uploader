@@ -14,7 +14,7 @@ import { debugLog } from '../../core/utils';
  */
 export function showProgressDialog(accounts, title = 'Uploading Balance History for All Accounts') {
   const dialogId = `balance-uploader-progress-${Date.now()}`;
-  
+
   // Create overlay
   const overlay = document.createElement('div');
   overlay.id = dialogId;
@@ -30,7 +30,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     justify-content: center;
     z-index: 10000;
   `;
-  
+
   // Create modal
   const modal = document.createElement('div');
   modal.style.cssText = `
@@ -44,7 +44,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     display: flex;
     flex-direction: column;
   `;
-  
+
   // Header
   const header = document.createElement('h2');
   header.style.cssText = `
@@ -54,7 +54,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
   `;
   header.textContent = title;
   modal.appendChild(header);
-  
+
   // Account list container
   const accountList = document.createElement('div');
   accountList.style.cssText = `
@@ -63,10 +63,10 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     overflow-y: auto;
   `;
   modal.appendChild(accountList);
-  
+
   // Create account rows
   const accountElements = {};
-  accounts.forEach(account => {
+  accounts.forEach((account) => {
     const accountRow = document.createElement('div');
     accountRow.style.cssText = `
       display: flex;
@@ -74,7 +74,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
       padding: 10px;
       border-bottom: 1px solid #eee;
     `;
-    
+
     // Status icon
     const statusIcon = document.createElement('span');
     statusIcon.style.cssText = `
@@ -84,13 +84,13 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     statusIcon.textContent = '○'; // Pending
     statusIcon.dataset.status = 'pending';
     accountRow.appendChild(statusIcon);
-    
+
     // Account name
     const accountName = document.createElement('div');
     accountName.style.cssText = 'flex-grow: 1;';
     accountName.textContent = `${account.nickname || account.name || 'Account'} (${account.key || account.id})`;
     accountRow.appendChild(accountName);
-    
+
     // Status text
     const statusText = document.createElement('div');
     statusText.style.cssText = `
@@ -99,16 +99,16 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     `;
     statusText.textContent = 'Pending';
     accountRow.appendChild(statusText);
-    
+
     accountList.appendChild(accountRow);
-    
+
     accountElements[account.key || account.id] = {
       row: accountRow,
       icon: statusIcon,
-      status: statusText
+      status: statusText,
     };
   });
-  
+
   // Error container (initially hidden)
   const errorContainer = document.createElement('div');
   errorContainer.style.cssText = `
@@ -119,7 +119,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     display: none;
   `;
   modal.appendChild(errorContainer);
-  
+
   // Summary
   const summary = document.createElement('div');
   summary.style.cssText = `
@@ -128,7 +128,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
   `;
   summary.textContent = `Total: ${accounts.length} accounts`;
   modal.appendChild(summary);
-  
+
   // Buttons container
   const buttonsContainer = document.createElement('div');
   buttonsContainer.style.cssText = `
@@ -137,7 +137,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     gap: 10px;
   `;
   modal.appendChild(buttonsContainer);
-  
+
   // Cancel button (initially visible)
   const cancelButton = document.createElement('button');
   cancelButton.textContent = 'Cancel Upload';
@@ -165,21 +165,21 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     display: none;
   `;
   buttonsContainer.appendChild(closeButton);
-  
+
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
-  
+
   // Promise management for error acknowledgment
   const acknowledgmentPromise = {
     promise: null,
-    resolve: null
+    resolve: null,
   };
 
   // Cancel callback management and state tracking
   let cancelCallback = null;
   let isCancelled = false;
   let uploadState = 'pending'; // 'pending', 'active', 'completed'
-  
+
   // Dialog API
   const dialog = {
     /**
@@ -194,7 +194,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
         debugLog(`Warning: Account element not found for ID: ${accountId}`);
         return;
       }
-      
+
       // Update upload state based on account status
       if (status === 'processing' && uploadState === 'pending') {
         uploadState = 'active';
@@ -203,30 +203,39 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
         // Don't change to completed here - let the service layer decide when all processing is done
         debugLog(`Account ${accountId} finished with status: ${status}`);
       }
-      
+
       // Update status text
       el.status.textContent = message || status;
-      
+
       // Update icon
-      el.icon.textContent = 
-        status === 'processing' ? '⟳' : 
-        status === 'success' ? '✓' : 
-        status === 'error' ? '✗' : '○';
-      
+      if (status === 'processing') {
+        el.icon.textContent = '⟳';
+      } else if (status === 'success') {
+        el.icon.textContent = '✓';
+      } else if (status === 'error') {
+        el.icon.textContent = '✗';
+      } else {
+        el.icon.textContent = '○';
+      }
+
       // Update colors
-      el.row.style.backgroundColor = 
-        status === 'processing' ? '#e3f2fd' : 
-        status === 'success' ? '#e8f5e9' : 
-        status === 'error' ? '#ffebee' : 'transparent';
-      
-      el.status.style.color = 
-        status === 'processing' ? '#1565c0' : 
-        status === 'success' ? '#2e7d32' : 
-        status === 'error' ? '#c62828' : '#888';
-      
+      if (status === 'processing') {
+        el.row.style.backgroundColor = '#e3f2fd';
+        el.status.style.color = '#1565c0';
+      } else if (status === 'success') {
+        el.row.style.backgroundColor = '#e8f5e9';
+        el.status.style.color = '#2e7d32';
+      } else if (status === 'error') {
+        el.row.style.backgroundColor = '#ffebee';
+        el.status.style.color = '#c62828';
+      } else {
+        el.row.style.backgroundColor = 'transparent';
+        el.status.style.color = '#888';
+      }
+
       el.icon.style.color = el.status.style.color;
     },
-    
+
     /**
      * Show error dialog and wait for user acknowledgment
      * @param {string} accountId - Account ID that had the error
@@ -237,10 +246,10 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
       // Mark upload as completed on error
       uploadState = 'completed';
       debugLog('Upload state changed to completed due to error');
-      
+
       // Hide cancel button and show close button since upload is done
       dialog.hideCancel();
-      
+
       errorContainer.style.display = 'block';
       errorContainer.innerHTML = `
         <div style="margin-bottom: 10px; font-weight: bold; color: #f44336;">
@@ -268,12 +277,12 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
           ">Continue</button>
         </div>
       `;
-      
+
       // Create new promise for acknowledgment
-      acknowledgmentPromise.promise = new Promise(resolve => {
+      acknowledgmentPromise.promise = new Promise((resolve) => {
         acknowledgmentPromise.resolve = resolve;
       });
-      
+
       // Set up acknowledgment button (continue with next account if applicable)
       document.getElementById('error-ack-button').onclick = () => {
         errorContainer.style.display = 'none';
@@ -288,10 +297,10 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
         errorContainer.style.display = 'none';
         dialog.close();
       };
-      
+
       return acknowledgmentPromise.promise;
     },
-    
+
     /**
      * Show summary of results
      * @param {Object} stats - Statistics object with success, failed, total counts
@@ -302,7 +311,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
       summary.textContent = `Summary: ${stats.success} success, ${stats.failed} failed, ${pendingCount} pending`;
       return dialog;
     },
-    
+
     /**
      * Set up cancel callback for the upload process
      * @param {Function} callback - Function to call when cancel is requested
@@ -332,34 +341,34 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     close: () => {
       overlay.remove();
       return dialog;
-    }
+    },
   };
-  
+
   // Set up cancel button handler with debugging
   cancelButton.onclick = () => {
-    debugLog('Cancel button clicked', { 
-      hasCallback: !!cancelCallback, 
-      isCancelled: isCancelled,
-      uploadState: uploadState 
+    debugLog('Cancel button clicked', {
+      hasCallback: !!cancelCallback,
+      isCancelled,
+      uploadState,
     });
-    
+
     if (!cancelCallback) {
       debugLog('Warning: Cancel button clicked but no callback registered');
       return;
     }
-    
+
     if (isCancelled) {
       debugLog('Warning: Cancel already in progress');
       return;
     }
-    
+
     debugLog('Executing cancel callback');
     isCancelled = true;
     uploadState = 'completed';
     cancelButton.textContent = 'Cancelling...';
     cancelButton.disabled = true;
     cancelButton.style.opacity = '0.6';
-    
+
     try {
       cancelCallback();
       debugLog('Cancel callback executed successfully');
@@ -370,7 +379,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
 
   // Set up close button handler
   closeButton.onclick = dialog.close;
-  
+
   debugLog('Progress dialog created with accounts:', accounts);
   return dialog;
 }

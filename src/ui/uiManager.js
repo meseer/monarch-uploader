@@ -7,9 +7,7 @@ import { debugLog, isQuestradeAllAccountsPage } from '../core/utils';
 import { STORAGE } from '../core/config';
 import stateManager from '../core/state';
 import questradeApi from '../api/questrade';
-import monarchApi from '../api/monarch';
 import toast from './toast';
-import accountSelector from './components/accountSelector';
 import uploadButton from './components/uploadButton';
 
 /**

@@ -2,7 +2,8 @@
 // @name         Questrade, EQBank, CanadaLife to Monarch Balance Uploader
 // @namespace    http://tampermonkey.net/
 // @version      3.7.0
-// @description  Adds buttons to download/upload balance history for individual and all accounts. Supports Questrade, EQBank, and CanadaLife. Supports progress tracking.
+// @description  Adds buttons to download/upload balance history for individual and all accounts.
+// @description  Supports Questrade, EQBank, and CanadaLife. Supports progress tracking.
 // @author       You
 // @match        https://myportal.questrade.com/investing/summary*
 // @match        https://app.monarchmoney.com/*
@@ -26,7 +27,8 @@ const metadata = `// ==UserScript==
 // @name         Questrade, EQBank, CanadaLife to Monarch Balance Uploader
 // @namespace    http://tampermonkey.net/
 // @version      3.7.0
-// @description  Adds buttons to download/upload balance history for individual and all accounts. Supports Questrade, EQBank, and CanadaLife. Supports progress tracking.
+// @description  Adds buttons to download/upload balance history for individual and all accounts.
+// @description  Supports Questrade, EQBank, and CanadaLife. Supports progress tracking.
 // @author       You
 // @match        https://myportal.questrade.com/investing/summary*
 // @match        https://app.monarchmoney.com/*
@@ -46,4 +48,4 @@ const metadata = `// ==UserScript==
 // @run-at       document-idle
 // ==/UserScript==`;
 
-export default metadata;
+module.exports = metadata;

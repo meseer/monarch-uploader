@@ -14,8 +14,8 @@ import { addModalKeyboardHandlers, trapFocus } from '../keyboardNavigation';
  * @returns {Promise<string|null>} Promise that resolves to selected date or null if cancelled
  */
 export function showDatePickerPromise(defaultDate, promptText) {
-  return new Promise(resolve => {
-    showDatePicker(defaultDate, promptText, selectedDate => {
+  return new Promise((resolve) => {
+    showDatePicker(defaultDate, promptText, (selectedDate) => {
       resolve(selectedDate);
     });
   });
@@ -29,7 +29,7 @@ export function showDatePickerPromise(defaultDate, promptText) {
  */
 export function showDatePicker(defaultDate, promptText, callback) {
   debugLog('Showing date picker with default date:', defaultDate);
-  
+
   // Create the overlay
   const overlay = document.createElement('div');
   overlay.style.cssText = `
@@ -44,12 +44,12 @@ export function showDatePicker(defaultDate, promptText, callback) {
     justify-content: center;
     z-index: 10000;
   `;
-  
+
   // Handle click outside to close
-  overlay.onclick = (e) => { 
-    if (e.target === overlay) { 
-      overlay.remove(); 
-      callback(null); 
+  overlay.onclick = (e) => {
+    if (e.target === overlay) {
+      overlay.remove();
+      callback(null);
     }
   };
 
@@ -62,7 +62,7 @@ export function showDatePicker(defaultDate, promptText, callback) {
     width: 90%;
     max-width: 400px;
   `;
-  
+
   // Create the title
   const title = document.createElement('h2');
   title.style.cssText = `
@@ -72,7 +72,7 @@ export function showDatePicker(defaultDate, promptText, callback) {
   `;
   title.textContent = 'Select Start Date';
   modal.appendChild(title);
-  
+
   // Create the description
   const description = document.createElement('p');
   description.style.cssText = `
@@ -81,7 +81,7 @@ export function showDatePicker(defaultDate, promptText, callback) {
   `;
   description.textContent = promptText;
   modal.appendChild(description);
-  
+
   // Create date input
   const dateInput = document.createElement('input');
   dateInput.type = 'date';
@@ -96,7 +96,7 @@ export function showDatePicker(defaultDate, promptText, callback) {
     box-sizing: border-box;
   `;
   modal.appendChild(dateInput);
-  
+
   // Create button container
   const buttonContainer = document.createElement('div');
   buttonContainer.style.cssText = `
@@ -104,7 +104,10 @@ export function showDatePicker(defaultDate, promptText, callback) {
     justify-content: flex-end;
     gap: 10px;
   `;
-  
+
+  // Set up keyboard navigation - declare cleanup function first
+  let cleanupKeyboard = () => {};
+
   // Helper functions for actions
   const cancelAction = () => {
     cleanupKeyboard();
@@ -136,7 +139,7 @@ export function showDatePicker(defaultDate, promptText, callback) {
   `;
   cancelBtn.onclick = cancelAction;
   buttonContainer.appendChild(cancelBtn);
-  
+
   // Select button
   const selectBtn = document.createElement('button');
   selectBtn.textContent = 'Select';
@@ -150,14 +153,11 @@ export function showDatePicker(defaultDate, promptText, callback) {
   `;
   selectBtn.onclick = selectAction;
   buttonContainer.appendChild(selectBtn);
-  
+
   modal.appendChild(buttonContainer);
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 
-  // Set up keyboard navigation
-  let cleanupKeyboard = () => {};
-  
   // Add keyboard handlers for the modal
   const cleanupModalHandlers = addModalKeyboardHandlers(
     overlay,
@@ -167,7 +167,7 @@ export function showDatePicker(defaultDate, promptText, callback) {
       if (document.activeElement !== dateInput) {
         selectAction();
       }
-    }
+    },
   );
 
   // Add focus trapping
@@ -191,7 +191,7 @@ export function showDatePicker(defaultDate, promptText, callback) {
 
   // Focus the date input
   dateInput.focus();
-  
+
   debugLog('Date picker modal displayed with keyboard navigation');
 }
 

@@ -157,7 +157,7 @@ export function createMonarchAccountMappingSelector(
 export async function showMonarchAccountSelector(accounts, callback, originalAccounts = null) {
   debugLog('Starting account selector with', {
     accountsCount: accounts.length,
-    hasOriginalAccounts: Boolean(originalAccounts)
+    hasOriginalAccounts: Boolean(originalAccounts),
   });
 
   // If originalAccounts is not provided, this is the initial call
@@ -177,7 +177,7 @@ export async function showMonarchAccountSelector(accounts, callback, originalAcc
 
     // Create a map of credential ID to accounts
     const credentialAccounts = {};
-    monarchAccounts.forEach(account => {
+    monarchAccounts.forEach((account) => {
       if (account.credential && account.credential.id) {
         if (!credentialAccounts[account.credential.id]) {
           credentialAccounts[account.credential.id] = [];
@@ -187,37 +187,39 @@ export async function showMonarchAccountSelector(accounts, callback, originalAcc
         credentialAccounts[account.credential.id].push({
           ...account,
           // Add detailed account info from our filtered account list
-          details: allAccounts.find(acc => acc.id === account.id)
+          details: allAccounts.find((acc) => acc.id === account.id),
         });
       }
     });
 
     // Create credential list with account info
-    const institutionList = credentials.map(cred => {
-      const accounts = credentialAccounts[cred.id] || [];
+    const institutionList = credentials.map((cred) => {
+      const credAccounts = credentialAccounts[cred.id] || [];
 
       // Check if any accounts in this institution are brokerage accounts we care about
-      const hasBrokerageAccounts = accounts.some(acc => 
-        acc.details && !acc.deletedAt);
+      const hasBrokerageAccounts = credAccounts.some((acc) => acc.details && !acc.deletedAt);
 
       // Extract domain from institution URL
       const institutionDomain = extractDomain(cred.institution?.url);
 
       // Calculate domain match score
-      const domainMatchScore = institutionDomain && currentDomain ? 
-        (institutionDomain === currentDomain ? 1 : 0) : 0;
+      let domainMatchScore;
+      if (institutionDomain && currentDomain) {
+        domainMatchScore = institutionDomain === currentDomain ? 1 : 0;
+      } else {
+        domainMatchScore = 0;
+      }
 
       return {
         credential: cred,
-        accounts: accounts.filter(acc => acc.details && !acc.deletedAt),
+        accounts: credAccounts.filter((acc) => acc.details && !acc.deletedAt),
         hasBrokerageAccounts,
-        domainMatchScore
+        domainMatchScore,
       };
     });
 
     // Filter to only show institutions with valid brokerage accounts
-    const validInstitutions = institutionList.filter(inst => 
-      inst.hasBrokerageAccounts);
+    const validInstitutions = institutionList.filter((inst) => inst.hasBrokerageAccounts);
 
     // Sort by domain match score (descending) then by name
     validInstitutions.sort((a, b) => {
@@ -230,11 +232,10 @@ export async function showMonarchAccountSelector(accounts, callback, originalAcc
     // Display the institutions
     debugLog('Showing institution selector with', {
       institutionCount: validInstitutions.length,
-      allAccountsCount: allAccounts.length
+      allAccountsCount: allAccounts.length,
     });
 
     showInstitutionSelector(validInstitutions, callback);
-
   } catch (error) {
     debugLog('Failed to get institution data:', error);
     // Fall back to original account selector if we can't get institution data
@@ -252,15 +253,15 @@ function showInstitutionSelector(institutions, callback) {
     institutionsCount: institutions ? institutions.length : 0,
   });
 
-  // Helper to close modal with cleanup
-  const closeModal = () => {
+  // Set up keyboard navigation cleanup function
+  let cleanupKeyboard = () => {};
+
+  // Create overlay
+  const overlay = createModalOverlay(() => {
     cleanupKeyboard();
     overlay.remove();
     callback(null);
-  };
-
-  // Create overlay
-  const overlay = createModalOverlay(closeModal);
+  });
 
   // Create modal content
   const modal = document.createElement('div');
@@ -291,7 +292,7 @@ function showInstitutionSelector(institutions, callback) {
   const institutionItems = [];
 
   // Add each institution
-  institutions.forEach(inst => {
+  institutions.forEach((inst) => {
     const cred = inst.credential;
 
     // Create the main container
@@ -314,13 +315,13 @@ function showInstitutionSelector(institutions, callback) {
 
     // Logo priority: 1) Institution base64, 2) Account logoUrl, 3) Institution external URL, 4) Letter fallback
     let logoHandled = false;
-    
+
     // First priority: Institution base64 logo
     if (cred.institution?.logo && !logoHandled) {
       try {
-        const isUrl = typeof cred.institution.logo === 'string' && 
-                     (cred.institution.logo.trim().toLowerCase().startsWith('http') || 
-                      cred.institution.logo.trim().toLowerCase().startsWith('//'));
+        const isUrl = typeof cred.institution.logo === 'string'
+                     && (cred.institution.logo.trim().toLowerCase().startsWith('http')
+                      || cred.institution.logo.trim().toLowerCase().startsWith('//'));
 
         if (!isUrl) {
           // Base64 data - highest priority
@@ -334,15 +335,15 @@ function showInstitutionSelector(institutions, callback) {
         // Continue to next priority if base64 fails
       }
     }
-    
+
     // Second priority: Account logoUrl
     if (!logoHandled) {
-      const accountWithLogo = inst.accounts?.find(acc => acc.details?.logoUrl);
+      const accountWithLogo = inst.accounts?.find((acc) => acc.details?.logoUrl);
       if (accountWithLogo && accountWithLogo.details.logoUrl) {
         try {
           GM_addElement(logoContainer, 'img', {
             src: accountWithLogo.details.logoUrl,
-            style: 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;'
+            style: 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;',
           });
           logoHandled = true;
         } catch (e) {
@@ -350,18 +351,18 @@ function showInstitutionSelector(institutions, callback) {
         }
       }
     }
-    
+
     // Third priority: Institution external URL logo
     if (!logoHandled && cred.institution?.logo) {
       try {
-        const isUrl = typeof cred.institution.logo === 'string' && 
-                     (cred.institution.logo.trim().toLowerCase().startsWith('http') || 
-                      cred.institution.logo.trim().toLowerCase().startsWith('//'));
+        const isUrl = typeof cred.institution.logo === 'string'
+                     && (cred.institution.logo.trim().toLowerCase().startsWith('http')
+                      || cred.institution.logo.trim().toLowerCase().startsWith('//'));
 
         if (isUrl) {
           GM_addElement(logoContainer, 'img', {
             src: cred.institution.logo,
-            style: 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;'
+            style: 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;',
           });
           logoHandled = true;
         }
@@ -369,7 +370,7 @@ function showInstitutionSelector(institutions, callback) {
         // Continue to final fallback
       }
     }
-    
+
     // Final fallback: Letter-based logo
     if (!logoHandled) {
       addLogoFallback(logoContainer, cred.institution?.name);
@@ -427,11 +428,11 @@ function showInstitutionSelector(institutions, callback) {
     item.appendChild(arrowContainer);
 
     // Add hover effect
-    item.onmouseover = () => { 
+    item.onmouseover = () => {
       item.style.backgroundColor = '#f5f5f5';
       item.style.borderColor = '#ddd';
     };
-    item.onmouseout = () => { 
+    item.onmouseout = () => {
       item.style.backgroundColor = '';
       item.style.borderColor = '#eee';
     };
@@ -440,7 +441,7 @@ function showInstitutionSelector(institutions, callback) {
     item.onclick = () => {
       debugLog('Navigating to account selector with all institutions data:', {
         selectedInstitution: cred.institution?.name || 'Unknown',
-        totalInstitutions: institutions.length
+        totalInstitutions: institutions.length,
       });
       cleanupKeyboard();
       overlay.remove();
@@ -463,14 +464,19 @@ function showInstitutionSelector(institutions, callback) {
     cursor: pointer;
     margin-top: 10px;
   `;
-  cancelBtn.onclick = closeModal;
+  cancelBtn.onclick = () => {
+    cleanupKeyboard();
+    overlay.remove();
+    callback(null);
+  };
   modal.appendChild(cancelBtn);
 
-  // Set up keyboard navigation
-  let cleanupKeyboard = () => {};
-
   // Add keyboard handlers for the modal (Escape to close)
-  const cleanupModalHandlers = addModalKeyboardHandlers(overlay, closeModal);
+  const cleanupModalHandlers = addModalKeyboardHandlers(overlay, () => {
+    cleanupKeyboard();
+    overlay.remove();
+    callback(null);
+  });
 
   // Make institution items keyboard navigable if there are any
   let cleanupItemNavigation = () => {};
@@ -483,13 +489,13 @@ function showInstitutionSelector(institutions, callback) {
         const cred = inst.credential;
         debugLog('Keyboard selecting institution:', {
           selectedInstitution: cred.institution?.name || 'Unknown',
-          totalInstitutions: institutions.length
+          totalInstitutions: institutions.length,
         });
         cleanupKeyboard();
         overlay.remove();
         showAccountSelector(inst, callback, institutions);
       },
-      0 // Focus first item initially
+      0, // Focus first item initially
     );
   }
 
@@ -517,7 +523,7 @@ function showAccountSelector(institution, callback, allInstitutions) {
   // Get institution details
   const cred = institution.credential;
   const accounts = institution.accounts || [];
-  
+
   // Get current account context for name matching
   const currentState = stateManager.getState();
   const currentAccountName = currentState.currentAccount.nickname || '';
@@ -525,7 +531,7 @@ function showAccountSelector(institution, callback, allInstitutions) {
   debugLog('Showing account selector for institution:', {
     institutionName: cred.institution?.name || 'Unknown',
     accountsCount: accounts.length,
-    allInstitutionsAvailable: Boolean(allInstitutions)
+    allInstitutionsAvailable: Boolean(allInstitutions),
   });
 
   if (!accounts.length) {
@@ -535,21 +541,27 @@ function showAccountSelector(institution, callback, allInstitutions) {
   }
 
   // Calculate similarity scores for account names
-  const accountsWithScores = accounts.map(account => {
+  const accountsWithScores = accounts.map((account) => {
     // Calculate similarity score to the current account name
     const similarityScore = stringSimilarity(
       account.details?.displayName || '',
-      currentAccountName || ''
+      currentAccountName || '',
     );
 
-    return { 
+    return {
       ...account,
-      similarityScore
+      similarityScore,
     };
   });
 
   // Sort by similarity score (highest first)
   accountsWithScores.sort((a, b) => b.similarityScore - a.similarityScore);
+
+  // Set up keyboard navigation cleanup function
+  let cleanupKeyboard = () => {};
+
+  // Create the overlay first (declared early to avoid use-before-define)
+  let overlay;
 
   // Helper to close modal with cleanup
   const closeModal = () => {
@@ -561,8 +573,8 @@ function showAccountSelector(institution, callback, allInstitutions) {
   const backAction = () => {
     debugLog('Navigating back to institution list', {
       allInstsLength: allInsts?.length || 0,
-      firstInstitutionName: allInsts && allInsts.length > 0 ? 
-        (allInsts[0].credential?.institution?.name || 'Unknown') : 'None'
+      firstInstitutionName: allInsts && allInsts.length > 0
+        ? (allInsts[0].credential?.institution?.name || 'Unknown') : 'None',
     });
 
     cleanupKeyboard();
@@ -571,8 +583,8 @@ function showAccountSelector(institution, callback, allInstitutions) {
     showInstitutionSelector(allInsts, callback);
   };
 
-  // Create the overlay
-  const overlay = createModalOverlay(closeModal);
+  // Now initialize the overlay with the closeModal function
+  overlay = createModalOverlay(closeModal);
 
   // Create the modal
   const modal = document.createElement('div');
@@ -616,9 +628,9 @@ function showAccountSelector(institution, callback, allInstitutions) {
   let institutionLogoImg = null;
   if (cred.institution?.logo) {
     try {
-      const isUrl = typeof cred.institution.logo === 'string' && 
-                    (cred.institution.logo.trim().toLowerCase().startsWith('http') || 
-                     cred.institution.logo.trim().toLowerCase().startsWith('//'));
+      const isUrl = typeof cred.institution.logo === 'string'
+                    && (cred.institution.logo.trim().toLowerCase().startsWith('http')
+                     || cred.institution.logo.trim().toLowerCase().startsWith('//'));
 
       if (isUrl) {
         institutionLogoImg = cred.institution.logo;
@@ -660,11 +672,11 @@ function showAccountSelector(institution, callback, allInstitutions) {
 
     // Logo priority: 1) Institution base64, 2) Account logoUrl, 3) Institution external URL, 4) Letter fallback
     let logoHandled = false;
-    
+
     // First priority: Institution base64 logo (already processed above if available)
     if (institutionLogoImg && !logoHandled) {
       const isUrl = institutionLogoImg.startsWith('http') || institutionLogoImg.startsWith('//');
-      
+
       if (!isUrl) {
         // Base64 data - highest priority
         const logoImg = document.createElement('img');
@@ -674,15 +686,15 @@ function showAccountSelector(institution, callback, allInstitutions) {
         logoHandled = true;
       }
     }
-    
+
     // Second priority: Account logoUrl
     if (!logoHandled) {
-      const accountWithLogo = accounts?.find(acc => acc.details?.logoUrl);
+      const accountWithLogo = accounts?.find((acc) => acc.details?.logoUrl);
       if (accountWithLogo && accountWithLogo.details.logoUrl) {
         try {
           GM_addElement(logoContainer, 'img', {
             src: accountWithLogo.details.logoUrl,
-            style: 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;'
+            style: 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;',
           });
           logoHandled = true;
         } catch (e) {
@@ -690,16 +702,16 @@ function showAccountSelector(institution, callback, allInstitutions) {
         }
       }
     }
-    
+
     // Third priority: Institution external URL logo
     if (!logoHandled && institutionLogoImg) {
       const isUrl = institutionLogoImg.startsWith('http') || institutionLogoImg.startsWith('//');
-      
+
       if (isUrl) {
         try {
           GM_addElement(logoContainer, 'img', {
             src: institutionLogoImg,
-            style: 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;'
+            style: 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;',
           });
           logoHandled = true;
         } catch (e) {
@@ -707,7 +719,7 @@ function showAccountSelector(institution, callback, allInstitutions) {
         }
       }
     }
-    
+
     // Final fallback: Letter-based logo
     if (!logoHandled) {
       addLogoFallback(logoContainer, cred.institution?.name);
@@ -763,7 +775,7 @@ function showAccountSelector(institution, callback, allInstitutions) {
     item.appendChild(textContainer);
 
     // Hover effects
-    item.onmouseover = () => { 
+    item.onmouseover = () => {
       if (index !== 0) {
         item.style.backgroundColor = '#f5f5f5';
       } else {
@@ -771,7 +783,7 @@ function showAccountSelector(institution, callback, allInstitutions) {
       }
       item.style.borderColor = '#ddd';
     };
-    item.onmouseout = () => { 
+    item.onmouseout = () => {
       if (index !== 0) {
         item.style.backgroundColor = '';
       } else {
@@ -807,9 +819,6 @@ function showAccountSelector(institution, callback, allInstitutions) {
   cancelBtn.onclick = closeModal;
   modal.appendChild(cancelBtn);
 
-  // Set up keyboard navigation
-  let cleanupKeyboard = () => {};
-
   // Add keyboard handlers for the modal (Escape to close)
   const cleanupModalHandlers = addModalKeyboardHandlers(overlay, closeModal);
 
@@ -823,13 +832,13 @@ function showAccountSelector(institution, callback, allInstitutions) {
         const account = accountsWithScores[index];
         debugLog('Keyboard selecting account:', {
           selectedAccount: account.details?.displayName || account.displayName || 'Unknown Account',
-          totalAccounts: accountsWithScores.length
+          totalAccounts: accountsWithScores.length,
         });
         cleanupKeyboard();
         overlay.remove();
         callback(account.details);
       },
-      0 // Focus first item initially
+      0, // Focus first item initially
     );
   }
 
@@ -885,7 +894,7 @@ function showFlatAccountSelector(accounts, callback) {
   title.innerHTML = `Select Monarch Account for <b>${currentAccountName}</b>`;
   modal.appendChild(title);
 
-  accounts.forEach(acc => {
+  accounts.forEach((acc) => {
     // Create the main container for the list item
     const item = document.createElement('div');
     item.style.cssText = `
@@ -902,7 +911,7 @@ function showFlatAccountSelector(accounts, callback) {
     if (acc.logoUrl) {
       GM_addElement(item, 'img', {
         src: acc.logoUrl,
-        style: 'width: 40px; height: 40px; margin-right: 15px; border-radius: 5px;'
+        style: 'width: 40px; height: 40px; margin-right: 15px; border-radius: 5px;',
       });
     }
 
@@ -926,8 +935,12 @@ function showFlatAccountSelector(accounts, callback) {
     item.appendChild(infoDiv);
 
     // Add event listeners
-    item.onmouseover = () => item.style.backgroundColor = '#f0f0f0';
-    item.onmouseout = () => item.style.backgroundColor = 'transparent';
+    item.onmouseover = () => {
+      item.style.backgroundColor = '#f0f0f0';
+    };
+    item.onmouseout = () => {
+      item.style.backgroundColor = 'transparent';
+    };
     item.onclick = () => { overlay.remove(); callback(acc); };
 
     modal.appendChild(item);
@@ -959,7 +972,7 @@ function createModalOverlay(onClickOutside) {
 
   // Add click outside handler if provided
   if (onClickOutside) {
-    overlay.onclick = (e) => { 
+    overlay.onclick = (e) => {
       if (e.target === overlay) {
         onClickOutside();
       }
@@ -967,49 +980,6 @@ function createModalOverlay(onClickOutside) {
   }
 
   return overlay;
-}
-
-/**
- * Try to use account logoUrl as fallback when institution base64 logo is not available
- * @param {HTMLElement} container - Container to add logo to
- * @param {Array} accounts - List of accounts for this institution
- * @param {string} institutionName - Institution name for final fallback
- * @param {string} institutionExternalUrl - Institution external logo URL as third priority
- */
-function tryAccountLogoFallback(container, accounts, institutionName, institutionExternalUrl = null) {
-  let logoHandled = false;
-  
-  // Second priority: Account logoUrl
-  const accountWithLogo = accounts?.find(acc => acc.details?.logoUrl);
-  if (accountWithLogo && accountWithLogo.details.logoUrl && !logoHandled) {
-    try {
-      GM_addElement(container, 'img', {
-        src: accountWithLogo.details.logoUrl,
-        style: 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;'
-      });
-      logoHandled = true;
-    } catch (e) {
-      // Continue to next priority
-    }
-  }
-  
-  // Third priority: Institution external URL logo
-  if (!logoHandled && institutionExternalUrl) {
-    try {
-      GM_addElement(container, 'img', {
-        src: institutionExternalUrl,
-        style: 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;'
-      });
-      logoHandled = true;
-    } catch (e) {
-      // Continue to final fallback
-    }
-  }
-  
-  // Final fallback: Letter-based logo
-  if (!logoHandled) {
-    addLogoFallback(container, institutionName);
-  }
 }
 
 /**
@@ -1031,7 +1001,8 @@ function addLogoFallback(container, institutionName) {
     color: #666;
     font-weight: bold;
   `;
-  logoFallback.textContent = (institutionName || '?')[0];
+  const [firstChar] = institutionName || '?';
+  logoFallback.textContent = firstChar;
   container.appendChild(logoFallback);
 }
 

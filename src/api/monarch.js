@@ -47,7 +47,8 @@ export function callMonarchGraphQL(operation, query, variables) {
     const authStatus = authService.checkMonarchAuth();
     if (!authStatus.authenticated) {
       stateManager.setMonarchAuth(null);
-      return reject(new Error('Monarch token not found.'));
+      reject(new Error('Monarch token not found.'));
+      return;
     }
 
     const data = { operationName: operation, query, variables };
@@ -71,9 +72,12 @@ export function callMonarchGraphQL(operation, query, variables) {
           // Token is invalid or expired, clear auth state
           authService.saveToken('monarch', null);
           stateManager.setMonarchAuth(null);
-          return reject(new Error('Monarch Auth Error (401): Token was invalid or expired.'));
-        } if (res.status !== 200) {
-          return reject(new Error(`Monarch API Error: ${res.status}`));
+          reject(new Error('Monarch Auth Error (401): Token was invalid or expired.'));
+          return;
+        }
+        if (res.status !== 200) {
+          reject(new Error(`Monarch API Error: ${res.status}`));
+          return;
         }
 
         const responseData = JSON.parse(res.responseText);
@@ -226,7 +230,7 @@ export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDat
     let monarchAccount = JSON.parse(GM_getValue(`${STORAGE.ACCOUNT_MAPPING_PREFIX}${accountId}`, null));
     if (!monarchAccount) {
       debugLog('No Monarch account mapping found, showing account selector');
-      
+
       // Fetch Monarch investment accounts
       const investmentAccounts = await listMonarchAccounts();
       if (!investmentAccounts.length) {
@@ -234,14 +238,15 @@ export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDat
       }
 
       // Show account selector and wait for user selection
-      monarchAccount = await new Promise(resolve => 
-        showMonarchAccountSelector(investmentAccounts, resolve));
-        
+      monarchAccount = await new Promise((resolve) => {
+        showMonarchAccountSelector(investmentAccounts, resolve);
+      });
+
       if (!monarchAccount) {
         // User cancelled selection
         throw new Error('Account selection cancelled by user');
       }
-      
+
       // Save the mapping for future use
       GM_setValue(`${STORAGE.ACCOUNT_MAPPING_PREFIX}${accountId}`, JSON.stringify(monarchAccount));
       debugLog(`Saved account mapping: ${accountId} -> ${monarchAccount.displayName}`);
@@ -287,7 +292,7 @@ export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDat
 
     // Finalize the upload
     debugLog('Finalizing upload (Step 2/2)');
-    const { parseBalanceHistory } = await callMonarchGraphQL(
+    await callMonarchGraphQL(
       'Web_ParseUploadBalanceHistorySession',
       'mutation Web_ParseUploadBalanceHistorySession($input: ParseBalanceHistoryInput!) {\n  parseBalanceHistory(input: $input) {\n    uploadBalanceHistorySession {\n      ...UploadBalanceHistorySessionFields\n      __typename\n    }\n    __typename\n  }\n}\n\nfragment UploadBalanceHistorySessionFields on UploadBalanceHistorySession {\n  sessionKey\n  status\n  __typename\n}',
       { input: { sessionKey: response.session_key } },
@@ -300,8 +305,8 @@ export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDat
     let attempts = 0;
 
     while (attempts < maxRetries) {
-      attempts++;
-      
+      attempts += 1;
+
       try {
         const { uploadBalanceHistorySession } = await callMonarchGraphQL(
           'Web_GetUploadBalanceHistorySession',
@@ -320,7 +325,9 @@ export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDat
           // Upload is still processing, wait and retry
           if (attempts < maxRetries) {
             debugLog(`Upload still processing, waiting ${retryDelay}ms before next check...`);
-            await new Promise(resolve => setTimeout(resolve, retryDelay));
+            await new Promise((resolve) => {
+              setTimeout(resolve, retryDelay);
+            });
           }
         } else {
           // Unknown status, treat as error
@@ -330,7 +337,9 @@ export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDat
         // If this is a GraphQL/network error during status check, retry
         if (attempts < maxRetries) {
           debugLog(`Error checking upload status (attempt ${attempts}/${maxRetries}): ${error.message}, retrying...`);
-          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          await new Promise((resolve) => {
+            setTimeout(resolve, retryDelay);
+          });
         } else {
           // Final attempt failed
           throw error;

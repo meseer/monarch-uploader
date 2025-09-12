@@ -27,6 +27,18 @@ module.exports = {
     'no-use-before-define': ['error', { 'functions': false }],
     'no-param-reassign': 'off', // Common in DOM manipulation
     'no-console': 'off', // Allow console logs
+    
+    // Relaxed rules for userscript development
+    'max-classes-per-file': 'off', // Allow multiple classes per file
+    'import/no-named-as-default-member': 'off', // Allow named imports from default exports
+    'import/no-cycle': 'off', // Allow circular dependencies (common in userscripts)
+    'no-await-in-loop': 'off', // Allow await in loops for sequential processing
+    'no-restricted-syntax': 'off', // Allow for/of loops and other syntax
+    'class-methods-use-this': 'off', // Allow methods that don't use this
+    'no-promise-executor-return': 'off', // Allow return in promise executors
+    'brace-style': 'off', // Allow flexible brace styles
+    'no-continue': 'off', // Allow continue statements
+    'no-alert': 'warn', // Warn but don't error on alerts
   },
   globals: {
     // Tampermonkey globals

@@ -3,8 +3,10 @@
  * Handles fetching, processing, and uploading balance history data
  */
 
-import { debugLog, formatDate, getLocalToday, getTodayLocal, formatDaysAgoLocal, parseLocalDate } from '../core/utils';
-import { STORAGE, API } from '../core/config';
+import {
+  debugLog, formatDate, getLocalToday, getTodayLocal, formatDaysAgoLocal, parseLocalDate,
+} from '../core/utils';
+import { STORAGE } from '../core/config';
 import stateManager from '../core/state';
 import questradeApi from '../api/questrade';
 import monarchApi from '../api/monarch';
@@ -126,10 +128,10 @@ export function getDefaultDateRange(accountId, days = 90) {
     fromDate = parseLocalDate(lastUsedDate);
 
     // Safety check - if saved date is invalid or future, use default
-    if (isNaN(fromDate) || fromDate > toDate) {
+    if (Number.isNaN(fromDate.getTime()) || fromDate > toDate) {
       fromDate = formatDaysAgoLocal(days);
       return {
-        fromDate: fromDate,
+        fromDate,
         toDate: getTodayLocal(),
       };
     }
@@ -137,7 +139,7 @@ export function getDefaultDateRange(accountId, days = 90) {
     // Default to looking back specified days
     fromDate = formatDaysAgoLocal(days);
     return {
-      fromDate: fromDate,
+      fromDate,
       toDate: getTodayLocal(),
     };
   }
@@ -265,7 +267,7 @@ export async function bulkProcessAccounts(accounts, fromDate, toDate) {
   toast.show(`Processing ${accounts.length} accounts...`, 'info');
 
   // Process accounts sequentially
-  for (let i = 0; i < accounts.length; i++) {
+  for (let i = 0; i < accounts.length; i += 1) {
     const account = accounts[i];
     const accountDisplayName = account.nickname || account.name || 'Account';
     const progressMessage = `Processing account ${i + 1} of ${accounts.length}: ${accountDisplayName}`;
@@ -280,9 +282,9 @@ export async function bulkProcessAccounts(accounts, fromDate, toDate) {
     );
 
     if (success) {
-      results.success++;
+      results.success += 1;
     } else {
-      results.failed++;
+      results.failed += 1;
     }
   }
 
@@ -395,15 +397,14 @@ export async function uploadAllAccountsToMonarch() {
 
           if (uploadSuccess) {
             // Update success stats and progress
-            stats.success++;
+            stats.success += 1;
             progressDialog.updateProgress(account.key, 'success', 'Upload complete');
           } else {
             throw new Error('Upload failed without specific error message');
           }
-
         } catch (error) {
           // Update failed stats and progress
-          stats.failed++;
+          stats.failed += 1;
           progressDialog.updateProgress(account.key, 'error', error.message);
 
           // Show error and wait for acknowledgment
@@ -428,13 +429,11 @@ export async function uploadAllAccountsToMonarch() {
       } else if (stats.success > 0) {
         toast.show(`Upload completed: ${stats.success} successful, ${stats.failed} failed`, 'warning');
       }
-
     } catch (error) {
       // Ensure we complete the upload process even on error
       completeUpload();
       throw error;
     }
-
   } catch (error) {
     toast.show(`Failed to start upload process: ${error.message}`, 'error');
   }
@@ -450,7 +449,8 @@ async function ensureAllAccountMappings(accounts, progressDialog) {
   const unmappedAccounts = [];
 
   // Check each account for mapping
-  for (const account of accounts) {
+  for (let i = 0; i < accounts.length; i += 1) {
+    const account = accounts[i];
     const monarchAccount = JSON.parse(GM_getValue(`${STORAGE.ACCOUNT_MAPPING_PREFIX}${account.key}`, null));
     if (!monarchAccount) {
       unmappedAccounts.push(account);
@@ -474,7 +474,8 @@ async function ensureAllAccountMappings(accounts, progressDialog) {
   }
 
   // Map each unmapped account
-  for (const account of unmappedAccounts) {
+  for (let i = 0; i < unmappedAccounts.length; i += 1) {
+    const account = unmappedAccounts[i];
     // Update progress if dialog exists
     if (progressDialog) {
       progressDialog.updateProgress(account.key, 'processing', 'Mapping account...');
@@ -485,8 +486,7 @@ async function ensureAllAccountMappings(accounts, progressDialog) {
     stateManager.setAccount(account.key, accountName);
 
     // Show account selector for this Questrade account
-    const monarchAccount = await new Promise(resolve => 
-      showMonarchAccountSelector(investmentAccounts, resolve));
+    const monarchAccount = await new Promise((resolve) => showMonarchAccountSelector(investmentAccounts, resolve));
 
     if (!monarchAccount) {
       // User cancelled
@@ -532,8 +532,10 @@ async function getStartDatesForAllAccounts(accounts) {
   // If any account is missing lastUsedDate, show date picker once
   if (needsDatePicker) {
     const defaultDate = oldestDate || formatDate(new Date(Date.now() - 12096e5)); // 2 weeks ago
-    const selectedDate = await showDatePickerPromise(defaultDate, 
-      'Select start date for accounts without history');
+    const selectedDate = await showDatePickerPromise(
+      defaultDate,
+      'Select start date for accounts without history',
+    );
 
     if (!selectedDate) return null; // User cancelled
 
@@ -558,10 +560,10 @@ async function getStartDatesForAllAccounts(accounts) {
 async function fetchQuestradeBalanceHistory(accountId, fromDate, toDate) {
   const balanceData = await questradeApi.makeApiCall(`/v2/brokerage-accounts-balances/${accountId}/balances?timeOfDay=current`);
   const historyData = await questradeApi.makeApiCall(`/v2/brokerage-accounts-balances/${accountId}/historical-balance?granularity=1d&to=${toDate}&from=${fromDate}`);
-  
-  const currentBalance = balanceData.totalEquity?.combined?.find(i => i.currencyCode === "CAD")?.amount;
+
+  const currentBalance = balanceData.totalEquity?.combined?.find((i) => i.currencyCode === 'CAD')?.amount;
   const accountName = stateManager.getState().currentAccount.nickname || 'Unknown Account';
-  
+
   return processJsonToCSV(JSON.stringify(historyData), currentBalance, accountName);
 }
 
@@ -575,18 +577,18 @@ async function fetchQuestradeBalanceHistory(accountId, fromDate, toDate) {
 function processJsonToCSV(jsonData, currentBalance, accountName) {
   try {
     const data = JSON.parse(jsonData);
-    let csvContent = `"Date","Total Equity","Account Name"\n`;
-    
+    let csvContent = '"Date","Total Equity","Account Name"\n';
+
     if (data.data && Array.isArray(data.data)) {
-      data.data.forEach(item => {
+      data.data.forEach((item) => {
         csvContent += `"${item.date}","${item.totalEquity}","${accountName}"\n`;
       });
     }
-    
+
     if (currentBalance) {
       csvContent += `"${getTodayLocal()}","${currentBalance}","${accountName}"\n`;
     }
-    
+
     return csvContent;
   } catch (error) {
     debugLog('Error processing JSON to CSV:', error);

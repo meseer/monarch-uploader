@@ -3,7 +3,9 @@
  * Handles uploading Canada Life balance history to Monarch Money
  */
 
-import { debugLog, formatDate, getTodayLocal, getYesterdayLocal, formatDaysAgoLocal, parseLocalDate } from '../core/utils';
+import {
+  debugLog, formatDate, getTodayLocal, getYesterdayLocal, formatDaysAgoLocal, parseLocalDate,
+} from '../core/utils';
 import { STORAGE } from '../core/config';
 import stateManager from '../core/state';
 import canadalife from '../api/canadalife';
@@ -36,10 +38,10 @@ export function convertCanadaLifeDataToCSV(historicalData) {
     }
 
     const { data } = historicalData;
-    
+
     // Skip header row and process data rows
     const dataRows = data.slice(1);
-    
+
     if (dataRows.length === 0) {
       throw new Error('No balance data to convert');
     }
@@ -48,14 +50,13 @@ export function convertCanadaLifeDataToCSV(historicalData) {
     let csvContent = '"Date","Total Equity","Account Name"\n';
 
     // Add each balance record
-    dataRows.forEach(row => {
+    dataRows.forEach((row) => {
       const [date, balance, accountName] = row;
       csvContent += `"${date}","${balance}","${accountName}"\n`;
     });
 
     debugLog(`Converted ${dataRows.length} balance records to CSV format`);
     return csvContent;
-
   } catch (error) {
     debugLog('Error converting Canada Life data to CSV:', error);
     throw new Error(`Failed to convert balance data: ${error.message}`);
@@ -92,7 +93,7 @@ function parseFlexibleDate(dateString) {
   // Handle ISO format dates (e.g., "2014-07-28T00:00:00")
   if (dateString.includes('T')) {
     const isoDate = new Date(dateString);
-    if (!isNaN(isoDate.getTime())) {
+    if (!Number.isNaN(isoDate.getTime())) {
       debugLog(`Parsed ISO date: ${dateString} -> ${isoDate.toISOString()}`);
       return isoDate;
     }
@@ -108,7 +109,7 @@ function parseFlexibleDate(dateString) {
 
   // Fallback to standard Date parsing
   const fallbackDate = new Date(dateString);
-  if (!isNaN(fallbackDate.getTime())) {
+  if (!Number.isNaN(fallbackDate.getTime())) {
     debugLog(`Parsed date using fallback: ${dateString} -> ${fallbackDate.toISOString()}`);
     return fallbackDate;
   }
@@ -126,8 +127,8 @@ function formatUserFriendlyDate(date) {
   if (typeof date === 'string') {
     date = parseFlexibleDate(date);
   }
-  
-  if (!(date instanceof Date) || isNaN(date.getTime())) {
+
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
     return 'Invalid Date';
   }
 
@@ -157,10 +158,10 @@ function validateStartDateAgainstAccountCreation(startDate, account) {
   if (start < enrollmentDate) {
     const formattedEnrollmentDate = formatUserFriendlyDate(account.EnrollmentDate);
     const accountName = account.LongNameEnglish || account.EnglishShortName || 'Account';
-    
+
     throw new Error(
-      `Start date ${startDate} is before ${accountName} creation date ${formattedEnrollmentDate}. ` +
-      `Please select a start date on or after ${formattedEnrollmentDate}.`
+      `Start date ${startDate} is before ${accountName} creation date ${formattedEnrollmentDate}. `
+      + `Please select a start date on or after ${formattedEnrollmentDate}.`,
     );
   }
 
@@ -179,9 +180,8 @@ function validateDateRange(startDate, endDate, allowToday = false, account = nul
   const start = new Date(startDate);
   const end = new Date(endDate);
   const today = new Date(getTodayDate());
-  const yesterday = new Date(getYesterdayDate());
 
-  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
     throw new Error('Invalid date format. Use YYYY-MM-DD');
   }
 
@@ -211,7 +211,7 @@ function validateDateRange(startDate, endDate, allowToday = false, account = nul
 async function getStartDateForAccount(accountId) {
   // Check for existing last upload date
   const lastUploadDate = GM_getValue(`${STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX}${accountId}`, null);
-  
+
   if (lastUploadDate && /^\d{4}-\d{2}-\d{2}$/.test(lastUploadDate)) {
     // Use day after last upload date
     const nextDay = new Date(lastUploadDate);
@@ -222,11 +222,11 @@ async function getStartDateForAccount(accountId) {
   // No previous upload date - prompt user for initial start date
   const account = stateManager.getState().currentAccount;
   const accountName = account.nickname || account.name || 'Account';
-  
+
   const defaultDate = formatDaysAgoLocal(90); // 90 days ago
   const selectedDate = await showDatePickerPromise(
     defaultDate,
-    `Select initial start date for ${accountName} balance history upload`
+    `Select initial start date for ${accountName} balance history upload`,
   );
 
   return selectedDate;
@@ -253,7 +253,7 @@ function storeLastUploadDate(accountId, endDate) {
  */
 async function getMonarchAccountMapping(canadalifAccount) {
   const accountId = canadalifAccount.agreementId;
-  
+
   // Check for existing mapping
   const existingMapping = GM_getValue(`${STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX}${accountId}`, null);
   if (existingMapping) {
@@ -276,8 +276,7 @@ async function getMonarchAccountMapping(canadalifAccount) {
   stateManager.setAccount(accountId, accountName);
 
   // Show account selector
-  const monarchAccount = await new Promise(resolve => 
-    showMonarchAccountSelector(investmentAccounts, resolve));
+  const monarchAccount = await new Promise((resolve) => showMonarchAccountSelector(investmentAccounts, resolve));
 
   if (!monarchAccount) {
     return null; // User cancelled
@@ -285,7 +284,7 @@ async function getMonarchAccountMapping(canadalifAccount) {
 
   // Save the mapping
   GM_setValue(`${STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX}${accountId}`, JSON.stringify(monarchAccount));
-  
+
   debugLog(`Saved Canada Life account mapping: ${accountName} -> ${monarchAccount.displayName}`);
   toast.show(`Mapped ${accountName} to ${monarchAccount.displayName} in Monarch`, 'success');
 
@@ -328,37 +327,37 @@ async function uploadSingleAccount(canadalifAccount, startDate, endDate, progres
     if (progressDialog) {
       const businessDays = calculateBusinessDays(startDate, endDate);
       progressDialog.updateProgress(
-        accountId, 
-        'processing', 
-        `Loading ${businessDays} business days of balance history...`
+        accountId,
+        'processing',
+        `Loading ${businessDays} business days of balance history...`,
       );
     }
 
     // Create progress callback for historical data loading
     const historyProgressCallback = progressDialog ? (current, total, percentage) => {
       progressDialog.updateProgress(
-        accountId, 
-        'processing', 
-        `Loaded balance for ${current} days out of ${total} (${percentage}%)`
+        accountId,
+        'processing',
+        `Loaded balance for ${current} days out of ${total} (${percentage}%)`,
       );
     } : null;
 
     // Load balance history from Canada Life with progress tracking and cancellation support
     const historicalData = await canadalife.loadAccountBalanceHistory(
-      canadalifAccount, 
-      startDate, 
-      endDate, 
+      canadalifAccount,
+      startDate,
+      endDate,
       historyProgressCallback,
-      signal
+      signal,
     );
-    
+
     // Update progress
     if (progressDialog) {
       const recordCount = historicalData.data.length - 1; // Exclude header
       progressDialog.updateProgress(
-        accountId, 
-        'processing', 
-        `Converting ${recordCount} balance records to CSV...`
+        accountId,
+        'processing',
+        `Converting ${recordCount} balance records to CSV...`,
       );
     }
 
@@ -387,18 +386,17 @@ async function uploadSingleAccount(canadalifAccount, startDate, endDate, progres
     if (progressDialog) {
       const recordCount = historicalData.data.length - 1;
       progressDialog.updateProgress(
-        accountId, 
-        'success', 
-        `Successfully uploaded ${recordCount} balance records`
+        accountId,
+        'success',
+        `Successfully uploaded ${recordCount} balance records`,
       );
     }
 
     debugLog(`Successfully uploaded ${accountName} balance history to Monarch`);
     return true;
-
   } catch (error) {
     debugLog(`Error uploading ${accountName} balance history:`, error);
-    
+
     if (progressDialog) {
       progressDialog.updateProgress(accountId, 'error', error.message);
     }
@@ -425,7 +423,7 @@ function calculateBusinessDays(startDate, endDate) {
   while (current <= end) {
     const dayOfWeek = current.getDay();
     if (dayOfWeek !== 0 && dayOfWeek !== 6) { // Skip weekends
-      count++;
+      count += 1;
     }
     current.setDate(current.getDate() + 1);
   }
@@ -442,7 +440,7 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
     // Load Canada Life accounts
     toast.show('Loading Canada Life accounts...', 'info');
     const accounts = await canadalife.loadCanadaLifeAccounts();
-    
+
     if (!accounts || accounts.length === 0) {
       toast.show('No Canada Life accounts found', 'error');
       return;
@@ -451,15 +449,15 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
     debugLog(`Found ${accounts.length} Canada Life accounts for upload`);
 
     // Create progress dialog
-    const accountsForDialog = accounts.map(acc => ({
+    const accountsForDialog = accounts.map((acc) => ({
       key: acc.agreementId,
       nickname: acc.LongNameEnglish || acc.EnglishShortName,
-      name: acc.EnglishShortName
+      name: acc.EnglishShortName,
     }));
 
     const progressDialog = showProgressDialog(
-      accountsForDialog, 
-      'Uploading Canada Life Balance History to Monarch'
+      accountsForDialog,
+      'Uploading Canada Life Balance History to Monarch',
     );
 
     // Initialize stats and cancellation support
@@ -482,7 +480,6 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
         break;
       }
       const accountId = account.agreementId;
-      const accountName = account.LongNameEnglish || account.EnglishShortName;
 
       try {
         // Update progress
@@ -493,27 +490,26 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
         if (!startDate) {
           // User cancelled date selection
           progressDialog.updateProgress(accountId, 'error', 'Date selection cancelled');
-          stats.failed++;
+          stats.failed += 1;
           break;
         }
 
         // Upload the account (auto upload allows today and stores yesterday as last upload)
         await uploadSingleAccount(account, startDate, endDate, progressDialog, true, abortController.signal);
-        stats.success++;
-
+        stats.success += 1;
       } catch (error) {
-        stats.failed++;
-        
+        stats.failed += 1;
+
         // Check if this is a cancellation error
         if (error.message === 'Operation cancelled by user') {
           progressDialog.updateProgress(accountId, 'error', 'Cancelled');
           debugLog('Upload cancelled during account processing');
           break;
         }
-        
+
         // Show error and wait for user acknowledgment
         await progressDialog.showError(accountId, error);
-        
+
         // Stop processing remaining accounts after error
         break;
       }
@@ -521,7 +517,7 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
 
     // Always hide cancel button and show close button when upload processing is done
     progressDialog.hideCancel();
-    
+
     // Show final summary
     progressDialog.showSummary(stats);
 
@@ -533,7 +529,6 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
     } else if (stats.success > 0) {
       toast.show(`Uploaded ${stats.success} of ${stats.total} accounts successfully`, 'warning');
     }
-
   } catch (error) {
     debugLog('Error in uploadAllCanadaLifeAccountsToMonarch:', error);
     toast.show(`Failed to start upload process: ${error.message}`, 'error');
@@ -549,7 +544,7 @@ export async function uploadCanadaLifeAccountWithDateRange() {
     // Load Canada Life accounts
     toast.show('Loading Canada Life accounts...', 'info');
     const accounts = await canadalife.loadCanadaLifeAccounts();
-    
+
     if (!accounts || accounts.length === 0) {
       toast.show('No Canada Life accounts found', 'error');
       return;
@@ -576,37 +571,35 @@ export async function uploadCanadaLifeAccountWithDateRange() {
     const accountForDialog = {
       key: selectedAccount.agreementId,
       nickname: selectedAccount.LongNameEnglish || selectedAccount.EnglishShortName,
-      name: selectedAccount.EnglishShortName
+      name: selectedAccount.EnglishShortName,
     };
 
     const progressDialog = showProgressDialog(
-      [accountForDialog], 
-      `Uploading ${selectedAccount.EnglishShortName} Balance History to Monarch`
+      [accountForDialog],
+      `Uploading ${selectedAccount.EnglishShortName} Balance History to Monarch`,
     );
 
     try {
       // Upload the account with progress tracking (not auto upload, so no today allowance)
       await uploadSingleAccount(selectedAccount, dateRange.startDate, dateRange.endDate, progressDialog, false);
-      
+
       // Hide cancel button and show close button when upload completes
       progressDialog.hideCancel();
-      
+
       // Show success summary
       progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
-      
-      toast.show(`Successfully uploaded ${selectedAccount.EnglishShortName} balance history to Monarch`, 'success');
 
+      toast.show(`Successfully uploaded ${selectedAccount.EnglishShortName} balance history to Monarch`, 'success');
     } catch (error) {
       // Hide cancel button and show close button when upload fails
       progressDialog.hideCancel();
-      
+
       // Show error in progress dialog
       const stats = { success: 0, failed: 1, total: 1 };
       progressDialog.updateProgress(selectedAccount.agreementId, 'error', error.message);
       progressDialog.showSummary(stats);
       throw error;
     }
-
   } catch (error) {
     debugLog('Error in uploadCanadaLifeAccountWithDateRange:', error);
     toast.show(`Upload failed: ${error.message}`, 'error');
@@ -654,7 +647,7 @@ async function selectCanadaLifeAccount(accounts) {
     modal.appendChild(title);
 
     // Add account list
-    accounts.forEach(account => {
+    accounts.forEach((account) => {
       const item = document.createElement('div');
       item.style.cssText = `
         padding: 15px;
@@ -767,7 +760,7 @@ async function selectDateRange() {
     const startInput = document.createElement('input');
     startInput.type = 'date';
     startInput.style.cssText = 'width: 100%; padding: 8px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px;';
-    
+
     // Default to 30 days ago
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -819,7 +812,7 @@ async function selectDateRange() {
     selectBtn.addEventListener('click', () => {
       const startDate = startInput.value;
       const endDate = endInput.value;
-      
+
       if (!startDate || !endDate) {
         alert('Please select both start and end dates');
         return;

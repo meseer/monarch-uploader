@@ -28,7 +28,7 @@ export class AccountError extends Error {
 export async function loadCurrentAccountInfo() {
   try {
     // Extract account ID from URL
-    const matches = window.location.pathname.match(/\/accounts\/([^\/]+)/);
+    const matches = window.location.pathname.match(/\/accounts\/([^/]+)/);
     if (!matches || !matches[1]) return null;
 
     const accountId = matches[1];
@@ -150,12 +150,9 @@ export async function processAccountBalanceHistory(accountId, accountName, fromD
 
 /**
  * Bulk process multiple accounts
- * @param {Array<Object>} accounts - Array of account objects with id and name
- * @param {string} fromDate - Start date in YYYY-MM-DD format
- * @param {string} toDate - End date in YYYY-MM-DD format
  * @returns {Promise<Object>} Results with success and fail counts
  */
-export async function bulkProcessAccounts(accounts, fromDate, toDate) {
+export async function bulkProcessAccounts() {
   // Delegate to balance service comprehensive upload function
   return balanceService.uploadAllAccountsToMonarch();
 }
