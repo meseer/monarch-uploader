@@ -40,6 +40,9 @@ class StateManager {
         canadalife: {
           token: null,
         },
+        rogersbank: {
+          credentials: null,
+        },
       },
     };
 
@@ -127,6 +130,17 @@ class StateManager {
   setCanadaLifeAuth(token) {
     const prevState = { ...this.state };
     this.state.auth.canadalife = { token };
+
+    this.notifyListeners('auth', prevState, this.state);
+  }
+
+  /**
+   * Update Rogers Bank authentication credentials
+   * @param {Object} credentials - Rogers Bank credentials object
+   */
+  setRogersBankAuth(credentials) {
+    const prevState = { ...this.state };
+    this.state.auth.rogersbank = { credentials };
 
     this.notifyListeners('auth', prevState, this.state);
   }

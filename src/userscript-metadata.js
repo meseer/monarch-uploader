@@ -1,14 +1,15 @@
 // ==UserScript==
-// @name         Questrade, EQBank, CanadaLife to Monarch Balance Uploader
+// @name         Questrade, EQBank, CanadaLife, Rogers Bank to Monarch Balance Uploader
 // @namespace    http://tampermonkey.net/
-// @version      3.7.0
+// @version      3.8.0
 // @description  Adds buttons to download/upload balance history for individual and all accounts.
-// @description  Supports Questrade, EQBank, and CanadaLife. Supports progress tracking.
+// @description  Supports Questrade, EQBank, CanadaLife, and Rogers Bank. Supports progress tracking.
 // @author       You
 // @match        https://myportal.questrade.com/investing/summary*
 // @match        https://app.monarchmoney.com/*
 // @match        https://secure.eqbank.ca/*
 // @match        https://my.canadalife.com/*
+// @match        https://selfserve.rogersbank.com/*
 // @grant        GM_addElement
 // @grant        GM_deleteValue
 // @grant        GM_download
@@ -24,16 +25,17 @@
 // ==/UserScript==
 
 const metadata = `// ==UserScript==
-// @name         Questrade, EQBank, CanadaLife to Monarch Balance Uploader
+// @name         Questrade, EQBank, CanadaLife, Rogers Bank to Monarch Balance Uploader
 // @namespace    http://tampermonkey.net/
-// @version      3.7.0
+// @version      3.8.0
 // @description  Adds buttons to download/upload balance history for individual and all accounts.
-// @description  Supports Questrade, EQBank, and CanadaLife. Supports progress tracking.
+// @description  Supports Questrade, EQBank, CanadaLife, and Rogers Bank. Supports progress tracking.
 // @author       You
 // @match        https://myportal.questrade.com/investing/summary*
 // @match        https://app.monarchmoney.com/*
 // @match        https://secure.eqbank.ca/*
 // @match        https://my.canadalife.com/s/dashboard*
+// @match        https://selfserve.rogersbank.com/*
 // @grant        GM_addElement
 // @grant        GM_deleteValue
 // @grant        GM_download
