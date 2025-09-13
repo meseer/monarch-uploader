@@ -356,6 +356,144 @@ export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDat
 }
 
 /**
+ * Upload transactions to Monarch Money
+ * @param {string} monarchAccountId - Monarch account ID to upload transactions to
+ * @param {string} csvData - CSV data containing transactions
+ * @param {string} filename - Optional filename for the upload
+ * @param {boolean} shouldUpdateBalance - Whether to update account balance (default: false)
+ * @param {boolean} skipCheckForDuplicates - Whether to skip duplicate checking (default: false)
+ * @returns {Promise<boolean>} Success status
+ */
+export async function uploadTransactionsToMonarch(
+  monarchAccountId,
+  csvData,
+  filename = null,
+  shouldUpdateBalance = false,
+  skipCheckForDuplicates = false,
+) {
+  try {
+    debugLog('Starting Monarch transactions upload process');
+
+    // Get auth status
+    const authStatus = authService.checkMonarchAuth();
+    if (!authStatus.authenticated) {
+      throw new Error('Monarch authentication required for uploading transactions');
+    }
+
+    // Generate filename if not provided
+    const uploadFilename = filename || `transactions_${new Date().toISOString().split('T')[0]}.csv`;
+
+    // Create form data
+    const formData = new FormData();
+    const fileBlob = new Blob([csvData], { type: 'text/csv' });
+    formData.append('file', fileBlob, uploadFilename);
+
+    // Submit the upload to get session key
+    debugLog('Uploading CSV to Monarch transactions endpoint (Step 1/3)');
+    const uploadResponse = await new Promise((resolve, reject) => GM_xmlhttpRequest({
+      mode: 'cors',
+      method: 'POST',
+      url: API.MONARCH_TRANSACTIONS_UPLOAD_URL,
+      headers: {
+        accept: 'application/json',
+        authorization: `Token ${authStatus.token}`,
+        origin: 'https://app.monarchmoney.com',
+      },
+      data: formData,
+      onload: (res) => resolve(res),
+      onerror: (err) => reject(err),
+    }));
+
+    if (uploadResponse.status !== 200) {
+      throw new Error(`Monarch transactions upload failed: ${uploadResponse.statusText}`);
+    }
+
+    const response = JSON.parse(uploadResponse.responseText);
+    if (!response.session_key) {
+      throw new Error('Upload failed: Monarch did not return a session key.');
+    }
+
+    debugLog(`Received session key: ${response.session_key}`);
+
+    // Parse the uploaded statement
+    debugLog('Parsing uploaded statement (Step 2/3)');
+    await callMonarchGraphQL(
+      'Web_ParseUploadStatementSession',
+      'mutation Web_ParseUploadStatementSession($input: ParseStatementInput!) {\n  parseUploadStatementSession(input: $input) {\n    uploadStatementSession {\n      ...UploadStatementSessionFields\n      __typename\n    }\n    __typename\n  }\n}\n\nfragment UploadStatementSessionFields on UploadStatementSession {\n  sessionKey\n  status\n  errorMessage\n  skipCheckForDuplicates\n  uploadedStatement {\n    id\n    transactionCount\n    __typename\n  }\n  __typename\n}',
+      {
+        input: {
+          parserName: 'monarch_csv',
+          sessionKey: response.session_key,
+          accountId: monarchAccountId,
+          skipCheckForDuplicates,
+          shouldUpdateBalance,
+          allowWarnings: true,
+        },
+      },
+    );
+
+    // Poll for upload completion
+    debugLog('Waiting for transaction processing to complete (Step 3/3)...');
+    const maxRetries = 30;
+    const retryDelay = 2000;
+    let attempts = 0;
+
+    while (attempts < maxRetries) {
+      attempts += 1;
+
+      try {
+        const { uploadStatementSession } = await callMonarchGraphQL(
+          'Web_GetUploadStatementSession',
+          'query Web_GetUploadStatementSession($sessionKey: String!) {\n  uploadStatementSession(sessionKey: $sessionKey) {\n    ...UploadStatementSessionFields\n    __typename\n  }\n}\n\nfragment UploadStatementSessionFields on UploadStatementSession {\n  sessionKey\n  status\n  errorMessage\n  skipCheckForDuplicates\n  uploadedStatement {\n    id\n    transactionCount\n    __typename\n  }\n  __typename\n}',
+          { sessionKey: response.session_key },
+        );
+
+        debugLog(`Upload status check ${attempts}/${maxRetries}: ${uploadStatementSession.status}`);
+
+        if (uploadStatementSession.status === 'completed') {
+          const transactionCount = uploadStatementSession.uploadedStatement?.transactionCount || 0;
+          debugLog(`Successfully uploaded ${transactionCount} transactions to Monarch account ${monarchAccountId}`);
+          return true;
+        }
+        if (uploadStatementSession.status === 'failed') {
+          const errorMsg = uploadStatementSession.errorMessage || 'Unknown error';
+          throw new Error(`Monarch transaction upload processing failed: ${errorMsg}`);
+        }
+        if (uploadStatementSession.status === 'started' || uploadStatementSession.status === 'pending') {
+          // Upload is still processing, wait and retry
+          if (attempts < maxRetries) {
+            debugLog(`Upload still processing, waiting ${retryDelay}ms before next check...`);
+            await new Promise((resolve) => {
+              setTimeout(resolve, retryDelay);
+            });
+          }
+        } else {
+          // Unknown status
+          throw new Error(`Unknown upload status: ${uploadStatementSession.status}`);
+        }
+      } catch (error) {
+        // If this is a GraphQL/network error during status check, retry
+        if (attempts < maxRetries) {
+          debugLog(`Error checking upload status (attempt ${attempts}/${maxRetries}): ${error.message}, retrying...`);
+          await new Promise((resolve) => {
+            setTimeout(resolve, retryDelay);
+          });
+        } else {
+          // Final attempt failed
+          throw error;
+        }
+      }
+    }
+
+    // If we get here, we've exceeded max retries
+    throw new Error(`Upload processing timeout - exceeded maximum retry attempts (${maxRetries}). The upload may still be processing in Monarch.`);
+  } catch (error) {
+    debugLog('Monarch transaction upload failed:', error);
+    throw error;
+  }
+}
+
+/**
  * Check token status and update state
  * @returns {Object} Auth status information
  */
@@ -379,6 +517,7 @@ export default {
   listAccounts: listMonarchAccounts,
   getInstitutionSettings: getMonarchInstitutionSettings,
   uploadBalance: uploadBalanceToMonarch,
+  uploadTransactions: uploadTransactionsToMonarch,
   checkTokenStatus,
   getToken,
 };

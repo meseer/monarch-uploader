@@ -10,6 +10,7 @@ export const DEBUG_LOG = true;
 export const API = {
   QUESTRADE_BASE_URL: 'https://api.questrade.com',
   MONARCH_GRAPHQL_URL: 'https://api.monarchmoney.com/graphql',
+  MONARCH_TRANSACTIONS_UPLOAD_URL: 'https://api.monarchmoney.com/statements/upload-async/',
 };
 
 // Storage keys

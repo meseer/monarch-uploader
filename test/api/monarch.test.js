@@ -2,7 +2,7 @@
  * Monarch API Tests - Simplified version focusing on retry mechanism
  */
 
-import { callMonarchGraphQL } from '../../src/api/monarch';
+import { callMonarchGraphQL, uploadTransactionsToMonarch } from '../../src/api/monarch';
 import authService from '../../src/services/auth';
 
 // Mock dependencies
@@ -249,6 +249,304 @@ describe('Monarch API Retry Mechanism', () => {
       
       expect(result).toEqual({ success: true, attempts: 2 });
       expect(GM_xmlhttpRequest).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('uploadTransactionsToMonarch', () => {
+    const mockCSVData = 'Date,Description,Amount\n2025-01-01,Test Transaction,100.00';
+    const mockAccountId = '123456';
+    
+    beforeEach(() => {
+      // Reset FormData mock
+      global.FormData = jest.fn(() => ({
+        append: jest.fn()
+      }));
+      global.Blob = jest.fn((content, options) => ({
+        content: content[0],
+        type: options.type
+      }));
+    });
+
+    test('should successfully upload transactions with default parameters', async () => {
+      // Mock upload response with session key
+      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({
+            session_key: 'upload-statement-session-123'
+          })
+        });
+      });
+
+      // Mock parse mutation response
+      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              parseUploadStatementSession: {
+                uploadStatementSession: {
+                  sessionKey: 'upload-statement-session-123',
+                  status: 'started'
+                }
+              }
+            }
+          })
+        });
+      });
+
+      // Mock status check - completed
+      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              uploadStatementSession: {
+                sessionKey: 'upload-statement-session-123',
+                status: 'completed',
+                uploadedStatement: {
+                  id: 'stmt-123',
+                  transactionCount: 1
+                }
+              }
+            }
+          })
+        });
+      });
+
+      const result = await uploadTransactionsToMonarch(mockAccountId, mockCSVData);
+      
+      expect(result).toBe(true);
+      expect(GM_xmlhttpRequest).toHaveBeenCalledTimes(3);
+      
+      // Check the parse mutation was called with correct default parameters
+      const parseMutationCall = JSON.parse(GM_xmlhttpRequest.mock.calls[1][0].data);
+      expect(parseMutationCall.variables.input).toEqual({
+        parserName: 'monarch_csv',
+        sessionKey: 'upload-statement-session-123',
+        accountId: mockAccountId,
+        skipCheckForDuplicates: false,
+        shouldUpdateBalance: false,
+        allowWarnings: true
+      });
+    });
+
+    test('should use custom parameters when provided', async () => {
+      // Mock upload response
+      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({
+            session_key: 'upload-statement-session-456'
+          })
+        });
+      });
+
+      // Mock parse mutation response
+      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              parseUploadStatementSession: {
+                uploadStatementSession: {
+                  sessionKey: 'upload-statement-session-456',
+                  status: 'started'
+                }
+              }
+            }
+          })
+        });
+      });
+
+      // Mock status check - completed
+      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              uploadStatementSession: {
+                sessionKey: 'upload-statement-session-456',
+                status: 'completed',
+                uploadedStatement: {
+                  id: 'stmt-456',
+                  transactionCount: 5
+                }
+              }
+            }
+          })
+        });
+      });
+
+      const result = await uploadTransactionsToMonarch(
+        mockAccountId,
+        mockCSVData,
+        'custom_transactions.csv',
+        true,  // shouldUpdateBalance
+        true   // skipCheckForDuplicates
+      );
+      
+      expect(result).toBe(true);
+      
+      // Check custom parameters were used
+      const parseMutationCall = JSON.parse(GM_xmlhttpRequest.mock.calls[1][0].data);
+      expect(parseMutationCall.variables.input.shouldUpdateBalance).toBe(true);
+      expect(parseMutationCall.variables.input.skipCheckForDuplicates).toBe(true);
+    });
+
+    test('should handle upload failure', async () => {
+      // Mock failed upload response
+      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
+        onload({
+          status: 500,
+          statusText: 'Internal Server Error'
+        });
+      });
+
+      await expect(uploadTransactionsToMonarch(mockAccountId, mockCSVData))
+        .rejects.toThrow('Monarch transactions upload failed: Internal Server Error');
+      
+      expect(GM_xmlhttpRequest).toHaveBeenCalledTimes(1);
+    });
+
+    test('should handle missing session key in response', async () => {
+      // Mock upload response without session key
+      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({})
+        });
+      });
+
+      await expect(uploadTransactionsToMonarch(mockAccountId, mockCSVData))
+        .rejects.toThrow('Upload failed: Monarch did not return a session key.');
+    });
+
+    test('should handle failed status with error message', async () => {
+      // Mock successful upload
+      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({
+            session_key: 'upload-statement-session-789'
+          })
+        });
+      });
+
+      // Mock parse mutation
+      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              parseUploadStatementSession: {
+                uploadStatementSession: {
+                  sessionKey: 'upload-statement-session-789',
+                  status: 'started'
+                }
+              }
+            }
+          })
+        });
+      });
+
+      // Mock status check - failed with error message
+      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              uploadStatementSession: {
+                sessionKey: 'upload-statement-session-789',
+                status: 'failed',
+                errorMessage: 'Invalid CSV format'
+              }
+            }
+          })
+        });
+      });
+
+      await expect(uploadTransactionsToMonarch(mockAccountId, mockCSVData))
+        .rejects.toThrow('Monarch transaction upload processing failed: Invalid CSV format');
+    });
+
+    test('should retry on pending status', async () => {
+      // Mock successful upload
+      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({
+            session_key: 'upload-statement-session-999'
+          })
+        });
+      });
+
+      // Mock parse mutation
+      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              parseUploadStatementSession: {
+                uploadStatementSession: {
+                  sessionKey: 'upload-statement-session-999',
+                  status: 'started'
+                }
+              }
+            }
+          })
+        });
+      });
+
+      // Mock first status check - pending
+      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              uploadStatementSession: {
+                sessionKey: 'upload-statement-session-999',
+                status: 'pending'
+              }
+            }
+          })
+        });
+      });
+
+      // Mock second status check - completed
+      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              uploadStatementSession: {
+                sessionKey: 'upload-statement-session-999',
+                status: 'completed',
+                uploadedStatement: {
+                  id: 'stmt-999',
+                  transactionCount: 10
+                }
+              }
+            }
+          })
+        });
+      });
+
+      const result = await uploadTransactionsToMonarch(mockAccountId, mockCSVData);
+      
+      expect(result).toBe(true);
+      expect(GM_xmlhttpRequest).toHaveBeenCalledTimes(4); // upload + parse + 2 status checks
+    });
+
+    test('should throw error when authentication is not available', async () => {
+      authService.checkMonarchAuth.mockReturnValueOnce({
+        authenticated: false
+      });
+
+      await expect(uploadTransactionsToMonarch(mockAccountId, mockCSVData))
+        .rejects.toThrow('Monarch authentication required for uploading transactions');
+      
+      expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
     });
   });
 });
