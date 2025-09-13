@@ -108,10 +108,10 @@ export function checkRogersBankAuth() {
 
   // Check if we have all required credentials
   const hasAllCredentials = !!(
-    creds.authToken &&
-    creds.accountId &&
-    creds.customerId &&
-    creds.deviceId
+    creds.authToken
+    && creds.accountId
+    && creds.customerId
+    && creds.deviceId
   );
 
   if (hasAllCredentials) {
@@ -159,7 +159,7 @@ export function setupCredentialInterception() {
   const requestDataMap = new WeakMap();
 
   // Override setRequestHeader to capture headers
-  XMLHttpRequest.prototype.setRequestHeader = function(header, value) {
+  XMLHttpRequest.prototype.setRequestHeader = function (header, value) {
     // Get or create request data for this XHR instance
     let requestData = requestDataMap.get(this);
     if (!requestData) {
@@ -175,7 +175,7 @@ export function setupCredentialInterception() {
   };
 
   // Override open to capture URL
-  XMLHttpRequest.prototype.open = function(method, url, ...args) {
+  XMLHttpRequest.prototype.open = function (method, url, ...args) {
     // Get or create request data for this XHR instance
     let requestData = requestDataMap.get(this);
     if (!requestData) {
@@ -192,12 +192,12 @@ export function setupCredentialInterception() {
   };
 
   // Override send to process the complete request
-  XMLHttpRequest.prototype.send = function(body) {
+  XMLHttpRequest.prototype.send = function (body) {
     const requestData = requestDataMap.get(this);
 
     if (requestData && requestData.url) {
-      const url = requestData.url;
-      const headers = requestData.headers;
+      const { url } = requestData;
+      const { headers } = requestData;
 
       // Check if this is a Rogers Bank API call
       if (url.includes('selfserve.apis.rogersbank.com')) {
@@ -235,13 +235,13 @@ export function setupCredentialInterception() {
         // Handle token regeneration responses
         if (url.includes('/v1/authenticate/regeneratetoken/')) {
           // Listen for the response to capture new token
-          this.addEventListener('load', function() {
+          this.addEventListener('load', function () {
             try {
               // Get the Accesstoken from response headers
               const newToken = this.getResponseHeader('Accesstoken');
               if (newToken) {
                 debugLog('Captured new Rogers Bank token from regeneratetoken API');
-                
+
                 // Update only the auth token, keep other credentials
                 const currentCreds = getRogersBankCredentials();
                 saveRogersBankCredentials({
@@ -271,7 +271,7 @@ export function setupCredentialInterception() {
 
   // Also intercept fetch API
   const originalFetch = window.fetch;
-  window.fetch = async function(url, options = {}) {
+  window.fetch = async function (url, options = {}) {
     // Check if this is a Rogers Bank API call
     if (typeof url === 'string' && url.includes('selfserve.apis.rogersbank.com')) {
       debugLog('Rogers Bank fetch API call intercepted:', { url, headers: options.headers });
@@ -318,14 +318,14 @@ export function setupCredentialInterception() {
       if (url.includes('/v1/authenticate/regeneratetoken/')) {
         try {
           const response = await originalFetch.call(this, url, options);
-          
+
           // Clone response to read headers without consuming the body
           const clonedResponse = response.clone();
           const newToken = clonedResponse.headers.get('Accesstoken');
-          
+
           if (newToken) {
             debugLog('Captured new Rogers Bank token from regeneratetoken fetch API');
-            
+
             const currentCreds = getRogersBankCredentials();
             saveRogersBankCredentials({
               ...currentCreds,
@@ -363,7 +363,7 @@ export function setupCredentialInterception() {
  */
 export function clearRogersBankCredentials() {
   debugLog('Clearing Rogers Bank credentials...');
-  
+
   // Clear from GM storage
   GM_deleteValue(STORAGE.ROGERSBANK_AUTH_TOKEN);
   GM_deleteValue(STORAGE.ROGERSBANK_ACCOUNT_ID);
@@ -372,15 +372,15 @@ export function clearRogersBankCredentials() {
   GM_deleteValue(STORAGE.ROGERSBANK_CUSTOMER_ID_ENCODED);
   GM_deleteValue(STORAGE.ROGERSBANK_DEVICE_ID);
   GM_deleteValue(STORAGE.ROGERSBANK_LAST_UPDATED);
-  
+
   // Clear local cache
   Object.keys(credentials).forEach((key) => {
     credentials[key] = null;
   });
-  
+
   // Update state manager
   stateManager.setRogersBankAuth(null);
-  
+
   debugLog('Rogers Bank credentials cleared');
   toast.show('Rogers Bank credentials cleared', 'info');
 }

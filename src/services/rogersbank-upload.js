@@ -14,10 +14,10 @@ import toast from '../ui/toast';
 export async function uploadRogersBankToMonarch(options = {}) {
   try {
     debugLog('Rogers Bank upload service called with options:', options);
-    
+
     // Placeholder implementation
     toast.show('Rogers Bank upload functionality is coming soon!', 'info');
-    
+
     return {
       success: false,
       message: 'Upload functionality not yet implemented',
@@ -37,7 +37,7 @@ export async function uploadRogersBankToMonarch(options = {}) {
 export async function fetchRogersBankTransactions(startDate, endDate) {
   try {
     debugLog('Fetching Rogers Bank transactions:', { startDate, endDate });
-    
+
     // Placeholder - will be implemented when API details are confirmed
     return [];
   } catch (error) {

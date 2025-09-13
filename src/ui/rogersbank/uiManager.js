@@ -145,19 +145,19 @@ function waitForTargetElement() {
   observer = new MutationObserver((mutations, obs) => {
     // Check if target element now exists
     const targetSection = document.querySelector('section[aria-labelledby="master-card-section"]');
-    
+
     if (targetSection && !isInitialized) {
       debugLog('Target element found, initializing UI...');
       isInitialized = true;
-      
+
       // Stop observing
       obs.disconnect();
-      
+
       // Clear timeout
       if (timeoutId) {
         clearTimeout(timeoutId);
       }
-      
+
       // Create container and initialize UI
       const container = createUIContainer();
       if (container) {
@@ -169,7 +169,7 @@ function waitForTargetElement() {
   // Start observing
   observer.observe(document.body, {
     childList: true,
-    subtree: true
+    subtree: true,
   });
 
   // Set timeout to stop observing after 30 seconds
@@ -230,8 +230,8 @@ function updateConnectionStatus(connectionStatus) {
         if (!creds.accountId) missingCreds.push('account');
         if (!creds.customerId) missingCreds.push('customer');
         if (!creds.deviceId) missingCreds.push('device');
-        
-        rogersbankIndicator.textContent = missingCreds.length > 0 
+
+        rogersbankIndicator.textContent = missingCreds.length > 0
           ? `Rogers Bank: Missing (${missingCreds.join(', ')})`
           : 'Rogers Bank: Not connected';
         rogersbankIndicator.style.color = '#dc3545';
