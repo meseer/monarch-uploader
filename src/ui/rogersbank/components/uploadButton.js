@@ -7,6 +7,7 @@ import { debugLog } from '../../../core/utils';
 import { COLORS } from '../../../core/config';
 import rogersbank from '../../../api/rogersbank';
 import toast from '../../toast';
+import { uploadRogersBankToMonarch } from '../../../services/rogersbank-upload';
 
 /**
  * Creates a styled button for Rogers Bank
@@ -108,17 +109,65 @@ export function createRogersBankUploadButton() {
     return container;
   }
 
-  // Create upload button (non-functional for now as requested)
-  const uploadButton = createRogersBankButton('Upload to Monarch', () => {
-    debugLog('Rogers Bank upload button clicked (placeholder)');
-    toast.show('Rogers Bank upload functionality coming soon!', 'info');
+  // Create upload button with actual functionality
+  const uploadButton = createRogersBankButton('Upload Transactions to Monarch', async () => {
+    debugLog('Rogers Bank upload button clicked');
+
+    // Disable button during upload
+    uploadButton.disabled = true;
+    uploadButton.style.opacity = '0.6';
+    uploadButton.style.cursor = 'not-allowed';
+    const originalText = uploadButton.textContent;
+    uploadButton.textContent = 'Processing...';
+
+    try {
+      // Call the upload service
+      const result = await uploadRogersBankToMonarch();
+
+      if (result.success && result.data) {
+        debugLog('Transaction upload completed:', result);
+
+        // Display summary in console
+        if (result.data.transactions) {
+          console.log('====================================');
+          console.log('Rogers Bank Transaction Upload Summary');
+          console.log('====================================');
+          console.log(`Date Range: ${result.data.fromDate} to ${result.data.toDate}`);
+          console.log(`Approved Transactions Uploaded: ${result.data.transactions.length}`);
+
+          if (result.data.monarchAccountName) {
+            console.log(`Monarch Account: ${result.data.monarchAccountName}`);
+          }
+
+          console.log('\nFirst 3 Uploaded Transactions:');
+          result.data.transactions.slice(0, 3).forEach((tx, index) => {
+            console.log(`\n${index + 1}. ${tx.date} - ${tx.merchant?.name || 'N/A'}`);
+            console.log(`   Amount: $${tx.amount?.value} ${tx.amount?.currency}`);
+            console.log(`   Category: ${tx.merchant?.categoryDescription || tx.merchant?.category || 'N/A'}`);
+            console.log(`   Status: ${tx.activityStatus}`);
+            console.log(`   Type: ${tx.activityType}`);
+            console.log(`   Reference: ${tx.referenceNumber}`);
+          });
+          console.log('====================================');
+        }
+      }
+    } catch (error) {
+      debugLog('Error during transaction upload:', error);
+      toast.show('Failed to upload transactions', 'error');
+    } finally {
+      // Re-enable button
+      uploadButton.disabled = false;
+      uploadButton.style.opacity = '1';
+      uploadButton.style.cursor = 'pointer';
+      uploadButton.textContent = originalText;
+    }
   }, { color: '#28a745' }); // Green color for upload action
 
   container.appendChild(uploadButton);
 
   // Add informational text
   const infoText = document.createElement('div');
-  infoText.textContent = 'Upload functionality will be implemented in the next phase.';
+  infoText.textContent = 'Click to fetch approved transactions and upload them to Monarch Money.';
   infoText.style.cssText = `
     padding: 4px 0;
     font-size: 12px;

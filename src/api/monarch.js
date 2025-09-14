@@ -103,17 +103,18 @@ export function setupMonarchTokenCapture() {
 
 /**
  * List all Monarch accounts
+ * @param {string} accountType - Account type to filter for ('brokerage' for investment, 'credit' for credit cards)
  * @returns {Promise<Array>} List of accounts
  */
-export async function listMonarchAccounts() {
+export async function listMonarchAccounts(accountType = 'brokerage') {
   const { accounts } = await callMonarchGraphQL(
     'GetAccounts',
     'query GetAccounts {\n accounts {\n id\n displayName\n deactivatedAt\n isHidden\n isAsset\n isManual\n mask\n displayLastUpdatedAt\n currentBalance\n displayBalance\n hideFromList\n hideTransactionsFromReports\n includeInNetWorth\n order\n icon\n logoUrl\n deactivatedAt \n type {\n  name\n  display\n  group\n  }\n subtype {\n name\n display\n }\n }}\n',
     {},
   );
 
-  // Filter for investment accounts
-  return accounts.filter((acc) => acc.type.name === 'brokerage'
+  // Filter for specified account type
+  return accounts.filter((acc) => acc.type.name === accountType
     && acc.isHidden === false
     && acc.hideFromList === false);
 }

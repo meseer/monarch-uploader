@@ -152,16 +152,21 @@ export function createMonarchAccountMappingSelector(
  * @param {Array} accounts - List of available accounts
  * @param {Function} callback - Callback function to receive selected account
  * @param {Array} originalAccounts - Original full accounts list for navigation
+ * @param {string} accountType - Account type filter ('brokerage', 'credit', etc.)
  * @returns {Promise} Promise that resolves when selection is complete
  */
-export async function showMonarchAccountSelector(accounts, callback, originalAccounts = null) {
+export async function showMonarchAccountSelector(accounts, callback, originalAccounts = null, accountType = null) {
   debugLog('Starting account selector with', {
     accountsCount: accounts.length,
     hasOriginalAccounts: Boolean(originalAccounts),
+    accountType,
   });
 
   // If originalAccounts is not provided, this is the initial call
   const allAccounts = originalAccounts || accounts;
+
+  // Determine account type from the accounts if not provided
+  const effectiveAccountType = accountType || (accounts.length > 0 && accounts[0].type?.name) || 'brokerage';
 
   try {
     // First, fetch institution data
@@ -196,8 +201,8 @@ export async function showMonarchAccountSelector(accounts, callback, originalAcc
     const institutionList = credentials.map((cred) => {
       const credAccounts = credentialAccounts[cred.id] || [];
 
-      // Check if any accounts in this institution are brokerage accounts we care about
-      const hasBrokerageAccounts = credAccounts.some((acc) => acc.details && !acc.deletedAt);
+      // Check if any accounts in this institution match our account type filter
+      const hasMatchingAccounts = credAccounts.some((acc) => acc.details && !acc.deletedAt);
 
       // Extract domain from institution URL
       const institutionDomain = extractDomain(cred.institution?.url);
@@ -213,13 +218,13 @@ export async function showMonarchAccountSelector(accounts, callback, originalAcc
       return {
         credential: cred,
         accounts: credAccounts.filter((acc) => acc.details && !acc.deletedAt),
-        hasBrokerageAccounts,
+        hasMatchingAccounts,
         domainMatchScore,
       };
     });
 
-    // Filter to only show institutions with valid brokerage accounts
-    const validInstitutions = institutionList.filter((inst) => inst.hasBrokerageAccounts);
+    // Filter to only show institutions with valid accounts of the right type
+    const validInstitutions = institutionList.filter((inst) => inst.hasMatchingAccounts);
 
     // Sort by domain match score (descending) then by name
     validInstitutions.sort((a, b) => {
@@ -233,9 +238,10 @@ export async function showMonarchAccountSelector(accounts, callback, originalAcc
     debugLog('Showing institution selector with', {
       institutionCount: validInstitutions.length,
       allAccountsCount: allAccounts.length,
+      accountType: effectiveAccountType,
     });
 
-    showInstitutionSelector(validInstitutions, callback);
+    showInstitutionSelector(validInstitutions, callback, effectiveAccountType);
   } catch (error) {
     debugLog('Failed to get institution data:', error);
     // Fall back to original account selector if we can't get institution data
@@ -247,10 +253,12 @@ export async function showMonarchAccountSelector(accounts, callback, originalAcc
  * Show the institution selection screen
  * @param {Array} institutions - List of institutions with account info
  * @param {Function} callback - Callback for final account selection
+ * @param {string} accountType - Account type being selected
  */
-function showInstitutionSelector(institutions, callback) {
+function showInstitutionSelector(institutions, callback, accountType = 'brokerage') {
   debugLog('Showing institution selector with', {
     institutionsCount: institutions ? institutions.length : 0,
+    accountType,
   });
 
   // Set up keyboard navigation cleanup function
@@ -284,7 +292,15 @@ function showInstitutionSelector(institutions, callback) {
   // No institutions message
   if (!institutions.length) {
     const noInst = document.createElement('div');
-    noInst.textContent = 'No institutions found with investment accounts.';
+    let accountTypeDisplay;
+    if (accountType === 'credit') {
+      accountTypeDisplay = 'credit card';
+    } else if (accountType === 'brokerage') {
+      accountTypeDisplay = 'investment';
+    } else {
+      accountTypeDisplay = accountType;
+    }
+    noInst.textContent = `No institutions found with ${accountTypeDisplay} accounts.`;
     noInst.style.cssText = 'color: #666; padding: 20px 0;';
     modal.appendChild(noInst);
   }
@@ -445,7 +461,7 @@ function showInstitutionSelector(institutions, callback) {
       });
       cleanupKeyboard();
       overlay.remove();
-      showAccountSelector(inst, callback, institutions);
+      showAccountSelector(inst, callback, institutions, accountType);
     };
 
     modal.appendChild(item);
@@ -493,7 +509,7 @@ function showInstitutionSelector(institutions, callback) {
         });
         cleanupKeyboard();
         overlay.remove();
-        showAccountSelector(inst, callback, institutions);
+        showAccountSelector(inst, callback, institutions, accountType);
       },
       0, // Focus first item initially
     );
@@ -515,8 +531,9 @@ function showInstitutionSelector(institutions, callback) {
  * @param {Object} institution - Institution object with accounts
  * @param {Function} callback - Callback for account selection
  * @param {Array} allInstitutions - All institutions for navigation
+ * @param {string} accountType - Account type being selected
  */
-function showAccountSelector(institution, callback, allInstitutions) {
+function showAccountSelector(institution, callback, allInstitutions, accountType = 'brokerage') {
   // Store all institutions for navigation
   const allInsts = allInstitutions || [institution];
 
@@ -580,7 +597,7 @@ function showAccountSelector(institution, callback, allInstitutions) {
     cleanupKeyboard();
     overlay.remove();
     // Re-show the institution selector with the full original institutions list
-    showInstitutionSelector(allInsts, callback);
+    showInstitutionSelector(allInsts, callback, accountType);
   };
 
   // Now initialize the overlay with the closeModal function

@@ -6,7 +6,13 @@
 
 // Import core modules
 import { STORAGE } from './core/config';
-import { debugLog, clearAllGmStorage } from './core/utils';
+import {
+  debugLog,
+  clearAllGmStorage,
+  clearTransactionUploadHistory,
+  clearAccountMapping,
+  clearLastUploadedDate,
+} from './core/utils';
 import stateManager from './core/state';
 import navigationManager from './core/navigation';
 
@@ -26,7 +32,12 @@ import { loadCurrentAccountInfo } from './services/account';
 // Main IIFE - application entry point
 (function initMonarchUploader() {
   debugLog('Initializing Questrade to Monarch balance uploader...');
+
+  // Register Tampermonkey menu commands
   GM_registerMenuCommand('Clear All Cached Data', clearAllGmStorage);
+  GM_registerMenuCommand('Clear Transaction Upload History', clearTransactionUploadHistory);
+  GM_registerMenuCommand('Clear Account Mapping', clearAccountMapping);
+  GM_registerMenuCommand('Clear Last Uploaded Date', clearLastUploadedDate);
 
   // Initialize the application once the DOM is ready
 

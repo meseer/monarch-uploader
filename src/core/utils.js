@@ -3,7 +3,8 @@
  * This file will gradually replace inline utility functions in the original script
  */
 
-import { DEBUG_LOG } from './config';
+import { DEBUG_LOG, STORAGE } from './config';
+import toast from '../ui/toast';
 
 /**
  * Gets the current date in local timezone
@@ -217,8 +218,129 @@ export async function clearAllGmStorage() {
     const keys = await GM_listValues();
     await Promise.all(keys.map((key) => GM_deleteValue(key)));
     debugLog('Cleared all storage and token cache');
+    toast.show('All cached data cleared', 'success');
   } catch (error) {
     debugLog('Failed to clear Tampermonkey storage:', error);
+    toast.show('Failed to clear cached data', 'error');
+  }
+}
+
+/**
+ * Gets the current financial institution from hostname
+ * @returns {string} Institution name or 'unknown'
+ */
+export function getCurrentInstitution() {
+  const { hostname } = window.location;
+  if (hostname.includes('questrade.com')) return 'questrade';
+  if (hostname.includes('canadalife.com')) return 'canadalife';
+  if (hostname.includes('rogersbank.com')) return 'rogersbank';
+  if (hostname.includes('monarchmoney.com')) return 'monarch';
+  return 'unknown';
+}
+
+/**
+ * Clears transaction upload history (currently only Rogers Bank has this)
+ */
+export async function clearTransactionUploadHistory() {
+  try {
+    const institution = getCurrentInstitution();
+    const keys = await GM_listValues();
+    let clearedCount = 0;
+
+    // Currently only Rogers Bank has uploaded transaction references
+    if (institution === 'rogersbank') {
+      const keysToDelete = keys.filter((key) => key.startsWith(STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX));
+      await Promise.all(keysToDelete.map((key) => GM_deleteValue(key)));
+      clearedCount = keysToDelete.length;
+      debugLog(`Cleared ${clearedCount} Rogers Bank transaction upload history keys`);
+      toast.show('Transaction upload history cleared', 'success');
+    } else {
+      debugLog('No transaction upload history to clear for this institution');
+      toast.show('No transaction history to clear', 'info');
+    }
+  } catch (error) {
+    debugLog('Failed to clear transaction upload history:', error);
+    toast.show('Failed to clear transaction history', 'error');
+  }
+}
+
+/**
+ * Clears account mapping for the current financial institution
+ */
+export async function clearAccountMapping() {
+  try {
+    const institution = getCurrentInstitution();
+    const keys = await GM_listValues();
+    let prefix = null;
+    let institutionName = '';
+
+    switch (institution) {
+      case 'questrade':
+        prefix = STORAGE.ACCOUNT_MAPPING_PREFIX;
+        institutionName = 'Questrade';
+        break;
+      case 'canadalife':
+        prefix = STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX;
+        institutionName = 'Canada Life';
+        break;
+      case 'rogersbank':
+        prefix = STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX;
+        institutionName = 'Rogers Bank';
+        break;
+      default:
+        debugLog('Not on a supported financial institution site');
+        toast.show('Please run this on a supported financial site', 'warning');
+        return;
+    }
+
+    const keysToDelete = keys.filter((key) => key.startsWith(prefix));
+    await Promise.all(keysToDelete.map((key) => GM_deleteValue(key)));
+
+    debugLog(`Cleared ${keysToDelete.length} ${institutionName} account mapping keys`);
+    toast.show(`${institutionName} account mappings cleared`, 'success');
+  } catch (error) {
+    debugLog('Failed to clear account mapping:', error);
+    toast.show('Failed to clear account mappings', 'error');
+  }
+}
+
+/**
+ * Clears last uploaded date for the current financial institution
+ */
+export async function clearLastUploadedDate() {
+  try {
+    const institution = getCurrentInstitution();
+    const keys = await GM_listValues();
+    const keysToDelete = [];
+    let institutionName = '';
+
+    switch (institution) {
+      case 'questrade':
+        institutionName = 'Questrade';
+        keysToDelete.push(...keys.filter((key) => key.startsWith(STORAGE.LAST_DATE_PREFIX)));
+        break;
+      case 'canadalife':
+        institutionName = 'Canada Life';
+        keysToDelete.push(...keys.filter((key) => key.startsWith(STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX)));
+        break;
+      case 'rogersbank':
+        institutionName = 'Rogers Bank';
+        keysToDelete.push(...keys.filter((key) => key.startsWith(STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX)
+          || key === STORAGE.ROGERSBANK_FROM_DATE));
+        break;
+      default:
+        debugLog('Not on a supported financial institution site');
+        toast.show('Please run this on a supported financial site', 'warning');
+        return;
+    }
+
+    await Promise.all(keysToDelete.map((key) => GM_deleteValue(key)));
+
+    debugLog(`Cleared ${keysToDelete.length} ${institutionName} last uploaded date keys`);
+    toast.show(`${institutionName} last uploaded dates cleared`, 'success');
+  } catch (error) {
+    debugLog('Failed to clear last uploaded date:', error);
+    toast.show('Failed to clear last uploaded dates', 'error');
   }
 }
 
@@ -238,4 +360,8 @@ export default {
   getAccountIdFromUrl,
   isQuestradeAllAccountsPage,
   clearAllGmStorage,
+  getCurrentInstitution,
+  clearTransactionUploadHistory,
+  clearAccountMapping,
+  clearLastUploadedDate,
 };

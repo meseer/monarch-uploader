@@ -1,0 +1,194 @@
+/**
+ * CSV Conversion Utilities
+ * Handles conversion of data to CSV format
+ */
+
+import { debugLog } from '../core/utils';
+import { applyMerchantMapping } from '../mappers/merchant';
+import { applyCategoryMapping } from '../mappers/category';
+
+/**
+ * Escape a CSV field value
+ * @param {string|number} value - Value to escape
+ * @returns {string} Escaped value
+ */
+function escapeCSVField(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  const stringValue = String(value);
+
+  // Check if escaping is needed
+  if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n') || stringValue.includes('\r')) {
+    // Escape double quotes by doubling them
+    const escaped = stringValue.replace(/"/g, '""');
+    return `"${escaped}"`;
+  }
+
+  return stringValue;
+}
+
+/**
+ * Convert an array of objects to CSV string
+ * @param {Array<Object>} data - Array of objects to convert
+ * @param {Array<string>} columns - Column names (optional, will use object keys if not provided)
+ * @returns {string} CSV string
+ */
+export function convertToCSV(data, columns = null) {
+  if (!data || !Array.isArray(data) || data.length === 0) {
+    debugLog('No data to convert to CSV');
+    return '';
+  }
+
+  // Determine columns from first object if not provided
+  const columnNames = columns || Object.keys(data[0]);
+
+  // Create header row
+  const headerRow = columnNames.map(escapeCSVField).join(',');
+
+  // Create data rows
+  const dataRows = data.map((row) => columnNames.map((col) => {
+    const value = row[col];
+    return escapeCSVField(value);
+  }).join(','));
+
+  // Combine header and data rows
+  const csvContent = [headerRow, ...dataRows].join('\n');
+
+  debugLog('CSV generated:', {
+    rows: data.length,
+    columns: columnNames.length,
+    sizeBytes: csvContent.length,
+  });
+
+  return csvContent;
+}
+
+/**
+ * Convert Rogers Bank transactions to Monarch CSV format
+ * @param {Array} transactions - Array of Rogers Bank transaction objects
+ * @param {string} accountName - Rogers account name for the Account column
+ * @returns {string} CSV string formatted for Monarch
+ */
+export function convertTransactionsToMonarchCSV(transactions, accountName) {
+  if (!transactions || transactions.length === 0) {
+    return '';
+  }
+
+  // Define Monarch CSV columns
+  const columns = [
+    'Date',
+    'Merchant',
+    'Category',
+    'Account',
+    'Original Statement',
+    'Notes',
+    'Amount',
+    'Tags',
+  ];
+
+  // Transform transactions to Monarch format
+  const monarchRows = transactions.map((transaction) => {
+    // Apply merchant mapping
+    const mappedMerchant = applyMerchantMapping(transaction.merchant?.name || '');
+
+    // Apply category mapping
+    const originalCategory = transaction.merchant?.categoryDescription
+      || transaction.merchant?.category
+      || '';
+    const mappedCategory = applyCategoryMapping(originalCategory);
+
+    // Create notes field
+    const notes = `${transaction.activityType || ''} / ${transaction.referenceNumber || ''}`.trim();
+
+    return {
+      Date: transaction.date || '',
+      Merchant: mappedMerchant,
+      Category: mappedCategory,
+      Account: accountName,
+      'Original Statement': transaction.merchant?.name || '',
+      Notes: notes,
+      Amount: -(transaction.amount?.value || 0), // Negate amount for Rogers transactions
+      Tags: '', // Empty for now, can be enhanced later
+    };
+  });
+
+  debugLog('Transformed transactions for CSV:', {
+    originalCount: transactions.length,
+    transformedCount: monarchRows.length,
+    sample: monarchRows[0], // Log first row as sample
+  });
+
+  return convertToCSV(monarchRows, columns);
+}
+
+/**
+ * Parse CSV string to array of objects
+ * @param {string} csvString - CSV string to parse
+ * @param {boolean} hasHeader - Whether the first row is a header
+ * @returns {Array<Object>} Array of parsed objects
+ */
+export function parseCSV(csvString, hasHeader = true) {
+  if (!csvString) {
+    return [];
+  }
+
+  const lines = csvString.split('\n').filter((line) => line.trim());
+  if (lines.length === 0) {
+    return [];
+  }
+
+  // Simple CSV parser (doesn't handle all edge cases)
+  const parseRow = (row) => {
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < row.length; i += 1) {
+      const char = row[i];
+
+      if (char === '"') {
+        if (inQuotes && row[i + 1] === '"') {
+          current += '"';
+          i += 1; // Skip next quote
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        result.push(current);
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+
+    result.push(current);
+    return result;
+  };
+
+  const rows = lines.map(parseRow);
+
+  if (!hasHeader) {
+    return rows;
+  }
+
+  // Convert to objects using header
+  const header = rows[0];
+  const dataRows = rows.slice(1);
+
+  return dataRows.map((row) => {
+    const obj = {};
+    header.forEach((col, index) => {
+      obj[col] = row[index] || '';
+    });
+    return obj;
+  });
+}
+
+export default {
+  convertToCSV,
+  convertTransactionsToMonarchCSV,
+  parseCSV,
+  escapeCSVField,
+};

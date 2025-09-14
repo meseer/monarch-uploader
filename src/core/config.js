@@ -33,6 +33,8 @@ export const STORAGE = {
   ROGERSBANK_LAST_UPDATED: 'rogersbank_last_updated',
   ROGERSBANK_LAST_UPLOAD_DATE_PREFIX: 'rogersbank_last_upload_date_',
   ROGERSBANK_ACCOUNT_MAPPING_PREFIX: 'rogersbank_monarch_account_for_',
+  ROGERSBANK_FROM_DATE: 'rogersbank_from_date',
+  ROGERSBANK_UPLOADED_REFS_PREFIX: 'rogersbank_uploaded_refs_', // Store uploaded transaction reference numbers
 };
 
 // Brand colors

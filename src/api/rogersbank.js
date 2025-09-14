@@ -159,7 +159,7 @@ export function setupCredentialInterception() {
   const requestDataMap = new WeakMap();
 
   // Override setRequestHeader to capture headers
-  XMLHttpRequest.prototype.setRequestHeader = function (header, value) {
+  XMLHttpRequest.prototype.setRequestHeader = function setRequestHeaderWrapper(header, value) {
     // Get or create request data for this XHR instance
     let requestData = requestDataMap.get(this);
     if (!requestData) {
@@ -175,7 +175,7 @@ export function setupCredentialInterception() {
   };
 
   // Override open to capture URL
-  XMLHttpRequest.prototype.open = function (method, url, ...args) {
+  XMLHttpRequest.prototype.open = function openWrapper(method, url, ...args) {
     // Get or create request data for this XHR instance
     let requestData = requestDataMap.get(this);
     if (!requestData) {
@@ -192,7 +192,7 @@ export function setupCredentialInterception() {
   };
 
   // Override send to process the complete request
-  XMLHttpRequest.prototype.send = function (body) {
+  XMLHttpRequest.prototype.send = function sendWrapper(body) {
     const requestData = requestDataMap.get(this);
 
     if (requestData && requestData.url) {
@@ -235,7 +235,7 @@ export function setupCredentialInterception() {
         // Handle token regeneration responses
         if (url.includes('/v1/authenticate/regeneratetoken/')) {
           // Listen for the response to capture new token
-          this.addEventListener('load', function () {
+          this.addEventListener('load', function handleTokenRegeneration() {
             try {
               // Get the Accesstoken from response headers
               const newToken = this.getResponseHeader('Accesstoken');
@@ -271,7 +271,7 @@ export function setupCredentialInterception() {
 
   // Also intercept fetch API
   const originalFetch = window.fetch;
-  window.fetch = async function (url, options = {}) {
+  window.fetch = async function fetchWrapper(url, options = {}) {
     // Check if this is a Rogers Bank API call
     if (typeof url === 'string' && url.includes('selfserve.apis.rogersbank.com')) {
       debugLog('Rogers Bank fetch API call intercepted:', { url, headers: options.headers });

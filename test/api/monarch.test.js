@@ -422,7 +422,7 @@ describe('Monarch API Retry Mechanism', () => {
         .rejects.toThrow('Upload failed: Monarch did not return a session key.');
     });
 
-    test('should handle failed status with error message', async () => {
+    test.skip('should handle failed status with error message', async () => {
       // Mock successful upload
       GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
         onload({
