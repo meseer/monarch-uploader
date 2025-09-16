@@ -463,12 +463,12 @@ function isWeekend(date) {
  */
 function generateBusinessDays(startDate, endDate) {
   const businessDays = [];
-  const current = parseLocalDate(startDate);  // Use local timezone parsing
-  const end = parseLocalDate(endDate);        // Use local timezone parsing
+  const current = parseLocalDate(startDate); // Use local timezone parsing
+  const end = parseLocalDate(endDate); // Use local timezone parsing
 
   while (current <= end) {
     if (!isWeekend(current)) {
-      businessDays.push(formatDate(current));  // Use consistent local formatting
+      businessDays.push(formatDate(current)); // Use consistent local formatting
     }
     current.setDate(current.getDate() + 1);
   }

@@ -109,7 +109,36 @@ export function setupMonarchTokenCapture() {
 export async function listMonarchAccounts(accountType = 'brokerage') {
   const { accounts } = await callMonarchGraphQL(
     'GetAccounts',
-    'query GetAccounts {\n accounts {\n id\n displayName\n deactivatedAt\n isHidden\n isAsset\n isManual\n mask\n displayLastUpdatedAt\n currentBalance\n displayBalance\n hideFromList\n hideTransactionsFromReports\n includeInNetWorth\n order\n icon\n logoUrl\n deactivatedAt \n type {\n  name\n  display\n  group\n  }\n subtype {\n name\n display\n }\n }}\n',
+    `query GetAccounts {
+      accounts {
+        id
+        displayName
+        deactivatedAt
+        isHidden
+        isAsset
+        isManual
+        mask
+        displayLastUpdatedAt
+        currentBalance
+        displayBalance
+        hideFromList
+        hideTransactionsFromReports
+        includeInNetWorth
+        order
+        icon
+        logoUrl
+        deactivatedAt
+        type {
+          name
+          display
+          group
+        }
+        subtype {
+          name
+          display
+        }
+      }
+    }`,
     {},
   );
 
@@ -271,7 +300,8 @@ export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDat
     const previewResponse = await new Promise((resolve, reject) => GM_xmlhttpRequest({
       mode: 'cors',
       method: 'POST',
-      url: API.MONARCH_UPLOAD_URL || 'https://api.monarchmoney.com/account-balance-history/upload/',
+      url: API.MONARCH_UPLOAD_URL
+        || 'https://api.monarchmoney.com/account-balance-history/upload/',
       headers: {
         accept: 'application/json',
         authorization: `Token ${authStatus.token}`,
@@ -295,7 +325,21 @@ export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDat
     debugLog('Finalizing upload (Step 2/2)');
     await callMonarchGraphQL(
       'Web_ParseUploadBalanceHistorySession',
-      'mutation Web_ParseUploadBalanceHistorySession($input: ParseBalanceHistoryInput!) {\n  parseBalanceHistory(input: $input) {\n    uploadBalanceHistorySession {\n      ...UploadBalanceHistorySessionFields\n      __typename\n    }\n    __typename\n  }\n}\n\nfragment UploadBalanceHistorySessionFields on UploadBalanceHistorySession {\n  sessionKey\n  status\n  __typename\n}',
+      `mutation Web_ParseUploadBalanceHistorySession($input: ParseBalanceHistoryInput!) {
+        parseBalanceHistory(input: $input) {
+          uploadBalanceHistorySession {
+            ...UploadBalanceHistorySessionFields
+            __typename
+          }
+          __typename
+        }
+      }
+      
+      fragment UploadBalanceHistorySessionFields on UploadBalanceHistorySession {
+        sessionKey
+        status
+        __typename
+      }`,
       { input: { sessionKey: response.session_key } },
     );
 
@@ -311,14 +355,26 @@ export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDat
       try {
         const { uploadBalanceHistorySession } = await callMonarchGraphQL(
           'Web_GetUploadBalanceHistorySession',
-          'query Web_GetUploadBalanceHistorySession($sessionKey: String!) {\n  uploadBalanceHistorySession(sessionKey: $sessionKey) {\n    ...UploadBalanceHistorySessionFields\n    __typename\n  }\n}\n\nfragment UploadBalanceHistorySessionFields on UploadBalanceHistorySession {\n  sessionKey\n  status\n  __typename\n}',
+          `query Web_GetUploadBalanceHistorySession($sessionKey: String!) {
+            uploadBalanceHistorySession(sessionKey: $sessionKey) {
+              ...UploadBalanceHistorySessionFields
+              __typename
+            }
+          }
+          
+          fragment UploadBalanceHistorySessionFields on UploadBalanceHistorySession {
+            sessionKey
+            status
+            __typename
+          }`,
           { sessionKey: response.session_key },
         );
 
         debugLog(`Upload status check ${attempts}/${maxRetries}: ${uploadBalanceHistorySession.status}`);
 
         if (uploadBalanceHistorySession.status === 'completed') {
-          debugLog(`Successfully uploaded ${response.previews[0].count} days of "${accountName}" balance history to Monarch`);
+          const dayCount = response.previews[0].count;
+          debugLog(`Successfully uploaded ${dayCount} days of "${accountName}" balance history to Monarch`);
           return true;
         } if (uploadBalanceHistorySession.status === 'failed') {
           throw new Error('Monarch upload processing failed');
@@ -349,7 +405,9 @@ export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDat
     }
 
     // If we get here, we've exceeded max retries
-    throw new Error(`Upload processing timeout - exceeded maximum retry attempts (${maxRetries}). The upload may still be processing in Monarch.`);
+    const timeoutMsg = `Upload processing timeout - exceeded maximum retry attempts (${maxRetries}). `
+      + 'The upload may still be processing in Monarch.';
+    throw new Error(timeoutMsg);
   } catch (error) {
     debugLog('Monarch upload failed:', error);
     throw error;
@@ -420,7 +478,28 @@ export async function uploadTransactionsToMonarch(
     debugLog('Parsing uploaded statement (Step 2/3)');
     await callMonarchGraphQL(
       'Web_ParseUploadStatementSession',
-      'mutation Web_ParseUploadStatementSession($input: ParseStatementInput!) {\n  parseUploadStatementSession(input: $input) {\n    uploadStatementSession {\n      ...UploadStatementSessionFields\n      __typename\n    }\n    __typename\n  }\n}\n\nfragment UploadStatementSessionFields on UploadStatementSession {\n  sessionKey\n  status\n  errorMessage\n  skipCheckForDuplicates\n  uploadedStatement {\n    id\n    transactionCount\n    __typename\n  }\n  __typename\n}',
+      `mutation Web_ParseUploadStatementSession($input: ParseStatementInput!) {
+        parseUploadStatementSession(input: $input) {
+          uploadStatementSession {
+            ...UploadStatementSessionFields
+            __typename
+          }
+          __typename
+        }
+      }
+      
+      fragment UploadStatementSessionFields on UploadStatementSession {
+        sessionKey
+        status
+        errorMessage
+        skipCheckForDuplicates
+        uploadedStatement {
+          id
+          transactionCount
+          __typename
+        }
+        __typename
+      }`,
       {
         input: {
           parserName: 'monarch_csv',
@@ -445,7 +524,25 @@ export async function uploadTransactionsToMonarch(
       try {
         const { uploadStatementSession } = await callMonarchGraphQL(
           'Web_GetUploadStatementSession',
-          'query Web_GetUploadStatementSession($sessionKey: String!) {\n  uploadStatementSession(sessionKey: $sessionKey) {\n    ...UploadStatementSessionFields\n    __typename\n  }\n}\n\nfragment UploadStatementSessionFields on UploadStatementSession {\n  sessionKey\n  status\n  errorMessage\n  skipCheckForDuplicates\n  uploadedStatement {\n    id\n    transactionCount\n    __typename\n  }\n  __typename\n}',
+          `query Web_GetUploadStatementSession($sessionKey: String!) {
+            uploadStatementSession(sessionKey: $sessionKey) {
+              ...UploadStatementSessionFields
+              __typename
+            }
+          }
+          
+          fragment UploadStatementSessionFields on UploadStatementSession {
+            sessionKey
+            status
+            errorMessage
+            skipCheckForDuplicates
+            uploadedStatement {
+              id
+              transactionCount
+              __typename
+            }
+            __typename
+          }`,
           { sessionKey: response.session_key },
         );
 
@@ -453,7 +550,8 @@ export async function uploadTransactionsToMonarch(
 
         if (uploadStatementSession.status === 'completed') {
           const transactionCount = uploadStatementSession.uploadedStatement?.transactionCount || 0;
-          debugLog(`Successfully uploaded ${transactionCount} transactions to Monarch account ${monarchAccountId}`);
+          const successMsg = `Successfully uploaded ${transactionCount} transactions to Monarch account ${monarchAccountId}`;
+          debugLog(successMsg);
           return true;
         }
         if (uploadStatementSession.status === 'failed') {
@@ -487,7 +585,9 @@ export async function uploadTransactionsToMonarch(
     }
 
     // If we get here, we've exceeded max retries
-    throw new Error(`Upload processing timeout - exceeded maximum retry attempts (${maxRetries}). The upload may still be processing in Monarch.`);
+    const timeoutMsg = `Upload processing timeout - exceeded maximum retry attempts (${maxRetries}). `
+      + 'The upload may still be processing in Monarch.';
+    throw new Error(timeoutMsg);
   } catch (error) {
     debugLog('Monarch transaction upload failed:', error);
     throw error;

@@ -47,7 +47,7 @@ async function getFromDate() {
       // Default to 14 days ago (two weeks) if no persisted date
       const defaultDate = new Date();
       defaultDate.setDate(defaultDate.getDate() - 14);
-      defaultDateStr = defaultDate.toISOString().split('T')[0];
+      [defaultDateStr] = defaultDate.toISOString().split('T');
       debugLog('No persisted nextSyncFromDate found, defaulting to 14 days ago:', defaultDateStr);
     }
 
@@ -123,7 +123,7 @@ function saveNextSyncFromDate() {
   try {
     // Calculate 7 days before today using existing utility function
     const nextSyncFromDate = formatDaysAgoLocal(7);
-    
+
     // Save to storage
     GM_setValue(STORAGE.ROGERSBANK_NEXT_SYNC_FROM_DATE, nextSyncFromDate);
     debugLog('Saved nextSyncFromDate for future uploads:', nextSyncFromDate);
