@@ -99,6 +99,9 @@ function saveRogersBankCredentials(newCredentials) {
   }
 }
 
+// Track the last authentication status to avoid duplicate logging
+let lastAuthStatus = null;
+
 /**
  * Check Rogers Bank authentication status
  * @returns {Object} Authentication status object
@@ -114,20 +117,22 @@ export function checkRogersBankAuth() {
     && creds.deviceId
   );
 
-  if (hasAllCredentials) {
-    debugLog('Rogers Bank authentication: Connected');
-    return {
-      authenticated: true,
-      credentials: creds,
-      source: 'intercepted',
-    };
+  const currentStatus = hasAllCredentials ? 'connected' : 'not_connected';
+
+  // Only log if status changed
+  if (lastAuthStatus !== currentStatus) {
+    if (hasAllCredentials) {
+      debugLog('Rogers Bank authentication: Connected');
+    } else {
+      debugLog('Rogers Bank authentication: Not connected (missing credentials)');
+    }
+    lastAuthStatus = currentStatus;
   }
 
-  debugLog('Rogers Bank authentication: Not connected (missing credentials)');
   return {
-    authenticated: false,
+    authenticated: hasAllCredentials,
     credentials: creds,
-    source: null,
+    source: hasAllCredentials ? 'intercepted' : null,
   };
 }
 
@@ -349,13 +354,8 @@ export function setupCredentialInterception() {
 
   debugLog('Rogers Bank credential interception setup complete');
 
-  // Check initial status
+  // Check initial status once during setup
   checkCredentialStatus();
-
-  // Set up periodic status checking (every 10 seconds)
-  setInterval(() => {
-    checkCredentialStatus();
-  }, 10000);
 }
 
 /**

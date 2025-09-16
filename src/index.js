@@ -21,7 +21,7 @@ import navigationManager from './core/navigation';
 import { checkTokenStatus } from './api/questrade';
 import monarchApi from './api/monarch';
 import { setupTokenMonitoring, checkTokenStatus as checkCanadaLifeTokenStatus } from './api/canadalife';
-import { setupCredentialInterception, checkCredentialStatus as checkRogersBankCredentialStatus } from './api/rogersbank';
+import { setupCredentialInterception } from './api/rogersbank';
 
 // Import UI components
 import toast from './ui/toast';
@@ -106,8 +106,8 @@ import { loadCurrentAccountInfo } from './services/account';
       // Initialize Rogers Bank components
       initializeRogersBankApp();
 
-      // Set up periodic status checks
-      setInterval(checkRogersBankStatus, 10000); // Check every 10 seconds
+      // Initialize Monarch token monitoring (event-driven, no polling)
+      initializeMonarchTokenMonitoring();
       return;
     }
 
@@ -218,9 +218,6 @@ import { loadCurrentAccountInfo } from './services/account';
       // Set up credential interception
       setupCredentialInterception();
 
-      // Check credential status immediately
-      checkRogersBankStatus();
-
       // Initialize Rogers Bank UI
       initRogersBankUI()
         .then(() => debugLog('Rogers Bank UI initialized successfully'))
@@ -231,18 +228,26 @@ import { loadCurrentAccountInfo } from './services/account';
   }
 
   /**
-     * Check auth status for Rogers Bank
+     * Initialize Monarch token monitoring with event-driven detection
      */
-  function checkRogersBankStatus() {
+  function initializeMonarchTokenMonitoring() {
     try {
-      // Check Rogers Bank credential status
-      checkRogersBankCredentialStatus();
-
-      // Check if we have a Monarch token
+      // Check initial Monarch token state
       const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN);
       stateManager.setMonarchAuth(monarchToken);
+
+      // Set up storage event listener for Monarch token changes
+      window.addEventListener('storage', (event) => {
+        if (event.key === STORAGE.MONARCH_TOKEN) {
+          debugLog('Monarch token changed via storage event');
+          const newToken = GM_getValue(STORAGE.MONARCH_TOKEN);
+          stateManager.setMonarchAuth(newToken);
+        }
+      });
+
+      debugLog('Monarch token monitoring initialized');
     } catch (error) {
-      debugLog('Error checking Rogers Bank status:', error);
+      debugLog('Error initializing Monarch token monitoring:', error);
     }
   }
 

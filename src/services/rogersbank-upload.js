@@ -257,7 +257,7 @@ async function resolveCategoriesForTransactions(transactions) {
  */
 async function fetchRogersBankTransactions(fromDate, toDate) {
   try {
-    const credentials = getRogersBankCredentials();
+    const credentials = getRogersBankCredentials(); // Get credentials for API calls
 
     // Check if we have all required credentials
     if (!credentials.authToken || !credentials.accountId || !credentials.customerId

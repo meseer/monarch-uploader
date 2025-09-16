@@ -398,16 +398,13 @@ function waitForTargetElement() {
  * @param {HTMLElement} connectionStatus - Connection status container
  */
 function setupStatusMonitoring(connectionStatus) {
-  // Set up periodic status checks
-  const statusInterval = setInterval(() => {
-    updateConnectionStatus(connectionStatus);
-  }, 10000); // Check every 10 seconds
-
-  // Store interval ID for cleanup if needed
-  connectionStatus.statusInterval = statusInterval;
-
-  // Listen for state changes
+  // Listen for state changes (reactive updates only)
   stateManager.addListener('auth', () => {
+    updateConnectionStatus(connectionStatus);
+  });
+
+  // Listen for Rogers Bank credential changes (event-driven)
+  stateManager.addListener('rogersbankAuth', () => {
     updateConnectionStatus(connectionStatus);
   });
 }
