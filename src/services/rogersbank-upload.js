@@ -13,6 +13,7 @@ import { convertTransactionsToMonarchCSV } from '../utils/csv';
 import { showDatePickerPromise } from '../ui/components/datePicker';
 import { applyCategoryMapping, saveUserCategorySelection } from '../mappers/category';
 import { showMonarchCategorySelector } from '../ui/components/categorySelector';
+import { showProgressDialog } from '../ui/components/progressDialog';
 
 /**
  * Extract Rogers account name from DOM
@@ -336,6 +337,9 @@ async function fetchRogersBankTransactions(fromDate, toDate) {
  * @returns {Promise<Object>} Upload result
  */
 export async function uploadRogersBankToMonarch() {
+  let progressDialog = null;
+  const abortController = new AbortController();
+
   try {
     debugLog('Rogers Bank upload service started');
 
@@ -351,16 +355,55 @@ export async function uploadRogersBankToMonarch() {
     const toDate = getEndOfCurrentMonth();
     debugLog(`Date range: ${fromDate} to ${toDate}`);
 
-    // Show progress
-    toast.show(`Fetching transactions from ${fromDate} to ${toDate}...`, 'info');
+    // Extract Rogers account name and create progress dialog
+    const rogersAccountName = getRogersAccountName();
+    const rogersAccountId = `rogers_${rogersAccountName.replace(/\s+/g, '_').toLowerCase()}`;
+
+    // Create progress dialog for Rogers Bank account
+    const accountForDialog = {
+      key: rogersAccountId,
+      nickname: rogersAccountName,
+      name: 'Rogers Bank Transaction Upload',
+    };
+
+    progressDialog = showProgressDialog(
+      [accountForDialog],
+      'Uploading Rogers Bank Transactions to Monarch Money'
+    );
+
+    // Set up cancellation callback
+    progressDialog.onCancel(() => {
+      debugLog('Upload cancellation requested by user');
+      abortController.abort();
+    });
+
+    // Update progress - fetching transactions
+    progressDialog.updateProgress(rogersAccountId, 'processing', `Fetching transactions from ${fromDate} to ${toDate}...`);
+
+    // Check for cancellation before fetching
+    if (abortController.signal.aborted) {
+      progressDialog?.updateProgress(rogersAccountId, 'error', 'Upload cancelled');
+      progressDialog?.hideCancel();
+      return { success: false, message: 'Upload cancelled by user' };
+    }
 
     // Fetch transactions
     const result = await fetchRogersBankTransactions(fromDate, toDate);
+
+    // Check for cancellation after fetching
+    if (abortController.signal.aborted) {
+      progressDialog?.updateProgress(rogersAccountId, 'error', 'Upload cancelled');
+      progressDialog?.hideCancel();
+      return { success: false, message: 'Upload cancelled by user' };
+    }
 
     if (result.success && result.transactions.length > 0) {
       // Log first 3 transactions for testing
       debugLog('First 3 transactions:', result.transactions.slice(0, 3));
       console.log('Rogers Bank - First 3 Transactions:', result.transactions.slice(0, 3));
+
+      // Update progress - filtering transactions
+      progressDialog.updateProgress(rogersAccountId, 'processing', `Processing ${result.transactions.length} transactions...`);
 
       // Filter only approved transactions
       const approvedTransactions = result.transactions.filter(
@@ -370,6 +413,9 @@ export async function uploadRogersBankToMonarch() {
       debugLog(`Filtered ${approvedTransactions.length} approved transactions from ${result.transactions.length} total`);
 
       if (approvedTransactions.length === 0) {
+        progressDialog.updateProgress(rogersAccountId, 'success', 'No approved transactions found to upload');
+        progressDialog.hideCancel();
+        progressDialog.showSummary({ success: 0, failed: 0, total: 1 });
         toast.show('No approved transactions found to upload', 'info');
         return {
           success: true,
@@ -378,13 +424,8 @@ export async function uploadRogersBankToMonarch() {
         };
       }
 
-      // Extract Rogers account name from DOM
-      const rogersAccountName = getRogersAccountName();
-
-      // Create a unique ID for this Rogers account
-      const rogersAccountId = `rogers_${rogersAccountName.replace(/\s+/g, '_').toLowerCase()}`;
-
       // Filter out duplicate transactions
+      progressDialog.updateProgress(rogersAccountId, 'processing', `Checking for duplicate transactions among ${approvedTransactions.length} approved transactions...`);
       const filterResult = filterDuplicateTransactions(approvedTransactions, rogersAccountId);
       const transactionsToUpload = filterResult.transactions;
 
@@ -392,6 +433,9 @@ export async function uploadRogersBankToMonarch() {
         const message = filterResult.duplicateCount > 0
           ? `All ${filterResult.duplicateCount} transactions have already been uploaded`
           : 'No new transactions to upload';
+        progressDialog.updateProgress(rogersAccountId, 'success', message);
+        progressDialog.hideCancel();
+        progressDialog.showSummary({ success: 0, failed: 0, total: 1 });
         toast.show(message, 'info');
         return {
           success: true,
@@ -407,6 +451,9 @@ export async function uploadRogersBankToMonarch() {
       // Show info about duplicates if any
       if (filterResult.duplicateCount > 0) {
         debugLog(`Processing ${transactionsToUpload.length} new transactions (skipped ${filterResult.duplicateCount} duplicates)`);
+        progressDialog.updateProgress(rogersAccountId, 'processing', `Found ${transactionsToUpload.length} new transactions (${filterResult.duplicateCount} duplicates skipped)`);
+      } else {
+        progressDialog.updateProgress(rogersAccountId, 'processing', `Found ${transactionsToUpload.length} new transactions to upload`);
       }
 
       // Check for existing Monarch account mapping
@@ -422,8 +469,16 @@ export async function uploadRogersBankToMonarch() {
         }
       }
 
+      // Check for cancellation before account mapping
+      if (abortController.signal.aborted) {
+        progressDialog?.updateProgress(rogersAccountId, 'error', 'Upload cancelled');
+        progressDialog?.hideCancel();
+        return { success: false, message: 'Upload cancelled by user' };
+      }
+
       // If no mapping exists, show the account selector
       if (!monarchAccount) {
+        progressDialog.updateProgress(rogersAccountId, 'processing', 'Getting Monarch account mapping...');
         debugLog('No Monarch account mapping found, showing account selector');
 
         // Fetch Monarch credit card accounts (for Rogers Bank)
@@ -439,6 +494,9 @@ export async function uploadRogersBankToMonarch() {
 
         if (!monarchAccount) {
           // User cancelled selection
+          progressDialog.updateProgress(rogersAccountId, 'error', 'Account mapping cancelled by user');
+          progressDialog.hideCancel();
+          progressDialog.showSummary({ success: 0, failed: 1, total: 1 });
           toast.show('Account selection cancelled', 'info');
           return {
             success: false,
@@ -452,26 +510,49 @@ export async function uploadRogersBankToMonarch() {
           JSON.stringify(monarchAccount),
         );
         debugLog(`Saved account mapping: ${rogersAccountName} -> ${monarchAccount.displayName}`);
-        toast.show(`Mapped ${rogersAccountName} to ${monarchAccount.displayName}`, 'success');
+        progressDialog.updateProgress(rogersAccountId, 'processing', `Mapped to Monarch account: ${monarchAccount.displayName}`);
+      } else {
+        progressDialog.updateProgress(rogersAccountId, 'processing', `Using existing Monarch account mapping: ${monarchAccount.displayName}`);
+      }
+
+      // Check for cancellation before category resolution
+      if (abortController.signal.aborted) {
+        progressDialog?.updateProgress(rogersAccountId, 'error', 'Upload cancelled');
+        progressDialog?.hideCancel();
+        return { success: false, message: 'Upload cancelled by user' };
       }
 
       // Resolve categories for all transactions (handle automatic mapping and manual selection)
-      toast.show('Resolving transaction categories...', 'info');
+      progressDialog.updateProgress(rogersAccountId, 'processing', 'Resolving transaction categories...');
       const transactionsWithResolvedCategories = await resolveCategoriesForTransactions(transactionsToUpload);
 
+      // Check for cancellation after category resolution
+      if (abortController.signal.aborted) {
+        progressDialog?.updateProgress(rogersAccountId, 'error', 'Upload cancelled');
+        progressDialog?.hideCancel();
+        return { success: false, message: 'Upload cancelled by user' };
+      }
+
       // Convert transactions to Monarch CSV format (use transactions with resolved categories)
-      toast.show('Converting transactions to CSV format...', 'info');
+      progressDialog.updateProgress(rogersAccountId, 'processing', `Converting ${transactionsToUpload.length} transactions to CSV format...`);
       const csvData = convertTransactionsToMonarchCSV(transactionsWithResolvedCategories, rogersAccountName);
 
       if (!csvData) {
         throw new Error('Failed to convert transactions to CSV');
       }
 
+      // Check for cancellation before upload
+      if (abortController.signal.aborted) {
+        progressDialog?.updateProgress(rogersAccountId, 'error', 'Upload cancelled');
+        progressDialog?.hideCancel();
+        return { success: false, message: 'Upload cancelled by user' };
+      }
+
       // Upload to Monarch with balance update enabled
       const uploadMessage = filterResult.duplicateCount > 0
         ? `Uploading ${transactionsToUpload.length} new transactions to Monarch (${filterResult.duplicateCount} duplicates skipped)...`
         : `Uploading ${transactionsToUpload.length} transactions to Monarch...`;
-      toast.show(uploadMessage, 'info');
+      progressDialog.updateProgress(rogersAccountId, 'processing', uploadMessage);
 
       const filename = `rogers_transactions_${fromDate}_to_${toDate}.csv`;
       const uploadSuccess = await monarchApi.uploadTransactions(
@@ -496,13 +577,19 @@ export async function uploadRogersBankToMonarch() {
         saveNextSyncFromDate();
 
         const successMessage = filterResult.duplicateCount > 0
-          ? `Successfully uploaded ${transactionsToUpload.length} new transactions to Monarch! (${filterResult.duplicateCount} duplicates skipped)`
-          : `Successfully uploaded ${transactionsToUpload.length} transactions to Monarch!`;
-        toast.show(successMessage, 'success');
+          ? `Successfully uploaded ${transactionsToUpload.length} new transactions (${filterResult.duplicateCount} duplicates skipped)`
+          : `Successfully uploaded ${transactionsToUpload.length} transactions`;
+        
+        progressDialog.updateProgress(rogersAccountId, 'success', successMessage);
+        progressDialog.hideCancel();
+        progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
+
+        // Also show toast for user confirmation
+        toast.show(`${successMessage} to Monarch!`, 'success');
 
         return {
           success: true,
-          message: successMessage,
+          message: `${successMessage} to Monarch!`,
           data: {
             ...result,
             transactions: transactionsToUpload,
@@ -516,6 +603,9 @@ export async function uploadRogersBankToMonarch() {
     }
 
     if (result.transactions.length === 0) {
+      progressDialog.updateProgress(rogersAccountId, 'success', 'No transactions found in the specified date range');
+      progressDialog.hideCancel();
+      progressDialog.showSummary({ success: 0, failed: 0, total: 1 });
       toast.show('No transactions found in the specified date range', 'info');
       return {
         success: true,
@@ -525,12 +615,24 @@ export async function uploadRogersBankToMonarch() {
     }
 
     // Fallback return for any edge case
+    progressDialog?.updateProgress(rogersAccountId, 'error', 'Unexpected error occurred');
+    progressDialog?.hideCancel();
+    progressDialog?.showSummary({ success: 0, failed: 1, total: 1 });
     return {
       success: false,
       message: 'Unexpected error occurred',
     };
   } catch (error) {
     debugLog('Error in Rogers Bank upload service:', error);
+    
+    // Update progress dialog with error if it exists
+    if (progressDialog && rogersAccountId) {
+      progressDialog.updateProgress(rogersAccountId, 'error', `Upload failed: ${error.message}`);
+      progressDialog.hideCancel();
+      progressDialog.showSummary({ success: 0, failed: 1, total: 1 });
+    }
+
+    // Also show error toast for user confirmation
     toast.show(`Error: ${error.message}`, 'error');
     return {
       success: false,
