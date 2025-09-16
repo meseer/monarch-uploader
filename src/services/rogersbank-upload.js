@@ -339,6 +339,7 @@ async function fetchRogersBankTransactions(fromDate, toDate) {
 export async function uploadRogersBankToMonarch() {
   let progressDialog = null;
   const abortController = new AbortController();
+  let rogersAccountId = null; // Declare at function level for catch block access
 
   try {
     debugLog('Rogers Bank upload service started');
@@ -357,7 +358,7 @@ export async function uploadRogersBankToMonarch() {
 
     // Extract Rogers account name and create progress dialog
     const rogersAccountName = getRogersAccountName();
-    const rogersAccountId = `rogers_${rogersAccountName.replace(/\s+/g, '_').toLowerCase()}`;
+    rogersAccountId = `rogers_${rogersAccountName.replace(/\s+/g, '_').toLowerCase()}`;
 
     // Create progress dialog for Rogers Bank account
     const accountForDialog = {
@@ -368,7 +369,7 @@ export async function uploadRogersBankToMonarch() {
 
     progressDialog = showProgressDialog(
       [accountForDialog],
-      'Uploading Rogers Bank Transactions to Monarch Money'
+      'Uploading Rogers Bank Transactions to Monarch Money',
     );
 
     // Set up cancellation callback
@@ -579,7 +580,7 @@ export async function uploadRogersBankToMonarch() {
         const successMessage = filterResult.duplicateCount > 0
           ? `Successfully uploaded ${transactionsToUpload.length} new transactions (${filterResult.duplicateCount} duplicates skipped)`
           : `Successfully uploaded ${transactionsToUpload.length} transactions`;
-        
+
         progressDialog.updateProgress(rogersAccountId, 'success', successMessage);
         progressDialog.hideCancel();
         progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
@@ -624,7 +625,7 @@ export async function uploadRogersBankToMonarch() {
     };
   } catch (error) {
     debugLog('Error in Rogers Bank upload service:', error);
-    
+
     // Update progress dialog with error if it exists
     if (progressDialog && rogersAccountId) {
       progressDialog.updateProgress(rogersAccountId, 'error', `Upload failed: ${error.message}`);

@@ -23,10 +23,11 @@ module.exports = {
     'no-undef': ['error', { 'typeof': true }],
     
     // Project-specific exceptions
-    'max-len': ['warn', { 'code': 120 }],
+    'max-len': 'off', // Disabled - too restrictive for this project
     'no-use-before-define': ['error', { 'functions': false }],
     'no-param-reassign': 'off', // Common in DOM manipulation
     'no-console': 'off', // Allow console logs
+    'no-plusplus': 'off', // Allow ++ and -- operators
     
     // Relaxed rules for userscript development
     'max-classes-per-file': 'off', // Allow multiple classes per file

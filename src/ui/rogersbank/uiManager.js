@@ -98,7 +98,7 @@ class RogersBankNavigationManager {
     try {
       // Wait for DOM to be ready with target element
       await this.waitForTargetElementAsync();
-      
+
       // Try to create container
       const container = createUIContainer();
       if (container) {
@@ -127,11 +127,11 @@ class RogersBankNavigationManager {
       // Set up observer to wait for element
       let attempts = 0;
       const maxAttempts = 60; // 30 seconds with 500ms intervals
-      
+
       const checkInterval = setInterval(() => {
         attempts++;
         const element = document.querySelector('section[aria-labelledby="master-card-section"]');
-        
+
         if (element) {
           clearInterval(checkInterval);
           resolve(element);
@@ -150,13 +150,13 @@ class RogersBankNavigationManager {
   shouldShowUI() {
     // Check if we're on the main account page where the master-card-section exists
     const path = window.location.pathname;
-    
+
     // Show UI on main dashboard/home pages where the target element exists
-    return path === '/' || 
-           path === '/home' ||
-           path === '/dashboard' || 
-           path.match(/^\/accounts?\/?$/) ||
-           path.includes('master-card');
+    return path === '/'
+           || path === '/home'
+           || path === '/dashboard'
+           || path.match(/^\/accounts?\/?$/)
+           || path.includes('master-card');
   }
 
   /**

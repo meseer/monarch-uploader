@@ -26,6 +26,40 @@ function toTitleCase(str) {
 }
 
 /**
+ * Configuration for prefixes to remove from merchant names
+ * Each prefix should be lowercase for consistent matching
+ */
+const PREFIXES_TO_REMOVE = [
+  { prefix: 'tst-', description: 'Toast transactions' },
+  { prefix: 'sq *', description: 'Square transactions' },
+  { prefix: 'ls ', description: 'Lightspeed transactions' },
+];
+
+/**
+ * Remove leading prefixes from merchant name
+ * @param {string} merchantName - Merchant name to process
+ * @returns {string} Merchant name with prefix removed (if found)
+ */
+function removeLeadingPrefixes(merchantName) {
+  let transformed = merchantName.trim();
+  const lowerTransformed = transformed.toLowerCase();
+
+  // Check each configured prefix
+  for (const { prefix, description } of PREFIXES_TO_REMOVE) {
+    if (lowerTransformed.startsWith(prefix)) {
+      transformed = transformed.substring(prefix.length).trim();
+      debugLog(`Removed ${prefix.toUpperCase()} prefix from merchant (${description}):`, {
+        original: merchantName,
+        transformed,
+      });
+      break; // Only remove the first matching prefix
+    }
+  }
+
+  return transformed;
+}
+
+/**
  * Apply merchant name transformations
  * @param {string} merchantName - Original merchant name
  * @returns {string} Transformed merchant name
@@ -35,19 +69,8 @@ export function applyMerchantMapping(merchantName) {
     return '';
   }
 
-  let transformed = merchantName.trim();
-
-  // Rule 1: Remove leading "TST-" prefix (Toast transactions)
-  if (transformed.toLowerCase().startsWith('tst-')) {
-    transformed = transformed.substring(4).trim();
-    debugLog('Removed TST- prefix from merchant:', { original: merchantName, transformed });
-  }
-
-  // Rule 2: Remove leading "Sq *" prefix (Square transactions)
-  if (transformed.toLowerCase().startsWith('sq *')) {
-    transformed = transformed.substring(4).trim();
-    debugLog('Removed Sq * prefix from merchant:', { original: merchantName, transformed });
-  }
+  // Rule 1: Remove leading prefixes (TST-, Sq *, Ls )
+  let transformed = removeLeadingPrefixes(merchantName);
 
   // Rule 3: Convert to title case (as last step to ensure proper capitalization)
   transformed = toTitleCase(transformed);
