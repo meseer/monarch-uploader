@@ -13,6 +13,7 @@ import {
   clearAccountMapping,
   clearLastUploadedDate,
 } from './core/utils';
+import { clearSavedCategoryMappings } from './mappers/category';
 import stateManager from './core/state';
 import navigationManager from './core/navigation';
 
@@ -38,6 +39,7 @@ import { loadCurrentAccountInfo } from './services/account';
   GM_registerMenuCommand('Clear Transaction Upload History', clearTransactionUploadHistory);
   GM_registerMenuCommand('Clear Account Mapping', clearAccountMapping);
   GM_registerMenuCommand('Clear Last Uploaded Date', clearLastUploadedDate);
+  GM_registerMenuCommand('Clear Category Mappings', clearSavedCategoryMappings);
 
   // Initialize the application once the DOM is ready
 

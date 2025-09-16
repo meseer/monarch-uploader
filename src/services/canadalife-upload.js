@@ -814,7 +814,7 @@ async function selectDateRange() {
       const endDate = endInput.value;
 
       if (!startDate || !endDate) {
-        alert('Please select both start and end dates');
+        toast.show('Please select both start and end dates', 'error');
         return;
       }
 
@@ -823,7 +823,7 @@ async function selectDateRange() {
         overlay.remove();
         resolve({ startDate, endDate });
       } catch (error) {
-        alert(error.message);
+        toast.show(error.message, 'error');
       }
     });
     buttonContainer.appendChild(selectBtn);

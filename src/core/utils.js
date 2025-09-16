@@ -136,7 +136,7 @@ export function extractDomain(url) {
 }
 
 /**
- * Calculate similarity between two strings
+ * Calculate similarity between two strings using Levenshtein distance
  * Returns a score from 0 (no similarity) to 1 (identical)
  * @param {string} str1 - First string
  * @param {string} str2 - Second string
@@ -147,20 +147,19 @@ export function stringSimilarity(str1, str2) {
   if (!str1 || !str2) return 0; // One empty = no similarity
 
   // Convert both to lowercase for case-insensitive comparison
-  str1 = str1.toLowerCase();
-  str2 = str2.toLowerCase();
+  str1 = str1.toLowerCase().trim();
+  str2 = str2.toLowerCase().trim();
 
   // If exact match
   if (str1 === str2) return 1;
 
-  // Simple partial matching
-  if (str1.includes(str2) || str2.includes(str1)) {
-    return 0.8;
-  }
-
-  // Calculate Levenshtein distance for more complex comparison
+  // Calculate Levenshtein distance
   const len1 = str1.length;
   const len2 = str2.length;
+
+  // If one string is much longer than the other, similarity is inherently low
+  const lengthRatio = Math.min(len1, len2) / Math.max(len1, len2);
+  if (lengthRatio < 0.3) return 0; // Very different lengths = likely unrelated
 
   // Create distance matrix
   const matrix = Array(len1 + 1).fill().map(() => Array(len2 + 1).fill(0));
@@ -187,7 +186,12 @@ export function stringSimilarity(str1, str2) {
   // Convert to a similarity score between 0 and 1
   const maxLen = Math.max(len1, len2);
   if (maxLen === 0) return 1; // Handle edge case of empty strings
-  return 1 - distance / maxLen;
+
+  const rawSimilarity = 1 - distance / maxLen;
+
+  // Apply a stricter threshold - only high similarities should pass
+  // This helps prevent false matches between unrelated categories
+  return rawSimilarity > 0.6 ? rawSimilarity : rawSimilarity * 0.5;
 }
 
 /**
@@ -245,14 +249,11 @@ export async function clearTransactionUploadHistory() {
   try {
     const institution = getCurrentInstitution();
     const keys = await GM_listValues();
-    let clearedCount = 0;
-
     // Currently only Rogers Bank has uploaded transaction references
     if (institution === 'rogersbank') {
       const keysToDelete = keys.filter((key) => key.startsWith(STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX));
       await Promise.all(keysToDelete.map((key) => GM_deleteValue(key)));
-      clearedCount = keysToDelete.length;
-      debugLog(`Cleared ${clearedCount} Rogers Bank transaction upload history keys`);
+      debugLog(`Cleared ${keysToDelete.length} Rogers Bank transaction upload history keys`);
       toast.show('Transaction upload history cleared', 'success');
     } else {
       debugLog('No transaction upload history to clear for this institution');
@@ -261,6 +262,33 @@ export async function clearTransactionUploadHistory() {
   } catch (error) {
     debugLog('Failed to clear transaction upload history:', error);
     toast.show('Failed to clear transaction history', 'error');
+  }
+}
+
+/**
+ * Clears category mappings for the current financial institution
+ */
+export async function clearCategoryMappings() {
+  try {
+    const institution = getCurrentInstitution();
+    let institutionName = '';
+
+    switch (institution) {
+      case 'rogersbank':
+        await GM_deleteValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS);
+        institutionName = 'Rogers Bank';
+        break;
+      default:
+        debugLog('No category mappings to clear for this institution');
+        toast.show('No category mappings to clear', 'info');
+        return;
+    }
+
+    debugLog(`Cleared ${institutionName} category mappings`);
+    toast.show(`${institutionName} category mappings cleared`, 'success');
+  } catch (error) {
+    debugLog('Failed to clear category mappings:', error);
+    toast.show('Failed to clear category mappings', 'error');
   }
 }
 
@@ -362,6 +390,7 @@ export default {
   clearAllGmStorage,
   getCurrentInstitution,
   clearTransactionUploadHistory,
+  clearCategoryMappings,
   clearAccountMapping,
   clearLastUploadedDate,
 };

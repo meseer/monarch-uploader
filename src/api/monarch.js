@@ -495,6 +495,40 @@ export async function uploadTransactionsToMonarch(
 }
 
 /**
+ * Get categories and category groups from Monarch Money
+ * @returns {Promise<Object>} Object containing categoryGroups and categories arrays
+ */
+export async function getMonarchCategoriesAndGroups() {
+  const query = `query ManageGetCategoryGroups {
+    categoryGroups {
+      id
+      name
+      order
+      type
+      __typename
+    }
+    categories(includeDisabledSystemCategories: true) {
+      id
+      name
+      order
+      icon
+      isSystemCategory
+      systemCategory
+      isDisabled
+      group {
+        id
+        type
+        name
+        __typename
+      }
+      __typename
+    }
+  }`;
+
+  return callMonarchGraphQL('ManageGetCategoryGroups', query, {});
+}
+
+/**
  * Check token status and update state
  * @returns {Object} Auth status information
  */
@@ -519,6 +553,7 @@ export default {
   getInstitutionSettings: getMonarchInstitutionSettings,
   uploadBalance: uploadBalanceToMonarch,
   uploadTransactions: uploadTransactionsToMonarch,
+  getCategoriesAndGroups: getMonarchCategoriesAndGroups,
   checkTokenStatus,
   getToken,
 };

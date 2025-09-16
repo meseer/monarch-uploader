@@ -93,11 +93,23 @@ export function convertTransactionsToMonarchCSV(transactions, accountName) {
     // Apply merchant mapping
     const mappedMerchant = applyMerchantMapping(transaction.merchant?.name || '');
 
-    // Apply category mapping
-    const originalCategory = transaction.merchant?.categoryDescription
-      || transaction.merchant?.category
-      || '';
-    const mappedCategory = applyCategoryMapping(originalCategory);
+    // Use resolved Monarch category if available, otherwise fall back to old mapping
+    let mappedCategory;
+    if (transaction.resolvedMonarchCategory) {
+      // Transaction already has a resolved Monarch category from the category resolution process
+      mappedCategory = transaction.resolvedMonarchCategory;
+    } else {
+      // Fallback to old category mapping (for backward compatibility)
+      const originalCategory = transaction.merchant?.categoryDescription
+        || transaction.merchant?.category
+        || '';
+      mappedCategory = applyCategoryMapping(originalCategory);
+
+      // Ensure we never use raw bank categories in CSV - if mapping returns an object, use 'Uncategorized'
+      if (typeof mappedCategory === 'object') {
+        mappedCategory = 'Uncategorized';
+      }
+    }
 
     // Create notes field
     const notes = `${transaction.activityType || ''} / ${transaction.referenceNumber || ''}`.trim();
@@ -118,6 +130,7 @@ export function convertTransactionsToMonarchCSV(transactions, accountName) {
     originalCount: transactions.length,
     transformedCount: monarchRows.length,
     sample: monarchRows[0], // Log first row as sample
+    resolvedCategoryCount: transactions.filter((t) => t.resolvedMonarchCategory).length,
   });
 
   return convertToCSV(monarchRows, columns);

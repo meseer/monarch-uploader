@@ -35,6 +35,7 @@ export const STORAGE = {
   ROGERSBANK_ACCOUNT_MAPPING_PREFIX: 'rogersbank_monarch_account_for_',
   ROGERSBANK_FROM_DATE: 'rogersbank_from_date',
   ROGERSBANK_UPLOADED_REFS_PREFIX: 'rogersbank_uploaded_refs_', // Store uploaded transaction reference numbers
+  ROGERSBANK_CATEGORY_MAPPINGS: 'rogersbank_category_mappings', // Store bank category to Monarch category mappings
 };
 
 // Brand colors

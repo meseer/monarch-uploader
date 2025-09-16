@@ -6,6 +6,7 @@
 
 import { debugLog } from '../../core/utils';
 import { addModalKeyboardHandlers, trapFocus } from '../keyboardNavigation';
+import toast from '../toast';
 
 /**
  * Show a date picker modal and return a promise with the selected date
@@ -118,8 +119,7 @@ export function showDatePicker(defaultDate, promptText, callback) {
   const selectAction = () => {
     const selectedDate = dateInput.value;
     if (!selectedDate || !/^\d{4}-\d{2}-\d{2}$/.test(selectedDate)) {
-      // Show error - could use toast here but keeping simple
-      alert('Please select a valid date');
+      toast.show('Please select a valid date', 'error');
       return;
     }
     cleanupKeyboard();

@@ -2,7 +2,7 @@
  * Monarch API Tests - Simplified version focusing on retry mechanism
  */
 
-import { callMonarchGraphQL, uploadTransactionsToMonarch } from '../../src/api/monarch';
+import { callMonarchGraphQL, uploadTransactionsToMonarch, getMonarchCategoriesAndGroups } from '../../src/api/monarch';
 import authService from '../../src/services/auth';
 
 // Mock dependencies
@@ -547,6 +547,245 @@ describe('Monarch API Retry Mechanism', () => {
         .rejects.toThrow('Monarch authentication required for uploading transactions');
       
       expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getMonarchCategoriesAndGroups', () => {
+    const mockCategoriesResponse = {
+      data: {
+        categoryGroups: [
+          {
+            id: "162625045019525024",
+            name: "Income",
+            order: 0,
+            type: "income",
+            __typename: "CategoryGroup"
+          },
+          {
+            id: "162625045019525025",
+            name: "Gifts & Donations",
+            order: 1,
+            type: "expense",
+            __typename: "CategoryGroup"
+          }
+        ],
+        categories: [
+          {
+            id: "162625045061467453",
+            name: "Advertising & Promotion",
+            order: 0,
+            icon: "📣",
+            isSystemCategory: true,
+            systemCategory: "advertising_promotion",
+            isDisabled: false,
+            group: {
+              id: "162625045019525037",
+              type: "expense",
+              name: "Business",
+              __typename: "CategoryGroup"
+            },
+            __typename: "Category"
+          },
+          {
+            id: "162625045061467411",
+            name: "Auto Payment",
+            order: 0,
+            icon: "🚗",
+            isSystemCategory: true,
+            systemCategory: "auto_payment",
+            isDisabled: false,
+            group: {
+              id: "162625045019525026",
+              type: "expense",
+              name: "Auto & Transport",
+              __typename: "CategoryGroup"
+            },
+            __typename: "Category"
+          }
+        ]
+      }
+    };
+
+    test('should successfully fetch categories and category groups', async () => {
+      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify(mockCategoriesResponse)
+        });
+      });
+
+      const result = await getMonarchCategoriesAndGroups();
+      
+      expect(result).toEqual(mockCategoriesResponse.data);
+      expect(GM_xmlhttpRequest).toHaveBeenCalledTimes(1);
+      
+      // Verify correct GraphQL query was used
+      const callArgs = GM_xmlhttpRequest.mock.calls[0][0];
+      const requestData = JSON.parse(callArgs.data);
+      
+      expect(requestData.operationName).toBe('ManageGetCategoryGroups');
+      expect(requestData.variables).toEqual({});
+      expect(requestData.query).toContain('query ManageGetCategoryGroups');
+      expect(requestData.query).toContain('categoryGroups');
+      expect(requestData.query).toContain('categories(includeDisabledSystemCategories: true)');
+      expect(requestData.query).toContain('isSystemCategory');
+      expect(requestData.query).toContain('systemCategory');
+      expect(requestData.query).toContain('isDisabled');
+    });
+
+    test('should handle authentication error', async () => {
+      authService.checkMonarchAuth.mockReturnValueOnce({
+        authenticated: false
+      });
+
+      await expect(getMonarchCategoriesAndGroups())
+        .rejects.toThrow('Monarch token not found.');
+      
+      expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
+    });
+
+    test('should handle 401 unauthorized response', async () => {
+      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
+        onload({
+          status: 401,
+          responseText: 'Unauthorized'
+        });
+      });
+
+      await expect(getMonarchCategoriesAndGroups())
+        .rejects.toThrow('Monarch Auth Error (401): Token was invalid or expired.');
+    });
+
+    test('should handle non-200 status codes', async () => {
+      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
+        onload({
+          status: 500,
+          responseText: 'Internal Server Error'
+        });
+      });
+
+      await expect(getMonarchCategoriesAndGroups())
+        .rejects.toThrow('Monarch API Error: 500');
+    });
+
+    test('should handle GraphQL errors in response', async () => {
+      const mockErrorResponse = {
+        errors: [
+          {
+            message: 'Field error in categories',
+            locations: [{ line: 10, column: 5 }],
+            path: ['categories']
+          }
+        ]
+      };
+
+      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify(mockErrorResponse)
+        });
+      });
+
+      await expect(getMonarchCategoriesAndGroups())
+        .rejects.toThrow();
+    });
+
+    test('should handle network errors', async () => {
+      GM_xmlhttpRequest.mockImplementationOnce(({ onerror }) => {
+        onerror(new Error('Network connection failed'));
+      });
+
+      await expect(getMonarchCategoriesAndGroups())
+        .rejects.toThrow('Network connection failed');
+    });
+
+    test('should return empty arrays when no categories exist', async () => {
+      const emptyResponse = {
+        data: {
+          categoryGroups: [],
+          categories: []
+        }
+      };
+
+      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify(emptyResponse)
+        });
+      });
+
+      const result = await getMonarchCategoriesAndGroups();
+      
+      expect(result).toEqual({
+        categoryGroups: [],
+        categories: []
+      });
+      expect(GM_xmlhttpRequest).toHaveBeenCalledTimes(1);
+    });
+
+    test('should handle partial response with missing fields', async () => {
+      const partialResponse = {
+        data: {
+          categoryGroups: [
+            {
+              id: "162625045019525024",
+              name: "Income",
+              order: 0,
+              type: "income",
+              __typename: "CategoryGroup"
+            }
+          ],
+          categories: [
+            {
+              id: "162625045061467453",
+              name: "Advertising & Promotion",
+              order: 0,
+              // Missing some optional fields like icon, isSystemCategory, etc.
+              group: {
+                id: "162625045019525037",
+                type: "expense",
+                name: "Business",
+                __typename: "CategoryGroup"
+              },
+              __typename: "Category"
+            }
+          ]
+        }
+      };
+
+      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify(partialResponse)
+        });
+      });
+
+      const result = await getMonarchCategoriesAndGroups();
+      
+      expect(result).toEqual(partialResponse.data);
+      expect(result.categoryGroups).toHaveLength(1);
+      expect(result.categories).toHaveLength(1);
+      expect(result.categories[0].name).toBe('Advertising & Promotion');
+    });
+
+    test('should use correct request headers and URL', async () => {
+      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify(mockCategoriesResponse)
+        });
+      });
+
+      await getMonarchCategoriesAndGroups();
+      
+      const callArgs = GM_xmlhttpRequest.mock.calls[0][0];
+      
+      expect(callArgs.method).toBe('POST');
+      expect(callArgs.url).toBe('https://api.monarchmoney.com/graphql');
+      expect(callArgs.headers['Content-Type']).toBe('application/json');
+      expect(callArgs.headers.Authorization).toBe('Token test-token');
+      expect(callArgs.headers.origin).toBe('https://app.monarchmoney.com');
+      expect(callArgs.mode).toBe('cors');
     });
   });
 });

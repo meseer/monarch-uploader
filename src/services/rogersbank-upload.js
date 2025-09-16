@@ -11,6 +11,8 @@ import monarchApi from '../api/monarch';
 import { showMonarchAccountSelector } from '../ui/components/accountSelector';
 import { convertTransactionsToMonarchCSV } from '../utils/csv';
 import { showDatePickerPromise } from '../ui/components/datePicker';
+import { applyCategoryMapping, saveUserCategorySelection } from '../mappers/category';
+import { showMonarchCategorySelector } from '../ui/components/categorySelector';
 
 /**
  * Extract Rogers account name from DOM
@@ -140,6 +142,94 @@ function filterDuplicateTransactions(transactions, accountId) {
     duplicateCount,
     originalCount,
   };
+}
+
+/**
+ * Resolve categories for transactions, handling both automatic mapping and manual selection
+ * @param {Array} transactions - Array of transactions to process
+ * @returns {Promise<Array>} Transactions with resolved Monarch categories
+ */
+async function resolveCategoriesForTransactions(transactions) {
+  if (!transactions || transactions.length === 0) {
+    return transactions;
+  }
+
+  debugLog('Starting category resolution for transactions');
+
+  // Find all unique bank categories that need resolution
+  const uniqueBankCategories = new Set();
+  const categoriesToResolve = [];
+
+  transactions.forEach((transaction) => {
+    const bankCategory = transaction.merchant?.categoryDescription
+      || transaction.merchant?.category
+      || 'Uncategorized';
+
+    if (!uniqueBankCategories.has(bankCategory)) {
+      uniqueBankCategories.add(bankCategory);
+
+      // Test the category mapping
+      const mappingResult = applyCategoryMapping(bankCategory);
+
+      if (mappingResult && typeof mappingResult === 'object' && mappingResult.needsManualSelection) {
+        // This category needs manual selection
+        categoriesToResolve.push(mappingResult);
+      }
+    }
+  });
+
+  debugLog(`Found ${uniqueBankCategories.size} unique bank categories, ${categoriesToResolve.length} need manual selection`);
+
+  // Handle categories that need manual selection
+  if (categoriesToResolve.length > 0) {
+    toast.show(`Resolving ${categoriesToResolve.length} categories that need manual selection...`, 'info');
+
+    for (let i = 0; i < categoriesToResolve.length; i += 1) {
+      const categoryToResolve = categoriesToResolve[i];
+
+      debugLog(`Showing category selector for: ${categoryToResolve.bankCategory} (${i + 1}/${categoriesToResolve.length})`);
+
+      // Show progress in toast
+      toast.show(`Selecting category ${i + 1} of ${categoriesToResolve.length}: "${categoryToResolve.bankCategory}"`, 'info');
+
+      // Show the category selector and wait for user selection
+      const selectedCategory = await new Promise((resolve) => {
+        showMonarchCategorySelector(categoryToResolve.bankCategory, resolve);
+      });
+
+      if (!selectedCategory) {
+        // User cancelled - this will abort the upload
+        throw new Error(`Category selection cancelled for "${categoryToResolve.bankCategory}". Upload aborted.`);
+      }
+
+      // Save the user's selection for future use
+      saveUserCategorySelection(categoryToResolve.bankCategory, selectedCategory.name);
+      debugLog(`User selected category mapping: ${categoryToResolve.bankCategory} -> ${selectedCategory.name}`);
+
+      toast.show(`Mapped "${categoryToResolve.bankCategory}" to "${selectedCategory.name}"`, 'success');
+    }
+  }
+
+  // Now resolve all categories (they should all have mappings now)
+  const resolvedTransactions = transactions.map((transaction) => {
+    const bankCategory = transaction.merchant?.categoryDescription
+      || transaction.merchant?.category
+      || 'Uncategorized';
+
+    const mappingResult = applyCategoryMapping(bankCategory);
+
+    // At this point, all categories should resolve to strings (Monarch category names)
+    const resolvedCategory = typeof mappingResult === 'string' ? mappingResult : 'Uncategorized';
+
+    return {
+      ...transaction,
+      resolvedMonarchCategory: resolvedCategory,
+      originalBankCategory: bankCategory,
+    };
+  });
+
+  debugLog('Category resolution completed for all transactions');
+  return resolvedTransactions;
 }
 
 /**
@@ -349,9 +439,13 @@ export async function uploadRogersBankToMonarch() {
         toast.show(`Mapped ${rogersAccountName} to ${monarchAccount.displayName}`, 'success');
       }
 
-      // Convert transactions to Monarch CSV format (use filtered transactions)
+      // Resolve categories for all transactions (handle automatic mapping and manual selection)
+      toast.show('Resolving transaction categories...', 'info');
+      const transactionsWithResolvedCategories = await resolveCategoriesForTransactions(transactionsToUpload);
+
+      // Convert transactions to Monarch CSV format (use transactions with resolved categories)
       toast.show('Converting transactions to CSV format...', 'info');
-      const csvData = convertTransactionsToMonarchCSV(transactionsToUpload, rogersAccountName);
+      const csvData = convertTransactionsToMonarchCSV(transactionsWithResolvedCategories, rogersAccountName);
 
       if (!csvData) {
         throw new Error('Failed to convert transactions to CSV');
