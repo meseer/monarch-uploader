@@ -38,13 +38,13 @@ export function applyMerchantMapping(merchantName) {
   let transformed = merchantName.trim();
 
   // Rule 1: Remove leading "TST-" prefix (Toast transactions)
-  if (transformed.startsWith('TST-')) {
+  if (transformed.toLowerCase().startsWith('tst-')) {
     transformed = transformed.substring(4).trim();
     debugLog('Removed TST- prefix from merchant:', { original: merchantName, transformed });
   }
 
   // Rule 2: Remove leading "Sq *" prefix (Square transactions)
-  if (transformed.startsWith('Sq *')) {
+  if (transformed.toLowerCase().startsWith('sq *')) {
     transformed = transformed.substring(4).trim();
     debugLog('Removed Sq * prefix from merchant:', { original: merchantName, transformed });
   }
