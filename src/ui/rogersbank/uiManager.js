@@ -12,6 +12,192 @@ import { createConnectionStatus, updateCredentialsDisplay } from './components/c
 import { createRogersBankUploadButton } from './components/uploadButton';
 
 /**
+ * Navigation manager for Rogers Bank SPA navigation
+ */
+class RogersBankNavigationManager {
+  constructor() {
+    this.currentUrl = window.location.href;
+    this.isInitialized = false;
+    this.urlCheckInterval = null;
+    this.uiInitialized = false;
+  }
+
+  /**
+   * Start monitoring URL changes for SPA navigation
+   */
+  startMonitoring() {
+    if (this.isInitialized) return;
+
+    debugLog('Starting Rogers Bank navigation monitoring...');
+
+    // Listen for popstate events (back/forward navigation)
+    window.addEventListener('popstate', () => {
+      this.handleUrlChange();
+    });
+
+    // Poll for URL changes (for programmatic navigation)
+    this.urlCheckInterval = setInterval(() => {
+      this.checkUrlChange();
+    }, 500); // Check every 500ms
+
+    this.isInitialized = true;
+    debugLog('Rogers Bank navigation monitoring started');
+  }
+
+  /**
+   * Stop monitoring URL changes
+   */
+  stopMonitoring() {
+    if (this.urlCheckInterval) {
+      clearInterval(this.urlCheckInterval);
+      this.urlCheckInterval = null;
+    }
+    this.isInitialized = false;
+    debugLog('Rogers Bank navigation monitoring stopped');
+  }
+
+  /**
+   * Check if URL has changed and handle it
+   */
+  checkUrlChange() {
+    const newUrl = window.location.href;
+    if (newUrl !== this.currentUrl) {
+      this.currentUrl = newUrl;
+      this.handleUrlChange();
+    }
+  }
+
+  /**
+   * Handle URL change event
+   */
+  async handleUrlChange() {
+    try {
+      debugLog('Rogers Bank URL changed to:', window.location.href);
+
+      const shouldShowUI = this.shouldShowUI();
+      const hasUI = this.hasUIContainer();
+
+      if (shouldShowUI && !hasUI) {
+        // UI should be shown but isn't present - initialize it directly
+        debugLog('Re-initializing Rogers Bank UI after navigation');
+        await this.initializeUIDirectly();
+      } else if (!shouldShowUI && hasUI) {
+        // UI shouldn't be shown but is present - clean it up
+        debugLog('Cleaning up Rogers Bank UI after navigation away');
+        this.cleanupUI();
+      }
+    } catch (error) {
+      debugLog('Error handling Rogers Bank URL change:', error);
+    }
+  }
+
+  /**
+   * Initialize UI directly without recursion
+   */
+  async initializeUIDirectly() {
+    try {
+      // Wait for DOM to be ready with target element
+      await this.waitForTargetElementAsync();
+      
+      // Try to create container
+      const container = createUIContainer();
+      if (container) {
+        // Element exists, initialize UI immediately
+        initializeUIComponents(container);
+        this.markUIInitialized();
+        debugLog('Rogers Bank UI re-initialized successfully after navigation');
+      }
+    } catch (error) {
+      debugLog('Error in direct UI initialization:', error);
+    }
+  }
+
+  /**
+   * Wait for target element with async/await pattern
+   */
+  async waitForTargetElementAsync() {
+    return new Promise((resolve, reject) => {
+      // Check if element already exists
+      const targetSection = document.querySelector('section[aria-labelledby="master-card-section"]');
+      if (targetSection) {
+        resolve(targetSection);
+        return;
+      }
+
+      // Set up observer to wait for element
+      let attempts = 0;
+      const maxAttempts = 60; // 30 seconds with 500ms intervals
+      
+      const checkInterval = setInterval(() => {
+        attempts++;
+        const element = document.querySelector('section[aria-labelledby="master-card-section"]');
+        
+        if (element) {
+          clearInterval(checkInterval);
+          resolve(element);
+        } else if (attempts >= maxAttempts) {
+          clearInterval(checkInterval);
+          reject(new Error('Target element not found after waiting'));
+        }
+      }, 500);
+    });
+  }
+
+  /**
+   * Determine if UI should be shown on current page
+   * @returns {boolean} True if UI should be shown
+   */
+  shouldShowUI() {
+    // Check if we're on the main account page where the master-card-section exists
+    const path = window.location.pathname;
+    
+    // Show UI on main dashboard/home pages where the target element exists
+    return path === '/' || 
+           path === '/home' ||
+           path === '/dashboard' || 
+           path.match(/^\/accounts?\/?$/) ||
+           path.includes('master-card');
+  }
+
+  /**
+   * Check if UI container currently exists
+   * @returns {boolean} True if UI container exists
+   */
+  hasUIContainer() {
+    return document.getElementById('rogersbank-balance-uploader-container') !== null;
+  }
+
+  /**
+   * Clean up UI when navigating away
+   */
+  cleanupUI() {
+    const container = document.getElementById('rogersbank-balance-uploader-container');
+    if (container) {
+      container.remove();
+      this.uiInitialized = false;
+      debugLog('Rogers Bank UI container cleaned up');
+    }
+  }
+
+  /**
+   * Mark UI as initialized
+   */
+  markUIInitialized() {
+    this.uiInitialized = true;
+  }
+
+  /**
+   * Check if UI is initialized
+   */
+  isUIInitialized() {
+    return this.uiInitialized;
+  }
+}
+
+// Create singleton instance
+const navigationManager = new RogersBankNavigationManager();
+
+/**
  * Creates and appends the main UI container to Rogers Bank page
  * @returns {HTMLElement|null} Created container element
  */
@@ -83,11 +269,17 @@ export async function initRogersBankUI() {
   try {
     debugLog('Initializing Rogers Bank UI...');
 
+    // Start navigation monitoring if not already started
+    if (!navigationManager.isInitialized) {
+      navigationManager.startMonitoring();
+    }
+
     // Try to create container immediately
     const container = createUIContainer();
     if (container) {
       // Element exists, initialize UI immediately
       initializeUIComponents(container);
+      navigationManager.markUIInitialized();
     } else {
       // Element doesn't exist yet, set up observer to wait for it
       debugLog('Target element not found, setting up MutationObserver...');
@@ -97,6 +289,20 @@ export async function initRogersBankUI() {
     debugLog('Error initializing Rogers Bank UI:', error);
     toast.show('Failed to initialize Balance Uploader', 'error');
   }
+}
+
+/**
+ * Start navigation monitoring for Rogers Bank
+ */
+export function startNavigationMonitoring() {
+  navigationManager.startMonitoring();
+}
+
+/**
+ * Stop navigation monitoring for Rogers Bank
+ */
+export function stopNavigationMonitoring() {
+  navigationManager.stopMonitoring();
 }
 
 /**
@@ -162,6 +368,7 @@ function waitForTargetElement() {
       const container = createUIContainer();
       if (container) {
         initializeUIComponents(container);
+        navigationManager.markUIInitialized();
       }
     }
   });
@@ -283,4 +490,6 @@ export default {
   createUIContainer,
   updateConnectionStatus,
   refreshRogersBankUI,
+  startNavigationMonitoring,
+  stopNavigationMonitoring,
 };
