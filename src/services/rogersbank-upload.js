@@ -3,7 +3,7 @@
  * Handles downloading transactions from Rogers Bank and uploading to Monarch Money
  */
 
-import { debugLog } from '../core/utils';
+import { debugLog, formatDaysAgoLocal } from '../core/utils';
 import toast from '../ui/toast';
 import { STORAGE } from '../core/config';
 import { getRogersBankCredentials } from '../api/rogersbank';
@@ -36,19 +36,22 @@ function getRogersAccountName() {
  */
 async function getFromDate() {
   try {
-    // Check for saved date - commented out per requirements
-    // const savedDate = GM_getValue(STORAGE.ROGERSBANK_FROM_DATE, null);
-    // if (savedDate) {
-    //   debugLog('Using saved from date:', savedDate);
-    //   return savedDate;
-    // }
+    // Check for persisted nextSyncFromDate (7 days before last successful upload)
+    const nextSyncFromDate = GM_getValue(STORAGE.ROGERSBANK_NEXT_SYNC_FROM_DATE, null);
+    let defaultDateStr;
 
-    // Default to 14 days ago (two weeks)
-    const defaultDate = new Date();
-    defaultDate.setDate(defaultDate.getDate() - 14);
-    const defaultDateStr = defaultDate.toISOString().split('T')[0];
+    if (nextSyncFromDate) {
+      debugLog('Using persisted nextSyncFromDate as default:', nextSyncFromDate);
+      defaultDateStr = nextSyncFromDate;
+    } else {
+      // Default to 14 days ago (two weeks) if no persisted date
+      const defaultDate = new Date();
+      defaultDate.setDate(defaultDate.getDate() - 14);
+      defaultDateStr = defaultDate.toISOString().split('T')[0];
+      debugLog('No persisted nextSyncFromDate found, defaulting to 14 days ago:', defaultDateStr);
+    }
 
-    // Use date picker component
+    // Use date picker component with the calculated default
     const selectedDate = await showDatePickerPromise(
       defaultDateStr,
       'Select the start date for transaction download',
@@ -58,10 +61,6 @@ async function getFromDate() {
       debugLog('User cancelled date input');
       return null;
     }
-
-    // Save the date for future use - commented out per requirements
-    // GM_setValue(STORAGE.ROGERSBANK_FROM_DATE, selectedDate);
-    // debugLog('Saved new from date:', selectedDate);
 
     return selectedDate;
   } catch (error) {
@@ -113,6 +112,23 @@ function saveUploadedReferenceNumbers(accountId, referenceNumbers) {
     debugLog(`Saved ${referenceNumbers.length} new reference numbers for account ${accountId}`);
   } catch (error) {
     debugLog('Error saving uploaded reference numbers:', error);
+  }
+}
+
+/**
+ * Save next sync from date (7 days before today) after successful upload
+ * This date will be used as the default start date for the next upload
+ */
+function saveNextSyncFromDate() {
+  try {
+    // Calculate 7 days before today using existing utility function
+    const nextSyncFromDate = formatDaysAgoLocal(7);
+    
+    // Save to storage
+    GM_setValue(STORAGE.ROGERSBANK_NEXT_SYNC_FROM_DATE, nextSyncFromDate);
+    debugLog('Saved nextSyncFromDate for future uploads:', nextSyncFromDate);
+  } catch (error) {
+    debugLog('Error saving nextSyncFromDate:', error);
   }
 }
 
@@ -476,13 +492,13 @@ export async function uploadRogersBankToMonarch() {
           saveUploadedReferenceNumbers(rogersAccountId, referenceNumbers);
         }
 
+        // Save nextSyncFromDate (7 days before today) for future uploads
+        saveNextSyncFromDate();
+
         const successMessage = filterResult.duplicateCount > 0
           ? `Successfully uploaded ${transactionsToUpload.length} new transactions to Monarch! (${filterResult.duplicateCount} duplicates skipped)`
           : `Successfully uploaded ${transactionsToUpload.length} transactions to Monarch!`;
         toast.show(successMessage, 'success');
-
-        // Note: Not saving fromDate per requirements
-        // Future enhancement: Save the last successful upload date
 
         return {
           success: true,

@@ -354,7 +354,8 @@ export async function clearLastUploadedDate() {
       case 'rogersbank':
         institutionName = 'Rogers Bank';
         keysToDelete.push(...keys.filter((key) => key.startsWith(STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX)
-          || key === STORAGE.ROGERSBANK_FROM_DATE));
+          || key === STORAGE.ROGERSBANK_FROM_DATE
+          || key === STORAGE.ROGERSBANK_NEXT_SYNC_FROM_DATE));
         break;
       default:
         debugLog('Not on a supported financial institution site');
