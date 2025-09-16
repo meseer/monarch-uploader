@@ -4,7 +4,7 @@
  */
 
 import { STORAGE } from '../core/config';
-import { debugLog } from '../core/utils';
+import { debugLog, parseLocalDate, formatDate } from '../core/utils';
 import stateManager from '../core/state';
 import toast from '../ui/toast';
 
@@ -463,12 +463,12 @@ function isWeekend(date) {
  */
 function generateBusinessDays(startDate, endDate) {
   const businessDays = [];
-  const current = new Date(startDate);
-  const end = new Date(endDate);
+  const current = parseLocalDate(startDate);  // Use local timezone parsing
+  const end = parseLocalDate(endDate);        // Use local timezone parsing
 
   while (current <= end) {
     if (!isWeekend(current)) {
-      businessDays.push(current.toISOString().split('T')[0]);
+      businessDays.push(formatDate(current));  // Use consistent local formatting
     }
     current.setDate(current.getDate() + 1);
   }
