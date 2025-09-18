@@ -103,7 +103,7 @@ export function formatDaysAgoLocal(days) {
 export function debugLog(message, obj) {
   if (!DEBUG_LOG) return;
 
-  const prefix = '[Balance Uploader]';
+  const prefix = '[Monarch Uploader]';
 
   if (obj) {
     console.log(`${prefix} ${message}`, obj);
