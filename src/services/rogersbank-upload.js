@@ -39,18 +39,18 @@ async function getFromDate() {
   try {
     // Check for persisted nextSyncFromDate (7 days before last successful upload)
     const nextSyncFromDate = GM_getValue(STORAGE.ROGERSBANK_NEXT_SYNC_FROM_DATE, null);
-    let defaultDateStr;
 
     if (nextSyncFromDate) {
-      debugLog('Using persisted nextSyncFromDate as default:', nextSyncFromDate);
-      defaultDateStr = nextSyncFromDate;
-    } else {
-      // Default to 14 days ago (two weeks) if no persisted date
-      const defaultDate = new Date();
-      defaultDate.setDate(defaultDate.getDate() - 14);
-      [defaultDateStr] = defaultDate.toISOString().split('T');
-      debugLog('No persisted nextSyncFromDate found, defaulting to 14 days ago:', defaultDateStr);
+      debugLog('Using persisted nextSyncFromDate without prompting:', nextSyncFromDate);
+      return nextSyncFromDate;
     }
+
+    // No persisted date - show date picker with 14 days ago default
+    const defaultDate = new Date();
+    defaultDate.setDate(defaultDate.getDate() - 14);
+    const defaultDateStr = defaultDate.toISOString().split('T')[0];
+
+    debugLog('No persisted nextSyncFromDate found, showing date picker with default:', defaultDateStr);
 
     // Use date picker component with the calculated default
     const selectedDate = await showDatePickerPromise(
