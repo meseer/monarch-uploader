@@ -3,7 +3,7 @@
  * Handles all communication with Monarch Money's GraphQL API
  */
 
-import { API, STORAGE } from '../core/config';
+import { API } from '../core/config';
 import { debugLog } from '../core/utils';
 import stateManager from '../core/state';
 import authService from '../services/auth';

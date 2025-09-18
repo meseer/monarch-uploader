@@ -446,7 +446,7 @@ export async function fetchRogersBankBalance() {
     throw error;
   }
 }
-g
+
 // Export as default object
 export default {
   getRogersBankCredentials,

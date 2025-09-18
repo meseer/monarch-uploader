@@ -2,7 +2,7 @@
  * Balance Service Tests
  */
 
-import balanceService, { 
+import {
   BalanceError,
   fetchBalanceHistory,
   processBalanceData,
@@ -10,7 +10,7 @@ import balanceService, {
   storeDateRange,
   uploadBalanceToMonarch,
   processAndUploadBalance,
-  bulkProcessAccounts
+  bulkProcessAccounts,
 } from '../../src/services/balance';
 import questradeApi from '../../src/api/questrade';
 import monarchApi from '../../src/api/monarch';
@@ -20,22 +20,23 @@ import toast from '../../src/ui/toast';
 
 // Mock dependencies
 jest.mock('../../src/api/questrade', () => ({
-  makeApiCall: jest.fn()
+  makeApiCall: jest.fn(),
 }));
 
 jest.mock('../../src/api/monarch', () => ({
-  uploadBalance: jest.fn()
+  uploadBalance: jest.fn(),
+  resolveAccountMapping: jest.fn(),
 }));
 
 jest.mock('../../src/core/state', () => ({
   setAccount: jest.fn(),
   getState: jest.fn().mockReturnValue({
-    currentAccount: { name: 'Test Account' }
-  })
+    currentAccount: { name: 'Test Account' },
+  }),
 }));
 
 jest.mock('../../src/ui/toast', () => ({
-  show: jest.fn()
+  show: jest.fn(),
 }));
 
 // Mock GM storage functions
@@ -173,17 +174,19 @@ describe('Balance Service', () => {
 
   describe('uploadBalanceToMonarch', () => {
     test('should upload CSV data to Monarch', async () => {
-      // Mock successful upload
+      // Mock successful upload and account mapping
+      monarchApi.resolveAccountMapping.mockResolvedValueOnce({ id: 'monarch-account-123' });
       monarchApi.uploadBalance.mockResolvedValueOnce(true);
       
       const result = await uploadBalanceToMonarch(
-        '12345', 
-        '"Date","Amount"\n"2025-01-01","1000"', 
-        '2025-01-01', 
-        '2025-01-31'
+        '12345',
+        '"Date","Amount"\n"2025-01-01","1000"',
+        '2025-01-01',
+        '2025-01-31',
       );
       
       expect(result).toBe(true);
+      expect(monarchApi.resolveAccountMapping).toHaveBeenCalled();
       expect(monarchApi.uploadBalance).toHaveBeenCalled();
     });
     
@@ -198,29 +201,30 @@ describe('Balance Service', () => {
 
   describe('processAndUploadBalance', () => {
     test('should complete the full balance processing workflow', async () => {
-      // Mock successful API calls directly
+      // Mock successful API calls and account mapping
+      monarchApi.resolveAccountMapping.mockResolvedValueOnce({ id: 'monarch-account-123' });
       questradeApi.makeApiCall
         .mockResolvedValueOnce({
           totalEquity: {
-            combined: [{ currencyCode: 'CAD', amount: 10000 }]
-          }
+            combined: [{ currencyCode: 'CAD', amount: 10000 }],
+          },
         })
         .mockResolvedValueOnce({
           data: [
             { date: '2025-01-01', totalEquity: 9800 },
-            { date: '2025-01-02', totalEquity: 9900 }
-          ]
+            { date: '2025-01-02', totalEquity: 9900 },
+          ],
         });
-      
+
       monarchApi.uploadBalance.mockResolvedValueOnce(true);
-      
+
       const result = await processAndUploadBalance(
         '12345',
         'Test Account',
         '2025-01-01',
-        '2025-01-31'
+        '2025-01-31',
       );
-      
+
       // Check result
       expect(result).toBe(true);
       expect(stateManager.setAccount).toHaveBeenCalledWith('12345', 'Test Account');
@@ -250,57 +254,61 @@ describe('Balance Service', () => {
       // Mock accounts with correct property names
       const accounts = [
         { id: '12345', nickname: 'Account 1' },
-        { id: '67890', nickname: 'Account 2' }
+        { id: '67890', nickname: 'Account 2' },
       ];
-      
+
       // Mock successful API calls for both accounts
+      monarchApi.resolveAccountMapping.mockResolvedValue({ id: 'monarch-account-123' });
       questradeApi.makeApiCall.mockResolvedValue({
         totalEquity: {
-          combined: [{ currencyCode: 'CAD', amount: 10000 }]
-        }
+          combined: [{ currencyCode: 'CAD', amount: 10000 }],
+        },
       });
-      
+
       monarchApi.uploadBalance.mockResolvedValue(true);
-      
+
       const result = await bulkProcessAccounts(
         accounts,
         '2025-01-01',
-        '2025-01-31'
+        '2025-01-31',
       );
-      
+
       // Check results
       expect(result.success).toBe(2);
       expect(result.failed).toBe(0);
       expect(toast.show).toHaveBeenCalledWith('Completed: 2 successful, 0 failed', 'success');
     });
-    
+
     test('should handle mixed success and failure', async () => {
       // Mock accounts with correct property names
       const accounts = [
         { id: '12345', nickname: 'Account 1' },
-        { id: '67890', nickname: 'Account 2' }
+        { id: '67890', nickname: 'Account 2' },
       ];
-      
+
       // Mock first account success, second account failure
+      monarchApi.resolveAccountMapping
+        .mockResolvedValueOnce({ id: 'monarch-account-123' })
+        .mockResolvedValueOnce({ id: 'monarch-account-456' });
       questradeApi.makeApiCall
         .mockResolvedValueOnce({
           totalEquity: {
-            combined: [{ currencyCode: 'CAD', amount: 10000 }]
-          }
+            combined: [{ currencyCode: 'CAD', amount: 10000 }],
+          },
         })
         .mockResolvedValueOnce({
-          data: [{ date: '2025-01-01', totalEquity: 9800 }]
+          data: [{ date: '2025-01-01', totalEquity: 9800 }],
         })
         .mockRejectedValueOnce(new Error('API Error')); // Fail on second account
-      
+
       monarchApi.uploadBalance.mockResolvedValue(true);
-      
+
       const result = await bulkProcessAccounts(
         accounts,
         '2025-01-01',
-        '2025-01-31'
+        '2025-01-31',
       );
-      
+
       // Check results
       expect(result.success).toBe(1);
       expect(result.failed).toBe(1);
@@ -311,9 +319,9 @@ describe('Balance Service', () => {
       const result = await bulkProcessAccounts(
         [],
         '2025-01-01',
-        '2025-01-31'
+        '2025-01-31',
       );
-      
+
       // Check results
       expect(result.success).toBe(0);
       expect(result.failed).toBe(0);
