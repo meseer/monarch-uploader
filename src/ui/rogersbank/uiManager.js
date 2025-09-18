@@ -10,6 +10,7 @@ import rogersbank from '../../api/rogersbank';
 import toast from '../toast';
 import { createConnectionStatus, updateCredentialsDisplay } from './components/connectionStatus';
 import { createRogersBankUploadButton } from './components/uploadButton';
+import { showSettingsModal } from '../components/settingsModal';
 
 /**
  * Navigation manager for Rogers Bank SPA navigation
@@ -239,6 +240,12 @@ function createUIContainer() {
     margin-bottom: 8px;
   `;
 
+  const titleSection = document.createElement('div');
+  titleSection.style.cssText = 'display: flex; flex-direction: column;';
+
+  const titleRow = document.createElement('div');
+  titleRow.style.cssText = 'display: flex; align-items: center; gap: 10px;';
+
   const title = document.createElement('div');
   title.textContent = 'Balance Uploader';
   title.style.cssText = `
@@ -246,12 +253,38 @@ function createUIContainer() {
     color: ${COLORS.ROGERSBANK_BRAND};
     font-size: 16px;
   `;
-  header.appendChild(title);
+  titleRow.appendChild(title);
+
+  const settingsButton = document.createElement('button');
+  settingsButton.innerHTML = '⚙️';
+  settingsButton.title = 'Settings';
+  settingsButton.style.cssText = `
+    background: none;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 4px;
+    color: #666;
+    transition: background-color 0.2s;
+  `;
+  settingsButton.addEventListener('click', showSettingsModal);
+  settingsButton.addEventListener('mouseover', () => {
+    settingsButton.style.backgroundColor = '#f0f0f0';
+  });
+  settingsButton.addEventListener('mouseout', () => {
+    settingsButton.style.backgroundColor = 'transparent';
+  });
+  titleRow.appendChild(settingsButton);
+
+  titleSection.appendChild(titleRow);
 
   const subtitle = document.createElement('div');
   subtitle.textContent = 'Rogers Bank → Monarch Money';
   subtitle.style.cssText = 'font-size: 12px; color: #666; font-weight: 500;';
-  header.appendChild(subtitle);
+  titleSection.appendChild(subtitle);
+
+  header.appendChild(titleSection);
 
   container.appendChild(header);
 

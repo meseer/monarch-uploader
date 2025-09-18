@@ -9,6 +9,7 @@ import stateManager from '../core/state';
 import questradeApi from '../api/questrade';
 import toast from './toast';
 import uploadButton from './components/uploadButton';
+import { showSettingsModal } from './components/settingsModal';
 
 /**
  * Creates and appends status indicators to the provided container
@@ -164,15 +165,47 @@ export function createButtonContainer() {
   const header = document.createElement('div');
   header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;';
 
+  const titleSection = document.createElement('div');
+  titleSection.style.cssText = 'display: flex; flex-direction: column;';
+
+  const titleRow = document.createElement('div');
+  titleRow.style.cssText = 'display: flex; align-items: center; gap: 10px;';
+
   const title = document.createElement('h3');
   title.textContent = 'Balance History Uploader';
   title.style.cssText = 'margin: 0; font-size: 18px; font-weight: bold;';
-  header.appendChild(title);
+  titleRow.appendChild(title);
+
+  const settingsButton = document.createElement('button');
+  settingsButton.innerHTML = '⚙️';
+  settingsButton.title = 'Settings';
+  settingsButton.style.cssText = `
+    background: none;
+    border: none;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    color: #666;
+    transition: background-color 0.2s;
+  `;
+  settingsButton.addEventListener('click', showSettingsModal);
+  settingsButton.addEventListener('mouseover', () => {
+    settingsButton.style.backgroundColor = '#f0f0f0';
+  });
+  settingsButton.addEventListener('mouseout', () => {
+    settingsButton.style.backgroundColor = 'transparent';
+  });
+  titleRow.appendChild(settingsButton);
+
+  titleSection.appendChild(titleRow);
 
   const subtitle = document.createElement('div');
   subtitle.textContent = 'Questrade → Monarch Money';
   subtitle.style.cssText = 'font-size: 14px; color: #666;';
-  header.appendChild(subtitle);
+  titleSection.appendChild(subtitle);
+
+  header.appendChild(titleSection);
 
   container.appendChild(header);
 
@@ -214,12 +247,55 @@ export async function initSingleAccountUI() {
 
     // Clear existing dynamic content if reusing container
     if (!isNewContainer) {
-      // Remove all child elements except the header
-      const header = container.querySelector('div:first-child');
+      // Clear all content and recreate header to ensure gear button is present
       container.innerHTML = '';
-      if (header) {
-        container.appendChild(header);
-      }
+
+      // Recreate header with gear button
+      const header = document.createElement('div');
+      header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;';
+
+      const titleSection = document.createElement('div');
+      titleSection.style.cssText = 'display: flex; flex-direction: column;';
+
+      const titleRow = document.createElement('div');
+      titleRow.style.cssText = 'display: flex; align-items: center; gap: 10px;';
+
+      const title = document.createElement('h3');
+      title.textContent = 'Balance History Uploader';
+      title.style.cssText = 'margin: 0; font-size: 18px; font-weight: bold;';
+      titleRow.appendChild(title);
+
+      const settingsButton = document.createElement('button');
+      settingsButton.innerHTML = '⚙️';
+      settingsButton.title = 'Settings';
+      settingsButton.style.cssText = `
+        background: none;
+        border: none;
+        font-size: 16px;
+        cursor: pointer;
+        padding: 4px 8px;
+        border-radius: 4px;
+        color: #666;
+        transition: background-color 0.2s;
+      `;
+      settingsButton.addEventListener('click', showSettingsModal);
+      settingsButton.addEventListener('mouseover', () => {
+        settingsButton.style.backgroundColor = '#f0f0f0';
+      });
+      settingsButton.addEventListener('mouseout', () => {
+        settingsButton.style.backgroundColor = 'transparent';
+      });
+      titleRow.appendChild(settingsButton);
+
+      titleSection.appendChild(titleRow);
+
+      const subtitle = document.createElement('div');
+      subtitle.textContent = 'Questrade → Monarch Money';
+      subtitle.style.cssText = 'font-size: 14px; color: #666;';
+      titleSection.appendChild(subtitle);
+
+      header.appendChild(titleSection);
+      container.appendChild(header);
 
       // Clean up any existing listeners
       if (container.accountListener) {
@@ -315,14 +391,57 @@ export async function initAllAccountsUI() {
 
     // Clear existing dynamic content if reusing container
     if (!isNewContainer) {
-      // Remove all child elements except the header
-      const header = container.querySelector('div:first-child');
+      // Clear all content and recreate header to ensure gear button is present
       container.innerHTML = '';
-      if (header) {
-        container.appendChild(header);
-      }
 
-      debugLog('Cleared existing content from container, preserved header');
+      // Recreate header with gear button
+      const header = document.createElement('div');
+      header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;';
+
+      const titleSection = document.createElement('div');
+      titleSection.style.cssText = 'display: flex; flex-direction: column;';
+
+      const titleRow = document.createElement('div');
+      titleRow.style.cssText = 'display: flex; align-items: center; gap: 10px;';
+
+      const title = document.createElement('h3');
+      title.textContent = 'Balance History Uploader';
+      title.style.cssText = 'margin: 0; font-size: 18px; font-weight: bold;';
+      titleRow.appendChild(title);
+
+      const settingsButton = document.createElement('button');
+      settingsButton.innerHTML = '⚙️';
+      settingsButton.title = 'Settings';
+      settingsButton.style.cssText = `
+        background: none;
+        border: none;
+        font-size: 16px;
+        cursor: pointer;
+        padding: 4px 8px;
+        border-radius: 4px;
+        color: #666;
+        transition: background-color 0.2s;
+      `;
+      settingsButton.addEventListener('click', showSettingsModal);
+      settingsButton.addEventListener('mouseover', () => {
+        settingsButton.style.backgroundColor = '#f0f0f0';
+      });
+      settingsButton.addEventListener('mouseout', () => {
+        settingsButton.style.backgroundColor = 'transparent';
+      });
+      titleRow.appendChild(settingsButton);
+
+      titleSection.appendChild(titleRow);
+
+      const subtitle = document.createElement('div');
+      subtitle.textContent = 'Questrade → Monarch Money';
+      subtitle.style.cssText = 'font-size: 14px; color: #666;';
+      titleSection.appendChild(subtitle);
+
+      header.appendChild(titleSection);
+      container.appendChild(header);
+
+      debugLog('Cleared existing content from container, recreated header with gear button');
     }
 
     // Create status indicators

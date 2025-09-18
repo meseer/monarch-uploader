@@ -3,7 +3,7 @@
  * This file will gradually replace inline utility functions in the original script
  */
 
-import { DEBUG_LOG, STORAGE } from './config';
+import { STORAGE } from './config';
 import toast from '../ui/toast';
 
 /**
@@ -15,14 +15,42 @@ export function getLocalToday() {
 }
 
 /**
- * Gets yesterday's date in local timezone
- * @returns {Date} Yesterday's date in local timezone
+ * Debug logging function
+ * @param {...any} args - Arguments to log
+ * @param {string} level - Log level (debug, info, warning, error)
  */
-export function getLocalYesterday() {
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  return yesterday;
+export function debugLog(...args) {
+  const level = args.length > 0 && typeof args[args.length - 1] === 'string'
+    && ['debug', 'info', 'warning', 'error'].includes(args[args.length - 1])
+    ? args.pop() : 'debug';
+
+  const currentLogLevel = GM_getValue('debug_log_level', 'debug');
+  const logLevels = {
+    debug: 0, info: 1, warning: 2, error: 3,
+  };
+
+  // Only log if the message level is at or above the current log level
+  if (logLevels[level] >= logLevels[currentLogLevel]) {
+    const prefix = level === 'debug' ? '[Balance Uploader]' : `[Balance Uploader - ${level.toUpperCase()}]`;
+
+    if (level === 'error') {
+      console.error(prefix, ...args);
+    } else if (level === 'warning') {
+      console.warn(prefix, ...args);
+    } else if (level === 'info') {
+      console.info(prefix, ...args);
+    } else {
+      console.log(prefix, ...args);
+    }
+  }
 }
+
+/**
+ * Helper functions for specific log levels
+ */
+export const logInfo = (...args) => debugLog(...args, 'info');
+export const logWarning = (...args) => debugLog(...args, 'warning');
+export const logError = (...args) => debugLog(...args, 'error');
 
 /**
  * Formats a date object to YYYY-MM-DD string format using local timezone
@@ -68,6 +96,16 @@ export function getTodayLocal() {
 }
 
 /**
+ * Gets yesterday's date in local timezone
+ * @returns {Date} Yesterday's date in local timezone
+ */
+export function getLocalYesterday() {
+  const date = getLocalToday();
+  date.setDate(date.getDate() - 1);
+  return date;
+}
+
+/**
  * Gets yesterday's date formatted as YYYY-MM-DD in local timezone
  * @returns {string} Yesterday's date string
  */
@@ -94,24 +132,6 @@ export function getDaysAgoLocal(days) {
 export function formatDaysAgoLocal(days) {
   return formatDate(getDaysAgoLocal(days));
 }
-
-/**
- * Debug logging function with support for objects
- * @param {string} message - The message to log
- * @param {any} obj - Optional object to log
- */
-export function debugLog(message, obj) {
-  if (!DEBUG_LOG) return;
-
-  const prefix = '[Monarch Uploader]';
-
-  if (obj) {
-    console.log(`${prefix} ${message}`, obj);
-  } else {
-    console.log(`${prefix} ${message}`);
-  }
-}
-
 /**
  * Extracts domain from a URL
  * @param {string} url - The URL to extract domain from
