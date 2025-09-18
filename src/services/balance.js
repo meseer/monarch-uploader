@@ -185,8 +185,19 @@ export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDat
     // Get account name from state
     const accountName = stateManager.getState().currentAccount.nickname || 'Unknown Account';
 
-    // Upload using Monarch API
-    const success = await monarchApi.uploadBalance(accountId, csvData, fromDate, toDate);
+    // Resolve Monarch account mapping for this Questrade account
+    const monarchAccount = await monarchApi.resolveAccountMapping(
+      accountId,
+      STORAGE.ACCOUNT_MAPPING_PREFIX,
+      'brokerage',
+    );
+
+    if (!monarchAccount) {
+      throw new BalanceError('Account mapping cancelled by user', accountId);
+    }
+
+    // Upload using Monarch API with resolved account ID
+    const success = await monarchApi.uploadBalance(monarchAccount.id, csvData, fromDate, toDate);
 
     // Store the date for next time if successful
     if (success) {

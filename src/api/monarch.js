@@ -240,15 +240,15 @@ export async function getMonarchInstitutionSettings() {
 
 /**
  * Upload balance history to Monarch Money
- * @param {string} accountId - Questrade account ID
+ * @param {string} monarchAccountId - Monarch account ID to upload to
  * @param {string} csvData - CSV data containing balance history
  * @param {string} fromDate - Start date in YYYY-MM-DD format
  * @param {string} toDate - End date in YYYY-MM-DD format
  * @returns {Promise<boolean>} Success status
  */
-export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDate) {
+export async function uploadBalanceToMonarch(monarchAccountId, csvData, fromDate, toDate) {
   try {
-    debugLog('Starting Monarch upload process');
+    debugLog('Starting Monarch balance upload process');
 
     // Get auth status
     const authStatus = authService.checkMonarchAuth();
@@ -256,30 +256,8 @@ export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDat
       throw new Error('Monarch authentication required for uploading balance history');
     }
 
-    // Get Monarch account mapping
-    let monarchAccount = JSON.parse(GM_getValue(`${STORAGE.ACCOUNT_MAPPING_PREFIX}${accountId}`, null));
-    if (!monarchAccount) {
-      debugLog('No Monarch account mapping found, showing account selector');
-
-      // Fetch Monarch investment accounts
-      const investmentAccounts = await listMonarchAccounts();
-      if (!investmentAccounts.length) {
-        throw new Error('No investment accounts found in Monarch.');
-      }
-
-      // Show account selector and wait for user selection
-      monarchAccount = await new Promise((resolve) => {
-        showMonarchAccountSelector(investmentAccounts, resolve);
-      });
-
-      if (!monarchAccount) {
-        // User cancelled selection
-        throw new Error('Account selection cancelled by user');
-      }
-
-      // Save the mapping for future use
-      GM_setValue(`${STORAGE.ACCOUNT_MAPPING_PREFIX}${accountId}`, JSON.stringify(monarchAccount));
-      debugLog(`Saved account mapping: ${accountId} -> ${monarchAccount.displayName}`);
+    if (!monarchAccountId) {
+      throw new Error('Monarch account ID is required for balance upload');
     }
 
     // Create upload filename
@@ -291,7 +269,7 @@ export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDat
     const formData = new FormData();
     const fileBlob = new Blob([csvData], { type: 'text/csv' });
     formData.append('files', fileBlob, fileName);
-    const accountMapping = { [fileName]: monarchAccount.id };
+    const accountMapping = { [fileName]: monarchAccountId };
     formData.append('account_files_mapping', JSON.stringify(accountMapping));
     formData.append('preview', 'true');
 
@@ -595,6 +573,65 @@ export async function uploadTransactionsToMonarch(
 }
 
 /**
+ * Resolve Monarch account mapping for an institution account
+ * @param {string} institutionAccountId - The institution's account ID (Questrade, Rogers, etc.)
+ * @param {string} storagePrefix - Storage prefix for the mapping (e.g., STORAGE.ACCOUNT_MAPPING_PREFIX)
+ * @param {string} accountType - Account type ('brokerage', 'credit', etc.)
+ * @returns {Promise<Object|null>} Monarch account object, or null if cancelled
+ */
+export async function resolveMonarchAccountMapping(institutionAccountId, storagePrefix, accountType = 'brokerage') {
+  try {
+    debugLog(`Resolving Monarch account mapping for ${institutionAccountId} with type ${accountType}`);
+
+    // Check for existing mapping
+    const existingMapping = GM_getValue(`${storagePrefix}${institutionAccountId}`, null);
+    if (existingMapping) {
+      try {
+        const monarchAccount = JSON.parse(existingMapping);
+        debugLog(`Found existing mapping: ${institutionAccountId} -> ${monarchAccount.displayName}`);
+        return monarchAccount;
+      } catch (error) {
+        debugLog('Error parsing existing account mapping, will prompt for new one:', error);
+        // Fall through to create new mapping
+      }
+    }
+
+    debugLog('No existing mapping found, showing account selector');
+
+    // Fetch Monarch accounts of the specified type
+    const monarchAccounts = await listMonarchAccounts(accountType);
+    if (!monarchAccounts || monarchAccounts.length === 0) {
+      const accountTypeDisplay = accountType === 'credit' ? 'credit card' : accountType;
+      throw new Error(`No ${accountTypeDisplay} accounts found in Monarch. Please ensure you have ${accountTypeDisplay} accounts in Monarch.`);
+    }
+
+    // Show account selector and wait for user selection
+    const monarchAccount = await new Promise((resolve) => {
+      showMonarchAccountSelector(monarchAccounts, resolve, null, accountType);
+    });
+
+    if (!monarchAccount) {
+      // User cancelled selection
+      debugLog('User cancelled account mapping selection');
+      return null;
+    }
+
+    // Save the mapping for future use
+    GM_setValue(`${storagePrefix}${institutionAccountId}`, JSON.stringify(monarchAccount));
+
+    const { currentAccount } = stateManager.getState();
+    const institutionAccountName = currentAccount.nickname || currentAccount.name || 'Account';
+
+    debugLog(`Saved account mapping: ${institutionAccountName} (${institutionAccountId}) -> ${monarchAccount.displayName} (${monarchAccount.id})`);
+
+    return monarchAccount;
+  } catch (error) {
+    debugLog('Error resolving Monarch account mapping:', error);
+    throw error;
+  }
+}
+
+/**
  * Get categories and category groups from Monarch Money
  * @returns {Promise<Object>} Object containing categoryGroups and categories arrays
  */
@@ -654,6 +691,7 @@ export default {
   uploadBalance: uploadBalanceToMonarch,
   uploadTransactions: uploadTransactionsToMonarch,
   getCategoriesAndGroups: getMonarchCategoriesAndGroups,
+  resolveAccountMapping: resolveMonarchAccountMapping,
   checkTokenStatus,
   getToken,
 };

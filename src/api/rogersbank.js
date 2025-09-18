@@ -385,6 +385,68 @@ export function clearRogersBankCredentials() {
   toast.show('Rogers Bank credentials cleared', 'info');
 }
 
+/**
+ * Fetch current account balance from Rogers Bank API
+ * @returns {Promise<number>} Current balance (as negative value for credit card)
+ */
+export async function fetchRogersBankBalance() {
+  try {
+    const creds = getRogersBankCredentials();
+
+    // Check if we have all required credentials
+    if (!creds.authToken || !creds.accountId || !creds.customerId
+        || !creds.accountIdEncoded || !creds.customerIdEncoded || !creds.deviceId) {
+      throw new Error('Missing Rogers Bank credentials. Please navigate to your account page first.');
+    }
+
+    const url = `https://selfserve.apis.rogersbank.com/corebank/v1/account/${creds.accountId}/customer/${creds.customerId}/detail`;
+
+    debugLog('Fetching Rogers Bank balance from:', url);
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        accept: 'application/json, text/plain, */*',
+        accountid: creds.accountIdEncoded,
+        authorization: creds.authToken,
+        channel: '101',
+        customerid: creds.customerIdEncoded,
+        deviceid: creds.deviceId,
+        isrefresh: 'false',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    // Check API response status
+    if (data.statusCode !== '200') {
+      throw new Error(`API returned error status: ${data.statusCode}`);
+    }
+
+    // Extract current balance
+    const currentBalance = data.accountDetail?.currentBalance?.value;
+    if (currentBalance === undefined || currentBalance === null) {
+      throw new Error('Current balance not found in API response');
+    }
+
+    // Convert to number
+    const balanceValue = parseFloat(currentBalance);
+    if (Number.isNaN(balanceValue)) {
+      throw new Error('Invalid balance value received from API');
+    }
+
+    debugLog(`Rogers Bank current balance: ${balanceValue}`);
+    return balanceValue;
+  } catch (error) {
+    debugLog('Error fetching Rogers Bank balance:', error);
+    throw error;
+  }
+}
+g
 // Export as default object
 export default {
   getRogersBankCredentials,
@@ -392,4 +454,5 @@ export default {
   checkCredentialStatus,
   setupCredentialInterception,
   clearRogersBankCredentials,
+  fetchRogersBankBalance,
 };

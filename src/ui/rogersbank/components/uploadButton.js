@@ -110,7 +110,7 @@ export function createRogersBankUploadButton() {
   }
 
   // Create upload button with actual functionality
-  const uploadButton = createRogersBankButton('Upload Transactions to Monarch', async () => {
+  const uploadButton = createRogersBankButton('Upload to Monarch', async () => {
     debugLog('Rogers Bank upload button clicked');
 
     // Disable button during upload
@@ -167,7 +167,7 @@ export function createRogersBankUploadButton() {
 
   // Add informational text
   const infoText = document.createElement('div');
-  infoText.textContent = 'Click to fetch approved transactions and upload them to Monarch Money.';
+  infoText.textContent = 'Click to upload current balance and approved transactions to Monarch Money.';
   infoText.style.cssText = `
     padding: 4px 0;
     font-size: 12px;

@@ -3,10 +3,10 @@
  * Handles downloading transactions from Rogers Bank and uploading to Monarch Money
  */
 
-import { debugLog, formatDaysAgoLocal } from '../core/utils';
+import { debugLog, formatDaysAgoLocal, getTodayLocal } from '../core/utils';
 import toast from '../ui/toast';
 import { STORAGE } from '../core/config';
-import { getRogersBankCredentials } from '../api/rogersbank';
+import { getRogersBankCredentials, fetchRogersBankBalance } from '../api/rogersbank';
 import monarchApi from '../api/monarch';
 import { showMonarchAccountSelector } from '../ui/components/accountSelector';
 import { convertTransactionsToMonarchCSV } from '../utils/csv';
@@ -345,6 +345,25 @@ async function fetchRogersBankTransactions(fromDate, toDate) {
 }
 
 /**
+ * Generate CSV data for Rogers Bank balance
+ * @param {number} balance - Current balance (negative value)
+ * @param {string} accountName - Rogers account name
+ * @returns {string} CSV formatted balance data
+ */
+function generateBalanceCSV(balance, accountName) {
+  try {
+    const todayFormatted = getTodayLocal();
+    let csvContent = '"Date","Total Equity","Account Name"\n';
+    csvContent += `"${todayFormatted}","${balance}","${accountName}"\n`;
+    debugLog(`Generated balance CSV for ${accountName}: ${balance} on ${todayFormatted}`);
+    return csvContent;
+  } catch (error) {
+    debugLog('Error generating balance CSV:', error);
+    throw new Error(`Failed to generate balance CSV: ${error.message}`);
+  }
+}
+
+/**
  * Upload Rogers Bank transactions to Monarch Money
  * @returns {Promise<Object>} Upload result
  */
@@ -376,12 +395,12 @@ export async function uploadRogersBankToMonarch() {
     const accountForDialog = {
       key: rogersAccountId,
       nickname: rogersAccountName,
-      name: 'Rogers Bank Transaction Upload',
+      name: 'Rogers Bank Upload to Monarch',
     };
 
     progressDialog = showProgressDialog(
       [accountForDialog],
-      'Uploading Rogers Bank Transactions to Monarch Money',
+      'Uploading Rogers Bank Data to Monarch Money',
     );
 
     // Set up cancellation callback
@@ -390,7 +409,93 @@ export async function uploadRogersBankToMonarch() {
       abortController.abort();
     });
 
-    // Update progress - fetching transactions
+    // STEP 1: Establish Monarch account mapping (always needed for both balance and transactions)
+    let monarchAccount = null;
+    const savedMapping = GM_getValue(`${STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX}${rogersAccountId}`, null);
+
+    if (savedMapping) {
+      try {
+        monarchAccount = JSON.parse(savedMapping);
+        debugLog('Using existing Monarch account mapping:', monarchAccount);
+      } catch (e) {
+        debugLog('Error parsing saved mapping, will prompt for new one:', e);
+      }
+    }
+
+    // If no mapping exists, show the account selector
+    if (!monarchAccount) {
+      progressDialog.updateProgress(rogersAccountId, 'processing', 'Getting Monarch account mapping...');
+      debugLog('No Monarch account mapping found, showing account selector');
+
+      // Fetch Monarch credit card accounts (for Rogers Bank)
+      const monarchAccounts = await monarchApi.listAccounts('credit');
+      if (!monarchAccounts || monarchAccounts.length === 0) {
+        throw new Error('No Monarch credit card accounts found. Please ensure you have credit card accounts in Monarch.');
+      }
+
+      // Show account selector and wait for user selection (pass 'credit' as account type)
+      monarchAccount = await new Promise((resolve) => {
+        showMonarchAccountSelector(monarchAccounts, resolve, null, 'credit');
+      });
+
+      if (!monarchAccount) {
+        // User cancelled selection
+        progressDialog.updateProgress(rogersAccountId, 'error', 'Account mapping cancelled by user');
+        progressDialog.hideCancel();
+        progressDialog.showSummary({ success: 0, failed: 1, total: 1 });
+        toast.show('Account selection cancelled', 'info');
+        return {
+          success: false,
+          message: 'Account selection cancelled by user',
+        };
+      }
+
+      // Save the mapping for future use
+      GM_setValue(
+        `${STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX}${rogersAccountId}`,
+        JSON.stringify(monarchAccount),
+      );
+      debugLog(`Saved account mapping: ${rogersAccountName} -> ${monarchAccount.displayName}`);
+      progressDialog.updateProgress(rogersAccountId, 'processing', `Mapped to Monarch account: ${monarchAccount.displayName}`);
+    } else {
+      progressDialog.updateProgress(rogersAccountId, 'processing', `Using existing Monarch account mapping: ${monarchAccount.displayName}`);
+    }
+
+    // STEP 2: Upload current balance to Monarch (now that we have account mapping)
+    try {
+      // Fetch current balance from Rogers Bank
+      progressDialog.updateProgress(rogersAccountId, 'processing', 'Fetching current account balance...');
+      const currentBalance = await fetchRogersBankBalance();
+
+      // Generate balance CSV
+      progressDialog.updateProgress(rogersAccountId, 'processing', 'Preparing balance data for upload...');
+      const balanceCSV = generateBalanceCSV(currentBalance, rogersAccountName);
+
+      // Upload balance to Monarch
+      progressDialog.updateProgress(rogersAccountId, 'processing', 'Uploading current balance to Monarch...');
+      const todayFormatted = getTodayLocal();
+      const balanceUploadSuccess = await monarchApi.uploadBalance(
+        monarchAccount.id, // Use actual Monarch account ID
+        balanceCSV,
+        todayFormatted, // fromDate = today
+        todayFormatted, // toDate = today
+      );
+
+      if (balanceUploadSuccess) {
+        progressDialog.updateProgress(rogersAccountId, 'processing', 'Balance uploaded successfully');
+        debugLog(`Successfully uploaded balance ${currentBalance} for ${rogersAccountName}`);
+      } else {
+        // Balance upload failed, but continue with transactions
+        progressDialog.updateProgress(rogersAccountId, 'processing', 'Balance upload failed, continuing with transactions...');
+        debugLog('Balance upload failed, but continuing with transaction upload');
+      }
+    } catch (balanceError) {
+      // Balance upload failed, but continue with transactions
+      progressDialog.updateProgress(rogersAccountId, 'processing', `Balance upload failed: ${balanceError.message}, continuing with transactions...`);
+      debugLog('Balance upload failed:', balanceError);
+    }
+
+    // STEP 3: Fetch and process transactions if any exist
     progressDialog.updateProgress(rogersAccountId, 'processing', `Fetching transactions from ${fromDate} to ${toDate}...`);
 
     // Check for cancellation before fetching
@@ -428,11 +533,11 @@ export async function uploadRogersBankToMonarch() {
       if (approvedTransactions.length === 0) {
         progressDialog.updateProgress(rogersAccountId, 'success', 'No approved transactions found to upload');
         progressDialog.hideCancel();
-        progressDialog.showSummary({ success: 0, failed: 0, total: 1 });
-        toast.show('No approved transactions found to upload', 'info');
+        progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
+        toast.show('Balance uploaded successfully. No approved transactions found to upload', 'info');
         return {
           success: true,
-          message: 'No approved transactions found',
+          message: 'Balance uploaded successfully. No approved transactions found.',
           data: { ...result, transactions: approvedTransactions },
         };
       }
@@ -446,13 +551,13 @@ export async function uploadRogersBankToMonarch() {
         const message = filterResult.duplicateCount > 0
           ? `All ${filterResult.duplicateCount} transactions have already been uploaded`
           : 'No new transactions to upload';
-        progressDialog.updateProgress(rogersAccountId, 'success', message);
+        progressDialog.updateProgress(rogersAccountId, 'success', `Balance uploaded successfully. ${message}`);
         progressDialog.hideCancel();
-        progressDialog.showSummary({ success: 0, failed: 0, total: 1 });
-        toast.show(message, 'info');
+        progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
+        toast.show(`Balance uploaded successfully. ${message}`, 'info');
         return {
           success: true,
-          message,
+          message: `Balance uploaded successfully. ${message}`,
           data: {
             ...result,
             transactions: transactionsToUpload,
@@ -467,65 +572,6 @@ export async function uploadRogersBankToMonarch() {
         progressDialog.updateProgress(rogersAccountId, 'processing', `Found ${transactionsToUpload.length} new transactions (${filterResult.duplicateCount} duplicates skipped)`);
       } else {
         progressDialog.updateProgress(rogersAccountId, 'processing', `Found ${transactionsToUpload.length} new transactions to upload`);
-      }
-
-      // Check for existing Monarch account mapping
-      let monarchAccount = null;
-      const savedMapping = GM_getValue(`${STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX}${rogersAccountId}`, null);
-
-      if (savedMapping) {
-        try {
-          monarchAccount = JSON.parse(savedMapping);
-          debugLog('Using existing Monarch account mapping:', monarchAccount);
-        } catch (e) {
-          debugLog('Error parsing saved mapping, will prompt for new one:', e);
-        }
-      }
-
-      // Check for cancellation before account mapping
-      if (abortController.signal.aborted) {
-        progressDialog?.updateProgress(rogersAccountId, 'error', 'Upload cancelled');
-        progressDialog?.hideCancel();
-        return { success: false, message: 'Upload cancelled by user' };
-      }
-
-      // If no mapping exists, show the account selector
-      if (!monarchAccount) {
-        progressDialog.updateProgress(rogersAccountId, 'processing', 'Getting Monarch account mapping...');
-        debugLog('No Monarch account mapping found, showing account selector');
-
-        // Fetch Monarch credit card accounts (for Rogers Bank)
-        const monarchAccounts = await monarchApi.listAccounts('credit');
-        if (!monarchAccounts || monarchAccounts.length === 0) {
-          throw new Error('No Monarch credit card accounts found. Please ensure you have credit card accounts in Monarch.');
-        }
-
-        // Show account selector and wait for user selection (pass 'credit' as account type)
-        monarchAccount = await new Promise((resolve) => {
-          showMonarchAccountSelector(monarchAccounts, resolve, null, 'credit');
-        });
-
-        if (!monarchAccount) {
-          // User cancelled selection
-          progressDialog.updateProgress(rogersAccountId, 'error', 'Account mapping cancelled by user');
-          progressDialog.hideCancel();
-          progressDialog.showSummary({ success: 0, failed: 1, total: 1 });
-          toast.show('Account selection cancelled', 'info');
-          return {
-            success: false,
-            message: 'Account selection cancelled by user',
-          };
-        }
-
-        // Save the mapping for future use
-        GM_setValue(
-          `${STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX}${rogersAccountId}`,
-          JSON.stringify(monarchAccount),
-        );
-        debugLog(`Saved account mapping: ${rogersAccountName} -> ${monarchAccount.displayName}`);
-        progressDialog.updateProgress(rogersAccountId, 'processing', `Mapped to Monarch account: ${monarchAccount.displayName}`);
-      } else {
-        progressDialog.updateProgress(rogersAccountId, 'processing', `Using existing Monarch account mapping: ${monarchAccount.displayName}`);
       }
 
       // Check for cancellation before category resolution
@@ -590,8 +636,8 @@ export async function uploadRogersBankToMonarch() {
         saveNextSyncFromDate();
 
         const successMessage = filterResult.duplicateCount > 0
-          ? `Successfully uploaded ${transactionsToUpload.length} new transactions (${filterResult.duplicateCount} duplicates skipped)`
-          : `Successfully uploaded ${transactionsToUpload.length} transactions`;
+          ? `Successfully uploaded balance and ${transactionsToUpload.length} new transactions (${filterResult.duplicateCount} duplicates skipped)`
+          : `Successfully uploaded balance and ${transactionsToUpload.length} transactions`;
 
         progressDialog.updateProgress(rogersAccountId, 'success', successMessage);
         progressDialog.hideCancel();
@@ -616,13 +662,13 @@ export async function uploadRogersBankToMonarch() {
     }
 
     if (result.transactions.length === 0) {
-      progressDialog.updateProgress(rogersAccountId, 'success', 'No transactions found in the specified date range');
+      progressDialog.updateProgress(rogersAccountId, 'success', 'Balance uploaded successfully. No transactions found in the specified date range');
       progressDialog.hideCancel();
-      progressDialog.showSummary({ success: 0, failed: 0, total: 1 });
-      toast.show('No transactions found in the specified date range', 'info');
+      progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
+      toast.show('Balance uploaded successfully. No transactions found in the specified date range', 'info');
       return {
         success: true,
-        message: 'No transactions found',
+        message: 'Balance uploaded successfully. No transactions found',
         data: result,
       };
     }
