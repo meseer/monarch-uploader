@@ -173,6 +173,18 @@ async function resolveCategoriesForTransactions(transactions) {
 
   debugLog('Starting category resolution for transactions');
 
+  // Fetch categories and category groups from Monarch for similarity scoring
+  let availableCategories = [];
+  try {
+    debugLog('Fetching categories from Monarch for similarity scoring');
+    const categoryData = await monarchApi.getCategoriesAndGroups();
+    availableCategories = categoryData.categories || [];
+    debugLog(`Fetched ${availableCategories.length} categories from Monarch`);
+  } catch (error) {
+    debugLog('Failed to fetch categories from Monarch, will use manual selection for all:', error);
+    // Continue with empty categories array - all mappings will require manual selection
+  }
+
   // Find all unique bank categories that need resolution
   const uniqueBankCategories = new Set();
   const categoriesToResolve = [];
@@ -185,8 +197,8 @@ async function resolveCategoriesForTransactions(transactions) {
     if (!uniqueBankCategories.has(bankCategory)) {
       uniqueBankCategories.add(bankCategory);
 
-      // Test the category mapping
-      const mappingResult = applyCategoryMapping(bankCategory);
+      // Test the category mapping with available categories for similarity scoring
+      const mappingResult = applyCategoryMapping(bankCategory, availableCategories);
 
       if (mappingResult && typeof mappingResult === 'object' && mappingResult.needsManualSelection) {
         // This category needs manual selection
@@ -233,7 +245,7 @@ async function resolveCategoriesForTransactions(transactions) {
       || transaction.merchant?.category
       || 'Uncategorized';
 
-    const mappingResult = applyCategoryMapping(bankCategory);
+    const mappingResult = applyCategoryMapping(bankCategory, availableCategories);
 
     // At this point, all categories should resolve to strings (Monarch category names)
     const resolvedCategory = typeof mappingResult === 'string' ? mappingResult : 'Uncategorized';
