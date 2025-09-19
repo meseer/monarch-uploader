@@ -208,7 +208,7 @@ export function getLastUpdateDate(accountId, institutionType) {
  */
 export function calculateFromDateWithLookback(institutionType, accountId) {
   const lastUploadDate = getLastUpdateDate(accountId, institutionType);
-  
+
   if (!lastUploadDate) {
     // No previous upload date - caller should handle showing date picker
     return null;
@@ -218,12 +218,12 @@ export function calculateFromDateWithLookback(institutionType, accountId) {
   const lookbackStorageKey = `${institutionType}_lookback_days`;
   const defaultLookback = getDefaultLookbackDays(institutionType);
   const lookbackDays = GM_getValue(lookbackStorageKey, defaultLookback);
-  
+
   debugLog(`Calculating from date for ${institutionType} account ${accountId}: lastUploadDate=${lastUploadDate}, lookback=${lookbackDays} days`);
-  
+
   // Calculate: lastUploadDate - lookbackDays
   const fromDate = formatDaysBeforeDate(lastUploadDate, lookbackDays);
-  
+
   debugLog(`Calculated from date: ${fromDate}`);
   return fromDate;
 }

@@ -378,7 +378,7 @@ function renderGeneralTab(container) {
  * @returns {HTMLElement} Lookback period section element
  */
 function createLookbackPeriodSection(institutionType) {
-  const section = createSection('Lookback Period', '⏰', `Configure how many days to look back from the last upload date for subsequent uploads`);
+  const section = createSection('Lookback Period', '⏰', 'Configure how many days to look back from the last upload date for subsequent uploads');
 
   const configContainer = document.createElement('div');
   configContainer.style.cssText = 'margin: 15px 0;';
@@ -1022,7 +1022,7 @@ function createAccountMappingCards(data, onDelete, institutionName, institutionT
     deleteButton.addEventListener('click', async (e) => {
       e.stopPropagation(); // Prevent card toggle
       const confirmed = await showConfirmDialog(
-        `Are you sure you want to delete the mapping for "${displayKey}"?\n\nThis will unlink the account from Monarch.`
+        `Are you sure you want to delete the mapping for "${displayKey}"?\n\nThis will unlink the account from Monarch.`,
       );
       if (confirmed) {
         onDelete(key);
