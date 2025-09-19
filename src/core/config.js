@@ -34,9 +34,12 @@ export const STORAGE = {
   ROGERSBANK_LAST_UPLOAD_DATE_PREFIX: 'rogersbank_last_upload_date_',
   ROGERSBANK_ACCOUNT_MAPPING_PREFIX: 'rogersbank_monarch_account_for_',
   ROGERSBANK_FROM_DATE: 'rogersbank_from_date',
-  ROGERSBANK_NEXT_SYNC_FROM_DATE: 'rogersbank_next_sync_from_date', // Store calculated next sync date (7 days before today)
   ROGERSBANK_UPLOADED_REFS_PREFIX: 'rogersbank_uploaded_refs_', // Store uploaded transaction reference numbers
   ROGERSBANK_CATEGORY_MAPPINGS: 'rogersbank_category_mappings', // Store bank category to Monarch category mappings
+  // Lookback period storage keys (days to look back from last upload date)
+  QUESTRADE_LOOKBACK_DAYS: 'questrade_lookback_days',
+  CANADALIFE_LOOKBACK_DAYS: 'canadalife_lookback_days',
+  ROGERSBANK_LOOKBACK_DAYS: 'rogersbank_lookback_days',
 };
 
 // Brand colors

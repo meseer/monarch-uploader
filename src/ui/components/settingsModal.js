@@ -3,7 +3,7 @@
  * Provides a unified interface for managing application settings and stored data
  */
 
-import { debugLog } from '../../core/utils';
+import { debugLog, getDefaultLookbackDays } from '../../core/utils';
 import { STORAGE } from '../../core/config';
 import toast from '../toast';
 
@@ -373,10 +373,147 @@ function renderGeneralTab(container) {
 }
 
 /**
+ * Creates a lookback period configuration section for an institution
+ * @param {string} institutionType - Type of institution ('questrade', 'canadalife', 'rogersbank')
+ * @returns {HTMLElement} Lookback period section element
+ */
+function createLookbackPeriodSection(institutionType) {
+  const section = createSection('Lookback Period', '⏰', `Configure how many days to look back from the last upload date for subsequent uploads`);
+
+  const configContainer = document.createElement('div');
+  configContainer.style.cssText = 'margin: 15px 0;';
+
+  const label = document.createElement('label');
+  label.textContent = 'Lookback Days:';
+  label.style.cssText = 'display: block; margin-bottom: 8px; font-weight: bold;';
+
+  const inputContainer = document.createElement('div');
+  inputContainer.style.cssText = 'display: flex; align-items: center; gap: 10px; margin-bottom: 10px;';
+
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.min = '0';
+  input.max = '30';
+  input.step = '1';
+  input.style.cssText = `
+    padding: 8px 12px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+    width: 80px;
+  `;
+
+  // Get storage key based on institution type
+  let storageKey;
+  let institutionName;
+  switch (institutionType) {
+    case 'questrade':
+      storageKey = STORAGE.QUESTRADE_LOOKBACK_DAYS;
+      institutionName = 'Questrade';
+      break;
+    case 'canadalife':
+      storageKey = STORAGE.CANADALIFE_LOOKBACK_DAYS;
+      institutionName = 'CanadaLife';
+      break;
+    case 'rogersbank':
+      storageKey = STORAGE.ROGERSBANK_LOOKBACK_DAYS;
+      institutionName = 'Rogers Bank';
+      break;
+    default:
+      console.error('Unknown institution type:', institutionType);
+      return section;
+  }
+
+  // Load current value or default
+  const defaultLookback = getDefaultLookbackDays(institutionType);
+  const currentValue = GM_getValue(storageKey, defaultLookback);
+  input.value = currentValue;
+
+  const daysLabel = document.createElement('span');
+  daysLabel.textContent = 'days';
+  daysLabel.style.cssText = 'color: #666; font-size: 14px;';
+
+  const resetButton = document.createElement('button');
+  resetButton.textContent = 'Reset to Default';
+  resetButton.style.cssText = `
+    padding: 6px 12px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: white;
+    cursor: pointer;
+    font-size: 12px;
+    margin-left: 10px;
+  `;
+
+  inputContainer.appendChild(input);
+  inputContainer.appendChild(daysLabel);
+  inputContainer.appendChild(resetButton);
+
+  // Description
+  const description = document.createElement('div');
+  description.style.cssText = 'font-size: 13px; color: #666; margin-top: 8px; line-height: 1.4;';
+  description.innerHTML = `
+    <strong>How it works:</strong><br>
+    • When uploading transactions after a previous upload exists, the system calculates the "from date" as: <code>Last Upload Date - Lookback Days</code><br>
+    • This ensures no transactions are missed due to delayed processing or date discrepancies<br>
+    • Default for ${institutionName}: <strong>${defaultLookback} day${defaultLookback !== 1 ? 's' : ''}</strong><br>
+    • Range: 0-30 days (0 means start exactly from the last upload date)
+  `;
+
+  // Save changes
+  const saveChanges = () => {
+    const value = parseInt(input.value, 10);
+    if (Number.isNaN(value) || value < 0 || value > 30) {
+      input.value = currentValue; // Reset to previous valid value
+      toast.show('Please enter a valid number between 0 and 30', 'error');
+      return;
+    }
+
+    GM_setValue(storageKey, value);
+    toast.show(`${institutionName} lookback period set to ${value} day${value !== 1 ? 's' : ''}`, 'success');
+    debugLog(`${institutionName} lookback period updated to: ${value} days`);
+  };
+
+  // Reset to default
+  resetButton.addEventListener('click', () => {
+    input.value = defaultLookback;
+    GM_setValue(storageKey, defaultLookback);
+    toast.show(`${institutionName} lookback period reset to default (${defaultLookback} day${defaultLookback !== 1 ? 's' : ''})`, 'success');
+  });
+
+  // Save on blur or enter
+  input.addEventListener('blur', saveChanges);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      saveChanges();
+      input.blur();
+    }
+  });
+
+  resetButton.addEventListener('mouseover', () => {
+    resetButton.style.backgroundColor = '#f8f9fa';
+  });
+  resetButton.addEventListener('mouseout', () => {
+    resetButton.style.backgroundColor = 'white';
+  });
+
+  configContainer.appendChild(label);
+  configContainer.appendChild(inputContainer);
+  configContainer.appendChild(description);
+  section.appendChild(configContainer);
+
+  return section;
+}
+
+/**
  * Renders the Questrade settings tab
  * @param {HTMLElement} container - Container element
  */
 function renderQuestradeTab(container) {
+  // Lookback Period Section
+  const lookbackSection = createLookbackPeriodSection('questrade');
+  container.appendChild(lookbackSection);
+
   // Account Mappings Section
   const mappingsSection = createSection('Account Mappings', '🔗', 'Questrade to Monarch account mappings');
   const mappingsData = getStorageData(STORAGE.ACCOUNT_MAPPING_PREFIX);
@@ -395,6 +532,10 @@ function renderQuestradeTab(container) {
  * @param {HTMLElement} container - Container element
  */
 function renderCanadaLifeTab(container) {
+  // Lookback Period Section
+  const lookbackSection = createLookbackPeriodSection('canadalife');
+  container.appendChild(lookbackSection);
+
   // Account Mappings Section
   const mappingsSection = createSection('Account Mappings', '🔗', 'CanadaLife to Monarch account mappings');
   const mappingsData = getStorageData(STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX);
@@ -413,6 +554,10 @@ function renderCanadaLifeTab(container) {
  * @param {HTMLElement} container - Container element
  */
 function renderRogersBankTab(container) {
+  // Lookback Period Section
+  const lookbackSection = createLookbackPeriodSection('rogersbank');
+  container.appendChild(lookbackSection);
+
   // Account Mappings Section
   const mappingsSection = createSection('Account Mappings', '🔗', 'Rogers Bank to Monarch account mappings');
   const mappingsData = getStorageData(STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX);

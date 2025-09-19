@@ -3,7 +3,9 @@
  * Handles downloading transactions from Rogers Bank and uploading to Monarch Money
  */
 
-import { debugLog, formatDaysAgoLocal, getTodayLocal } from '../core/utils';
+import {
+  debugLog, getTodayLocal, calculateFromDateWithLookback, saveLastUploadDate,
+} from '../core/utils';
 import toast from '../ui/toast';
 import { STORAGE } from '../core/config';
 import { getRogersBankCredentials, fetchRogersBankBalance } from '../api/rogersbank';
@@ -33,24 +35,25 @@ function getRogersAccountName() {
 
 /**
  * Get saved from date or prompt user for one
+ * @param {string} rogersAccountId - Rogers account ID for lookup
  * @returns {Promise<string|null>} The from date in YYYY-MM-DD format or null if cancelled
  */
-async function getFromDate() {
+async function getFromDate(rogersAccountId) {
   try {
-    // Check for persisted nextSyncFromDate (7 days before last successful upload)
-    const nextSyncFromDate = GM_getValue(STORAGE.ROGERSBANK_NEXT_SYNC_FROM_DATE, null);
+    // Use new unified date calculation with configurable lookback
+    const calculatedFromDate = calculateFromDateWithLookback('rogersbank', rogersAccountId);
 
-    if (nextSyncFromDate) {
-      debugLog('Using persisted nextSyncFromDate without prompting:', nextSyncFromDate);
-      return nextSyncFromDate;
+    if (calculatedFromDate) {
+      debugLog('Using calculated from date based on last upload and lookback:', calculatedFromDate);
+      return calculatedFromDate;
     }
 
-    // No persisted date - show date picker with 14 days ago default
+    // No previous upload date - show date picker with 14 days ago default
     const defaultDate = new Date();
     defaultDate.setDate(defaultDate.getDate() - 14);
     const defaultDateStr = defaultDate.toISOString().split('T')[0];
 
-    debugLog('No persisted nextSyncFromDate found, showing date picker with default:', defaultDateStr);
+    debugLog('No previous upload found, showing date picker with default:', defaultDateStr);
 
     // Use date picker component with the calculated default
     const selectedDate = await showDatePickerPromise(
@@ -113,23 +116,6 @@ function saveUploadedReferenceNumbers(accountId, referenceNumbers) {
     debugLog(`Saved ${referenceNumbers.length} new reference numbers for account ${accountId}`);
   } catch (error) {
     debugLog('Error saving uploaded reference numbers:', error);
-  }
-}
-
-/**
- * Save next sync from date (7 days before today) after successful upload
- * This date will be used as the default start date for the next upload
- */
-function saveNextSyncFromDate() {
-  try {
-    // Calculate 7 days before today using existing utility function
-    const nextSyncFromDate = formatDaysAgoLocal(7);
-
-    // Save to storage
-    GM_setValue(STORAGE.ROGERSBANK_NEXT_SYNC_FROM_DATE, nextSyncFromDate);
-    debugLog('Saved nextSyncFromDate for future uploads:', nextSyncFromDate);
-  } catch (error) {
-    debugLog('Error saving nextSyncFromDate:', error);
   }
 }
 
@@ -378,8 +364,12 @@ export async function uploadRogersBankToMonarch() {
   try {
     debugLog('Rogers Bank upload service started');
 
-    // Get date range
-    const fromDate = await getFromDate();
+    // Extract Rogers account name first (needed for account ID)
+    const rogersAccountName = getRogersAccountName();
+    rogersAccountId = `rogers_${rogersAccountName.replace(/\s+/g, '_').toLowerCase()}`;
+
+    // Get date range (now with account ID for lookback calculation)
+    const fromDate = await getFromDate(rogersAccountId);
     if (!fromDate) {
       return {
         success: false,
@@ -389,10 +379,6 @@ export async function uploadRogersBankToMonarch() {
 
     const toDate = getEndOfCurrentMonth();
     debugLog(`Date range: ${fromDate} to ${toDate}`);
-
-    // Extract Rogers account name and create progress dialog
-    const rogersAccountName = getRogersAccountName();
-    rogersAccountId = `rogers_${rogersAccountName.replace(/\s+/g, '_').toLowerCase()}`;
 
     // Create progress dialog for Rogers Bank account
     const accountForDialog = {
@@ -635,8 +621,8 @@ export async function uploadRogersBankToMonarch() {
           saveUploadedReferenceNumbers(rogersAccountId, referenceNumbers);
         }
 
-        // Save nextSyncFromDate (7 days before today) for future uploads
-        saveNextSyncFromDate();
+        // Save last upload date for future uploads with configurable lookback
+        saveLastUploadDate(rogersAccountId, toDate, 'rogersbank');
 
         const successMessage = filterResult.duplicateCount > 0
           ? `Successfully uploaded balance and ${transactionsToUpload.length} new transactions (${filterResult.duplicateCount} duplicates skipped)`

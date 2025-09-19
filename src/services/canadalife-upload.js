@@ -5,6 +5,7 @@
 
 import {
   debugLog, formatDate, getTodayLocal, getYesterdayLocal, formatDaysAgoLocal, parseLocalDate,
+  calculateFromDateWithLookback, saveLastUploadDate,
 } from '../core/utils';
 import { STORAGE } from '../core/config';
 import stateManager from '../core/state';
@@ -209,14 +210,10 @@ function validateDateRange(startDate, endDate, allowToday = false, account = nul
  * @returns {Promise<string|null>} Start date in YYYY-MM-DD format, or null if cancelled
  */
 async function getStartDateForAccount(accountId) {
-  // Check for existing last upload date
-  const lastUploadDate = GM_getValue(`${STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX}${accountId}`, null);
-
-  if (lastUploadDate && /^\d{4}-\d{2}-\d{2}$/.test(lastUploadDate)) {
-    // Use day after last upload date
-    const nextDay = new Date(lastUploadDate);
-    nextDay.setDate(nextDay.getDate() + 1);
-    return formatDate(nextDay);
+  // Use unified date calculation with configurable lookback
+  const fromDate = calculateFromDateWithLookback('canadalife', accountId);
+  if (fromDate) {
+    return fromDate;
   }
 
   // No previous upload date - prompt user for initial start date
@@ -230,20 +227,6 @@ async function getStartDateForAccount(accountId) {
   );
 
   return selectedDate;
-}
-
-/**
- * Store last upload date for a Canada Life account
- * @param {string} accountId - Canada Life account ID (agreementId)
- * @param {string} endDate - End date that was successfully uploaded
- */
-function storeLastUploadDate(accountId, endDate) {
-  try {
-    GM_setValue(`${STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX}${accountId}`, endDate);
-    debugLog(`Stored last upload date ${endDate} for Canada Life account ${accountId}`);
-  } catch (error) {
-    debugLog('Error storing last upload date:', error);
-  }
 }
 
 /**
@@ -379,7 +362,7 @@ async function uploadSingleAccount(canadalifAccount, startDate, endDate, progres
     // Store last upload date for auto uploads only
     // Store yesterday even if we uploaded today's data to refresh today's balance in future uploads
     if (isAutoUpload) {
-      storeLastUploadDate(accountId, getYesterdayDate());
+      saveLastUploadDate(accountId, getYesterdayDate(), 'canadalife');
     }
 
     // Update progress

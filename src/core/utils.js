@@ -132,6 +132,129 @@ export function getDaysAgoLocal(days) {
 export function formatDaysAgoLocal(days) {
   return formatDate(getDaysAgoLocal(days));
 }
+
+/**
+ * Creates a date N days before a specific date
+ * @param {string|Date} baseDate - Base date (string in YYYY-MM-DD format or Date object)
+ * @param {number} days - Number of days to go back
+ * @returns {string} Date N days before baseDate in YYYY-MM-DD format
+ */
+export function formatDaysBeforeDate(baseDate, days) {
+  let date;
+  if (typeof baseDate === 'string') {
+    date = parseLocalDate(baseDate);
+  } else if (baseDate instanceof Date) {
+    date = new Date(baseDate);
+  } else {
+    debugLog('Invalid base date provided to formatDaysBeforeDate:', baseDate);
+    return formatDaysAgoLocal(days);
+  }
+
+  date.setDate(date.getDate() - days);
+  return formatDate(date);
+}
+
+/**
+ * Gets the default lookback period for an institution
+ * @param {string} institutionType - Institution type ('questrade', 'canadalife', 'rogersbank')
+ * @returns {number} Default lookback days
+ */
+export function getDefaultLookbackDays(institutionType) {
+  switch (institutionType) {
+    case 'questrade':
+      return 0; // Uses exact last upload date
+    case 'canadalife':
+      return 1; // Day after last upload = 1 day lookback
+    case 'rogersbank':
+      return 7; // Current 7 day lookback behavior
+    default:
+      debugLog(`Unknown institution type: ${institutionType}, using 0 days`);
+      return 0;
+  }
+}
+
+/**
+ * Gets the last update date for an account based on institution type
+ * @param {string} accountId - Account ID
+ * @param {string} institutionType - Institution type ('questrade', 'canadalife', 'rogersbank')
+ * @returns {string|null} Last update date in YYYY-MM-DD format or null if not found
+ */
+export function getLastUpdateDate(accountId, institutionType) {
+  let storageKey;
+
+  switch (institutionType) {
+    case 'questrade':
+      storageKey = STORAGE.LAST_DATE_PREFIX + accountId;
+      break;
+    case 'canadalife':
+      storageKey = STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX + accountId;
+      break;
+    case 'rogersbank':
+      storageKey = STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX + accountId;
+      break;
+    default:
+      debugLog(`Unknown institution type: ${institutionType}`);
+      return null;
+  }
+
+  return GM_getValue(storageKey, null);
+}
+
+/**
+ * Calculates the from date for an upload based on last upload date and configurable lookback
+ * @param {string} institutionType - Institution type ('questrade', 'canadalife', 'rogersbank')
+ * @param {string} accountId - Account ID
+ * @returns {string|null} From date in YYYY-MM-DD format, or null if no last upload date exists
+ */
+export function calculateFromDateWithLookback(institutionType, accountId) {
+  const lastUploadDate = getLastUpdateDate(accountId, institutionType);
+  
+  if (!lastUploadDate) {
+    // No previous upload date - caller should handle showing date picker
+    return null;
+  }
+
+  // Get configurable lookback period or use default
+  const lookbackStorageKey = `${institutionType}_lookback_days`;
+  const defaultLookback = getDefaultLookbackDays(institutionType);
+  const lookbackDays = GM_getValue(lookbackStorageKey, defaultLookback);
+  
+  debugLog(`Calculating from date for ${institutionType} account ${accountId}: lastUploadDate=${lastUploadDate}, lookback=${lookbackDays} days`);
+  
+  // Calculate: lastUploadDate - lookbackDays
+  const fromDate = formatDaysBeforeDate(lastUploadDate, lookbackDays);
+  
+  debugLog(`Calculated from date: ${fromDate}`);
+  return fromDate;
+}
+
+/**
+ * Saves the last upload date for an account based on institution type
+ * @param {string} accountId - Account ID
+ * @param {string} uploadDate - Upload date in YYYY-MM-DD format
+ * @param {string} institutionType - Institution type ('questrade', 'canadalife', 'rogersbank')
+ */
+export function saveLastUploadDate(accountId, uploadDate, institutionType) {
+  let storageKey;
+
+  switch (institutionType) {
+    case 'questrade':
+      storageKey = STORAGE.LAST_DATE_PREFIX + accountId;
+      break;
+    case 'canadalife':
+      storageKey = STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX + accountId;
+      break;
+    case 'rogersbank':
+      storageKey = STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX + accountId;
+      break;
+    default:
+      debugLog(`Unknown institution type: ${institutionType}, cannot save last upload date`);
+      return;
+  }
+
+  GM_setValue(storageKey, uploadDate);
+  debugLog(`Saved last upload date ${uploadDate} for ${institutionType} account ${accountId}`);
+}
 /**
  * Extracts domain from a URL
  * @param {string} url - The URL to extract domain from
@@ -517,8 +640,7 @@ export async function clearLastUploadedDate() {
       case 'rogersbank':
         institutionName = 'Rogers Bank';
         keysToDelete.push(...keys.filter((key) => key.startsWith(STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX)
-          || key === STORAGE.ROGERSBANK_FROM_DATE
-          || key === STORAGE.ROGERSBANK_NEXT_SYNC_FROM_DATE));
+          || key === STORAGE.ROGERSBANK_FROM_DATE));
         break;
       default:
         debugLog('Not on a supported financial institution site');
