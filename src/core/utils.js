@@ -31,7 +31,7 @@ export function debugLog(...args) {
 
   // Only log if the message level is at or above the current log level
   if (logLevels[level] >= logLevels[currentLogLevel]) {
-    const prefix = level === 'debug' ? '[Balance Uploader]' : `[Balance Uploader - ${level.toUpperCase()}]`;
+    const prefix = level === 'debug' ? '[Monarch Uploader]' : `[Monarch Uploader - ${level.toUpperCase()}]`;
 
     if (level === 'error') {
       console.error(prefix, ...args);
@@ -156,7 +156,141 @@ export function extractDomain(url) {
 }
 
 /**
- * Calculate similarity between two strings using Levenshtein distance
+ * Semantic keyword groups for category matching
+ * Each group contains related terms that should be considered similar
+ */
+const SEMANTIC_KEYWORDS = {
+  grocery: ['grocery', 'groceries', 'supermarket', 'food', 'market', 'store'],
+  restaurant: ['restaurant', 'restaurants', 'dining', 'eatery', 'food', 'bar', 'bars', 'cafe', 'coffee'],
+  gas: ['gas', 'fuel', 'petroleum', 'station', 'gasoline', 'petrol'],
+  bank: ['bank', 'banking', 'financial', 'atm', 'credit', 'debit'],
+  medical: ['medical', 'health', 'healthcare', 'doctor', 'clinic', 'hospital', 'pharmacy'],
+  shopping: ['shopping', 'retail', 'store', 'mall', 'boutique', 'merchandise'],
+  transport: ['transport', 'transportation', 'travel', 'transit', 'taxi', 'uber', 'lyft'],
+  government: ['government', 'municipal', 'federal', 'tax', 'service', 'public'],
+  entertainment: ['entertainment', 'movie', 'theater', 'game', 'recreation', 'fun'],
+  education: ['education', 'school', 'university', 'college', 'learning', 'academic'],
+};
+
+/**
+ * Common stop words to remove during tokenization
+ */
+const STOP_WORDS = new Set([
+  'and', 'or', 'the', 'a', 'an', 'in', 'on', 'at', 'to', 'for', 'of', 'with',
+  'by', 'from', 'up', 'about', 'into', 'through', 'during', '&', 'plus',
+]);
+
+/**
+ * Common abbreviations and their expansions
+ */
+const ABBREVIATIONS = {
+  st: 'street',
+  ave: 'avenue',
+  blvd: 'boulevard',
+  dr: 'drive',
+  rd: 'road',
+  govt: 'government',
+  gov: 'government',
+  dept: 'department',
+  svcs: 'services',
+  svc: 'service',
+  co: 'company',
+  corp: 'corporation',
+  inc: 'incorporated',
+  ltd: 'limited',
+  llc: 'company',
+};
+
+/**
+ * Normalize and clean a string for comparison
+ * @param {string} str - String to normalize
+ * @returns {string} Normalized string
+ */
+function normalizeString(str) {
+  if (!str) return '';
+
+  return str
+    .toLowerCase()
+    .trim()
+    // Remove special characters and punctuation, keep spaces and alphanumeric
+    .replace(/[^\w\s]/g, ' ')
+    // Normalize whitespace
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Tokenize a string into words with preprocessing
+ * @param {string} str - String to tokenize
+ * @returns {Array<string>} Array of processed word tokens
+ */
+function tokenizeString(str) {
+  if (!str) return [];
+
+  const normalized = normalizeString(str);
+
+  // Split into words
+  let words = normalized.split(/\s+/).filter((word) => word.length > 0);
+
+  // Expand abbreviations
+  words = words.map((word) => ABBREVIATIONS[word] || word);
+
+  // Remove stop words
+  words = words.filter((word) => !STOP_WORDS.has(word));
+
+  // Apply simple stemming for common plurals
+  words = words.map((word) => {
+    if (word.endsWith('ies') && word.length > 4) {
+      return `${word.slice(0, -3)}y`; // groceries -> grocery
+    }
+    if (word.endsWith('s') && word.length > 3 && !word.endsWith('ss')) {
+      return word.slice(0, -1); // stores -> store, but not 'business' -> 'busines'
+    }
+    return word;
+  });
+
+  return words.filter((word) => word.length > 1); // Remove single character words
+}
+
+/**
+ * Expand word tokens with semantic synonyms
+ * @param {Array<string>} words - Word tokens to expand
+ * @returns {Set<string>} Expanded set of words including synonyms
+ */
+function expandWithSynonyms(words) {
+  const expandedWords = new Set(words);
+
+  // For each word, check if it belongs to any semantic group
+  words.forEach((word) => {
+    Object.entries(SEMANTIC_KEYWORDS).forEach(([, synonyms]) => {
+      if (synonyms.includes(word)) {
+        // Add all synonyms from this group
+        synonyms.forEach((synonym) => expandedWords.add(synonym));
+      }
+    });
+  });
+
+  return expandedWords;
+}
+
+/**
+ * Calculate Jaccard similarity between two sets
+ * @param {Set} set1 - First set
+ * @param {Set} set2 - Second set
+ * @returns {number} Jaccard similarity coefficient (0-1)
+ */
+function calculateJaccardSimilarity(set1, set2) {
+  if (set1.size === 0 && set2.size === 0) return 1;
+  if (set1.size === 0 || set2.size === 0) return 0;
+
+  const intersection = new Set([...set1].filter((x) => set2.has(x)));
+  const union = new Set([...set1, ...set2]);
+
+  return intersection.size / union.size;
+}
+
+/**
+ * Calculate enhanced similarity between two strings using Jaccard similarity with semantic expansion
  * Returns a score from 0 (no similarity) to 1 (identical)
  * @param {string} str1 - First string
  * @param {string} str2 - Second string
@@ -166,52 +300,61 @@ export function stringSimilarity(str1, str2) {
   if (!str1 && !str2) return 1; // Both empty = identical
   if (!str1 || !str2) return 0; // One empty = no similarity
 
-  // Convert both to lowercase for case-insensitive comparison
-  str1 = str1.toLowerCase().trim();
-  str2 = str2.toLowerCase().trim();
+  // Quick exact match check after normalization
+  const norm1 = normalizeString(str1);
+  const norm2 = normalizeString(str2);
+  if (norm1 === norm2) return 1;
 
-  // If exact match
-  if (str1 === str2) return 1;
+  // Tokenize both strings
+  const words1 = tokenizeString(str1);
+  const words2 = tokenizeString(str2);
 
-  // Calculate Levenshtein distance
-  const len1 = str1.length;
-  const len2 = str2.length;
+  // If either has no meaningful words after processing, return 0
+  if (words1.length === 0 || words2.length === 0) return 0;
 
-  // If one string is much longer than the other, similarity is inherently low
-  const lengthRatio = Math.min(len1, len2) / Math.max(len1, len2);
-  if (lengthRatio < 0.3) return 0; // Very different lengths = likely unrelated
+  // Calculate base Jaccard similarity with original words
+  const baseSet1 = new Set(words1);
+  const baseSet2 = new Set(words2);
+  const baseSimilarity = calculateJaccardSimilarity(baseSet1, baseSet2);
 
-  // Create distance matrix
-  const matrix = Array(len1 + 1).fill().map(() => Array(len2 + 1).fill(0));
+  // Calculate enhanced similarity with semantic expansion
+  const expandedSet1 = expandWithSynonyms(words1);
+  const expandedSet2 = expandWithSynonyms(words2);
+  const expandedSimilarity = calculateJaccardSimilarity(expandedSet1, expandedSet2);
 
-  // Initialize first row and column
-  for (let i = 0; i <= len1; i += 1) matrix[i][0] = i;
-  for (let j = 0; j <= len2; j += 1) matrix[0][j] = j;
+  // Use the higher of the two similarities, but give preference to exact word matches
+  // If we have exact word matches, weight them more heavily
+  const exactWordMatches = [...baseSet1].filter((word) => baseSet2.has(word)).length;
+  const hasExactMatches = exactWordMatches > 0;
 
-  // Fill the matrix
-  for (let i = 1; i <= len1; i += 1) {
-    for (let j = 1; j <= len2; j += 1) {
-      const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
-      matrix[i][j] = Math.min(
-        matrix[i - 1][j] + 1, // deletion
-        matrix[i][j - 1] + 1, // insertion
-        matrix[i - 1][j - 1] + cost, // substitution
-      );
+  let finalSimilarity;
+  if (hasExactMatches) {
+    // If we have exact word matches, prioritize base similarity but boost with semantic expansion
+    finalSimilarity = Math.max(baseSimilarity, expandedSimilarity * 0.8);
+
+    // Apply significant boost for exact matches
+    const matchRatio = exactWordMatches / Math.min(baseSet1.size, baseSet2.size);
+    finalSimilarity = Math.min(1, finalSimilarity + (matchRatio * 0.3));
+  } else {
+    // No exact matches, rely primarily on semantic expansion
+    finalSimilarity = expandedSimilarity;
+
+    // Apply a moderate boost if semantic expansion found good matches
+    if (expandedSimilarity > 0.5) {
+      finalSimilarity = Math.min(1, finalSimilarity * 1.2);
     }
   }
 
-  // The last cell contains the Levenshtein distance
-  const distance = matrix[len1][len2];
+  debugLog(`Similarity calculation for "${str1}" vs "${str2}":`, {
+    words1,
+    words2,
+    baseSimilarity: baseSimilarity.toFixed(3),
+    expandedSimilarity: expandedSimilarity.toFixed(3),
+    exactWordMatches,
+    finalSimilarity: finalSimilarity.toFixed(3),
+  });
 
-  // Convert to a similarity score between 0 and 1
-  const maxLen = Math.max(len1, len2);
-  if (maxLen === 0) return 1; // Handle edge case of empty strings
-
-  const rawSimilarity = 1 - distance / maxLen;
-
-  // Apply a stricter threshold - only high similarities should pass
-  // This helps prevent false matches between unrelated categories
-  return rawSimilarity > 0.6 ? rawSimilarity : rawSimilarity * 0.5;
+  return Math.min(1, Math.max(0, finalSimilarity));
 }
 
 /**

@@ -213,6 +213,98 @@ export function getAllSavedCategoryMappings() {
 }
 
 /**
+ * Calculate comprehensive similarity data for all categories and groups
+ * @param {string} bankCategory - Bank category to match against
+ * @param {Array} availableCategories - Available Monarch categories
+ * @returns {Object} Comprehensive similarity data structure
+ */
+export function calculateAllCategorySimilarities(bankCategory, availableCategories = []) {
+  if (!bankCategory || !availableCategories || availableCategories.length === 0) {
+    return {
+      bankCategory,
+      categoryGroups: [],
+      totalCategories: 0,
+    };
+  }
+
+  debugLog('Calculating similarities for all categories against:', bankCategory);
+
+  // Group categories by their group and calculate similarities
+  const categoriesByGroup = {};
+  const categoryScores = new Map();
+
+  availableCategories.forEach((category) => {
+    if (!category.isDisabled && category.group) {
+      const groupId = category.group.id;
+      if (!categoriesByGroup[groupId]) {
+        categoriesByGroup[groupId] = {
+          group: category.group,
+          categories: [],
+        };
+      }
+
+      // Calculate similarity score for this category
+      const similarityScore = stringSimilarity(bankCategory.toLowerCase().trim(), category.name.toLowerCase());
+      categoryScores.set(category.id, similarityScore);
+
+      // Add category with its score
+      categoriesByGroup[groupId].categories.push({
+        ...category,
+        similarityScore,
+      });
+    }
+  });
+
+  // Calculate max similarity for each group and structure the data
+  const categoryGroups = Object.values(categoriesByGroup)
+    .map((groupData) => {
+      // Sort categories within group by similarity score (descending)
+      const sortedCategories = groupData.categories
+        .sort((a, b) => {
+          if (b.similarityScore !== a.similarityScore) {
+            return b.similarityScore - a.similarityScore;
+          }
+          // Fall back to original sorting
+          if (a.order !== b.order) {
+            return a.order - b.order;
+          }
+          return a.name.localeCompare(b.name);
+        });
+
+      // Calculate max similarity score for the group
+      const maxSimilarityScore = sortedCategories.length > 0
+        ? Math.max(...sortedCategories.map((cat) => cat.similarityScore))
+        : 0;
+
+      return {
+        ...groupData.group,
+        categories: sortedCategories,
+        categoryCount: sortedCategories.length,
+        maxSimilarityScore,
+      };
+    })
+    .filter((group) => group.categoryCount > 0)
+    .sort((a, b) => {
+      // Sort groups by max similarity score (descending)
+      if (b.maxSimilarityScore !== a.maxSimilarityScore) {
+        return b.maxSimilarityScore - a.maxSimilarityScore;
+      }
+      // Fall back to original sorting
+      return a.order - b.order;
+    });
+
+  const totalCategories = categoryGroups.reduce((sum, group) => sum + group.categoryCount, 0);
+
+  debugLog(`Calculated similarities for ${totalCategories} categories across ${categoryGroups.length} groups`);
+
+  return {
+    bankCategory,
+    categoryGroups,
+    totalCategories,
+  };
+}
+
+/**
  * Batch apply category mappings to multiple transactions
  * @param {Array} transactions - Array of transaction objects
  * @param {Array} availableCategories - Available Monarch categories to match against
@@ -242,4 +334,5 @@ export default {
   saveUserCategorySelection,
   clearSavedCategoryMappings,
   getAllSavedCategoryMappings,
+  calculateAllCategorySimilarities,
 };

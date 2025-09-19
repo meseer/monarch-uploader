@@ -93,47 +93,58 @@ export function createCategorySelector({
  * Show sophisticated Monarch category selector with group-based selection
  * @param {string} bankCategory - Bank category name being mapped
  * @param {Function} callback - Callback function to receive selected category
- * @param {Object} similarityInfo - Optional similarity information to display
+ * @param {Object} similarityInfo - Optional comprehensive similarity data
  * @returns {Promise} Promise that resolves when selection is complete
  */
 export async function showMonarchCategorySelector(bankCategory, callback, similarityInfo = null) {
   debugLog('Starting category selector for bank category:', bankCategory);
 
   try {
-    // Fetch categories and category groups from Monarch
-    debugLog('Fetching category data from Monarch');
-    const categoryData = await monarchApi.getCategoriesAndGroups();
+    let groupsWithCategories = [];
 
-    const categoryGroups = categoryData.categoryGroups || [];
-    const categories = categoryData.categories || [];
+    // If we have pre-calculated similarity data, use it directly
+    if (similarityInfo && similarityInfo.categoryGroups && similarityInfo.categoryGroups.length > 0) {
+      debugLog('Using pre-calculated similarity data for category selection');
+      groupsWithCategories = similarityInfo.categoryGroups;
+    } else {
+      // Fallback to original behavior if no similarity data provided
+      debugLog('No similarity data provided, falling back to original behavior');
 
-    if (!categoryGroups.length && !categories.length) {
-      toast.show('No categories found in Monarch', 'error');
-      callback(null);
-      return;
-    }
+      // Fetch categories and category groups from Monarch
+      debugLog('Fetching category data from Monarch');
+      const categoryData = await monarchApi.getCategoriesAndGroups();
 
-    // Group categories by their group
-    const categoriesByGroup = {};
-    categories.forEach((category) => {
-      if (!category.isDisabled && category.group) {
-        const groupId = category.group.id;
-        if (!categoriesByGroup[groupId]) {
-          categoriesByGroup[groupId] = [];
-        }
-        categoriesByGroup[groupId].push(category);
+      const categoryGroups = categoryData.categoryGroups || [];
+      const categories = categoryData.categories || [];
+
+      if (!categoryGroups.length && !categories.length) {
+        toast.show('No categories found in Monarch', 'error');
+        callback(null);
+        return;
       }
-    });
 
-    // Create group list with category counts
-    const groupsWithCategories = categoryGroups
-      .map((group) => ({
-        ...group,
-        categories: categoriesByGroup[group.id] || [],
-        categoryCount: (categoriesByGroup[group.id] || []).length,
-      }))
-      .filter((group) => group.categoryCount > 0)
-      .sort((a, b) => a.order - b.order);
+      // Group categories by their group
+      const categoriesByGroup = {};
+      categories.forEach((category) => {
+        if (!category.isDisabled && category.group) {
+          const groupId = category.group.id;
+          if (!categoriesByGroup[groupId]) {
+            categoriesByGroup[groupId] = [];
+          }
+          categoriesByGroup[groupId].push(category);
+        }
+      });
+
+      // Create group list with category counts (no similarity sorting)
+      groupsWithCategories = categoryGroups
+        .map((group) => ({
+          ...group,
+          categories: categoriesByGroup[group.id] || [],
+          categoryCount: (categoriesByGroup[group.id] || []).length,
+        }))
+        .filter((group) => group.categoryCount > 0)
+        .sort((a, b) => a.order - b.order);
+    }
 
     if (!groupsWithCategories.length) {
       toast.show('No valid category groups found', 'error');
@@ -145,6 +156,7 @@ export async function showMonarchCategorySelector(bankCategory, callback, simila
     debugLog('Showing category group selector with', {
       groupCount: groupsWithCategories.length,
       bankCategory,
+      hasSimilarityData: !!similarityInfo,
     });
 
     showCategoryGroupSelector(groupsWithCategories, bankCategory, callback, similarityInfo);
@@ -281,6 +293,22 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
     countDiv.textContent = `${group.categoryCount} categories`;
     infoDiv.appendChild(countDiv);
 
+    // Add similarity score if available
+    if (typeof group.maxSimilarityScore === 'number') {
+      const scorePercent = Math.round(group.maxSimilarityScore * 100);
+      let scoreColor = '#e74c3c'; // Red for low scores
+      if (group.maxSimilarityScore > 0.95) {
+        scoreColor = '#27ae60'; // Green for high scores
+      } else if (group.maxSimilarityScore > 0.7) {
+        scoreColor = '#f39c12'; // Orange for medium scores
+      }
+
+      const scoreDiv = document.createElement('div');
+      scoreDiv.style.cssText = `font-size: 0.85em; font-weight: bold; color: ${scoreColor};`;
+      scoreDiv.textContent = `${scorePercent}% match`;
+      infoDiv.appendChild(scoreDiv);
+    }
+
     item.appendChild(infoDiv);
 
     // Add right arrow icon
@@ -393,11 +421,21 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
     return;
   }
 
-  // Sort categories by order, then by name
+  // Sort categories by similarity score (if available), then by order, then by name
   const sortedCategories = [...categories].sort((a, b) => {
+    // Primary sort: similarity score (highest first) - if both have similarity scores
+    if (typeof a.similarityScore === 'number' && typeof b.similarityScore === 'number') {
+      if (b.similarityScore !== a.similarityScore) {
+        return b.similarityScore - a.similarityScore;
+      }
+    }
+
+    // Secondary sort: category order
     if (a.order !== b.order) {
       return a.order - b.order;
     }
+
+    // Tertiary sort: category name alphabetically
     return a.name.localeCompare(b.name);
   });
 
@@ -518,6 +556,22 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
       systemDiv.style.cssText = 'font-size: 0.8em; color: #888;';
       systemDiv.textContent = 'System category';
       textContainer.appendChild(systemDiv);
+    }
+
+    // Add similarity score if available
+    if (typeof category.similarityScore === 'number') {
+      const scorePercent = Math.round(category.similarityScore * 100);
+      let scoreColor = '#e74c3c'; // Red for low scores
+      if (category.similarityScore > 0.95) {
+        scoreColor = '#27ae60'; // Green for high scores
+      } else if (category.similarityScore > 0.7) {
+        scoreColor = '#f39c12'; // Orange for medium scores
+      }
+
+      const scoreDiv = document.createElement('div');
+      scoreDiv.style.cssText = `font-size: 0.8em; font-weight: bold; color: ${scoreColor};`;
+      scoreDiv.textContent = `${scorePercent}% match`;
+      textContainer.appendChild(scoreDiv);
     }
 
     item.appendChild(textContainer);

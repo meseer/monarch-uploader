@@ -8,6 +8,59 @@ import { STORAGE } from '../../core/config';
 import toast from '../toast';
 
 /**
+ * Gets institution logo from stored account mappings
+ * @param {string} storagePrefix - Storage prefix for account mappings
+ * @param {string} institutionName - Institution name for fallback
+ * @returns {HTMLElement} Logo element (img or fallback)
+ */
+function getInstitutionLogo(storagePrefix, institutionName) {
+  const allKeys = GM_listValues();
+
+  // Look for stored account mappings with this prefix
+  for (const key of allKeys) {
+    if (key.startsWith(storagePrefix)) {
+      try {
+        const accountData = GM_getValue(key, '');
+        const parsedAccount = JSON.parse(accountData);
+
+        // Check if this account has a logoUrl
+        if (parsedAccount && parsedAccount.logoUrl) {
+          const logoContainer = document.createElement('div');
+          logoContainer.style.cssText = 'display: inline-flex; margin-right: 6px;';
+          GM_addElement(logoContainer, 'img', {
+            src: parsedAccount.logoUrl,
+            style: 'width: 16px; height: 16px; border-radius: 3px; object-fit: contain;',
+          });
+          return logoContainer;
+        }
+      } catch (error) {
+        debugLog('Error parsing account data for logo:', error);
+        continue;
+      }
+    }
+  }
+
+  // No logo found - create letter fallback
+  const logoFallback = document.createElement('div');
+  logoFallback.style.cssText = `
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    background-color: #e0e0e0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: #666;
+    font-weight: bold;
+    margin-right: 6px;
+  `;
+  const firstChar = institutionName ? institutionName.charAt(0).toUpperCase() : '?';
+  logoFallback.textContent = firstChar;
+  return logoFallback;
+}
+
+/**
  * Creates the settings modal
  * @returns {HTMLElement} Modal element
  */
@@ -102,12 +155,36 @@ export function createSettingsModal() {
     overflow-y: auto;
   `;
 
-  // Define tabs
+  // Define tabs with institution mapping for dynamic logos
   const tabs = [
-    { id: 'general', label: 'General', icon: '⚙️' },
-    { id: 'questrade', label: 'Questrade', icon: '💼' },
-    { id: 'canadalife', label: 'CanadaLife', icon: '🏛️' },
-    { id: 'rogersbank', label: 'Rogers Bank', icon: '🏦' },
+    {
+      id: 'general',
+      label: 'General',
+      fallbackIcon: '⚙️',
+      storagePrefix: null,
+      institutionName: null,
+    },
+    {
+      id: 'questrade',
+      label: 'Questrade',
+      fallbackIcon: '💼',
+      storagePrefix: STORAGE.ACCOUNT_MAPPING_PREFIX,
+      institutionName: 'Questrade',
+    },
+    {
+      id: 'canadalife',
+      label: 'CanadaLife',
+      fallbackIcon: '🏛️',
+      storagePrefix: STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX,
+      institutionName: 'Canada Life',
+    },
+    {
+      id: 'rogersbank',
+      label: 'Rogers Bank',
+      fallbackIcon: '🏦',
+      storagePrefix: STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX,
+      institutionName: 'Rogers Bank',
+    },
   ];
 
   let activeTab = 'general';
@@ -116,7 +193,29 @@ export function createSettingsModal() {
   tabs.forEach((tab) => {
     const tabButton = document.createElement('button');
     tabButton.className = `settings-tab-button ${tab.id === activeTab ? 'active' : ''}`;
-    tabButton.innerHTML = `${tab.icon} ${tab.label}`;
+
+    // Create button content with dynamic logo or fallback icon
+    const buttonContent = document.createElement('div');
+    buttonContent.style.cssText = 'display: flex; align-items: center;';
+
+    if (tab.storagePrefix && tab.institutionName) {
+      // Get institution logo from stored mappings
+      const logoElement = getInstitutionLogo(tab.storagePrefix, tab.institutionName);
+      buttonContent.appendChild(logoElement);
+    } else {
+      // Use fallback emoji for general tab
+      const iconSpan = document.createElement('span');
+      iconSpan.textContent = tab.fallbackIcon;
+      iconSpan.style.cssText = 'margin-right: 6px;';
+      buttonContent.appendChild(iconSpan);
+    }
+
+    // Add label text
+    const labelSpan = document.createElement('span');
+    labelSpan.textContent = tab.label;
+    buttonContent.appendChild(labelSpan);
+
+    tabButton.appendChild(buttonContent);
     tabButton.style.cssText = `
       background: none;
       border: none;
@@ -281,25 +380,14 @@ function renderQuestradeTab(container) {
   // Account Mappings Section
   const mappingsSection = createSection('Account Mappings', '🔗', 'Questrade to Monarch account mappings');
   const mappingsData = getStorageData(STORAGE.ACCOUNT_MAPPING_PREFIX);
-  const mappingsTable = createDataTable(['Questrade Account', 'Monarch Account', 'Actions'], mappingsData, (key) => {
+  const mappingsCards = createAccountMappingCards(mappingsData, (key) => {
     GM_deleteValue(key);
     toast.show('Account mapping deleted', 'success');
     renderQuestradeTab(container);
-  });
-  mappingsSection.appendChild(mappingsTable);
-
-  // Last Sync Dates Section
-  const syncSection = createSection('Last Sync Dates', '📅', 'Last download dates for accounts');
-  const syncData = getStorageData(STORAGE.LAST_DATE_PREFIX);
-  const syncTable = createDataTable(['Account ID', 'Last Download Date', 'Actions'], syncData, (key) => {
-    GM_deleteValue(key);
-    toast.show('Last sync date cleared', 'success');
-    renderQuestradeTab(container);
-  });
-  syncSection.appendChild(syncTable);
+  }, 'Questrade', 'questrade');
+  mappingsSection.appendChild(mappingsCards);
 
   container.appendChild(mappingsSection);
-  container.appendChild(syncSection);
 }
 
 /**
@@ -310,25 +398,14 @@ function renderCanadaLifeTab(container) {
   // Account Mappings Section
   const mappingsSection = createSection('Account Mappings', '🔗', 'CanadaLife to Monarch account mappings');
   const mappingsData = getStorageData(STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX);
-  const mappingsTable = createDataTable(['CanadaLife Account', 'Monarch Account', 'Actions'], mappingsData, (key) => {
+  const mappingsCards = createAccountMappingCards(mappingsData, (key) => {
     GM_deleteValue(key);
     toast.show('Account mapping deleted', 'success');
     renderCanadaLifeTab(container);
-  });
-  mappingsSection.appendChild(mappingsTable);
-
-  // Last Upload Dates Section
-  const uploadSection = createSection('Last Upload Dates', '📅', 'Last upload dates for accounts');
-  const uploadData = getStorageData(STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX);
-  const uploadTable = createDataTable(['Account ID', 'Last Upload Date', 'Actions'], uploadData, (key) => {
-    GM_deleteValue(key);
-    toast.show('Last upload date cleared', 'success');
-    renderCanadaLifeTab(container);
-  });
-  uploadSection.appendChild(uploadTable);
+  }, 'Canada Life', 'canadalife');
+  mappingsSection.appendChild(mappingsCards);
 
   container.appendChild(mappingsSection);
-  container.appendChild(uploadSection);
 }
 
 /**
@@ -339,22 +416,12 @@ function renderRogersBankTab(container) {
   // Account Mappings Section
   const mappingsSection = createSection('Account Mappings', '🔗', 'Rogers Bank to Monarch account mappings');
   const mappingsData = getStorageData(STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX);
-  const mappingsTable = createDataTable(['Rogers Account', 'Monarch Account', 'Actions'], mappingsData, (key) => {
+  const mappingsCards = createAccountMappingCards(mappingsData, (key) => {
     GM_deleteValue(key);
     toast.show('Account mapping deleted', 'success');
     renderRogersBankTab(container);
-  });
-  mappingsSection.appendChild(mappingsTable);
-
-  // Last Upload Dates Section
-  const uploadSection = createSection('Last Upload Dates', '📅', 'Last upload dates for accounts');
-  const uploadData = getStorageData(STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX);
-  const uploadTable = createDataTable(['Account ID', 'Last Upload Date', 'Actions'], uploadData, (key) => {
-    GM_deleteValue(key);
-    toast.show('Last upload date cleared', 'success');
-    renderRogersBankTab(container);
-  });
-  uploadSection.appendChild(uploadTable);
+  }, 'Rogers Bank', 'rogersbank');
+  mappingsSection.appendChild(mappingsCards);
 
   // Uploaded Transactions Section
   const transactionsSection = createSection('Uploaded Transactions', '📋', 'Individual transaction references that have been uploaded');
@@ -393,7 +460,6 @@ function renderRogersBankTab(container) {
   categorySection.appendChild(categoryTable);
 
   container.appendChild(mappingsSection);
-  container.appendChild(uploadSection);
   container.appendChild(transactionsSection);
   container.appendChild(categorySection);
 }
@@ -523,6 +589,358 @@ function showConfirmDialog(message) {
 
     document.body.appendChild(modal);
   });
+}
+
+/**
+ * Adds a logo fallback (first letter) to a container for account cards
+ * @param {HTMLElement} container - Container to add logo to
+ * @param {string} institutionName - Institution name for fallback
+ */
+function addAccountLogoFallback(container, institutionName) {
+  const logoFallback = document.createElement('div');
+  logoFallback.style.cssText = `
+    width: 40px;
+    height: 40px;
+    border-radius: 5px;
+    background-color: #e0e0e0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    color: #666;
+    font-weight: bold;
+  `;
+  const firstChar = institutionName ? institutionName.charAt(0).toUpperCase() : '?';
+  logoFallback.textContent = firstChar;
+  container.appendChild(logoFallback);
+}
+
+/**
+ * Gets the last update date for an account based on institution type
+ * @param {string} displayKey - Account display key (without prefix)
+ * @param {string} institutionType - Type of institution ('questrade', 'canadalife', 'rogersbank')
+ * @returns {string|null} Last update date or null if not found
+ */
+function getLastUpdateDate(displayKey, institutionType) {
+  let storageKey;
+
+  switch (institutionType) {
+    case 'questrade':
+      storageKey = STORAGE.LAST_DATE_PREFIX + displayKey;
+      break;
+    case 'canadalife':
+      storageKey = STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX + displayKey;
+      break;
+    case 'rogersbank':
+      storageKey = STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX + displayKey;
+      break;
+    default:
+      return null;
+  }
+
+  return GM_getValue(storageKey, null);
+}
+
+/**
+ * Clears the last update date for an account based on institution type
+ * @param {string} displayKey - Account display key (without prefix)
+ * @param {string} institutionType - Type of institution ('questrade', 'canadalife', 'rogersbank')
+ * @param {Function} onClear - Callback function to execute after clearing
+ */
+function clearLastUpdateDate(displayKey, institutionType, onClear) {
+  let storageKey;
+
+  switch (institutionType) {
+    case 'questrade':
+      storageKey = STORAGE.LAST_DATE_PREFIX + displayKey;
+      break;
+    case 'canadalife':
+      storageKey = STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX + displayKey;
+      break;
+    case 'rogersbank':
+      storageKey = STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX + displayKey;
+      break;
+    default:
+      return;
+  }
+
+  GM_deleteValue(storageKey);
+  toast.show('Last update date cleared', 'success');
+  if (onClear) onClear();
+}
+
+/**
+ * Formats a date for display
+ * @param {string} dateValue - Date value to format
+ * @returns {string} Formatted date string
+ */
+function formatLastUpdateDate(dateValue) {
+  if (!dateValue) return 'Never';
+
+  try {
+    const date = new Date(dateValue);
+    if (Number.isNaN(date.getTime())) return 'Invalid date';
+
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  } catch (error) {
+    return 'Invalid date';
+  }
+}
+
+/**
+ * Creates account mapping cards (for Monarch account mappings)
+ * @param {Array} data - Array of [key, displayKey, value] tuples
+ * @param {Function} onDelete - Delete handler
+ * @param {string} institutionName - Institution name for logo fallback
+ * @param {string} institutionType - Type of institution for last update date lookup
+ * @returns {HTMLElement} Cards container element
+ */
+function createAccountMappingCards(data, onDelete, institutionName, institutionType) {
+  if (data.length === 0) {
+    const emptyMessage = document.createElement('p');
+    emptyMessage.textContent = 'No account mappings found.';
+    emptyMessage.style.cssText = 'color: #666; font-style: italic; margin: 10px 0;';
+    return emptyMessage;
+  }
+
+  const container = document.createElement('div');
+  container.style.cssText = 'margin: 10px 0;';
+
+  data.forEach(([key, displayKey, value]) => {
+    let accountData = null;
+    try {
+      accountData = JSON.parse(value);
+    } catch (error) {
+      debugLog('Error parsing account data:', error);
+      return; // Skip invalid entries
+    }
+
+    // Create card container
+    const card = document.createElement('div');
+    card.style.cssText = `
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      margin-bottom: 15px;
+      overflow: hidden;
+      transition: all 0.2s;
+    `;
+
+    // Create card header (always visible)
+    const cardHeader = document.createElement('div');
+    cardHeader.style.cssText = `
+      display: flex;
+      align-items: center;
+      padding: 15px;
+      background-color: #fff;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    `;
+
+    // Logo container
+    const logoContainer = document.createElement('div');
+    logoContainer.style.cssText = 'margin-right: 15px; flex-shrink: 0;';
+
+    // Use account logo or fallback
+    if (accountData.logoUrl) {
+      try {
+        GM_addElement(logoContainer, 'img', {
+          src: accountData.logoUrl,
+          style: 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;',
+        });
+      } catch (error) {
+        // Add letter fallback if logo fails
+        addAccountLogoFallback(logoContainer, institutionName);
+      }
+    } else {
+      // Add letter fallback
+      addAccountLogoFallback(logoContainer, institutionName);
+    }
+    cardHeader.appendChild(logoContainer);
+
+    // Account info section
+    const infoContainer = document.createElement('div');
+    infoContainer.style.cssText = 'flex-grow: 1;';
+
+    // Account name
+    const nameDiv = document.createElement('div');
+    nameDiv.style.cssText = 'font-weight: bold; font-size: 1.1em; margin-bottom: 2px;';
+    nameDiv.textContent = accountData.displayName || 'Unknown Account';
+    infoContainer.appendChild(nameDiv);
+
+    // Account subtype
+    if (accountData.subtype?.display) {
+      const subtypeDiv = document.createElement('div');
+      subtypeDiv.style.cssText = 'font-size: 0.9em; color: #666; margin-bottom: 2px;';
+      subtypeDiv.textContent = accountData.subtype.display;
+      infoContainer.appendChild(subtypeDiv);
+    }
+
+    // Account balance (if available)
+    if (accountData.currentBalance !== undefined) {
+      const balanceDiv = document.createElement('div');
+      balanceDiv.style.cssText = 'font-size: 0.85em; color: #555;';
+      balanceDiv.textContent = `Balance: ${new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+      }).format(accountData.currentBalance)}`;
+      infoContainer.appendChild(balanceDiv);
+    }
+
+    // Last update date (if available and institution type provided)
+    if (institutionType) {
+      const lastUpdateDate = getLastUpdateDate(displayKey, institutionType);
+      const lastUpdateDiv = document.createElement('div');
+      lastUpdateDiv.style.cssText = 'font-size: 0.8em; color: #555; margin-bottom: 2px; display: flex; align-items: center; gap: 8px;';
+
+      const dateText = document.createElement('span');
+      dateText.textContent = `Last Updated: ${formatLastUpdateDate(lastUpdateDate)}`;
+      lastUpdateDiv.appendChild(dateText);
+
+      // Add clear button if date exists
+      if (lastUpdateDate) {
+        const clearButton = document.createElement('button');
+        clearButton.textContent = 'Clear';
+        clearButton.style.cssText = `
+          background: #6c757d;
+          color: white;
+          border: none;
+          border-radius: 3px;
+          padding: 2px 6px;
+          font-size: 10px;
+          cursor: pointer;
+          transition: background-color 0.2s;
+        `;
+        clearButton.addEventListener('click', (e) => {
+          e.stopPropagation(); // Prevent card toggle
+          clearLastUpdateDate(displayKey, institutionType, () => {
+            // Refresh the current tab
+            const tabContainer = document.querySelector('.settings-tab-content');
+            if (tabContainer) {
+              renderTabContent(tabContainer, institutionType);
+            }
+          });
+        });
+        clearButton.addEventListener('mouseover', () => {
+          clearButton.style.backgroundColor = '#5a6268';
+        });
+        clearButton.addEventListener('mouseout', () => {
+          clearButton.style.backgroundColor = '#6c757d';
+        });
+        lastUpdateDiv.appendChild(clearButton);
+      }
+
+      infoContainer.appendChild(lastUpdateDiv);
+    }
+
+    // Mapping info (institution account name)
+    const mappingDiv = document.createElement('div');
+    mappingDiv.style.cssText = 'font-size: 0.8em; color: #888; margin-top: 5px;';
+    mappingDiv.textContent = `Mapped from: ${displayKey}`;
+    infoContainer.appendChild(mappingDiv);
+
+    cardHeader.appendChild(infoContainer);
+
+    // Expand/collapse icon
+    const expandIcon = document.createElement('div');
+    expandIcon.style.cssText = `
+      margin-left: 15px;
+      font-size: 1.2em;
+      color: #666;
+      transition: transform 0.2s;
+      cursor: pointer;
+    `;
+    expandIcon.textContent = '▼';
+    cardHeader.appendChild(expandIcon);
+
+    // Delete button
+    const deleteButton = document.createElement('button');
+    deleteButton.textContent = '✕';
+    deleteButton.style.cssText = `
+      margin-left: 10px;
+      background: #dc3545;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+      cursor: pointer;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background-color 0.2s;
+    `;
+    deleteButton.addEventListener('click', async (e) => {
+      e.stopPropagation(); // Prevent card toggle
+      const confirmed = await showConfirmDialog(
+        `Are you sure you want to delete the mapping for "${displayKey}"?\n\nThis will unlink the account from Monarch.`
+      );
+      if (confirmed) {
+        onDelete(key);
+      }
+    });
+    deleteButton.addEventListener('mouseover', () => {
+      deleteButton.style.backgroundColor = '#c82333';
+    });
+    deleteButton.addEventListener('mouseout', () => {
+      deleteButton.style.backgroundColor = '#dc3545';
+    });
+    cardHeader.appendChild(deleteButton);
+
+    // Expandable content (JSON display)
+    const expandableContent = document.createElement('div');
+    expandableContent.style.cssText = 'display: none; padding: 15px; background-color: #f8f9fa; border-top: 1px solid #e0e0e0;';
+
+    const jsonContainer = document.createElement('pre');
+    jsonContainer.style.cssText = `
+      background-color: #2d3748;
+      color: #e2e8f0;
+      padding: 12px;
+      border-radius: 4px;
+      font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+      font-size: 12px;
+      line-height: 1.4;
+      overflow-x: auto;
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+    `;
+    jsonContainer.textContent = JSON.stringify(accountData, null, 2);
+    expandableContent.appendChild(jsonContainer);
+
+    card.appendChild(cardHeader);
+    card.appendChild(expandableContent);
+
+    // Toggle functionality
+    let isExpanded = false;
+    const toggleCard = () => {
+      isExpanded = !isExpanded;
+      expandableContent.style.display = isExpanded ? 'block' : 'none';
+      expandIcon.style.transform = isExpanded ? 'rotate(180deg)' : 'rotate(0deg)';
+    };
+
+    cardHeader.addEventListener('click', (e) => {
+      // Don't toggle if delete button was clicked
+      if (e.target === deleteButton) return;
+      toggleCard();
+    });
+
+    // Hover effects
+    cardHeader.addEventListener('mouseover', () => {
+      cardHeader.style.backgroundColor = '#f8f9fa';
+    });
+    cardHeader.addEventListener('mouseout', () => {
+      cardHeader.style.backgroundColor = '#fff';
+    });
+
+    container.appendChild(card);
+  });
+
+  return container;
 }
 
 /**
@@ -688,7 +1106,7 @@ function createTransactionsManagementTable() {
   }
 
   // Create accordion-style display for each account
-  transactionAccounts.forEach((account, index) => {
+  transactionAccounts.forEach((account) => {
     const accountSection = document.createElement('div');
     accountSection.style.cssText = `
       border: 1px solid #e0e0e0;

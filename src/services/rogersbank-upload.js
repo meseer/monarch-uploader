@@ -11,7 +11,7 @@ import monarchApi from '../api/monarch';
 import { showMonarchAccountSelector } from '../ui/components/accountSelector';
 import { convertTransactionsToMonarchCSV } from '../utils/csv';
 import { showDatePickerPromise } from '../ui/components/datePicker';
-import { applyCategoryMapping, saveUserCategorySelection } from '../mappers/category';
+import { applyCategoryMapping, saveUserCategorySelection, calculateAllCategorySimilarities } from '../mappers/category';
 import { showMonarchCategorySelector } from '../ui/components/categorySelector';
 import { showProgressDialog } from '../ui/components/progressDialog';
 
@@ -221,9 +221,12 @@ async function resolveCategoriesForTransactions(transactions) {
       // Show progress in toast
       toast.show(`Selecting category ${i + 1} of ${categoriesToResolve.length}: "${categoryToResolve.bankCategory}"`, 'info');
 
+      // Calculate comprehensive similarity data for the UI
+      const similarityData = calculateAllCategorySimilarities(categoryToResolve.bankCategory, availableCategories);
+
       // Show the category selector and wait for user selection
       const selectedCategory = await new Promise((resolve) => {
-        showMonarchCategorySelector(categoryToResolve.bankCategory, resolve);
+        showMonarchCategorySelector(categoryToResolve.bankCategory, resolve, similarityData);
       });
 
       if (!selectedCategory) {
