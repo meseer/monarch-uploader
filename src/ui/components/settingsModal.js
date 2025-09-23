@@ -212,14 +212,9 @@ export function createSettingsModal() {
       const logoContainer = document.createElement('div');
       logoContainer.style.cssText = 'display: inline-flex; margin-right: 6px;';
 
-      const img = GM_addElement(logoContainer, 'img', {
+      GM_addElement(logoContainer, 'img', {
         src: 'https://www.google.com/s2/favicons?domain=monarchmoney.com&sz=16',
         style: 'width: 16px; height: 16px; border-radius: 3px; object-fit: contain;',
-      });
-
-      // Add error handling - if favicon fails to load, don't show any fallback
-      img.addEventListener('error', () => {
-        logoContainer.style.display = 'none';
       });
 
       buttonContent.appendChild(logoContainer);
