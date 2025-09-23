@@ -5,6 +5,7 @@
 
 import { debugLog, getDefaultLookbackDays } from '../../core/utils';
 import { STORAGE } from '../../core/config';
+import { checkMonarchAuth } from '../../services/auth';
 import toast from '../toast';
 
 /**
@@ -185,6 +186,13 @@ export function createSettingsModal() {
       storagePrefix: STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX,
       institutionName: 'Rogers Bank',
     },
+    {
+      id: 'monarch',
+      label: 'Monarch',
+      fallbackIcon: '👑',
+      storagePrefix: null,
+      institutionName: 'Monarch Money',
+    },
   ];
 
   let activeTab = 'general';
@@ -313,6 +321,9 @@ function renderTabContent(container, tabId) {
       break;
     case 'rogersbank':
       renderRogersBankTab(container);
+      break;
+    case 'monarch':
+      renderMonarchTab(container);
       break;
     default:
       container.innerHTML = '<p>Tab content not found.</p>';
@@ -607,6 +618,132 @@ function renderRogersBankTab(container) {
   container.appendChild(mappingsSection);
   container.appendChild(transactionsSection);
   container.appendChild(categorySection);
+}
+
+/**
+ * Renders the Monarch settings tab
+ * @param {HTMLElement} container - Container element
+ */
+function renderMonarchTab(container) {
+  // Connection Status Section
+  const statusSection = createSection('Connection Status', '🔗', 'Current Monarch Money authentication status');
+
+  const statusContainer = document.createElement('div');
+  statusContainer.style.cssText = 'margin: 15px 0;';
+
+  // Get current authentication status
+  const authStatus = checkMonarchAuth();
+
+  // Status indicator
+  const statusIndicator = document.createElement('div');
+  statusIndicator.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 15px;
+    padding: 12px;
+    border-radius: 6px;
+    ${authStatus.authenticated
+    ? 'background-color: #d4edda; border: 1px solid #c3e6cb; color: #155724;'
+    : 'background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24;'
+}
+  `;
+
+  // Status icon
+  const statusIcon = document.createElement('span');
+  statusIcon.textContent = authStatus.authenticated ? '✅' : '❌';
+  statusIcon.style.cssText = 'font-size: 18px;';
+  statusIndicator.appendChild(statusIcon);
+
+  // Status text
+  const statusText = document.createElement('div');
+  statusText.style.cssText = 'font-weight: 500;';
+  statusText.textContent = authStatus.authenticated
+    ? 'Connected to Monarch Money'
+    : 'Not connected to Monarch Money';
+  statusIndicator.appendChild(statusText);
+
+  statusContainer.appendChild(statusIndicator);
+
+  // Status details
+  const statusDetails = document.createElement('div');
+  statusDetails.style.cssText = 'font-size: 13px; color: #666; margin-bottom: 15px; line-height: 1.4;';
+
+  if (authStatus.authenticated) {
+    statusDetails.innerHTML = `
+      <strong>Status:</strong> Your authentication token is stored and ready to use.<br>
+      <strong>Usage:</strong> This token is used to authenticate with Monarch Money's API for transaction uploads.
+    `;
+  } else {
+    statusDetails.innerHTML = `
+      <strong>Status:</strong> No authentication token found.<br>
+      <strong>To connect:</strong> Visit <a href="https://app.monarchmoney.com" target="_blank" style="color: #0073b1; text-decoration: none;">Monarch Money</a> and log in. The token will be automatically captured.
+    `;
+  }
+
+  statusContainer.appendChild(statusDetails);
+  statusSection.appendChild(statusContainer);
+
+  // Token Management Section (only show if authenticated)
+  if (authStatus.authenticated) {
+    const tokenSection = createSection('Token Management', '🔑', 'Manage your stored authentication token');
+
+    const tokenContainer = document.createElement('div');
+    tokenContainer.style.cssText = 'margin: 15px 0;';
+
+    // Token info
+    const tokenInfo = document.createElement('div');
+    tokenInfo.style.cssText = 'margin-bottom: 15px; font-size: 14px; color: #666;';
+    tokenInfo.textContent = 'Your authentication token is securely stored locally and is used to access Monarch Money\'s API.';
+    tokenContainer.appendChild(tokenInfo);
+
+    // Remove token button
+    const removeButton = document.createElement('button');
+    removeButton.textContent = 'Remove Authentication Token';
+    removeButton.style.cssText = `
+      padding: 10px 16px;
+      border: none;
+      border-radius: 4px;
+      background: #dc3545;
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: background-color 0.2s;
+    `;
+
+    removeButton.addEventListener('click', async () => {
+      const confirmed = await showConfirmDialog(
+        'Are you sure you want to remove your Monarch Money authentication token?\n\nThis will disconnect the application from your Monarch Money account. You will need to log in again at monarchmoney.com to reconnect.',
+      );
+
+      if (confirmed) {
+        // Remove the token
+        GM_deleteValue(STORAGE.MONARCH_TOKEN);
+        toast.show('Monarch Money authentication token removed', 'success');
+        debugLog('Monarch token removed by user');
+
+        // Refresh the tab to show updated status
+        renderMonarchTab(container);
+      }
+    });
+
+    removeButton.addEventListener('mouseover', () => {
+      removeButton.style.backgroundColor = '#c82333';
+    });
+
+    removeButton.addEventListener('mouseout', () => {
+      removeButton.style.backgroundColor = '#dc3545';
+    });
+
+    tokenContainer.appendChild(removeButton);
+    tokenSection.appendChild(tokenContainer);
+
+    container.appendChild(statusSection);
+    container.appendChild(tokenSection);
+  } else {
+    container.appendChild(statusSection);
+  }
 }
 
 /**
