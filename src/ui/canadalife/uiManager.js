@@ -110,19 +110,64 @@ function createUIContainer() {
 }
 
 /**
- * Initialize UI for CanadaLife website
+ * Wait for target element to appear using MutationObserver
  */
-export async function initCanadaLifeUI() {
-  try {
-    debugLog('Initializing CanadaLife UI...');
+function waitForTargetElement() {
+  let observer = null;
+  let timeoutId = null;
+  let isInitialized = false;
 
-    // Create main container
-    const container = createUIContainer();
-    if (!container) {
-      debugLog('Failed to create UI container');
-      return;
+  // Create observer
+  observer = new MutationObserver((mutations, obs) => {
+    // Check if target element now exists
+    const targetContainer = document.querySelector('.ims-navigation');
+
+    if (targetContainer && !isInitialized) {
+      debugLog('Target element found, initializing UI...');
+      isInitialized = true;
+
+      // Stop observing
+      obs.disconnect();
+
+      // Clear timeout
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+
+      // Create container and initialize UI
+      const container = createUIContainer();
+      if (container) {
+        initializeUIComponents(container);
+      }
     }
+  });
 
+  // Start observing
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+  });
+
+  // Set timeout to stop observing after 30 seconds
+  timeoutId = setTimeout(() => {
+    if (!isInitialized) {
+      debugLog('Timeout waiting for CanadaLife UI element (30s)');
+      if (observer) {
+        observer.disconnect();
+      }
+      toast.show('CanadaLife UI element not found', 'warning');
+    }
+  }, 30000); // 30 seconds timeout
+
+  debugLog('MutationObserver started, waiting for target element...');
+}
+
+/**
+ * Initialize UI components once container is available
+ * @param {HTMLElement} container - The UI container element
+ */
+function initializeUIComponents(container) {
+  try {
     // Clear existing dynamic content (keep header)
     const existingContent = Array.from(container.children).slice(1);
     existingContent.forEach((child) => child.remove());
@@ -145,6 +190,29 @@ export async function initCanadaLifeUI() {
 
     // Show initialization toast
     toast.show('CanadaLife Balance Uploader initialized', 'info', 2000);
+  } catch (error) {
+    debugLog('Error initializing UI components:', error);
+    toast.show('Failed to initialize Balance Uploader', 'error');
+  }
+}
+
+/**
+ * Initialize UI for CanadaLife website
+ */
+export async function initCanadaLifeUI() {
+  try {
+    debugLog('Initializing CanadaLife UI...');
+
+    // Try to create container immediately
+    const container = createUIContainer();
+    if (container) {
+      // Element exists, initialize UI immediately
+      initializeUIComponents(container);
+    } else {
+      // Element doesn't exist yet, set up observer to wait for it
+      debugLog('Target element not found, setting up MutationObserver...');
+      waitForTargetElement();
+    }
   } catch (error) {
     debugLog('Error initializing CanadaLife UI:', error);
     toast.show('Failed to initialize Balance Uploader', 'error');
