@@ -105,16 +105,5 @@ jobs:
         cp dist/monarch-uploader.user.js monarch-uploader-dev.user.js
         gh release upload dev-latest monarch-uploader-dev.user.js --clobber
         
-        # Upload additional dist files if they exist
-        if [ -d "dist" ] && [ "$(ls -A dist/*.user.js 2>/dev/null)" ]; then
-          for file in dist/*.user.js; do
-            if [ -f "$file" ]; then
-              filename=$(basename "$file")
-              cp "$file" "dev-$filename"
-              gh release upload dev-latest "dev-$filename" --clobber
-            fi
-          done
-        fi
-        
         echo "✅ Development release created successfully!"
         echo "📦 Download URL: https://github.com/${{ github.repository }}/releases/download/dev-latest/monarch-uploader-dev.user.js"
