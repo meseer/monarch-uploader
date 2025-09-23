@@ -103,15 +103,17 @@ jobs:
           --prerelease \
           --latest=false
         
-        # Upload the userscript with development filename
-        gh release upload dev-latest questrade-account-balance-uploader.user.js --name "monarch-uploader-dev.user.js" --clobber
+        # Copy and rename the main userscript, then upload
+        cp questrade-account-balance-uploader.user.js monarch-uploader-dev.user.js
+        gh release upload dev-latest monarch-uploader-dev.user.js --clobber
         
         # Upload additional dist files if they exist
         if [ -d "dist" ] && [ "$(ls -A dist/*.user.js 2>/dev/null)" ]; then
           for file in dist/*.user.js; do
             if [ -f "$file" ]; then
               filename=$(basename "$file")
-              gh release upload dev-latest "$file" --name "dev-$filename" --clobber
+              cp "$file" "dev-$filename"
+              gh release upload dev-latest "dev-$filename" --clobber
             fi
           done
         fi
