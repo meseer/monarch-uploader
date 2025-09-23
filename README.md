@@ -91,13 +91,32 @@ monarch-uploader/
 
 ### Installing the Userscript
 
-After building, the userscript will be available in the `dist` folder. To install:
+There are two ways to install the userscript:
+
+#### Option 1: Direct Installation (Recommended)
+
+**Latest Development Version** (updated with every push to main):
+- 🔗 **[Install Development Version](https://github.com/meseer/monarch-uploader/releases/download/dev-latest/monarch-uploader-dev.user.js)**
+- URL: `https://github.com/meseer/monarch-uploader/releases/download/dev-latest/monarch-uploader-dev.user.js`
+
+**Stable Release Version** (updated with each official release):
+- 🔗 **[Install Stable Version](https://github.com/meseer/monarch-uploader/releases/latest/download/monarch-uploader-stable.user.js)**
+- URL: `https://github.com/meseer/monarch-uploader/releases/latest/download/monarch-uploader-stable.user.js`
+
+#### Option 2: Manual Installation
 
 1. Install [Tampermonkey](https://www.tampermonkey.net/) browser extension
-2. Open Tampermonkey dashboard
-3. Create a new script or import from file
-4. Copy-paste the content from `dist/questrade-account-balance-uploader.user.js`
-5. Save the script
+2. Build the project locally with `npm run build`
+3. Open Tampermonkey dashboard
+4. Create a new script or import from file
+5. Copy-paste the content from `dist/questrade-account-balance-uploader.user.js`
+6. Save the script
+
+#### Installation Notes
+
+- **Development Version**: Gets the latest features and fixes immediately, but may be less stable
+- **Stable Version**: Thoroughly tested releases, recommended for production use
+- Both URLs support auto-updates in Tampermonkey - the extension will automatically check for and install updates
 
 ## Contributing
 

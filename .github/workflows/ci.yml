@@ -42,7 +42,7 @@ jobs:
         files: ./coverage/lcov.info
         fail_ci_if_error: false
 
-  build-release:
+  create-dev-release:
     runs-on: ubuntu-latest
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -70,3 +70,48 @@ jobs:
           dist/*.user.js
           questrade-account-balance-uploader.user.js
         retention-days: 30
+
+    - name: Create/Update Development Release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Get current commit info
+        COMMIT_SHA=$(git rev-parse --short HEAD)
+        COMMIT_MSG=$(git log -1 --pretty=format:"%s")
+        BUILD_DATE=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+        
+        # Delete existing dev-latest release if it exists
+        gh release delete dev-latest --yes || true
+        
+        # Create new dev-latest release
+        gh release create dev-latest \
+          --title "Development Build (Latest)" \
+          --notes "🚧 **Development Build** - Latest from main branch
+
+        **Build Info:**
+        - Commit: $COMMIT_SHA
+        - Message: $COMMIT_MSG  
+        - Built: $BUILD_DATE
+
+        **Installation:**
+        Direct install URL: https://github.com/${{ github.repository }}/releases/download/dev-latest/monarch-uploader-dev.user.js
+
+        **⚠️ Note:** This is an automatically generated development build. For stable releases, use the [latest stable release](https://github.com/${{ github.repository }}/releases/latest)." \
+          --prerelease \
+          --latest=false
+        
+        # Upload the userscript with development filename
+        gh release upload dev-latest questrade-account-balance-uploader.user.js --name "monarch-uploader-dev.user.js" --clobber
+        
+        # Upload additional dist files if they exist
+        if [ -d "dist" ] && [ "$(ls -A dist/*.user.js 2>/dev/null)" ]; then
+          for file in dist/*.user.js; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              gh release upload dev-latest "$file" --name "dev-$filename" --clobber
+            fi
+          done
+        fi
+        
+        echo "✅ Development release created successfully!"
+        echo "📦 Download URL: https://github.com/${{ github.repository }}/releases/download/dev-latest/monarch-uploader-dev.user.js"
