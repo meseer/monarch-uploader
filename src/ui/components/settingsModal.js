@@ -212,16 +212,16 @@ export function createSettingsModal() {
       const logoContainer = document.createElement('div');
       logoContainer.style.cssText = 'display: inline-flex; margin-right: 6px;';
 
-      const img = document.createElement('img');
-      img.src = 'https://www.google.com/s2/favicons?domain=monarchmoney.com&sz=16';
-      img.style.cssText = 'width: 16px; height: 16px; border-radius: 3px; object-fit: contain;';
+      const img = GM_addElement(logoContainer, 'img', {
+        src: 'https://www.google.com/s2/favicons?domain=monarchmoney.com&sz=16',
+        style: 'width: 16px; height: 16px; border-radius: 3px; object-fit: contain;',
+      });
 
       // Add error handling - if favicon fails to load, don't show any fallback
       img.addEventListener('error', () => {
         logoContainer.style.display = 'none';
       });
 
-      logoContainer.appendChild(img);
       buttonContent.appendChild(logoContainer);
     } else if (tab.storagePrefix && tab.institutionName) {
       // Get institution logo from stored mappings
