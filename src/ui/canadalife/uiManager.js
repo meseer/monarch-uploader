@@ -11,6 +11,7 @@ import toast from '../toast';
 import { createConnectionStatus } from './components/connectionStatus';
 import { createCanadaLifeUploadButton } from './components/uploadButton';
 import { showSettingsModal } from '../components/settingsModal';
+import { createMonarchLoginLink } from '../components/monarchLoginLink';
 
 /**
  * Creates and appends the main UI container to CanadaLife navigation
@@ -196,12 +197,19 @@ function updateConnectionStatus(connectionStatus) {
     // Update Monarch status
     const monarchIndicator = connectionStatus.querySelector('.monarch-status');
     if (monarchIndicator) {
+      // Clear existing content
+      monarchIndicator.innerHTML = '';
+
       if (monarchToken) {
         monarchIndicator.textContent = 'Monarch: Connected';
         monarchIndicator.style.color = '#28a745';
       } else {
-        monarchIndicator.textContent = 'Monarch: Not connected';
-        monarchIndicator.style.color = '#dc3545';
+        // Create clickable login link
+        const loginLink = createMonarchLoginLink('Monarch: Not connected', () => {
+          // Callback to update status after successful login
+          updateConnectionStatus(connectionStatus);
+        });
+        monarchIndicator.appendChild(loginLink);
       }
     }
 

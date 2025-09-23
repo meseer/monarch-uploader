@@ -7,6 +7,7 @@ import { debugLog, getDefaultLookbackDays } from '../../core/utils';
 import { STORAGE } from '../../core/config';
 import { checkMonarchAuth } from '../../services/auth';
 import toast from '../toast';
+import { createMonarchLoginLink } from './monarchLoginLink';
 
 /**
  * Gets institution logo from stored account mappings
@@ -658,9 +659,18 @@ function renderMonarchTab(container) {
   // Status text
   const statusText = document.createElement('div');
   statusText.style.cssText = 'font-weight: 500;';
-  statusText.textContent = authStatus.authenticated
-    ? 'Connected to Monarch Money'
-    : 'Not connected to Monarch Money';
+
+  if (authStatus.authenticated) {
+    statusText.textContent = 'Connected to Monarch Money';
+  } else {
+    // Create clickable login link for non-authenticated state
+    const loginLink = createMonarchLoginLink('Not connected to Monarch Money', () => {
+      // Callback to refresh the tab after successful login
+      renderMonarchTab(container);
+    });
+    statusText.appendChild(loginLink);
+  }
+
   statusIndicator.appendChild(statusText);
 
   statusContainer.appendChild(statusIndicator);

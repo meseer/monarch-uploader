@@ -10,6 +10,7 @@ import questradeApi from '../api/questrade';
 import toast from './toast';
 import uploadButton from './components/uploadButton';
 import { showSettingsModal } from './components/settingsModal';
+import { createMonarchLoginLink } from './components/monarchLoginLink';
 
 /**
  * Creates and appends status indicators to the provided container
@@ -122,12 +123,20 @@ export function updateStatusIndicators(indicators) {
   // Update Monarch status
   if (indicators.monarch) {
     const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN);
+
+    // Clear existing content
+    indicators.monarch.innerHTML = '';
+
     if (monarchToken) {
       indicators.monarch.textContent = 'Monarch: Connected';
       indicators.monarch.style.color = '#28a745';
     } else {
-      indicators.monarch.textContent = 'Monarch: Not connected';
-      indicators.monarch.style.color = '#dc3545';
+      // Create clickable login link
+      const loginLink = createMonarchLoginLink('Monarch: Not connected', () => {
+        // Callback to update status after successful login
+        updateStatusIndicators(indicators);
+      });
+      indicators.monarch.appendChild(loginLink);
     }
   }
 
