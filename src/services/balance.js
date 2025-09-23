@@ -14,6 +14,7 @@ import toast from '../ui/toast';
 import { showProgressDialog } from '../ui/components/progressDialog';
 import { showDatePickerPromise } from '../ui/components/datePicker';
 import { showMonarchAccountSelector } from '../ui/components/accountSelector';
+import { ensureMonarchAuthentication } from '../ui/components/monarchLoginLink';
 
 /**
  * Custom balance error class
@@ -314,6 +315,12 @@ export async function bulkProcessAccounts(accounts, fromDate, toDate) {
  */
 export async function uploadAllAccountsToMonarch() {
   try {
+    // Check Monarch authentication before proceeding
+    const authenticated = await ensureMonarchAuthentication(null, 'upload all Questrade accounts');
+    if (!authenticated) {
+      return; // User cancelled authentication
+    }
+
     // Get all Questrade accounts
     const accounts = await questradeApi.fetchAccounts();
     if (!accounts || !accounts.length) {

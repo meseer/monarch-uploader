@@ -15,6 +15,7 @@ import toast from '../ui/toast';
 import { showProgressDialog } from '../ui/components/progressDialog';
 import { showDatePickerPromise } from '../ui/components/datePicker';
 import { showMonarchAccountSelector } from '../ui/components/accountSelector';
+import { ensureMonarchAuthentication } from '../ui/components/monarchLoginLink';
 
 /**
  * Custom Canada Life upload error class
@@ -420,6 +421,12 @@ function calculateBusinessDays(startDate, endDate) {
  */
 export async function uploadAllCanadaLifeAccountsToMonarch() {
   try {
+    // Check Monarch authentication before proceeding
+    const authenticated = await ensureMonarchAuthentication(null, 'upload all Canada Life accounts');
+    if (!authenticated) {
+      return; // User cancelled authentication
+    }
+
     // Load Canada Life accounts
     toast.show('Loading Canada Life accounts...', 'info');
     const accounts = await canadalife.loadCanadaLifeAccounts();
@@ -524,6 +531,12 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
  */
 export async function uploadCanadaLifeAccountWithDateRange() {
   try {
+    // Check Monarch authentication before proceeding
+    const authenticated = await ensureMonarchAuthentication(null, 'upload Canada Life account with custom date range');
+    if (!authenticated) {
+      return; // User cancelled authentication
+    }
+
     // Load Canada Life accounts
     toast.show('Loading Canada Life accounts...', 'info');
     const accounts = await canadalife.loadCanadaLifeAccounts();

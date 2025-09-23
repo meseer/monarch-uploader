@@ -7,6 +7,7 @@ import { debugLog } from '../../core/utils';
 import stateManager from '../../core/state';
 import toast from '../toast';
 import { getDateRange, processAccountBalanceHistory } from '../../services/account';
+import { ensureMonarchAuthentication } from './monarchLoginLink';
 
 /**
  * Creates a styled button
@@ -109,6 +110,12 @@ export function createButtonGroup() {
 export function createSingleAccountUploadButton(fallbackAccountId, fallbackAccountName) {
   // Create button with initial text
   const button = createButton(`Upload ${fallbackAccountName} to Monarch`, async () => {
+    // Check Monarch authentication before proceeding
+    const authenticated = await ensureMonarchAuthentication(null, 'upload balance history');
+    if (!authenticated) {
+      return; // User cancelled authentication
+    }
+
     // Always get current state when button is clicked
     const currentState = stateManager.getState();
     const currentAccountId = currentState.currentAccount.id || fallbackAccountId;
@@ -205,6 +212,12 @@ export function createBulkUploadButton(accounts) {
   }
 
   return createButton(`Upload All ${accounts.length} Accounts`, async () => {
+    // Check Monarch authentication before proceeding
+    const authenticated = await ensureMonarchAuthentication(null, 'upload all accounts');
+    if (!authenticated) {
+      return; // User cancelled authentication
+    }
+
     // Import balance service dynamically to avoid circular imports
     const { uploadAllAccountsToMonarch } = await import('../../services/balance');
 

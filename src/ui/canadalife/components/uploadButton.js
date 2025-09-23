@@ -8,6 +8,7 @@ import { COLORS } from '../../../core/config';
 import canadalife from '../../../api/canadalife';
 import toast from '../../toast';
 import { uploadAllCanadaLifeAccountsToMonarch, uploadCanadaLifeAccountWithDateRange } from '../../../services/canadalife-upload';
+import { ensureMonarchAuthentication } from '../../components/monarchLoginLink';
 
 /**
  * Creates a styled button for CanadaLife
@@ -576,6 +577,12 @@ export function createCanadaLifeUploadButton() {
 
   // Create upload all to Monarch button (PRIMARY - moved to top)
   const uploadAllButton = createCanadaLifeButton('Upload All to Monarch', async () => {
+    // Check Monarch authentication before proceeding
+    const authenticated = await ensureMonarchAuthentication(null, 'upload Canada Life accounts');
+    if (!authenticated) {
+      return; // User cancelled authentication
+    }
+
     try {
       // Disable button while uploading
       uploadAllButton.disabled = true;
@@ -597,6 +604,12 @@ export function createCanadaLifeUploadButton() {
 
   // Create upload custom range button (SECONDARY - moved to top)
   const uploadCustomRangeButton = createCanadaLifeButton('Upload Custom Range', async () => {
+    // Check Monarch authentication before proceeding
+    const authenticated = await ensureMonarchAuthentication(null, 'upload Canada Life account with custom range');
+    if (!authenticated) {
+      return; // User cancelled authentication
+    }
+
     try {
       // Disable button while uploading
       uploadCustomRangeButton.disabled = true;

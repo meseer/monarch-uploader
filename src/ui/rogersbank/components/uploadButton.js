@@ -8,6 +8,7 @@ import { COLORS } from '../../../core/config';
 import rogersbank from '../../../api/rogersbank';
 import toast from '../../toast';
 import { uploadRogersBankToMonarch } from '../../../services/rogersbank-upload';
+import { ensureMonarchAuthentication } from '../../components/monarchLoginLink';
 
 /**
  * Creates a styled button for Rogers Bank
@@ -111,6 +112,12 @@ export function createRogersBankUploadButton() {
 
   // Create upload button with actual functionality
   const uploadButton = createRogersBankButton('Upload to Monarch', async () => {
+    // Check Monarch authentication before proceeding
+    const authenticated = await ensureMonarchAuthentication(null, 'upload Rogers Bank transactions');
+    if (!authenticated) {
+      return; // User cancelled authentication
+    }
+
     debugLog('Rogers Bank upload button clicked');
 
     // Disable button during upload
