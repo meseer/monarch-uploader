@@ -25,7 +25,7 @@ jobs:
       run: npm test
 
     - name: Build userscript
-      run: npm run build
+      run: BUILD_TYPE=stable npm run build
 
     - name: Get version from tag
       id: version

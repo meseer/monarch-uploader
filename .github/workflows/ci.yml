@@ -33,7 +33,7 @@ jobs:
       run: npm test
 
     - name: Build userscript
-      run: npm run build
+      run: BUILD_TYPE=dev npm run build
 
     - name: Upload test coverage
       if: matrix.node-version == '22.x'
@@ -63,7 +63,7 @@ jobs:
       run: npm ci
 
     - name: Build userscript
-      run: npm run build
+      run: BUILD_TYPE=dev npm run build
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4

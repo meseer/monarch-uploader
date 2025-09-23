@@ -6,8 +6,11 @@
   "scripts": {
     "build": "npm run clean && webpack --mode production",
     "build:dev": "webpack --mode development",
+    "build:stable": "npm run clean && BUILD_TYPE=stable webpack --mode production",
+    "build:dev-release": "npm run clean && BUILD_TYPE=dev webpack --mode production",
     "build:full": "npm run clean && npm run lint && npm run test && webpack --mode production",
     "watch": "webpack --mode development --watch",
+    "watch:dev": "BUILD_TYPE=dev webpack --mode development --watch",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "test": "jest",

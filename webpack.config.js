@@ -7,8 +7,11 @@ const createBanner = () => {
   // Import metadata from our embedded file
   const metadataPath = path.resolve(__dirname, 'src', 'userscript-metadata.js');
   delete require.cache[metadataPath]; // Clear cache to get fresh metadata
-  const metadata = require(metadataPath);
-  return metadata + '\n\n';
+  // eslint-disable-next-line import/no-dynamic-require, global-require
+  const generateMetadata = require(metadataPath);
+  const buildType = process.env.BUILD_TYPE || 'local';
+  const metadata = generateMetadata(buildType);
+  return `${metadata}\n\n`;
 };
 
 module.exports = (env, argv) => {
@@ -18,7 +21,7 @@ module.exports = (env, argv) => {
     entry: './src/index.js',
     output: {
       path: path.resolve(__dirname, 'dist'),
-      filename: 'monarch-uploader.user.js'
+      filename: 'monarch-uploader.user.js',
     },
     module: {
       rules: [
@@ -28,11 +31,11 @@ module.exports = (env, argv) => {
           use: {
             loader: 'babel-loader',
             options: {
-              presets: ['@babel/preset-env']
-            }
-          }
-        }
-      ]
+              presets: ['@babel/preset-env'],
+            },
+          },
+        },
+      ],
     },
     optimization: {
       minimize: isProduction,
@@ -40,35 +43,35 @@ module.exports = (env, argv) => {
         new TerserPlugin({
           terserOptions: {
             format: {
-              comments: /==UserScript==|@name|@namespace|@version|@description|@author|@match|@grant|@connect|@run-at|==/
-            }
+              comments: /==UserScript==|@name|@namespace|@version|@description|@author|@match|@grant|@connect|@run-at|==/,
+            },
           },
-          extractComments: false
-        })
-      ]
+          extractComments: false,
+        }),
+      ],
     },
     plugins: [
       // Add banner with userscript metadata
       new webpack.BannerPlugin({
         banner: createBanner(),
         raw: true,
-        entryOnly: true
-      })
+        entryOnly: true,
+      }),
     ],
     // Source maps for better debugging
     devtool: isProduction ? false : 'source-map',
     // External GM_ functions
     externals: {
       // List Tampermonkey's GM_* functions as externals
-      'GM_addElement': 'GM_addElement',
-      'GM_deleteValue': 'GM_deleteValue',
-      'GM_download': 'GM_download',
-      'GM_getValue': 'GM_getValue',
-      'GM_listValues': 'GM_listValues',
-      'GM_log': 'GM_log',
-      'GM_registerMenuCommand': 'GM_registerMenuCommand',
-      'GM_setValue': 'GM_setValue',
-      'GM_xmlhttpRequest': 'GM_xmlhttpRequest'
-    }
+      GM_addElement: 'GM_addElement',
+      GM_deleteValue: 'GM_deleteValue',
+      GM_download: 'GM_download',
+      GM_getValue: 'GM_getValue',
+      GM_listValues: 'GM_listValues',
+      GM_log: 'GM_log',
+      GM_registerMenuCommand: 'GM_registerMenuCommand',
+      GM_setValue: 'GM_setValue',
+      GM_xmlhttpRequest: 'GM_xmlhttpRequest',
+    },
   };
 };
