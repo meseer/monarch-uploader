@@ -364,9 +364,24 @@ export async function uploadRogersBankToMonarch() {
   try {
     debugLog('Rogers Bank upload service started');
 
-    // Extract Rogers account name first (needed for account ID)
+    // Get Rogers Bank credentials to use API account ID
+    const credentials = getRogersBankCredentials();
+
+    // Extract Rogers account name for display purposes (always needed)
     const rogersAccountName = getRogersAccountName();
-    rogersAccountId = `rogers_${rogersAccountName.replace(/\s+/g, '_').toLowerCase()}`;
+
+    // Use API account ID if available, otherwise fallback to DOM-based ID
+    if (credentials.accountId) {
+      rogersAccountId = credentials.accountId;
+      debugLog('Using Rogers Bank API account ID:', rogersAccountId);
+    } else {
+      // Fallback: Extract Rogers account name from DOM and sanitize
+      // Keep only alphanumeric characters and convert to lowercase
+      const sanitizedName = rogersAccountName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      rogersAccountId = `rogers_${sanitizedName}`;
+      debugLog('Rogers Bank API credentials not available, using sanitized DOM-based ID:', rogersAccountId);
+      debugLog('Original account name:', rogersAccountName, 'Sanitized:', sanitizedName);
+    }
 
     // Get date range (now with account ID for lookback calculation)
     const fromDate = await getFromDate(rogersAccountId);
@@ -622,7 +637,7 @@ export async function uploadRogersBankToMonarch() {
         }
 
         // Save last upload date for future uploads with configurable lookback
-        saveLastUploadDate(rogersAccountId, toDate, 'rogersbank');
+        saveLastUploadDate(rogersAccountId, getTodayLocal(), 'rogersbank');
 
         const successMessage = filterResult.duplicateCount > 0
           ? `Successfully uploaded balance and ${transactionsToUpload.length} new transactions (${filterResult.duplicateCount} duplicates skipped)`
