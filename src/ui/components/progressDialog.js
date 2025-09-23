@@ -85,17 +85,42 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     statusIcon.dataset.status = 'pending';
     accountRow.appendChild(statusIcon);
 
+    // Account name container
+    const accountNameContainer = document.createElement('div');
+    accountNameContainer.style.cssText = `
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    `;
+
     // Account name
     const accountName = document.createElement('div');
-    accountName.style.cssText = 'flex-grow: 1;';
-    accountName.textContent = `${account.nickname || account.name || 'Account'} (${account.key || account.id})`;
-    accountRow.appendChild(accountName);
+    accountName.style.cssText = 'font-weight: 500;';
+    accountName.textContent = account.nickname || account.name || 'Account';
+    accountNameContainer.appendChild(accountName);
+
+    // Account ID
+    const accountId = document.createElement('div');
+    accountId.style.cssText = `
+      font-size: 0.85em;
+      color: #888;
+      font-weight: normal;
+    `;
+    accountId.textContent = account.key || account.id;
+    accountNameContainer.appendChild(accountId);
+
+    accountRow.appendChild(accountNameContainer);
 
     // Status text
     const statusText = document.createElement('div');
     statusText.style.cssText = `
       margin-left: 10px;
       color: #888;
+      min-width: 120px;
+      max-width: 150px;
+      word-wrap: break-word;
+      text-align: right;
     `;
     statusText.textContent = 'Pending';
     accountRow.appendChild(statusText);

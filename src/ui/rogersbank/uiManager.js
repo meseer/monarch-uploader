@@ -229,7 +229,31 @@ function createUIContainer() {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     font-size: 14px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    max-width: 380px;
+    width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
   `;
+
+  // Add responsive behavior using media queries to match the card above
+  const style = document.createElement('style');
+  style.textContent = `
+    @media (max-width: 1279px) {
+      #rogersbank-balance-uploader-container {
+        max-width: 100% !important;
+      }
+    }
+    @media (min-width: 1280px) {
+      #rogersbank-balance-uploader-container {
+        max-width: 380px !important;
+      }
+    }
+  `;
+
+  if (!document.head.querySelector('style[data-rogers-ui-responsive]')) {
+    style.setAttribute('data-rogers-ui-responsive', 'true');
+    document.head.appendChild(style);
+  }
 
   // Create header
   const header = document.createElement('div');

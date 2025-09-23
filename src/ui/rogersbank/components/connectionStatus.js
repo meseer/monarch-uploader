@@ -13,13 +13,17 @@ export function createConnectionStatus() {
   container.style.cssText = `
     display: flex;
     flex-wrap: wrap;
-    gap: 12px;
+    gap: 8px;
     margin: 8px 0;
     padding: 8px;
     background-color: #ffffff;
     border: 1px solid #dee2e6;
     border-radius: 4px;
     font-size: 13px;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
   `;
 
   // Create Rogers Bank status indicator
@@ -67,22 +71,30 @@ export function createConnectionStatus() {
   credentialsDetails.className = 'credentials-details';
   credentialsDetails.style.cssText = `
     width: 100%;
+    max-width: 100%;
     margin-top: 8px;
     padding-top: 8px;
     border-top: 1px solid #e9ecef;
     font-size: 12px;
     color: #666;
     display: none;
+    box-sizing: border-box;
+    overflow: hidden;
   `;
 
   const credentialsTitle = document.createElement('div');
   credentialsTitle.textContent = 'Captured Credentials:';
-  credentialsTitle.style.cssText = 'font-weight: 600; margin-bottom: 4px;';
+  credentialsTitle.style.cssText = 'font-weight: 600; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis;';
   credentialsDetails.appendChild(credentialsTitle);
 
   const credentialsList = document.createElement('div');
   credentialsList.className = 'credentials-list';
-  credentialsList.style.cssText = 'padding-left: 12px;';
+  credentialsList.style.cssText = `
+    padding-left: 12px;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+  `;
   credentialsDetails.appendChild(credentialsList);
 
   container.appendChild(credentialsDetails);
