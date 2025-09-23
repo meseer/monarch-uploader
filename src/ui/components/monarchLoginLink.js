@@ -88,7 +88,6 @@ function openMonarchLoginPopup(onSuccess = null) {
 
     // Monitor popup for successful login
     monitorPopupForLogin(popup, onSuccess);
-
   } catch (error) {
     debugLog('Error opening Monarch login popup:', error);
     toast.show('Failed to open login popup', 'error');
