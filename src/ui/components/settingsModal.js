@@ -207,7 +207,23 @@ export function createSettingsModal() {
     const buttonContent = document.createElement('div');
     buttonContent.style.cssText = 'display: flex; align-items: center;';
 
-    if (tab.storagePrefix && tab.institutionName) {
+    if (tab.id === 'monarch') {
+      // Use Google Favicon API for Monarch tab
+      const logoContainer = document.createElement('div');
+      logoContainer.style.cssText = 'display: inline-flex; margin-right: 6px;';
+
+      const img = document.createElement('img');
+      img.src = 'https://www.google.com/s2/favicons?domain=monarchmoney.com&sz=16';
+      img.style.cssText = 'width: 16px; height: 16px; border-radius: 3px; object-fit: contain;';
+
+      // Add error handling - if favicon fails to load, don't show any fallback
+      img.addEventListener('error', () => {
+        logoContainer.style.display = 'none';
+      });
+
+      logoContainer.appendChild(img);
+      buttonContent.appendChild(logoContainer);
+    } else if (tab.storagePrefix && tab.institutionName) {
       // Get institution logo from stored mappings
       const logoElement = getInstitutionLogo(tab.storagePrefix, tab.institutionName);
       buttonContent.appendChild(logoElement);
@@ -665,8 +681,11 @@ function renderMonarchTab(container) {
   } else {
     // Create clickable login link for non-authenticated state
     const loginLink = createMonarchLoginLink('Not connected to Monarch Money', () => {
-      // Callback to refresh the tab after successful login
-      renderMonarchTab(container);
+      // Callback to refresh the tab after successful login using proper tab rendering
+      const tabContainer = document.querySelector('.settings-tab-content');
+      if (tabContainer) {
+        renderTabContent(tabContainer, 'monarch');
+      }
     });
     statusText.appendChild(loginLink);
   }
@@ -733,8 +752,11 @@ function renderMonarchTab(container) {
         toast.show('Monarch Money authentication token removed', 'success');
         debugLog('Monarch token removed by user');
 
-        // Refresh the tab to show updated status
-        renderMonarchTab(container);
+        // Refresh the tab to show updated status using proper tab rendering
+        const tabContainer = document.querySelector('.settings-tab-content');
+        if (tabContainer) {
+          renderTabContent(tabContainer, 'monarch');
+        }
       }
     });
 

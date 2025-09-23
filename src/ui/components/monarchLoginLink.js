@@ -73,7 +73,7 @@ function openMonarchLoginPopup(onSuccess = null) {
 
     // Open popup window
     const popup = window.open(
-      'https://app.monarchmoney.com/login',
+      'https://app.monarchmoney.com/dashboard',
       'monarchLogin',
       popupFeatures,
     );
