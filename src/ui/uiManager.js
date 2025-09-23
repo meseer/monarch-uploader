@@ -222,6 +222,65 @@ export function createButtonContainer() {
 }
 
 /**
+ * Wait for target element to appear using MutationObserver
+ * @param {string} selector - CSS selector for target element
+ * @param {number} timeout - Maximum time to wait in milliseconds
+ * @returns {Promise<Element|null>} Promise that resolves with the element or null if timeout
+ */
+function waitForTargetElement(selector, timeout = 30000) {
+  return new Promise((resolve) => {
+    // Check if element already exists
+    const element = document.querySelector(selector);
+    if (element) {
+      resolve(element);
+      return;
+    }
+
+    let observer = null;
+    let timeoutId = null;
+    let resolved = false;
+
+    // Create observer
+    observer = new MutationObserver((mutations, obs) => {
+      // Check if target element now exists
+      const targetElement = document.querySelector(selector);
+
+      if (targetElement && !resolved) {
+        resolved = true;
+        obs.disconnect();
+
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+
+        debugLog(`Target element found: ${selector}`);
+        resolve(targetElement);
+      }
+    });
+
+    // Start observing
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+
+    // Set timeout
+    timeoutId = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        debugLog(`Timeout waiting for element: ${selector} (${timeout}ms)`);
+        if (observer) {
+          observer.disconnect();
+        }
+        resolve(null);
+      }
+    }, timeout);
+
+    debugLog(`MutationObserver started, waiting for: ${selector}`);
+  });
+}
+
+/**
  * Initialize UI for a single account page
  */
 export async function initSingleAccountUI() {
@@ -244,10 +303,18 @@ export async function initSingleAccountUI() {
       isNewContainer = true;
 
       // Find the sidebar content (original working approach)
-      const targetContainer = document.querySelector('.sidebar__content');
+      let targetContainer = document.querySelector('.sidebar__content');
+
+      // If not found immediately, wait for it with MutationObserver
       if (!targetContainer) {
-        debugLog('Could not find .sidebar__content insertion point');
-        return;
+        debugLog('Sidebar content not found, setting up observer to wait for it...');
+        targetContainer = await waitForTargetElement('.sidebar__content', 30000);
+
+        if (!targetContainer) {
+          debugLog('Could not find .sidebar__content insertion point after waiting');
+          toast.show('UI element not found - please refresh the page', 'warning');
+          return;
+        }
       }
 
       debugLog('Adding button container to the .sidebar__content insertion point');
@@ -388,10 +455,18 @@ export async function initAllAccountsUI() {
       isNewContainer = true;
 
       // Find the sidebar content (original working approach)
-      const targetContainer = document.querySelector('.sidebar__content');
+      let targetContainer = document.querySelector('.sidebar__content');
+
+      // If not found immediately, wait for it with MutationObserver
       if (!targetContainer) {
-        debugLog('Could not find .sidebar__content insertion point');
-        return;
+        debugLog('Sidebar content not found, setting up observer to wait for it...');
+        targetContainer = await waitForTargetElement('.sidebar__content', 30000);
+
+        if (!targetContainer) {
+          debugLog('Could not find .sidebar__content insertion point after waiting');
+          toast.show('UI element not found - please refresh the page', 'warning');
+          return;
+        }
       }
 
       debugLog('Adding button container to the .sidebar__content insertion point');
