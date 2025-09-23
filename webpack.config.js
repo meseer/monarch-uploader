@@ -18,7 +18,7 @@ module.exports = (env, argv) => {
     entry: './src/index.js',
     output: {
       path: path.resolve(__dirname, 'dist'),
-      filename: 'questrade-account-balance-uploader.user.js'
+      filename: 'monarch-uploader.user.js'
     },
     module: {
       rules: [

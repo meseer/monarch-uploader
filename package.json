@@ -2,7 +2,7 @@
   "name": "monarch-uploader",
   "version": "3.8.0",
   "description": "Tampermonkey userscript for uploading Questrade balance history to Monarch Money",
-  "main": "dist/questrade-account-balance-uploader.user.js",
+  "main": "dist/monarch-uploader.user.js",
   "scripts": {
     "build": "npm run clean && webpack --mode production",
     "build:dev": "webpack --mode development",

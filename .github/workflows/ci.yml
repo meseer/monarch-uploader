@@ -69,9 +69,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: userscript-build
-        path: |
-          dist/*.user.js
-          questrade-account-balance-uploader.user.js
+        path: dist/*.user.js
         retention-days: 30
 
     - name: Create/Update Development Release
@@ -104,7 +102,7 @@ jobs:
           --latest=false
         
         # Copy and rename the main userscript, then upload
-        cp questrade-account-balance-uploader.user.js monarch-uploader-dev.user.js
+        cp dist/monarch-uploader.user.js monarch-uploader-dev.user.js
         gh release upload dev-latest monarch-uploader-dev.user.js --clobber
         
         # Upload additional dist files if they exist

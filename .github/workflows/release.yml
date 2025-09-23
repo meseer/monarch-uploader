@@ -35,7 +35,6 @@ jobs:
       run: |
         mkdir -p release-assets
         cp dist/*.user.js release-assets/ 2>/dev/null || true
-        cp questrade-account-balance-uploader.user.js release-assets/
         ls -la release-assets/
 
     - name: Generate changelog
@@ -93,14 +92,14 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./questrade-account-balance-uploader.user.js
+        asset_path: ./dist/monarch-uploader.user.js
         asset_name: monarch-uploader-stable.user.js
         asset_content_type: application/javascript
 
     - name: Upload Build Assets (if exist)
       run: |
         for file in release-assets/*.user.js; do
-          if [ -f "$file" ] && [ "$(basename "$file")" != "questrade-account-balance-uploader.user.js" ]; then
+          if [ -f "$file" ] && [ "$(basename "$file")" != "monarch-uploader.user.js" ]; then
             filename=$(basename "$file")
             echo "Uploading additional asset: $filename"
             
