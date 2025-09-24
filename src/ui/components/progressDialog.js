@@ -372,7 +372,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
   // Set up cancel button handler with debugging
   cancelButton.onclick = () => {
     debugLog('Cancel button clicked', {
-      hasCallback: !!cancelCallback,
+      hasCallback: Boolean(cancelCallback),
       isCancelled,
       uploadState,
     });

@@ -161,15 +161,15 @@ export function formatDaysBeforeDate(baseDate, days) {
  */
 export function getDefaultLookbackDays(institutionType) {
   switch (institutionType) {
-    case 'questrade':
-      return 0; // Uses exact last upload date
-    case 'canadalife':
-      return 1; // Day after last upload = 1 day lookback
-    case 'rogersbank':
-      return 7; // Current 7 day lookback behavior
-    default:
-      debugLog(`Unknown institution type: ${institutionType}, using 0 days`);
-      return 0;
+  case 'questrade':
+    return 0; // Uses exact last upload date
+  case 'canadalife':
+    return 1; // Day after last upload = 1 day lookback
+  case 'rogersbank':
+    return 7; // Current 7 day lookback behavior
+  default:
+    debugLog(`Unknown institution type: ${institutionType}, using 0 days`);
+    return 0;
   }
 }
 
@@ -183,18 +183,18 @@ export function getLastUpdateDate(accountId, institutionType) {
   let storageKey;
 
   switch (institutionType) {
-    case 'questrade':
-      storageKey = STORAGE.LAST_DATE_PREFIX + accountId;
-      break;
-    case 'canadalife':
-      storageKey = STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX + accountId;
-      break;
-    case 'rogersbank':
-      storageKey = STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX + accountId;
-      break;
-    default:
-      debugLog(`Unknown institution type: ${institutionType}`);
-      return null;
+  case 'questrade':
+    storageKey = STORAGE.LAST_DATE_PREFIX + accountId;
+    break;
+  case 'canadalife':
+    storageKey = STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX + accountId;
+    break;
+  case 'rogersbank':
+    storageKey = STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX + accountId;
+    break;
+  default:
+    debugLog(`Unknown institution type: ${institutionType}`);
+    return null;
   }
 
   return GM_getValue(storageKey, null);
@@ -238,18 +238,18 @@ export function saveLastUploadDate(accountId, uploadDate, institutionType) {
   let storageKey;
 
   switch (institutionType) {
-    case 'questrade':
-      storageKey = STORAGE.LAST_DATE_PREFIX + accountId;
-      break;
-    case 'canadalife':
-      storageKey = STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX + accountId;
-      break;
-    case 'rogersbank':
-      storageKey = STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX + accountId;
-      break;
-    default:
-      debugLog(`Unknown institution type: ${institutionType}, cannot save last upload date`);
-      return;
+  case 'questrade':
+    storageKey = STORAGE.LAST_DATE_PREFIX + accountId;
+    break;
+  case 'canadalife':
+    storageKey = STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX + accountId;
+    break;
+  case 'rogersbank':
+    storageKey = STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX + accountId;
+    break;
+  default:
+    debugLog(`Unknown institution type: ${institutionType}, cannot save last upload date`);
+    return;
   }
 
   GM_setValue(storageKey, uploadDate);
@@ -560,14 +560,14 @@ export async function clearCategoryMappings() {
     let institutionName = '';
 
     switch (institution) {
-      case 'rogersbank':
-        await GM_deleteValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS);
-        institutionName = 'Rogers Bank';
-        break;
-      default:
-        debugLog('No category mappings to clear for this institution');
-        toast.show('No category mappings to clear', 'info');
-        return;
+    case 'rogersbank':
+      await GM_deleteValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS);
+      institutionName = 'Rogers Bank';
+      break;
+    default:
+      debugLog('No category mappings to clear for this institution');
+      toast.show('No category mappings to clear', 'info');
+      return;
     }
 
     debugLog(`Cleared ${institutionName} category mappings`);
@@ -589,22 +589,22 @@ export async function clearAccountMapping() {
     let institutionName = '';
 
     switch (institution) {
-      case 'questrade':
-        prefix = STORAGE.ACCOUNT_MAPPING_PREFIX;
-        institutionName = 'Questrade';
-        break;
-      case 'canadalife':
-        prefix = STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX;
-        institutionName = 'Canada Life';
-        break;
-      case 'rogersbank':
-        prefix = STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX;
-        institutionName = 'Rogers Bank';
-        break;
-      default:
-        debugLog('Not on a supported financial institution site');
-        toast.show('Please run this on a supported financial site', 'warning');
-        return;
+    case 'questrade':
+      prefix = STORAGE.ACCOUNT_MAPPING_PREFIX;
+      institutionName = 'Questrade';
+      break;
+    case 'canadalife':
+      prefix = STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX;
+      institutionName = 'Canada Life';
+      break;
+    case 'rogersbank':
+      prefix = STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX;
+      institutionName = 'Rogers Bank';
+      break;
+    default:
+      debugLog('Not on a supported financial institution site');
+      toast.show('Please run this on a supported financial site', 'warning');
+      return;
     }
 
     const keysToDelete = keys.filter((key) => key.startsWith(prefix));
@@ -629,23 +629,23 @@ export async function clearLastUploadedDate() {
     let institutionName = '';
 
     switch (institution) {
-      case 'questrade':
-        institutionName = 'Questrade';
-        keysToDelete.push(...keys.filter((key) => key.startsWith(STORAGE.LAST_DATE_PREFIX)));
-        break;
-      case 'canadalife':
-        institutionName = 'Canada Life';
-        keysToDelete.push(...keys.filter((key) => key.startsWith(STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX)));
-        break;
-      case 'rogersbank':
-        institutionName = 'Rogers Bank';
-        keysToDelete.push(...keys.filter((key) => key.startsWith(STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX)
+    case 'questrade':
+      institutionName = 'Questrade';
+      keysToDelete.push(...keys.filter((key) => key.startsWith(STORAGE.LAST_DATE_PREFIX)));
+      break;
+    case 'canadalife':
+      institutionName = 'Canada Life';
+      keysToDelete.push(...keys.filter((key) => key.startsWith(STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX)));
+      break;
+    case 'rogersbank':
+      institutionName = 'Rogers Bank';
+      keysToDelete.push(...keys.filter((key) => key.startsWith(STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX)
           || key === STORAGE.ROGERSBANK_FROM_DATE));
-        break;
-      default:
-        debugLog('Not on a supported financial institution site');
-        toast.show('Please run this on a supported financial site', 'warning');
-        return;
+      break;
+    default:
+      debugLog('Not on a supported financial institution site');
+      toast.show('Please run this on a supported financial site', 'warning');
+      return;
     }
 
     await Promise.all(keysToDelete.map((key) => GM_deleteValue(key)));

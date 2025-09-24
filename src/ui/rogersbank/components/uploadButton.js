@@ -43,7 +43,7 @@ function createRogersBankButton(text, onClick, options = {}) {
     button.className = options.className;
   }
 
-  button.disabled = !!options.disabled;
+  button.disabled = Boolean(options.disabled);
 
   // Add hover effect
   button.addEventListener('mouseover', () => {

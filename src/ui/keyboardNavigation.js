@@ -13,21 +13,21 @@
 export function addModalKeyboardHandlers(overlay, onEscape, onEnter = null) {
   const handleKeyDown = (event) => {
     switch (event.key) {
-      case 'Escape':
+    case 'Escape':
+      event.preventDefault();
+      event.stopPropagation();
+      if (onEscape) onEscape();
+      break;
+    case 'Enter':
+      if (onEnter && !isInputElement(event.target)) {
         event.preventDefault();
         event.stopPropagation();
-        if (onEscape) onEscape();
-        break;
-      case 'Enter':
-        if (onEnter && !isInputElement(event.target)) {
-          event.preventDefault();
-          event.stopPropagation();
-          onEnter();
-        }
-        break;
-      default:
-        // No action needed for other keys
-        break;
+        onEnter();
+      }
+      break;
+    default:
+      // No action needed for other keys
+      break;
     }
   };
 
@@ -64,31 +64,31 @@ export function makeItemsKeyboardNavigable(items, onSelect, initialFocusIndex = 
 
     const handleKeyDown = (event) => {
       switch (event.key) {
-        case 'ArrowDown':
-          event.preventDefault();
-          moveFocus(1);
-          break;
-        case 'ArrowUp':
-          event.preventDefault();
+      case 'ArrowDown':
+        event.preventDefault();
+        moveFocus(1);
+        break;
+      case 'ArrowUp':
+        event.preventDefault();
+        moveFocus(-1);
+        break;
+      case 'Tab':
+        // Allow natural tab navigation but update our focus tracking
+        if (event.shiftKey) {
           moveFocus(-1);
-          break;
-        case 'Tab':
-          // Allow natural tab navigation but update our focus tracking
-          if (event.shiftKey) {
-            moveFocus(-1);
-          } else {
-            moveFocus(1);
-          }
-          break;
-        case 'Enter':
-        case ' ': // Space key
-          event.preventDefault();
-          event.stopPropagation();
-          if (onSelect) onSelect(item, index);
-          break;
-        default:
-          // No action needed for other keys
-          break;
+        } else {
+          moveFocus(1);
+        }
+        break;
+      case 'Enter':
+      case ' ': // Space key
+        event.preventDefault();
+        event.stopPropagation();
+        if (onSelect) onSelect(item, index);
+        break;
+      default:
+        // No action needed for other keys
+        break;
       }
     };
 

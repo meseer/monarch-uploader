@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Questrade, EQBank, CanadaLife, Rogers Bank to Monarch Balance Uploader
 // @namespace    http://tampermonkey.net/
-// @version      3.8.0
+// @version      3.8.1
 // @description  Adds buttons to download/upload balance history for individual and all accounts.
 // @description  Supports Questrade, EQBank, CanadaLife, and Rogers Bank. Supports progress tracking.
 // @author       You
@@ -31,19 +31,19 @@ function generateMetadata(buildType = 'local') {
   let updateUrl;
 
   switch (buildType) {
-    case 'stable':
-      downloadUrl = `${baseUrl}/latest/download/monarch-uploader-stable.user.js`;
-      updateUrl = `${baseUrl}/latest/download/monarch-uploader-stable.user.js`;
-      break;
-    case 'dev':
-      downloadUrl = `${baseUrl}/download/dev-latest/monarch-uploader-dev.user.js`;
-      updateUrl = `${baseUrl}/download/dev-latest/monarch-uploader-dev.user.js`;
-      break;
-    default:
-      // For local builds or unknown types, don't include update URLs
-      downloadUrl = null;
-      updateUrl = null;
-      break;
+  case 'stable':
+    downloadUrl = `${baseUrl}/latest/download/monarch-uploader-stable.user.js`;
+    updateUrl = `${baseUrl}/latest/download/monarch-uploader-stable.user.js`;
+    break;
+  case 'dev':
+    downloadUrl = `${baseUrl}/download/dev-latest/monarch-uploader-dev.user.js`;
+    updateUrl = `${baseUrl}/download/dev-latest/monarch-uploader-dev.user.js`;
+    break;
+  default:
+    // For local builds or unknown types, don't include update URLs
+    downloadUrl = null;
+    updateUrl = null;
+    break;
   }
 
   const downloadLine = downloadUrl ? `// @downloadURL  ${downloadUrl}\n` : '';
@@ -52,7 +52,7 @@ function generateMetadata(buildType = 'local') {
   return `// ==UserScript==
 // @name         Questrade, EQBank, CanadaLife, Rogers Bank to Monarch Balance Uploader
 // @namespace    http://tampermonkey.net/
-// @version      3.8.0
+// @version      3.8.1
 // @description  Adds buttons to download/upload balance history for individual and all accounts.
 // @description  Supports Questrade, EQBank, CanadaLife, and Rogers Bank. Supports progress tracking.
 // @author       You

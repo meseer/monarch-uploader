@@ -156,7 +156,7 @@ export async function showMonarchCategorySelector(bankCategory, callback, simila
     debugLog('Showing category group selector with', {
       groupCount: groupsWithCategories.length,
       bankCategory,
-      hasSimilarityData: !!similarityInfo,
+      hasSimilarityData: Boolean(similarityInfo),
     });
 
     showCategoryGroupSelector(groupsWithCategories, bankCategory, callback, similarityInfo);

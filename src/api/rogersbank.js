@@ -41,10 +41,10 @@ export function getRogersBankCredentials() {
     Object.assign(credentials, stored);
 
     debugLog('Rogers Bank credentials retrieved:', {
-      hasToken: !!stored.authToken,
-      hasAccountId: !!stored.accountId,
-      hasCustomerId: !!stored.customerId,
-      hasDeviceId: !!stored.deviceId,
+      hasToken: Boolean(stored.authToken),
+      hasAccountId: Boolean(stored.accountId),
+      hasCustomerId: Boolean(stored.customerId),
+      hasDeviceId: Boolean(stored.deviceId),
       lastUpdated: stored.lastUpdated,
     });
 
@@ -110,12 +110,10 @@ export function checkRogersBankAuth() {
   const creds = getRogersBankCredentials();
 
   // Check if we have all required credentials
-  const hasAllCredentials = !!(
-    creds.authToken
+  const hasAllCredentials = Boolean(creds.authToken
     && creds.accountId
     && creds.customerId
-    && creds.deviceId
-  );
+    && creds.deviceId);
 
   const currentStatus = hasAllCredentials ? 'connected' : 'not_connected';
 

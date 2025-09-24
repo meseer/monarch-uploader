@@ -69,23 +69,23 @@ function getInstitutionLogo(storagePrefix, institutionName) {
  */
 function checkInstitutionConnection(institutionId) {
   switch (institutionId) {
-    case 'questrade':
-      return checkQuestradeAuth().authenticated;
-    case 'canadalife':
-      // Check for CanadaLife token in localStorage
-      try {
-        const token = localStorage.getItem(STORAGE.CANADALIFE_TOKEN_KEY);
-        return !!token;
-      } catch (error) {
-        return false;
-      }
-    case 'rogersbank':
-      // Check for Rogers Bank auth token
-      return !!GM_getValue(STORAGE.ROGERSBANK_AUTH_TOKEN);
-    case 'monarch':
-      return checkMonarchAuth().authenticated;
-    default:
+  case 'questrade':
+    return checkQuestradeAuth().authenticated;
+  case 'canadalife':
+    // Check for CanadaLife token in localStorage
+    try {
+      const token = localStorage.getItem(STORAGE.CANADALIFE_TOKEN_KEY);
+      return Boolean(token);
+    } catch (error) {
       return false;
+    }
+  case 'rogersbank':
+    // Check for Rogers Bank auth token
+    return Boolean(GM_getValue(STORAGE.ROGERSBANK_AUTH_TOKEN));
+  case 'monarch':
+    return checkMonarchAuth().authenticated;
+  default:
+    return false;
   }
 }
 
@@ -380,23 +380,23 @@ function renderTabContent(container, tabId) {
   container.innerHTML = '';
 
   switch (tabId) {
-    case 'general':
-      renderGeneralTab(container);
-      break;
-    case 'questrade':
-      renderQuestradeTab(container);
-      break;
-    case 'canadalife':
-      renderCanadaLifeTab(container);
-      break;
-    case 'rogersbank':
-      renderRogersBankTab(container);
-      break;
-    case 'monarch':
-      renderMonarchTab(container);
-      break;
-    default:
-      container.innerHTML = '<p>Tab content not found.</p>';
+  case 'general':
+    renderGeneralTab(container);
+    break;
+  case 'questrade':
+    renderQuestradeTab(container);
+    break;
+  case 'canadalife':
+    renderCanadaLifeTab(container);
+    break;
+  case 'rogersbank':
+    renderRogersBankTab(container);
+    break;
+  case 'monarch':
+    renderMonarchTab(container);
+    break;
+  default:
+    container.innerHTML = '<p>Tab content not found.</p>';
   }
 }
 
@@ -488,21 +488,21 @@ function createLookbackPeriodSection(institutionType) {
   let storageKey;
   let institutionName;
   switch (institutionType) {
-    case 'questrade':
-      storageKey = STORAGE.QUESTRADE_LOOKBACK_DAYS;
-      institutionName = 'Questrade';
-      break;
-    case 'canadalife':
-      storageKey = STORAGE.CANADALIFE_LOOKBACK_DAYS;
-      institutionName = 'CanadaLife';
-      break;
-    case 'rogersbank':
-      storageKey = STORAGE.ROGERSBANK_LOOKBACK_DAYS;
-      institutionName = 'Rogers Bank';
-      break;
-    default:
-      console.error('Unknown institution type:', institutionType);
-      return section;
+  case 'questrade':
+    storageKey = STORAGE.QUESTRADE_LOOKBACK_DAYS;
+    institutionName = 'Questrade';
+    break;
+  case 'canadalife':
+    storageKey = STORAGE.CANADALIFE_LOOKBACK_DAYS;
+    institutionName = 'CanadaLife';
+    break;
+  case 'rogersbank':
+    storageKey = STORAGE.ROGERSBANK_LOOKBACK_DAYS;
+    institutionName = 'Rogers Bank';
+    break;
+  default:
+    console.error('Unknown institution type:', institutionType);
+    return section;
   }
 
   // Load current value or default
@@ -992,17 +992,17 @@ function getLastUpdateDate(displayKey, institutionType) {
   let storageKey;
 
   switch (institutionType) {
-    case 'questrade':
-      storageKey = STORAGE.LAST_DATE_PREFIX + displayKey;
-      break;
-    case 'canadalife':
-      storageKey = STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX + displayKey;
-      break;
-    case 'rogersbank':
-      storageKey = STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX + displayKey;
-      break;
-    default:
-      return null;
+  case 'questrade':
+    storageKey = STORAGE.LAST_DATE_PREFIX + displayKey;
+    break;
+  case 'canadalife':
+    storageKey = STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX + displayKey;
+    break;
+  case 'rogersbank':
+    storageKey = STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX + displayKey;
+    break;
+  default:
+    return null;
   }
 
   return GM_getValue(storageKey, null);
@@ -1018,17 +1018,17 @@ function clearLastUpdateDate(displayKey, institutionType, onClear) {
   let storageKey;
 
   switch (institutionType) {
-    case 'questrade':
-      storageKey = STORAGE.LAST_DATE_PREFIX + displayKey;
-      break;
-    case 'canadalife':
-      storageKey = STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX + displayKey;
-      break;
-    case 'rogersbank':
-      storageKey = STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX + displayKey;
-      break;
-    default:
-      return;
+  case 'questrade':
+    storageKey = STORAGE.LAST_DATE_PREFIX + displayKey;
+    break;
+  case 'canadalife':
+    storageKey = STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX + displayKey;
+    break;
+  case 'rogersbank':
+    storageKey = STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX + displayKey;
+    break;
+  default:
+    return;
   }
 
   GM_deleteValue(storageKey);
