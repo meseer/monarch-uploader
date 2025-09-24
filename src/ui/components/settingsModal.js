@@ -5,7 +5,7 @@
 
 import { debugLog, getDefaultLookbackDays } from '../../core/utils';
 import { STORAGE } from '../../core/config';
-import { checkMonarchAuth } from '../../services/auth';
+import { checkMonarchAuth, checkQuestradeAuth } from '../../services/auth';
 import toast from '../toast';
 import { createMonarchLoginLink } from './monarchLoginLink';
 
@@ -63,6 +63,33 @@ function getInstitutionLogo(storagePrefix, institutionName) {
 }
 
 /**
+ * Checks connection status for an institution
+ * @param {string} institutionId - Institution identifier
+ * @returns {boolean} True if connected
+ */
+function checkInstitutionConnection(institutionId) {
+  switch (institutionId) {
+    case 'questrade':
+      return checkQuestradeAuth().authenticated;
+    case 'canadalife':
+      // Check for CanadaLife token in localStorage
+      try {
+        const token = localStorage.getItem(STORAGE.CANADALIFE_TOKEN_KEY);
+        return !!token;
+      } catch (error) {
+        return false;
+      }
+    case 'rogersbank':
+      // Check for Rogers Bank auth token
+      return !!GM_getValue(STORAGE.ROGERSBANK_AUTH_TOKEN);
+    case 'monarch':
+      return checkMonarchAuth().authenticated;
+    default:
+      return false;
+  }
+}
+
+/**
  * Creates the settings modal
  * @returns {HTMLElement} Modal element
  */
@@ -89,7 +116,7 @@ export function createSettingsModal() {
   modalContent.style.cssText = `
     background-color: white;
     border-radius: 8px;
-    width: 800px;
+    width: 900px;
     max-width: 95%;
     max-height: 90%;
     overflow: hidden;
@@ -139,21 +166,31 @@ export function createSettingsModal() {
 
   modalContent.appendChild(header);
 
-  // Create tab navigation
+  // Create main container with two columns
+  const mainContainer = document.createElement('div');
+  mainContainer.style.cssText = `
+    display: flex;
+    height: 550px;
+  `;
+
+  // Create tab navigation (left column)
   const tabNav = document.createElement('div');
   tabNav.className = 'settings-tab-nav';
   tabNav.style.cssText = `
     display: flex;
-    border-bottom: 1px solid #e0e0e0;
+    flex-direction: column;
+    width: 250px;
     background-color: #f8f9fa;
+    border-right: 1px solid #e0e0e0;
+    padding: 10px 0;
   `;
 
-  // Create tab content container
+  // Create tab content container (right column)
   const tabContent = document.createElement('div');
   tabContent.className = 'settings-tab-content';
   tabContent.style.cssText = `
+    flex: 1;
     padding: 20px;
-    height: 500px;
     overflow-y: auto;
   `;
 
@@ -233,7 +270,24 @@ export function createSettingsModal() {
     // Add label text
     const labelSpan = document.createElement('span');
     labelSpan.textContent = tab.label;
+    labelSpan.style.cssText = 'flex: 1;';
     buttonContent.appendChild(labelSpan);
+
+    // Add connection indicator (except for General tab)
+    if (tab.id !== 'general') {
+      const isConnected = checkInstitutionConnection(tab.id);
+      const connectionDot = document.createElement('span');
+      connectionDot.style.cssText = `
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background-color: ${isConnected ? '#28a745' : '#dc3545'};
+        margin-left: auto;
+        flex-shrink: 0;
+      `;
+      connectionDot.title = isConnected ? 'Connected' : 'Not connected';
+      buttonContent.appendChild(connectionDot);
+    }
 
     tabButton.appendChild(buttonContent);
     tabButton.style.cssText = `
@@ -242,12 +296,15 @@ export function createSettingsModal() {
       padding: 15px 20px;
       cursor: pointer;
       font-size: 14px;
-      border-bottom: 3px solid transparent;
+      border-left: 3px solid transparent;
       transition: all 0.2s;
+      width: 100%;
+      text-align: left;
+      display: block;
     `;
 
     if (tab.id === activeTab) {
-      tabButton.style.borderBottomColor = '#0073b1';
+      tabButton.style.borderLeftColor = '#0073b1';
       tabButton.style.backgroundColor = 'white';
       tabButton.style.fontWeight = 'bold';
     }
@@ -258,12 +315,12 @@ export function createSettingsModal() {
 
       // Update tab button styles
       tabNav.querySelectorAll('.settings-tab-button').forEach((btn) => {
-        btn.style.borderBottomColor = 'transparent';
+        btn.style.borderLeftColor = 'transparent';
         btn.style.backgroundColor = 'transparent';
         btn.style.fontWeight = 'normal';
       });
 
-      tabButton.style.borderBottomColor = '#0073b1';
+      tabButton.style.borderLeftColor = '#0073b1';
       tabButton.style.backgroundColor = 'white';
       tabButton.style.fontWeight = 'bold';
 
@@ -286,8 +343,9 @@ export function createSettingsModal() {
     tabNav.appendChild(tabButton);
   });
 
-  modalContent.appendChild(tabNav);
-  modalContent.appendChild(tabContent);
+  mainContainer.appendChild(tabNav);
+  mainContainer.appendChild(tabContent);
+  modalContent.appendChild(mainContainer);
 
   // Initial tab content render
   renderTabContent(tabContent, activeTab);
