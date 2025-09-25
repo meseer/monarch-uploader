@@ -8,6 +8,7 @@ import {
 } from '../core/utils';
 import toast from '../ui/toast';
 import { STORAGE } from '../core/config';
+import stateManager from '../core/state';
 import { getRogersBankCredentials, fetchRogersBankBalance } from '../api/rogersbank';
 import monarchApi from '../api/monarch';
 import { showMonarchAccountSelector } from '../ui/components/accountSelector';
@@ -425,6 +426,10 @@ export async function uploadRogersBankToMonarch() {
 
     const toDate = getEndOfCurrentMonth();
     debugLog(`Date range: ${fromDate} to ${toDate}`);
+
+    // Set the account in state manager so it displays correctly in the account selector
+    stateManager.setAccount(rogersAccountId, rogersAccountName);
+    debugLog(`Set account in state: ${rogersAccountId}, ${rogersAccountName}`);
 
     // Create progress dialog for Rogers Bank account
     const accountForDialog = {

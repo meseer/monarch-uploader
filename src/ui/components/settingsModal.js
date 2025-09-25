@@ -601,7 +601,7 @@ function renderQuestradeTab(container) {
   const mappingsCards = createAccountMappingCards(mappingsData, (key) => {
     GM_deleteValue(key);
     toast.show('Account mapping deleted', 'success');
-    renderQuestradeTab(container);
+    renderTabContent(container, 'questrade');
   }, 'Questrade', 'questrade');
   mappingsSection.appendChild(mappingsCards);
 
@@ -623,7 +623,7 @@ function renderCanadaLifeTab(container) {
   const mappingsCards = createAccountMappingCards(mappingsData, (key) => {
     GM_deleteValue(key);
     toast.show('Account mapping deleted', 'success');
-    renderCanadaLifeTab(container);
+    renderTabContent(container, 'canadalife');
   }, 'Canada Life', 'canadalife');
   mappingsSection.appendChild(mappingsCards);
 
@@ -645,7 +645,7 @@ function renderRogersBankTab(container) {
   const mappingsCards = createAccountMappingCards(mappingsData, (key) => {
     GM_deleteValue(key);
     toast.show('Account mapping deleted', 'success');
-    renderRogersBankTab(container);
+    renderTabContent(container, 'rogersbank');
   }, 'Rogers Bank', 'rogersbank');
   mappingsSection.appendChild(mappingsCards);
 
@@ -677,7 +677,7 @@ function renderRogersBankTab(container) {
       delete currentMappings[bankCategory];
       GM_setValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS, JSON.stringify(currentMappings));
       toast.show('Category mapping deleted', 'success');
-      renderRogersBankTab(container);
+      renderTabContent(container, 'rogersbank');
     } catch (error) {
       toast.show('Error deleting category mapping', 'error');
       debugLog('Error deleting category mapping:', error);
@@ -1665,7 +1665,7 @@ function createTransactionsManagementTable() {
         // Refresh the Rogers Bank tab
         const tabContainer = document.querySelector('.settings-tab-content');
         if (tabContainer) {
-          renderRogersBankTab(tabContainer);
+          renderTabContent(tabContainer, 'rogersbank');
         }
       }
     });
@@ -1728,7 +1728,7 @@ function deleteSelectedTransactionRefs(selectedCheckboxes) {
   // Refresh the Rogers Bank tab
   const tabContainer = document.querySelector('.settings-tab-content');
   if (tabContainer) {
-    renderRogersBankTab(tabContainer);
+    renderTabContent(tabContainer, 'rogersbank');
   }
 }
 
