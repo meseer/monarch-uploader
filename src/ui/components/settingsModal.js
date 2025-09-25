@@ -1516,6 +1516,19 @@ function createTransactionsManagementTable() {
     const bulkActions = document.createElement('div');
     bulkActions.style.cssText = 'margin-bottom: 15px; display: flex; gap: 10px; align-items: center;';
 
+    // Add button (leftmost)
+    const addBtn = document.createElement('button');
+    addBtn.textContent = 'Add';
+    addBtn.style.cssText = `
+      padding: 5px 10px;
+      border: 1px solid #28a745;
+      border-radius: 4px;
+      background: white;
+      color: #28a745;
+      cursor: pointer;
+      font-size: 12px;
+    `;
+
     const selectAllBtn = document.createElement('button');
     selectAllBtn.textContent = 'Select All';
     selectAllBtn.style.cssText = `
@@ -1563,6 +1576,7 @@ function createTransactionsManagementTable() {
       margin-left: auto;
     `;
 
+    bulkActions.appendChild(addBtn);
     bulkActions.appendChild(selectAllBtn);
     bulkActions.appendChild(selectNoneBtn);
     bulkActions.appendChild(deleteSelectedBtn);
@@ -1604,7 +1618,70 @@ function createTransactionsManagementTable() {
       transactionsList.appendChild(refRow);
     });
 
+    // Inline input area for adding transaction IDs (initially hidden)
+    const addInputArea = document.createElement('div');
+    addInputArea.style.cssText = `
+      display: none;
+      margin-bottom: 15px;
+      padding: 12px;
+      background-color: #f8f9fa;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+    `;
+
+    const inputLabel = document.createElement('label');
+    inputLabel.textContent = 'Add Transaction IDs:';
+    inputLabel.style.cssText = 'display: block; margin-bottom: 8px; font-weight: bold; font-size: 13px;';
+    addInputArea.appendChild(inputLabel);
+
+    const textarea = document.createElement('textarea');
+    textarea.placeholder = 'Enter transaction IDs (one per line or comma-separated)';
+    textarea.style.cssText = `
+      width: 100%;
+      min-height: 80px;
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 13px;
+      resize: vertical;
+      box-sizing: border-box;
+    `;
+    addInputArea.appendChild(textarea);
+
+    const inputButtonContainer = document.createElement('div');
+    inputButtonContainer.style.cssText = 'margin-top: 10px; display: flex; gap: 8px;';
+
+    const saveBtn = document.createElement('button');
+    saveBtn.textContent = 'Save';
+    saveBtn.style.cssText = `
+      padding: 6px 12px;
+      border: none;
+      border-radius: 4px;
+      background: #28a745;
+      color: white;
+      cursor: pointer;
+      font-size: 12px;
+    `;
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.cssText = `
+      padding: 6px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background: white;
+      color: #333;
+      cursor: pointer;
+      font-size: 12px;
+    `;
+
+    inputButtonContainer.appendChild(saveBtn);
+    inputButtonContainer.appendChild(cancelBtn);
+    addInputArea.appendChild(inputButtonContainer);
+
     accountContent.appendChild(bulkActions);
+    accountContent.appendChild(addInputArea);
     accountContent.appendChild(transactionsList);
 
     // Toggle functionality
@@ -1621,6 +1698,99 @@ function createTransactionsManagementTable() {
 
     accountHeader.addEventListener('mouseout', () => {
       accountHeader.style.backgroundColor = '#f8f9fa';
+    });
+
+    // Add button event listener
+    let isAddingMode = false;
+    addBtn.addEventListener('click', () => {
+      isAddingMode = !isAddingMode;
+      addInputArea.style.display = isAddingMode ? 'block' : 'none';
+      addBtn.textContent = isAddingMode ? 'Cancel' : 'Add';
+      addBtn.style.borderColor = isAddingMode ? '#dc3545' : '#28a745';
+      addBtn.style.color = isAddingMode ? '#dc3545' : '#28a745';
+
+      if (!isAddingMode) {
+        textarea.value = '';
+      }
+    });
+
+    // Save button event listener
+    saveBtn.addEventListener('click', () => {
+      const inputValue = textarea.value.trim();
+      if (!inputValue) {
+        toast.show('Please enter at least one transaction ID', 'warning');
+        return;
+      }
+
+      // Parse input - handle comma-separated, space-separated, and newline-separated
+      const newIds = inputValue
+        .split(/[\n,]/)
+        .map((id) => id.trim())
+        .filter((id) => id.length > 0);
+
+      if (newIds.length === 0) {
+        toast.show('No valid transaction IDs found', 'warning');
+        return;
+      }
+
+      // Check for duplicates
+      const existingRefs = account.references;
+      const duplicates = [];
+      const uniqueNewIds = [];
+
+      newIds.forEach((id) => {
+        if (existingRefs.includes(id)) {
+          duplicates.push(id);
+        } else if (!uniqueNewIds.includes(id)) {
+          uniqueNewIds.push(id);
+        }
+      });
+
+      if (uniqueNewIds.length === 0) {
+        toast.show('All transaction IDs already exist', 'warning');
+        return;
+      }
+
+      // Update storage
+      try {
+        const updatedRefs = [...existingRefs, ...uniqueNewIds];
+        GM_setValue(account.key, updatedRefs);
+
+        // Show success message
+        let message = `Added ${uniqueNewIds.length} transaction ID(s)`;
+        if (duplicates.length > 0) {
+          message += ` (${duplicates.length} duplicate(s) skipped)`;
+        }
+        toast.show(message, 'success');
+        debugLog(`Added ${uniqueNewIds.length} transaction IDs to ${account.accountId}`);
+
+        // Reset the input area
+        textarea.value = '';
+        isAddingMode = false;
+        addInputArea.style.display = 'none';
+        addBtn.textContent = 'Add';
+        addBtn.style.borderColor = '#28a745';
+        addBtn.style.color = '#28a745';
+
+        // Refresh the Rogers Bank tab to show updated list
+        const tabContainer = document.querySelector('.settings-tab-content');
+        if (tabContainer) {
+          renderTabContent(tabContainer, 'rogersbank');
+        }
+      } catch (error) {
+        debugLog('Error adding transaction IDs:', error);
+        toast.show('Error adding transaction IDs', 'error');
+      }
+    });
+
+    // Cancel button event listener
+    cancelBtn.addEventListener('click', () => {
+      textarea.value = '';
+      isAddingMode = false;
+      addInputArea.style.display = 'none';
+      addBtn.textContent = 'Add';
+      addBtn.style.borderColor = '#28a745';
+      addBtn.style.color = '#28a745';
     });
 
     // Bulk action event listeners
