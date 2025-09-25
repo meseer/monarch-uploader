@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Questrade, EQBank, CanadaLife, Rogers Bank to Monarch Balance Uploader
 // @namespace    http://tampermonkey.net/
-// @version      3.8.2
+// @version      3.9.1
 // @description  Adds buttons to download/upload balance history for individual and all accounts.
 // @description  Supports Questrade, EQBank, CanadaLife, and Rogers Bank. Supports progress tracking.
 // @author       You
@@ -52,7 +52,7 @@ function generateMetadata(buildType = 'local') {
   return `// ==UserScript==
 // @name         Questrade, EQBank, CanadaLife, Rogers Bank to Monarch Balance Uploader
 // @namespace    http://tampermonkey.net/
-// @version      3.8.2
+// @version      3.9.1
 // @description  Adds buttons to download/upload balance history for individual and all accounts.
 // @description  Supports Questrade, EQBank, CanadaLife, and Rogers Bank. Supports progress tracking.
 // @author       You

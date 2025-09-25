@@ -94,10 +94,12 @@ export function createCategorySelector({
  * @param {string} bankCategory - Bank category name being mapped
  * @param {Function} callback - Callback function to receive selected category
  * @param {Object} similarityInfo - Optional comprehensive similarity data
+ * @param {Object} transactionDetails - Optional transaction details (merchant, amount, etc.)
  * @returns {Promise} Promise that resolves when selection is complete
  */
-export async function showMonarchCategorySelector(bankCategory, callback, similarityInfo = null) {
+export async function showMonarchCategorySelector(bankCategory, callback, similarityInfo = null, transactionDetails = null) {
   debugLog('Starting category selector for bank category:', bankCategory);
+  debugLog('Transaction details:', transactionDetails);
 
   try {
     let groupsWithCategories = [];
@@ -157,9 +159,10 @@ export async function showMonarchCategorySelector(bankCategory, callback, simila
       groupCount: groupsWithCategories.length,
       bankCategory,
       hasSimilarityData: Boolean(similarityInfo),
+      hasTransactionDetails: Boolean(transactionDetails),
     });
 
-    showCategoryGroupSelector(groupsWithCategories, bankCategory, callback, similarityInfo);
+    showCategoryGroupSelector(groupsWithCategories, bankCategory, callback, similarityInfo, transactionDetails);
   } catch (error) {
     debugLog('Failed to get category data:', error);
     toast.show('Failed to load categories from Monarch', 'error');
@@ -173,11 +176,13 @@ export async function showMonarchCategorySelector(bankCategory, callback, simila
  * @param {string} bankCategory - Bank category name being mapped
  * @param {Function} callback - Callback for final category selection
  * @param {Object} similarityInfo - Optional similarity information to display
+ * @param {Object} transactionDetails - Optional transaction details (merchant, amount, etc.)
  */
-function showCategoryGroupSelector(categoryGroups, bankCategory, callback, similarityInfo = null) {
+function showCategoryGroupSelector(categoryGroups, bankCategory, callback, similarityInfo = null, transactionDetails = null) {
   debugLog('Showing category group selector with', {
     groupsCount: categoryGroups ? categoryGroups.length : 0,
     bankCategory,
+    hasTransactionDetails: Boolean(transactionDetails),
   });
 
   // Set up keyboard navigation cleanup function
@@ -207,6 +212,65 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
   header.style.cssText = 'margin-top:0; margin-bottom: 20px; font-size: 1.2em;';
   header.textContent = 'Select Category Group';
   modal.appendChild(header);
+
+  // Add transaction details section if available
+  if (transactionDetails) {
+    const transactionInfo = document.createElement('div');
+    transactionInfo.style.cssText = `
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 15px;
+    `;
+
+    let transactionHtml = '<div style="font-weight: bold; margin-bottom: 8px; color: #333;">Transaction Details:</div>';
+
+    // Add merchant name if available
+    if (transactionDetails.merchant) {
+      transactionHtml += `<div style="margin-bottom: 4px;">
+        <span style="color: #666;">Merchant:</span> 
+        <span style="font-weight: 500; color: #333;">${transactionDetails.merchant}</span>
+      </div>`;
+    }
+
+    // Add amount if available
+    if (transactionDetails.amount !== undefined && transactionDetails.amount !== null) {
+      let formattedAmount = '';
+      let amountValue = 0;
+
+      // Handle amount as object with value and currency properties
+      if (typeof transactionDetails.amount === 'object' && transactionDetails.amount.value !== undefined) {
+        amountValue = parseFloat(transactionDetails.amount.value) || 0;
+        const currency = transactionDetails.amount.currency || 'CAD';
+        formattedAmount = `$${Math.abs(amountValue).toFixed(2)} ${currency}`;
+      } else if (typeof transactionDetails.amount === 'number') {
+        // Fallback for simple number
+        amountValue = transactionDetails.amount;
+        formattedAmount = `$${Math.abs(amountValue).toFixed(2)}`;
+      } else {
+        // Fallback for string or other formats
+        formattedAmount = String(transactionDetails.amount);
+      }
+
+      const amountColor = amountValue < 0 ? '#dc3545' : '#28a745';
+      transactionHtml += `<div style="margin-bottom: 4px;">
+        <span style="color: #666;">Amount:</span> 
+        <span style="font-weight: 500; color: ${amountColor};">${formattedAmount}</span>
+      </div>`;
+    }
+
+    // Add date if available
+    if (transactionDetails.date) {
+      transactionHtml += `<div style="margin-bottom: 4px;">
+        <span style="color: #666;">Date:</span> 
+        <span style="font-weight: 500; color: #333;">${transactionDetails.date}</span>
+      </div>`;
+    }
+
+    transactionInfo.innerHTML = transactionHtml;
+    modal.appendChild(transactionInfo);
+  }
 
   // Add bank category reference with similarity score if available
   const bankCategoryRef = document.createElement('div');
@@ -338,7 +402,7 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
       debugLog('Navigating to category selector for group:', group.name);
       cleanupKeyboard();
       overlay.remove();
-      showCategorySelector(group, bankCategory, callback, categoryGroups);
+      showCategorySelector(group, bankCategory, callback, categoryGroups, transactionDetails);
     };
 
     modal.appendChild(item);
@@ -382,7 +446,7 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
         debugLog('Keyboard selecting group:', group.name);
         cleanupKeyboard();
         overlay.remove();
-        showCategorySelector(group, bankCategory, callback, categoryGroups);
+        showCategorySelector(group, bankCategory, callback, categoryGroups, transactionDetails);
       },
       0, // Focus first item initially
     );
@@ -405,8 +469,9 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
  * @param {string} bankCategory - Bank category name being mapped
  * @param {Function} callback - Callback for category selection
  * @param {Array} allCategoryGroups - All category groups for navigation
+ * @param {Object} transactionDetails - Optional transaction details (merchant, amount, etc.)
  */
-function showCategorySelector(categoryGroup, bankCategory, callback, allCategoryGroups) {
+function showCategorySelector(categoryGroup, bankCategory, callback, allCategoryGroups, transactionDetails = null) {
   const categories = categoryGroup.categories || [];
 
   debugLog('Showing category selector for group:', {
@@ -456,8 +521,8 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
     debugLog('Navigating back to category group list');
     cleanupKeyboard();
     overlay.remove();
-    // Re-show the category group selector
-    showCategoryGroupSelector(allCategoryGroups, bankCategory, callback);
+    // Re-show the category group selector with transaction details
+    showCategoryGroupSelector(allCategoryGroups, bankCategory, callback, null, transactionDetails);
   };
 
   // Now initialize the overlay with the closeModal function
@@ -494,6 +559,65 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
   header.style.cssText = 'margin-top:0; margin-bottom: 20px; font-size: 1.2em;';
   header.textContent = categoryGroup.name;
   modal.appendChild(header);
+
+  // Add transaction details section if available
+  if (transactionDetails) {
+    const transactionInfo = document.createElement('div');
+    transactionInfo.style.cssText = `
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 15px;
+    `;
+
+    let transactionHtml = '<div style="font-weight: bold; margin-bottom: 8px; color: #333;">Transaction Details:</div>';
+
+    // Add merchant name if available
+    if (transactionDetails.merchant) {
+      transactionHtml += `<div style="margin-bottom: 4px;">
+        <span style="color: #666;">Merchant:</span>
+        <span style="font-weight: 500; color: #333;">${transactionDetails.merchant}</span>
+      </div>`;
+    }
+
+    // Add amount if available
+    if (transactionDetails.amount !== undefined && transactionDetails.amount !== null) {
+      let formattedAmount = '';
+      let amountValue = 0;
+
+      // Handle amount as object with value and currency properties
+      if (typeof transactionDetails.amount === 'object' && transactionDetails.amount.value !== undefined) {
+        amountValue = parseFloat(transactionDetails.amount.value) || 0;
+        const currency = transactionDetails.amount.currency || 'CAD';
+        formattedAmount = `$${Math.abs(amountValue).toFixed(2)} ${currency}`;
+      } else if (typeof transactionDetails.amount === 'number') {
+        // Fallback for simple number
+        amountValue = transactionDetails.amount;
+        formattedAmount = `$${Math.abs(amountValue).toFixed(2)}`;
+      } else {
+        // Fallback for string or other formats
+        formattedAmount = String(transactionDetails.amount);
+      }
+
+      const amountColor = amountValue < 0 ? '#dc3545' : '#28a745';
+      transactionHtml += `<div style="margin-bottom: 4px;">
+        <span style="color: #666;">Amount:</span>
+        <span style="font-weight: 500; color: ${amountColor};">${formattedAmount}</span>
+      </div>`;
+    }
+
+    // Add date if available
+    if (transactionDetails.date) {
+      transactionHtml += `<div style="margin-bottom: 4px;">
+        <span style="color: #666;">Date:</span>
+        <span style="font-weight: 500; color: #333;">${transactionDetails.date}</span>
+      </div>`;
+    }
+
+    transactionInfo.innerHTML = transactionHtml;
+    modal.appendChild(transactionInfo);
+  }
 
   // Add bank category reference
   const bankCategoryRef = document.createElement('div');

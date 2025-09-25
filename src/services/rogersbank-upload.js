@@ -171,8 +171,8 @@ async function resolveCategoriesForTransactions(transactions) {
     // Continue with empty categories array - all mappings will require manual selection
   }
 
-  // Find all unique bank categories that need resolution
-  const uniqueBankCategories = new Set();
+  // Find all unique bank categories that need resolution and track transaction details
+  const uniqueBankCategories = new Map(); // Use Map to store category with example transaction
   const categoriesToResolve = [];
 
   transactions.forEach((transaction) => {
@@ -181,14 +181,18 @@ async function resolveCategoriesForTransactions(transactions) {
       || 'Uncategorized';
 
     if (!uniqueBankCategories.has(bankCategory)) {
-      uniqueBankCategories.add(bankCategory);
+      // Store the first transaction as an example for this category
+      uniqueBankCategories.set(bankCategory, transaction);
 
       // Test the category mapping with available categories for similarity scoring
       const mappingResult = applyCategoryMapping(bankCategory, availableCategories);
 
       if (mappingResult && typeof mappingResult === 'object' && mappingResult.needsManualSelection) {
-        // This category needs manual selection
-        categoriesToResolve.push(mappingResult);
+        // This category needs manual selection, attach example transaction
+        categoriesToResolve.push({
+          ...mappingResult,
+          exampleTransaction: transaction,
+        });
       }
     }
   });
@@ -210,9 +214,36 @@ async function resolveCategoriesForTransactions(transactions) {
       // Calculate comprehensive similarity data for the UI
       const similarityData = calculateAllCategorySimilarities(categoryToResolve.bankCategory, availableCategories);
 
-      // Show the category selector and wait for user selection
+      // Prepare transaction details for the selector
+      const transactionDetails = {};
+      if (categoryToResolve.exampleTransaction) {
+        const exampleTx = categoryToResolve.exampleTransaction;
+
+        // Extract merchant name
+        transactionDetails.merchant = exampleTx.description
+          || exampleTx.merchant?.name
+          || exampleTx.transactionDescription
+          || 'Unknown Merchant';
+
+        // Extract amount
+        transactionDetails.amount = exampleTx.transactionAmount || exampleTx.amount || 0;
+
+        // Extract and format date
+        if (exampleTx.activityDate) {
+          const date = new Date(exampleTx.activityDate);
+          transactionDetails.date = date.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+          });
+        }
+
+        debugLog('Transaction details for category selector:', transactionDetails);
+      }
+
+      // Show the category selector with transaction details
       const selectedCategory = await new Promise((resolve) => {
-        showMonarchCategorySelector(categoryToResolve.bankCategory, resolve, similarityData);
+        showMonarchCategorySelector(categoryToResolve.bankCategory, resolve, similarityData, transactionDetails);
       });
 
       if (!selectedCategory) {
