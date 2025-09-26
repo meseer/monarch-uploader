@@ -115,3 +115,68 @@ jobs:
         echo "Release created successfully!"
         echo "Stable Download URL: https://github.com/${{ github.repository }}/releases/latest/download/monarch-uploader-stable.user.js"
         echo "Version-specific URL: https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/monarch-uploader-stable.user.js"
+
+    - name: Update GitHub Gist
+      if: env.GIST_TOKEN != ''
+      env:
+        GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+        GIST_ID: f00fb552c96efeb3eb4e4e1fd520d4e7
+      run: |
+        echo "Updating GitHub Gist with latest userscript..."
+        
+        # Read the built userscript content
+        USERSCRIPT_CONTENT=$(cat dist/monarch-uploader.user.js)
+        
+        # Escape the content for JSON
+        ESCAPED_CONTENT=$(echo "$USERSCRIPT_CONTENT" | jq -Rs .)
+        
+        # Get version without 'v' prefix
+        VERSION="${{ steps.version.outputs.VERSION }}"
+        VERSION="${VERSION#v}"
+        
+        # Create the JSON payload
+        cat > gist_update.json << EOF
+        {
+          "description": "Monarch Money Balance Uploader v${VERSION} - Tampermonkey userscript for uploading balance history from Questrade, Canada Life, and Rogers Bank to Monarch Money",
+          "files": {
+            "monarch-uploader.user.js": {
+              "content": $ESCAPED_CONTENT
+            }
+          }
+        }
+        EOF
+        
+        # Update the gist using GitHub API
+        response=$(curl -s -w "\n%{http_code}" -X PATCH \
+          -H "Authorization: token $GIST_TOKEN" \
+          -H "Accept: application/vnd.github.v3+json" \
+          -d @gist_update.json \
+          "https://api.github.com/gists/$GIST_ID")
+        
+        # Get the HTTP status code
+        http_code=$(echo "$response" | tail -n1)
+        
+        # Check if update was successful
+        if [ "$http_code" = "200" ]; then
+          echo "✅ Successfully updated gist: https://gist.github.com/meseer/$GIST_ID"
+          echo "Direct install link: https://gist.github.com/meseer/$GIST_ID/raw/monarch-uploader.user.js"
+        else
+          echo "⚠️ Failed to update gist (HTTP $http_code)"
+          echo "Response: $(echo "$response" | head -n-1)"
+          echo "Note: This won't fail the release, but the gist wasn't updated."
+        fi
+        
+        # Clean up
+        rm -f gist_update.json
+
+    - name: Gist Update Instructions
+      if: env.GIST_TOKEN == ''
+      env:
+        GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+      run: |
+        echo "ℹ️ GitHub Gist auto-update is not configured."
+        echo "To enable automatic gist updates:"
+        echo "1. Go to https://github.com/settings/tokens/new"
+        echo "2. Generate a token with 'gist' scope"
+        echo "3. Add it as a repository secret named 'GIST_TOKEN'"
+        echo "   Repository Settings → Secrets and variables → Actions → New repository secret"

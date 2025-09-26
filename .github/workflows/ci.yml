@@ -72,6 +72,12 @@ jobs:
         path: dist/*.user.js
         retention-days: 30
 
+    - name: Get version from package.json
+      id: version
+      run: |
+        VERSION=$(node -p "require('./package.json').version")
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
     - name: Create/Update Development Release
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -80,15 +86,17 @@ jobs:
         COMMIT_SHA=$(git rev-parse --short HEAD)
         COMMIT_MSG=$(git log -1 --pretty=format:"%s")
         BUILD_DATE=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+        VERSION="${{ steps.version.outputs.VERSION }}"
         
         # Delete existing dev-latest release if it exists
         gh release delete dev-latest --yes || true
         
         # Create new dev-latest release
         gh release create dev-latest \
-          --title "Development Build (Latest)" \
+          --title "Development Build v${VERSION}-dev (Latest)" \
           --notes "🚧 **Development Build** - Latest from main branch
 
+        **Version:** v${VERSION}-dev
         **Build Info:**
         - Commit: $COMMIT_SHA
         - Message: $COMMIT_MSG  
@@ -107,3 +115,68 @@ jobs:
         
         echo "✅ Development release created successfully!"
         echo "📦 Download URL: https://github.com/${{ github.repository }}/releases/download/dev-latest/monarch-uploader-dev.user.js"
+
+    - name: Update GitHub Gist
+      if: env.GIST_TOKEN != ''
+      env:
+        GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+        GIST_ID: f00fb552c96efeb3eb4e4e1fd520d4e7
+      run: |
+        echo "Updating GitHub Gist with latest development build..."
+        
+        # Read the built userscript content
+        USERSCRIPT_CONTENT=$(cat dist/monarch-uploader.user.js)
+        
+        # Escape the content for JSON
+        ESCAPED_CONTENT=$(echo "$USERSCRIPT_CONTENT" | jq -Rs .)
+        
+        # Get version and commit info
+        VERSION="${{ steps.version.outputs.VERSION }}"
+        COMMIT_SHA=$(git rev-parse --short HEAD)
+        
+        # Create the JSON payload
+        cat > gist_update.json << EOF
+        {
+          "description": "Monarch Money Balance Uploader v${VERSION}-dev (commit ${COMMIT_SHA}) - Tampermonkey userscript for uploading balance history from Questrade, Canada Life, and Rogers Bank to Monarch Money",
+          "files": {
+            "monarch-uploader.user.js": {
+              "content": $ESCAPED_CONTENT
+            }
+          }
+        }
+        EOF
+        
+        # Update the gist using GitHub API
+        response=$(curl -s -w "\n%{http_code}" -X PATCH \
+          -H "Authorization: token $GIST_TOKEN" \
+          -H "Accept: application/vnd.github.v3+json" \
+          -d @gist_update.json \
+          "https://api.github.com/gists/$GIST_ID")
+        
+        # Get the HTTP status code
+        http_code=$(echo "$response" | tail -n1)
+        
+        # Check if update was successful
+        if [ "$http_code" = "200" ]; then
+          echo "✅ Successfully updated gist: https://gist.github.com/meseer/$GIST_ID"
+          echo "Direct install link: https://gist.github.com/meseer/$GIST_ID/raw/monarch-uploader.user.js"
+        else
+          echo "⚠️ Failed to update gist (HTTP $http_code)"
+          echo "Response: $(echo "$response" | head -n-1)"
+          echo "Note: This won't fail the CI, but the gist wasn't updated."
+        fi
+        
+        # Clean up
+        rm -f gist_update.json
+
+    - name: Gist Update Instructions
+      if: env.GIST_TOKEN == ''
+      env:
+        GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+      run: |
+        echo "ℹ️ GitHub Gist auto-update is not configured."
+        echo "To enable automatic gist updates:"
+        echo "1. Go to https://github.com/settings/tokens/new"
+        echo "2. Generate a token with 'gist' scope"
+        echo "3. Add it as a repository secret named 'GIST_TOKEN'"
+        echo "   Repository Settings → Secrets and variables → Actions → New repository secret"

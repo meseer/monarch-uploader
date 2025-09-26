@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Questrade, EQBank, CanadaLife, Rogers Bank to Monarch Balance Uploader
 // @namespace    http://tampermonkey.net/
-// @version      3.10.0
+// @version      3.12.0
 // @description  Adds buttons to download/upload balance history for individual and all accounts.
 // @description  Supports Questrade, EQBank, CanadaLife, and Rogers Bank. Supports progress tracking.
 // @author       You
@@ -25,40 +25,24 @@
 // ==/UserScript==
 
 function generateMetadata(buildType = 'local') {
-  const baseUrl = 'https://github.com/meseer/monarch-uploader/releases';
+  // All builds now point to the same Gist for updates
+  const gistUrl = 'https://gist.github.com/meseer/f00fb552c96efeb3eb4e4e1fd520d4e7/raw/monarch-uploader.user.js';
+  
+  // Always include update URLs pointing to the Gist
+  const downloadUrl = gistUrl;
+  const updateUrl = gistUrl;
 
-  let downloadUrl;
-  let updateUrl;
-
-  switch (buildType) {
-  case 'stable':
-    downloadUrl = `${baseUrl}/latest/download/monarch-uploader-stable.user.js`;
-    updateUrl = `${baseUrl}/latest/download/monarch-uploader-stable.user.js`;
-    break;
-  case 'dev':
-    downloadUrl = `${baseUrl}/download/dev-latest/monarch-uploader-dev.user.js`;
-    updateUrl = `${baseUrl}/download/dev-latest/monarch-uploader-dev.user.js`;
-    break;
-  default:
-    // For local builds or unknown types, don't include update URLs
-    downloadUrl = null;
-    updateUrl = null;
-    break;
-  }
-
-  const downloadLine = downloadUrl ? `// @downloadURL  ${downloadUrl}\n` : '';
-  const updateLine = updateUrl ? `// @updateURL    ${updateUrl}\n` : '';
+  const downloadLine = `// @downloadURL  ${downloadUrl}\n`;
+  const updateLine = `// @updateURL    ${updateUrl}\n`;
 
   return `// ==UserScript==
-// @name         Questrade, EQBank, CanadaLife, Rogers Bank to Monarch Balance Uploader
+// @name         Questrade, CanadaLife, Rogers Bank to Monarch Balance Uploader
 // @namespace    http://tampermonkey.net/
-// @version      3.10.0
-// @description  Adds buttons to download/upload balance history for individual and all accounts.
-// @description  Supports Questrade, EQBank, CanadaLife, and Rogers Bank. Supports progress tracking.
+// @version      3.12.0
+// @description  Upload Questrade, CanadaLife, and Rogers Bank balance and transactions to Monarch.
 // @author       You
 // @match        https://myportal.questrade.com/investing/summary*
 // @match        https://app.monarchmoney.com/*
-// @match        https://secure.eqbank.ca/*
 // @match        https://my.canadalife.com/s/dashboard*
 // @match        https://selfserve.rogersbank.com/*
 ${downloadLine}${updateLine}// @grant        GM_addElement

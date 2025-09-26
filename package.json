@@ -1,6 +1,6 @@
 {
   "name": "monarch-uploader",
-  "version": "3.10.0",
+  "version": "3.12.0",
   "description": "Tampermonkey userscript for uploading Questrade balance history to Monarch Money",
   "main": "dist/monarch-uploader.user.js",
   "scripts": {
