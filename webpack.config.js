@@ -43,7 +43,7 @@ module.exports = (env, argv) => {
         new TerserPlugin({
           terserOptions: {
             format: {
-              comments: /==UserScript==|@name|@namespace|@version|@description|@author|@match|@grant|@connect|@run-at|==/,
+              comments: /==UserScript==|@name|@namespace|@version|@description|@author|@match|@downloadURL|@updateURL|@grant|@connect|@run-at|==/,
             },
           },
           extractComments: false,
