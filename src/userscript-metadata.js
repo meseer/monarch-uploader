@@ -40,7 +40,7 @@ function generateMetadata(buildType = 'local') {
 // @namespace    http://tampermonkey.net/
 // @version      3.12.0
 // @description  Upload Questrade, CanadaLife, and Rogers Bank balance and transactions to Monarch.
-// @author       You
+// @author       Mykhailo Delegan
 // @match        https://myportal.questrade.com/investing/summary*
 // @match        https://app.monarchmoney.com/*
 // @match        https://my.canadalife.com/s/dashboard*
