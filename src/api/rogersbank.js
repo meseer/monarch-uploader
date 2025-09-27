@@ -232,7 +232,7 @@ export function setupCredentialInterception() {
             authToken,
           });
 
-          toast.show('Rogers Bank credentials captured', 'success', 2000);
+          toast.show('Rogers Bank credentials captured', 'debug', 2000);
         }
 
         // Handle token regeneration responses
@@ -252,7 +252,7 @@ export function setupCredentialInterception() {
                   authToken: newToken,
                 });
 
-                toast.show('Rogers Bank token refreshed', 'info', 2000);
+                toast.show('Rogers Bank token refreshed', 'debug', 2000);
               }
             } catch (error) {
               debugLog('Error capturing regenerated token:', error);
@@ -314,7 +314,7 @@ export function setupCredentialInterception() {
           authToken: headersObj.authorization || null,
         });
 
-        toast.show('Rogers Bank credentials captured (fetch)', 'success', 2000);
+        toast.show('Rogers Bank credentials captured (fetch)', 'debug', 2000);
       }
 
       // Handle token regeneration
@@ -335,7 +335,7 @@ export function setupCredentialInterception() {
               authToken: newToken,
             });
 
-            toast.show('Rogers Bank token refreshed (fetch)', 'info', 2000);
+            toast.show('Rogers Bank token refreshed (fetch)', 'debug', 2000);
           }
 
           return response;

@@ -181,7 +181,7 @@ export function setupMonarchTokenCapture() {
             GM_setValue(STORAGE.MONARCH_TOKEN, token);
             stateManager.setMonarchAuth(token);
             debugLog('Successfully captured and stored new Monarch token.');
-            toast.show('Monarch Money token updated', 'success', 2000);
+            toast.show('Monarch Money token updated', 'debug', 2000);
           }
         }
       } catch (error) {

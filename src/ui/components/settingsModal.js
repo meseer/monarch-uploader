@@ -430,7 +430,7 @@ function renderGeneralTab(container) {
     { value: 'error', label: 'Error (Show only errors)' },
   ];
 
-  const currentLogLevel = GM_getValue('debug_log_level', 'debug');
+  const currentLogLevel = GM_getValue('debug_log_level', 'info');
 
   logLevels.forEach((level) => {
     const option = document.createElement('option');
@@ -442,7 +442,7 @@ function renderGeneralTab(container) {
 
   select.addEventListener('change', () => {
     GM_setValue('debug_log_level', select.value);
-    toast.show(`Log level set to: ${select.options[select.selectedIndex].text}`, 'success');
+    toast.show(`Log level set to: ${select.options[select.selectedIndex].text}`, 'info');
     debugLog(`Log level changed to: ${select.value}`);
   });
 
@@ -551,7 +551,7 @@ function createLookbackPeriodSection(institutionType) {
     }
 
     GM_setValue(storageKey, value);
-    toast.show(`${institutionName} lookback period set to ${value} day${value !== 1 ? 's' : ''}`, 'success');
+    toast.show(`${institutionName} lookback period set to ${value} day${value !== 1 ? 's' : ''}`, 'info');
     debugLog(`${institutionName} lookback period updated to: ${value} days`);
   };
 
@@ -559,7 +559,7 @@ function createLookbackPeriodSection(institutionType) {
   resetButton.addEventListener('click', () => {
     input.value = defaultLookback;
     GM_setValue(storageKey, defaultLookback);
-    toast.show(`${institutionName} lookback period reset to default (${defaultLookback} day${defaultLookback !== 1 ? 's' : ''})`, 'success');
+    toast.show(`${institutionName} lookback period reset to default (${defaultLookback} day${defaultLookback !== 1 ? 's' : ''})`, 'info');
   });
 
   // Save on blur or enter
@@ -600,7 +600,7 @@ function renderQuestradeTab(container) {
   const mappingsData = getStorageData(STORAGE.ACCOUNT_MAPPING_PREFIX);
   const mappingsCards = createAccountMappingCards(mappingsData, (key) => {
     GM_deleteValue(key);
-    toast.show('Account mapping deleted', 'success');
+    toast.show('Account mapping deleted', 'info');
     renderTabContent(container, 'questrade');
   }, 'Questrade', 'questrade');
   mappingsSection.appendChild(mappingsCards);
@@ -622,7 +622,7 @@ function renderCanadaLifeTab(container) {
   const mappingsData = getStorageData(STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX);
   const mappingsCards = createAccountMappingCards(mappingsData, (key) => {
     GM_deleteValue(key);
-    toast.show('Account mapping deleted', 'success');
+    toast.show('Account mapping deleted', 'info');
     renderTabContent(container, 'canadalife');
   }, 'Canada Life', 'canadalife');
   mappingsSection.appendChild(mappingsCards);
@@ -644,7 +644,7 @@ function renderRogersBankTab(container) {
   const mappingsData = getStorageData(STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX);
   const mappingsCards = createAccountMappingCards(mappingsData, (key) => {
     GM_deleteValue(key);
-    toast.show('Account mapping deleted', 'success');
+    toast.show('Account mapping deleted', 'info');
     renderTabContent(container, 'rogersbank');
   }, 'Rogers Bank', 'rogersbank');
   mappingsSection.appendChild(mappingsCards);
@@ -676,7 +676,7 @@ function renderRogersBankTab(container) {
       const currentMappings = JSON.parse(GM_getValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS, '{}'));
       delete currentMappings[bankCategory];
       GM_setValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS, JSON.stringify(currentMappings));
-      toast.show('Category mapping deleted', 'success');
+      toast.show('Category mapping deleted', 'info');
       renderTabContent(container, 'rogersbank');
     } catch (error) {
       toast.show('Error deleting category mapping', 'error');
@@ -802,7 +802,7 @@ function renderMonarchTab(container) {
       if (confirmed) {
         // Remove the token
         GM_deleteValue(STORAGE.MONARCH_TOKEN);
-        toast.show('Monarch Money authentication token removed', 'success');
+        toast.show('Monarch Money authentication token removed', 'info');
         debugLog('Monarch token removed by user');
 
         // Refresh the tab to show updated status using proper tab rendering
@@ -1032,7 +1032,7 @@ function clearLastUpdateDate(displayKey, institutionType, onClear) {
   }
 
   GM_deleteValue(storageKey);
-  toast.show('Last update date cleared', 'success');
+  toast.show('Last update date cleared', 'info');
   if (onClear) onClear();
 }
 
@@ -1761,7 +1761,7 @@ function createTransactionsManagementTable() {
         if (duplicates.length > 0) {
           message += ` (${duplicates.length} duplicate(s) skipped)`;
         }
-        toast.show(message, 'success');
+        toast.show(message, 'info');
         debugLog(`Added ${uniqueNewIds.length} transaction IDs to ${account.accountId}`);
 
         // Reset the input area
@@ -1831,7 +1831,7 @@ function createTransactionsManagementTable() {
 
       if (confirmed) {
         GM_deleteValue(account.key);
-        toast.show(`All transaction references cleared for ${account.accountId}`, 'success');
+        toast.show(`All transaction references cleared for ${account.accountId}`, 'info');
         // Refresh the Rogers Bank tab
         const tabContainer = document.querySelector('.settings-tab-content');
         if (tabContainer) {
@@ -1893,7 +1893,7 @@ function deleteSelectedTransactionRefs(selectedCheckboxes) {
     }
   });
 
-  toast.show(`Deleted ${selectedCheckboxes.length} transaction reference(s)`, 'success');
+  toast.show(`Deleted ${selectedCheckboxes.length} transaction reference(s)`, 'info');
 
   // Refresh the Rogers Bank tab
   const tabContainer = document.querySelector('.settings-tab-content');

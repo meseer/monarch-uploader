@@ -24,7 +24,7 @@ export function debugLog(...args) {
     && ['debug', 'info', 'warning', 'error'].includes(args[args.length - 1])
     ? args.pop() : 'debug';
 
-  const currentLogLevel = GM_getValue('debug_log_level', 'debug');
+  const currentLogLevel = GM_getValue('debug_log_level', 'info');
   const logLevels = {
     debug: 0, info: 1, warning: 2, error: 3,
   };
@@ -508,7 +508,7 @@ export async function clearAllGmStorage() {
     const keys = await GM_listValues();
     await Promise.all(keys.map((key) => GM_deleteValue(key)));
     debugLog('Cleared all storage and token cache');
-    toast.show('All cached data cleared', 'success');
+    toast.show('All cached data cleared', 'info');
   } catch (error) {
     debugLog('Failed to clear Tampermonkey storage:', error);
     toast.show('Failed to clear cached data', 'error');
@@ -540,7 +540,7 @@ export async function clearTransactionUploadHistory() {
       const keysToDelete = keys.filter((key) => key.startsWith(STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX));
       await Promise.all(keysToDelete.map((key) => GM_deleteValue(key)));
       debugLog(`Cleared ${keysToDelete.length} Rogers Bank transaction upload history keys`);
-      toast.show('Transaction upload history cleared', 'success');
+      toast.show('Transaction upload history cleared', 'info');
     } else {
       debugLog('No transaction upload history to clear for this institution');
       toast.show('No transaction history to clear', 'info');
@@ -571,7 +571,7 @@ export async function clearCategoryMappings() {
     }
 
     debugLog(`Cleared ${institutionName} category mappings`);
-    toast.show(`${institutionName} category mappings cleared`, 'success');
+    toast.show(`${institutionName} category mappings cleared`, 'info');
   } catch (error) {
     debugLog('Failed to clear category mappings:', error);
     toast.show('Failed to clear category mappings', 'error');
@@ -611,7 +611,7 @@ export async function clearAccountMapping() {
     await Promise.all(keysToDelete.map((key) => GM_deleteValue(key)));
 
     debugLog(`Cleared ${keysToDelete.length} ${institutionName} account mapping keys`);
-    toast.show(`${institutionName} account mappings cleared`, 'success');
+    toast.show(`${institutionName} account mappings cleared`, 'info');
   } catch (error) {
     debugLog('Failed to clear account mapping:', error);
     toast.show('Failed to clear account mappings', 'error');
@@ -651,7 +651,7 @@ export async function clearLastUploadedDate() {
     await Promise.all(keysToDelete.map((key) => GM_deleteValue(key)));
 
     debugLog(`Cleared ${keysToDelete.length} ${institutionName} last uploaded date keys`);
-    toast.show(`${institutionName} last uploaded dates cleared`, 'success');
+    toast.show(`${institutionName} last uploaded dates cleared`, 'info');
   } catch (error) {
     debugLog('Failed to clear last uploaded date:', error);
     toast.show('Failed to clear last uploaded dates', 'error');

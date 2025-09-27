@@ -234,19 +234,19 @@ export async function processAndUploadBalance(accountId, accountName, fromDate, 
     stateManager.setAccount(accountId, accountName);
 
     // Step 1: Fetch balance history
-    toast.show(`Downloading ${accountName} balance history...`, 'info');
+    toast.show(`Downloading ${accountName} balance history...`, 'trace');
     const balanceData = await fetchBalanceHistory(accountId, fromDate, toDate);
 
     // Step 2: Process the data
     const csvData = processBalanceData(balanceData, accountName);
 
     // Step 3: Upload to Monarch
-    toast.show(`Uploading ${accountName} balance history to Monarch (may take up to 2 minutes for large files)...`, 'info');
+    toast.show(`Uploading ${accountName} balance history to Monarch (may take up to 2 minutes for large files)...`, 'trace');
     const success = await uploadBalanceToMonarch(accountId, csvData, fromDate, toDate);
 
     // Step 4: Show result notification
     if (success) {
-      toast.show(`Successfully uploaded ${accountName} balance history to Monarch`, 'success');
+      toast.show(`Successfully uploaded ${accountName} balance history to Monarch`, 'info');
       return true;
     }
     toast.show(`Failed to upload ${accountName} balance history to Monarch`, 'error');
@@ -276,7 +276,7 @@ export async function bulkProcessAccounts(accounts, fromDate, toDate) {
   const results = { success: 0, failed: 0 };
 
   // Show initial progress
-  toast.show(`Processing ${accounts.length} accounts...`, 'info');
+  toast.show(`Processing ${accounts.length} accounts...`, 'trace');
 
   // Process accounts sequentially
   for (let i = 0; i < accounts.length; i += 1) {
@@ -303,7 +303,7 @@ export async function bulkProcessAccounts(accounts, fromDate, toDate) {
   // Show final summary
   const summaryMessage = `Completed: ${results.success} successful, ${results.failed} failed`;
   debugLog('Bulk processing complete:', results);
-  toast.show(summaryMessage, results.failed === 0 ? 'success' : 'warning');
+  toast.show(summaryMessage, results.failed === 0 ? 'info' : 'warning');
 
   return results;
 }
@@ -443,7 +443,7 @@ export async function uploadAllAccountsToMonarch() {
       if (isCancelled) {
         toast.show('Upload process was cancelled', 'warning');
       } else if (stats.success === stats.total) {
-        toast.show(`Successfully uploaded balance history for all ${stats.total} accounts!`, 'success');
+        toast.show(`Successfully uploaded balance history for all ${stats.total} accounts!`, 'info');
       } else if (stats.success > 0) {
         toast.show(`Upload completed: ${stats.success} successful, ${stats.failed} failed`, 'warning');
       }

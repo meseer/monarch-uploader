@@ -184,7 +184,7 @@ function handleSuccessfulLogin(onSuccess) {
   debugLog('Handling successful Monarch login');
 
   // Show success message
-  toast.show('Successfully connected to Monarch Money!', 'success', 3000);
+  toast.show('Successfully connected to Monarch Money!', 'info', 3000);
 
   // Trigger auth state change to update UI
   stateManager.notifyListeners('auth');

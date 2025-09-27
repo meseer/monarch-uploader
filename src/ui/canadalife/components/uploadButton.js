@@ -316,7 +316,7 @@ function updateAccountSelector(accounts) {
 
   accountsLoadingState = 'loaded';
 
-  toast.show(`Loaded ${accounts.length} Canada Life accounts`, 'success');
+  toast.show(`Loaded ${accounts.length} Canada Life accounts`, 'trace');
 }
 
 /**
@@ -492,7 +492,7 @@ function displayHistoricalBalanceResult(historicalData) {
   historicalBalanceResultElement.innerHTML = tableHTML;
   historicalBalanceResultElement.style.display = 'block';
 
-  toast.show(`Historical balance loaded for ${account.shortName}: ${totalDays} days, ${apiCallsMade} API calls`, 'success');
+  toast.show(`Historical balance loaded for ${account.shortName}: ${totalDays} days, ${apiCallsMade} API calls`, 'trace');
 }
 
 /**
@@ -543,7 +543,7 @@ function displayBalanceResult(balanceData) {
 
   balanceResultElement.style.display = 'block';
 
-  toast.show(`Balance loaded for ${balanceData.account.shortName}: ${formattedClosingBalance}`, 'success');
+  toast.show(`Balance loaded for ${balanceData.account.shortName}: ${formattedClosingBalance}`, 'trace');
 }
 
 /**

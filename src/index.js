@@ -144,7 +144,7 @@ import { loadCurrentAccountInfo } from './services/account';
       }
 
       // Show initialization toast
-      toast.show('Balance Uploader initialized', 'info', 2000);
+      toast.show('Balance Uploader initialized', 'trace', 2000);
     } catch (error) {
       debugLog('Error initializing application:', error);
     }

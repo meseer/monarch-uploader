@@ -370,7 +370,7 @@ export async function makeAuraApiCall(payload, options = {}) {
       if (error instanceof CanadaLifeTokenExpiredError && !isRetry && error.recoverable) {
         // Token expired but we have a fresh token available - retry once
         debugLog('Token expired, attempting retry with fresh token');
-        toast.show('Token expired, retrying with fresh token...', 'info');
+        toast.show('Token expired, retrying with fresh token...', 'debug');
 
         // Mark this as a retry and call recursively
         const retryOptions = { ...options, isRetry: true };
@@ -410,7 +410,7 @@ export async function makeAuraApiCall(payload, options = {}) {
         if (error instanceof CanadaLifeTokenExpiredError && !isRetry && error.recoverable) {
           // Token expired but we have a fresh token available - retry once
           debugLog('Token expired in nested response, attempting retry with fresh token');
-          toast.show('Token expired, retrying with fresh token...', 'info');
+          toast.show('Token expired, retrying with fresh token...', 'debug');
 
           // Mark this as a retry and call recursively
           const retryOptions = { ...options, isRetry: true };
@@ -800,7 +800,7 @@ export async function loadCanadaLifeAccounts(forceRefresh = false) {
     }
 
     debugLog('Loading Canada Life accounts from API...');
-    toast.show('Loading Canada Life accounts...', 'info');
+    toast.show('Loading Canada Life accounts...', 'debug');
 
     // Build the Aura API payload
     const payload = {
@@ -860,7 +860,7 @@ export async function loadCanadaLifeAccounts(forceRefresh = false) {
 
     // Show success notification
     const accountNames = accounts.map((acc) => acc.EnglishShortName).join(', ');
-    toast.show(`Loaded Canada Life accounts: ${accountNames}`, 'success');
+    toast.show(`Loaded Canada Life accounts: ${accountNames}`, 'debug');
 
     return accounts;
   } catch (error) {

@@ -123,7 +123,7 @@ export function createMonarchAccountMappingSelector(
       stateManager.setAccount(questradeAccountId, questradeAccountName);
 
       // Notify user
-      toast.show(`Mapped ${questradeAccountName} to ${selectedAccount.displayName} in Monarch`, 'success');
+      toast.show(`Mapped ${questradeAccountName} to ${selectedAccount.displayName} in Monarch`, 'info');
 
       debugLog(`Account mapping saved: ${questradeAccountName} -> ${selectedAccount.displayName}`, {
         questradeId: questradeAccountId,

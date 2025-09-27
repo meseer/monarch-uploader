@@ -9,6 +9,36 @@ import { debugLog } from '../core/utils';
 let toastContainer = null;
 
 /**
+ * Determines if a toast should be shown based on current log level
+ * @param {string} type - Type of toast (debug, info, warning, error)
+ * @returns {boolean} Whether the toast should be shown
+ */
+function shouldShowToast(type) {
+  const currentLogLevel = GM_getValue('debug_log_level', 'info');
+  const logLevels = {
+    debug: 0, info: 1, warning: 2, error: 3,
+  };
+
+  // Get current log level value
+  const currentLevel = logLevels[currentLogLevel] ?? 1;
+
+  // Toast types now directly align with log levels
+  const toastLevels = {
+    debug: 0, // Show at debug level (0)
+    info: 1, // Show at info level (1) and below
+    warning: 2, // Show at warning level (2) and below
+    error: 3, // Show at error level (3) and below
+  };
+
+  const toastLevel = toastLevels[type] ?? 1;
+
+  // Show toast if its level is >= current log level
+  // E.g., at info level (1): show info (1), warning (2), and error (3) toasts
+  // but not debug (0) toasts
+  return toastLevel >= currentLevel;
+}
+
+/**
  * Ensures the toast container exists in the DOM
  * @returns {HTMLElement} Toast container element
  */
@@ -25,20 +55,26 @@ export function ensureToastContainer() {
 /**
  * Shows a toast notification
  * @param {string} message - Message to display
- * @param {string} type - Type of toast (success, error, info, warning)
+ * @param {string} type - Type of toast (debug, info, warning, error)
  * @param {number} duration - Duration to show toast in ms
  */
 export function showToast(message, type = 'info', duration = UI.TOAST_DURATION) {
+  // Check if toast should be shown based on log level
+  if (!shouldShowToast(type)) {
+    debugLog(`Toast suppressed (log level): ${message} (${type})`);
+    return null;
+  }
+
   debugLog(`Showing toast: ${message} (${type})`);
   const container = ensureToastContainer();
   const toast = document.createElement('div');
 
   // Set colors based on type
   const colors = {
-    success: { bg: '#28a745', text: 'white' },
-    error: { bg: '#dc3545', text: 'white' },
-    info: { bg: '#17a2b8', text: 'white' },
-    warning: { bg: '#ffc107', text: 'black' },
+    debug: { bg: '#6c757d', text: 'white' }, // Gray for debug messages
+    info: { bg: '#28a745', text: 'white' }, // Green for info messages (previously success color)
+    warning: { bg: '#ffc107', text: 'black' }, // Yellow for warnings
+    error: { bg: '#dc3545', text: 'white' }, // Red for errors
   };
 
   const color = colors[type] || colors.info;
@@ -110,3 +146,6 @@ export default {
   ensureContainer: ensureToastContainer,
   remove: removeToast,
 };
+
+// Export individual functions for backward compatibility
+export { showToast as show };

@@ -276,7 +276,7 @@ describe('Balance Service', () => {
       // Check results
       expect(result.success).toBe(2);
       expect(result.failed).toBe(0);
-      expect(toast.show).toHaveBeenCalledWith('Completed: 2 successful, 0 failed', 'success');
+      expect(toast.show).toHaveBeenCalledWith('Completed: 2 successful, 0 failed', 'info');
     });
 
     test('should handle mixed success and failure', async () => {

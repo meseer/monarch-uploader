@@ -270,7 +270,7 @@ async function getMonarchAccountMapping(canadalifAccount) {
   GM_setValue(`${STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX}${accountId}`, JSON.stringify(monarchAccount));
 
   debugLog(`Saved Canada Life account mapping: ${accountName} -> ${monarchAccount.displayName}`);
-  toast.show(`Mapped ${accountName} to ${monarchAccount.displayName} in Monarch`, 'success');
+  toast.show(`Mapped ${accountName} to ${monarchAccount.displayName} in Monarch`, 'info');
 
   return monarchAccount;
 }
@@ -515,7 +515,7 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
     if (abortController.signal.aborted) {
       toast.show(`Upload cancelled. ${stats.success} accounts uploaded successfully before cancellation.`, 'warning');
     } else if (stats.success === stats.total) {
-      toast.show(`Successfully uploaded balance history for all ${stats.total} Canada Life accounts!`, 'success');
+      toast.show(`Successfully uploaded balance history for all ${stats.total} Canada Life accounts!`, 'info');
     } else if (stats.success > 0) {
       toast.show(`Uploaded ${stats.success} of ${stats.total} accounts successfully`, 'warning');
     }
@@ -585,7 +585,7 @@ export async function uploadCanadaLifeAccountWithDateRange() {
       // Show success summary
       progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
 
-      toast.show(`Successfully uploaded ${selectedAccount.EnglishShortName} balance history to Monarch`, 'success');
+      toast.show(`Successfully uploaded ${selectedAccount.EnglishShortName} balance history to Monarch`, 'info');
     } catch (error) {
       // Hide cancel button and show close button when upload fails
       progressDialog.hideCancel();

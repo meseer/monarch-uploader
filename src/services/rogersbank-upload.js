@@ -138,7 +138,7 @@ function filterDuplicateTransactions(transactions, accountId) {
 
   if (duplicateCount > 0) {
     debugLog(`Filtered out ${duplicateCount} duplicate transactions`);
-    toast.show(`Skipping ${duplicateCount} already uploaded transactions`, 'info');
+    toast.show(`Skipping ${duplicateCount} already uploaded transactions`, 'debug');
   }
 
   return {
@@ -202,7 +202,7 @@ async function resolveCategoriesForTransactions(transactions) {
 
   // Handle categories that need manual selection
   if (categoriesToResolve.length > 0) {
-    toast.show(`Resolving ${categoriesToResolve.length} categories that need manual selection...`, 'info');
+    toast.show(`Resolving ${categoriesToResolve.length} categories that need manual selection...`, 'debug');
 
     for (let i = 0; i < categoriesToResolve.length; i += 1) {
       const categoryToResolve = categoriesToResolve[i];
@@ -210,7 +210,7 @@ async function resolveCategoriesForTransactions(transactions) {
       debugLog(`Showing category selector for: ${categoryToResolve.bankCategory} (${i + 1}/${categoriesToResolve.length})`);
 
       // Show progress in toast
-      toast.show(`Selecting category ${i + 1} of ${categoriesToResolve.length}: "${categoryToResolve.bankCategory}"`, 'info');
+      toast.show(`Selecting category ${i + 1} of ${categoriesToResolve.length}: "${categoryToResolve.bankCategory}"`, 'debug');
 
       // Calculate comprehensive similarity data for the UI
       const similarityData = calculateAllCategorySimilarities(categoryToResolve.bankCategory, availableCategories);
@@ -256,7 +256,7 @@ async function resolveCategoriesForTransactions(transactions) {
       saveUserCategorySelection(categoryToResolve.bankCategory, selectedCategory.name);
       debugLog(`User selected category mapping: ${categoryToResolve.bankCategory} -> ${selectedCategory.name}`);
 
-      toast.show(`Mapped "${categoryToResolve.bankCategory}" to "${selectedCategory.name}"`, 'success');
+      toast.show(`Mapped "${categoryToResolve.bankCategory}" to "${selectedCategory.name}"`, 'debug');
     }
   }
 
@@ -684,7 +684,7 @@ export async function uploadRogersBankToMonarch() {
         progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
 
         // Also show toast for user confirmation
-        toast.show(`${successMessage} to Monarch!`, 'success');
+        toast.show(`${successMessage} to Monarch!`, 'info');
 
         return {
           success: true,

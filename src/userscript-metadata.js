@@ -1,13 +1,11 @@
 // ==UserScript==
-// @name         Questrade, EQBank, CanadaLife, Rogers Bank to Monarch Balance Uploader
-// @namespace    http://tampermonkey.net/
-// @version      3.12.0
-// @description  Adds buttons to download/upload balance history for individual and all accounts.
-// @description  Supports Questrade, EQBank, CanadaLife, and Rogers Bank. Supports progress tracking.
-// @author       You
-// @match        https://myportal.questrade.com/investing/summary*
+// @name         Monarch Uploader
+// @namespace    https://github.com/meseer/monarch-uploader
+// @version      3.14.3
+// @description  Upload Questrade, CanadaLife, and Rogers Bank balance and transactions to Monarch.
+// @author       Mykhailo Delegan
+// @match        https://myportal.questrade.com/*
 // @match        https://app.monarchmoney.com/*
-// @match        https://secure.eqbank.ca/*
 // @match        https://my.canadalife.com/*
 // @match        https://selfserve.rogersbank.com/*
 // @grant        GM_addElement
@@ -38,7 +36,7 @@ function generateMetadata(buildType = 'local') {
   return `// ==UserScript==
 // @name         Monarch Uploader
 // @namespace    https://github.com/meseer/monarch-uploader
-// @version      3.13.0
+// @version      3.14.3
 // @description  Upload Questrade, CanadaLife, and Rogers Bank balance and transactions to Monarch.
 // @author       Mykhailo Delegan
 // @match        https://myportal.questrade.com/*
