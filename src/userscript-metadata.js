@@ -36,14 +36,14 @@ function generateMetadata(buildType = 'local') {
   const updateLine = `// @updateURL    ${updateUrl}\n`;
 
   return `// ==UserScript==
-// @name         Questrade, CanadaLife, Rogers Bank to Monarch Balance Uploader
-// @namespace    http://tampermonkey.net/
+// @name         Monarch Uploader
+// @namespace    https://github.com/meseer/monarch-uploader
 // @version      3.12.0
 // @description  Upload Questrade, CanadaLife, and Rogers Bank balance and transactions to Monarch.
 // @author       Mykhailo Delegan
-// @match        https://myportal.questrade.com/investing/summary*
+// @match        https://myportal.questrade.com/*
 // @match        https://app.monarchmoney.com/*
-// @match        https://my.canadalife.com/s/dashboard*
+// @match        https://my.canadalife.com/*
 // @match        https://selfserve.rogersbank.com/*
 ${downloadLine}${updateLine}// @grant        GM_addElement
 // @grant        GM_deleteValue
