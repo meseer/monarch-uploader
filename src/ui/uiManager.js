@@ -433,19 +433,6 @@ export async function initAllAccountsUI() {
   try {
     if (!isQuestradeAllAccountsPage()) return;
 
-    // Get accounts
-    let accounts = [];
-    try {
-      accounts = await questradeApi.fetchAccounts();
-    } catch (error) {
-      debugLog('Error fetching accounts:', error);
-    }
-
-    if (!accounts || accounts.length === 0) {
-      toast.show('No accounts found', 'warning');
-      return;
-    }
-
     // Get or create button container
     let container = document.getElementById('balance-uploader-container');
     let isNewContainer = false;
@@ -471,6 +458,19 @@ export async function initAllAccountsUI() {
 
       debugLog('Adding button container to the .sidebar__content insertion point');
       targetContainer.appendChild(container);
+    }
+
+    // Now that we know the SPA has loaded (sidebar exists), fetch accounts
+    let accounts = [];
+    try {
+      accounts = await questradeApi.fetchAccounts();
+    } catch (error) {
+      debugLog('Error fetching accounts:', error);
+    }
+
+    if (!accounts || accounts.length === 0) {
+      toast.show('No accounts found', 'warning');
+      return;
     }
 
     // Clear existing dynamic content if reusing container
