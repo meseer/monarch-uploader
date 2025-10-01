@@ -171,6 +171,41 @@ export async function showMonarchCategorySelector(bankCategory, callback, simila
 }
 
 /**
+ * Create a search input element
+ * @param {string} placeholder - Placeholder text for the input
+ * @param {Function} onSearch - Callback function when search value changes
+ * @returns {Object} Object containing the container and input elements
+ */
+function createSearchInput(placeholder, onSearch) {
+  const searchContainer = document.createElement('div');
+  searchContainer.style.cssText = `
+    margin-bottom: 15px;
+    position: relative;
+  `;
+
+  const searchInput = document.createElement('input');
+  searchInput.type = 'text';
+  searchInput.placeholder = placeholder;
+  searchInput.style.cssText = `
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 14px;
+    box-sizing: border-box;
+  `;
+
+  searchInput.addEventListener('input', (e) => {
+    onSearch(e.target.value.toLowerCase());
+  });
+
+  searchContainer.appendChild(searchInput);
+
+  // Return both container and input for reference
+  return { container: searchContainer, input: searchInput };
+}
+
+/**
  * Show the category group selection screen
  * @param {Array} categoryGroups - List of category groups with categories
  * @param {string} bankCategory - Bank category name being mapped
@@ -212,6 +247,12 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
   header.style.cssText = 'margin-top:0; margin-bottom: 20px; font-size: 1.2em;';
   header.textContent = 'Select Category Group';
   modal.appendChild(header);
+
+  // Initialize search query variable
+  let searchQuery = '';
+
+  // Declare searchElements in outer scope (will be initialized later)
+  let searchElements;
 
   // Add transaction details section if available
   if (transactionDetails) {
@@ -293,50 +334,46 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
   bankCategoryRef.innerHTML = bankCategoryHtml;
   modal.appendChild(bankCategoryRef);
 
-  // No groups message
-  if (!categoryGroups.length) {
-    const noGroups = document.createElement('div');
-    noGroups.textContent = 'No category groups found.';
-    noGroups.style.cssText = 'color: #666; padding: 20px 0;';
-    modal.appendChild(noGroups);
-  }
+  // Create placeholder for search container (will be filled after updateDisplay is defined)
+  const searchPlaceholder = document.createElement('div');
+  modal.appendChild(searchPlaceholder);
 
-  const groupItems = [];
+  // Create containers for dynamic content
+  const contentContainer = document.createElement('div');
+  modal.appendChild(contentContainer);
 
-  // Add each category group
-  categoryGroups.forEach((group) => {
-    // Create the main container
+  // Helper function to create a group item
+  const createGroupItem = (group, onClick) => {
     const item = document.createElement('div');
     item.style.cssText = `
-      display: flex;
-      align-items: center;
-      padding: 15px;
-      border-radius: 8px;
-      cursor: pointer;
-      margin-bottom: 15px;
-      border: 1px solid #eee;
-      transition: all 0.2s;
-      position: relative;
-    `;
+        display: flex;
+        align-items: center;
+        padding: 15px;
+        border-radius: 8px;
+        cursor: pointer;
+        margin-bottom: 15px;
+        border: 1px solid #eee;
+        transition: all 0.2s;
+        position: relative;
+      `;
 
     // Create left section with icon
     const iconContainer = document.createElement('div');
     iconContainer.style.cssText = 'margin-right: 15px; flex-shrink: 0;';
 
-    // Create icon based on group type or name
     const iconDiv = document.createElement('div');
     iconDiv.style.cssText = `
-      width: 40px;
-      height: 40px;
-      border-radius: 5px;
-      background-color: ${getGroupColor(group.type || group.name)};
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 20px;
-      color: white;
-      font-weight: bold;
-    `;
+        width: 40px;
+        height: 40px;
+        border-radius: 5px;
+        background-color: ${getGroupColor(group.type || group.name)};
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        color: white;
+        font-weight: bold;
+      `;
     iconDiv.textContent = getGroupIcon(group.type || group.name);
     iconContainer.appendChild(iconDiv);
     item.appendChild(iconContainer);
@@ -345,13 +382,11 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
     const infoDiv = document.createElement('div');
     infoDiv.style.cssText = 'flex-grow: 1;';
 
-    // Group name
     const nameDiv = document.createElement('div');
     nameDiv.style.cssText = 'font-weight: bold; font-size: 1.1em;';
     nameDiv.textContent = group.name;
     infoDiv.appendChild(nameDiv);
 
-    // Category count
     const countDiv = document.createElement('div');
     countDiv.style.cssText = 'font-size: 0.9em; color: #666;';
     countDiv.textContent = `${group.categoryCount} categories`;
@@ -360,11 +395,11 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
     // Add similarity score if available
     if (typeof group.maxSimilarityScore === 'number') {
       const scorePercent = Math.round(group.maxSimilarityScore * 100);
-      let scoreColor = '#e74c3c'; // Red for low scores
+      let scoreColor = '#e74c3c';
       if (group.maxSimilarityScore > 0.95) {
-        scoreColor = '#27ae60'; // Green for high scores
+        scoreColor = '#27ae60';
       } else if (group.maxSimilarityScore > 0.7) {
-        scoreColor = '#f39c12'; // Orange for medium scores
+        scoreColor = '#f39c12';
       }
 
       const scoreDiv = document.createElement('div');
@@ -378,12 +413,12 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
     // Add right arrow icon
     const arrowContainer = document.createElement('div');
     arrowContainer.style.cssText = `
-      margin-left: 15px;
-      font-size: 1.5em;
-      color: #aaa;
-      position: relative;
-      z-index: 1;
-    `;
+        margin-left: 15px;
+        font-size: 1.5em;
+        color: #aaa;
+        position: relative;
+        z-index: 1;
+      `;
     arrowContainer.innerHTML = '&rsaquo;';
     item.appendChild(arrowContainer);
 
@@ -397,17 +432,199 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
       item.style.borderColor = '#eee';
     };
 
-    // Add click handler to show categories for this group
-    item.onclick = () => {
-      debugLog('Navigating to category selector for group:', group.name);
-      cleanupKeyboard();
-      overlay.remove();
-      showCategorySelector(group, bankCategory, callback, categoryGroups, transactionDetails);
+    item.onclick = onClick;
+    return item;
+  };
+
+  // Helper function to create a category item (for search results)
+  const createCategoryItem = (category, onClick) => {
+    const item = document.createElement('div');
+    item.style.cssText = `
+        display: flex;
+        align-items: center;
+        padding: 15px;
+        border-radius: 8px;
+        cursor: pointer;
+        margin-bottom: 10px;
+        border: 1px solid #eee;
+        transition: all 0.2s;
+        position: relative;
+      `;
+
+    // Create icon container
+    const iconContainer = document.createElement('div');
+    iconContainer.style.cssText = 'margin-right: 15px; flex-shrink: 0;';
+
+    const iconDiv = document.createElement('div');
+    iconDiv.style.cssText = `
+        width: 32px;
+        height: 32px;
+        border-radius: 4px;
+        background-color: ${category.groupColor || '#f0f0f0'};
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        color: white;
+      `;
+    iconDiv.textContent = category.icon || '📁';
+    iconContainer.appendChild(iconDiv);
+    item.appendChild(iconContainer);
+
+    // Create text container
+    const textContainer = document.createElement('div');
+    textContainer.style.flexGrow = '1';
+
+    const nameDiv = document.createElement('div');
+    nameDiv.style.cssText = 'font-weight: bold;';
+    nameDiv.textContent = category.name;
+    textContainer.appendChild(nameDiv);
+
+    // Show group name
+    if (category.groupName) {
+      const groupDiv = document.createElement('div');
+      groupDiv.style.cssText = 'font-size: 0.85em; color: #666;';
+      groupDiv.textContent = category.groupName;
+      textContainer.appendChild(groupDiv);
+    }
+
+    // Add similarity score if available
+    if (typeof category.similarityScore === 'number') {
+      const scorePercent = Math.round(category.similarityScore * 100);
+      let scoreColor = '#e74c3c';
+      if (category.similarityScore > 0.95) {
+        scoreColor = '#27ae60';
+      } else if (category.similarityScore > 0.7) {
+        scoreColor = '#f39c12';
+      }
+
+      const scoreDiv = document.createElement('div');
+      scoreDiv.style.cssText = `font-size: 0.8em; font-weight: bold; color: ${scoreColor};`;
+      scoreDiv.textContent = `${scorePercent}% match`;
+      textContainer.appendChild(scoreDiv);
+    }
+
+    item.appendChild(textContainer);
+
+    // Hover effects
+    item.onmouseover = () => {
+      item.style.backgroundColor = '#f5f5f5';
+      item.style.borderColor = '#ddd';
+    };
+    item.onmouseout = () => {
+      item.style.backgroundColor = '';
+      item.style.borderColor = '#eee';
     };
 
-    modal.appendChild(item);
-    groupItems.push(item);
+    item.onclick = onClick;
+    return item;
+  };
+
+  // Define updateDisplay function first before using it in search input
+  const updateDisplay = () => {
+    contentContainer.innerHTML = '';
+    const items = [];
+
+    if (searchQuery) {
+      // Search mode: show filtered categories from all groups
+      const filteredCategories = [];
+
+      categoryGroups.forEach((group) => {
+        group.categories.forEach((category) => {
+          if (category.name.toLowerCase().includes(searchQuery)) {
+            filteredCategories.push({
+              ...category,
+              groupName: group.name,
+              groupColor: getGroupColor(group.type || group.name),
+            });
+          }
+        });
+      });
+
+      // Sort by similarity score if available, then by name
+      filteredCategories.sort((a, b) => {
+        if (typeof a.similarityScore === 'number' && typeof b.similarityScore === 'number') {
+          if (b.similarityScore !== a.similarityScore) {
+            return b.similarityScore - a.similarityScore;
+          }
+        }
+        return a.name.localeCompare(b.name);
+      });
+
+      if (filteredCategories.length === 0) {
+        const noResults = document.createElement('div');
+        noResults.textContent = 'No categories found matching your search.';
+        noResults.style.cssText = 'color: #666; padding: 20px 0; text-align: center;';
+        contentContainer.appendChild(noResults);
+      } else {
+        // Display filtered categories
+        filteredCategories.forEach((category) => {
+          const item = createCategoryItem(category, () => {
+            debugLog('Selected category from search:', { name: category.name, id: category.id });
+            cleanupKeyboard();
+            overlay.remove();
+            callback(category);
+          });
+          contentContainer.appendChild(item);
+          items.push(item);
+        });
+      }
+    } else {
+      // Normal mode: show category groups
+      if (!categoryGroups.length) {
+        const noGroups = document.createElement('div');
+        noGroups.textContent = 'No category groups found.';
+        noGroups.style.cssText = 'color: #666; padding: 20px 0;';
+        contentContainer.appendChild(noGroups);
+      }
+
+      categoryGroups.forEach((group) => {
+        const item = createGroupItem(group, () => {
+          debugLog('Navigating to category selector for group:', group.name);
+          cleanupKeyboard();
+          overlay.remove();
+          showCategorySelector(group, bankCategory, callback, categoryGroups, transactionDetails);
+        });
+        contentContainer.appendChild(item);
+        items.push(item);
+      });
+    }
+
+    // Update keyboard navigation for new items
+    if (items.length > 0) {
+      // Wrap the keyboard navigation handler to check if search has focus
+      const originalCleanup = makeItemsKeyboardNavigable(
+        items,
+        (item) => {
+          item.click();
+        },
+        0,
+      );
+
+      // Override cleanup to also check for search focus
+      cleanupKeyboard = () => {
+        // Don't process keyboard navigation if search input has focus
+        if (document.activeElement === searchElements.input) {
+          return;
+        }
+        originalCleanup();
+      };
+    }
+  };
+
+  // Now create the search input with access to updateDisplay function
+  searchElements = createSearchInput('Search categories...', (query) => {
+    searchQuery = query;
+    updateDisplay();
+    // Keep focus on search input after update
+    setTimeout(() => searchElements.input.focus(), 0);
   });
+
+  // Replace the placeholder with actual search container
+  searchPlaceholder.replaceWith(searchElements.container);
+
+  // Initial display
+  updateDisplay();
 
   // Add a cancel button
   const cancelBtn = document.createElement('button');
@@ -429,34 +646,22 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
   modal.appendChild(cancelBtn);
 
   // Add keyboard handlers for the modal (Escape to close)
-  const cleanupModalHandlers = addModalKeyboardHandlers(overlay, () => {
+  addModalKeyboardHandlers(overlay, () => {
     cleanupKeyboard();
     overlay.remove();
     callback(null);
   });
 
-  // Make group items keyboard navigable if there are any
-  let cleanupItemNavigation = () => {};
-  if (groupItems.length > 0) {
-    cleanupItemNavigation = makeItemsKeyboardNavigable(
-      groupItems,
-      (item, index) => {
-        // Same logic as click handler
-        const group = categoryGroups[index];
-        debugLog('Keyboard selecting group:', group.name);
-        cleanupKeyboard();
-        overlay.remove();
-        showCategorySelector(group, bankCategory, callback, categoryGroups, transactionDetails);
-      },
-      0, // Focus first item initially
-    );
-  }
+  // Override keyboard event handling to check if search has focus
+  document.addEventListener('keydown', (e) => {
+    // If search input has focus, don't let keyboard navigation interfere
+    if (document.activeElement === searchElements.input) {
+      e.stopPropagation();
+    }
+  }, true);
 
-  // Combine cleanup functions
-  cleanupKeyboard = () => {
-    cleanupModalHandlers();
-    cleanupItemNavigation();
-  };
+  // Focus search input initially
+  setTimeout(() => searchElements.input.focus(), 100);
 
   // Show the modal
   overlay.appendChild(modal);
@@ -485,24 +690,6 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
     callback(null);
     return;
   }
-
-  // Sort categories by similarity score (if available), then by order, then by name
-  const sortedCategories = [...categories].sort((a, b) => {
-    // Primary sort: similarity score (highest first) - if both have similarity scores
-    if (typeof a.similarityScore === 'number' && typeof b.similarityScore === 'number') {
-      if (b.similarityScore !== a.similarityScore) {
-        return b.similarityScore - a.similarityScore;
-      }
-    }
-
-    // Secondary sort: category order
-    if (a.order !== b.order) {
-      return a.order - b.order;
-    }
-
-    // Tertiary sort: category name alphabetically
-    return a.name.localeCompare(b.name);
-  });
 
   // Set up keyboard navigation cleanup function
   let cleanupKeyboard = () => {};
@@ -559,6 +746,13 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
   header.style.cssText = 'margin-top:0; margin-bottom: 20px; font-size: 1.2em;';
   header.textContent = categoryGroup.name;
   modal.appendChild(header);
+
+  // Initialize search and navigation variables
+  let searchQuery = '';
+  let cleanupItemNavigation = () => {};
+
+  // Declare searchElements in outer scope (will be initialized later)
+  let searchElements;
 
   // Add transaction details section if available
   if (transactionDetails) {
@@ -625,102 +819,178 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
   bankCategoryRef.innerHTML = `Selecting Monarch category for bank category: <b>${bankCategory}</b>`;
   modal.appendChild(bankCategoryRef);
 
-  const categoryItems = [];
+  // Create placeholder for search container (will be filled after updateDisplay is defined)
+  const searchPlaceholder = document.createElement('div');
+  modal.appendChild(searchPlaceholder);
 
-  // Add categories
-  sortedCategories.forEach((category) => {
-    // Create list item container
-    const item = document.createElement('div');
-    item.style.cssText = `
-      display: flex;
-      align-items: center;
-      padding: 15px;
-      border-radius: 8px;
-      cursor: pointer;
-      margin-bottom: 10px;
-      border: 1px solid #eee;
-      transition: all 0.2s;
-      position: relative;
-    `;
+  // Create container for dynamic content
+  const contentContainer = document.createElement('div');
+  modal.appendChild(contentContainer);
 
-    // Create icon container
-    const iconContainer = document.createElement('div');
-    iconContainer.style.cssText = 'margin-right: 15px; flex-shrink: 0;';
+  // Define updateDisplay function first before using it in search input
+  const updateDisplay = () => {
+    contentContainer.innerHTML = '';
+    const categoryItems = [];
 
-    // Category icon
-    const iconDiv = document.createElement('div');
-    iconDiv.style.cssText = `
-      width: 32px;
-      height: 32px;
-      border-radius: 4px;
-      background-color: #f0f0f0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
-      color: #666;
-    `;
-    iconDiv.textContent = category.icon || '📁';
-    iconContainer.appendChild(iconDiv);
-    item.appendChild(iconContainer);
-
-    // Create text container
-    const textContainer = document.createElement('div');
-    textContainer.style.flexGrow = '1';
-
-    // Category name
-    const nameDiv = document.createElement('div');
-    nameDiv.style.cssText = 'font-weight: bold;';
-    nameDiv.textContent = category.name;
-    textContainer.appendChild(nameDiv);
-
-    // System category indicator
-    if (category.isSystemCategory) {
-      const systemDiv = document.createElement('div');
-      systemDiv.style.cssText = 'font-size: 0.8em; color: #888;';
-      systemDiv.textContent = 'System category';
-      textContainer.appendChild(systemDiv);
-    }
-
-    // Add similarity score if available
-    if (typeof category.similarityScore === 'number') {
-      const scorePercent = Math.round(category.similarityScore * 100);
-      let scoreColor = '#e74c3c'; // Red for low scores
-      if (category.similarityScore > 0.95) {
-        scoreColor = '#27ae60'; // Green for high scores
-      } else if (category.similarityScore > 0.7) {
-        scoreColor = '#f39c12'; // Orange for medium scores
+    // Sort categories by similarity score (if available), then by order, then by name
+    const sortedCategories = [...categories].sort((a, b) => {
+      if (typeof a.similarityScore === 'number' && typeof b.similarityScore === 'number') {
+        if (b.similarityScore !== a.similarityScore) {
+          return b.similarityScore - a.similarityScore;
+        }
       }
+      if (a.order !== b.order) {
+        return a.order - b.order;
+      }
+      return a.name.localeCompare(b.name);
+    });
 
-      const scoreDiv = document.createElement('div');
-      scoreDiv.style.cssText = `font-size: 0.8em; font-weight: bold; color: ${scoreColor};`;
-      scoreDiv.textContent = `${scorePercent}% match`;
-      textContainer.appendChild(scoreDiv);
+    // Filter categories based on search
+    const filteredCategories = searchQuery
+      ? sortedCategories.filter((cat) => cat.name.toLowerCase().includes(searchQuery))
+      : sortedCategories;
+
+    if (filteredCategories.length === 0) {
+      const noResults = document.createElement('div');
+      noResults.textContent = 'No categories found matching your search.';
+      noResults.style.cssText = 'color: #666; padding: 20px 0; text-align: center;';
+      contentContainer.appendChild(noResults);
+    } else {
+      // Add categories
+      filteredCategories.forEach((category) => {
+        // Create list item container
+        const item = document.createElement('div');
+        item.style.cssText = `
+          display: flex;
+          align-items: center;
+          padding: 15px;
+          border-radius: 8px;
+          cursor: pointer;
+          margin-bottom: 10px;
+          border: 1px solid #eee;
+          transition: all 0.2s;
+          position: relative;
+        `;
+
+        // Create icon container
+        const iconContainer = document.createElement('div');
+        iconContainer.style.cssText = 'margin-right: 15px; flex-shrink: 0;';
+
+        // Category icon
+        const iconDiv = document.createElement('div');
+        iconDiv.style.cssText = `
+          width: 32px;
+          height: 32px;
+          border-radius: 4px;
+          background-color: #f0f0f0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 14px;
+          color: #666;
+        `;
+        iconDiv.textContent = category.icon || '📁';
+        iconContainer.appendChild(iconDiv);
+        item.appendChild(iconContainer);
+
+        // Create text container
+        const textContainer = document.createElement('div');
+        textContainer.style.flexGrow = '1';
+
+        // Category name
+        const nameDiv = document.createElement('div');
+        nameDiv.style.cssText = 'font-weight: bold;';
+        nameDiv.textContent = category.name;
+        textContainer.appendChild(nameDiv);
+
+        // System category indicator
+        if (category.isSystemCategory) {
+          const systemDiv = document.createElement('div');
+          systemDiv.style.cssText = 'font-size: 0.8em; color: #888;';
+          systemDiv.textContent = 'System category';
+          textContainer.appendChild(systemDiv);
+        }
+
+        // Add similarity score if available
+        if (typeof category.similarityScore === 'number') {
+          const scorePercent = Math.round(category.similarityScore * 100);
+          let scoreColor = '#e74c3c'; // Red for low scores
+          if (category.similarityScore > 0.95) {
+            scoreColor = '#27ae60'; // Green for high scores
+          } else if (category.similarityScore > 0.7) {
+            scoreColor = '#f39c12'; // Orange for medium scores
+          }
+
+          const scoreDiv = document.createElement('div');
+          scoreDiv.style.cssText = `font-size: 0.8em; font-weight: bold; color: ${scoreColor};`;
+          scoreDiv.textContent = `${scorePercent}% match`;
+          textContainer.appendChild(scoreDiv);
+        }
+
+        item.appendChild(textContainer);
+
+        // Hover effects
+        item.onmouseover = () => {
+          item.style.backgroundColor = '#f5f5f5';
+          item.style.borderColor = '#ddd';
+        };
+        item.onmouseout = () => {
+          item.style.backgroundColor = '';
+          item.style.borderColor = '#eee';
+        };
+
+        // Click handler
+        item.onclick = () => {
+          debugLog('Selected category:', { name: category.name, id: category.id });
+          cleanupKeyboard();
+          overlay.remove();
+          callback(category); // Return the full category object
+        };
+
+        contentContainer.appendChild(item);
+        categoryItems.push(item);
+      });
     }
 
-    item.appendChild(textContainer);
+    // Update keyboard navigation for new items
+    if (categoryItems.length > 0) {
+      const originalCleanup = makeItemsKeyboardNavigable(
+        categoryItems,
+        (_item, index) => {
+          // Same logic as click handler
+          const category = filteredCategories[index];
+          debugLog('Keyboard selecting category:', { name: category.name, id: category.id });
+          cleanupKeyboard();
+          overlay.remove();
+          callback(category); // Return the full category object
+        },
+        0, // Focus first item initially
+      );
 
-    // Hover effects
-    item.onmouseover = () => {
-      item.style.backgroundColor = '#f5f5f5';
-      item.style.borderColor = '#ddd';
-    };
-    item.onmouseout = () => {
-      item.style.backgroundColor = '';
-      item.style.borderColor = '#eee';
-    };
+      // Override cleanup to check for search focus
+      cleanupItemNavigation = () => {
+        // Don't process keyboard navigation if search input has focus
+        if (document.activeElement === searchElements.input) {
+          return;
+        }
+        originalCleanup();
+      };
+    }
+  };
 
-    // Click handler
-    item.onclick = () => {
-      debugLog('Selected category:', { name: category.name, id: category.id });
-      cleanupKeyboard();
-      overlay.remove();
-      callback(category); // Return the full category object
-    };
-
-    modal.appendChild(item);
-    categoryItems.push(item);
+  // Now create the search input with access to updateDisplay function
+  searchElements = createSearchInput('Search within this group...', (query) => {
+    searchQuery = query;
+    updateDisplay();
+    // Keep focus on search input after update
+    setTimeout(() => searchElements.input.focus(), 0);
   });
+
+  // Replace the placeholder with actual search container
+  searchPlaceholder.replaceWith(searchElements.container);
+
+  // Initial display
+  updateDisplay();
 
   // Add a cancel button
   const cancelBtn = document.createElement('button');
@@ -740,22 +1010,13 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
   // Add keyboard handlers for the modal (Escape to close)
   const cleanupModalHandlers = addModalKeyboardHandlers(overlay, closeModal);
 
-  // Make category items keyboard navigable if there are any
-  let cleanupItemNavigation = () => {};
-  if (categoryItems.length > 0) {
-    cleanupItemNavigation = makeItemsKeyboardNavigable(
-      categoryItems,
-      (item, index) => {
-        // Same logic as click handler
-        const category = sortedCategories[index];
-        debugLog('Keyboard selecting category:', { name: category.name, id: category.id });
-        cleanupKeyboard();
-        overlay.remove();
-        callback(category); // Return the full category object
-      },
-      0, // Focus first item initially
-    );
-  }
+  // Override keyboard event handling to check if search has focus
+  document.addEventListener('keydown', (e) => {
+    // If search input has focus, don't let keyboard navigation interfere
+    if (document.activeElement === searchElements.input) {
+      e.stopPropagation();
+    }
+  }, true);
 
   // Make back button keyboard navigable
   backButton.setAttribute('tabindex', '0');
@@ -771,6 +1032,9 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
     cleanupModalHandlers();
     cleanupItemNavigation();
   };
+
+  // Focus search input initially
+  setTimeout(() => searchElements.input.focus(), 100);
 
   // Show the modal
   overlay.appendChild(modal);
