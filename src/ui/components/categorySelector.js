@@ -253,7 +253,7 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
         formattedAmount = String(transactionDetails.amount);
       }
 
-      const amountColor = amountValue < 0 ? '#dc3545' : '#28a745';
+      const amountColor = amountValue < 0 ? '#28a745' : '#dc3545';
       transactionHtml += `<div style="margin-bottom: 4px;">
         <span style="color: #666;">Amount:</span> 
         <span style="font-weight: 500; color: ${amountColor};">${formattedAmount}</span>
@@ -600,7 +600,7 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
         formattedAmount = String(transactionDetails.amount);
       }
 
-      const amountColor = amountValue < 0 ? '#dc3545' : '#28a745';
+      const amountColor = amountValue < 0 ? '#28a745' : '#dc3545';
       transactionHtml += `<div style="margin-bottom: 4px;">
         <span style="color: #666;">Amount:</span>
         <span style="font-weight: 500; color: ${amountColor};">${formattedAmount}</span>
