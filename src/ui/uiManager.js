@@ -460,16 +460,40 @@ export async function initAllAccountsUI() {
       targetContainer.appendChild(container);
     }
 
-    // Now that we know the SPA has loaded (sidebar exists), fetch accounts
+    // Now that we know the SPA has loaded (sidebar exists), fetch accounts with retries
     let accounts = [];
-    try {
-      accounts = await questradeApi.fetchAccounts();
-    } catch (error) {
-      debugLog('Error fetching accounts:', error);
+    const maxRetries = 10;
+    const retryDelay = 1500; // Start with 1.5 seconds
+
+    debugLog('Starting to fetch accounts with retries...');
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        accounts = await questradeApi.fetchAccounts();
+
+        if (accounts && accounts.length > 0) {
+          debugLog(`Successfully fetched ${accounts.length} accounts on attempt ${attempt}`);
+          break;
+        }
+
+        // If no accounts and not the last attempt, wait and retry
+        if (attempt < maxRetries) {
+          debugLog(`No accounts found on attempt ${attempt}, retrying in ${retryDelay * attempt}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, retryDelay * attempt));
+        }
+      } catch (error) {
+        debugLog(`Error fetching accounts on attempt ${attempt}:`, error);
+
+        // If error and not the last attempt, wait and retry
+        if (attempt < maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, retryDelay * attempt));
+        }
+      }
     }
 
     if (!accounts || accounts.length === 0) {
-      toast.show('No accounts found', 'warning');
+      debugLog('No accounts found after all retry attempts');
+      toast.show('No accounts found after waiting for data to load', 'warning');
       return;
     }
 
