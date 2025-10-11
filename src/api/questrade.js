@@ -6,7 +6,7 @@
 import { API, STORAGE } from '../core/config';
 import { debugLog } from '../core/utils';
 import stateManager from '../core/state';
-import authService from '../services/auth';
+import authService from '../services/questrade/auth';
 
 /**
  * Make an API call to the Questrade API

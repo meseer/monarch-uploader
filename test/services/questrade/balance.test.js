@@ -11,31 +11,31 @@ import {
   uploadBalanceToMonarch,
   processAndUploadBalance,
   bulkProcessAccounts,
-} from '../../src/services/balance';
-import questradeApi from '../../src/api/questrade';
-import monarchApi from '../../src/api/monarch';
-import stateManager from '../../src/core/state';
-import { STORAGE } from '../../src/core/config';
-import toast from '../../src/ui/toast';
+} from '../../../src/services/questrade/balance';
+import questradeApi from '../../../src/api/questrade';
+import monarchApi from '../../../src/api/monarch';
+import stateManager from '../../../src/core/state';
+import { STORAGE } from '../../../src/core/config';
+import toast from '../../../src/ui/toast';
 
 // Mock dependencies
-jest.mock('../../src/api/questrade', () => ({
+jest.mock('../../../src/api/questrade', () => ({
   makeApiCall: jest.fn(),
 }));
 
-jest.mock('../../src/api/monarch', () => ({
+jest.mock('../../../src/api/monarch', () => ({
   uploadBalance: jest.fn(),
   resolveAccountMapping: jest.fn(),
 }));
 
-jest.mock('../../src/core/state', () => ({
+jest.mock('../../../src/core/state', () => ({
   setAccount: jest.fn(),
   getState: jest.fn().mockReturnValue({
     currentAccount: { name: 'Test Account' },
   }),
 }));
 
-jest.mock('../../src/ui/toast', () => ({
+jest.mock('../../../src/ui/toast', () => ({
   show: jest.fn(),
 }));
 

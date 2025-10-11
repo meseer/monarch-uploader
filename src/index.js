@@ -28,7 +28,7 @@ import toast from './ui/toast';
 import { initUI, updateStatusIndicators } from './ui/uiManager';
 import { initCanadaLifeUI } from './ui/canadalife/uiManager';
 import { initRogersBankUI } from './ui/rogersbank/uiManager';
-import { loadCurrentAccountInfo } from './services/account';
+import { loadCurrentAccountInfo } from './services/questrade/account';
 
 // Main IIFE - application entry point
 (function initMonarchUploader() {

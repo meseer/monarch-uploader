@@ -6,7 +6,7 @@
 import { debugLog } from '../../core/utils';
 import stateManager from '../../core/state';
 import toast from '../toast';
-import { getDateRange, processAccountBalanceHistory } from '../../services/account';
+import { getDateRange, processAccountBalanceHistory } from '../../services/questrade/account';
 import { ensureMonarchAuthentication } from './monarchLoginLink';
 
 /**
@@ -219,7 +219,7 @@ export function createBulkUploadButton(accounts) {
     }
 
     // Import balance service dynamically to avoid circular imports
-    const { uploadAllAccountsToMonarch } = await import('../../services/balance');
+    const { uploadAllAccountsToMonarch } = await import('../../services/questrade/balance');
 
     try {
       // Call the comprehensive upload function

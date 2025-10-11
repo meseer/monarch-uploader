@@ -5,7 +5,8 @@
 
 import { debugLog, getDefaultLookbackDays } from '../../core/utils';
 import { STORAGE } from '../../core/config';
-import { checkMonarchAuth, checkQuestradeAuth } from '../../services/auth';
+import { checkMonarchAuth } from '../../services/auth';
+import { checkQuestradeAuth } from '../../services/questrade/auth';
 import toast from '../toast';
 import { createMonarchLoginLink } from './monarchLoginLink';
 

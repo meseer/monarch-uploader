@@ -3,10 +3,10 @@
  * Handles account-related business logic
  */
 
-import { debugLog } from '../core/utils';
-import { STORAGE } from '../core/config';
-import stateManager from '../core/state';
-import questradeApi from '../api/questrade';
+import { debugLog } from '../../core/utils';
+import { STORAGE } from '../../core/config';
+import stateManager from '../../core/state';
+import questradeApi from '../../api/questrade';
 import authService from './auth';
 import balanceService from './balance';
 

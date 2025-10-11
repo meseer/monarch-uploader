@@ -9,30 +9,30 @@ import accountService, {
   processAccountBalanceHistory,
   linkAccounts,
   getLinkedAccount,
-} from '../../src/services/account';
-import questradeApi from '../../src/api/questrade';
-import stateManager from '../../src/core/state';
-import authService from '../../src/services/auth';
-import balanceService from '../../src/services/balance';
-import { STORAGE } from '../../src/core/config';
+} from '../../../src/services/questrade/account';
+import questradeApi from '../../../src/api/questrade';
+import stateManager from '../../../src/core/state';
+import authService from '../../../src/services/auth';
+import balanceService from '../../../src/services/questrade/balance';
+import { STORAGE } from '../../../src/core/config';
 
 // Mock dependencies
-jest.mock('../../src/api/questrade', () => ({
+jest.mock('../../../src/api/questrade', () => ({
   fetchAccounts: jest.fn(),
   getAccount: jest.fn(),
 }));
 
-jest.mock('../../src/services/auth', () => ({
+jest.mock('../../../src/services/auth', () => ({
   checkQuestradeAuth: jest.fn(),
 }));
 
-jest.mock('../../src/services/balance', () => ({
+jest.mock('../../../src/services/questrade/balance', () => ({
   processAndUploadBalance: jest.fn(),
   bulkProcessAccounts: jest.fn(),
   getDefaultDateRange: jest.fn(),
 }));
 
-jest.mock('../../src/core/state', () => ({
+jest.mock('../../../src/core/state', () => ({
   setAccount: jest.fn(),
   getState: jest.fn().mockReturnValue({
     currentAccount: { name: 'Test Account' },

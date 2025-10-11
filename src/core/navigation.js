@@ -5,7 +5,7 @@
 
 import { debugLog, isQuestradeAllAccountsPage } from './utils';
 import stateManager from './state';
-import accountService from '../services/account';
+import accountService from '../services/questrade/account';
 import uiManager from '../ui/uiManager';
 
 /**
