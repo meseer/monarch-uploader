@@ -5,7 +5,7 @@
 
 import {
   debugLog, formatDate, getTodayLocal, getYesterdayLocal, formatDaysAgoLocal, parseLocalDate,
-  calculateFromDateWithLookback, saveLastUploadDate,
+  calculateFromDateWithLookback, saveLastUploadDate, getLastUpdateDate,
 } from '../core/utils';
 import { STORAGE } from '../core/config';
 import stateManager from '../core/state';
@@ -276,6 +276,73 @@ async function getMonarchAccountMapping(canadalifAccount) {
 }
 
 /**
+ * Extract balance change information for a Canada Life account
+ * @param {string} accountId - Account ID
+ * @param {Object} historicalData - Historical data from loadAccountBalanceHistory
+ * @returns {Object|null} Balance change data or null if not available
+ */
+function extractCanadaLifeBalanceChange(accountId, historicalData) {
+  try {
+    if (!historicalData || !historicalData.data || !Array.isArray(historicalData.data)) {
+      debugLog(`No historical data found for Canada Life account ${accountId}`);
+      return null;
+    }
+
+    const dataRows = historicalData.data.slice(1); // Skip header row
+    if (dataRows.length === 0) {
+      debugLog(`No balance data rows found for Canada Life account ${accountId}`);
+      return null;
+    }
+
+    // Today's balance is the last entry (most recent)
+    const todayEntry = dataRows[dataRows.length - 1];
+    const newBalance = parseFloat(todayEntry[1]);
+
+    if (isNaN(newBalance)) {
+      debugLog(`Invalid new balance for Canada Life account ${accountId}`);
+      return null;
+    }
+
+    // Get last upload date
+    const lastUploadDate = getLastUpdateDate(accountId, 'canadalife');
+    if (!lastUploadDate) {
+      debugLog(`No last upload date found for Canada Life account ${accountId}`);
+      return null;
+    }
+
+    // Find old balance from last upload date
+    const oldBalanceEntry = dataRows.find((row) => row[0] === lastUploadDate);
+    if (!oldBalanceEntry) {
+      debugLog(`No balance found for last upload date ${lastUploadDate} for Canada Life account ${accountId}`);
+      return null;
+    }
+
+    const oldBalance = parseFloat(oldBalanceEntry[1]);
+    if (isNaN(oldBalance)) {
+      debugLog(`Invalid old balance for Canada Life account ${accountId}`);
+      return null;
+    }
+
+    // Calculate percentage change
+    const changePercent = oldBalance !== 0
+      ? ((newBalance - oldBalance) / Math.abs(oldBalance)) * 100
+      : 0;
+
+    debugLog(`Balance change for Canada Life account ${accountId}: ${oldBalance} -> ${newBalance} (${changePercent.toFixed(2)}%)`);
+
+    return {
+      oldBalance,
+      newBalance,
+      lastUploadDate,
+      changePercent,
+    };
+  } catch (error) {
+    debugLog(`Error extracting balance change for Canada Life account ${accountId}:`, error);
+    return null;
+  }
+}
+
+/**
  * Upload balance history for a single Canada Life account
  * @param {Object} canadalifAccount - Canada Life account object
  * @param {string} startDate - Start date in YYYY-MM-DD format
@@ -334,6 +401,14 @@ async function uploadSingleAccount(canadalifAccount, startDate, endDate, progres
       historyProgressCallback,
       signal,
     );
+
+    // Extract and display balance change information
+    if (progressDialog) {
+      const balanceChange = extractCanadaLifeBalanceChange(accountId, historicalData);
+      if (balanceChange) {
+        progressDialog.updateBalanceChange(accountId, balanceChange);
+      }
+    }
 
     // Update progress
     if (progressDialog) {

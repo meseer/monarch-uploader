@@ -463,7 +463,7 @@ export async function initAllAccountsUI() {
     // Now that we know the SPA has loaded (sidebar exists), fetch accounts with retries
     let accounts = [];
     const maxRetries = 10;
-    const retryDelay = 1500; // Start with 1.5 seconds
+    const retryDelay = 1000; // Check every 1 second for better responsiveness
 
     debugLog('Starting to fetch accounts with retries...');
 
@@ -478,15 +478,15 @@ export async function initAllAccountsUI() {
 
         // If no accounts and not the last attempt, wait and retry
         if (attempt < maxRetries) {
-          debugLog(`No accounts found on attempt ${attempt}, retrying in ${retryDelay * attempt}ms...`);
-          await new Promise((resolve) => setTimeout(resolve, retryDelay * attempt));
+          debugLog(`No accounts found on attempt ${attempt}, retrying in ${retryDelay}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, retryDelay));
         }
       } catch (error) {
         debugLog(`Error fetching accounts on attempt ${attempt}:`, error);
 
         // If error and not the last attempt, wait and retry
         if (attempt < maxRetries) {
-          await new Promise((resolve) => setTimeout(resolve, retryDelay * attempt));
+          await new Promise((resolve) => setTimeout(resolve, retryDelay));
         }
       }
     }

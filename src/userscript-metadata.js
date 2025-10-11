@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Monarch Uploader
 // @namespace    https://github.com/meseer/monarch-uploader
-// @version      3.17.0
+// @version      3.18.1
 // @description  Upload Questrade, CanadaLife, and Rogers Bank balance and transactions to Monarch.
 // @author       Mykhailo Delegan
 // @match        https://myportal.questrade.com/*
@@ -36,7 +36,7 @@ function generateMetadata(buildType = 'local') {
   return `// ==UserScript==
 // @name         Monarch Uploader
 // @namespace    https://github.com/meseer/monarch-uploader
-// @version      3.17.0
+// @version      3.18.1
 // @description  Upload Questrade, CanadaLife, and Rogers Bank balance and transactions to Monarch.
 // @author       Mykhailo Delegan
 // @match        https://myportal.questrade.com/*

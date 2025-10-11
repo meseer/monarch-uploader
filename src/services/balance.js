@@ -5,6 +5,7 @@
 
 import {
   debugLog, formatDate, getLocalToday, getTodayLocal, formatDaysAgoLocal, parseLocalDate,
+  getLastUpdateDate,
 } from '../core/utils';
 import { STORAGE } from '../core/config';
 import stateManager from '../core/state';
@@ -309,6 +310,65 @@ export async function bulkProcessAccounts(accounts, fromDate, toDate) {
 }
 
 /**
+ * Extract balance change information for an account
+ * @param {string} accountId - Account ID
+ * @param {Object} balanceData - Balance data from fetchBalanceHistory
+ * @returns {Object|null} Balance change data or null if not available
+ */
+function extractBalanceChange(accountId, balanceData) {
+  try {
+    // Get today's balance (CAD)
+    const currentBalance = balanceData.currentBalance?.totalEquity?.combined?.find((i) => i.currencyCode === 'CAD')?.amount;
+    if (!currentBalance) {
+      debugLog(`No current CAD balance found for account ${accountId}`);
+      return null;
+    }
+
+    // Get last upload date
+    const lastUploadDate = getLastUpdateDate(accountId, 'questrade');
+    if (!lastUploadDate) {
+      debugLog(`No last upload date found for account ${accountId}`);
+      return null;
+    }
+
+    // Find old balance from last upload date in history data
+    if (!balanceData.history?.data || !Array.isArray(balanceData.history.data)) {
+      debugLog(`No historical data found for account ${accountId}`);
+      return null;
+    }
+
+    const oldBalanceEntry = balanceData.history.data.find((item) => item.date === lastUploadDate);
+    if (!oldBalanceEntry) {
+      debugLog(`No balance found for last upload date ${lastUploadDate} for account ${accountId}`);
+      return null;
+    }
+
+    const oldBalance = oldBalanceEntry.totalEquity;
+    if (oldBalance === undefined || oldBalance === null) {
+      debugLog(`Invalid old balance for account ${accountId}`);
+      return null;
+    }
+
+    // Calculate percentage change
+    const changePercent = oldBalance !== 0
+      ? ((currentBalance - oldBalance) / Math.abs(oldBalance)) * 100
+      : 0;
+
+    debugLog(`Balance change for account ${accountId}: ${oldBalance} -> ${currentBalance} (${changePercent.toFixed(2)}%)`);
+
+    return {
+      oldBalance,
+      newBalance: currentBalance,
+      lastUploadDate,
+      changePercent,
+    };
+  } catch (error) {
+    debugLog(`Error extracting balance change for account ${accountId}:`, error);
+    return null;
+  }
+}
+
+/**
  * Comprehensive function to upload all Questrade accounts to Monarch
  * Based on the original script's uploadAllAccountsToMonarch functionality
  * @returns {Promise<void>}
@@ -400,11 +460,20 @@ export async function uploadAllAccountsToMonarch() {
 
           // Fetch balance history
           progressDialog.updateProgress(account.key, 'processing', 'Fetching balance data...');
-          const csvData = await fetchQuestradeBalanceHistory(account.key, fromDate, toDate);
+          const balanceData = await fetchBalanceHistory(account.key, fromDate, toDate);
 
-          if (!csvData) {
+          if (!balanceData) {
             throw new Error('Failed to fetch balance history.');
           }
+
+          // Extract and display balance change information
+          const balanceChange = extractBalanceChange(account.key, balanceData);
+          if (balanceChange) {
+            progressDialog.updateBalanceChange(account.key, balanceChange);
+          }
+
+          // Process balance data to CSV
+          const csvData = processBalanceData(balanceData, accountName);
 
           // Check cancellation before upload
           if (isCancelled) break;
@@ -566,52 +635,6 @@ async function getStartDatesForAllAccounts(accounts) {
   }
 
   return startDates;
-}
-
-/**
- * Fetch Questrade balance history and convert to CSV
- * @param {string} accountId - Account ID
- * @param {string} fromDate - Start date
- * @param {string} toDate - End date
- * @returns {Promise<string>} CSV data
- */
-async function fetchQuestradeBalanceHistory(accountId, fromDate, toDate) {
-  const balanceData = await questradeApi.makeApiCall(`/v2/brokerage-accounts-balances/${accountId}/balances?timeOfDay=current`);
-  const historyData = await questradeApi.makeApiCall(`/v2/brokerage-accounts-balances/${accountId}/historical-balance?granularity=1d&to=${toDate}&from=${fromDate}`);
-
-  const currentBalance = balanceData.totalEquity?.combined?.find((i) => i.currencyCode === 'CAD')?.amount;
-  const accountName = stateManager.getState().currentAccount.nickname || 'Unknown Account';
-
-  return processJsonToCSV(JSON.stringify(historyData), currentBalance, accountName);
-}
-
-/**
- * Process JSON balance history to CSV format
- * @param {string} jsonData - JSON data string
- * @param {number} currentBalance - Current balance to append
- * @param {string} accountName - Account name for CSV
- * @returns {string} CSV formatted data
- */
-function processJsonToCSV(jsonData, currentBalance, accountName) {
-  try {
-    const data = JSON.parse(jsonData);
-    let csvContent = '"Date","Total Equity","Account Name"\n';
-
-    if (data.data && Array.isArray(data.data)) {
-      data.data.forEach((item) => {
-        csvContent += `"${item.date}","${item.totalEquity}","${accountName}"\n`;
-      });
-    }
-
-    if (currentBalance) {
-      csvContent += `"${getTodayLocal()}","${currentBalance}","${accountName}"\n`;
-    }
-
-    return csvContent;
-  } catch (error) {
-    debugLog('Error processing JSON to CSV:', error);
-    throw new Error(`Error processing API response: ${error.message}`);
-  }
 }
 
 // Default export with all methods

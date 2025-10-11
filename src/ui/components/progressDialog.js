@@ -13,11 +13,11 @@ import { debugLog } from '../../core/utils';
  * @returns {Object} Progress dialog API object
  */
 export function showProgressDialog(accounts, title = 'Uploading Balance History for All Accounts') {
-  const dialogId = `balance-uploader-progress-${Date.now()}`;
+  const timestamp = Date.now();
 
   // Create overlay
   const overlay = document.createElement('div');
-  overlay.id = dialogId;
+  overlay.id = `balance-uploader-overlay-${timestamp}`;
   overlay.style.cssText = `
     position: fixed;
     top: 0;
@@ -33,6 +33,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
 
   // Create modal
   const modal = document.createElement('div');
+  modal.id = `balance-uploader-modal-${timestamp}`;
   modal.style.cssText = `
     background: white;
     padding: 25px;
@@ -47,6 +48,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
 
   // Header
   const header = document.createElement('h2');
+  header.id = `balance-uploader-header-${timestamp}`;
   header.style.cssText = `
     margin-top: 0;
     margin-bottom: 15px;
@@ -57,6 +59,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
 
   // Account list container
   const accountList = document.createElement('div');
+  accountList.id = `balance-uploader-account-list-${timestamp}`;
   accountList.style.cssText = `
     margin-bottom: 20px;
     max-height: 300px;
@@ -67,16 +70,29 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
   // Create account rows
   const accountElements = {};
   accounts.forEach((account) => {
+    const accountKey = account.key || account.id;
+
+    // Main account container
+    const accountContainer = document.createElement('div');
+    accountContainer.id = `balance-uploader-account-container-${accountKey}`;
+    accountContainer.style.cssText = `
+      border-bottom: 1px solid #eee;
+      padding-bottom: 5px;
+      margin-bottom: 5px;
+    `;
+
+    // Account row
     const accountRow = document.createElement('div');
+    accountRow.id = `balance-uploader-account-row-${accountKey}`;
     accountRow.style.cssText = `
       display: flex;
       align-items: center;
       padding: 10px;
-      border-bottom: 1px solid #eee;
     `;
 
     // Status icon
     const statusIcon = document.createElement('span');
+    statusIcon.id = `balance-uploader-account-icon-${accountKey}`;
     statusIcon.style.cssText = `
       margin-right: 10px;
       font-size: 1.2em;
@@ -87,6 +103,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
 
     // Account name container
     const accountNameContainer = document.createElement('div');
+    accountNameContainer.id = `balance-uploader-account-info-${accountKey}`;
     accountNameContainer.style.cssText = `
       flex-grow: 1;
       display: flex;
@@ -107,13 +124,14 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
       color: #888;
       font-weight: normal;
     `;
-    accountId.textContent = account.key || account.id;
+    accountId.textContent = accountKey;
     accountNameContainer.appendChild(accountId);
 
     accountRow.appendChild(accountNameContainer);
 
     // Status text
     const statusText = document.createElement('div');
+    statusText.id = `balance-uploader-account-status-${accountKey}`;
     statusText.style.cssText = `
       margin-left: 10px;
       color: #888;
@@ -125,17 +143,36 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     statusText.textContent = 'Pending';
     accountRow.appendChild(statusText);
 
-    accountList.appendChild(accountRow);
+    // Balance change section (initially hidden)
+    const balanceChangeDiv = document.createElement('div');
+    balanceChangeDiv.id = `balance-uploader-balance-change-${accountKey}`;
+    balanceChangeDiv.style.cssText = `
+      display: none;
+      width: 100%;
+      padding: 8px 15px;
+      border-radius: 4px;
+      font-size: 0.9em;
+      font-weight: 500;
+      text-align: center;
+    `;
 
-    accountElements[account.key || account.id] = {
+    // Add elements to container
+    accountContainer.appendChild(accountRow);
+    accountContainer.appendChild(balanceChangeDiv);
+    accountList.appendChild(accountContainer);
+
+    accountElements[accountKey] = {
+      container: accountContainer,
       row: accountRow,
       icon: statusIcon,
       status: statusText,
+      balanceChange: balanceChangeDiv,
     };
   });
 
   // Error container (initially hidden)
   const errorContainer = document.createElement('div');
+  errorContainer.id = `balance-uploader-error-container-${timestamp}`;
   errorContainer.style.cssText = `
     border: 1px solid #f44336;
     border-radius: 5px;
@@ -147,6 +184,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
 
   // Summary
   const summary = document.createElement('div');
+  summary.id = `balance-uploader-summary-${timestamp}`;
   summary.style.cssText = `
     margin-bottom: 20px;
     font-weight: bold;
@@ -156,6 +194,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
 
   // Buttons container
   const buttonsContainer = document.createElement('div');
+  buttonsContainer.id = `balance-uploader-buttons-${timestamp}`;
   buttonsContainer.style.cssText = `
     display: flex;
     justify-content: flex-end;
@@ -259,6 +298,56 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
       }
 
       el.icon.style.color = el.status.style.color;
+    },
+
+    /**
+     * Update balance change information for a specific account
+     * @param {string} accountId - Account ID to update
+     * @param {Object} balanceChangeData - Balance change data
+     * @param {number} balanceChangeData.oldBalance - Previous balance
+     * @param {number} balanceChangeData.newBalance - Current balance
+     * @param {string} balanceChangeData.lastUploadDate - Last upload date in YYYY-MM-DD format
+     * @param {number} balanceChangeData.changePercent - Percentage change
+     */
+    updateBalanceChange: (accountId, { oldBalance, newBalance, lastUploadDate, changePercent }) => {
+      const el = accountElements[accountId];
+      if (!el || !el.balanceChange) {
+        debugLog(`Warning: Balance change element not found for ID: ${accountId}`);
+        return;
+      }
+
+      try {
+        // Format the balance change display
+        const changeSymbol = changePercent > 0 ? '+' : '';
+        const formattedOldBalance = `$${Math.abs(oldBalance).toFixed(2)}`;
+        const formattedNewBalance = `$${Math.abs(newBalance).toFixed(2)}`;
+        const formattedChangePercent = `${changeSymbol}${changePercent.toFixed(2)}%`;
+
+        // Set the content
+        el.balanceChange.textContent = `${formattedOldBalance} (${lastUploadDate}) → ${formattedNewBalance} (${formattedChangePercent})`;
+
+        // Set colors based on change
+        let backgroundColor;
+        let textColor;
+        if (changePercent > 0) {
+          backgroundColor = '#e8f5e9';
+          textColor = '#2e7d32';
+        } else if (changePercent < 0) {
+          backgroundColor = '#ffebee';
+          textColor = '#c62828';
+        } else {
+          backgroundColor = '#f5f5f5';
+          textColor = '#666';
+        }
+
+        el.balanceChange.style.backgroundColor = backgroundColor;
+        el.balanceChange.style.color = textColor;
+        el.balanceChange.style.display = 'block';
+
+        debugLog(`Updated balance change for ${accountId}: ${formattedOldBalance} → ${formattedNewBalance} (${formattedChangePercent})`);
+      } catch (error) {
+        debugLog(`Error updating balance change for ${accountId}:`, error);
+      }
     },
 
     /**
