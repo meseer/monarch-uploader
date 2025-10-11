@@ -361,9 +361,9 @@ async function uploadSingleAccount(canadalifAccount, startDate, endDate, progres
     }
 
     // Store last upload date for auto uploads only
-    // Store yesterday even if we uploaded today's data to refresh today's balance in future uploads
+    // Store the actual end date that was uploaded to ensure proper continuity
     if (isAutoUpload) {
-      saveLastUploadDate(accountId, getYesterdayDate(), 'canadalife');
+      saveLastUploadDate(accountId, endDate, 'canadalife');
     }
 
     // Update progress
