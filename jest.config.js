@@ -35,6 +35,24 @@ module.exports = {
     '!**/vendor/**'
   ],
   
+  // Coverage output settings
+  coverageDirectory: 'coverage',
+  coverageReporters: [
+    'text',
+    'lcov',
+    'html'
+  ],
+  
+  // Coverage thresholds (optional - can be adjusted)
+  coverageThreshold: {
+    global: {
+      branches: 0, // Start with 0, increase as coverage improves
+      functions: 0,
+      lines: 0,
+      statements: 0
+    }
+  },
+  
   // Setup files to run before each test
   setupFilesAfterEnv: [
     '<rootDir>/test/setup.js'
