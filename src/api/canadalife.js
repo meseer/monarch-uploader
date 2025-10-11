@@ -477,6 +477,25 @@ function generateBusinessDays(startDate, endDate) {
 }
 
 /**
+ * Generate array of all days (including weekends) between start and end dates
+ * @param {string} startDate - Start date in YYYY-MM-DD format
+ * @param {string} endDate - End date in YYYY-MM-DD format
+ * @returns {Array<string>} Array of all date strings in YYYY-MM-DD format
+ */
+function generateAllDays(startDate, endDate) {
+  const allDays = [];
+  const current = parseLocalDate(startDate);
+  const end = parseLocalDate(endDate);
+
+  while (current <= end) {
+    allDays.push(formatDate(current));
+    current.setDate(current.getDate() + 1);
+  }
+
+  return allDays;
+}
+
+/**
  * Load historical account balance data for a date range
  * Optimizes API calls by leveraging opening balance = previous day's closing balance
  * Skips weekends when balances don't change
@@ -543,15 +562,21 @@ export async function loadAccountBalanceHistory(account, startDate, endDate, pro
         progressCallback(1, 1, 100);
       }
     } else {
-      // Optimize API calls: process every other day to get 2 days of data per call
+      // Simplified approach: process each day with optimization to minimize API calls
+      debugLog(`Processing ${businessDays.length} business days with optimization: ${businessDays}`);
+
+      const balanceMap = new Map(); // Map from date to balance data
+
+      // Make optimized API calls (every other day to get 2 days of data per call)
       for (let i = 0; i < businessDays.length; i += 2) {
+        debugLog(`Loop iteration i=${i}, processing date: ${businessDays[i]}`);
+
         // Check for cancellation before each API call
         if (signal?.aborted) {
           throw new Error('Operation cancelled by user');
         }
 
         const currentDate = businessDays[i];
-        const nextDate = businessDays[i + 1];
 
         try {
           // Update progress before making API call
@@ -561,81 +586,108 @@ export async function loadAccountBalanceHistory(account, startDate, endDate, pro
             progressCallback(currentProgress, businessDays.length, percentage);
           }
 
-          // Make API call for current date with signal support
+          // Make API call for current date
+          debugLog(`Making API call for ${currentDate}`);
           const balanceData = await loadAccountBalance(account, currentDate, signal);
           apiCallsMade += 1;
 
-          // Add previous day's balance if we have opening balance and this isn't the first day
-          if (i > 0) {
-            // The opening balance for current date is the closing balance for the previous business day
+          debugLog(`Received balance data for ${currentDate}:`, {
+            opening: balanceData.openingBalance,
+            closing: balanceData.closingBalance,
+          });
+
+          // Store current day's closing balance
+          balanceMap.set(currentDate, balanceData.closingBalance);
+
+          // If there's a previous day that we haven't processed yet, use the opening balance
+          if (i > 0 && !balanceMap.has(businessDays[i - 1])) {
             const prevBusinessDay = businessDays[i - 1];
-            data.push([
-              prevBusinessDay,
-              balanceData.openingBalance,
-              account.EnglishShortName,
-            ]);
-          }
-
-          // Add current day's closing balance
-          data.push([
-            currentDate,
-            balanceData.closingBalance,
-            account.EnglishShortName,
-          ]);
-
-          // If there's a next day and we haven't processed it yet
-          if (nextDate && i + 1 < businessDays.length) {
-            // The opening balance for next date would be today's closing balance
-            // We'll add next day's data in the next iteration or handle edge case below
+            debugLog(`Adding previous day ${prevBusinessDay} with opening balance ${balanceData.openingBalance}`);
+            balanceMap.set(prevBusinessDay, balanceData.openingBalance);
           }
         } catch (error) {
           debugLog(`Error loading balance for ${currentDate}:`, error);
-          // Continue processing other dates, but log the error
           toast.show(`Warning: Could not load balance for ${currentDate}`, 'warning');
         }
       }
 
-      // Handle the case where we have an odd number of business days
-      // The last day might not have been processed if we increment by 2
-      const lastDayIndex = businessDays.length - 1;
-      const lastDay = businessDays[lastDayIndex];
+      debugLog('Balance map after optimization:', Array.from(balanceMap.entries()));
 
-      // Check if last day was already processed
-      const lastDayProcessed = data.some((row) => row[0] === lastDay);
-
-      if (!lastDayProcessed && businessDays.length > 1) {
-        try {
-          // Update progress for final day
-          if (progressCallback) {
-            progressCallback(businessDays.length, businessDays.length, 100);
+      // Handle any remaining days that weren't processed
+      for (const businessDay of businessDays) {
+        if (!balanceMap.has(businessDay)) {
+          debugLog(`Processing missing day: ${businessDay}`);
+          try {
+            const balanceData = await loadAccountBalance(account, businessDay);
+            apiCallsMade += 1;
+            balanceMap.set(businessDay, balanceData.closingBalance);
+            debugLog(`Added missing day balance: ${businessDay} = ${balanceData.closingBalance}`);
+          } catch (error) {
+            debugLog(`Error loading balance for missing day ${businessDay}:`, error);
+            toast.show(`Warning: Could not load balance for ${businessDay}`, 'warning');
           }
+        }
+      }
 
-          const balanceData = await loadAccountBalance(account, lastDay);
-          apiCallsMade += 1;
+      debugLog('Final balance map:', Array.from(balanceMap.entries()));
 
+      // Convert balance map to data array
+      for (const businessDay of businessDays) {
+        if (balanceMap.has(businessDay)) {
           data.push([
-            lastDay,
-            balanceData.closingBalance,
+            businessDay,
+            balanceMap.get(businessDay),
             account.EnglishShortName,
           ]);
-        } catch (error) {
-          debugLog(`Error loading balance for last day ${lastDay}:`, error);
-          toast.show(`Warning: Could not load balance for ${lastDay}`, 'warning');
         }
-      } else if (progressCallback) {
-        // Ensure progress shows 100% completion
+      }
+
+      // Final progress update
+      if (progressCallback) {
         progressCallback(businessDays.length, businessDays.length, 100);
       }
     }
 
-    // Sort data by date (skip header row)
+    // Sort business day data by date (skip header row)
     const headerRow = data[0];
     const dataRows = data.slice(1);
     dataRows.sort((a, b) => new Date(a[0]) - new Date(b[0]));
-    const sortedData = [headerRow, ...dataRows];
+
+    // Extend weekend data: Generate all days and fill in weekend gaps
+    const allDays = generateAllDays(startDate, endDate);
+    const businessDayMap = new Map(dataRows.map((row) => [row[0], row[1]])); // date -> balance
+
+    debugLog('Extending weekend data:', {
+      allDaysCount: allDays.length,
+      businessDaysCount: dataRows.length,
+      businessDates: Array.from(businessDayMap.keys()),
+    });
+
+    // Build complete dataset with weekend extension
+    const extendedDataRows = [];
+    let lastBusinessDayBalance = null;
+
+    for (const currentDate of allDays) {
+      if (businessDayMap.has(currentDate)) {
+        // This is a business day with actual data
+        const balance = businessDayMap.get(currentDate);
+        extendedDataRows.push([currentDate, balance, account.EnglishShortName]);
+        lastBusinessDayBalance = balance;
+        debugLog(`Added business day: ${currentDate} = ${balance}`);
+      } else if (lastBusinessDayBalance !== null) {
+        // This is a weekend/holiday - extend the last business day balance
+        extendedDataRows.push([currentDate, lastBusinessDayBalance, account.EnglishShortName]);
+        debugLog(`Extended weekend: ${currentDate} = ${lastBusinessDayBalance} (carried from previous business day)`);
+      } else {
+        // This shouldn't happen if we start with a business day, but handle gracefully
+        debugLog(`Warning: No previous business day balance to extend for ${currentDate}`);
+      }
+    }
+
+    const finalData = [headerRow, ...extendedDataRows];
 
     const result = {
-      data: sortedData,
+      data: finalData,
       account: {
         shortName: account.EnglishShortName,
         name: account.LongNameEnglish || account.EnglishShortName,
@@ -645,7 +697,8 @@ export async function loadAccountBalanceHistory(account, startDate, endDate, pro
         startDate,
         endDate,
       },
-      totalDays: businessDays.length,
+      totalDays: allDays.length, // Now includes weekends
+      businessDays: businessDays.length,
       apiCallsMade,
     };
 
