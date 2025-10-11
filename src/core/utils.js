@@ -184,7 +184,7 @@ export function getLastUpdateDate(accountId, institutionType) {
 
   switch (institutionType) {
   case 'questrade':
-    storageKey = STORAGE.LAST_DATE_PREFIX + accountId;
+    storageKey = STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX + accountId;
     break;
   case 'canadalife':
     storageKey = STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX + accountId;
@@ -239,7 +239,7 @@ export function saveLastUploadDate(accountId, uploadDate, institutionType) {
 
   switch (institutionType) {
   case 'questrade':
-    storageKey = STORAGE.LAST_DATE_PREFIX + accountId;
+    storageKey = STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX + accountId;
     break;
   case 'canadalife':
     storageKey = STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX + accountId;
@@ -590,7 +590,7 @@ export async function clearAccountMapping() {
 
     switch (institution) {
     case 'questrade':
-      prefix = STORAGE.ACCOUNT_MAPPING_PREFIX;
+      prefix = STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX;
       institutionName = 'Questrade';
       break;
     case 'canadalife':
@@ -631,7 +631,7 @@ export async function clearLastUploadedDate() {
     switch (institution) {
     case 'questrade':
       institutionName = 'Questrade';
-      keysToDelete.push(...keys.filter((key) => key.startsWith(STORAGE.LAST_DATE_PREFIX)));
+      keysToDelete.push(...keys.filter((key) => key.startsWith(STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX)));
       break;
     case 'canadalife':
       institutionName = 'Canada Life';

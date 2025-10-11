@@ -207,7 +207,7 @@ export function createSettingsModal() {
       id: 'questrade',
       label: 'Questrade',
       fallbackIcon: '💼',
-      storagePrefix: STORAGE.ACCOUNT_MAPPING_PREFIX,
+      storagePrefix: STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX,
       institutionName: 'Questrade',
     },
     {
@@ -597,7 +597,7 @@ function renderQuestradeTab(container) {
 
   // Account Mappings Section
   const mappingsSection = createSection('Account Mappings', '🔗', 'Questrade to Monarch account mappings');
-  const mappingsData = getStorageData(STORAGE.ACCOUNT_MAPPING_PREFIX);
+  const mappingsData = getStorageData(STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX);
   const mappingsCards = createAccountMappingCards(mappingsData, (key) => {
     GM_deleteValue(key);
     toast.show('Account mapping deleted', 'info');
@@ -993,7 +993,7 @@ function getLastUpdateDate(displayKey, institutionType) {
 
   switch (institutionType) {
   case 'questrade':
-    storageKey = STORAGE.LAST_DATE_PREFIX + displayKey;
+    storageKey = STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX + displayKey;
     break;
   case 'canadalife':
     storageKey = STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX + displayKey;
@@ -1019,7 +1019,7 @@ function clearLastUpdateDate(displayKey, institutionType, onClear) {
 
   switch (institutionType) {
   case 'questrade':
-    storageKey = STORAGE.LAST_DATE_PREFIX + displayKey;
+    storageKey = STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX + displayKey;
     break;
   case 'canadalife':
     storageKey = STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX + displayKey;

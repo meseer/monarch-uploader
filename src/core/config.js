@@ -17,8 +17,9 @@ export const API = {
 export const STORAGE = {
   ACCOUNTS_LIST: 'questrade_accounts_list',
   MONARCH_TOKEN: 'monarch_graphql_token',
-  ACCOUNT_MAPPING_PREFIX: 'monarch_account_for_',
-  LAST_DATE_PREFIX: 'lastUsedFromDate_',
+  // Questrade specific storage keys
+  QUESTRADE_LAST_UPLOAD_DATE_PREFIX: 'questrade_last_upload_date_',
+  QUESTRADE_ACCOUNT_MAPPING_PREFIX: 'questrade_monarch_account_for_',
   // CanadaLife specific storage keys
   CANADALIFE_TOKEN_KEY: '$AuraClientService.token$siteforce:communityApp',
   CANADALIFE_LAST_UPLOAD_DATE_PREFIX: 'canadalife_last_upload_date_',

@@ -142,7 +142,7 @@ export function updateStatusIndicators(indicators) {
 
   // Update last downloaded note
   if (indicators.lastDownloaded && state.currentAccount.id) {
-    const lastUsedDate = GM_getValue(`${STORAGE.LAST_DATE_PREFIX}${state.currentAccount.id}`);
+    const lastUsedDate = GM_getValue(`${STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX}${state.currentAccount.id}`);
     if (lastUsedDate) {
       indicators.lastDownloaded.textContent = `Last download: ${lastUsedDate}`;
     } else {

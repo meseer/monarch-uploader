@@ -182,7 +182,7 @@ export function linkAccounts(questradeAccountId, questradeAccountName, monarchAc
     }
 
     // Store mapping
-    const mappingKey = `${STORAGE.ACCOUNT_MAPPING_PREFIX}${questradeAccountId}`;
+    const mappingKey = `${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}${questradeAccountId}`;
     GM_setValue(mappingKey, JSON.stringify(monarchAccount));
 
     // Update state
@@ -209,7 +209,7 @@ export function getLinkedAccount(questradeAccountId) {
   try {
     if (!questradeAccountId) return null;
 
-    const mappingKey = `${STORAGE.ACCOUNT_MAPPING_PREFIX}${questradeAccountId}`;
+    const mappingKey = `${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}${questradeAccountId}`;
     const mapping = GM_getValue(mappingKey, null);
 
     return mapping ? JSON.parse(mapping) : null;

@@ -123,7 +123,7 @@ export function getDefaultDateRange(accountId, days = 90) {
 
   // Check if we have a last used date for this account
   let fromDate;
-  const lastUsedDate = GM_getValue(`${STORAGE.LAST_DATE_PREFIX}${accountId}`);
+  const lastUsedDate = GM_getValue(`${STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX}${accountId}`);
 
   if (lastUsedDate) {
     // Parse the saved date in local timezone
@@ -161,7 +161,7 @@ export function storeDateRange(accountId, toDate) {
   if (!accountId || !toDate) return;
 
   try {
-    GM_setValue(`${STORAGE.LAST_DATE_PREFIX}${accountId}`, toDate);
+    GM_setValue(`${STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX}${accountId}`, toDate);
     debugLog(`Stored last used date ${toDate} for account ${accountId}`);
   } catch (error) {
     debugLog('Error storing date range:', error);
@@ -190,7 +190,7 @@ export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDat
     // Resolve Monarch account mapping for this Questrade account
     const monarchAccount = await monarchApi.resolveAccountMapping(
       accountId,
-      STORAGE.ACCOUNT_MAPPING_PREFIX,
+      STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX,
       'brokerage',
     );
 
@@ -538,7 +538,7 @@ async function ensureAllAccountMappings(accounts, progressDialog) {
   // Check each account for mapping
   for (let i = 0; i < accounts.length; i += 1) {
     const account = accounts[i];
-    const monarchAccount = JSON.parse(GM_getValue(`${STORAGE.ACCOUNT_MAPPING_PREFIX}${account.key}`, null));
+    const monarchAccount = JSON.parse(GM_getValue(`${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}${account.key}`, null));
     if (!monarchAccount) {
       unmappedAccounts.push(account);
     }
@@ -581,7 +581,7 @@ async function ensureAllAccountMappings(accounts, progressDialog) {
     }
 
     // Save the mapping
-    GM_setValue(`${STORAGE.ACCOUNT_MAPPING_PREFIX}${account.key}`, JSON.stringify(monarchAccount));
+    GM_setValue(`${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}${account.key}`, JSON.stringify(monarchAccount));
 
     // Update progress if dialog exists
     if (progressDialog) {
@@ -604,7 +604,7 @@ async function getStartDatesForAllAccounts(accounts) {
 
   // Check each account for lastUsedDate
   for (const account of accounts) {
-    const lastDate = GM_getValue(`${STORAGE.LAST_DATE_PREFIX}${account.key}`, null);
+    const lastDate = GM_getValue(`${STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX}${account.key}`, null);
     if (lastDate && /^\d{4}-\d{2}-\d{2}$/.test(lastDate)) {
       startDates[account.key] = lastDate;
       // Track oldest date among accounts that have one

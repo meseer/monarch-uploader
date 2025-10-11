@@ -40,16 +40,16 @@ jest.mock('../../src/ui/toast', () => ({
 }));
 
 // Mock GM storage functions
-global.GM_getValue = jest.fn();
-global.GM_setValue = jest.fn();
+globalThis.GM_getValue = jest.fn();
+globalThis.GM_setValue = jest.fn();
 
 describe('Balance Service', () => {
   beforeEach(() => {
     // Clear all mocks before each test
     jest.clearAllMocks();
-    
+
     // Set up console mocks for debugLog
-    global.console = { log: jest.fn() };
+    globalThis.console = { log: jest.fn() };
   });
 
   describe('fetchBalanceHistory', () => {
@@ -57,42 +57,42 @@ describe('Balance Service', () => {
       // Mock API responses
       const mockBalanceData = {
         totalEquity: {
-          combined: [{ currencyCode: 'CAD', amount: 10000 }]
-        }
+          combined: [{ currencyCode: 'CAD', amount: 10000 }],
+        },
       };
-      
+
       const mockHistoryData = {
         data: [
           { date: '2025-01-01', totalEquity: 9800 },
-          { date: '2025-01-02', totalEquity: 9900 }
-        ]
+          { date: '2025-01-02', totalEquity: 9900 },
+        ],
       };
-      
+
       // Setup mocks
       questradeApi.makeApiCall
         .mockResolvedValueOnce(mockBalanceData)
         .mockResolvedValueOnce(mockHistoryData);
-      
+
       const result = await fetchBalanceHistory('12345', '2025-01-01', '2025-01-31');
-      
+
       expect(questradeApi.makeApiCall).toHaveBeenCalledTimes(2);
       expect(result).toEqual({
         currentBalance: mockBalanceData,
-        history: mockHistoryData
+        history: mockHistoryData,
       });
     });
-    
+
     test('should throw BalanceError when dates are invalid', async () => {
       await expect(fetchBalanceHistory('12345', '', '2025-01-31'))
         .rejects
         .toThrow(BalanceError);
-        
+
       expect(questradeApi.makeApiCall).not.toHaveBeenCalled();
     });
-    
+
     test('should throw BalanceError when API call fails', async () => {
       questradeApi.makeApiCall.mockRejectedValueOnce(new Error('API Error'));
-      
+
       await expect(fetchBalanceHistory('12345', '2025-01-01', '2025-01-31'))
         .rejects
         .toThrow(BalanceError);
@@ -104,30 +104,30 @@ describe('Balance Service', () => {
       const rawData = {
         currentBalance: {
           totalEquity: {
-            combined: [{ currencyCode: 'CAD', amount: 10000 }]
-          }
+            combined: [{ currencyCode: 'CAD', amount: 10000 }],
+          },
         },
         history: {
           data: [
             { date: '2025-01-01', totalEquity: 9800 },
-            { date: '2025-01-02', totalEquity: 9900 }
-          ]
-        }
+            { date: '2025-01-02', totalEquity: 9900 },
+          ],
+        },
       };
-      
+
       const result = processBalanceData(rawData, 'Test Account');
-      
+
       // Check that CSV contains header and data rows
       expect(result).toContain('"Date","Total Equity","Account Name"');
       expect(result).toContain('"2025-01-01","9800","Test Account"');
       expect(result).toContain('"2025-01-02","9900","Test Account"');
-      
+
       // Check that current balance is included with today's date (flexible date check)
       expect(result).toContain('"10000","Test Account"');
       // Check that today's date pattern is present (YYYY-MM-DD format)
       expect(result).toMatch(/"20\d{2}-\d{2}-\d{2}","10000","Test Account"/);
     });
-    
+
     test('should throw error when invalid data is provided', () => {
       expect(() => processBalanceData({}, 'Test Account'))
         .toThrow('Failed to process balance data');
@@ -138,37 +138,37 @@ describe('Balance Service', () => {
     test('getDefaultDateRange should return default dates when no saved date', () => {
       // Mock no saved date
       GM_getValue.mockReturnValueOnce(null);
-      
+
       const result = getDefaultDateRange('12345', 30);
-      
+
       expect(result).toHaveProperty('fromDate');
       expect(result).toHaveProperty('toDate');
-      
+
       // Check that fromDate is approximately 30 days ago (allow for some variance)
       const fromDate = new Date(result.fromDate);
       const today = new Date();
       const daysDiff = Math.round((today - fromDate) / (1000 * 60 * 60 * 24));
-      
+
       expect(daysDiff).toBeGreaterThanOrEqual(29);
       expect(daysDiff).toBeLessThanOrEqual(31);
     });
-    
+
     test('getDefaultDateRange should use saved date when available', () => {
       // Mock saved date (30 days ago)
       const savedDate = new Date();
       savedDate.setDate(savedDate.getDate() - 30);
       GM_getValue.mockReturnValueOnce(savedDate.toISOString().split('T')[0]);
-      
+
       const result = getDefaultDateRange('12345');
-      
+
       // Check that fromDate matches saved date
       expect(result.fromDate).toBe(savedDate.toISOString().split('T')[0]);
     });
-    
+
     test('storeDateRange should save date for account', () => {
       storeDateRange('12345', '2025-01-31');
-      
-      expect(GM_setValue).toHaveBeenCalledWith(`${STORAGE.LAST_DATE_PREFIX}12345`, '2025-01-31');
+
+      expect(GM_setValue).toHaveBeenCalledWith(`${STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX}12345`, '2025-01-31');
     });
   });
 
@@ -177,24 +177,24 @@ describe('Balance Service', () => {
       // Mock successful upload and account mapping
       monarchApi.resolveAccountMapping.mockResolvedValueOnce({ id: 'monarch-account-123' });
       monarchApi.uploadBalance.mockResolvedValueOnce(true);
-      
+
       const result = await uploadBalanceToMonarch(
         '12345',
         '"Date","Amount"\n"2025-01-01","1000"',
         '2025-01-01',
         '2025-01-31',
       );
-      
+
       expect(result).toBe(true);
       expect(monarchApi.resolveAccountMapping).toHaveBeenCalled();
       expect(monarchApi.uploadBalance).toHaveBeenCalled();
     });
-    
+
     test('should throw BalanceError when no CSV data', async () => {
       await expect(uploadBalanceToMonarch('12345', '', '2025-01-01', '2025-01-31'))
         .rejects
         .toThrow(BalanceError);
-        
+
       expect(monarchApi.uploadBalance).not.toHaveBeenCalled();
     });
   });
@@ -231,18 +231,18 @@ describe('Balance Service', () => {
       expect(questradeApi.makeApiCall).toHaveBeenCalledTimes(2);
       expect(monarchApi.uploadBalance).toHaveBeenCalled();
     });
-    
+
     test('should handle errors and show error toast', async () => {
       // Mock API failure directly
       questradeApi.makeApiCall.mockRejectedValueOnce(new Error('Failed to fetch current balance data'));
-      
+
       const result = await processAndUploadBalance(
         '12345',
         'Test Account',
         '2025-01-01',
-        '2025-01-31'
+        '2025-01-31',
       );
-      
+
       // Check result and error toast (should show the actual error message from the service)
       expect(result).toBe(false);
       expect(toast.show).toHaveBeenCalledWith('Failed to fetch balance history: Failed to fetch current balance data', 'error');
@@ -314,7 +314,7 @@ describe('Balance Service', () => {
       expect(result.failed).toBe(1);
       expect(toast.show).toHaveBeenCalledWith('Completed: 1 successful, 1 failed', 'warning');
     });
-    
+
     test('should handle empty accounts list', async () => {
       const result = await bulkProcessAccounts(
         [],
