@@ -6,7 +6,7 @@
 import { debugLog, isQuestradeAllAccountsPage } from './utils';
 import stateManager from './state';
 import accountService from '../services/questrade/account';
-import uiManager from '../ui/uiManager';
+import uiManager from '../ui/questrade/uiManager';
 
 /**
  * Navigation manager class to handle URL changes

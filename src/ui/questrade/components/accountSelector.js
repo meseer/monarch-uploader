@@ -1,13 +1,150 @@
 /**
- * Generic Account Selector Component
- * Contains generic functionality for selecting Monarch accounts
+ * Account Selector Component
+ * A reusable dropdown for selecting accounts with sophisticated modal UI
  */
 
-import { debugLog, stringSimilarity } from '../../core/utils';
-import stateManager from '../../core/state';
-import monarchApi from '../../api/monarch';
-import toast from '../toast';
-import { addModalKeyboardHandlers, makeItemsKeyboardNavigable } from '../keyboardNavigation';
+import { debugLog, extractDomain, stringSimilarity } from '../../../core/utils';
+import stateManager from '../../../core/state';
+import monarchApi from '../../../api/monarch';
+import toast from '../../toast';
+import { addModalKeyboardHandlers, makeItemsKeyboardNavigable } from '../../keyboardNavigation';
+
+/**
+ * Creates an account selector dropdown
+ *
+ * @param {Object} options - Configuration options
+ * @param {Array<Object>} options.accounts - List of accounts to select from
+ * @param {Function} options.onChange - Callback when selection changes
+ * @param {string} options.selectedId - Initially selected account ID
+ * @param {string} options.labelText - Text to show as label (default: "Select Account:")
+ * @param {string} options.placeholderText - Placeholder text when no selection (default: "Choose an account...")
+ * @param {boolean} options.required - Whether selection is required (default: true)
+ * @returns {HTMLElement} The created selector element
+ */
+export function createAccountSelector({
+  accounts = [],
+  onChange = null,
+  selectedId = null,
+  labelText = 'Select Account:',
+  placeholderText = 'Choose an account...',
+  required = true,
+}) {
+  // Create container
+  const container = document.createElement('div');
+  container.className = 'account-selector-container';
+  container.style.cssText = 'margin: 10px 0; display: flex; flex-direction: column; gap: 5px;';
+
+  // Create label
+  const label = document.createElement('label');
+  label.textContent = labelText;
+  label.style.cssText = 'font-weight: bold; font-size: 14px;';
+  container.appendChild(label);
+
+  // Create select element
+  const select = document.createElement('select');
+  select.className = 'account-selector';
+  select.style.cssText = 'padding: 8px; border-radius: 4px; border: 1px solid #ccc; font-size: 14px; width: 100%;';
+
+  if (required) {
+    select.setAttribute('required', 'required');
+  }
+
+  // Add placeholder option
+  const placeholderOption = document.createElement('option');
+  placeholderOption.value = '';
+  placeholderOption.textContent = placeholderText;
+  placeholderOption.disabled = true;
+  placeholderOption.selected = !selectedId;
+  select.appendChild(placeholderOption);
+
+  // Add account options
+  accounts.forEach((account) => {
+    const option = document.createElement('option');
+    option.value = account.id;
+    option.textContent = account.nickname || account.name || account.displayName;
+    option.selected = account.id === selectedId;
+    select.appendChild(option);
+  });
+
+  // Handle empty accounts array
+  if (accounts.length === 0) {
+    select.disabled = true;
+    const emptyOption = document.createElement('option');
+    emptyOption.value = '';
+    emptyOption.textContent = 'No accounts available';
+    select.appendChild(emptyOption);
+  }
+
+  // Add event listener
+  if (onChange && typeof onChange === 'function') {
+    select.addEventListener('change', (event) => {
+      const selectedAccount = accounts.find((acc) => acc.id === event.target.value);
+      onChange(selectedAccount);
+    });
+  }
+
+  container.appendChild(select);
+  return container;
+}
+
+/**
+ * Creates a Monarch account mapping selector
+ * This specialized selector links Questrade accounts to Monarch accounts
+ *
+ * @param {string} questradeAccountId - Questrade account ID to map
+ * @param {string} questradeAccountName - Questrade account name
+ * @param {Array<Object>} monarchAccounts - Available Monarch accounts
+ * @param {string} storagePrefix - Storage prefix for saving mapping
+ * @returns {HTMLElement} The created selector element
+ */
+export function createMonarchAccountMappingSelector(
+  questradeAccountId,
+  questradeAccountName,
+  monarchAccounts,
+  storagePrefix,
+) {
+  // Get existing mapping if any
+  let existingMapping = null;
+  try {
+    existingMapping = JSON.parse(GM_getValue(`${storagePrefix}${questradeAccountId}`, null));
+  } catch (error) {
+    debugLog('Error parsing existing account mapping:', error);
+  }
+
+  // Setup callback for selection change
+  const handleAccountSelection = (selectedAccount) => {
+    if (!selectedAccount) return;
+
+    try {
+      // Store mapping
+      GM_setValue(`${storagePrefix}${questradeAccountId}`, JSON.stringify(selectedAccount));
+
+      // Update state
+      stateManager.setAccount(questradeAccountId, questradeAccountName);
+
+      // Notify user
+      toast.show(`Mapped ${questradeAccountName} to ${selectedAccount.displayName} in Monarch`, 'info');
+
+      debugLog(`Account mapping saved: ${questradeAccountName} -> ${selectedAccount.displayName}`, {
+        questradeId: questradeAccountId,
+        monarchId: selectedAccount.id,
+      });
+    } catch (error) {
+      toast.show('Error saving account mapping', 'error');
+      debugLog('Error saving account mapping:', error);
+    }
+  };
+
+  // Create and return the selector
+  return createAccountSelector({
+    accounts: monarchAccounts,
+    onChange: handleAccountSelection,
+    selectedId: existingMapping?.id || null,
+    labelText: `Map Questrade "${questradeAccountName}" to Monarch account:`,
+    placeholderText: 'Select Monarch account...',
+    required: true,
+  });
+}
 
 /**
  * Show sophisticated Monarch account selector with institution-based selection
@@ -498,7 +635,7 @@ function showAccountSelector(institution, callback, allInstitutions, accountType
   header.textContent = cred.institution?.name || 'Select Account';
   modal.appendChild(header);
 
-  // Add account reference header
+  // Add Questrade account reference header
   const accountRef = document.createElement('div');
   accountRef.style.cssText = 'margin-bottom: 15px; font-size: 0.95em;';
   accountRef.innerHTML = `Selecting Monarch account for <b>${currentAccountName}</b>`;
@@ -801,76 +938,41 @@ function showFlatAccountSelector(accounts, callback) {
 
     // Create and append the account name
     const nameDiv = document.createElement('div');
-    nameDiv.style.cssText = 'font-weight: bold;';
+    nameDiv.style.fontWeight = 'bold';
     nameDiv.textContent = acc.displayName;
     infoDiv.appendChild(nameDiv);
 
-    // Add account balance if available
-    if (acc.currentBalance !== undefined) {
-      const balanceDiv = document.createElement('div');
-      balanceDiv.style.cssText = 'font-size: 0.9em; color: #555;';
-      balanceDiv.textContent = `Balance: ${new Intl.NumberFormat().format(acc.currentBalance)}`;
-      infoDiv.appendChild(balanceDiv);
-    }
+    // Create and append the account balance
+    const balanceDiv = document.createElement('div');
+    balanceDiv.style.cssText = 'font-size: 0.9em; color: #555;';
+    balanceDiv.textContent = `Balance: ${new Intl.NumberFormat().format(acc.currentBalance)}`;
+    infoDiv.appendChild(balanceDiv);
 
-    // Add account type if available
-    if (acc.type && acc.type.display) {
-      const typeDiv = document.createElement('div');
-      typeDiv.style.cssText = 'font-size: 0.85em; color: #666;';
-      typeDiv.textContent = acc.type.display;
-      infoDiv.appendChild(typeDiv);
-    }
-
+    // Append the text info container to the main item
     item.appendChild(infoDiv);
 
-    // Add hover effects
+    // Add event listeners
     item.onmouseover = () => {
-      item.style.backgroundColor = '#f5f5f5';
-      item.style.borderColor = '#ddd';
+      item.style.backgroundColor = '#f0f0f0';
     };
     item.onmouseout = () => {
-      item.style.backgroundColor = '';
-      item.style.borderColor = '#eee';
+      item.style.backgroundColor = 'transparent';
     };
-
-    // Add click handler
-    item.onclick = () => {
-      overlay.remove();
-      callback(acc);
-    };
+    item.onclick = () => { overlay.remove(); callback(acc); };
 
     modal.appendChild(item);
   });
 
-  // Add cancel button
-  const cancelBtn = document.createElement('button');
-  cancelBtn.textContent = 'Cancel';
-  cancelBtn.style.cssText = `
-    padding: 8px 16px;
-    background-color: #f5f5f5;
-    color: #333;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    margin-top: 10px;
-  `;
-  cancelBtn.onclick = () => {
-    overlay.remove();
-    callback(null);
-  };
-  modal.appendChild(cancelBtn);
-
-  // Show the modal
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 }
 
 /**
- * Create a modal overlay with backdrop
- * @param {Function} onClose - Function to call when overlay is clicked
- * @returns {HTMLElement} The overlay element
+ * Create a modal overlay with standard styling
+ * @param {Function} onClickOutside - Handler for clicking outside modal
+ * @returns {HTMLElement} Overlay element
  */
-function createModalOverlay(onClose) {
+function createModalOverlay(onClickOutside) {
   const overlay = document.createElement('div');
   overlay.style.cssText = `
     position: fixed;
@@ -878,57 +980,54 @@ function createModalOverlay(onClose) {
     left: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
+    background: rgba(0,0,0,0.7);
     display: flex;
-    justify-content: center;
     align-items: center;
+    justify-content: center;
     z-index: 10000;
   `;
 
-  // Close modal when clicking outside
-  overlay.onclick = (e) => {
-    if (e.target === overlay) {
-      onClose();
-    }
-  };
+  // Add click outside handler if provided
+  if (onClickOutside) {
+    overlay.onclick = (e) => {
+      if (e.target === overlay) {
+        onClickOutside();
+      }
+    };
+  }
 
   return overlay;
 }
 
 /**
- * Add a letter-based logo fallback
+ * Add a logo fallback (first letter) to a container
  * @param {HTMLElement} container - Container to add logo to
- * @param {string} name - Name to extract letter from
+ * @param {string} institutionName - Institution name for fallback
  */
-function addLogoFallback(container, name) {
-  const fallback = document.createElement('div');
-  fallback.style.cssText = `
+function addLogoFallback(container, institutionName) {
+  const logoFallback = document.createElement('div');
+  logoFallback.style.cssText = `
     width: 40px;
     height: 40px;
-    background-color: #ddd;
-    color: #666;
     border-radius: 5px;
+    background-color: #e0e0e0;
     display: flex;
     align-items: center;
     justify-content: center;
+    font-size: 20px;
+    color: #666;
     font-weight: bold;
-    font-size: 1.2em;
   `;
-  fallback.textContent = (name || 'U')[0].toUpperCase();
-  container.appendChild(fallback);
+  const [firstChar] = institutionName || '?';
+  logoFallback.textContent = firstChar;
+  container.appendChild(logoFallback);
 }
 
-/**
- * Extract domain from URL for matching
- * @param {string} url - URL to extract domain from
- * @returns {string|null} Extracted domain or null
- */
-function extractDomain(url) {
-  if (!url) return null;
-  try {
-    const urlObj = new URL(url);
-    return urlObj.hostname.replace(/^www\./, '');
-  } catch (e) {
-    return null;
-  }
-}
+export default {
+  create: createAccountSelector,
+  createMonarchMapping: createMonarchAccountMappingSelector,
+  showMonarchAccountSelector,
+  showInstitutionSelector,
+  showAccountSelector,
+  showFlatAccountSelector,
+};

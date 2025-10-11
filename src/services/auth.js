@@ -7,7 +7,7 @@ import { debugLog } from '../core/utils';
 import { STORAGE } from '../core/config';
 import stateManager from '../core/state';
 import toast from '../ui/toast';
-import { checkQuestradeAuth } from './questrade/auth';
+import { checkQuestradeAuth, getQuestradeToken, saveQuestradeToken } from './questrade/auth';
 
 /**
  * Custom authentication error class
@@ -123,8 +123,8 @@ export function saveMonarchToken(token) {
 }
 
 /**
- * Save a token for a specific provider (legacy compatibility)
- * @param {string} provider - Provider name ('monarch' only supported)
+ * Save a token for a specific provider
+ * @param {string} provider - Provider name ('monarch' or 'questrade')
  * @param {string|Object} token - Token to save
  */
 export function saveToken(provider, token) {
@@ -133,6 +133,8 @@ export function saveToken(provider, token) {
   try {
     if (provider.toLowerCase() === 'monarch') {
       saveMonarchToken(token);
+    } else if (provider.toLowerCase() === 'questrade') {
+      saveQuestradeToken(token);
     } else {
       throw new AuthError(`Provider ${provider} not supported in shared auth service`, provider);
     }
@@ -141,6 +143,9 @@ export function saveToken(provider, token) {
     throw new AuthError(`Failed to save ${provider} token`, provider);
   }
 }
+
+// Re-export Questrade auth functions for external access
+export { getQuestradeToken, checkQuestradeAuth, saveQuestradeToken };
 
 // Default export with all methods
 export default {
@@ -151,5 +156,8 @@ export default {
   isFullyAuthenticated,
   saveToken,
   saveMonarchToken,
+  getQuestradeToken,
+  checkQuestradeAuth,
+  saveQuestradeToken,
   AuthError,
 };

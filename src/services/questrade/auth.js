@@ -122,7 +122,7 @@ export function checkQuestradeAuth() {
  */
 export function questradeTokenNeedsRefresh() {
   const authStatus = checkQuestradeAuth();
-  return authStatus.authenticated && authStatus.expiresIn < 300; // Less than 5 minutes
+  return !authStatus.authenticated || authStatus.expiresIn < 300; // No auth or less than 5 minutes
 }
 
 /**
@@ -130,19 +130,25 @@ export function questradeTokenNeedsRefresh() {
  * @param {string|Object} token - Token to save
  */
 export function saveQuestradeToken(token) {
-  if (!token) return;
-
   try {
     // For Questrade, we don't directly save tokens as they're managed by the platform
     // This is just for testing or specific scenarios
     questradeTokenCache = token;
-    questradeTokenTimestamp = Date.now();
+    questradeTokenTimestamp = token ? Date.now() : 0;
     stateManager.setQuestradeAuth(token);
     debugLog('Updated Questrade token cache');
   } catch (error) {
     debugLog('Error saving Questrade token:', error);
     throw new AuthError('Failed to save Questrade token', 'questrade');
   }
+}
+
+/**
+ * Clear the token cache (primarily for testing)
+ */
+export function clearQuestradeTokenCache() {
+  questradeTokenCache = null;
+  questradeTokenTimestamp = 0;
 }
 
 // Default export with all methods

@@ -11,7 +11,7 @@ jest.mock('../../src/core/state', () => ({
   getState: jest.fn().mockReturnValue({})
 }));
 
-jest.mock('../../src/ui/uiManager', () => ({
+jest.mock('../../src/ui/questrade/uiManager', () => ({
   updateUIForAccountPage: jest.fn(),
   removeUI: jest.fn()
 }));

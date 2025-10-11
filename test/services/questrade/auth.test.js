@@ -7,6 +7,7 @@ import {
   checkQuestradeAuth,
   questradeTokenNeedsRefresh,
   saveQuestradeToken,
+  clearQuestradeTokenCache,
 } from '../../../src/services/questrade/auth';
 import stateManager from '../../../src/core/state';
 
@@ -24,6 +25,9 @@ describe('Questrade Auth Service', () => {
   beforeEach(() => {
     // Clear all mocks before each test
     jest.clearAllMocks();
+
+    // Clear token cache to ensure clean state for each test
+    clearQuestradeTokenCache();
 
     // Mock sessionStorage
     Object.defineProperty(window, 'sessionStorage', {

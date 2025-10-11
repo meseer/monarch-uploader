@@ -12,7 +12,7 @@ import accountService, {
 } from '../../../src/services/questrade/account';
 import questradeApi from '../../../src/api/questrade';
 import stateManager from '../../../src/core/state';
-import authService from '../../../src/services/auth';
+import authService from '../../../src/services/questrade/auth';
 import balanceService from '../../../src/services/questrade/balance';
 import { STORAGE } from '../../../src/core/config';
 
@@ -22,7 +22,7 @@ jest.mock('../../../src/api/questrade', () => ({
   getAccount: jest.fn(),
 }));
 
-jest.mock('../../../src/services/auth', () => ({
+jest.mock('../../../src/services/questrade/auth', () => ({
   checkQuestradeAuth: jest.fn(),
 }));
 
@@ -34,6 +34,12 @@ jest.mock('../../../src/services/questrade/balance', () => ({
 
 jest.mock('../../../src/core/state', () => ({
   setAccount: jest.fn(),
+  setQuestradeAuth: jest.fn(),
+  setMonarchAuth: jest.fn(),
+  setCanadaLifeAuth: jest.fn(),
+  setRogersBankAuth: jest.fn(),
+  setUiElement: jest.fn(),
+  addListener: jest.fn(),
   getState: jest.fn().mockReturnValue({
     currentAccount: { name: 'Test Account' },
   }),

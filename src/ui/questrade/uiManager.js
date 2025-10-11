@@ -3,14 +3,14 @@
  * Responsible for initializing and managing UI components
  */
 
-import { debugLog, isQuestradeAllAccountsPage } from '../core/utils';
-import { STORAGE } from '../core/config';
-import stateManager from '../core/state';
-import questradeApi from '../api/questrade';
-import toast from './toast';
+import { debugLog, isQuestradeAllAccountsPage } from '../../core/utils';
+import { STORAGE } from '../../core/config';
+import stateManager from '../../core/state';
+import questradeApi from '../../api/questrade';
+import toast from '../toast';
 import uploadButton from './components/uploadButton';
-import { showSettingsModal } from './components/settingsModal';
-import { createMonarchLoginLink } from './components/monarchLoginLink';
+import { showSettingsModal } from '../components/settingsModal';
+import { createMonarchLoginLink } from '../components/monarchLoginLink';
 
 /**
  * Creates and appends status indicators to the provided container

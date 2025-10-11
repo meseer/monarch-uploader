@@ -25,7 +25,7 @@ import { setupCredentialInterception } from './api/rogersbank';
 
 // Import UI components
 import toast from './ui/toast';
-import { initUI, updateStatusIndicators } from './ui/uiManager';
+import { initUI, updateStatusIndicators } from './ui/questrade/uiManager';
 import { initCanadaLifeUI } from './ui/canadalife/uiManager';
 import { initRogersBankUI } from './ui/rogersbank/uiManager';
 import { loadCurrentAccountInfo } from './services/questrade/account';

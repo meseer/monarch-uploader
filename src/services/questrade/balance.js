@@ -14,7 +14,7 @@ import monarchApi from '../../api/monarch';
 import toast from '../../ui/toast';
 import { showProgressDialog } from '../../ui/components/progressDialog';
 import { showDatePickerPromise } from '../../ui/components/datePicker';
-import { showMonarchAccountSelector } from '../../ui/components/accountSelector';
+import { showMonarchAccountSelector } from '../../ui/questrade/components/accountSelector';
 import { ensureMonarchAuthentication } from '../../ui/components/monarchLoginLink';
 
 /**
