@@ -35,10 +35,11 @@ jobs:
     - name: Build userscript
       run: BUILD_TYPE=dev npm run build
 
-    - name: Upload test coverage
+    - name: Upload coverage reports to Codecov
       if: matrix.node-version == '22.x'
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v5
       with:
+        token: ${{ secrets.CODECOV_TOKEN }}
         files: ./coverage/lcov.info
         fail_ci_if_error: false
 
