@@ -30,7 +30,7 @@ jobs:
       run: npm run lint
 
     - name: Run tests
-      run: npm test
+      run: npm test -- --coverage
 
     - name: Build userscript
       run: BUILD_TYPE=dev npm run build
