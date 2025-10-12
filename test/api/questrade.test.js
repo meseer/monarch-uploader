@@ -6,6 +6,7 @@ import {
   makeQuestradeApiCall,
   fetchAndCacheQuestradeAccounts,
   getQuestradeAccount,
+  fetchAccountPositions,
   checkTokenStatus,
   getToken,
 } from '../../src/api/questrade';
@@ -383,6 +384,221 @@ describe('Questrade API', () => {
       const result = getToken();
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe('fetchAccountPositions', () => {
+    test('should fetch positions with default sort order', async () => {
+      const mockResponse = {
+        data: [
+          {
+            securityUuid: '18111621-1e01-4892-0aef-1956144a7e9e',
+            openQuantity: 106,
+            marketValue: 824.68,
+            security: { symbol: 'SNAP', description: 'SNAP INC' },
+          },
+        ],
+        metadata: { totalCount: 1, count: 1 },
+      };
+
+      globalThis.GM_xmlhttpRequest.mockImplementation((options) => {
+        expect(options.url).toBe(
+          'https://api.questrade.com/v1/positions?sort-by=%2BmarketValue&account-uuid=test-uuid',
+        );
+        setTimeout(() => {
+          options.onload({
+            status: 200,
+            responseText: JSON.stringify(mockResponse),
+          });
+        }, 0);
+      });
+
+      const result = await fetchAccountPositions('test-uuid');
+      expect(result).toEqual(mockResponse);
+      expect(result.data).toHaveLength(1);
+      expect(result.metadata.totalCount).toBe(1);
+    });
+
+    test('should fetch positions with custom sort order', async () => {
+      const mockResponse = {
+        data: [
+          {
+            securityUuid: '4c0c0b3f-1f4e-4c22-0c9a-a4851d4c092b',
+            openQuantity: 20,
+            marketValue: 14106,
+            security: { symbol: 'META', description: 'META PLATFORMS INC' },
+          },
+        ],
+        metadata: { totalCount: 1, count: 1 },
+      };
+
+      globalThis.GM_xmlhttpRequest.mockImplementation((options) => {
+        expect(options.url).toBe(
+          'https://api.questrade.com/v1/positions?sort-by=-marketValue&account-uuid=test-uuid',
+        );
+        setTimeout(() => {
+          options.onload({
+            status: 200,
+            responseText: JSON.stringify(mockResponse),
+          });
+        }, 0);
+      });
+
+      const result = await fetchAccountPositions('test-uuid', '-marketValue');
+      expect(result).toEqual(mockResponse);
+    });
+
+    test('should throw error when accountUuid is missing', async () => {
+      await expect(fetchAccountPositions('')).rejects.toThrow('Account UUID is required');
+      await expect(fetchAccountPositions(null)).rejects.toThrow('Account UUID is required');
+      await expect(fetchAccountPositions(undefined)).rejects.toThrow('Account UUID is required');
+    });
+
+    test('should handle empty positions array', async () => {
+      const mockResponse = {
+        data: [],
+        metadata: { totalCount: 0, count: 0 },
+      };
+
+      globalThis.GM_xmlhttpRequest.mockImplementation((options) => {
+        setTimeout(() => {
+          options.onload({
+            status: 200,
+            responseText: JSON.stringify(mockResponse),
+          });
+        }, 0);
+      });
+
+      const result = await fetchAccountPositions('test-uuid');
+      expect(result.data).toHaveLength(0);
+      expect(result.metadata.totalCount).toBe(0);
+    });
+
+    test('should handle auth errors', async () => {
+      authService.checkQuestradeAuth.mockReturnValue({
+        authenticated: false,
+        token: null,
+      });
+
+      await expect(fetchAccountPositions('test-uuid')).rejects.toThrow(
+        'Questrade auth token not found. Please ensure you are logged in to Questrade.',
+      );
+    });
+
+    test('should handle 401 unauthorized and clear auth', async () => {
+      globalThis.GM_xmlhttpRequest.mockImplementation((options) => {
+        setTimeout(() => {
+          options.onload({
+            status: 401,
+            responseText: '{"error": "Unauthorized"}',
+          });
+        }, 0);
+      });
+
+      await expect(fetchAccountPositions('test-uuid')).rejects.toThrow(
+        'Questrade Auth Error (401): Token was invalid or expired. Please refresh the page.',
+      );
+
+      expect(authService.saveToken).toHaveBeenCalledWith('questrade', null);
+      expect(stateManager.setQuestradeAuth).toHaveBeenCalledWith(null);
+    });
+
+    test('should handle HTTP errors', async () => {
+      globalThis.GM_xmlhttpRequest.mockImplementation((options) => {
+        setTimeout(() => {
+          options.onload({
+            status: 500,
+            responseText: 'Internal Server Error',
+          });
+        }, 0);
+      });
+
+      await expect(fetchAccountPositions('test-uuid')).rejects.toThrow(
+        'Questrade API Error: Received status 500',
+      );
+    });
+
+    test('should handle network errors', async () => {
+      globalThis.GM_xmlhttpRequest.mockImplementation((options) => {
+        setTimeout(() => {
+          options.onerror({ error: 'Network error' });
+        }, 0);
+      });
+
+      await expect(fetchAccountPositions('test-uuid')).rejects.toThrow(
+        'A network error occurred while contacting the Questrade API.',
+      );
+    });
+
+    test('should validate response structure', async () => {
+      const mockResponse = {
+        data: [
+          {
+            securityUuid: '18111621-1e01-4892-0aef-1956144a7e9e',
+            openQuantity: 106,
+            closedQuantity: 0,
+            averagePrice: 24.4102,
+            marketValue: 824.68,
+            percentageOfPortfolio: 0.0551,
+            openPnl: -1762.8,
+            currency: 'USD',
+            account: {
+              accountUuid: 'ab37ef5b-226a-4522-0ebc-630c828e3b2a',
+              number: '26831722',
+              name: 'Joint Margin',
+            },
+            security: {
+              symbol: 'SNAP',
+              description: 'SNAP INC',
+              type: 'Stock',
+            },
+            currentPrice: {
+              value: 7.78,
+              type: 'lastTradePrice',
+            },
+          },
+        ],
+        metadata: {
+          previousLink: '',
+          nextLink: '',
+          totalCount: 1,
+          count: 1,
+        },
+      };
+
+      globalThis.GM_xmlhttpRequest.mockImplementation((options) => {
+        setTimeout(() => {
+          options.onload({
+            status: 200,
+            responseText: JSON.stringify(mockResponse),
+          });
+        }, 0);
+      });
+
+      const result = await fetchAccountPositions('test-uuid');
+
+      // Validate structure
+      expect(result).toHaveProperty('data');
+      expect(result).toHaveProperty('metadata');
+      expect(Array.isArray(result.data)).toBe(true);
+      expect(result.data[0]).toHaveProperty('securityUuid');
+      expect(result.data[0]).toHaveProperty('openQuantity');
+      expect(result.data[0]).toHaveProperty('marketValue');
+      expect(result.data[0]).toHaveProperty('account');
+      expect(result.data[0]).toHaveProperty('security');
+      expect(result.metadata).toHaveProperty('totalCount');
+      expect(result.metadata).toHaveProperty('count');
+    });
+
+    test('should handle malformed JSON response', async () => {
+      globalThis.GM_xmlhttpRequest.mockImplementation((options) => {
+        options.onload({
+          status: 200,
+          responseText: 'invalid json{',
+        });
+      });
+
+      await expect(fetchAccountPositions('test-uuid')).rejects.toThrow();
     });
   });
 

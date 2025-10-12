@@ -92,6 +92,22 @@ export function getQuestradeAccount(accountId) {
 }
 
 /**
+ * Fetch positions for a specific account
+ * @param {string} accountUuid - Account UUID to fetch positions for
+ * @param {string} [sortBy='%2BmarketValue'] - Sort order (URL-encoded, e.g., %2BmarketValue for ascending market value)
+ * @returns {Promise<Object>} Response with data array and metadata
+ */
+export async function fetchAccountPositions(accountUuid, sortBy = '%2BmarketValue') {
+  if (!accountUuid) {
+    throw new Error('Account UUID is required');
+  }
+
+  const endpoint = `/v1/positions?sort-by=${sortBy}&account-uuid=${accountUuid}`;
+  debugLog(`Fetching positions for account: ${accountUuid}`);
+  return makeQuestradeApiCall(endpoint);
+}
+
+/**
  * Check token status and update state
  * @returns {Object|null} Token info if valid
  */
@@ -112,6 +128,7 @@ export default {
   makeApiCall: makeQuestradeApiCall,
   fetchAccounts: fetchAndCacheQuestradeAccounts,
   getAccount: getQuestradeAccount,
+  fetchPositions: fetchAccountPositions,
   checkTokenStatus,
   getToken,
 };
