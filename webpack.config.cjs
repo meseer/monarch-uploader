@@ -5,7 +5,7 @@ const webpack = require('webpack');
 // Function to create banner with metadata
 const createBanner = () => {
   // Import metadata from our embedded file
-  const metadataPath = path.resolve(__dirname, 'src', 'userscript-metadata.js');
+  const metadataPath = path.resolve(__dirname, 'src', 'userscript-metadata.cjs');
   delete require.cache[metadataPath]; // Clear cache to get fresh metadata
   // eslint-disable-next-line import/no-dynamic-require, global-require
   const generateMetadata = require(metadataPath);

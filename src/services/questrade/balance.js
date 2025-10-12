@@ -94,7 +94,9 @@ export function processBalanceData(rawData, accountName) {
     // Add historical data
     if (rawData.history.data && Array.isArray(rawData.history.data)) {
       rawData.history.data.forEach((item) => {
-        csvContent += `"${item.date}","${item.totalEquity}","${accountName}"\n`;
+        const date = item.date ?? '';
+        const totalEquity = item.totalEquity ?? '';
+        csvContent += `"${date}","${totalEquity}","${accountName}"\n`;
       });
     }
 

@@ -1,20 +1,39 @@
 /**
- * Canada Life API Tests - Focus on loadAccountBalanceHistory last day processing
+ * Canada Life API Tests - Comprehensive coverage for all API functions
  */
 
 import {
+  getCanadaLifeToken,
+  checkCanadaLifeAuth,
+  checkTokenStatus,
+  setupTokenMonitoring,
+  extractCookies,
+  makeAuraApiCall,
   loadAccountBalanceHistory,
+  loadAccountBalance,
+  loadCanadaLifeAccounts,
+  CanadaLifeTokenExpiredError,
+  CanadaLifeApiError,
 } from '../../src/api/canadalife';
+
+import stateManager from '../../src/core/state';
+import { debugLog } from '../../src/core/utils';
+import toast from '../../src/ui/toast';
+import { STORAGE } from '../../src/core/config';
 
 // Mock dependencies
 jest.mock('../../src/core/state', () => ({
-  getState: jest.fn().mockReturnValue({
-    auth: {
-      canadalife: {
-        token: 'mock-aura-token',
+  __esModule: true,
+  default: {
+    getState: jest.fn().mockReturnValue({
+      auth: {
+        canadalife: {
+          token: 'mock-aura-token',
+        },
       },
-    },
-  }),
+    }),
+    setCanadaLifeAuth: jest.fn(),
+  },
 }));
 
 jest.mock('../../src/core/utils', () => ({
@@ -32,20 +51,782 @@ jest.mock('../../src/core/utils', () => ({
 }));
 
 jest.mock('../../src/ui/toast', () => ({
-  show: jest.fn(),
+  __esModule: true,
+  default: {
+    show: jest.fn(),
+  },
 }));
 
 // Mock GM functions
-// eslint-disable-next-line no-global-assign
 global.GM_getValue = jest.fn();
-// eslint-disable-next-line no-global-assign
 global.GM_setValue = jest.fn();
-// eslint-disable-next-line no-global-assign
-global.document = {
-  cookie: 'mock-cookie=value',
+
+// Mock localStorage
+const localStorageMock = {
+  getItem: jest.fn(),
+  setItem: jest.fn(),
+  clear: jest.fn(),
 };
-// eslint-disable-next-line no-global-assign
+Object.defineProperty(global, 'localStorage', {
+  value: localStorageMock,
+  writable: true,
+});
+
+// Mock document with configurable cookie property
+if (!global.document) {
+  Object.defineProperty(global, 'document', {
+    value: {},
+    writable: true,
+    configurable: true,
+  });
+}
+Object.defineProperty(global.document, 'cookie', {
+  value: 'mock-cookie=value; another-cookie=another-value',
+  writable: true,
+  configurable: true,
+});
+
+// Mock window with addEventListener as Jest mock
+if (!global.window) {
+  Object.defineProperty(global, 'window', {
+    value: {
+      addEventListener: jest.fn(),
+    },
+    writable: true,
+    configurable: true,
+  });
+} else {
+  // If window exists, just mock addEventListener
+  global.window.addEventListener = jest.fn();
+}
+
+// Mock setInterval
+global.setInterval = jest.fn();
+
+// Mock fetch
 global.fetch = jest.fn();
+
+describe('Canada Life API - Core Functions', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    localStorageMock.getItem.mockClear();
+    localStorageMock.setItem.mockClear();
+    global.GM_getValue.mockClear();
+    global.GM_setValue.mockClear();
+    stateManager.getState.mockClear();
+    stateManager.setCanadaLifeAuth.mockClear();
+    debugLog.mockClear();
+    toast.show.mockClear();
+    global.fetch.mockClear();
+    if (global.window.addEventListener.mockClear) {
+      global.window.addEventListener.mockClear();
+    }
+    if (global.setInterval.mockClear) {
+      global.setInterval.mockClear();
+    }
+  });
+
+  describe('getCanadaLifeToken', () => {
+    test('should return token from localStorage when available', () => {
+      localStorageMock.getItem.mockReturnValue('test-token-123');
+
+      const result = getCanadaLifeToken();
+
+      expect(result).toBe('test-token-123');
+      expect(localStorageMock.getItem).toHaveBeenCalledWith(STORAGE.CANADALIFE_TOKEN_KEY);
+      expect(debugLog).toHaveBeenCalledWith('CanadaLife token found in localStorage');
+    });
+
+    test('should return null when token is empty string', () => {
+      localStorageMock.getItem.mockReturnValue('');
+
+      const result = getCanadaLifeToken();
+
+      expect(result).toBeNull();
+      expect(debugLog).toHaveBeenCalledWith('No CanadaLife token found in localStorage');
+    });
+
+    test('should return null when token is only whitespace', () => {
+      localStorageMock.getItem.mockReturnValue('   ');
+
+      const result = getCanadaLifeToken();
+
+      expect(result).toBeNull();
+      expect(debugLog).toHaveBeenCalledWith('No CanadaLife token found in localStorage');
+    });
+
+    test('should return null when localStorage is null', () => {
+      localStorageMock.getItem.mockReturnValue(null);
+
+      const result = getCanadaLifeToken();
+
+      expect(result).toBeNull();
+      expect(debugLog).toHaveBeenCalledWith('No CanadaLife token found in localStorage');
+    });
+
+    test('should handle localStorage errors gracefully', () => {
+      localStorageMock.getItem.mockImplementation(() => {
+        throw new Error('localStorage access denied');
+      });
+
+      const result = getCanadaLifeToken();
+
+      expect(result).toBeNull();
+      expect(debugLog).toHaveBeenCalledWith('Error reading CanadaLife token from localStorage:', expect.any(Error));
+    });
+  });
+
+  describe('checkCanadaLifeAuth', () => {
+    test('should return authenticated status when token exists', () => {
+      localStorageMock.getItem.mockReturnValue('valid-token');
+
+      const result = checkCanadaLifeAuth();
+
+      expect(result).toEqual({
+        authenticated: true,
+        token: 'valid-token',
+        source: 'localStorage',
+      });
+      expect(debugLog).toHaveBeenCalledWith('CanadaLife authentication: Connected');
+    });
+
+    test('should return not authenticated when no token', () => {
+      localStorageMock.getItem.mockReturnValue(null);
+
+      const result = checkCanadaLifeAuth();
+
+      expect(result).toEqual({
+        authenticated: false,
+        token: null,
+        source: null,
+      });
+      expect(debugLog).toHaveBeenCalledWith('CanadaLife authentication: Not connected');
+    });
+  });
+
+  describe('checkTokenStatus', () => {
+    test('should update state manager when authenticated', () => {
+      localStorageMock.getItem.mockReturnValue('valid-token');
+
+      const result = checkTokenStatus();
+
+      expect(stateManager.setCanadaLifeAuth).toHaveBeenCalledWith('valid-token');
+      expect(result).toEqual({
+        authenticated: true,
+        token: 'valid-token',
+        source: 'localStorage',
+      });
+    });
+
+    test('should update state manager with null when not authenticated', () => {
+      localStorageMock.getItem.mockReturnValue(null);
+
+      const result = checkTokenStatus();
+
+      expect(stateManager.setCanadaLifeAuth).toHaveBeenCalledWith(null);
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('setupTokenMonitoring', () => {
+    test('should set up token monitoring with interval and event listener', () => {
+      localStorageMock.getItem.mockReturnValue('test-token');
+
+      setupTokenMonitoring();
+
+      expect(stateManager.setCanadaLifeAuth).toHaveBeenCalledWith('test-token');
+      expect(global.setInterval).toHaveBeenCalledWith(expect.any(Function), 5000);
+      expect(global.window.addEventListener).toHaveBeenCalledWith('storage', expect.any(Function));
+      expect(debugLog).toHaveBeenCalledWith('CanadaLife token monitoring setup complete');
+    });
+
+    test('should handle storage events for token changes', () => {
+      let storageEventHandler;
+      global.window.addEventListener.mockImplementation((event, handler) => {
+        if (event === 'storage') {
+          storageEventHandler = handler;
+        }
+      });
+
+      setupTokenMonitoring();
+
+      // Simulate storage event for token key
+      localStorageMock.getItem.mockReturnValue('new-token');
+      storageEventHandler({ key: STORAGE.CANADALIFE_TOKEN_KEY });
+
+      expect(debugLog).toHaveBeenCalledWith('CanadaLife token changed via storage event');
+      expect(stateManager.setCanadaLifeAuth).toHaveBeenCalledWith('new-token');
+    });
+
+    test('should ignore storage events for other keys', () => {
+      let storageEventHandler;
+      global.window.addEventListener.mockImplementation((event, handler) => {
+        if (event === 'storage') {
+          storageEventHandler = handler;
+        }
+      });
+
+      setupTokenMonitoring();
+      jest.clearAllMocks();
+
+      // Simulate storage event for different key
+      storageEventHandler({ key: 'other_key' });
+
+      expect(debugLog).not.toHaveBeenCalledWith('CanadaLife token changed via storage event');
+    });
+  });
+
+  describe('extractCookies', () => {
+    test('should return document.cookie string', () => {
+      const result = extractCookies();
+
+      expect(result).toBe('mock-cookie=value; another-cookie=another-value');
+    });
+
+    test('should handle cookie extraction errors', () => {
+      const originalCookie = global.document.cookie;
+      Object.defineProperty(global.document, 'cookie', {
+        get: () => {
+          throw new Error('Cookie access denied');
+        },
+        configurable: true,
+      });
+
+      const result = extractCookies();
+
+      expect(result).toBe('');
+      expect(debugLog).toHaveBeenCalledWith('Error extracting cookies:', expect.any(Error));
+
+      // Restore original cookie
+      Object.defineProperty(global.document, 'cookie', {
+        value: originalCookie,
+        configurable: true,
+      });
+    });
+  });
+
+  describe('Error Classes', () => {
+    test('CanadaLifeTokenExpiredError should be created correctly', () => {
+      const error = new CanadaLifeTokenExpiredError('Token expired', { errorId: '004' });
+
+      expect(error).toBeInstanceOf(Error);
+      expect(error.name).toBe('CanadaLifeTokenExpiredError');
+      expect(error.message).toBe('Token expired');
+      expect(error.errorDetails).toEqual({ errorId: '004' });
+      expect(error.recoverable).toBe(true);
+    });
+
+    test('CanadaLifeApiError should be created correctly', () => {
+      const error = new CanadaLifeApiError('API error', { errorCode: 500 });
+
+      expect(error).toBeInstanceOf(Error);
+      expect(error.name).toBe('CanadaLifeApiError');
+      expect(error.message).toBe('API error');
+      expect(error.errorDetails).toEqual({ errorCode: 500 });
+      expect(error.recoverable).toBe(false);
+    });
+  });
+});
+
+describe('Canada Life API - makeAuraApiCall', () => {
+  const mockPayload = {
+    actions: [{
+      id: '123',
+      descriptor: 'test',
+      params: { test: 'data' },
+    }],
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    stateManager.getState.mockReturnValue({
+      auth: {
+        canadalife: {
+          token: 'valid-aura-token',
+        },
+      },
+    });
+  });
+
+  test('should make successful API call', async () => {
+    const mockResponse = { success: true, data: 'test' };
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: jest.fn((name) => {
+          if (name === 'content-type') return 'application/json';
+          return null;
+        }),
+        entries: jest.fn(() => [['content-type', 'application/json']]),
+      },
+      text: () => Promise.resolve(JSON.stringify(mockResponse)),
+    });
+
+    const result = await makeAuraApiCall(mockPayload);
+
+    expect(result).toEqual(mockResponse);
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://my.canadalife.com/s/sfsites/aura?r=13&aura.ApexAction.execute=1',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          cookie: 'mock-cookie=value; another-cookie=another-value',
+        }),
+      }),
+    );
+  });
+
+  test('should handle /*-secure- wrapped responses', async () => {
+    const mockResponse = { success: true, data: 'test' };
+    const wrappedResponse = `/*-secure-\n${JSON.stringify(mockResponse)}\n*/`;
+
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+        entries: () => [['content-type', 'application/json']],
+      },
+      text: () => Promise.resolve(wrappedResponse),
+    });
+
+    const result = await makeAuraApiCall(mockPayload);
+
+    expect(result).toEqual(mockResponse);
+    expect(debugLog).toHaveBeenCalledWith('Cleaned response from /*-secure- wrapper');
+  });
+
+  test('should handle generic /* */ wrapped responses', async () => {
+    const mockResponse = { success: true, data: 'test' };
+    const wrappedResponse = `/*${JSON.stringify(mockResponse)}*/`;
+
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+        entries: () => [['content-type', 'application/json']],
+      },
+      text: () => Promise.resolve(wrappedResponse),
+    });
+
+    const result = await makeAuraApiCall(mockPayload);
+
+    expect(result).toEqual(mockResponse);
+    expect(debugLog).toHaveBeenCalledWith('Cleaned response from /* */ wrapper');
+  });
+
+  test('should throw error when no aura token', async () => {
+    stateManager.getState.mockReturnValue({
+      auth: {
+        canadalife: {
+          token: null,
+        },
+      },
+    });
+
+    await expect(makeAuraApiCall(mockPayload)).rejects.toThrow('No Aura token found');
+  });
+
+  test('should throw error on HTTP failure', async () => {
+    global.fetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
+    });
+
+    await expect(makeAuraApiCall(mockPayload)).rejects.toThrow('Aura API call failed: 500 Internal Server Error');
+  });
+
+  test('should handle JSON parse errors', async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+        entries: () => [['content-type', 'application/json']],
+      },
+      text: () => Promise.resolve('invalid json'),
+    });
+
+    await expect(makeAuraApiCall(mockPayload)).rejects.toThrow('Failed to parse API response as JSON');
+  });
+
+  test('should extract nested response when requested', async () => {
+    const nestedData = { nested: true, value: 123 };
+    const mockResponse = {
+      actions: [{
+        returnValue: {
+          returnValue: JSON.stringify(nestedData),
+        },
+      }],
+    };
+
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+        entries: () => [['content-type', 'application/json']],
+      },
+      text: () => Promise.resolve(JSON.stringify(mockResponse)),
+    });
+
+    const result = await makeAuraApiCall(mockPayload, { extractNestedResponse: true });
+
+    expect(result).toEqual(nestedData);
+    expect(debugLog).toHaveBeenCalledWith('Extracted nested response data:', nestedData);
+  });
+
+  test('should handle abort signal', async () => {
+    const abortController = new AbortController();
+    const signal = abortController.signal;
+
+    global.fetch.mockImplementation(() => Promise.reject(new Error('AbortError')));
+
+    await expect(makeAuraApiCall(mockPayload, { signal })).rejects.toThrow('AbortError');
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ signal }),
+    );
+  });
+
+  test('should handle token expired error with retry', async () => {
+    const errorResponse = {
+      IPResult: {
+        activityReportsHasApiFailure: true,
+        result: {
+          errors: [{
+            errorId: '004',
+            httpCode: '401',
+            detail: 'Access token expired',
+          }],
+        },
+      },
+    };
+
+    // First call fails with token error
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+        entries: () => [['content-type', 'application/json']],
+      },
+      text: () => Promise.resolve(JSON.stringify(errorResponse)),
+    });
+
+    // Mock fresh token available
+    localStorageMock.getItem.mockReturnValue('fresh-token');
+
+    // Retry succeeds
+    const successResponse = { success: true };
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+        entries: () => [['content-type', 'application/json']],
+      },
+      text: () => Promise.resolve(JSON.stringify(successResponse)),
+    });
+
+    const result = await makeAuraApiCall(mockPayload);
+
+    expect(result).toEqual(successResponse);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(toast.show).toHaveBeenCalledWith('Token expired, retrying with fresh token...', 'debug');
+  });
+
+  test('should handle unrecoverable token error', async () => {
+    const errorResponse = {
+      IPResult: {
+        activityReportsHasApiFailure: true,
+        result: {
+          errors: [{
+            errorId: '004',
+            httpCode: '401',
+            detail: 'Access token expired',
+          }],
+        },
+      },
+    };
+
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+        entries: () => [['content-type', 'application/json']],
+      },
+      text: () => Promise.resolve(JSON.stringify(errorResponse)),
+    });
+
+    // No fresh token available
+    localStorageMock.getItem.mockReturnValue(null);
+
+    await expect(makeAuraApiCall(mockPayload)).rejects.toThrow(CanadaLifeTokenExpiredError);
+    expect(toast.show).toHaveBeenCalledWith(expect.stringContaining('Please refresh the page'), 'error');
+  });
+
+  test('should handle API errors', async () => {
+    const errorResponse = {
+      IPResult: {
+        activityReportsHasApiFailure: true,
+        result: {
+          errors: [{
+            errorId: '500',
+            httpCode: '500',
+            detail: 'Internal server error',
+          }],
+        },
+      },
+    };
+
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+        entries: () => [['content-type', 'application/json']],
+      },
+      text: () => Promise.resolve(JSON.stringify(errorResponse)),
+    });
+
+    await expect(makeAuraApiCall(mockPayload)).rejects.toThrow(CanadaLifeApiError);
+    expect(toast.show).toHaveBeenCalledWith(expect.stringContaining('Internal server error'), 'error');
+  });
+});
+
+describe('Canada Life API - Account Functions', () => {
+  const mockAccount = {
+    agreementId: 'test-agreement-123',
+    EnglishShortName: 'TEST-RRSP',
+    LongNameEnglish: 'Test RRSP Account',
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    stateManager.getState.mockReturnValue({
+      auth: {
+        canadalife: {
+          token: 'valid-aura-token',
+        },
+      },
+    });
+  });
+
+  describe('loadAccountBalance', () => {
+    test('should load account balance successfully', async () => {
+      const mockApiResponse = {
+        IPResult: {
+          Summary: {
+            Total: { Value: 10100 },
+            Details: [
+              {
+                Description: 'Value of this plan on 2024-01-15',
+                Value: 10000,
+              },
+            ],
+          },
+        },
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: {
+          get: () => 'application/json',
+          entries: () => [['content-type', 'application/json']],
+        },
+        text: () => Promise.resolve(`/*-secure-\n${JSON.stringify({
+          actions: [{
+            returnValue: {
+              returnValue: JSON.stringify(mockApiResponse),
+            },
+          }],
+        })}\n*/`),
+      });
+
+      const result = await loadAccountBalance(mockAccount, '2024-01-15');
+
+      expect(result).toEqual({
+        account: {
+          name: 'Test RRSP Account',
+          shortName: 'TEST-RRSP',
+          agreementId: 'test-agreement-123',
+        },
+        date: '2024-01-15',
+        openingBalance: 10000,
+        closingBalance: 10100,
+        change: 100,
+        rawResponse: mockApiResponse,
+      });
+    });
+
+    test('should validate input parameters', async () => {
+      await expect(loadAccountBalance(null, '2024-01-15')).rejects.toThrow();
+      await expect(loadAccountBalance({}, '2024-01-15')).rejects.toThrow();
+      await expect(loadAccountBalance(mockAccount, 'invalid-date')).rejects.toThrow();
+      await expect(loadAccountBalance(mockAccount, null)).rejects.toThrow();
+    });
+
+    test('should handle missing IPResult', async () => {
+      global.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: {
+          get: () => 'application/json',
+          entries: () => [['content-type', 'application/json']],
+        },
+        text: () => Promise.resolve(`/*-secure-\n${JSON.stringify({
+          actions: [{
+            returnValue: {
+              returnValue: JSON.stringify({}),
+            },
+          }],
+        })}\n*/`),
+      });
+
+      await expect(loadAccountBalance(mockAccount, '2024-01-15')).rejects.toThrow('No IPResult found in balance API response');
+    });
+
+    test('should handle fallback to first Details entry for opening balance', async () => {
+      const mockApiResponse = {
+        IPResult: {
+          Summary: {
+            Total: { Value: 10100 },
+            Details: [
+              {
+                Description: 'Some other description',
+                Value: 10000,
+              },
+            ],
+          },
+        },
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: {
+          get: () => 'application/json',
+          entries: () => [['content-type', 'application/json']],
+        },
+        text: () => Promise.resolve(`/*-secure-\n${JSON.stringify({
+          actions: [{
+            returnValue: {
+              returnValue: JSON.stringify(mockApiResponse),
+            },
+          }],
+        })}\n*/`),
+      });
+
+      const result = await loadAccountBalance(mockAccount, '2024-01-15');
+
+      expect(result.openingBalance).toBe(10000);
+      expect(debugLog).toHaveBeenCalledWith('Using first Details entry as opening balance (pattern match failed)');
+    });
+  });
+
+  describe('loadCanadaLifeAccounts', () => {
+    test('should load accounts from cache when available', async () => {
+      const cachedAccounts = [
+        { EnglishShortName: 'RRSP', LongNameEnglish: 'RRSP Account', agreementId: '123' },
+        { EnglishShortName: 'TFSA', LongNameEnglish: 'TFSA Account', agreementId: '456' },
+      ];
+
+      global.GM_getValue.mockReturnValue(JSON.stringify(cachedAccounts));
+
+      const result = await loadCanadaLifeAccounts();
+
+      expect(result).toEqual(cachedAccounts);
+      expect(debugLog).toHaveBeenCalledWith('Loaded 2 Canada Life accounts from cache');
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    test('should load accounts from API when cache empty', async () => {
+      global.GM_getValue.mockReturnValue(null);
+
+      const apiAccounts = [
+        { EnglishShortName: 'RRSP', LongNameEnglish: 'RRSP Account', agreementId: '123' },
+      ];
+
+      const mockApiResponse = {
+        IPResult: {
+          MemberPlans: apiAccounts,
+        },
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: {
+          get: () => 'application/json',
+          entries: () => [['content-type', 'application/json']],
+        },
+        text: () => Promise.resolve(JSON.stringify({
+          actions: [{
+            returnValue: {
+              returnValue: JSON.stringify(mockApiResponse),
+            },
+          }],
+        })),
+      });
+
+      const result = await loadCanadaLifeAccounts();
+
+      expect(result).toEqual(apiAccounts);
+      expect(global.GM_setValue).toHaveBeenCalledWith('canadalife_accounts', JSON.stringify(apiAccounts));
+      expect(toast.show).toHaveBeenCalledWith('Loading Canada Life accounts...', 'debug');
+      expect(toast.show).toHaveBeenCalledWith('Loaded Canada Life accounts: RRSP', 'debug');
+    });
+
+    test('should force refresh from API when requested', async () => {
+      const cachedAccounts = [{ EnglishShortName: 'OLD' }];
+      global.GM_getValue.mockReturnValue(JSON.stringify(cachedAccounts));
+
+      const freshAccounts = [{ EnglishShortName: 'NEW', LongNameEnglish: 'New Account', agreementId: '999' }];
+      const mockApiResponse = {
+        IPResult: {
+          MemberPlans: freshAccounts,
+        },
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: {
+          get: () => 'application/json',
+          entries: () => [['content-type', 'application/json']],
+        },
+        text: () => Promise.resolve(JSON.stringify({
+          actions: [{
+            returnValue: {
+              returnValue: JSON.stringify(mockApiResponse),
+            },
+          }],
+        })),
+      });
+
+      const result = await loadCanadaLifeAccounts(true);
+
+      expect(result).toEqual(freshAccounts);
+      expect(global.fetch).toHaveBeenCalled();
+    });
+
+    test('should handle API errors gracefully', async () => {
+      global.GM_getValue.mockReturnValue(null);
+      global.fetch.mockRejectedValue(new Error('Network error'));
+
+      await expect(loadCanadaLifeAccounts()).rejects.toThrow('Network error');
+      expect(toast.show).toHaveBeenCalledWith('Failed to load Canada Life accounts: Network error', 'error');
+    });
+  });
+});
 
 describe('Canada Life API - Last Day Processing Bug', () => {
   const mockAccount = {
@@ -71,9 +852,15 @@ describe('Canada Life API - Last Day Processing Bug', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    stateManager.getState.mockReturnValue({
+      auth: {
+        canadalife: {
+          token: 'valid-aura-token',
+        },
+      },
+    });
 
     // Mock fetch for makeAuraApiCall
-    // eslint-disable-next-line no-global-assign
     global.fetch.mockImplementation(() =>
       Promise.resolve({
         ok: true,
@@ -105,13 +892,13 @@ describe('Canada Life API - Last Day Processing Bug', () => {
       // Test actual dates that match real calendar
       // January 15, 2024 = Monday
       // January 19, 2024 = Friday
-      
+
       // Mock the internal generateBusinessDays function behavior that matches the real implementation
       const generateBusinessDaysLocal = (startDate, endDate) => {
         const businessDays = [];
         // Use the exact same parsing logic as the real function
-        const current = new Date(startDate + 'T00:00:00'); // Add time to avoid timezone issues
-        const end = new Date(endDate + 'T00:00:00');
+        const current = new Date(`${startDate}T00:00:00`); // Add time to avoid timezone issues
+        const end = new Date(`${endDate}T00:00:00`);
 
         while (current <= end) {
           const dayOfWeek = current.getDay();
@@ -151,7 +938,7 @@ describe('Canada Life API - Last Day Processing Bug', () => {
         // Simulate the parseLocalDate function behavior
         const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
         const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
-        
+
         const current = new Date(startYear, startMonth - 1, startDay);
         const end = new Date(endYear, endMonth - 1, endDay);
 
@@ -171,7 +958,7 @@ describe('Canada Life API - Last Day Processing Bug', () => {
       // Test the exact scenario: user uploads at 1pm including today
       const today = '2024-10-11'; // Friday (the current date from environment)
       const yesterday = '2024-10-10'; // Thursday
-      
+
       // Single day upload (today only) - this is the failing scenario
       const todayOnly = generateBusinessDaysReal(today, today);
       expect(todayOnly).toContain(today);
@@ -190,7 +977,7 @@ describe('Canada Life API - Last Day Processing Bug', () => {
       const today = '2024-01-15'; // Monday
 
       // Mock API response for today
-      // eslint-disable-next-line no-global-assign
+
       global.fetch.mockImplementationOnce(() =>
         Promise.resolve({
           ok: true,
@@ -237,7 +1024,7 @@ describe('Canada Life API - Last Day Processing Bug', () => {
       let callCount = 0;
 
       // Mock API responses for both days
-      // eslint-disable-next-line no-global-assign
+
       global.fetch.mockImplementation(() => {
         callCount++;
         const responseData = callCount === 1
@@ -289,7 +1076,7 @@ describe('Canada Life API - Last Day Processing Bug', () => {
       let callCount = 0;
 
       // Mock API responses - optimization should make 2 calls for 3 days
-      // eslint-disable-next-line no-global-assign
+
       global.fetch.mockImplementation(() => {
         callCount++;
         const responseData = callCount === 1
@@ -339,7 +1126,7 @@ describe('Canada Life API - Last Day Processing Bug', () => {
       let callCount = 0;
 
       // Mock API responses - optimization should make 3 calls for 5 days (i=0,2,4)
-      // eslint-disable-next-line no-global-assign
+
       global.fetch.mockImplementation(() => {
         callCount++;
         const balances = [9600, 9700, 9800, 9900, 10000];
@@ -392,7 +1179,6 @@ describe('Canada Life API - Last Day Processing Bug', () => {
 
       let callCount = 0;
 
-      // eslint-disable-next-line no-global-assign
       global.fetch.mockImplementation(() => {
         callCount++;
         const balances = [9800, 9900, 10000];
@@ -446,7 +1232,7 @@ describe('Canada Life API - Last Day Processing Bug', () => {
       let callCount = 0;
 
       // Mock API responses for the optimization calls
-      // eslint-disable-next-line no-global-assign
+
       global.fetch.mockImplementation(() => {
         callCount++;
         console.log(`API Call ${callCount} - Expected for date: ${callCount === 1 ? '2025-10-09' : '2025-10-11'}`);

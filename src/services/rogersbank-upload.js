@@ -558,7 +558,6 @@ export async function uploadRogersBankToMonarch() {
     if (result.success && result.transactions.length > 0) {
       // Log first 3 transactions for testing
       debugLog('First 3 transactions:', result.transactions.slice(0, 3));
-      console.log('Rogers Bank - First 3 Transactions:', result.transactions.slice(0, 3));
 
       // Update progress - filtering transactions
       progressDialog.updateProgress(rogersAccountId, 'processing', `Processing ${result.transactions.length} transactions...`);

@@ -8,25 +8,25 @@ import navigationManager from '../../src/core/navigation';
 // Mock dependencies
 jest.mock('../../src/core/state', () => ({
   setAccount: jest.fn(),
-  getState: jest.fn().mockReturnValue({})
+  getState: jest.fn().mockReturnValue({}),
 }));
 
 jest.mock('../../src/ui/questrade/uiManager', () => ({
   updateUIForAccountPage: jest.fn(),
-  removeUI: jest.fn()
+  removeUI: jest.fn(),
 }));
 
 // Mock for testing without JSDOM navigation issues
 const createMockLocation = (pathname) => ({
   pathname,
   hostname: 'myportal.questrade.com',
-  href: `https://myportal.questrade.com${pathname}`
+  href: `https://myportal.questrade.com${pathname}`,
 });
 
 describe('NavigationManager', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    
+
     // Mock console for debugLog
     global.console = { log: jest.fn() };
   });
@@ -57,21 +57,21 @@ describe('NavigationManager', () => {
   describe('monitoring lifecycle', () => {
     test('should not start monitoring twice', () => {
       const startSpy = jest.spyOn(navigationManager, 'startMonitoring');
-      
+
       navigationManager.startMonitoring();
       navigationManager.startMonitoring();
-      
+
       // Should only be called once due to internal guard
       expect(startSpy).toHaveBeenCalledTimes(2); // Both calls recorded
-      
+
       startSpy.mockRestore();
     });
 
     test('should stop monitoring correctly', () => {
       const stopSpy = jest.spyOn(navigationManager, 'stopMonitoring');
-      
+
       navigationManager.stopMonitoring();
-      
+
       expect(stopSpy).toHaveBeenCalled();
       stopSpy.mockRestore();
     });
@@ -80,18 +80,18 @@ describe('NavigationManager', () => {
   describe('page transition handling', () => {
     test('should handle page transition to account page correctly', () => {
       const spy = jest.spyOn(navigationManager, 'handlePageTransition');
-      
+
       navigationManager.handlePageTransition('account', '12345');
-      
+
       expect(spy).toHaveBeenCalledWith('account', '12345');
       spy.mockRestore();
     });
 
     test('should handle navigation away from account page', () => {
       const spy = jest.spyOn(navigationManager, 'handlePageTransition');
-      
+
       navigationManager.handlePageTransition('other', null);
-      
+
       expect(spy).toHaveBeenCalledWith('other', null);
       spy.mockRestore();
     });

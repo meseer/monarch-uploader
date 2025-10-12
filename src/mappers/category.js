@@ -234,7 +234,7 @@ export function calculateAllCategorySimilarities(bankCategory, availableCategori
   const categoryScores = new Map();
 
   availableCategories.forEach((category) => {
-    if (!category.isDisabled && category.group) {
+    if (category && !category.isDisabled && category.group) {
       const groupId = category.group.id;
       if (!categoriesByGroup[groupId]) {
         categoriesByGroup[groupId] = {

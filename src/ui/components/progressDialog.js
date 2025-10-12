@@ -70,6 +70,11 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
   // Create account rows
   const accountElements = {};
   accounts.forEach((account) => {
+    // Skip null/undefined accounts
+    if (!account) {
+      return;
+    }
+
     const accountKey = account.key || account.id;
 
     // Main account container

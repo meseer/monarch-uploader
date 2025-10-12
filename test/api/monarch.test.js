@@ -1,746 +1,825 @@
 /**
- * Monarch API Tests - Simplified version focusing on retry mechanism
+ * @fileoverview Tests for Monarch Money API client
  */
 
-import { callMonarchGraphQL, uploadTransactionsToMonarch, getMonarchCategoriesAndGroups } from '../../src/api/monarch';
+import { jest } from '@jest/globals';
+import '../setup';
+import {
+  callGraphQL,
+  callMonarchGraphQL,
+  setupMonarchTokenCapture,
+  listMonarchAccounts,
+  getMonarchInstitutionSettings,
+  uploadBalanceToMonarch,
+  uploadTransactionsToMonarch,
+  resolveMonarchAccountMapping,
+  getMonarchCategoriesAndGroups,
+  checkTokenStatus,
+  getToken,
+} from '../../src/api/monarch';
 import authService from '../../src/services/auth';
+import stateManager from '../../src/core/state';
+import { debugLog } from '../../src/core/utils';
+import { showMonarchAccountSelector } from '../../src/ui/components/accountSelector';
 
-// Mock dependencies
+// Mock all external dependencies
 jest.mock('../../src/services/auth', () => ({
   checkMonarchAuth: jest.fn(),
+  getMonarchToken: jest.fn(),
+  setupMonarchTokenCapture: jest.fn(),
   saveToken: jest.fn(),
 }));
 
 jest.mock('../../src/core/state', () => ({
-  getState: jest.fn().mockReturnValue({
-    currentAccount: { nickname: 'Test Account' }
-  }),
   setMonarchAuth: jest.fn(),
+  getState: jest.fn(),
 }));
 
-// Mock GM functions
-global.GM_xmlhttpRequest = jest.fn();
-global.GM_getValue = jest.fn();
-global.GM_setValue = jest.fn();
-global.console = { log: jest.fn() };
+jest.mock('../../src/core/utils', () => ({
+  debugLog: jest.fn(),
+}));
 
-describe('Monarch API Retry Mechanism', () => {
+jest.mock('../../src/ui/components/accountSelector', () => ({
+  showMonarchAccountSelector: jest.fn(),
+}));
+
+describe('Monarch API', () => {
+  let mockGMXmlHttpRequest;
+  let mockGMSetValue;
+  let mockGMGetValue;
+
   beforeEach(() => {
+    // Reset all mocks
     jest.clearAllMocks();
-    
-    // Default auth mock
+
+    // Setup Greasemonkey mocks
+    mockGMXmlHttpRequest = jest.fn();
+    mockGMSetValue = jest.fn();
+    mockGMGetValue = jest.fn();
+
+    globalThis.GM_xmlhttpRequest = mockGMXmlHttpRequest;
+    globalThis.GM_setValue = mockGMSetValue;
+    globalThis.GM_getValue = mockGMGetValue;
+
+    // Setup default auth service responses
     authService.checkMonarchAuth.mockReturnValue({
       authenticated: true,
-      token: 'test-token'
+      token: 'test-token-123',
+    });
+    authService.getMonarchToken.mockReturnValue('test-token-123');
+
+    // Setup default state
+    stateManager.getState.mockReturnValue({
+      currentAccount: { nickname: 'Test Account', name: 'Test Name' },
+    });
+
+    // Mock setTimeout globally to prevent actual delays in timeout tests
+    jest.spyOn(global, 'setTimeout').mockImplementation((callback) => {
+      callback();
+      return 1;
+    });
+  });
+
+  afterEach(() => {
+    // Restore setTimeout
+    global.setTimeout.mockRestore?.();
+  });
+
+  describe('callGraphQL', () => {
+    test('constructs GraphQL request options with authentication', () => {
+      const data = { query: 'test query', variables: {} };
+
+      const result = callGraphQL(data);
+
+      expect(authService.checkMonarchAuth).toHaveBeenCalled();
+      expect(result).toEqual({
+        mode: 'cors',
+        method: 'POST',
+        headers: {
+          accept: '*/*',
+          authorization: 'Token test-token-123',
+          'content-type': 'application/json',
+          origin: 'https://app.monarchmoney.com',
+        },
+        body: JSON.stringify(data),
+      });
+    });
+
+    test('throws error when not authenticated', () => {
+      authService.checkMonarchAuth.mockReturnValue({
+        authenticated: false,
+        token: null,
+      });
+
+      expect(() => callGraphQL({})).toThrow('Monarch token not found. Please log into Monarch Money in another tab.');
     });
   });
 
   describe('callMonarchGraphQL', () => {
-    test('should make successful GraphQL call', async () => {
+    test('makes successful GraphQL request', async () => {
       const mockResponse = {
-        data: { uploadBalanceHistorySession: { status: 'completed' } }
+        status: 200,
+        responseText: JSON.stringify({ data: { test: 'success' } }),
       };
 
-      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-        onload({
-          status: 200,
-          responseText: JSON.stringify(mockResponse)
-        });
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload(mockResponse), 0);
       });
 
-      const result = await callMonarchGraphQL('TestOperation', 'query { test }', {});
-      
-      expect(result).toEqual(mockResponse.data);
-      expect(GM_xmlhttpRequest).toHaveBeenCalledTimes(1);
+      const result = await callMonarchGraphQL('TestOperation', 'query test', {});
+
+      expect(result).toEqual({ test: 'success' });
+      expect(debugLog).toHaveBeenCalledWith('Calling Monarch GraphQL:', {
+        operationName: 'TestOperation',
+        query: 'query test',
+        variables: {},
+      });
     });
 
-    test('should handle 401 authentication error', async () => {
-      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-        onload({
-          status: 401,
-          responseText: 'Unauthorized'
-        });
+    test('handles 401 authentication error', async () => {
+      const mockResponse = { status: 401 };
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload(mockResponse), 0);
       });
 
-      await expect(callMonarchGraphQL('TestOperation', 'query { test }', {}))
-        .rejects.toThrow('Monarch Auth Error (401): Token was invalid or expired.');
+      await expect(callMonarchGraphQL('TestOperation', 'query test', {}))
+        .rejects
+        .toThrow('Monarch Auth Error (401): Token was invalid or expired.');
+
+      expect(authService.saveToken).toHaveBeenCalledWith('monarch', null);
+      expect(stateManager.setMonarchAuth).toHaveBeenCalledWith(null);
     });
 
-    test('should handle non-200 status codes', async () => {
-      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-        onload({
-          status: 500,
-          responseText: 'Server Error'
-        });
+    test('handles non-200 status codes', async () => {
+      const mockResponse = { status: 500, statusText: 'Internal Server Error' };
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload(mockResponse), 0);
       });
 
-      await expect(callMonarchGraphQL('TestOperation', 'query { test }', {}))
-        .rejects.toThrow('Monarch API Error: 500');
+      await expect(callMonarchGraphQL('TestOperation', 'query test', {}))
+        .rejects
+        .toThrow('Monarch API Error: 500');
     });
 
-    test('should handle GraphQL errors in response', async () => {
+    test('handles GraphQL errors in response', async () => {
       const mockResponse = {
-        errors: [{ message: 'GraphQL error' }]
+        status: 200,
+        responseText: JSON.stringify({ errors: [{ message: 'GraphQL error' }] }),
       };
 
-      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-        onload({
-          status: 200,
-          responseText: JSON.stringify(mockResponse)
-        });
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload(mockResponse), 0);
       });
 
-      await expect(callMonarchGraphQL('TestOperation', 'query { test }', {}))
-        .rejects.toThrow();
+      await expect(callMonarchGraphQL('TestOperation', 'query test', {}))
+        .rejects
+        .toThrow('[{"message":"GraphQL error"}]');
     });
 
-    test('should handle network errors', async () => {
-      GM_xmlhttpRequest.mockImplementationOnce(({ onerror }) => {
-        onerror(new Error('Network error'));
+    test('handles network errors', async () => {
+      const mockError = new Error('Network error');
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onerror(mockError), 0);
       });
 
-      await expect(callMonarchGraphQL('TestOperation', 'query { test }', {}))
-        .rejects.toThrow('Network error');
+      await expect(callMonarchGraphQL('TestOperation', 'query test', {}))
+        .rejects
+        .toThrow('Network error');
+    });
+
+    test('rejects when not authenticated', async () => {
+      authService.checkMonarchAuth.mockReturnValue({
+        authenticated: false,
+        token: null,
+      });
+
+      await expect(callMonarchGraphQL('TestOperation', 'query test', {}))
+        .rejects
+        .toThrow('Monarch token not found.');
+
+      expect(stateManager.setMonarchAuth).toHaveBeenCalledWith(null);
     });
   });
 
-  describe('Upload Status Polling Simulation', () => {
-    // This simulates the retry mechanism that would happen in uploadBalanceToMonarch
-    const simulateUploadStatusPolling = async (statusSequence, maxRetries = 5, delay = 100) => {
-      let attempt = 0;
-      
-      while (attempt < maxRetries) {
-        attempt++;
-        
-        // Mock the status response for this attempt
-        const expectedStatus = statusSequence[Math.min(attempt - 1, statusSequence.length - 1)];
-        
-        try {
-          const mockResponse = {
-            data: {
-              uploadBalanceHistorySession: {
-                sessionKey: 'test-session',
-                status: expectedStatus
-              }
-            }
-          };
+  describe('setupMonarchTokenCapture', () => {
+    test('delegates to auth service', () => {
+      authService.setupMonarchTokenCapture.mockReturnValue('test-result');
 
-          GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-            onload({
-              status: 200,
-              responseText: JSON.stringify(mockResponse)
-            });
-          });
+      const result = setupMonarchTokenCapture();
 
-          const result = await callMonarchGraphQL(
-            'Web_GetUploadBalanceHistorySession',
-            'query { uploadBalanceHistorySession }',
-            { sessionKey: 'test-session' }
-          );
+      expect(authService.setupMonarchTokenCapture).toHaveBeenCalled();
+      expect(result).toBe('test-result');
+    });
+  });
 
-          const status = result.uploadBalanceHistorySession.status;
-
-          if (status === 'completed') {
-            return { success: true, attempts: attempt };
-          } else if (status === 'failed') {
-            throw new Error('Upload processing failed');
-          } else if (status === 'started') {
-            // Continue polling
-            if (attempt >= maxRetries) {
-              throw new Error('Max retries exceeded');
-            }
-            // In real implementation, we'd wait here
-            continue;
-          } else {
-            throw new Error(`Unknown status: ${status}`);
-          }
-        } catch (error) {
-          if (attempt >= maxRetries) {
-            throw error;
-          }
-          // In real implementation, we'd wait here before retrying
-          continue;
-        }
-      }
-      
-      throw new Error('Max retries exceeded');
+  describe('listMonarchAccounts', () => {
+    const mockAccountsResponse = {
+      accounts: [
+        {
+          id: 'account1',
+          displayName: 'Brokerage Account',
+          type: { name: 'brokerage' },
+          isHidden: false,
+          hideFromList: false,
+        },
+        {
+          id: 'account2',
+          displayName: 'Credit Card',
+          type: { name: 'credit' },
+          isHidden: false,
+          hideFromList: false,
+        },
+        {
+          id: 'account3',
+          displayName: 'Hidden Account',
+          type: { name: 'brokerage' },
+          isHidden: true,
+          hideFromList: false,
+        },
+      ],
     };
 
-    test('should succeed immediately when status is completed', async () => {
-      const result = await simulateUploadStatusPolling(['completed']);
-      
-      expect(result).toEqual({ success: true, attempts: 1 });
-      expect(GM_xmlhttpRequest).toHaveBeenCalledTimes(1);
-    });
-
-    test('should retry when status is started then succeed', async () => {
-      const result = await simulateUploadStatusPolling(['started', 'started', 'completed']);
-      
-      expect(result).toEqual({ success: true, attempts: 3 });
-      expect(GM_xmlhttpRequest).toHaveBeenCalledTimes(3);
-    });
-
-    test('should fail immediately when status is failed', async () => {
-      await expect(simulateUploadStatusPolling(['failed']))
-        .rejects.toThrow('Upload processing failed');
-    });
-
-    test('should timeout after max retries with started status', async () => {
-      // All responses return 'started', should timeout
-      const statusSequence = Array(6).fill('started'); // More than maxRetries
-      
-      await expect(simulateUploadStatusPolling(statusSequence, 5))
-        .rejects.toThrow('Max retries exceeded');
-    });
-
-    test('should handle unknown status as error', async () => {
-      await expect(simulateUploadStatusPolling(['unknown-status']))
-        .rejects.toThrow('Unknown status: unknown-status');
-    });
-
-    test('should retry on network errors then succeed', async () => {
-      let callCount = 0;
-      
-      // First call fails with network error
-      GM_xmlhttpRequest.mockImplementationOnce(({ onerror }) => {
-        onerror(new Error('Network error'));
-      });
-      
-      // Second call succeeds
-      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-        onload({
+    test('lists brokerage accounts by default', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
           status: 200,
-          responseText: JSON.stringify({
-            data: {
-              uploadBalanceHistorySession: {
-                sessionKey: 'test-session',
-                status: 'completed'
-              }
-            }
-          })
-        });
+          responseText: JSON.stringify({ data: mockAccountsResponse }),
+        }), 0);
       });
-      
-      // Simulate the retry logic manually
-      let attempt = 0;
-      let result;
-      const maxRetries = 3;
-      
-      while (attempt < maxRetries) {
-        attempt++;
-        try {
-          const response = await callMonarchGraphQL(
-            'Web_GetUploadBalanceHistorySession',
-            'query { uploadBalanceHistorySession }',
-            { sessionKey: 'test-session' }
-          );
-          
-          if (response.uploadBalanceHistorySession.status === 'completed') {
-            result = { success: true, attempts: attempt };
-            break;
-          }
-        } catch (error) {
-          if (attempt >= maxRetries) {
-            throw error;
-          }
-          // Continue to retry
-        }
-      }
-      
-      expect(result).toEqual({ success: true, attempts: 2 });
-      expect(GM_xmlhttpRequest).toHaveBeenCalledTimes(2);
+
+      const result = await listMonarchAccounts();
+
+      expect(result).toHaveLength(1);
+      expect(result[0].displayName).toBe('Brokerage Account');
+      expect(result[0].type.name).toBe('brokerage');
     });
+
+    test('filters accounts by specified type', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockAccountsResponse }),
+        }), 0);
+      });
+
+      const result = await listMonarchAccounts('credit');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].displayName).toBe('Credit Card');
+      expect(result[0].type.name).toBe('credit');
+    });
+
+    test('excludes hidden accounts', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockAccountsResponse }),
+        }), 0);
+      });
+
+      const result = await listMonarchAccounts('brokerage');
+
+      // Should only return the non-hidden brokerage account
+      expect(result).toHaveLength(1);
+      expect(result[0].displayName).toBe('Brokerage Account');
+    });
+  });
+
+  describe('getMonarchInstitutionSettings', () => {
+    test('retrieves institution settings successfully', async () => {
+      const mockData = {
+        credentials: [{ id: 'cred1', institution: { name: 'Test Bank' } }],
+        accounts: [{ id: 'account1', displayName: 'Test Account' }],
+        subscription: { isOnFreeTrial: false },
+      };
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockData }),
+        }), 0);
+      });
+
+      const result = await getMonarchInstitutionSettings();
+
+      expect(result).toEqual(mockData);
+      expect(mockGMXmlHttpRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            Authorization: 'Token test-token-123',
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('uploadBalanceToMonarch', () => {
+    const mockUploadResponse = {
+      session_key: 'test-session-key',
+      previews: [{ count: 30 }],
+    };
+
+    beforeEach(() => {
+      // Mock FormData globally
+      globalThis.FormData = jest.fn().mockImplementation(() => ({
+        append: jest.fn(),
+      }));
+      globalThis.Blob = jest.fn();
+    });
+
+    test('uploads balance successfully', async () => {
+      // Mock upload response
+      mockGMXmlHttpRequest
+        .mockImplementationOnce((options) => {
+          setTimeout(() => options.onload({
+            status: 200,
+            responseText: JSON.stringify(mockUploadResponse),
+          }), 0);
+        })
+        // Mock GraphQL calls for parsing and status checks
+        .mockImplementation((options) => {
+          const data = JSON.parse(options.data);
+          if (data.operationName === 'Web_ParseUploadBalanceHistorySession') {
+            setTimeout(() => options.onload({
+              status: 200,
+              responseText: JSON.stringify({ data: {} }),
+            }), 0);
+          } else if (data.operationName === 'Web_GetUploadBalanceHistorySession') {
+            setTimeout(() => options.onload({
+              status: 200,
+              responseText: JSON.stringify({
+                data: {
+                  uploadBalanceHistorySession: { status: 'completed' },
+                },
+              }),
+            }), 0);
+          }
+        });
+
+      const result = await uploadBalanceToMonarch(
+        'monarch123',
+        'date,balance\n2024-01-01,1000',
+        '2024-01-01',
+        '2024-01-31',
+      );
+
+      expect(result).toBe(true);
+      expect(debugLog).toHaveBeenCalledWith('Starting Monarch balance upload process');
+    });
+
+    test('handles upload failure', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 500,
+          statusText: 'Server Error',
+        }), 0);
+      });
+
+      await expect(uploadBalanceToMonarch(
+        'monarch123',
+        'date,balance\n2024-01-01,1000',
+        '2024-01-01',
+        '2024-01-31',
+      )).rejects.toThrow('Monarch upload failed: Server Error');
+    });
+
+    test('throws error when not authenticated', async () => {
+      authService.checkMonarchAuth.mockReturnValue({
+        authenticated: false,
+        token: null,
+      });
+
+      await expect(uploadBalanceToMonarch(
+        'monarch123',
+        'csv-data',
+        '2024-01-01',
+        '2024-01-31',
+      )).rejects.toThrow('Monarch authentication required for uploading balance history');
+    });
+
+    test('throws error when no account ID provided', async () => {
+      await expect(uploadBalanceToMonarch(
+        null,
+        'csv-data',
+        '2024-01-01',
+        '2024-01-31',
+      )).rejects.toThrow('Monarch account ID is required for balance upload');
+    });
+
+    test('handles processing timeout', async () => {
+      // Mock upload response
+      mockGMXmlHttpRequest
+        .mockImplementationOnce((options) => {
+          options.onload({
+            status: 200,
+            responseText: JSON.stringify(mockUploadResponse),
+          });
+        })
+        // Mock parse call
+        .mockImplementationOnce((options) => {
+          options.onload({
+            status: 200,
+            responseText: JSON.stringify({ data: {} }),
+          });
+        })
+        // Mock status checks that always return 'started' (simulating timeout)
+        .mockImplementation((options) => {
+          options.onload({
+            status: 200,
+            responseText: JSON.stringify({
+              data: {
+                uploadBalanceHistorySession: { status: 'started' },
+              },
+            }),
+          });
+        });
+
+      await expect(uploadBalanceToMonarch(
+        'monarch123',
+        'csv-data',
+        '2024-01-01',
+        '2024-01-31',
+      )).rejects.toThrow('Upload processing timeout');
+    }, 70000); // Increase timeout to allow for actual retry logic
   });
 
   describe('uploadTransactionsToMonarch', () => {
-    const mockCSVData = 'Date,Description,Amount\n2025-01-01,Test Transaction,100.00';
-    const mockAccountId = '123456';
-    
+    const mockUploadResponse = {
+      session_key: 'test-session-key',
+    };
+
     beforeEach(() => {
-      // Reset FormData mock
-      global.FormData = jest.fn(() => ({
-        append: jest.fn()
+      // Mock FormData and Blob globally
+      globalThis.FormData = jest.fn().mockImplementation(() => ({
+        append: jest.fn(),
       }));
-      global.Blob = jest.fn((content, options) => ({
-        content: content[0],
-        type: options.type
-      }));
+      globalThis.Blob = jest.fn();
     });
 
-    test('should successfully upload transactions with default parameters', async () => {
-      // Mock upload response with session key
-      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-        onload({
-          status: 200,
-          responseText: JSON.stringify({
-            session_key: 'upload-statement-session-123'
-          })
-        });
-      });
-
-      // Mock parse mutation response
-      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-        onload({
-          status: 200,
-          responseText: JSON.stringify({
-            data: {
-              parseUploadStatementSession: {
-                uploadStatementSession: {
-                  sessionKey: 'upload-statement-session-123',
-                  status: 'started'
-                }
-              }
-            }
-          })
-        });
-      });
-
-      // Mock status check - completed
-      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-        onload({
-          status: 200,
-          responseText: JSON.stringify({
-            data: {
-              uploadStatementSession: {
-                sessionKey: 'upload-statement-session-123',
-                status: 'completed',
-                uploadedStatement: {
-                  id: 'stmt-123',
-                  transactionCount: 1
-                }
-              }
-            }
-          })
-        });
-      });
-
-      const result = await uploadTransactionsToMonarch(mockAccountId, mockCSVData);
-      
-      expect(result).toBe(true);
-      expect(GM_xmlhttpRequest).toHaveBeenCalledTimes(3);
-      
-      // Check the parse mutation was called with correct default parameters
-      const parseMutationCall = JSON.parse(GM_xmlhttpRequest.mock.calls[1][0].data);
-      expect(parseMutationCall.variables.input).toEqual({
-        parserName: 'monarch_csv',
-        sessionKey: 'upload-statement-session-123',
-        accountId: mockAccountId,
-        skipCheckForDuplicates: false,
-        shouldUpdateBalance: false,
-        allowWarnings: true
-      });
-    });
-
-    test('should use custom parameters when provided', async () => {
+    test('uploads transactions successfully', async () => {
       // Mock upload response
-      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-        onload({
-          status: 200,
-          responseText: JSON.stringify({
-            session_key: 'upload-statement-session-456'
-          })
+      mockGMXmlHttpRequest
+        .mockImplementationOnce((options) => {
+          setTimeout(() => options.onload({
+            status: 200,
+            responseText: JSON.stringify(mockUploadResponse),
+          }), 0);
+        })
+        // Mock GraphQL calls
+        .mockImplementation((options) => {
+          const data = JSON.parse(options.data);
+          if (data.operationName === 'Web_ParseUploadStatementSession') {
+            setTimeout(() => options.onload({
+              status: 200,
+              responseText: JSON.stringify({ data: {} }),
+            }), 0);
+          } else if (data.operationName === 'Web_GetUploadStatementSession') {
+            setTimeout(() => options.onload({
+              status: 200,
+              responseText: JSON.stringify({
+                data: {
+                  uploadStatementSession: {
+                    status: 'completed',
+                    uploadedStatement: { transactionCount: 5 },
+                  },
+                },
+              }),
+            }), 0);
+          }
         });
-      });
-
-      // Mock parse mutation response
-      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-        onload({
-          status: 200,
-          responseText: JSON.stringify({
-            data: {
-              parseUploadStatementSession: {
-                uploadStatementSession: {
-                  sessionKey: 'upload-statement-session-456',
-                  status: 'started'
-                }
-              }
-            }
-          })
-        });
-      });
-
-      // Mock status check - completed
-      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-        onload({
-          status: 200,
-          responseText: JSON.stringify({
-            data: {
-              uploadStatementSession: {
-                sessionKey: 'upload-statement-session-456',
-                status: 'completed',
-                uploadedStatement: {
-                  id: 'stmt-456',
-                  transactionCount: 5
-                }
-              }
-            }
-          })
-        });
-      });
 
       const result = await uploadTransactionsToMonarch(
-        mockAccountId,
-        mockCSVData,
-        'custom_transactions.csv',
-        true,  // shouldUpdateBalance
-        true   // skipCheckForDuplicates
+        'monarch123',
+        'date,description,amount\n2024-01-01,Test,100',
       );
-      
+
       expect(result).toBe(true);
-      
-      // Check custom parameters were used
-      const parseMutationCall = JSON.parse(GM_xmlhttpRequest.mock.calls[1][0].data);
-      expect(parseMutationCall.variables.input.shouldUpdateBalance).toBe(true);
-      expect(parseMutationCall.variables.input.skipCheckForDuplicates).toBe(true);
+      expect(debugLog).toHaveBeenCalledWith('Starting Monarch transactions upload process');
     });
 
-    test('should handle upload failure', async () => {
-      // Mock failed upload response
-      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-        onload({
-          status: 500,
-          statusText: 'Internal Server Error'
+    test('handles transaction upload with custom options', async () => {
+      // Mock successful responses
+      mockGMXmlHttpRequest
+        .mockImplementationOnce((options) => {
+          setTimeout(() => options.onload({
+            status: 200,
+            responseText: JSON.stringify(mockUploadResponse),
+          }), 0);
+        })
+        .mockImplementation((options) => {
+          const data = JSON.parse(options.data);
+          if (data.operationName === 'Web_ParseUploadStatementSession') {
+            // Verify the options were passed correctly
+            expect(data.variables.input.skipCheckForDuplicates).toBe(true);
+            expect(data.variables.input.shouldUpdateBalance).toBe(true);
+            setTimeout(() => options.onload({
+              status: 200,
+              responseText: JSON.stringify({ data: {} }),
+            }), 0);
+          } else if (data.operationName === 'Web_GetUploadStatementSession') {
+            setTimeout(() => options.onload({
+              status: 200,
+              responseText: JSON.stringify({
+                data: {
+                  uploadStatementSession: {
+                    status: 'completed',
+                    uploadedStatement: { transactionCount: 3 },
+                  },
+                },
+              }),
+            }), 0);
+          }
         });
-      });
 
-      await expect(uploadTransactionsToMonarch(mockAccountId, mockCSVData))
-        .rejects.toThrow('Monarch transactions upload failed: Internal Server Error');
-      
-      expect(GM_xmlhttpRequest).toHaveBeenCalledTimes(1);
+      const result = await uploadTransactionsToMonarch(
+        'monarch123',
+        'csv-data',
+        'custom-filename.csv',
+        true, // shouldUpdateBalance
+        true, // skipCheckForDuplicates
+      );
+
+      expect(result).toBe(true);
     });
 
-    test('should handle missing session key in response', async () => {
-      // Mock upload response without session key
-      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-        onload({
-          status: 200,
-          responseText: JSON.stringify({})
-        });
-      });
-
-      await expect(uploadTransactionsToMonarch(mockAccountId, mockCSVData))
-        .rejects.toThrow('Upload failed: Monarch did not return a session key.');
-    });
-
-    // Note: The failed status test has been removed due to complex async timer mocking issues.
-    // The error handling is still tested through other failure scenarios in this test suite.
-
-    test('should retry on pending status', async () => {
-      // Mock successful upload
-      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-        onload({
-          status: 200,
-          responseText: JSON.stringify({
-            session_key: 'upload-statement-session-999'
-          })
-        });
-      });
-
-      // Mock parse mutation
-      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-        onload({
-          status: 200,
-          responseText: JSON.stringify({
-            data: {
-              parseUploadStatementSession: {
+    test('handles upload processing failure', async () => {
+      // Mock upload response
+      mockGMXmlHttpRequest
+        .mockImplementationOnce((options) => {
+          options.onload({
+            status: 200,
+            responseText: JSON.stringify(mockUploadResponse),
+          });
+        })
+        // Mock parse call
+        .mockImplementationOnce((options) => {
+          options.onload({
+            status: 200,
+            responseText: JSON.stringify({ data: {} }),
+          });
+        })
+        // Mock failed status check
+        .mockImplementation((options) => {
+          options.onload({
+            status: 200,
+            responseText: JSON.stringify({
+              data: {
                 uploadStatementSession: {
-                  sessionKey: 'upload-statement-session-999',
-                  status: 'started'
-                }
-              }
-            }
-          })
+                  status: 'failed',
+                  errorMessage: 'Processing failed',
+                },
+              },
+            }),
+          });
         });
-      });
 
-      // Mock first status check - pending
-      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-        onload({
-          status: 200,
-          responseText: JSON.stringify({
-            data: {
-              uploadStatementSession: {
-                sessionKey: 'upload-statement-session-999',
-                status: 'pending'
-              }
-            }
-          })
-        });
-      });
+      await expect(uploadTransactionsToMonarch(
+        'monarch123',
+        'csv-data',
+      )).rejects.toThrow('Monarch transaction upload processing failed: Processing failed');
+    });
+  });
 
-      // Mock second status check - completed
-      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-        onload({
-          status: 200,
-          responseText: JSON.stringify({
-            data: {
-              uploadStatementSession: {
-                sessionKey: 'upload-statement-session-999',
-                status: 'completed',
-                uploadedStatement: {
-                  id: 'stmt-999',
-                  transactionCount: 10
-                }
-              }
-            }
-          })
-        });
-      });
+  describe('resolveMonarchAccountMapping', () => {
+    test('returns existing mapping when found', async () => {
+      const existingMapping = { id: 'monarch123', displayName: 'Existing Account' };
+      mockGMGetValue.mockReturnValue(JSON.stringify(existingMapping));
 
-      const result = await uploadTransactionsToMonarch(mockAccountId, mockCSVData);
-      
-      expect(result).toBe(true);
-      expect(GM_xmlhttpRequest).toHaveBeenCalledTimes(4); // upload + parse + 2 status checks
+      const result = await resolveMonarchAccountMapping('inst123', 'prefix_', 'brokerage');
+
+      expect(result).toEqual(existingMapping);
+      expect(debugLog).toHaveBeenCalledWith(
+        'Found existing mapping: inst123 -> Existing Account',
+      );
+      expect(mockGMSetValue).not.toHaveBeenCalled();
     });
 
-    test('should throw error when authentication is not available', async () => {
-      authService.checkMonarchAuth.mockReturnValueOnce({
-        authenticated: false
+    test('creates new mapping when none exists', async () => {
+      mockGMGetValue.mockReturnValue(null);
+
+      // Mock successful accounts list
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              accounts: [{
+                id: 'monarch123',
+                displayName: 'New Account',
+                type: { name: 'brokerage' },
+                isHidden: false,
+                hideFromList: false,
+              }],
+            },
+          }),
+        }), 0);
       });
 
-      await expect(uploadTransactionsToMonarch(mockAccountId, mockCSVData))
-        .rejects.toThrow('Monarch authentication required for uploading transactions');
-      
-      expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
+      const selectedAccount = { id: 'monarch123', displayName: 'Selected Account' };
+      showMonarchAccountSelector.mockImplementation((accounts, callback) => {
+        callback(selectedAccount);
+      });
+
+      const result = await resolveMonarchAccountMapping('inst123', 'prefix_', 'brokerage');
+
+      expect(result).toEqual(selectedAccount);
+      expect(mockGMSetValue).toHaveBeenCalledWith(
+        'prefix_inst123',
+        JSON.stringify(selectedAccount),
+      );
+      expect(showMonarchAccountSelector).toHaveBeenCalled();
+    });
+
+    test('returns null when user cancels selection', async () => {
+      mockGMGetValue.mockReturnValue(null);
+
+      // Mock successful accounts list
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              accounts: [{
+                id: 'monarch123',
+                displayName: 'Account',
+                type: { name: 'brokerage' },
+                isHidden: false,
+                hideFromList: false,
+              }],
+            },
+          }),
+        }), 0);
+      });
+
+      showMonarchAccountSelector.mockImplementation((accounts, callback) => {
+        callback(null); // User cancelled
+      });
+
+      const result = await resolveMonarchAccountMapping('inst123', 'prefix_', 'brokerage');
+
+      expect(result).toBeNull();
+      expect(debugLog).toHaveBeenCalledWith('User cancelled account mapping selection');
+    });
+
+    test('handles error when no accounts found', async () => {
+      mockGMGetValue.mockReturnValue(null);
+
+      // Mock empty accounts list
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: { accounts: [] },
+          }),
+        }), 0);
+      });
+
+      await expect(resolveMonarchAccountMapping('inst123', 'prefix_', 'credit'))
+        .rejects
+        .toThrow('No credit card accounts found in Monarch');
+    });
+
+    test('handles JSON parsing error for existing mapping', async () => {
+      mockGMGetValue.mockReturnValue('invalid-json');
+
+      // Mock successful accounts list
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              accounts: [{
+                id: 'monarch123',
+                displayName: 'Account',
+                type: { name: 'brokerage' },
+                isHidden: false,
+                hideFromList: false,
+              }],
+            },
+          }),
+        }), 0);
+      });
+
+      const selectedAccount = { id: 'monarch123', displayName: 'Selected Account' };
+      showMonarchAccountSelector.mockImplementation((accounts, callback) => {
+        callback(selectedAccount);
+      });
+
+      const result = await resolveMonarchAccountMapping('inst123', 'prefix_', 'brokerage');
+
+      expect(debugLog).toHaveBeenCalledWith(
+        'Error parsing existing account mapping, will prompt for new one:',
+        expect.any(Error),
+      );
+      expect(result).toEqual(selectedAccount);
     });
   });
 
   describe('getMonarchCategoriesAndGroups', () => {
-    const mockCategoriesResponse = {
-      data: {
-        categoryGroups: [
-          {
-            id: "162625045019525024",
-            name: "Income",
-            order: 0,
-            type: "income",
-            __typename: "CategoryGroup"
-          },
-          {
-            id: "162625045019525025",
-            name: "Gifts & Donations",
-            order: 1,
-            type: "expense",
-            __typename: "CategoryGroup"
-          }
-        ],
-        categories: [
-          {
-            id: "162625045061467453",
-            name: "Advertising & Promotion",
-            order: 0,
-            icon: "📣",
-            isSystemCategory: true,
-            systemCategory: "advertising_promotion",
-            isDisabled: false,
-            group: {
-              id: "162625045019525037",
-              type: "expense",
-              name: "Business",
-              __typename: "CategoryGroup"
-            },
-            __typename: "Category"
-          },
-          {
-            id: "162625045061467411",
-            name: "Auto Payment",
-            order: 0,
-            icon: "🚗",
-            isSystemCategory: true,
-            systemCategory: "auto_payment",
-            isDisabled: false,
-            group: {
-              id: "162625045019525026",
-              type: "expense",
-              name: "Auto & Transport",
-              __typename: "CategoryGroup"
-            },
-            __typename: "Category"
-          }
-        ]
-      }
-    };
+    test('retrieves categories and groups successfully', async () => {
+      const mockData = {
+        categoryGroups: [{ id: 'group1', name: 'Group 1' }],
+        categories: [{ id: 'cat1', name: 'Category 1' }],
+      };
 
-    test('should successfully fetch categories and category groups', async () => {
-      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-        onload({
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
           status: 200,
-          responseText: JSON.stringify(mockCategoriesResponse)
-        });
+          responseText: JSON.stringify({ data: mockData }),
+        }), 0);
       });
 
       const result = await getMonarchCategoriesAndGroups();
-      
-      expect(result).toEqual(mockCategoriesResponse.data);
-      expect(GM_xmlhttpRequest).toHaveBeenCalledTimes(1);
-      
-      // Verify correct GraphQL query was used
-      const callArgs = GM_xmlhttpRequest.mock.calls[0][0];
-      const requestData = JSON.parse(callArgs.data);
-      
-      expect(requestData.operationName).toBe('ManageGetCategoryGroups');
-      expect(requestData.variables).toEqual({});
-      expect(requestData.query).toContain('query ManageGetCategoryGroups');
-      expect(requestData.query).toContain('categoryGroups');
-      expect(requestData.query).toContain('categories(includeDisabledSystemCategories: true)');
-      expect(requestData.query).toContain('isSystemCategory');
-      expect(requestData.query).toContain('systemCategory');
-      expect(requestData.query).toContain('isDisabled');
+
+      expect(result).toEqual(mockData);
+      expect(mockGMXmlHttpRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            Authorization: 'Token test-token-123',
+          }),
+        }),
+      );
     });
+  });
 
-    test('should handle authentication error', async () => {
-      authService.checkMonarchAuth.mockReturnValueOnce({
-        authenticated: false
-      });
+  describe('checkTokenStatus', () => {
+    test('delegates to auth service', () => {
+      const mockStatus = { authenticated: true, token: 'test-token' };
+      authService.checkMonarchAuth.mockReturnValue(mockStatus);
 
-      await expect(getMonarchCategoriesAndGroups())
-        .rejects.toThrow('Monarch token not found.');
-      
-      expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
+      const result = checkTokenStatus();
+
+      expect(authService.checkMonarchAuth).toHaveBeenCalled();
+      expect(result).toEqual(mockStatus);
     });
+  });
 
-    test('should handle 401 unauthorized response', async () => {
-      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-        onload({
-          status: 401,
-          responseText: 'Unauthorized'
-        });
-      });
+  describe('getToken', () => {
+    test('delegates to auth service', () => {
+      authService.getMonarchToken.mockReturnValue('test-token');
 
-      await expect(getMonarchCategoriesAndGroups())
-        .rejects.toThrow('Monarch Auth Error (401): Token was invalid or expired.');
+      const result = getToken();
+
+      expect(authService.getMonarchToken).toHaveBeenCalled();
+      expect(result).toBe('test-token');
     });
+  });
 
-    test('should handle non-200 status codes', async () => {
-      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-        onload({
-          status: 500,
-          responseText: 'Internal Server Error'
-        });
-      });
-
-      await expect(getMonarchCategoriesAndGroups())
-        .rejects.toThrow('Monarch API Error: 500');
-    });
-
-    test('should handle GraphQL errors in response', async () => {
-      const mockErrorResponse = {
-        errors: [
-          {
-            message: 'Field error in categories',
-            locations: [{ line: 10, column: 5 }],
-            path: ['categories']
-          }
-        ]
-      };
-
-      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-        onload({
+  describe('Error Handling', () => {
+    test('handles missing session key in upload response', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
           status: 200,
-          responseText: JSON.stringify(mockErrorResponse)
-        });
+          responseText: JSON.stringify({}), // No session_key
+        }), 0);
       });
 
-      await expect(getMonarchCategoriesAndGroups())
-        .rejects.toThrow();
+      await expect(uploadBalanceToMonarch(
+        'monarch123',
+        'csv-data',
+        '2024-01-01',
+        '2024-01-31',
+      )).rejects.toThrow('Upload failed: Monarch did not return a session key.');
     });
 
-    test('should handle network errors', async () => {
-      GM_xmlhttpRequest.mockImplementationOnce(({ onerror }) => {
-        onerror(new Error('Network connection failed'));
-      });
+    test('handles unknown upload status', async () => {
+      const mockUploadResponse = { session_key: 'test-key', previews: [{ count: 1 }] };
 
-      await expect(getMonarchCategoriesAndGroups())
-        .rejects.toThrow('Network connection failed');
-    });
-
-    test('should return empty arrays when no categories exist', async () => {
-      const emptyResponse = {
-        data: {
-          categoryGroups: [],
-          categories: []
-        }
-      };
-
-      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-        onload({
-          status: 200,
-          responseText: JSON.stringify(emptyResponse)
-        });
-      });
-
-      const result = await getMonarchCategoriesAndGroups();
-      
-      expect(result).toEqual({
-        categoryGroups: [],
-        categories: []
-      });
-      expect(GM_xmlhttpRequest).toHaveBeenCalledTimes(1);
-    });
-
-    test('should handle partial response with missing fields', async () => {
-      const partialResponse = {
-        data: {
-          categoryGroups: [
-            {
-              id: "162625045019525024",
-              name: "Income",
-              order: 0,
-              type: "income",
-              __typename: "CategoryGroup"
-            }
-          ],
-          categories: [
-            {
-              id: "162625045061467453",
-              name: "Advertising & Promotion",
-              order: 0,
-              // Missing some optional fields like icon, isSystemCategory, etc.
-              group: {
-                id: "162625045019525037",
-                type: "expense",
-                name: "Business",
-                __typename: "CategoryGroup"
+      mockGMXmlHttpRequest
+        .mockImplementationOnce((options) => {
+          options.onload({
+            status: 200,
+            responseText: JSON.stringify(mockUploadResponse),
+          });
+        })
+        .mockImplementationOnce((options) => {
+          options.onload({
+            status: 200,
+            responseText: JSON.stringify({ data: {} }),
+          });
+        })
+        .mockImplementation((options) => {
+          options.onload({
+            status: 200,
+            responseText: JSON.stringify({
+              data: {
+                uploadBalanceHistorySession: { status: 'unknown_status' },
               },
-              __typename: "Category"
-            }
-          ]
-        }
-      };
-
-      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-        onload({
-          status: 200,
-          responseText: JSON.stringify(partialResponse)
+            }),
+          });
         });
-      });
 
-      const result = await getMonarchCategoriesAndGroups();
-      
-      expect(result).toEqual(partialResponse.data);
-      expect(result.categoryGroups).toHaveLength(1);
-      expect(result.categories).toHaveLength(1);
-      expect(result.categories[0].name).toBe('Advertising & Promotion');
-    });
-
-    test('should use correct request headers and URL', async () => {
-      GM_xmlhttpRequest.mockImplementationOnce(({ onload }) => {
-        onload({
-          status: 200,
-          responseText: JSON.stringify(mockCategoriesResponse)
-        });
-      });
-
-      await getMonarchCategoriesAndGroups();
-      
-      const callArgs = GM_xmlhttpRequest.mock.calls[0][0];
-      
-      expect(callArgs.method).toBe('POST');
-      expect(callArgs.url).toBe('https://api.monarchmoney.com/graphql');
-      expect(callArgs.headers['Content-Type']).toBe('application/json');
-      expect(callArgs.headers.Authorization).toBe('Token test-token');
-      expect(callArgs.headers.origin).toBe('https://app.monarchmoney.com');
-      expect(callArgs.mode).toBe('cors');
+      await expect(uploadBalanceToMonarch(
+        'monarch123',
+        'csv-data',
+        '2024-01-01',
+        '2024-01-31',
+      )).rejects.toThrow('Unknown upload status: unknown_status');
     });
   });
 });

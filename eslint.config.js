@@ -14,6 +14,10 @@ export default [
       globals: {
         ...globals.browser,
         ...globals.jest,
+        ...globals.node,
+        // Test environment globals
+        global: 'writable',
+        require: 'readonly',
         // Tampermonkey globals
         GM_addElement: 'readonly',
         GM_deleteValue: 'readonly',

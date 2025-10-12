@@ -110,7 +110,7 @@ describe('Canada Life Lookback Bug', () => {
     // Option 1: Store today as last upload when uploading today's data
     GM_setValue.mockImplementation(() => {});
     saveLastUploadDate(accountId, today, 'canadalife'); // Store today instead of yesterday
-    
+
     GM_getValue.mockImplementation((key, defaultValue) => {
       if (key === 'canadalife_last_upload_date_test-account-123') {
         return today;

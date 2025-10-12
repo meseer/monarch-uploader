@@ -54,10 +54,8 @@ export function makeItemsKeyboardNavigable(items, onSelect, initialFocusIndex = 
 
   // Make all items focusable and add keyboard handlers
   items.forEach((item, index) => {
-    // Make item focusable
-    if (!item.hasAttribute('tabindex')) {
-      item.setAttribute('tabindex', index === currentFocusIndex ? '0' : '-1');
-    }
+    // Make item focusable - always set tabindex for proper focus management
+    item.setAttribute('tabindex', index === currentFocusIndex ? '0' : '-1');
 
     // Add focus styling
     item.style.outline = 'none'; // Remove default outline, we'll add custom focus styling

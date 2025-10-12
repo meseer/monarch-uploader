@@ -327,5 +327,349 @@ describe('Balance Service', () => {
       expect(result.failed).toBe(0);
       expect(toast.show).toHaveBeenCalledWith('No accounts to process', 'warning');
     });
+
+    test('should handle null accounts list', async () => {
+      const result = await bulkProcessAccounts(
+        null,
+        '2025-01-01',
+        '2025-01-31',
+      );
+
+      // Check results
+      expect(result.success).toBe(0);
+      expect(result.failed).toBe(0);
+      expect(toast.show).toHaveBeenCalledWith('No accounts to process', 'warning');
+    });
+  });
+
+  describe('Real Code Path Tests', () => {
+    beforeEach(() => {
+      // Mock only the external dependencies, let internal logic execute
+      jest.clearAllMocks();
+    });
+
+    test('should handle real date parsing and validation in getDefaultDateRange', () => {
+      // Test with no saved date - should use default lookback
+      GM_getValue.mockReturnValue(null);
+
+      const result = getDefaultDateRange('test-account', 60);
+
+      expect(result).toHaveProperty('fromDate');
+      expect(result).toHaveProperty('toDate');
+      expect(typeof result.fromDate).toBe('string');
+      expect(typeof result.toDate).toBe('string');
+
+      // Verify date format (YYYY-MM-DD)
+      expect(result.fromDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(result.toDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+
+    test('should handle invalid saved date and fallback to default', () => {
+      // Test with invalid saved date
+      GM_getValue.mockReturnValue('invalid-date');
+
+      const result = getDefaultDateRange('test-account', 30);
+
+      expect(result).toHaveProperty('fromDate');
+      expect(result).toHaveProperty('toDate');
+
+      // Should fallback to default behavior when parsing fails
+      expect(result.fromDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(result.toDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+
+    test('should handle future saved date and fallback to default', () => {
+      // Test with future date (should fallback)
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + 10);
+      GM_getValue.mockReturnValue(futureDate.toISOString().split('T')[0]);
+
+      const result = getDefaultDateRange('test-account', 30);
+
+      expect(result).toHaveProperty('fromDate');
+      expect(result).toHaveProperty('toDate');
+
+      // Should fallback to default lookback when saved date is in future
+      const fromDate = new Date(result.fromDate);
+      const toDate = new Date(result.toDate);
+      expect(fromDate.getTime()).toBeLessThan(toDate.getTime());
+    });
+
+    test('should execute real error handling in processBalanceData', () => {
+      // Test with null data
+      expect(() => processBalanceData(null, 'Test Account')).toThrow('Failed to process balance data: Invalid balance data provided');
+
+      // Test with missing history
+      expect(() => processBalanceData({ currentBalance: {} }, 'Test Account')).toThrow('Failed to process balance data: Invalid balance data provided');
+
+      // Test with invalid history structure
+      expect(() => processBalanceData({ history: { data: 'not-an-array' } }, 'Test Account')).not.toThrow();
+    });
+
+    test('should execute real CSV processing with various data structures', () => {
+      // Test with complete data structure
+      const completeData = {
+        currentBalance: {
+          totalEquity: {
+            combined: [
+              { currencyCode: 'USD', amount: 5000 },
+              { currencyCode: 'CAD', amount: 10000 },
+            ],
+          },
+        },
+        history: {
+          data: [
+            { date: '2024-12-01', totalEquity: 9500 },
+            { date: '2024-12-02', totalEquity: 9750 },
+            { date: '2024-12-03', totalEquity: 9900 },
+          ],
+        },
+      };
+
+      const result = processBalanceData(completeData, 'My Investment Account');
+
+      // Should contain header
+      expect(result).toContain('"Date","Total Equity","Account Name"');
+
+      // Should contain historical data
+      expect(result).toContain('"2024-12-01","9500","My Investment Account"');
+      expect(result).toContain('"2024-12-02","9750","My Investment Account"');
+      expect(result).toContain('"2024-12-03","9900","My Investment Account"');
+
+      // Should contain current balance (CAD only)
+      expect(result).toContain('"10000","My Investment Account"');
+
+      // Should NOT contain USD balance
+      expect(result).not.toContain('"5000","My Investment Account"');
+    });
+
+    test('should handle missing CAD balance in current data', () => {
+      const dataWithoutCAD = {
+        currentBalance: {
+          totalEquity: {
+            combined: [
+              { currencyCode: 'USD', amount: 5000 },
+              { currencyCode: 'EUR', amount: 3000 },
+            ],
+          },
+        },
+        history: {
+          data: [
+            { date: '2024-12-01', totalEquity: 9500 },
+          ],
+        },
+      };
+
+      const result = processBalanceData(dataWithoutCAD, 'USD Account');
+
+      // Should still process historical data
+      expect(result).toContain('"2024-12-01","9500","USD Account"');
+
+      // Should not contain current balance since no CAD found
+      expect(result).not.toContain('"5000","USD Account"');
+      expect(result).not.toContain('"3000","USD Account"');
+    });
+
+    test('should execute real error handling in fetchBalanceHistory', async () => {
+      // Test missing dates
+      await expect(fetchBalanceHistory('account123', '', '2024-12-31')).rejects.toThrow(BalanceError);
+      await expect(fetchBalanceHistory('account123', '2024-01-01', '')).rejects.toThrow(BalanceError);
+      await expect(fetchBalanceHistory('account123', null, '2024-12-31')).rejects.toThrow(BalanceError);
+
+      // Test that error message contains account ID
+      try {
+        await fetchBalanceHistory('test-account-456', '', '2024-12-31');
+      } catch (error) {
+        expect(error.accountId).toBe('test-account-456');
+        expect(error.message).toBe('Invalid date range provided');
+      }
+    });
+
+    test('should execute real error handling in uploadBalanceToMonarch', async () => {
+      // Test missing CSV data
+      await expect(uploadBalanceToMonarch('account123', '', '2024-01-01', '2024-12-31')).rejects.toThrow(BalanceError);
+      await expect(uploadBalanceToMonarch('account123', null, '2024-01-01', '2024-12-31')).rejects.toThrow(BalanceError);
+
+      // Test that error contains account ID
+      try {
+        await uploadBalanceToMonarch('test-account-789', '', '2024-01-01', '2024-12-31');
+      } catch (error) {
+        expect(error.accountId).toBe('test-account-789');
+        expect(error.message).toBe('No CSV data to upload');
+      }
+    });
+
+    test('should execute real error handling in processAndUploadBalance', async () => {
+      // Test missing account info
+      const result1 = await processAndUploadBalance('', 'Test Account', '2024-01-01', '2024-12-31');
+      expect(result1).toBe(false);
+      expect(toast.show).toHaveBeenCalledWith('Account information missing', 'error');
+
+      const result2 = await processAndUploadBalance('account123', '', '2024-01-01', '2024-12-31');
+      expect(result2).toBe(false);
+      expect(toast.show).toHaveBeenCalledWith('Account information missing', 'error');
+    });
+
+    test('should handle state management correctly', async () => {
+      // Mock successful flow to test state management
+      monarchApi.resolveAccountMapping.mockResolvedValue({ id: 'monarch-123' });
+      questradeApi.makeApiCall
+        .mockResolvedValueOnce({ totalEquity: { combined: [{ currencyCode: 'CAD', amount: 10000 }] } })
+        .mockResolvedValueOnce({ data: [{ date: '2024-12-01', totalEquity: 9500 }] });
+      monarchApi.uploadBalance.mockResolvedValue(true);
+
+      const result = await processAndUploadBalance('test-account', 'My Test Account', '2024-01-01', '2024-12-31');
+
+      expect(result).toBe(true);
+      expect(stateManager.setAccount).toHaveBeenCalledWith('test-account', 'My Test Account');
+      expect(toast.show).toHaveBeenCalledWith('Downloading My Test Account balance history...', 'trace');
+      expect(toast.show).toHaveBeenCalledWith('Uploading My Test Account balance history to Monarch (may take up to 2 minutes for large files)...', 'trace');
+      expect(toast.show).toHaveBeenCalledWith('Successfully uploaded My Test Account balance history to Monarch', 'info');
+    });
+
+    test('should store date range on successful upload', async () => {
+      // Test the storeDateRange function with edge cases
+      storeDateRange('', '2024-12-31');
+      expect(GM_setValue).not.toHaveBeenCalled();
+
+      storeDateRange('account123', '');
+      expect(GM_setValue).not.toHaveBeenCalled();
+
+      storeDateRange('account123', '2024-12-31');
+      expect(GM_setValue).toHaveBeenCalledWith('questrade_last_upload_date_account123', '2024-12-31');
+    });
+
+    test('should handle GM_setValue errors gracefully', () => {
+      // Mock GM_setValue to throw an error
+      GM_setValue.mockImplementation(() => {
+        throw new Error('Storage error');
+      });
+
+      // Should not crash when storage fails
+      expect(() => storeDateRange('account123', '2024-12-31')).not.toThrow();
+    });
+  });
+
+  describe('BalanceError Class', () => {
+    test('should create BalanceError with message and accountId', () => {
+      const error = new BalanceError('Test error message', 'account-456');
+
+      expect(error.message).toBe('Test error message');
+      expect(error.accountId).toBe('account-456');
+      expect(error.name).toBe('BalanceError');
+      expect(error instanceof Error).toBe(true);
+      expect(error instanceof BalanceError).toBe(true);
+    });
+
+    test('should have proper error stack trace', () => {
+      const error = new BalanceError('Stack test', 'account-789');
+      expect(error.stack).toBeDefined();
+      expect(error.toString()).toContain('BalanceError: Stack test');
+    });
+  });
+
+  describe('Edge Cases and Error Handling', () => {
+    test('should handle corrupt balance data structures', () => {
+      const corruptData = {
+        currentBalance: {
+          totalEquity: null, // Null totalEquity
+        },
+        history: {
+          data: [
+            { date: '2024-12-01' }, // Missing totalEquity
+            { totalEquity: 9500 }, // Missing date
+            { date: null, totalEquity: null }, // Both null
+          ],
+        },
+      };
+
+      const result = processBalanceData(corruptData, 'Corrupt Account');
+
+      // Should still generate CSV with header
+      expect(result).toContain('"Date","Total Equity","Account Name"');
+
+      // Should handle missing/null values gracefully
+      expect(result).toContain('"2024-12-01","","Corrupt Account"');
+      expect(result).toContain('"","9500","Corrupt Account"');
+      expect(result).toContain('"","","Corrupt Account"');
+    });
+
+    test('should handle empty arrays and undefined values', () => {
+      const emptyData = {
+        currentBalance: {
+          totalEquity: {
+            combined: [], // Empty array
+          },
+        },
+        history: {
+          data: [], // Empty history
+        },
+      };
+
+      const result = processBalanceData(emptyData, 'Empty Account');
+
+      // Should still generate valid CSV with just header
+      expect(result).toBe('"Date","Total Equity","Account Name"\n');
+    });
+
+    test('should handle malformed currentBalance structure', () => {
+      const malformedData = {
+        currentBalance: 'not-an-object',
+        history: {
+          data: [{ date: '2024-12-01', totalEquity: 9500 }],
+        },
+      };
+
+      const result = processBalanceData(malformedData, 'Malformed Account');
+
+      // Should still process history data
+      expect(result).toContain('"2024-12-01","9500","Malformed Account"');
+
+      // Should not crash on malformed currentBalance
+      expect(result).toContain('"Date","Total Equity","Account Name"');
+    });
+
+    test('should validate API response structure in fetchBalanceHistory', async () => {
+      // Test with null API responses - first call returns null
+      questradeApi.makeApiCall.mockResolvedValueOnce(null);
+
+      await expect(fetchBalanceHistory('account123', '2024-01-01', '2024-12-31')).rejects.toThrow('Failed to fetch current balance data');
+
+      // Clear previous calls
+      jest.clearAllMocks();
+
+      // Test with successful first call but null second call
+      questradeApi.makeApiCall
+        .mockResolvedValueOnce({ totalEquity: { combined: [] } })
+        .mockResolvedValueOnce(null);
+
+      await expect(fetchBalanceHistory('account123', '2024-01-01', '2024-12-31')).rejects.toThrow('Failed to fetch historical balance data');
+    });
+
+    test('should wrap generic errors in BalanceError', async () => {
+      // Test generic error wrapping
+      questradeApi.makeApiCall.mockRejectedValue(new Error('Network timeout'));
+
+      try {
+        await fetchBalanceHistory('account123', '2024-01-01', '2024-12-31');
+      } catch (error) {
+        expect(error instanceof BalanceError).toBe(true);
+        expect(error.message).toBe('Failed to fetch balance history: Network timeout');
+        expect(error.accountId).toBe('account123');
+      }
+    });
+
+    test('should preserve BalanceError instances', async () => {
+      // Test that BalanceError instances are not double-wrapped
+      const originalError = new BalanceError('Original error', 'account123');
+      questradeApi.makeApiCall.mockRejectedValue(originalError);
+
+      try {
+        await fetchBalanceHistory('account123', '2024-01-01', '2024-12-31');
+      } catch (error) {
+        expect(error).toBe(originalError); // Should be the same instance
+        expect(error.message).toBe('Original error');
+      }
+    });
   });
 });

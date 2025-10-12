@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Monarch Uploader
 // @namespace    https://github.com/meseer/monarch-uploader
-// @version      3.20.5
+// @version      3.20.8
 // @description  Upload Questrade, CanadaLife, and Rogers Bank balance and transactions to Monarch.
 // @author       Mykhailo Delegan
 // @match        https://myportal.questrade.com/*
@@ -22,10 +22,10 @@
 // @run-at       document-idle
 // ==/UserScript==
 
-function generateMetadata(buildType = 'local') {
+function generateMetadata(_buildType = 'local') {
   // All builds now point to the same Gist for updates
   const gistUrl = 'https://gist.github.com/meseer/f00fb552c96efeb3eb4e4e1fd520d4e7/raw/monarch-uploader.user.js';
-  
+
   // Always include update URLs pointing to the Gist
   const downloadUrl = gistUrl;
   const updateUrl = gistUrl;
@@ -36,7 +36,7 @@ function generateMetadata(buildType = 'local') {
   return `// ==UserScript==
 // @name         Monarch Uploader
 // @namespace    https://github.com/meseer/monarch-uploader
-// @version      3.20.5
+// @version      3.20.8
 // @description  Upload Questrade, CanadaLife, and Rogers Bank balance and transactions to Monarch.
 // @author       Mykhailo Delegan
 // @match        https://myportal.questrade.com/*

@@ -61,7 +61,7 @@ export function createAccountSelector({
   accounts.forEach((account) => {
     const option = document.createElement('option');
     option.value = account.id;
-    option.textContent = account.nickname || account.name || account.displayName;
+    option.textContent = account.nickname || account.name || account.displayName || '';
     option.selected = account.id === selectedId;
     select.appendChild(option);
   });
@@ -156,17 +156,17 @@ export function createMonarchAccountMappingSelector(
  * @returns {Promise} Promise that resolves when selection is complete
  */
 export async function showMonarchAccountSelector(accounts, callback, originalAccounts = null, accountType = null) {
-  debugLog('Starting account selector with', {
-    accountsCount: accounts.length,
-    hasOriginalAccounts: Boolean(originalAccounts),
-    accountType,
-  });
-
   // If originalAccounts is not provided, this is the initial call
   const allAccounts = originalAccounts || accounts;
 
   // Determine account type from the accounts if not provided
   const effectiveAccountType = accountType || (accounts.length > 0 && accounts[0].type?.name) || 'brokerage';
+
+  debugLog('Starting account selector with', {
+    accountsCount: accounts.length,
+    hasOriginalAccounts: Boolean(originalAccounts),
+    accountType: effectiveAccountType,
+  });
 
   try {
     // First, fetch institution data
@@ -885,8 +885,32 @@ function showAccountSelector(institution, callback, allInstitutions, accountType
  * @param {Function} callback - Callback for account selection
  */
 function showFlatAccountSelector(accounts, callback) {
+  // Get current account name for similarity matching
+  const currentState = stateManager.getState();
+  const currentAccountName = currentState.currentAccount.nickname || 'Unknown Account';
+
+  // Calculate similarity scores for account names and sort
+  const accountsWithScores = accounts.map((account) => {
+    const similarityScore = stringSimilarity(
+      account.displayName || '',
+      currentAccountName || '',
+    );
+
+    return {
+      ...account,
+      similarityScore,
+    };
+  });
+
+  // Sort by similarity score (highest first)
+  accountsWithScores.sort((a, b) => b.similarityScore - a.similarityScore);
+
+  // Set up keyboard navigation cleanup function
+  let cleanupKeyboard = () => {};
+
   // Create the overlay and modal elements
   const overlay = createModalOverlay(() => {
+    cleanupKeyboard();
     overlay.remove();
     callback(null);
   });
@@ -902,16 +926,14 @@ function showFlatAccountSelector(accounts, callback) {
     overflow-y: auto;
   `;
 
-  // Get current account name for display
-  const currentState = stateManager.getState();
-  const currentAccountName = currentState.currentAccount.nickname || 'Unknown Account';
-
   const title = document.createElement('h2');
   title.style.cssText = 'margin-top:0; margin-bottom: 20px; font-size: 1em;';
   title.innerHTML = `Select Monarch Account for <b>${currentAccountName}</b>`;
   modal.appendChild(title);
 
-  accounts.forEach((acc) => {
+  const accountItems = [];
+
+  accountsWithScores.forEach((acc) => {
     // Create the main container for the list item
     const item = document.createElement('div');
     item.style.cssText = `
@@ -958,10 +980,43 @@ function showFlatAccountSelector(accounts, callback) {
     item.onmouseout = () => {
       item.style.backgroundColor = 'transparent';
     };
-    item.onclick = () => { overlay.remove(); callback(acc); };
+    item.onclick = () => {
+      cleanupKeyboard();
+      overlay.remove();
+      callback(acc);
+    };
 
     modal.appendChild(item);
+    accountItems.push(item);
   });
+
+  // Add keyboard handlers for the modal (Escape to close)
+  const cleanupModalHandlers = addModalKeyboardHandlers(overlay, () => {
+    cleanupKeyboard();
+    overlay.remove();
+    callback(null);
+  });
+
+  // Make account items keyboard navigable if there are any
+  let cleanupItemNavigation = () => {};
+  if (accountItems.length > 0) {
+    cleanupItemNavigation = makeItemsKeyboardNavigable(
+      accountItems,
+      (item, index) => {
+        const account = accountsWithScores[index];
+        cleanupKeyboard();
+        overlay.remove();
+        callback(account);
+      },
+      0, // Focus first item initially
+    );
+  }
+
+  // Combine cleanup functions
+  cleanupKeyboard = () => {
+    cleanupModalHandlers();
+    cleanupItemNavigation();
+  };
 
   overlay.appendChild(modal);
   document.body.appendChild(overlay);

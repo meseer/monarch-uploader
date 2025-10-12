@@ -191,15 +191,19 @@ describe('Rogers Bank API Client', () => {
       originalXHR = globalThis.XMLHttpRequest;
       originalFetch = globalThis.fetch;
 
-      // Mock XMLHttpRequest
-      globalThis.XMLHttpRequest = jest.fn(() => ({
-        open: jest.fn(),
-        send: jest.fn(),
-        setRequestHeader: jest.fn(),
-        addEventListener: jest.fn(),
-        getResponseHeader: jest.fn(),
-      }));
+      // Mock XMLHttpRequest constructor
+      globalThis.XMLHttpRequest = jest.fn().mockImplementation(() => {
+        const instance = {
+          open: jest.fn(),
+          send: jest.fn(),
+          setRequestHeader: jest.fn(),
+          addEventListener: jest.fn(),
+          getResponseHeader: jest.fn().mockReturnValue(null),
+        };
+        return instance;
+      });
 
+      // Create prototype object
       globalThis.XMLHttpRequest.prototype = {
         open: jest.fn(),
         send: jest.fn(),
@@ -207,9 +211,6 @@ describe('Rogers Bank API Client', () => {
         addEventListener: jest.fn(),
         getResponseHeader: jest.fn(),
       };
-
-      // Mock fetch
-      globalThis.fetch = jest.fn();
     });
 
     afterEach(() => {
@@ -237,6 +238,170 @@ describe('Rogers Bank API Client', () => {
       // Verify that fetch was overridden
       expect(globalThis.fetch).toBeDefined();
       expect(typeof globalThis.fetch).toBe('function');
+    });
+
+    test('should capture credentials from transaction API XHR calls', () => {
+      setupCredentialInterception();
+
+      // Create a mock XHR instance
+      const mockXHR = new XMLHttpRequest();
+
+      // Simulate the credential interception flow
+      const originalOpen = XMLHttpRequest.prototype.open;
+      const originalSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
+      const originalSend = XMLHttpRequest.prototype.send;
+
+      // Mock the transaction API URL
+      const transactionUrl = 'https://selfserve.apis.rogersbank.com/corebank/v1/account/12345/customer/67890/transactions';
+
+      // Simulate setting headers
+      originalSetRequestHeader.call(mockXHR, 'Authorization', 'Bearer test-token');
+      originalSetRequestHeader.call(mockXHR, 'AccountId', 'encoded-account-123');
+      originalSetRequestHeader.call(mockXHR, 'CustomerId', 'encoded-customer-456');
+      originalSetRequestHeader.call(mockXHR, 'DeviceId', 'device-789');
+
+      // Simulate opening the request
+      originalOpen.call(mockXHR, 'GET', transactionUrl);
+
+      // Simulate sending - this should trigger credential capture
+      originalSend.call(mockXHR, null);
+
+      // Check if GM_setValue was called for saving credentials
+      expect(globalThis.GM_setValue).toHaveBeenCalled();
+    });
+
+    test('should handle token regeneration XHR responses', () => {
+      setupCredentialInterception();
+
+      // Create a mock XHR instance
+      const mockXHR = new XMLHttpRequest();
+
+      // Mock the token regeneration URL
+      const regenUrl = 'https://selfserve.apis.rogersbank.com/authenticate/v1/authenticate/regeneratetoken/';
+
+      // Set up the response handler mock
+      mockXHR.getResponseHeader.mockReturnValue('new-access-token-123');
+
+      // Simulate the request setup
+      XMLHttpRequest.prototype.open.call(mockXHR, 'POST', regenUrl);
+      XMLHttpRequest.prototype.send.call(mockXHR, null);
+
+      // Simulate the load event that would trigger token capture
+      const loadHandler = mockXHR.addEventListener.mock.calls.find((call) => call[0] === 'load');
+      if (loadHandler) {
+        loadHandler[1].call(mockXHR);
+      }
+
+      // Should have attempted to save the new token
+      expect(mockXHR.getResponseHeader).toHaveBeenCalledWith('Accesstoken');
+    });
+
+    test('should intercept Rogers Bank fetch API calls', async () => {
+      // Mock fetch response
+      const mockFetchResponse = {
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({}),
+        clone: jest.fn().mockReturnThis(),
+        headers: {
+          get: jest.fn().mockReturnValue(null),
+        },
+      };
+
+      const originalFetch = jest.fn().mockResolvedValue(mockFetchResponse);
+      globalThis.fetch = originalFetch;
+
+      setupCredentialInterception();
+
+      // Test transaction API fetch call
+      const transactionUrl = 'https://selfserve.apis.rogersbank.com/corebank/v1/account/12345/customer/67890/transactions';
+      const options = {
+        headers: {
+          Authorization: 'Bearer test-token',
+          AccountId: 'encoded-account',
+          CustomerId: 'encoded-customer',
+          DeviceId: 'device-id',
+        },
+      };
+
+      // This should trigger credential capture
+      await globalThis.fetch(transactionUrl, options);
+
+      expect(globalThis.GM_setValue).toHaveBeenCalled();
+    });
+
+    test('should handle token regeneration in fetch API calls', async () => {
+      const mockNewToken = 'new-token-from-fetch';
+      const mockFetchResponse = {
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({}),
+        clone: jest.fn().mockReturnValue({
+          headers: {
+            get: jest.fn().mockReturnValue(mockNewToken),
+          },
+        }),
+        headers: {
+          get: jest.fn().mockReturnValue(mockNewToken),
+        },
+      };
+
+      const originalFetch = jest.fn().mockResolvedValue(mockFetchResponse);
+      globalThis.fetch = originalFetch;
+
+      setupCredentialInterception();
+
+      // Test token regeneration fetch call
+      const regenUrl = 'https://selfserve.apis.rogersbank.com/authenticate/v1/authenticate/regeneratetoken/';
+      const response = await globalThis.fetch(regenUrl, {});
+
+      expect(response).toBe(mockFetchResponse);
+      expect(mockFetchResponse.clone).toHaveBeenCalled();
+    });
+
+    test('should handle fetch API errors gracefully', async () => {
+      const fetchError = new Error('Network error');
+      const originalFetch = jest.fn().mockRejectedValue(fetchError);
+      globalThis.fetch = originalFetch;
+
+      setupCredentialInterception();
+
+      // Test that errors are properly propagated
+      const regenUrl = 'https://selfserve.apis.rogersbank.com/authenticate/v1/authenticate/regeneratetoken/';
+      await expect(globalThis.fetch(regenUrl, {})).rejects.toThrow('Network error');
+    });
+
+    test('should handle non-Rogers Bank API calls normally', async () => {
+      const mockFetchResponse = { ok: true, status: 200 };
+      const originalFetch = jest.fn().mockResolvedValue(mockFetchResponse);
+      globalThis.fetch = originalFetch;
+
+      setupCredentialInterception();
+
+      // Test non-Rogers Bank URL
+      const normalUrl = 'https://example.com/api/data';
+      const response = await globalThis.fetch(normalUrl, {});
+
+      expect(response).toBe(mockFetchResponse);
+      expect(originalFetch).toHaveBeenCalledWith(normalUrl, {});
+    });
+
+    test('should handle Headers object in fetch options', async () => {
+      const mockFetchResponse = { ok: true, status: 200 };
+      const originalFetch = jest.fn().mockResolvedValue(mockFetchResponse);
+      globalThis.fetch = originalFetch;
+
+      setupCredentialInterception();
+
+      // Test with Headers object
+      const headers = new Headers();
+      headers.append('Authorization', 'Bearer test-token');
+      headers.append('AccountId', 'encoded-account');
+
+      const transactionUrl = 'https://selfserve.apis.rogersbank.com/corebank/v1/account/12345/customer/67890/transactions';
+      await globalThis.fetch(transactionUrl, { headers });
+
+      expect(globalThis.GM_setValue).toHaveBeenCalled();
     });
   });
 

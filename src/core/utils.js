@@ -468,36 +468,42 @@ export function stringSimilarity(str1, str2) {
     }
   }
 
-  debugLog(`Similarity calculation for "${str1}" vs "${str2}":`, {
-    words1,
-    words2,
-    baseSimilarity: baseSimilarity.toFixed(3),
-    expandedSimilarity: expandedSimilarity.toFixed(3),
-    exactWordMatches,
-    finalSimilarity: finalSimilarity.toFixed(3),
-  });
+  // Only log detailed similarity calculations in debug mode
+  const currentLogLevel = GM_getValue('debug_log_level', 'info');
+  if (currentLogLevel === 'debug') {
+    debugLog(`Similarity calculation for "${str1}" vs "${str2}":`, {
+      words1,
+      words2,
+      baseSimilarity: baseSimilarity.toFixed(3),
+      expandedSimilarity: expandedSimilarity.toFixed(3),
+      exactWordMatches,
+      finalSimilarity: finalSimilarity.toFixed(3),
+    });
+  }
 
   return Math.min(1, Math.max(0, finalSimilarity));
 }
 
 /**
- * Gets account ID from current URL
+ * Gets account ID from URL
+ * @param {Location} location - Location object (defaults to window.location)
  * @returns {string|null} Account ID from URL or null if not found
  */
-export function getAccountIdFromUrl() {
-  const matches = window.location.pathname.match(/\/accounts\/([^/]+)/);
+export function getAccountIdFromUrl(location = window.location) {
+  const matches = location.pathname.match(/\/accounts\/([^/]+)/);
   return matches ? matches[1] : null;
 }
 
 /**
- * Checks if current page is the Questrade all accounts page
+ * Checks if page is the Questrade all accounts page
+ * @param {Location} location - Location object (defaults to window.location)
  * @returns {boolean} True if on all accounts page
  */
-export function isQuestradeAllAccountsPage() {
+export function isQuestradeAllAccountsPage(location = window.location) {
   // Check that we're on the Questrade domain
-  const isQuestradeDomain = window.location.hostname.endsWith('questrade.com');
+  const isQuestradeDomain = location.hostname.endsWith('questrade.com');
   // Match the 'all accounts' page URL path (with or without trailing slash)
-  const { pathname } = window.location;
+  const { pathname } = location;
   const isAllAccountsPath = pathname === '/investing/summary' || pathname === '/investing/summary/';
 
   return isQuestradeDomain && isAllAccountsPath;
@@ -516,11 +522,12 @@ export async function clearAllGmStorage() {
 }
 
 /**
- * Gets the current financial institution from hostname
+ * Gets the financial institution from hostname
+ * @param {Location} location - Location object (defaults to window.location)
  * @returns {string} Institution name or 'unknown'
  */
-export function getCurrentInstitution() {
-  const { hostname } = window.location;
+export function getCurrentInstitution(location = window.location) {
+  const { hostname } = location;
   if (hostname.includes('questrade.com')) return 'questrade';
   if (hostname.includes('canadalife.com')) return 'canadalife';
   if (hostname.includes('rogersbank.com')) return 'rogersbank';
@@ -530,10 +537,11 @@ export function getCurrentInstitution() {
 
 /**
  * Clears transaction upload history (currently only Rogers Bank has this)
+ * @param {Location} location - Location object (defaults to window.location)
  */
-export async function clearTransactionUploadHistory() {
+export async function clearTransactionUploadHistory(location = window.location) {
   try {
-    const institution = getCurrentInstitution();
+    const institution = getCurrentInstitution(location);
     const keys = await GM_listValues();
     // Currently only Rogers Bank has uploaded transaction references
     if (institution === 'rogersbank') {
@@ -552,11 +560,12 @@ export async function clearTransactionUploadHistory() {
 }
 
 /**
- * Clears category mappings for the current financial institution
+ * Clears category mappings for the financial institution
+ * @param {Location} location - Location object (defaults to window.location)
  */
-export async function clearCategoryMappings() {
+export async function clearCategoryMappings(location = window.location) {
   try {
-    const institution = getCurrentInstitution();
+    const institution = getCurrentInstitution(location);
     let institutionName = '';
 
     switch (institution) {
@@ -579,11 +588,12 @@ export async function clearCategoryMappings() {
 }
 
 /**
- * Clears account mapping for the current financial institution
+ * Clears account mapping for the financial institution
+ * @param {Location} location - Location object (defaults to window.location)
  */
-export async function clearAccountMapping() {
+export async function clearAccountMapping(location = window.location) {
   try {
-    const institution = getCurrentInstitution();
+    const institution = getCurrentInstitution(location);
     const keys = await GM_listValues();
     let prefix = null;
     let institutionName = '';
@@ -619,11 +629,12 @@ export async function clearAccountMapping() {
 }
 
 /**
- * Clears last uploaded date for the current financial institution
+ * Clears last uploaded date for the financial institution
+ * @param {Location} location - Location object (defaults to window.location)
  */
-export async function clearLastUploadedDate() {
+export async function clearLastUploadedDate(location = window.location) {
   try {
-    const institution = getCurrentInstitution();
+    const institution = getCurrentInstitution(location);
     const keys = await GM_listValues();
     const keysToDelete = [];
     let institutionName = '';
