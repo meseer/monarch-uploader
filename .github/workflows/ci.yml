@@ -29,8 +29,8 @@ jobs:
     - name: Run linter
       run: npm run lint
 
-    - name: Run tests
-      run: npm test -- --coverage
+    - name: Run tests with coverage
+      run: npm run test:coverage
 
     - name: Build userscript
       run: BUILD_TYPE=dev npm run build

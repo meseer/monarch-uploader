@@ -28,30 +28,8 @@ module.exports = {
     '^.+\\.js$': 'babel-jest'
   },
   
-  // Coverage settings
-  collectCoverageFrom: [
-    'src/**/*.js',
-    '!**/node_modules/**',
-    '!**/vendor/**'
-  ],
-  
-  // Coverage output settings
-  coverageDirectory: 'coverage',
-  coverageReporters: [
-    'text',
-    'lcov',
-    'html'
-  ],
-  
-  // Coverage thresholds (optional - can be adjusted)
-  coverageThreshold: {
-    global: {
-      branches: 0, // Start with 0, increase as coverage improves
-      functions: 0,
-      lines: 0,
-      statements: 0
-    }
-  },
+  // Coverage is now handled by c8, not Jest
+  collectCoverage: false,
   
   // Setup files to run before each test
   setupFilesAfterEnv: [
