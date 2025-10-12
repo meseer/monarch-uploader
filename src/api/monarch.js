@@ -666,6 +666,231 @@ export async function getMonarchCategoriesAndGroups() {
 }
 
 /**
+ * Search for securities by ticker or name
+ * @param {string} searchTerm - Search term (ticker or security name)
+ * @param {Object} options - Search options
+ * @param {number} options.limit - Maximum number of results (default: 5)
+ * @param {boolean} options.orderByPopularity - Order results by popularity (default: true)
+ * @returns {Promise<Array>} Array of security objects
+ */
+export async function searchSecurities(searchTerm, options = {}) {
+  const { limit = 5, orderByPopularity = true } = options;
+
+  const { securities } = await callMonarchGraphQL(
+    'SecuritySearch',
+    `query SecuritySearch($search: String!, $limit: Int, $orderByPopularity: Boolean) {
+      securities(
+        search: $search
+        limit: $limit
+        orderByPopularity: $orderByPopularity
+      ) {
+        id
+        name
+        type
+        logo
+        ticker
+        typeDisplay
+        currentPrice
+        closingPrice
+        oneDayChangeDollars
+        oneDayChangePercent
+        __typename
+      }
+    }`,
+    {
+      search: searchTerm,
+      limit,
+      orderByPopularity,
+    },
+  );
+
+  return securities || [];
+}
+
+/**
+ * Create a new manual holding
+ * @param {string} accountId - Monarch account ID
+ * @param {string} securityId - Security ID from Monarch
+ * @param {number} quantity - Quantity of shares/units
+ * @returns {Promise<Object>} Created holding object with id and ticker
+ */
+export async function createManualHolding(accountId, securityId, quantity) {
+  const result = await callMonarchGraphQL(
+    'Common_CreateManualHolding',
+    `mutation Common_CreateManualHolding($input: CreateManualHoldingInput!) {
+      createManualHolding(input: $input) {
+        holding {
+          id
+          ticker
+          __typename
+        }
+        errors {
+          ...PayloadErrorFields
+          __typename
+        }
+        __typename
+      }
+    }
+    
+    fragment PayloadErrorFields on PayloadError {
+      fieldErrors {
+        field
+        messages
+        __typename
+      }
+      message
+      code
+      __typename
+    }`,
+    {
+      input: {
+        accountId,
+        securityId,
+        quantity,
+      },
+    },
+  );
+
+  if (result.createManualHolding.errors) {
+    const errorMsg = result.createManualHolding.errors.message || 'Failed to create manual holding';
+    throw new Error(errorMsg);
+  }
+
+  return result.createManualHolding.holding;
+}
+
+/**
+ * Update an existing holding
+ * @param {string} holdingId - Holding ID to update
+ * @param {Object} updates - Fields to update
+ * @param {number} updates.quantity - Quantity of shares/units
+ * @param {number} updates.costBasis - Cost basis per share/unit
+ * @param {string} updates.securityType - Security type (equity, etf, cash, etc.)
+ * @returns {Promise<string>} Updated holding ID
+ */
+export async function updateHolding(holdingId, updates) {
+  const input = { id: holdingId, ...updates };
+
+  const result = await callMonarchGraphQL(
+    'Common_UpdateHolding',
+    `mutation Common_UpdateHolding($input: UpdateHoldingInput!) {
+      updateHolding(input: $input) {
+        errors {
+          ...PayloadErrorFields
+          __typename
+        }
+        holding {
+          id
+          __typename
+        }
+        __typename
+      }
+    }
+    
+    fragment PayloadErrorFields on PayloadError {
+      fieldErrors {
+        field
+        messages
+        __typename
+      }
+      message
+      code
+      __typename
+    }`,
+    { input },
+  );
+
+  if (result.updateHolding.errors) {
+    const errorMsg = result.updateHolding.errors.message || 'Failed to update holding';
+    throw new Error(errorMsg);
+  }
+
+  return result.updateHolding.holding.id;
+}
+
+/**
+ * Get holdings for specified accounts
+ * @param {Array<string>} accountIds - Array of Monarch account IDs
+ * @param {Object} options - Query options
+ * @param {boolean} options.includeHiddenHoldings - Include hidden holdings (default: true)
+ * @param {string} options.startDate - Start date in YYYY-MM-DD format
+ * @param {string} options.endDate - End date in YYYY-MM-DD format
+ * @param {number} options.topMoversLimit - Limit for top movers (default: 4)
+ * @returns {Promise<Object>} Portfolio holdings data
+ */
+export async function getHoldings(accountIds, options = {}) {
+  const {
+    includeHiddenHoldings = true,
+    startDate = null,
+    endDate = null,
+    topMoversLimit = 4,
+  } = options;
+
+  const input = {
+    accountIds,
+    includeHiddenHoldings,
+    topMoversLimit,
+  };
+
+  if (startDate) input.startDate = startDate;
+  if (endDate) input.endDate = endDate;
+
+  const { portfolio } = await callMonarchGraphQL(
+    'Web_GetHoldings',
+    `query Web_GetHoldings($input: PortfolioInput) {
+      portfolio(input: $input) {
+        aggregateHoldings {
+          edges {
+            node {
+              id
+              quantity
+              basis
+              totalValue
+              securityPriceChangeDollars
+              securityPriceChangePercent
+              lastSyncedAt
+              holdings {
+                id
+                type
+                typeDisplay
+                name
+                ticker
+                closingPrice
+                isManual
+                closingPriceUpdatedAt
+                costBasis
+                quantity
+                __typename
+              }
+              security {
+                id
+                name
+                type
+                ticker
+                typeDisplay
+                currentPrice
+                currentPriceUpdatedAt
+                closingPrice
+                oneDayChangePercent
+                oneDayChangeDollars
+                __typename
+              }
+              __typename
+            }
+            __typename
+          }
+          __typename
+        }
+        __typename
+      }
+    }`,
+    { input },
+  );
+
+  return portfolio;
+}
+
+/**
  * Check token status and update state
  * @returns {Object} Auth status information
  */
@@ -692,6 +917,10 @@ export default {
   uploadTransactions: uploadTransactionsToMonarch,
   getCategoriesAndGroups: getMonarchCategoriesAndGroups,
   resolveAccountMapping: resolveMonarchAccountMapping,
+  searchSecurities,
+  createManualHolding,
+  updateHolding,
+  getHoldings,
   checkTokenStatus,
   getToken,
 };

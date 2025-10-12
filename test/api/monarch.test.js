@@ -14,6 +14,10 @@ import {
   uploadTransactionsToMonarch,
   resolveMonarchAccountMapping,
   getMonarchCategoriesAndGroups,
+  searchSecurities,
+  createManualHolding,
+  updateHolding,
+  getHoldings,
   checkTokenStatus,
   getToken,
 } from '../../src/api/monarch';
@@ -820,6 +824,403 @@ describe('Monarch API', () => {
         '2024-01-01',
         '2024-01-31',
       )).rejects.toThrow('Unknown upload status: unknown_status');
+    });
+  });
+
+  describe('searchSecurities', () => {
+    test('searches for securities with default options', async () => {
+      const mockSecurities = [
+        {
+          id: 'sec123',
+          name: 'Test Company',
+          type: 'equity',
+          ticker: 'TEST',
+          currentPrice: 100.50,
+        },
+      ];
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: { securities: mockSecurities },
+          }),
+        }), 0);
+      });
+
+      const result = await searchSecurities('TEST');
+
+      expect(result).toEqual(mockSecurities);
+      expect(mockGMXmlHttpRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'POST',
+          data: expect.stringContaining('SecuritySearch'),
+        }),
+      );
+    });
+
+    test('searches for securities with custom options', async () => {
+      const mockSecurities = [
+        { id: 'sec1', ticker: 'AMZN', name: 'Amazon.com Inc.' },
+        { id: 'sec2', ticker: 'AMZY', name: 'YieldMax AMZN ETF' },
+      ];
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.variables.limit).toBe(10);
+        expect(data.variables.orderByPopularity).toBe(false);
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: { securities: mockSecurities },
+          }),
+        }), 0);
+      });
+
+      const result = await searchSecurities('AMZN', {
+        limit: 10,
+        orderByPopularity: false,
+      });
+
+      expect(result).toEqual(mockSecurities);
+    });
+
+    test('returns empty array when no securities found', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: { securities: [] },
+          }),
+        }), 0);
+      });
+
+      const result = await searchSecurities('NONEXISTENT');
+
+      expect(result).toEqual([]);
+    });
+
+    test('handles authentication errors', async () => {
+      authService.checkMonarchAuth.mockReturnValue({
+        authenticated: false,
+        token: null,
+      });
+
+      await expect(searchSecurities('TEST'))
+        .rejects
+        .toThrow('Monarch token not found.');
+    });
+  });
+
+  describe('createManualHolding', () => {
+    test('creates manual holding successfully', async () => {
+      const mockHolding = {
+        id: 'holding123',
+        ticker: 'AMZN',
+      };
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              createManualHolding: {
+                holding: mockHolding,
+                errors: null,
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      const result = await createManualHolding('account123', 'security456', 100);
+
+      expect(result).toEqual(mockHolding);
+      expect(mockGMXmlHttpRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'POST',
+          data: expect.stringContaining('Common_CreateManualHolding'),
+        }),
+      );
+    });
+
+    test('throws error when creation fails with errors', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              createManualHolding: {
+                holding: null,
+                errors: {
+                  message: 'Invalid security ID',
+                  code: 'INVALID_SECURITY',
+                },
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      await expect(createManualHolding('account123', 'invalid', 100))
+        .rejects
+        .toThrow('Invalid security ID');
+    });
+
+    test('handles network errors', async () => {
+      const mockError = new Error('Network error');
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onerror(mockError), 0);
+      });
+
+      await expect(createManualHolding('account123', 'security456', 100))
+        .rejects
+        .toThrow('Network error');
+    });
+
+    test('handles authentication errors', async () => {
+      authService.checkMonarchAuth.mockReturnValue({
+        authenticated: false,
+        token: null,
+      });
+
+      await expect(createManualHolding('account123', 'security456', 100))
+        .rejects
+        .toThrow('Monarch token not found.');
+    });
+  });
+
+  describe('updateHolding', () => {
+    test('updates holding successfully with all fields', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.variables.input).toEqual({
+          id: 'holding123',
+          quantity: 150,
+          costBasis: 200.50,
+          securityType: 'equity',
+        });
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              updateHolding: {
+                holding: { id: 'holding123' },
+                errors: null,
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      const result = await updateHolding('holding123', {
+        quantity: 150,
+        costBasis: 200.50,
+        securityType: 'equity',
+      });
+
+      expect(result).toBe('holding123');
+    });
+
+    test('updates holding with partial fields', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.variables.input).toEqual({
+          id: 'holding123',
+          quantity: 150,
+        });
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              updateHolding: {
+                holding: { id: 'holding123' },
+                errors: null,
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      const result = await updateHolding('holding123', { quantity: 150 });
+
+      expect(result).toBe('holding123');
+    });
+
+    test('throws error when update fails with errors', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              updateHolding: {
+                holding: null,
+                errors: {
+                  message: 'Invalid quantity',
+                  code: 'INVALID_QUANTITY',
+                },
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      await expect(updateHolding('holding123', { quantity: -10 }))
+        .rejects
+        .toThrow('Invalid quantity');
+    });
+
+    test('handles authentication errors', async () => {
+      authService.checkMonarchAuth.mockReturnValue({
+        authenticated: false,
+        token: null,
+      });
+
+      await expect(updateHolding('holding123', { quantity: 150 }))
+        .rejects
+        .toThrow('Monarch token not found.');
+    });
+  });
+
+  describe('getHoldings', () => {
+    const mockPortfolio = {
+      aggregateHoldings: {
+        edges: [
+          {
+            node: {
+              id: 'sec123',
+              quantity: 100,
+              basis: 150.25,
+              totalValue: 15025.00,
+              holdings: [
+                {
+                  id: 'holding123',
+                  ticker: 'AMZN',
+                  quantity: 100,
+                  costBasis: 150.25,
+                },
+              ],
+            },
+          },
+        ],
+      },
+    };
+
+    test('retrieves holdings with default options', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.variables.input.accountIds).toEqual(['account123']);
+        expect(data.variables.input.includeHiddenHoldings).toBe(true);
+        expect(data.variables.input.topMoversLimit).toBe(4);
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: { portfolio: mockPortfolio },
+          }),
+        }), 0);
+      });
+
+      const result = await getHoldings(['account123']);
+
+      expect(result).toEqual(mockPortfolio);
+    });
+
+    test('retrieves holdings with custom options', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.variables.input).toEqual({
+          accountIds: ['account123', 'account456'],
+          includeHiddenHoldings: false,
+          topMoversLimit: 10,
+          startDate: '2024-01-01',
+          endDate: '2024-12-31',
+        });
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: { portfolio: mockPortfolio },
+          }),
+        }), 0);
+      });
+
+      const result = await getHoldings(['account123', 'account456'], {
+        includeHiddenHoldings: false,
+        startDate: '2024-01-01',
+        endDate: '2024-12-31',
+        topMoversLimit: 10,
+      });
+
+      expect(result).toEqual(mockPortfolio);
+    });
+
+    test('retrieves holdings with multiple accounts', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.variables.input.accountIds).toEqual(['acc1', 'acc2', 'acc3']);
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: { portfolio: mockPortfolio },
+          }),
+        }), 0);
+      });
+
+      const result = await getHoldings(['acc1', 'acc2', 'acc3']);
+
+      expect(result).toEqual(mockPortfolio);
+    });
+
+    test('handles empty holdings result', async () => {
+      const emptyPortfolio = {
+        aggregateHoldings: {
+          edges: [],
+        },
+      };
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: { portfolio: emptyPortfolio },
+          }),
+        }), 0);
+      });
+
+      const result = await getHoldings(['account123']);
+
+      expect(result).toEqual(emptyPortfolio);
+    });
+
+    test('handles authentication errors', async () => {
+      authService.checkMonarchAuth.mockReturnValue({
+        authenticated: false,
+        token: null,
+      });
+
+      await expect(getHoldings(['account123']))
+        .rejects
+        .toThrow('Monarch token not found.');
+    });
+
+    test('handles GraphQL errors', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            errors: [{ message: 'Invalid account ID' }],
+          }),
+        }), 0);
+      });
+
+      await expect(getHoldings(['invalid']))
+        .rejects
+        .toThrow();
     });
   });
 });
