@@ -5,6 +5,7 @@
 import {
   convertToCSV,
   convertTransactionsToMonarchCSV,
+  convertQuestradeOrdersToMonarchCSV,
   parseCSV,
 } from '../../src/utils/csv';
 
@@ -302,6 +303,202 @@ describe('CSV Conversion Utilities', () => {
       expect(result[0]).toEqual({ name: 'John' });
       expect(result[1]).toEqual({ name: 'Jane' });
       expect(result[2]).toEqual({ name: 'Bob' });
+    });
+  });
+
+  describe('convertQuestradeOrdersToMonarchCSV', () => {
+    test('should convert Questrade Buy orders to Monarch CSV format with positive amounts', () => {
+      const orders = [
+        {
+          orderUuid: 'uuid1',
+          status: 'Executed',
+          action: 'Buy',
+          security: {
+            displayName: 'Apple Inc.',
+            currency: 'USD',
+          },
+          updatedDateTime: '2024-01-15T10:30:00.000Z',
+          filledQuantity: 10,
+          averageFilledPrice: 150.00,
+          totalFees: 5.00,
+          orderStatement: 'Bought 10 shares',
+          resolvedMonarchCategory: 'Investment',
+        },
+      ];
+
+      const accountName = 'Questrade TFSA';
+      const result = convertQuestradeOrdersToMonarchCSV(orders, accountName);
+
+      expect(result).toContain('Date,Merchant,Category,Account,Original Statement,Notes,Amount,Tags');
+      expect(result).toContain('2024-01-15');
+      expect(result).toContain('Apple Inc.');
+      expect(result).toContain('Investment');
+      expect(result).toContain('Questrade TFSA');
+      expect(result).toContain('1500'); // Positive amount for Buy
+    });
+
+    test('should convert Questrade Sell orders to Monarch CSV format with negative amounts', () => {
+      const orders = [
+        {
+          orderUuid: 'uuid2',
+          status: 'Executed',
+          action: 'Sell',
+          security: {
+            displayName: 'Tesla Inc.',
+            currency: 'USD',
+          },
+          updatedDateTime: '2024-01-16T14:20:00.000Z',
+          filledQuantity: 5,
+          averageFilledPrice: 200.00,
+          totalFees: 3.00,
+          orderStatement: 'Sold 5 shares',
+          resolvedMonarchCategory: 'Investment',
+        },
+      ];
+
+      const accountName = 'Questrade RRSP';
+      const result = convertQuestradeOrdersToMonarchCSV(orders, accountName);
+
+      expect(result).toContain('Date,Merchant,Category,Account,Original Statement,Notes,Amount,Tags');
+      expect(result).toContain('2024-01-16');
+      expect(result).toContain('Tesla Inc.');
+      expect(result).toContain('Investment');
+      expect(result).toContain('Questrade RRSP');
+      expect(result).toContain('-1000'); // Negative amount for Sell
+    });
+
+    test('should handle mixed Buy and Sell orders correctly', () => {
+      const orders = [
+        {
+          action: 'Buy',
+          security: { displayName: 'Stock A', currency: 'USD' },
+          updatedDateTime: '2024-01-15T10:00:00.000Z',
+          filledQuantity: 10,
+          averageFilledPrice: 50.00,
+          totalFees: 2.00,
+          orderStatement: 'Buy order',
+          resolvedMonarchCategory: 'Investment',
+        },
+        {
+          action: 'Sell',
+          security: { displayName: 'Stock B', currency: 'USD' },
+          updatedDateTime: '2024-01-16T10:00:00.000Z',
+          filledQuantity: 20,
+          averageFilledPrice: 30.00,
+          totalFees: 3.00,
+          orderStatement: 'Sell order',
+          resolvedMonarchCategory: 'Investment',
+        },
+      ];
+
+      const result = convertQuestradeOrdersToMonarchCSV(orders, 'Test Account');
+      
+      // Check the CSV contains both positive and negative amounts
+      expect(result).toContain('500,'); // Buy: positive
+      expect(result).toContain('-600,'); // Sell: negative
+      
+      // Verify it has 2 data rows plus header
+      expect(result).toContain('2024-01-15');
+      expect(result).toContain('2024-01-16');
+      expect(result).toContain('Stock A');
+      expect(result).toContain('Stock B');
+    });
+
+    test('should handle orders with missing fields', () => {
+      const orders = [
+        {
+          action: 'Buy',
+          // Missing most fields
+        },
+      ];
+
+      const result = convertQuestradeOrdersToMonarchCSV(orders, 'Test Account');
+      expect(result).toContain('Date,Merchant,Category,Account,Original Statement,Notes,Amount,Tags');
+      expect(result).toContain('Unknown Security');
+      expect(result).toContain('Uncategorized');
+      expect(result).toContain('0'); // Amount should be 0 for missing values
+    });
+
+    test('should build comprehensive notes field', () => {
+      const orders = [
+        {
+          action: 'Buy',
+          security: {
+            displayName: 'Apple Inc.',
+            currency: 'CAD',
+          },
+          updatedDateTime: '2024-01-15T10:00:00.000Z',
+          filledQuantity: 100,
+          averageFilledPrice: 25.50,
+          totalFees: 9.99,
+          orderStatement: 'Market order filled',
+          resolvedMonarchCategory: 'Investment',
+        },
+      ];
+
+      const result = convertQuestradeOrdersToMonarchCSV(orders, 'Test Account');
+      expect(result).toContain('Market order filled');
+      expect(result).toContain('Filled 100 @ 25.5');
+      expect(result).toContain('fees: 9.99 CAD');
+      expect(result).toContain('total: 2550 CAD');
+    });
+
+    test('should format date correctly from updatedDateTime', () => {
+      const orders = [
+        {
+          action: 'Buy',
+          security: { displayName: 'Test Security' },
+          updatedDateTime: '2024-12-31T23:59:59.999Z',
+          filledQuantity: 1,
+          averageFilledPrice: 100,
+          resolvedMonarchCategory: 'Investment',
+        },
+      ];
+
+      const result = convertQuestradeOrdersToMonarchCSV(orders, 'Test Account');
+      expect(result).toContain('2024-12-31'); // ISO date format YYYY-MM-DD
+    });
+
+    test('should handle empty orders array', () => {
+      const result = convertQuestradeOrdersToMonarchCSV([], 'Test Account');
+      expect(result).toBe('');
+    });
+
+    test('should handle null orders', () => {
+      const result = convertQuestradeOrdersToMonarchCSV(null, 'Test Account');
+      expect(result).toBe('');
+    });
+
+    test('should use resolved Monarch category', () => {
+      const orders = [
+        {
+          action: 'Buy',
+          security: { displayName: 'Test Security' },
+          updatedDateTime: '2024-01-15T10:00:00.000Z',
+          filledQuantity: 10,
+          averageFilledPrice: 50,
+          resolvedMonarchCategory: 'Custom Category',
+        },
+      ];
+
+      const result = convertQuestradeOrdersToMonarchCSV(orders, 'Test Account');
+      expect(result).toContain('Custom Category');
+    });
+
+    test('should fall back to Uncategorized when no category provided', () => {
+      const orders = [
+        {
+          action: 'Buy',
+          security: { displayName: 'Test Security' },
+          updatedDateTime: '2024-01-15T10:00:00.000Z',
+          filledQuantity: 10,
+          averageFilledPrice: 50,
+          // No resolvedMonarchCategory
+        },
+      ];
+
+      const result = convertQuestradeOrdersToMonarchCSV(orders, 'Test Account');
+      expect(result).toContain('Uncategorized');
     });
   });
 

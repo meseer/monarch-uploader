@@ -11,6 +11,7 @@ import monarchApi from '../../api/monarch';
 import questradeApi from '../../api/questrade';
 import balanceService from './balance';
 import positionsService from './positions';
+import transactionsService from './transactions';
 import toast from '../../ui/toast';
 import { showProgressDialog } from '../../ui/components/progressDialog';
 import { showDatePickerPromise } from '../../ui/components/datePicker';
@@ -92,8 +93,32 @@ export async function syncAccountToMonarch(accountId, accountName, fromDate, toD
       }
     }
 
-    // Step 3: Future - Sync transactions
-    // TODO: Implement transaction sync
+    // Step 3: Sync transactions (gracefully handle failures)
+    if (progressDialog) {
+      progressDialog.updateProgress(accountId, 'processing', 'Syncing transactions...');
+    }
+
+    try {
+      const transactionsResult = await transactionsService.processAndUploadTransactions(
+        accountId,
+        accountName,
+        fromDate,
+        progressDialog,
+      );
+
+      if (transactionsResult.success) {
+        debugLog(`Transactions sync completed: ${transactionsResult.ordersProcessed} processed`);
+        if (transactionsResult.skippedDuplicates) {
+          debugLog(`Skipped ${transactionsResult.skippedDuplicates} duplicate orders`);
+        }
+      }
+    } catch (transactionsError) {
+      debugLog('Error syncing transactions (non-fatal):', transactionsError);
+      // Don't fail the entire sync if transactions fail
+      if (progressDialog) {
+        progressDialog.updateProgress(accountId, 'success', 'Balance and positions synced (transactions error)');
+      }
+    }
 
     return true;
   } catch (error) {

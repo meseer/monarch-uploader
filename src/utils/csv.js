@@ -137,6 +137,75 @@ export function convertTransactionsToMonarchCSV(transactions, accountName) {
 }
 
 /**
+ * Convert Questrade orders to Monarch CSV format
+ * @param {Array} orders - Array of Questrade order objects
+ * @param {string} accountName - Questrade account name for the Account column
+ * @returns {string} CSV string formatted for Monarch
+ */
+export function convertQuestradeOrdersToMonarchCSV(orders, accountName) {
+  if (!orders || orders.length === 0) {
+    return '';
+  }
+
+  // Define Monarch CSV columns
+  const columns = [
+    'Date',
+    'Merchant',
+    'Category',
+    'Account',
+    'Original Statement',
+    'Notes',
+    'Amount',
+    'Tags',
+  ];
+
+  // Transform orders to Monarch format
+  const monarchRows = orders.map((order) => {
+    // Use security display name as merchant
+    const merchant = order.security?.displayName || 'Unknown Security';
+
+    // Use resolved Monarch category
+    const category = order.resolvedMonarchCategory || 'Uncategorized';
+
+    // Format date from updatedDateTime
+    let date = '';
+    if (order.updatedDateTime) {
+      const dateObj = new Date(order.updatedDateTime);
+      date = dateObj.toISOString().split('T')[0]; // YYYY-MM-DD format
+    }
+
+    // Build comprehensive notes field
+    const orderStatement = order.orderStatement || '';
+    const filledQuantity = order.filledQuantity || 0;
+    const averageFilledPrice = order.averageFilledPrice || 0;
+    const totalFees = order.totalFees || 0;
+    const currency = order.security?.currency || '';
+    const amount = filledQuantity * averageFilledPrice;
+
+    const notes = `${orderStatement} \nFilled ${filledQuantity} @ ${averageFilledPrice}, fees: ${totalFees} ${currency}, total: ${amount} ${currency}`.trim();
+
+    return {
+      Date: date,
+      Merchant: merchant,
+      Category: category,
+      Account: accountName,
+      'Original Statement': merchant,
+      Notes: notes,
+      Amount: order.action === 'Sell' ? -Math.abs(amount) : Math.abs(amount),
+      Tags: '', // Empty for now
+    };
+  });
+
+  debugLog('Transformed Questrade orders for CSV:', {
+    originalCount: orders.length,
+    transformedCount: monarchRows.length,
+    sample: monarchRows[0], // Log first row as sample
+  });
+
+  return convertToCSV(monarchRows, columns);
+}
+
+/**
  * Parse CSV string to array of objects
  * @param {string} csvString - CSV string to parse
  * @param {boolean} hasHeader - Whether the first row is a header

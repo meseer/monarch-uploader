@@ -98,18 +98,41 @@ export function getQuestradeAccount(accountId) {
 
 /**
  * Fetch positions for a specific account
- * @param {string} accountUuid - Account UUID to fetch positions for
+ * @param {string} accountId - Account Id to fetch positions for
  * @param {string} [sortBy='%2BmarketValue'] - Sort order (URL-encoded, e.g., %2BmarketValue for ascending market value)
  * @returns {Promise<Object>} Response with data array and metadata
  */
-export async function fetchAccountPositions(accountUuid, sortBy = '%2BmarketValue') {
-  if (!accountUuid) {
-    throw new Error('Account UUID is required');
+export async function fetchAccountPositions(accountId, sortBy = '%2BmarketValue') {
+  if (!accountId) {
+    throw new Error('Account Id is required');
   }
 
-  const endpoint = `/v1/positions?sort-by=${sortBy}&account-uuid=${accountUuid}`;
-  debugLog(`Fetching positions for account: ${accountUuid}`);
+  const endpoint = `/v1/positions?sort-by=${sortBy}&account-uuid=${accountId}`;
+  debugLog(`Fetching positions for account: ${accountId}`);
   return makeQuestradeApiCall(endpoint, ['brokerage.positions.read']);
+}
+
+/**
+ * Fetch orders for a specific account
+ * @param {string} accountId - Account Id to fetch orders for
+ * @param {string} fromDate - Start date in ISO format (e.g., '2025-09-12T02:29:57.993Z')
+ * @param {string} [statusGroup='All'] - Status group filter (All, Open, Closed, etc.)
+ * @param {number} [limit=1000] - Maximum number of orders to fetch
+ * @param {string} [sortBy='-createdDateTime'] - Sort order (e.g., '-createdDateTime' for descending)
+ * @returns {Promise<Object>} Response with data array and metadata
+ */
+export async function fetchAccountOrders(accountId, fromDate, statusGroup = 'All', limit = 1000, sortBy = '-createdDateTime') {
+  if (!accountId) {
+    throw new Error('Account Id is required');
+  }
+
+  if (!fromDate) {
+    throw new Error('From date is required');
+  }
+
+  const endpoint = `/v1/orders?from-date=${fromDate}&status-group=${statusGroup}&limit=${limit}&sort-by=${sortBy}&account-uuid=${accountId}`;
+  debugLog(`Fetching orders for account: ${accountId} from ${fromDate}`);
+  return makeQuestradeApiCall(endpoint, ['brokerage.orders.all']);
 }
 
 /**
@@ -134,6 +157,7 @@ export default {
   fetchAccounts: fetchAndCacheQuestradeAccounts,
   getAccount: getQuestradeAccount,
   fetchPositions: fetchAccountPositions,
+  fetchOrders: fetchAccountOrders,
   checkTokenStatus,
   getToken,
 };

@@ -21,6 +21,8 @@ export const STORAGE = {
   QUESTRADE_LAST_UPLOAD_DATE_PREFIX: 'questrade_last_upload_date_',
   QUESTRADE_ACCOUNT_MAPPING_PREFIX: 'questrade_monarch_account_for_',
   QUESTRADE_HOLDINGS_FOR_PREFIX: 'questrade_holdings_for_',
+  QUESTRADE_UPLOADED_ORDERS_PREFIX: 'questrade_uploaded_orders_', // Store uploaded order UUIDs per account
+  QUESTRADE_ORDER_CATEGORY_MAPPINGS: 'questrade_order_category_mappings', // Store order action to Monarch category mappings
   // CanadaLife specific storage keys
   CANADALIFE_TOKEN_KEY: '$AuraClientService.token$siteforce:communityApp',
   CANADALIFE_LAST_UPLOAD_DATE_PREFIX: 'canadalife_last_upload_date_',
