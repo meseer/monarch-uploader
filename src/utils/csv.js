@@ -182,7 +182,7 @@ export function convertQuestradeOrdersToMonarchCSV(orders, accountName) {
     const currency = order.security?.currency || '';
     const amount = filledQuantity * averageFilledPrice;
 
-    const notes = `${orderStatement} \nFilled ${filledQuantity} @ ${averageFilledPrice}, fees: ${totalFees} ${currency}, total: ${amount} ${currency}`.trim();
+    const notes = `${orderStatement} \nFilled ${filledQuantity} @ ${averageFilledPrice}, fees: ${totalFees} ${currency}\nTotal: ${amount} ${currency}`.trim();
 
     return {
       Date: date,

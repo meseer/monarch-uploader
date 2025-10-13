@@ -44,8 +44,10 @@ jobs:
         PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
         if [ -n "$PREVIOUS_TAG" ]; then
           CHANGELOG=$(git log --pretty=format:"- %s" $PREVIOUS_TAG..HEAD)
+          CONDENSED_CHANGELOG=$(git log --pretty=format:"%s" $PREVIOUS_TAG..HEAD | head -n 10 | paste -sd " | " -)
         else
           CHANGELOG=$(git log --pretty=format:"- %s" HEAD)
+          CONDENSED_CHANGELOG=$(git log -1 --pretty=format:"%s")
         fi
         
         # Write changelog to file
@@ -72,6 +74,10 @@ jobs:
         
         echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
         cat CHANGELOG.md >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        echo "CONDENSED_CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+        echo "$CONDENSED_CHANGELOG" >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
 
     - name: Create Release
@@ -134,10 +140,13 @@ jobs:
         VERSION="${{ steps.version.outputs.VERSION }}"
         VERSION="${VERSION#v}"
         
+        # Get condensed changelog
+        CONDENSED_CHANGELOG="${{ steps.changelog.outputs.CONDENSED_CHANGELOG }}"
+        
         # Create the JSON payload
         cat > gist_update.json << EOF
         {
-          "description": "Monarch Money Balance Uploader v${VERSION} - Tampermonkey userscript for uploading balance history from Questrade, Canada Life, and Rogers Bank to Monarch Money",
+          "description": "Monarch Money Balance Uploader v${VERSION} - Tampermonkey userscript | Changes: ${CONDENSED_CHANGELOG}",
           "files": {
             "monarch-uploader.user.js": {
               "content": $ESCAPED_CONTENT

@@ -134,11 +134,12 @@ jobs:
         # Get version and commit info
         VERSION="${{ steps.version.outputs.VERSION }}"
         COMMIT_SHA=$(git rev-parse --short HEAD)
+        COMMIT_MSG=$(git log -1 --pretty=format:"%s")
         
         # Create the JSON payload
         cat > gist_update.json << EOF
         {
-          "description": "Monarch Money Balance Uploader v${VERSION}-dev (commit ${COMMIT_SHA}) - Tampermonkey userscript for uploading balance history from Questrade, Canada Life, and Rogers Bank to Monarch Money",
+          "description": "Monarch Money Balance Uploader v${VERSION}-dev (commit ${COMMIT_SHA}) - Tampermonkey userscript | Latest: ${COMMIT_MSG}",
           "files": {
             "monarch-uploader.user.js": {
               "content": $ESCAPED_CONTENT
