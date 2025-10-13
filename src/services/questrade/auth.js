@@ -17,27 +17,16 @@ export class AuthError extends Error {
   }
 }
 
-// Token cache to avoid repeated storage lookups
-let questradeTokenCache = null;
-let questradeTokenTimestamp = 0;
-const TOKEN_CACHE_DURATION = 5000; // 5 seconds
-
 /**
  * Get Questrade authentication token from sessionStorage
+ * @param {Array<string>} requiredPermissions - List of required permissions for the token
  * @returns {Object|null} Token info or null if not found
  */
-export function getQuestradeToken() {
-  // Check if we have a recent cached token
-  if (questradeTokenCache && (Date.now() - questradeTokenTimestamp < TOKEN_CACHE_DURATION)) {
-    return questradeTokenCache;
-  }
-
-  const requiredPermissions = [
-    'brokerage.balances.all',
-    'brokerage.account-transactions.read',
-    'brokerage.accounts.read',
-  ];
-
+export function getQuestradeToken(requiredPermissions = [
+  'brokerage.balances.all',
+  'brokerage.account-transactions.read',
+  'brokerage.accounts.read',
+]) {
   let latestValidToken = null;
 
   for (let i = 0; i < sessionStorage.length; i += 1) {
@@ -71,29 +60,32 @@ export function getQuestradeToken() {
       ? latestValidToken.access_token
       : `Bearer ${latestValidToken.access_token}`;
 
-    questradeTokenCache = {
+    const tokenInfo = {
       token: formattedToken,
       expires_at: latestValidToken.expires_at,
     };
-    questradeTokenTimestamp = Date.now();
 
     // Update state manager with the token
-    stateManager.setQuestradeAuth(questradeTokenCache);
+    stateManager.setQuestradeAuth(tokenInfo);
 
-    return questradeTokenCache;
+    return tokenInfo;
   }
 
-  questradeTokenCache = null;
   stateManager.setQuestradeAuth(null);
   return null;
 }
 
 /**
  * Check Questrade authentication status
+ * @param {Array<string>} requiredPermissions - List of required permissions for the token
  * @returns {Object} Auth status information
  */
-export function checkQuestradeAuth() {
-  const tokenInfo = getQuestradeToken();
+export function checkQuestradeAuth(requiredPermissions = [
+  'brokerage.balances.all',
+  'brokerage.account-transactions.read',
+  'brokerage.accounts.read',
+]) {
+  const tokenInfo = getQuestradeToken(requiredPermissions);
 
   if (!tokenInfo) {
     return {
@@ -132,23 +124,13 @@ export function questradeTokenNeedsRefresh() {
 export function saveQuestradeToken(token) {
   try {
     // For Questrade, we don't directly save tokens as they're managed by the platform
-    // This is just for testing or specific scenarios
-    questradeTokenCache = token;
-    questradeTokenTimestamp = token ? Date.now() : 0;
+    // This is just for updating the state manager (primarily for testing)
     stateManager.setQuestradeAuth(token);
-    debugLog('Updated Questrade token cache');
+    debugLog('Updated Questrade token in state manager');
   } catch (error) {
     debugLog('Error saving Questrade token:', error);
     throw new AuthError('Failed to save Questrade token', 'questrade');
   }
-}
-
-/**
- * Clear the token cache (primarily for testing)
- */
-export function clearQuestradeTokenCache() {
-  questradeTokenCache = null;
-  questradeTokenTimestamp = 0;
 }
 
 // Default export with all methods

@@ -70,7 +70,7 @@ export function callMonarchGraphQL(operation, query, variables) {
 
         if (res.status === 401) {
           // Token is invalid or expired, clear auth state
-          authService.saveToken('monarch', null);
+          authService.saveMonarchToken(null);
           stateManager.setMonarchAuth(null);
           reject(new Error('Monarch Auth Error (401): Token was invalid or expired.'));
           return;
@@ -809,6 +809,46 @@ export async function updateHolding(holdingId, updates) {
 }
 
 /**
+ * Delete a holding
+ * @param {string} holdingId - Holding ID to delete
+ * @returns {Promise<boolean>} True if deleted successfully
+ */
+export async function deleteHolding(holdingId) {
+  const result = await callMonarchGraphQL(
+    'Common_DeleteHolding',
+    `mutation Common_DeleteHolding($id: ID!) {
+      deleteHolding(id: $id) {
+        deleted
+        errors {
+          ...PayloadErrorFields
+          __typename
+        }
+        __typename
+      }
+    }
+    
+    fragment PayloadErrorFields on PayloadError {
+      fieldErrors {
+        field
+        messages
+        __typename
+      }
+      message
+      code
+      __typename
+    }`,
+    { id: holdingId },
+  );
+
+  if (result.deleteHolding.errors) {
+    const errorMsg = result.deleteHolding.errors.message || 'Failed to delete holding';
+    throw new Error(errorMsg);
+  }
+
+  return result.deleteHolding.deleted;
+}
+
+/**
  * Get holdings for specified accounts
  * @param {Array<string>} accountIds - Array of Monarch account IDs
  * @param {Object} options - Query options
@@ -920,6 +960,7 @@ export default {
   searchSecurities,
   createManualHolding,
   updateHolding,
+  deleteHolding,
   getHoldings,
   checkTokenStatus,
   getToken,

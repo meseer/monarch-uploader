@@ -39,6 +39,7 @@ module.exports = (env, argv) => {
     },
     optimization: {
       minimize: isProduction,
+      splitChunks: false, // Disable code splitting for userscripts (must be single file)
       minimizer: [
         new TerserPlugin({
           terserOptions: {

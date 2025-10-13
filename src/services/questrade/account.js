@@ -9,6 +9,7 @@ import stateManager from '../../core/state';
 import questradeApi from '../../api/questrade';
 import authService from './auth';
 import balanceService from './balance';
+import syncService from './sync';
 
 /**
  * Custom account error class
@@ -144,8 +145,8 @@ export async function getAllAccounts(refresh = false) {
  * @returns {Promise<boolean>} Success status
  */
 export async function processAccountBalanceHistory(accountId, accountName, fromDate, toDate) {
-  // Delegate to balance service
-  return balanceService.processAndUploadBalance(accountId, accountName, fromDate, toDate);
+  // Use sync orchestrator to sync both balance and positions
+  return syncService.syncAccountToMonarch(accountId, accountName, fromDate, toDate);
 }
 
 /**

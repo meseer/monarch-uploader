@@ -4,12 +4,13 @@
 
 import authService, {
   AuthError,
-  getQuestradeToken,
-  checkQuestradeAuth,
   getMonarchToken,
   checkMonarchAuth,
-  isFullyAuthenticated,
 } from '../../src/services/auth';
+import {
+  getQuestradeToken,
+  checkQuestradeAuth,
+} from '../../src/services/questrade/auth';
 import stateManager from '../../src/core/state';
 import { STORAGE } from '../../src/core/config';
 
@@ -194,122 +195,21 @@ describe('Auth Service', () => {
     });
   });
 
-  describe('Combined Authentication', () => {
-    test('isFullyAuthenticated should return true when both services are authenticated', () => {
-      // Use a unique time for this test
-      const mockNow = 1641168000000; // 2022-01-03 00:00:00 (48 hours later)
-      jest.spyOn(Date, 'now').mockReturnValue(mockNow);
-
-      // Mock sessionStorage with valid Questrade token data
-      const mockQuestradeTokenData = {
-        access_token: 'questrade_token_789',
-        expires_at: Math.floor(mockNow / 1000) + 2400, // Expires in 40 minutes
-        scope: 'brokerage.balances.all brokerage.account-transactions.read brokerage.accounts.read',
-      };
-
-      // Setup sessionStorage mock for Questrade
-      const mockSessionStorage = {
-        length: 1,
-        key: jest.fn((index) => {
-          if (index === 0) {
-            return 'oidc.user:https://login.questrade.com/both123';
-          }
-          return null;
-        }),
-        getItem: jest.fn((key) => {
-          if (key === 'oidc.user:https://login.questrade.com/both123') {
-            return JSON.stringify(mockQuestradeTokenData);
-          }
-          return null;
-        }),
-      };
-
-      Object.defineProperty(global, 'sessionStorage', {
-        value: mockSessionStorage,
-        writable: true,
-      });
-
-      // Mock GM_getValue for Monarch token (authenticated)
-      global.GM_getValue.mockReturnValueOnce('monarch_authenticated_token');
-
-      const result = isFullyAuthenticated();
-      expect(result).toBe(true);
-    });
-
-    test('isFullyAuthenticated should return false when Questrade is not authenticated', () => {
-      // Mock empty sessionStorage (no Questrade token)
-      global.sessionStorage.length = 0;
-
-      // Mock GM_getValue for Monarch token (authenticated)
-      global.GM_getValue.mockReturnValueOnce('monarch_test_token');
-
-      const result = isFullyAuthenticated();
-      expect(result).toBe(false);
-    });
-
-    test('isFullyAuthenticated should return false when Monarch is not authenticated', () => {
-      // Use a unique time for this test
-      const mockNow = 1641254400000; // 2022-01-04 00:00:00 (72 hours later)
-      jest.spyOn(Date, 'now').mockReturnValue(mockNow);
-
-      // Mock sessionStorage with valid Questrade token data
-      const mockQuestradeTokenData = {
-        access_token: 'questrade_valid_token',
-        expires_at: Math.floor(mockNow / 1000) + 3000, // Expires in 50 minutes
-        scope: 'brokerage.balances.all brokerage.account-transactions.read brokerage.accounts.read',
-      };
-
-      // Setup sessionStorage mock for Questrade (authenticated)
-      const mockSessionStorage = {
-        length: 1,
-        key: jest.fn((index) => {
-          if (index === 0) {
-            return 'oidc.user:https://login.questrade.com/nomonarch123';
-          }
-          return null;
-        }),
-        getItem: jest.fn((key) => {
-          if (key === 'oidc.user:https://login.questrade.com/nomonarch123') {
-            return JSON.stringify(mockQuestradeTokenData);
-          }
-          return null;
-        }),
-      };
-
-      Object.defineProperty(global, 'sessionStorage', {
-        value: mockSessionStorage,
-        writable: true,
-      });
-
-      // Mock GM_getValue for Monarch token (not authenticated)
-      global.GM_getValue.mockReturnValueOnce(null);
-
-      const result = isFullyAuthenticated();
-      expect(result).toBe(false);
-    });
-  });
-
   describe('Token Management', () => {
-    test('saveToken should store a Monarch token', () => {
-      authService.saveToken('monarch', 'new_monarch_token');
+    test('saveMonarchToken should store a Monarch token', () => {
+      authService.saveMonarchToken('new_monarch_token');
       expect(GM_setValue).toHaveBeenCalledWith(STORAGE.MONARCH_TOKEN, 'new_monarch_token');
       expect(stateManager.setMonarchAuth).toHaveBeenCalledWith('new_monarch_token');
     });
 
-    test('saveToken should update Questrade token cache', () => {
-      const token = { token: 'Bearer new_questrade_token', expires_at: 12345 };
-      authService.saveToken('questrade', token);
-      expect(stateManager.setQuestradeAuth).toHaveBeenCalledWith(token);
-    });
-
-    test('saveToken should throw AuthError on error', () => {
+    test('saveMonarchToken should throw AuthError on error', () => {
       // Mock GM_setValue to throw an error
       global.GM_setValue.mockImplementationOnce(() => {
         throw new Error('Storage error');
       });
 
       expect(() => {
-        authService.saveToken('monarch', 'new_token');
+        authService.saveMonarchToken('new_token');
       }).toThrow(AuthError);
     });
   });

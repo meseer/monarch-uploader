@@ -211,22 +211,22 @@ export function createBulkUploadButton(accounts) {
     return createButton('No Accounts Available', null, { disabled: true });
   }
 
-  return createButton(`Upload All ${accounts.length} Accounts`, async () => {
+  return createButton(`Sync All ${accounts.length} Accounts`, async () => {
     // Check Monarch authentication before proceeding
-    const authenticated = await ensureMonarchAuthentication(null, 'upload all accounts');
+    const authenticated = await ensureMonarchAuthentication(null, 'sync all accounts');
     if (!authenticated) {
       return; // User cancelled authentication
     }
 
-    // Import balance service dynamically to avoid circular imports
-    const { uploadAllAccountsToMonarch } = await import('../../../services/questrade/balance');
+    // Import sync service dynamically to avoid circular imports
+    const { syncAllAccountsToMonarch } = await import('../../../services/questrade/sync');
 
     try {
-      // Call the comprehensive upload function
-      await uploadAllAccountsToMonarch();
+      // Call the comprehensive sync function (balance + positions)
+      await syncAllAccountsToMonarch();
     } catch (error) {
       toast.show(`Error: ${error.message}`, 'error');
-      debugLog('Error in bulk upload:', error);
+      debugLog('Error in bulk sync:', error);
     }
   }, { color: '#17a2b8' });
 }

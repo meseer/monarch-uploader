@@ -7,7 +7,6 @@ import { debugLog } from '../core/utils';
 import { STORAGE } from '../core/config';
 import stateManager from '../core/state';
 import toast from '../ui/toast';
-import { checkQuestradeAuth, getQuestradeToken, saveQuestradeToken } from './questrade/auth';
 
 /**
  * Custom authentication error class
@@ -86,26 +85,6 @@ export function setupMonarchTokenCapture() {
 }
 
 /**
- * Check authentication status for both Questrade and Monarch
- * @returns {Object} Auth status for both providers
- */
-export function checkAllAuth() {
-  return {
-    questrade: checkQuestradeAuth(),
-    monarch: checkMonarchAuth(),
-  };
-}
-
-/**
- * Verify that both Questrade and Monarch auth are valid
- * @returns {boolean} True if both authenticated
- */
-export function isFullyAuthenticated() {
-  const status = checkAllAuth();
-  return status.questrade.authenticated && status.monarch.authenticated;
-}
-
-/**
  * Save a token for Monarch
  * @param {string} token - Token to save
  */
@@ -122,42 +101,11 @@ export function saveMonarchToken(token) {
   }
 }
 
-/**
- * Save a token for a specific provider
- * @param {string} provider - Provider name ('monarch' or 'questrade')
- * @param {string|Object} token - Token to save
- */
-export function saveToken(provider, token) {
-  if (!token) return;
-
-  try {
-    if (provider.toLowerCase() === 'monarch') {
-      saveMonarchToken(token);
-    } else if (provider.toLowerCase() === 'questrade') {
-      saveQuestradeToken(token);
-    } else {
-      throw new AuthError(`Provider ${provider} not supported in shared auth service`, provider);
-    }
-  } catch (error) {
-    debugLog(`Error saving ${provider} token:`, error);
-    throw new AuthError(`Failed to save ${provider} token`, provider);
-  }
-}
-
-// Re-export Questrade auth functions for external access
-export { getQuestradeToken, checkQuestradeAuth, saveQuestradeToken };
-
 // Default export with all methods
 export default {
   getMonarchToken,
   checkMonarchAuth,
   setupMonarchTokenCapture,
-  checkAllAuth,
-  isFullyAuthenticated,
-  saveToken,
   saveMonarchToken,
-  getQuestradeToken,
-  checkQuestradeAuth,
-  saveQuestradeToken,
   AuthError,
 };

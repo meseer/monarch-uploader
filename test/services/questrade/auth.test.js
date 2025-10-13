@@ -7,7 +7,6 @@ import {
   checkQuestradeAuth,
   questradeTokenNeedsRefresh,
   saveQuestradeToken,
-  clearQuestradeTokenCache,
 } from '../../../src/services/questrade/auth';
 import stateManager from '../../../src/core/state';
 
@@ -25,9 +24,6 @@ describe('Questrade Auth Service', () => {
   beforeEach(() => {
     // Clear all mocks before each test
     jest.clearAllMocks();
-
-    // Clear token cache to ensure clean state for each test
-    clearQuestradeTokenCache();
 
     // Mock sessionStorage
     Object.defineProperty(window, 'sessionStorage', {
@@ -102,6 +98,68 @@ describe('Questrade Auth Service', () => {
 
       expect(result).toBeNull();
     });
+
+    test('should accept custom required permissions', () => {
+      const mockSessionData = {
+        access_token: 'positions-token',
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        scope: 'brokerage.positions.read',
+      };
+
+      window.sessionStorage.length = 1;
+      window.sessionStorage.key.mockReturnValueOnce('oidc.user:https://login.questrade.com/:qtweb');
+      window.sessionStorage.getItem.mockReturnValueOnce(JSON.stringify(mockSessionData));
+
+      const result = getQuestradeToken(['brokerage.positions.read']);
+
+      expect(result).toBeDefined();
+      expect(result.token).toBe('Bearer positions-token');
+    });
+
+    test('should return null when custom permissions not met', () => {
+      const mockSessionData = {
+        access_token: 'balance-token',
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        scope: 'brokerage.balances.all',
+      };
+
+      window.sessionStorage.length = 1;
+      window.sessionStorage.key.mockReturnValueOnce('oidc.user:https://login.questrade.com/:qtweb');
+      window.sessionStorage.getItem.mockReturnValueOnce(JSON.stringify(mockSessionData));
+
+      // Request positions permission but token only has balances
+      const result = getQuestradeToken(['brokerage.positions.read']);
+
+      expect(result).toBeNull();
+    });
+
+    test('should select token with latest expiry when multiple valid tokens exist', () => {
+      const oldTokenData = {
+        access_token: 'old-token',
+        expires_at: Math.floor(Date.now() / 1000) + 1800, // 30 minutes from now
+        scope: 'brokerage.positions.read',
+      };
+
+      const newTokenData = {
+        access_token: 'new-token',
+        expires_at: Math.floor(Date.now() / 1000) + 3600, // 1 hour from now
+        scope: 'brokerage.positions.read',
+      };
+
+      window.sessionStorage.length = 2;
+      window.sessionStorage.key
+        .mockReturnValueOnce('oidc.user:https://login.questrade.com/:old')
+        .mockReturnValueOnce('oidc.user:https://login.questrade.com/:new');
+      window.sessionStorage.getItem
+        .mockReturnValueOnce(JSON.stringify(oldTokenData))
+        .mockReturnValueOnce(JSON.stringify(newTokenData));
+
+      const result = getQuestradeToken(['brokerage.positions.read']);
+
+      expect(result).toBeDefined();
+      expect(result.token).toBe('Bearer new-token');
+      expect(result.expires_at).toBe(newTokenData.expires_at);
+    });
   });
 
   describe('questradeTokenNeedsRefresh', () => {
@@ -148,7 +206,7 @@ describe('Questrade Auth Service', () => {
   });
 
   describe('saveQuestradeToken', () => {
-    test('should save token to cache', () => {
+    test('should save token to state manager', () => {
       const tokenData = {
         token: 'Bearer new-token-123',
         expires_at: Math.floor(Date.now() / 1000) + 3600,
@@ -156,7 +214,7 @@ describe('Questrade Auth Service', () => {
 
       saveQuestradeToken(tokenData);
 
-      // Should update cache and call state manager
+      // Should call state manager
       expect(stateManager.setQuestradeAuth).toHaveBeenCalledWith(tokenData);
     });
 
@@ -169,6 +227,23 @@ describe('Questrade Auth Service', () => {
   });
 
   describe('checkQuestradeAuth', () => {
+    test('should accept custom required permissions', () => {
+      const mockSessionData = {
+        access_token: 'positions-token',
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        scope: 'brokerage.positions.read',
+      };
+
+      window.sessionStorage.length = 1;
+      window.sessionStorage.key.mockReturnValueOnce('oidc.user:https://login.questrade.com/:qtweb');
+      window.sessionStorage.getItem.mockReturnValueOnce(JSON.stringify(mockSessionData));
+
+      const result = checkQuestradeAuth(['brokerage.positions.read']);
+
+      expect(result.authenticated).toBe(true);
+      expect(result.token).toBe('Bearer positions-token');
+    });
+
     test('should return authenticated when valid token exists', () => {
       const mockSessionData = {
         access_token: 'valid-token',

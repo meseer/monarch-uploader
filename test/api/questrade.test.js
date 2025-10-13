@@ -28,7 +28,7 @@ jest.mock('../../src/services/questrade/auth', () => ({
   default: {
     checkQuestradeAuth: jest.fn(),
     getQuestradeToken: jest.fn(),
-    saveToken: jest.fn(),
+    saveQuestradeToken: jest.fn(),
   },
 }));
 
@@ -100,7 +100,7 @@ describe('Questrade API', () => {
         'Questrade Auth Error (401): Token was invalid or expired. Please refresh the page.',
       );
 
-      expect(authService.saveToken).toHaveBeenCalledWith('questrade', null);
+      expect(authService.saveQuestradeToken).toHaveBeenCalledWith(null);
       expect(stateManager.setQuestradeAuth).toHaveBeenCalledWith(null);
     });
 
@@ -499,7 +499,7 @@ describe('Questrade API', () => {
         'Questrade Auth Error (401): Token was invalid or expired. Please refresh the page.',
       );
 
-      expect(authService.saveToken).toHaveBeenCalledWith('questrade', null);
+      expect(authService.saveQuestradeToken).toHaveBeenCalledWith(null);
       expect(stateManager.setQuestradeAuth).toHaveBeenCalledWith(null);
     });
 

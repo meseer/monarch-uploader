@@ -11,11 +11,16 @@ import authService from '../services/questrade/auth';
 /**
  * Make an API call to the Questrade API
  * @param {string} endpoint - API endpoint to call
+ * @param {Array<string>} requiredPermissions - List of required permissions for the token
  * @returns {Promise<Object>} Response data
  */
-export async function makeQuestradeApiCall(endpoint) {
+export async function makeQuestradeApiCall(endpoint, requiredPermissions = [
+  'brokerage.balances.all',
+  'brokerage.account-transactions.read',
+  'brokerage.accounts.read',
+]) {
   // Get token from auth service
-  const authStatus = authService.checkQuestradeAuth();
+  const authStatus = authService.checkQuestradeAuth(requiredPermissions);
   if (!authStatus.authenticated) {
     throw new Error('Questrade auth token not found. Please ensure you are logged in to Questrade.');
   }
@@ -31,7 +36,7 @@ export async function makeQuestradeApiCall(endpoint) {
       onload: (res) => {
         if (res.status === 401) {
           // Token is invalid or expired, clear auth state
-          authService.saveToken('questrade', null);
+          authService.saveQuestradeToken(null);
           stateManager.setQuestradeAuth(null);
           reject(new Error('Questrade Auth Error (401): Token was invalid or expired. Please refresh the page.'));
         } else if (res.status >= 200 && res.status < 300) {
@@ -104,7 +109,7 @@ export async function fetchAccountPositions(accountUuid, sortBy = '%2BmarketValu
 
   const endpoint = `/v1/positions?sort-by=${sortBy}&account-uuid=${accountUuid}`;
   debugLog(`Fetching positions for account: ${accountUuid}`);
-  return makeQuestradeApiCall(endpoint);
+  return makeQuestradeApiCall(endpoint, ['brokerage.positions.read']);
 }
 
 /**

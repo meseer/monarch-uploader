@@ -31,7 +31,7 @@ jest.mock('../../src/services/auth', () => ({
   checkMonarchAuth: jest.fn(),
   getMonarchToken: jest.fn(),
   setupMonarchTokenCapture: jest.fn(),
-  saveToken: jest.fn(),
+  saveMonarchToken: jest.fn(),
 }));
 
 jest.mock('../../src/core/state', () => ({
@@ -151,7 +151,7 @@ describe('Monarch API', () => {
         .rejects
         .toThrow('Monarch Auth Error (401): Token was invalid or expired.');
 
-      expect(authService.saveToken).toHaveBeenCalledWith('monarch', null);
+      expect(authService.saveMonarchToken).toHaveBeenCalledWith(null);
       expect(stateManager.setMonarchAuth).toHaveBeenCalledWith(null);
     });
 
