@@ -440,7 +440,7 @@ describe('CSV Conversion Utilities', () => {
       expect(result).toContain('Market order filled');
       expect(result).toContain('Filled 100 @ 25.5');
       expect(result).toContain('fees: 9.99 CAD');
-      expect(result).toContain('total: 2550 CAD');
+      expect(result).toContain('Total: 2550 CAD');
     });
 
     test('should format date correctly from updatedDateTime', () => {
