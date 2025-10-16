@@ -4,7 +4,7 @@
  */
 
 import { debugLog, getDefaultLookbackDays } from '../../core/utils';
-import { STORAGE } from '../../core/config';
+import { STORAGE, API } from '../../core/config';
 import { checkMonarchAuth } from '../../services/auth';
 import { checkQuestradeAuth } from '../../services/questrade/auth';
 import toast from '../toast';
@@ -758,9 +758,10 @@ function renderMonarchTab(container) {
       <strong>Usage:</strong> This token is used to authenticate with Monarch Money's API for transaction uploads.
     `;
   } else {
+    // MIGRATION: Use dynamic Monarch app URL
     statusDetails.innerHTML = `
       <strong>Status:</strong> No authentication token found.<br>
-      <strong>To connect:</strong> Visit <a href="https://app.monarchmoney.com" target="_blank" style="color: #0073b1; text-decoration: none;">Monarch Money</a> and log in. The token will be automatically captured.
+      <strong>To connect:</strong> Visit <a href="${API.MONARCH_APP_URL}" target="_blank" style="color: #0073b1; text-decoration: none;">Monarch Money</a> and log in. The token will be automatically captured.
     `;
   }
 
@@ -796,8 +797,10 @@ function renderMonarchTab(container) {
     `;
 
     removeButton.addEventListener('click', async () => {
+      // MIGRATION: Use dynamic domain in message
+      const monarchDomain = API.MONARCH_APP_URL.replace('https://app.', '');
       const confirmed = await showConfirmDialog(
-        'Are you sure you want to remove your Monarch Money authentication token?\n\nThis will disconnect the application from your Monarch Money account. You will need to log in again at monarchmoney.com to reconnect.',
+        `Are you sure you want to remove your Monarch Money authentication token?\n\nThis will disconnect the application from your Monarch Money account. You will need to log in again at ${monarchDomain} to reconnect.`,
       );
 
       if (confirmed) {

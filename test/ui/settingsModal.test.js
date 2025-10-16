@@ -23,6 +23,9 @@ jest.mock('../../src/core/config', () => ({
     ROGERSBANK_CATEGORY_MAPPINGS: 'rogersbank_category_mappings',
     MONARCH_TOKEN: 'monarch_token',
   },
+  API: {
+    MONARCH_APP_URL: 'https://app.monarchmoney.com',
+  },
 }));
 
 jest.mock('../../src/core/utils', () => ({

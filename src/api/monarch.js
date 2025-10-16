@@ -21,6 +21,7 @@ export function callGraphQL(data) {
     throw new Error('Monarch token not found. Please log into Monarch Money in another tab.');
   }
 
+  // MIGRATION: Use dynamic origin based on current domain
   return {
     mode: 'cors',
     method: 'POST',
@@ -28,7 +29,7 @@ export function callGraphQL(data) {
       accept: '*/*',
       authorization: `Token ${authStatus.token}`,
       'content-type': 'application/json',
-      origin: 'https://app.monarchmoney.com',
+      origin: API.MONARCH_APP_URL,
     },
     body: JSON.stringify(data),
   };
@@ -54,6 +55,7 @@ export function callMonarchGraphQL(operation, query, variables) {
     const data = { operationName: operation, query, variables };
     debugLog('Calling Monarch GraphQL:', data);
 
+    // MIGRATION: Use dynamic origin based on current domain
     GM_xmlhttpRequest({
       mode: 'cors',
       method: 'POST',
@@ -62,7 +64,7 @@ export function callMonarchGraphQL(operation, query, variables) {
         accept: '*/*',
         'Content-Type': 'application/json',
         Authorization: `Token ${authStatus.token}`,
-        origin: 'https://app.monarchmoney.com',
+        origin: API.MONARCH_APP_URL,
       },
       data: JSON.stringify(data),
       onload: (res) => {
@@ -275,15 +277,15 @@ export async function uploadBalanceToMonarch(monarchAccountId, csvData, fromDate
 
     // Submit the upload
     debugLog('Uploading CSV to Monarch (Step 1/2)');
+    // MIGRATION: Use dynamic URLs based on current domain
     const previewResponse = await new Promise((resolve, reject) => GM_xmlhttpRequest({
       mode: 'cors',
       method: 'POST',
-      url: API.MONARCH_UPLOAD_URL
-        || 'https://api.monarchmoney.com/account-balance-history/upload/',
+      url: API.MONARCH_BALANCE_UPLOAD_URL,
       headers: {
         accept: 'application/json',
         authorization: `Token ${authStatus.token}`,
-        origin: 'https://app.monarchmoney.com',
+        origin: API.MONARCH_APP_URL,
       },
       data: formData,
       onload: (res) => resolve(res),
@@ -427,6 +429,7 @@ export async function uploadTransactionsToMonarch(
 
     // Submit the upload to get session key
     debugLog('Uploading CSV to Monarch transactions endpoint (Step 1/3)');
+    // MIGRATION: Use dynamic URLs based on current domain
     const uploadResponse = await new Promise((resolve, reject) => GM_xmlhttpRequest({
       mode: 'cors',
       method: 'POST',
@@ -434,7 +437,7 @@ export async function uploadTransactionsToMonarch(
       headers: {
         accept: 'application/json',
         authorization: `Token ${authStatus.token}`,
-        origin: 'https://app.monarchmoney.com',
+        origin: API.MONARCH_APP_URL,
       },
       data: formData,
       onload: (res) => resolve(res),

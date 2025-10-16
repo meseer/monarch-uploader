@@ -6,11 +6,33 @@
 // Debug settings
 export const DEBUG_LOG = true;
 
-// API Endpoints
+/**
+ * MIGRATION: Detect which Monarch domain we're using
+ * Once migration is complete, replace this function with:
+ * return 'monarch.com';
+ *
+ * Single decision point for Monarch domain detection
+ * @returns {string} The Monarch domain to use ('monarch.com' or 'monarchmoney.com')
+ */
+function getMonarchApiDomain() {
+  const hostname = window.location.hostname;
+  // During migration, detect which domain we're on
+  if (hostname.includes('monarch.com') && !hostname.includes('monarchmoney.com')) {
+    return 'monarch.com'; // New domain
+  }
+  return 'monarchmoney.com'; // Legacy domain (default)
+}
+
+// MIGRATION: Determine domain once at module load
+const monarchDomain = getMonarchApiDomain();
+
+// API Endpoints - dynamically constructed based on detected domain
 export const API = {
   QUESTRADE_BASE_URL: 'https://api.questrade.com',
-  MONARCH_GRAPHQL_URL: 'https://api.monarchmoney.com/graphql',
-  MONARCH_TRANSACTIONS_UPLOAD_URL: 'https://api.monarchmoney.com/statements/upload-async/',
+  MONARCH_GRAPHQL_URL: `https://api.${monarchDomain}/graphql`,
+  MONARCH_TRANSACTIONS_UPLOAD_URL: `https://api.${monarchDomain}/statements/upload-async/`,
+  MONARCH_BALANCE_UPLOAD_URL: `https://api.${monarchDomain}/account-balance-history/upload/`,
+  MONARCH_APP_URL: `https://app.${monarchDomain}`,
 };
 
 // Storage keys

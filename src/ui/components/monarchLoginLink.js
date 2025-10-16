@@ -4,7 +4,7 @@
  */
 
 import { debugLog } from '../../core/utils';
-import { STORAGE } from '../../core/config';
+import { STORAGE, API } from '../../core/config';
 import stateManager from '../../core/state';
 import toast from '../toast';
 
@@ -71,9 +71,9 @@ function openMonarchLoginPopup(onSuccess = null) {
       'status=no',
     ].join(',');
 
-    // Open popup window
+    // MIGRATION: Open popup window using dynamic domain
     const popup = window.open(
-      'https://app.monarchmoney.com/dashboard',
+      `${API.MONARCH_APP_URL}/dashboard`,
       'monarchLogin',
       popupFeatures,
     );

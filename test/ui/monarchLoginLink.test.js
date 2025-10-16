@@ -17,6 +17,9 @@ jest.mock('../../src/core/config', () => ({
   STORAGE: {
     MONARCH_TOKEN: 'monarch_token',
   },
+  API: {
+    MONARCH_APP_URL: 'https://app.monarchmoney.com',
+  },
 }));
 
 jest.mock('../../src/core/state', () => ({
