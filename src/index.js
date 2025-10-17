@@ -68,8 +68,8 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
      */
   function initApp() {
     // Check which site we're on and take appropriate action
-    if (window.location.hostname.includes('monarchmoney.com')) {
-      debugLog('Running on Monarch Money site');
+    if (window.location.hostname.includes('monarch.com')) {
+      debugLog('Running on Monarch site');
       // Set up token capture on Monarch's site
       monarchApi.setupTokenCapture();
       return; // Exit early - nothing else to do on Monarch's site

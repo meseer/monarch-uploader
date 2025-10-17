@@ -531,7 +531,7 @@ export function getCurrentInstitution(location = window.location) {
   if (hostname.includes('questrade.com')) return 'questrade';
   if (hostname.includes('canadalife.com')) return 'canadalife';
   if (hostname.includes('rogersbank.com')) return 'rogersbank';
-  if (hostname.includes('monarchmoney.com')) return 'monarch';
+  if (hostname.includes('monarch.com')) return 'monarch';
   return 'unknown';
 }
 

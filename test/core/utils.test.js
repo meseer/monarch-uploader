@@ -82,7 +82,7 @@ describe('Utility Functions', () => {
     });
 
     it('should extract domain from a URL with www', () => {
-      expect(extractDomain('www.monarchmoney.com/accounts')).toBe('monarchmoney.com');
+      expect(extractDomain('www.monarch.com/accounts')).toBe('monarch.com');
     });
 
     it('should handle empty URL', () => {
@@ -481,7 +481,7 @@ describe('Utility Functions', () => {
 
     it('should return false for non-Questrade domains', () => {
       const mockLoc = {
-        hostname: 'app.monarchmoney.com',
+        hostname: 'app.monarch.com',
         pathname: '/investing/summary/',
       };
 
@@ -507,7 +507,7 @@ describe('Utility Functions', () => {
     });
 
     it('should detect monarch', () => {
-      const mockLoc = { hostname: 'app.monarchmoney.com' };
+      const mockLoc = { hostname: 'app.monarch.com' };
       expect(getCurrentInstitution(mockLoc)).toBe('monarch');
     });
 

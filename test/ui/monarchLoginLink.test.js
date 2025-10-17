@@ -18,7 +18,7 @@ jest.mock('../../src/core/config', () => ({
     MONARCH_TOKEN: 'monarch_token',
   },
   API: {
-    MONARCH_APP_URL: 'https://app.monarchmoney.com',
+    MONARCH_APP_URL: 'https://app.monarch.com',
   },
 }));
 
@@ -111,7 +111,7 @@ describe('Monarch Login Link Component', () => {
       expect(clickEvent.preventDefault).toHaveBeenCalled();
       expect(clickEvent.stopPropagation).toHaveBeenCalled();
       expect(global.window.open).toHaveBeenCalledWith(
-        'https://app.monarchmoney.com/dashboard',
+        'https://app.monarch.com/dashboard',
         'monarchLogin',
         expect.stringContaining('width=500,height=600'),
       );
@@ -166,7 +166,7 @@ describe('Monarch Login Link Component', () => {
       // Expected top: (1080 - 600) / 2 = 240
       const expectedFeatures = expect.stringContaining('left=710,top=240');
       expect(global.window.open).toHaveBeenCalledWith(
-        'https://app.monarchmoney.com/dashboard',
+        'https://app.monarch.com/dashboard',
         'monarchLogin',
         expectedFeatures,
       );
@@ -532,7 +532,7 @@ describe('Monarch Login Link Component', () => {
       ].join(',');
 
       expect(global.window.open).toHaveBeenCalledWith(
-        'https://app.monarchmoney.com/dashboard',
+        'https://app.monarch.com/dashboard',
         'monarchLogin',
         expectedFeatures,
       );

@@ -7,23 +7,14 @@
 export const DEBUG_LOG = true;
 
 /**
- * MIGRATION: Detect which Monarch domain we're using
- * Once migration is complete, replace this function with:
- * return 'monarch.com';
- *
- * Single decision point for Monarch domain detection
- * @returns {string} The Monarch domain to use ('monarch.com' or 'monarchmoney.com')
+ * Get the Monarch domain
+ * @returns {string} The Monarch domain to use
  */
 function getMonarchApiDomain() {
-  const hostname = window.location.hostname;
-  // During migration, detect which domain we're on
-  if (hostname.includes('monarch.com') && !hostname.includes('monarchmoney.com')) {
-    return 'monarch.com'; // New domain
-  }
-  return 'monarchmoney.com'; // Legacy domain (default)
+  return 'monarch.com';
 }
 
-// MIGRATION: Determine domain once at module load
+// Determine domain once at module load
 const monarchDomain = getMonarchApiDomain();
 
 // API Endpoints - dynamically constructed based on detected domain

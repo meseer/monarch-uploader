@@ -103,7 +103,7 @@ describe('Monarch API', () => {
           accept: '*/*',
           authorization: 'Token test-token-123',
           'content-type': 'application/json',
-          origin: 'https://app.monarchmoney.com',
+          origin: 'https://app.monarch.com',
         },
         body: JSON.stringify(data),
       });

@@ -251,7 +251,7 @@ export function createSettingsModal() {
       logoContainer.style.cssText = 'display: inline-flex; margin-right: 6px;';
 
       GM_addElement(logoContainer, 'img', {
-        src: 'https://www.google.com/s2/favicons?domain=monarchmoney.com&sz=16',
+        src: 'https://www.google.com/s2/favicons?domain=monarch.com&sz=16',
         style: 'width: 16px; height: 16px; border-radius: 3px; object-fit: contain;',
       });
 

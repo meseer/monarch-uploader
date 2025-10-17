@@ -58,8 +58,8 @@ export function checkMonarchAuth() {
  * Should be called when on Monarch's site
  */
 export function setupMonarchTokenCapture() {
-  if (window.location.hostname.includes('monarchmoney.com')) {
-    debugLog('Running on Monarch Money site. Setting up token capture.');
+  if (window.location.hostname.includes('monarch.com')) {
+    debugLog('Running on Monarch site. Setting up token capture.');
 
     setInterval(() => {
       try {
