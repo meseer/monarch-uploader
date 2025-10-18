@@ -333,19 +333,69 @@ function extractBalanceChange(accountId, balanceData) {
       return null;
     }
 
-    // Find old balance from last upload date in history data
+    // Check if we have historical data
     if (!balanceData.history?.data || !Array.isArray(balanceData.history.data)) {
       debugLog(`No historical data found for account ${accountId}`);
       return null;
     }
 
-    const oldBalanceEntry = balanceData.history.data.find((item) => item.date === lastUploadDate);
-    if (!oldBalanceEntry) {
-      debugLog(`No balance found for last upload date ${lastUploadDate} for account ${accountId}`);
-      return null;
+    let oldBalance;
+    let compareDate = lastUploadDate;
+    const todayDate = getTodayLocal();
+
+    // If last upload was today, use yesterday's balance as the comparison point
+    // (yesterday's closing balance = today's opening balance)
+    if (lastUploadDate === todayDate) {
+      debugLog('Last upload was today, using yesterday\'s balance for comparison');
+
+      // Get yesterday's date
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayDate = formatDate(yesterday);
+
+      // Find yesterday's balance
+      const yesterdayEntry = balanceData.history.data.find((item) => item.date === yesterdayDate);
+      if (yesterdayEntry) {
+        oldBalance = yesterdayEntry.totalEquity;
+        compareDate = yesterdayDate;
+      } else {
+        // If yesterday's balance not found (weekend), find most recent
+        const sortedData = [...balanceData.history.data].sort((a, b) => new Date(b.date) - new Date(a.date));
+        if (sortedData.length > 0) {
+          oldBalance = sortedData[0].totalEquity;
+          compareDate = sortedData[0].date;
+          debugLog(`Yesterday not found, using most recent balance from ${compareDate}`);
+        } else {
+          debugLog('No historical data available for comparison');
+          return null;
+        }
+      }
+    } else {
+      // Last upload was in the past, find that date's balance
+      const oldBalanceEntry = balanceData.history.data.find((item) => item.date === lastUploadDate);
+
+      if (oldBalanceEntry) {
+        oldBalance = oldBalanceEntry.totalEquity;
+      } else {
+        // Date not found (weekend/holiday), find nearest previous date
+        debugLog(`Exact date ${lastUploadDate} not found, searching for nearest previous date`);
+
+        const sortedData = [...balanceData.history.data]
+          .filter((item) => item.date < lastUploadDate)
+          .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+        if (sortedData.length > 0) {
+          oldBalance = sortedData[0].totalEquity;
+          compareDate = sortedData[0].date;
+          debugLog(`Using nearest previous date ${compareDate} for comparison`);
+        } else {
+          debugLog('No suitable historical balance found for comparison');
+          return null;
+        }
+      }
     }
 
-    const oldBalance = oldBalanceEntry.totalEquity;
+    // Validate old balance
     if (oldBalance === undefined || oldBalance === null) {
       debugLog(`Invalid old balance for account ${accountId}`);
       return null;
@@ -356,12 +406,12 @@ function extractBalanceChange(accountId, balanceData) {
       ? ((currentBalance - oldBalance) / Math.abs(oldBalance)) * 100
       : 0;
 
-    debugLog(`Balance change for account ${accountId}: ${oldBalance} -> ${currentBalance} (${changePercent.toFixed(2)}%)`);
+    debugLog(`Balance change for account ${accountId}: ${oldBalance} (${compareDate}) -> ${currentBalance} (today) (${changePercent.toFixed(2)}%)`);
 
     return {
       oldBalance,
       newBalance: currentBalance,
-      lastUploadDate,
+      lastUploadDate: compareDate, // Use the actual date we're comparing from
       changePercent,
     };
   } catch (error) {
