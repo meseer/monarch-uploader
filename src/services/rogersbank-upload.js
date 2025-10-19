@@ -17,6 +17,7 @@ import { showDatePickerPromise } from '../ui/components/datePicker';
 import { applyCategoryMapping, saveUserCategorySelection, calculateAllCategorySimilarities } from '../mappers/category';
 import { showMonarchCategorySelector } from '../ui/components/categorySelector';
 import { showProgressDialog } from '../ui/components/progressDialog';
+import { getUploadedTransactionIds, saveUploadedTransactions } from '../utils/transactionStorage';
 
 /**
  * Extract Rogers account name from DOM
@@ -85,49 +86,15 @@ function getEndOfCurrentMonth() {
 }
 
 /**
- * Get stored reference numbers for de-duplication
- * @param {string} accountId - Rogers account ID
- * @returns {Set<string>} Set of uploaded reference numbers
- */
-function getUploadedReferenceNumbers(accountId) {
-  try {
-    const storedRefs = GM_getValue(`${STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX}${accountId}`, []);
-    return new Set(storedRefs);
-  } catch (error) {
-    debugLog('Error getting uploaded reference numbers:', error);
-    return new Set();
-  }
-}
-
-/**
- * Save reference numbers after successful upload
- * @param {string} accountId - Rogers account ID
- * @param {Array<string>} referenceNumbers - Array of reference numbers to save
- */
-function saveUploadedReferenceNumbers(accountId, referenceNumbers) {
-  try {
-    const existingRefs = getUploadedReferenceNumbers(accountId);
-    referenceNumbers.forEach((ref) => existingRefs.add(ref));
-
-    // Convert Set to Array for storage (limit to last 1000 references to avoid storage bloat)
-    const refsArray = Array.from(existingRefs);
-    const limitedRefs = refsArray.slice(-1000);
-
-    GM_setValue(`${STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX}${accountId}`, limitedRefs);
-    debugLog(`Saved ${referenceNumbers.length} new reference numbers for account ${accountId}`);
-  } catch (error) {
-    debugLog('Error saving uploaded reference numbers:', error);
-  }
-}
-
-/**
  * Filter out already uploaded transactions
  * @param {Array} transactions - Array of transactions
  * @param {string} accountId - Rogers account ID
  * @returns {Object} Filtered transactions and statistics
  */
 function filterDuplicateTransactions(transactions, accountId) {
-  const uploadedRefs = getUploadedReferenceNumbers(accountId);
+  // Use new transaction storage utility to get uploaded IDs
+  const uploadedIds = getUploadedTransactionIds('rogersbank', accountId);
+  const uploadedRefs = new Set(uploadedIds);
   const originalCount = transactions.length;
 
   const newTransactions = transactions.filter(
@@ -662,13 +629,25 @@ export async function uploadRogersBankToMonarch() {
       );
 
       if (uploadSuccess) {
-        // Save reference numbers for successful uploads
+        // Save reference numbers with dates for successful uploads
         const referenceNumbers = transactionsToUpload
           .map((transaction) => transaction.referenceNumber)
           .filter((ref) => ref); // Filter out any null/undefined references
 
         if (referenceNumbers.length > 0) {
-          saveUploadedReferenceNumbers(rogersAccountId, referenceNumbers);
+          // Extract the most recent transaction date (or use today as fallback)
+          let transactionDate = getTodayLocal();
+          const transactionsWithDates = transactionsToUpload.filter((transaction) => transaction.activityDate);
+          if (transactionsWithDates.length > 0) {
+            // Find the most recent transaction date
+            const mostRecentDate = transactionsWithDates
+              .map((transaction) => new Date(transaction.activityDate))
+              .sort((a, b) => b - a)[0];
+            transactionDate = mostRecentDate.toISOString().split('T')[0];
+          }
+
+          // Use new transaction storage utility with dates
+          saveUploadedTransactions(rogersAccountId, referenceNumbers, 'rogersbank', transactionDate);
         }
 
         // Save last upload date for future uploads with configurable lookback

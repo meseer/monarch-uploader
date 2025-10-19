@@ -57,6 +57,17 @@ export const STORAGE = {
   QUESTRADE_LOOKBACK_DAYS: 'questrade_lookback_days',
   CANADALIFE_LOOKBACK_DAYS: 'canadalife_lookback_days',
   ROGERSBANK_LOOKBACK_DAYS: 'rogersbank_lookback_days',
+  // Transaction retention settings (separate from lookback - for deduplication)
+  QUESTRADE_TRANSACTION_RETENTION_DAYS: 'questrade_transaction_retention_days',
+  QUESTRADE_TRANSACTION_RETENTION_COUNT: 'questrade_transaction_retention_count',
+  ROGERSBANK_TRANSACTION_RETENTION_DAYS: 'rogersbank_transaction_retention_days',
+  ROGERSBANK_TRANSACTION_RETENTION_COUNT: 'rogersbank_transaction_retention_count',
+};
+
+// Transaction retention defaults (for deduplication storage)
+export const TRANSACTION_RETENTION_DEFAULTS = {
+  DAYS: 45, // Keep transactions from last 45 days
+  COUNT: 1000, // Keep last 1000 transactions
 };
 
 // Brand colors
@@ -78,6 +89,7 @@ export default {
   DEBUG_LOG,
   API,
   STORAGE,
+  TRANSACTION_RETENTION_DEFAULTS,
   COLORS,
   UI,
 };

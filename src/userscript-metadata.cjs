@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Monarch Money Uploader
 // @namespace    http://tampermonkey.net/
-// @version      4.0.1
+// @version      4.2.0
 // @description  Upload Questrade, CanadaLife, and Rogers Bank balance and transactions to Monarch.
 // @author       Mykhailo Delegan
 // @match        https://myportal.questrade.com/*
@@ -36,7 +36,7 @@ function generateMetadata(_buildType = 'local') {
   return `// ==UserScript==
 // @name         Monarch Uploader
 // @namespace    https://github.com/meseer/monarch-uploader
-// @version      4.0.1
+// @version      4.2.0
 // @description  Upload Questrade, CanadaLife, and Rogers Bank balance and transactions to Monarch.
 // @author       Mykhailo Delegan
 // @match        https://myportal.questrade.com/*

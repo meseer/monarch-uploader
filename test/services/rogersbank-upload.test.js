@@ -116,6 +116,11 @@ jest.mock('../../src/mappers/category', () => ({
   calculateAllCategorySimilarities: jest.fn(),
 }));
 
+jest.mock('../../src/utils/transactionStorage', () => ({
+  getUploadedTransactionIds: jest.fn(() => []),
+  saveUploadedTransactions: jest.fn(),
+}));
+
 jest.mock('../../src/ui/components/categorySelector', () => ({
   showMonarchCategorySelector: jest.fn(),
 }));
@@ -138,6 +143,8 @@ describe('Rogers Bank Upload Service', () => {
   let showMonarchCategorySelector;
   let calculateFromDateWithLookback;
   let saveLastUploadDate;
+  let getUploadedTransactionIds;
+  let saveUploadedTransactions;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -157,6 +164,11 @@ describe('Rogers Bank Upload Service', () => {
     showMonarchCategorySelector = jest.requireMock('../../src/ui/components/categorySelector').showMonarchCategorySelector;
     calculateFromDateWithLookback = jest.requireMock('../../src/core/utils').calculateFromDateWithLookback;
     saveLastUploadDate = jest.requireMock('../../src/core/utils').saveLastUploadDate;
+
+    // Get transaction storage mocks
+    const transactionStorageMock = jest.requireMock('../../src/utils/transactionStorage');
+    getUploadedTransactionIds = transactionStorageMock.getUploadedTransactionIds;
+    saveUploadedTransactions = transactionStorageMock.saveUploadedTransactions;
 
     // Setup DOM mocks
     global.document.querySelector.mockReturnValue({
@@ -410,18 +422,21 @@ describe('Rogers Bank Upload Service', () => {
                 activityStatus: 'APPROVED',
                 transactionAmount: -25.00,
                 description: 'Approved Transaction',
+                activityDate: '2024-01-10',
               },
               {
                 referenceNumber: 'REF2',
                 activityStatus: 'PENDING',
                 transactionAmount: -50.00,
                 description: 'Pending Transaction',
+                activityDate: '2024-01-11',
               },
               {
                 referenceNumber: 'REF3',
                 activityStatus: 'APPROVED',
                 transactionAmount: -75.00,
                 description: 'Another Approved Transaction',
+                activityDate: '2024-01-12',
               },
             ],
           },
@@ -461,11 +476,11 @@ describe('Rogers Bank Upload Service', () => {
         if (key.includes('rogersbank_account_')) {
           return JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' });
         }
-        if (key.includes('rogersbank_uploaded_refs_')) {
-          return ['REF1']; // REF1 is already uploaded
-        }
         return null;
       });
+
+      // Mock that REF1 is already uploaded
+      getUploadedTransactionIds.mockReturnValue(['REF1']);
 
       fetchRogersBankBalance.mockResolvedValue(-1000);
       monarchApi.uploadBalance.mockResolvedValue(true);
@@ -481,12 +496,14 @@ describe('Rogers Bank Upload Service', () => {
                 activityStatus: 'APPROVED',
                 transactionAmount: -25.00,
                 description: 'Duplicate Transaction',
+                activityDate: '2024-01-10',
               },
               {
                 referenceNumber: 'REF2', // New
                 activityStatus: 'APPROVED',
                 transactionAmount: -50.00,
                 description: 'New Transaction',
+                activityDate: '2024-01-11',
               },
             ],
           },
@@ -526,11 +543,11 @@ describe('Rogers Bank Upload Service', () => {
         if (key.includes('rogersbank_account_')) {
           return JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' });
         }
-        if (key.includes('rogersbank_uploaded_refs_')) {
-          return ['REF1', 'REF2'];
-        }
         return null;
       });
+
+      // Mock that both REF1 and REF2 are already uploaded
+      getUploadedTransactionIds.mockReturnValue(['REF1', 'REF2']);
 
       fetchRogersBankBalance.mockResolvedValue(-1000);
       monarchApi.uploadBalance.mockResolvedValue(true);
@@ -546,12 +563,14 @@ describe('Rogers Bank Upload Service', () => {
                 activityStatus: 'APPROVED',
                 transactionAmount: -25.00,
                 description: 'Duplicate Transaction 1',
+                activityDate: '2024-01-10',
               },
               {
                 referenceNumber: 'REF2',
                 activityStatus: 'APPROVED',
                 transactionAmount: -50.00,
                 description: 'Duplicate Transaction 2',
+                activityDate: '2024-01-11',
               },
             ],
           },
@@ -583,6 +602,9 @@ describe('Rogers Bank Upload Service', () => {
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
       );
 
+      // Explicitly mock no uploaded transactions
+      getUploadedTransactionIds.mockReturnValue([]);
+
       fetchRogersBankBalance.mockResolvedValue(-1000);
       monarchApi.uploadBalance.mockResolvedValue(true);
 
@@ -597,6 +619,7 @@ describe('Rogers Bank Upload Service', () => {
                 activityStatus: 'APPROVED',
                 transactionAmount: -25.00,
                 description: 'Restaurant Purchase',
+                activityDate: '2024-01-10',
                 merchant: { categoryDescription: 'Restaurants' },
               },
             ],
@@ -645,6 +668,9 @@ describe('Rogers Bank Upload Service', () => {
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
       );
 
+      // Explicitly mock no uploaded transactions
+      getUploadedTransactionIds.mockReturnValue([]);
+
       fetchRogersBankBalance.mockResolvedValue(-1000);
       monarchApi.uploadBalance.mockResolvedValue(true);
 
@@ -659,6 +685,7 @@ describe('Rogers Bank Upload Service', () => {
                 activityStatus: 'APPROVED',
                 transactionAmount: -25.00,
                 description: 'Unknown Merchant',
+                activityDate: '2024-01-10',
                 merchant: { categoryDescription: 'Unknown Category' },
               },
             ],
@@ -729,6 +756,9 @@ describe('Rogers Bank Upload Service', () => {
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
       );
 
+      // Explicitly mock no uploaded transactions
+      getUploadedTransactionIds.mockReturnValue([]);
+
       fetchRogersBankBalance.mockResolvedValue(-1000);
       monarchApi.uploadBalance.mockResolvedValue(true);
 
@@ -743,6 +773,7 @@ describe('Rogers Bank Upload Service', () => {
                 activityStatus: 'APPROVED',
                 transactionAmount: -25.00,
                 description: 'Test Merchant',
+                activityDate: '2024-01-10',
                 merchant: { categoryDescription: 'Unknown Category' },
               },
             ],
@@ -938,6 +969,7 @@ describe('Rogers Bank Upload Service', () => {
                 activityStatus: 'APPROVED',
                 transactionAmount: -25.00,
                 description: 'Test Merchant 1',
+                activityDate: '2024-01-10',
                 merchant: { categoryDescription: 'Restaurants' },
               },
               {
@@ -945,6 +977,7 @@ describe('Rogers Bank Upload Service', () => {
                 activityStatus: 'APPROVED',
                 transactionAmount: -50.00,
                 description: 'Test Merchant 2',
+                activityDate: '2024-01-11',
                 merchant: { categoryDescription: 'Gas Stations' },
               },
             ],
@@ -1069,6 +1102,9 @@ describe('Rogers Bank Upload Service', () => {
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
       );
 
+      // Explicitly mock no uploaded transactions
+      getUploadedTransactionIds.mockReturnValue([]);
+
       fetchRogersBankBalance.mockResolvedValue(-1000);
       monarchApi.uploadBalance.mockResolvedValue(true);
 
@@ -1083,6 +1119,7 @@ describe('Rogers Bank Upload Service', () => {
                 activityStatus: 'APPROVED',
                 transactionAmount: -25.00,
                 description: 'Test Merchant',
+                activityDate: '2024-01-10',
                 // Missing merchant property
               },
             ],
@@ -1120,6 +1157,9 @@ describe('Rogers Bank Upload Service', () => {
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
       );
 
+      // Explicitly mock no uploaded transactions
+      getUploadedTransactionIds.mockReturnValue([]);
+
       fetchRogersBankBalance.mockResolvedValue(-1000);
       monarchApi.uploadBalance.mockResolvedValue(true);
 
@@ -1134,6 +1174,7 @@ describe('Rogers Bank Upload Service', () => {
                 activityStatus: 'APPROVED',
                 transactionAmount: -25.00,
                 description: 'Test Merchant',
+                activityDate: '2024-01-10',
                 merchant: { categoryDescription: 'Restaurants' },
               },
             ],
@@ -1174,6 +1215,9 @@ describe('Rogers Bank Upload Service', () => {
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
       );
 
+      // Explicitly mock no uploaded transactions
+      getUploadedTransactionIds.mockReturnValue([]);
+
       fetchRogersBankBalance.mockResolvedValue(-1000);
       monarchApi.uploadBalance.mockResolvedValue(true);
 
@@ -1183,6 +1227,7 @@ describe('Rogers Bank Upload Service', () => {
         activityStatus: 'APPROVED',
         transactionAmount: -Math.round((Math.random() * 100) * 100) / 100,
         description: `Test Merchant ${i + 1}`,
+        activityDate: '2024-01-10',
         merchant: { categoryDescription: 'Restaurants' },
       }));
 
@@ -1234,6 +1279,9 @@ describe('Rogers Bank Upload Service', () => {
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
       );
 
+      // Explicitly mock no uploaded transactions
+      getUploadedTransactionIds.mockReturnValue([]);
+
       fetchRogersBankBalance.mockResolvedValue(-1000);
       monarchApi.uploadBalance.mockResolvedValue(true);
 
@@ -1248,6 +1296,7 @@ describe('Rogers Bank Upload Service', () => {
                 activityStatus: 'APPROVED',
                 transactionAmount: -25.00,
                 description: 'Test Merchant 1',
+                activityDate: '2024-01-10',
                 merchant: { categoryDescription: 'Restaurants' },
               },
               {
@@ -1255,6 +1304,7 @@ describe('Rogers Bank Upload Service', () => {
                 activityStatus: 'APPROVED',
                 transactionAmount: -50.00,
                 description: 'Test Merchant 2',
+                activityDate: '2024-01-11',
                 merchant: { categoryDescription: 'Gas Stations' },
               },
             ],
@@ -1269,9 +1319,12 @@ describe('Rogers Bank Upload Service', () => {
 
       await uploadRogersBankToMonarch();
 
-      expect(globalThis.GM_setValue).toHaveBeenCalledWith(
-        expect.stringContaining('rogersbank_uploaded_refs_'),
-        expect.arrayContaining(['REF1', 'REF2']),
+      // Verify saveUploadedTransactions was called with the new API
+      expect(saveUploadedTransactions).toHaveBeenCalledWith(
+        'test-account',
+        ['REF1', 'REF2'],
+        'rogersbank',
+        expect.any(String), // transaction date
       );
       expect(saveLastUploadDate).toHaveBeenCalledWith(
         expect.any(String),
@@ -1293,16 +1346,16 @@ describe('Rogers Bank Upload Service', () => {
       showDatePickerPromise.mockResolvedValue('2024-01-01');
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
 
-      // Mock existing references
+      // Mock existing references and account mapping
       globalThis.GM_getValue.mockImplementation((key) => {
         if (key.includes('rogersbank_account_')) {
           return JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' });
         }
-        if (key.includes('rogersbank_uploaded_refs_')) {
-          return ['OLD_REF1', 'OLD_REF2'];
-        }
         return null;
       });
+
+      // Mock existing uploaded transactions
+      getUploadedTransactionIds.mockReturnValue(['OLD_REF1', 'OLD_REF2']);
 
       fetchRogersBankBalance.mockResolvedValue(-1000);
       monarchApi.uploadBalance.mockResolvedValue(true);
@@ -1318,6 +1371,7 @@ describe('Rogers Bank Upload Service', () => {
                 activityStatus: 'APPROVED',
                 transactionAmount: -25.00,
                 description: 'New Transaction',
+                activityDate: '2024-01-10',
                 merchant: { categoryDescription: 'Restaurants' },
               },
             ],
@@ -1332,9 +1386,12 @@ describe('Rogers Bank Upload Service', () => {
 
       await uploadRogersBankToMonarch();
 
-      expect(globalThis.GM_setValue).toHaveBeenCalledWith(
-        expect.stringContaining('rogersbank_uploaded_refs_'),
-        expect.arrayContaining(['OLD_REF1', 'OLD_REF2', 'NEW_REF1']),
+      // Verify saveUploadedTransactions was called with the new transaction
+      expect(saveUploadedTransactions).toHaveBeenCalledWith(
+        'test-account',
+        ['NEW_REF1'],
+        'rogersbank',
+        expect.any(String), // transaction date
       );
     });
   });

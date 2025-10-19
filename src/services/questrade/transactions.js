@@ -11,42 +11,7 @@ import toast from '../../ui/toast';
 import { convertQuestradeOrdersToMonarchCSV } from '../../utils/csv';
 import { applyCategoryMapping, saveUserCategorySelection, calculateAllCategorySimilarities } from '../../mappers/category';
 import { showMonarchCategorySelector } from '../../ui/components/categorySelector';
-
-/**
- * Get stored order UUIDs for de-duplication
- * @param {string} accountId - Questrade account ID
- * @returns {Set<string>} Set of uploaded order UUIDs
- */
-function getUploadedOrderUUIDs(accountId) {
-  try {
-    const storedUUIDs = GM_getValue(`${STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX}${accountId}`, []);
-    return new Set(storedUUIDs);
-  } catch (error) {
-    debugLog('Error getting uploaded order UUIDs:', error);
-    return new Set();
-  }
-}
-
-/**
- * Save order UUIDs after successful upload
- * @param {string} accountId - Questrade account ID
- * @param {Array<string>} orderUUIDs - Array of order UUIDs to save
- */
-function saveUploadedOrderUUIDs(accountId, orderUUIDs) {
-  try {
-    const existingUUIDs = getUploadedOrderUUIDs(accountId);
-    orderUUIDs.forEach((uuid) => existingUUIDs.add(uuid));
-
-    // Convert Set to Array for storage (limit to last 1000 UUIDs to avoid storage bloat)
-    const uuidsArray = Array.from(existingUUIDs);
-    const limitedUUIDs = uuidsArray.slice(-1000);
-
-    GM_setValue(`${STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX}${accountId}`, limitedUUIDs);
-    debugLog(`Saved ${orderUUIDs.length} new order UUIDs for account ${accountId}`);
-  } catch (error) {
-    debugLog('Error saving uploaded order UUIDs:', error);
-  }
-}
+import { getUploadedTransactionIds, saveUploadedTransactions } from '../../utils/transactionStorage';
 
 /**
  * Filter out already uploaded orders
@@ -55,7 +20,9 @@ function saveUploadedOrderUUIDs(accountId, orderUUIDs) {
  * @returns {Object} Filtered orders and statistics
  */
 function filterDuplicateOrders(orders, accountId) {
-  const uploadedUUIDs = getUploadedOrderUUIDs(accountId);
+  // Use new transaction storage utility to get uploaded IDs
+  const uploadedIds = getUploadedTransactionIds('questrade', accountId);
+  const uploadedUUIDs = new Set(uploadedIds);
   const originalCount = orders.length;
 
   const newOrders = orders.filter(
@@ -389,13 +356,27 @@ export async function processAndUploadTransactions(accountId, accountName, fromD
     );
 
     if (uploadSuccess) {
-      // Save order UUIDs for successful uploads
+      // Save order UUIDs with dates for successful uploads
       const orderUUIDs = ordersToUpload
         .map((order) => order.orderUuid)
         .filter((uuid) => uuid);
 
       if (orderUUIDs.length > 0) {
-        saveUploadedOrderUUIDs(accountId, orderUUIDs);
+        // Extract dates for each order
+        const transactionsWithDates = ordersToUpload.map((order) => {
+          let date = toDate; // Default to today
+          if (order.updatedDateTime) {
+            const orderDate = new Date(order.updatedDateTime);
+            date = orderDate.toISOString().split('T')[0];
+          }
+          return {
+            id: order.orderUuid,
+            date,
+          };
+        }).filter((t) => t.id); // Filter out any without IDs
+
+        // Use new transaction storage utility with dates
+        saveUploadedTransactions('questrade', accountId, transactionsWithDates);
       }
 
       // Save last upload date

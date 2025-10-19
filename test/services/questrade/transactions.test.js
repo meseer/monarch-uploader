@@ -14,13 +14,29 @@ jest.mock('../../../src/utils/csv');
 jest.mock('../../../src/ui/toast');
 jest.mock('../../../src/mappers/category');
 jest.mock('../../../src/ui/components/categorySelector');
+jest.mock('../../../src/utils/transactionStorage', () => ({
+  getUploadedTransactionIds: jest.fn(() => []),
+  saveUploadedTransactions: jest.fn(),
+}));
 
 describe('Questrade Transactions Service', () => {
+  let getUploadedTransactionIds;
+  let saveUploadedTransactions;
+
   beforeEach(() => {
     jest.clearAllMocks();
     // Clear GM storage
     global.GM_getValue = jest.fn(() => []);
     global.GM_setValue = jest.fn();
+
+    // Get transaction storage mocks
+    const transactionStorageMock = jest.requireMock('../../../src/utils/transactionStorage');
+    getUploadedTransactionIds = transactionStorageMock.getUploadedTransactionIds;
+    saveUploadedTransactions = transactionStorageMock.saveUploadedTransactions;
+
+    // Reset mocks to default state
+    getUploadedTransactionIds.mockReturnValue([]);
+    saveUploadedTransactions.mockImplementation(() => {});
   });
 
   describe('filterExecutedOrders', () => {
@@ -64,7 +80,7 @@ describe('Questrade Transactions Service', () => {
       ];
 
       // Mock that uuid1 has already been uploaded
-      global.GM_getValue = jest.fn(() => ['uuid1']);
+      getUploadedTransactionIds.mockReturnValue(['uuid1']);
 
       const result = transactionsService.filterDuplicateOrders(orders, 'account123');
 
@@ -81,7 +97,7 @@ describe('Questrade Transactions Service', () => {
         { orderUuid: 'uuid2', action: 'Sell' },
       ];
 
-      global.GM_getValue = jest.fn(() => []);
+      getUploadedTransactionIds.mockReturnValue([]);
 
       const result = transactionsService.filterDuplicateOrders(orders, 'account123');
 
@@ -218,7 +234,7 @@ describe('Questrade Transactions Service', () => {
       ];
 
       questradeApi.fetchOrders = jest.fn().mockResolvedValue({ data: mockOrders });
-      global.GM_getValue = jest.fn(() => ['uuid1']); // uuid1 already uploaded
+      getUploadedTransactionIds.mockReturnValue(['uuid1']); // uuid1 already uploaded
 
       const result = await transactionsService.processAndUploadTransactions(
         'account123',
@@ -245,6 +261,7 @@ describe('Questrade Transactions Service', () => {
           status: 'Executed',
           action: 'Buy',
           resolvedMonarchCategory: 'Investment',
+          updatedDateTime: '2025-01-01T10:00:00Z',
         },
       ];
 
@@ -256,9 +273,16 @@ describe('Questrade Transactions Service', () => {
         '2025-01-01',
       );
 
-      expect(global.GM_setValue).toHaveBeenCalledWith(
-        expect.stringContaining('questrade_uploaded_orders_'),
-        expect.arrayContaining(['uuid1']),
+      // Verify saveUploadedTransactions was called with transaction objects
+      expect(saveUploadedTransactions).toHaveBeenCalledWith(
+        'questrade',
+        'account123',
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 'uuid1',
+            date: '2025-01-01',
+          }),
+        ]),
       );
     });
   });
