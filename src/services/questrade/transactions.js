@@ -21,7 +21,7 @@ import { getUploadedTransactionIds, saveUploadedTransactions } from '../../utils
  */
 function filterDuplicateOrders(orders, accountId) {
   // Use new transaction storage utility to get uploaded IDs
-  const uploadedIds = getUploadedTransactionIds('questrade', accountId);
+  const uploadedIds = getUploadedTransactionIds(accountId, 'questrade');
   const uploadedUUIDs = new Set(uploadedIds);
   const originalCount = orders.length;
 

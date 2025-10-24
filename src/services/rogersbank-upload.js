@@ -93,7 +93,7 @@ function getEndOfCurrentMonth() {
  */
 function filterDuplicateTransactions(transactions, accountId) {
   // Use new transaction storage utility to get uploaded IDs
-  const uploadedIds = getUploadedTransactionIds('rogersbank', accountId);
+  const uploadedIds = getUploadedTransactionIds(accountId, 'rogersbank');
   const uploadedRefs = new Set(uploadedIds);
   const originalCount = transactions.length;
 
