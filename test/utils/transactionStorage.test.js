@@ -10,12 +10,17 @@ import {
   getUploadedTransactionIds,
 } from '../../src/utils/transactionStorage';
 import { STORAGE, TRANSACTION_RETENTION_DEFAULTS } from '../../src/core/config';
+import * as utils from '../../src/core/utils';
 
 // Mock GM functions
 global.GM_getValue = jest.fn();
 global.GM_setValue = jest.fn();
 global.GM_listValues = jest.fn();
 global.GM_deleteValue = jest.fn();
+
+// Mock date utilities to use a fixed date for consistent tests
+jest.spyOn(utils, 'getTodayLocal').mockReturnValue('2025-10-24');
+jest.spyOn(utils, 'parseLocalDate').mockImplementation((dateString) => new Date(dateString));
 
 describe('Transaction Storage Utilities', () => {
   beforeEach(() => {

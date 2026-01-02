@@ -22,12 +22,14 @@ import { checkTokenStatus } from './api/questrade';
 import monarchApi from './api/monarch';
 import { setupTokenMonitoring, checkTokenStatus as checkCanadaLifeTokenStatus } from './api/canadalife';
 import { setupCredentialInterception } from './api/rogersbank';
+import { setupTokenMonitoring as setupWealthsimpleTokenMonitoring, checkAuth as checkWealthsimpleAuth } from './api/wealthsimple';
 
 // Import UI components
 import toast from './ui/toast';
 import { initUI, updateStatusIndicators } from './ui/questrade/uiManager';
 import { initCanadaLifeUI } from './ui/canadalife/uiManager';
 import { initRogersBankUI } from './ui/rogersbank/uiManager';
+import { initWealthsimpleUI } from './ui/wealthsimple/uiManager';
 import { loadCurrentAccountInfo } from './services/questrade/account';
 
 // Main IIFE - application entry point
@@ -108,6 +110,18 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
 
       // Initialize Monarch token monitoring (event-driven, no polling)
       initializeMonarchTokenMonitoring();
+      return;
+    }
+
+    // When running on Wealthsimple, initialize Wealthsimple application
+    if (window.location.hostname.includes('wealthsimple.com')) {
+      debugLog('Running on Wealthsimple site');
+
+      // Initialize Wealthsimple components
+      initializeWealthsimpleApp();
+
+      // Set up periodic status checks
+      setInterval(checkWealthsimpleStatus, 10000); // Check every 10 seconds
       return;
     }
 
@@ -224,6 +238,44 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
         .catch((err) => debugLog('Error initializing Rogers Bank UI:', err));
     } catch (error) {
       debugLog('Error initializing Rogers Bank application:', error);
+    }
+  }
+
+  /**
+     * Initialize Wealthsimple application components
+     */
+  function initializeWealthsimpleApp() {
+    try {
+      debugLog('Initializing Wealthsimple application components...');
+
+      // Set up token monitoring
+      setupWealthsimpleTokenMonitoring();
+
+      // Check auth status immediately
+      checkWealthsimpleStatus();
+
+      // Initialize Wealthsimple UI
+      initWealthsimpleUI()
+        .then(() => debugLog('Wealthsimple UI initialized successfully'))
+        .catch((err) => debugLog('Error initializing Wealthsimple UI:', err));
+    } catch (error) {
+      debugLog('Error initializing Wealthsimple application:', error);
+    }
+  }
+
+  /**
+     * Check auth status for Wealthsimple
+     */
+  function checkWealthsimpleStatus() {
+    try {
+      // Check Wealthsimple auth status
+      checkWealthsimpleAuth();
+
+      // Check if we have a Monarch token
+      const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN);
+      stateManager.setMonarchAuth(monarchToken);
+    } catch (error) {
+      debugLog('Error checking Wealthsimple status:', error);
     }
   }
 

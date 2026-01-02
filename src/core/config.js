@@ -53,10 +53,15 @@ export const STORAGE = {
   ROGERSBANK_FROM_DATE: 'rogersbank_from_date',
   ROGERSBANK_UPLOADED_REFS_PREFIX: 'rogersbank_uploaded_refs_', // Store uploaded transaction reference numbers
   ROGERSBANK_CATEGORY_MAPPINGS: 'rogersbank_category_mappings', // Store bank category to Monarch category mappings
+  // Wealthsimple specific storage keys
+  WEALTHSIMPLE_AUTH_TOKEN: 'wealthsimple_auth_token',
+  WEALTHSIMPLE_LAST_UPLOAD_DATE_PREFIX: 'wealthsimple_last_upload_date_',
+  WEALTHSIMPLE_ACCOUNT_MAPPING_PREFIX: 'wealthsimple_monarch_account_for_',
   // Lookback period storage keys (days to look back from last upload date)
   QUESTRADE_LOOKBACK_DAYS: 'questrade_lookback_days',
   CANADALIFE_LOOKBACK_DAYS: 'canadalife_lookback_days',
   ROGERSBANK_LOOKBACK_DAYS: 'rogersbank_lookback_days',
+  WEALTHSIMPLE_LOOKBACK_DAYS: 'wealthsimple_lookback_days',
   // Transaction retention settings (separate from lookback - for deduplication)
   QUESTRADE_TRANSACTION_RETENTION_DAYS: 'questrade_transaction_retention_days',
   QUESTRADE_TRANSACTION_RETENTION_COUNT: 'questrade_transaction_retention_count',
@@ -75,6 +80,7 @@ export const COLORS = {
   CANADALIFE_BRAND: '#A20A29',
   QUESTRADE_BRAND: '#0073b1',
   ROGERSBANK_BRAND: '#DA291C', // Rogers red
+  WEALTHSIMPLE_BRAND: 'rgb(50, 48, 47)', // Wealthsimple dark gray
 };
 
 // UI settings
