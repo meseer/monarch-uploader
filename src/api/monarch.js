@@ -949,6 +949,186 @@ export function getToken() {
   return authService.getMonarchToken();
 }
 
+/**
+ * @typedef {Object} AccountSubtype
+ * @property {string} name - Subtype name (e.g., 'credit_card', 'checking')
+ * @property {string} display - Display name (e.g., 'Credit Card', 'Checking')
+ * @property {string} __typename - GraphQL typename
+ */
+
+/**
+ * @typedef {Object} AccountType
+ * @property {string} name - Type name (e.g., 'credit', 'depository', 'brokerage')
+ * @property {string} display - Display name (e.g., 'Credit Cards', 'Cash', 'Investments')
+ * @property {string} group - Group classification ('asset' or 'liability')
+ * @property {AccountSubtype[]} possibleSubtypes - Array of possible subtypes for this type
+ * @property {string} __typename - GraphQL typename
+ */
+
+/**
+ * @typedef {Object} AccountTypeOption
+ * @property {AccountType} type - Account type details
+ * @property {AccountSubtype|null} subtype - Default subtype if applicable, null otherwise
+ * @property {string} __typename - GraphQL typename
+ */
+
+/**
+ * @typedef {Object} AccountTypeOptionsResponse
+ * @property {AccountTypeOption[]} accountTypeOptions - Array of all available account type options
+ */
+
+/**
+ * Get available account type options from Monarch
+ * Returns all account types (Cash, Investments, Real Estate, Vehicles, Valuables, Credit Cards, Loans, etc.)
+ * along with their possible subtypes. Useful for displaying account type dropdowns when creating manual accounts.
+ * @returns {Promise<AccountTypeOption[]>} Array of account type options with their subtypes
+ * @example
+ * const options = await getAccountTypeOptions();
+ * // Find credit card type
+ * const creditOption = options.find(opt => opt.type.name === 'credit');
+ * // creditOption.type.possibleSubtypes will contain ['credit_card']
+ */
+export async function getAccountTypeOptions() {
+  const data = await callMonarchGraphQL(
+    'Common_GetAccountTypeOptions',
+    `query Common_GetAccountTypeOptions {
+      accountTypeOptions {
+        type {
+          name
+          display
+          group
+          possibleSubtypes {
+            display
+            name
+            __typename
+          }
+          __typename
+        }
+        subtype {
+          name
+          display
+          __typename
+        }
+        __typename
+      }
+    }`,
+    {},
+  );
+
+  return data.accountTypeOptions;
+}
+
+/**
+ * @typedef {Object} CreateManualAccountInput
+ * @property {string} type - Account type (e.g., 'credit', 'depository', 'brokerage', 'loan')
+ * @property {string} subtype - Account subtype (e.g., 'credit_card', 'checking', 'mortgage')
+ * @property {string} name - Display name for the account
+ * @property {number} displayBalance - Initial balance (use 0 for new accounts, negative for liabilities)
+ * @property {boolean} includeInNetWorth - Whether to include this account in net worth calculations
+ */
+
+/**
+ * @typedef {Object} PayloadError
+ * @property {Array} fieldErrors - Field-specific errors
+ * @property {string} message - Error message
+ * @property {string} code - Error code
+ * @property {string} __typename - GraphQL typename
+ */
+
+/**
+ * @typedef {Object} CreatedAccount
+ * @property {string} id - Created account ID
+ * @property {string} __typename - GraphQL typename
+ */
+
+/**
+ * @typedef {Object} CreateManualAccountResult
+ * @property {CreatedAccount} account - Created account information
+ * @property {PayloadError|null} errors - Any errors that occurred
+ * @property {string} __typename - GraphQL typename
+ */
+
+/**
+ * Create a new manual account in Monarch
+ * @param {CreateManualAccountInput} accountData - Account configuration
+ * @returns {Promise<string>} The ID of the created account
+ * @throws {Error} If account creation fails or validation errors occur
+ * @example
+ * // Create a credit card account
+ * const accountId = await createManualAccount({
+ *   type: 'credit',
+ *   subtype: 'credit_card',
+ *   name: 'My Credit Card',
+ *   displayBalance: 0,
+ *   includeInNetWorth: true
+ * });
+ *
+ * @example
+ * // Create a checking account
+ * const accountId = await createManualAccount({
+ *   type: 'depository',
+ *   subtype: 'checking',
+ *   name: 'My Checking',
+ *   displayBalance: 1000,
+ *   includeInNetWorth: true
+ * });
+ */
+export async function createManualAccount(accountData) {
+  const { type, subtype, name, displayBalance, includeInNetWorth } = accountData;
+
+  // Validate required fields
+  if (!type || !subtype || !name || displayBalance === undefined || includeInNetWorth === undefined) {
+    throw new Error('Missing required fields: type, subtype, name, displayBalance, and includeInNetWorth are required');
+  }
+
+  debugLog('Creating manual account:', accountData);
+
+  const result = await callMonarchGraphQL(
+    'Web_CreateManualAccount',
+    `mutation Web_CreateManualAccount($input: CreateManualAccountMutationInput!) {
+      createManualAccount(input: $input) {
+        account {
+          id
+          __typename
+        }
+        errors {
+          ...PayloadErrorFields
+          __typename
+        }
+        __typename
+      }
+    }
+    
+    fragment PayloadErrorFields on PayloadError {
+      fieldErrors {
+        field
+        messages
+        __typename
+      }
+      message
+      code
+      __typename
+    }`,
+    {
+      input: {
+        type,
+        subtype,
+        name,
+        displayBalance,
+        includeInNetWorth,
+      },
+    },
+  );
+
+  if (result.createManualAccount.errors) {
+    const errorMsg = result.createManualAccount.errors.message || 'Failed to create manual account';
+    throw new Error(errorMsg);
+  }
+
+  debugLog(`Successfully created manual account: ${name} (ID: ${result.createManualAccount.account.id})`);
+  return result.createManualAccount.account.id;
+}
+
 // Export as default object
 export default {
   callGraphQL,
@@ -967,4 +1147,6 @@ export default {
   getHoldings,
   checkTokenStatus,
   getToken,
+  getAccountTypeOptions,
+  createManualAccount,
 };

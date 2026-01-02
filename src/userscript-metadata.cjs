@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Monarch Money Uploader
 // @namespace    http://tampermonkey.net/
-// @version      4.4.1
+// @version      4.5.0
 // @description  Upload Questrade, CanadaLife, Rogers Bank, and Wealthsimple balance and transactions to Monarch.
 // @author       Mykhailo Delegan
 // @match        https://myportal.questrade.com/*
@@ -37,7 +37,7 @@ function generateMetadata(_buildType = 'local') {
   return `// ==UserScript==
 // @name         Monarch Uploader
 // @namespace    https://github.com/meseer/monarch-uploader
-// @version      4.4.1
+// @version      4.5.0
 // @description  Upload Questrade, CanadaLife, Rogers Bank, and Wealthsimple balance and transactions to Monarch.
 // @author       Mykhailo Delegan
 // @match        https://myportal.questrade.com/*
@@ -56,7 +56,7 @@ ${downloadLine}${updateLine}// @grant        GM_addElement
 // @grant        GM_xmlhttpRequest
 // @connect      api.monarch.com
 // @connect      api.questrade.com
-// @run-at       document-idle
+/4/ @run-at       document-idle
 // ==/UserScript==`;
 }
 

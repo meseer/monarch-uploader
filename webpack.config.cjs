@@ -55,7 +55,7 @@ module.exports = (env, argv) => {
       // Add banner with userscript metadata
       new webpack.BannerPlugin({
         banner: createBanner(),
-        raw: true,
+        raw: false,
         entryOnly: true,
       }),
     ],
