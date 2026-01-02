@@ -32,6 +32,10 @@ export const API = {
 export const STORAGE = {
   ACCOUNTS_LIST: 'questrade_accounts_list',
   MONARCH_TOKEN: 'monarch_graphql_token',
+  // Account lists with enhanced properties (skip flags, etc.)
+  WEALTHSIMPLE_ACCOUNTS_LIST: 'wealthsimple_accounts_list',
+  ROGERSBANK_ACCOUNTS_LIST: 'rogersbank_accounts_list',
+  CANADALIFE_ACCOUNTS_LIST: 'canadalife_accounts_list',
   // Questrade specific storage keys
   QUESTRADE_LAST_UPLOAD_DATE_PREFIX: 'questrade_last_upload_date_',
   QUESTRADE_ACCOUNT_MAPPING_PREFIX: 'questrade_monarch_account_for_',

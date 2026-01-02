@@ -5,12 +5,12 @@
 import {
   uploadAllWealthsimpleAccountsToMonarch,
 } from '../../src/services/wealthsimple-upload';
-import wealthsimpleApi from '../../src/api/wealthsimple';
 import toast from '../../src/ui/toast';
+import * as accountService from '../../src/services/wealthsimple/account';
 
 // Mock dependencies
-jest.mock('../../src/api/wealthsimple');
 jest.mock('../../src/ui/toast');
+jest.mock('../../src/services/wealthsimple/account');
 jest.mock('../../src/core/utils', () => ({
   debugLog: jest.fn(),
 }));
@@ -21,7 +21,7 @@ describe('Wealthsimple Upload Service', () => {
   });
 
   describe('uploadAllWealthsimpleAccountsToMonarch', () => {
-    it('should successfully fetch and log accounts', async () => {
+    it('should successfully process accounts', async () => {
       const mockAccounts = [
         {
           id: 'acc-1',
@@ -39,19 +39,25 @@ describe('Wealthsimple Upload Service', () => {
         },
       ];
 
-      wealthsimpleApi.fetchAccounts.mockResolvedValue(mockAccounts);
+      const mockMonarchAccount = { id: 'monarch-1', displayName: 'Test Account' };
+
+      accountService.syncAccountListWithAPI.mockResolvedValue(mockAccounts);
+      accountService.resolveWealthsimpleAccountMapping.mockResolvedValue(mockMonarchAccount);
+      accountService.uploadWealthsimpleBalance.mockResolvedValue(false);
+      accountService.uploadWealthsimpleTransactions.mockResolvedValue(false);
 
       await uploadAllWealthsimpleAccountsToMonarch();
 
-      expect(wealthsimpleApi.fetchAccounts).toHaveBeenCalled();
+      expect(accountService.syncAccountListWithAPI).toHaveBeenCalled();
+      expect(accountService.resolveWealthsimpleAccountMapping).toHaveBeenCalledTimes(2);
       expect(toast.show).toHaveBeenCalledWith(
-        'Successfully fetched 2 Wealthsimple accounts. Check console for details.',
-        'info',
+        '2 failed',
+        'warning',
       );
     });
 
     it('should handle no accounts found', async () => {
-      wealthsimpleApi.fetchAccounts.mockResolvedValue([]);
+      accountService.syncAccountListWithAPI.mockResolvedValue([]);
 
       await uploadAllWealthsimpleAccountsToMonarch();
 
@@ -62,7 +68,7 @@ describe('Wealthsimple Upload Service', () => {
     });
 
     it('should handle null accounts response', async () => {
-      wealthsimpleApi.fetchAccounts.mockResolvedValue(null);
+      accountService.syncAccountListWithAPI.mockResolvedValue(null);
 
       await uploadAllWealthsimpleAccountsToMonarch();
 
@@ -74,7 +80,7 @@ describe('Wealthsimple Upload Service', () => {
 
     it('should handle API errors', async () => {
       const error = new Error('API connection failed');
-      wealthsimpleApi.fetchAccounts.mockRejectedValue(error);
+      accountService.syncAccountListWithAPI.mockRejectedValue(error);
 
       await uploadAllWealthsimpleAccountsToMonarch();
 
@@ -93,13 +99,18 @@ describe('Wealthsimple Upload Service', () => {
         },
       ];
 
-      wealthsimpleApi.fetchAccounts.mockResolvedValue(mockAccounts);
+      const mockMonarchAccount = { id: 'monarch-1', displayName: 'Test Account' };
+
+      accountService.syncAccountListWithAPI.mockResolvedValue(mockAccounts);
+      accountService.resolveWealthsimpleAccountMapping.mockResolvedValue(mockMonarchAccount);
+      accountService.uploadWealthsimpleBalance.mockResolvedValue(false);
+      accountService.uploadWealthsimpleTransactions.mockResolvedValue(false);
 
       await uploadAllWealthsimpleAccountsToMonarch();
 
       expect(toast.show).toHaveBeenCalledWith(
-        'Successfully fetched 1 Wealthsimple accounts. Check console for details.',
-        'info',
+        '1 failed',
+        'warning',
       );
     });
   });

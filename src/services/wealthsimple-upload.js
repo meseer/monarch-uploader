@@ -5,58 +5,73 @@
 
 import { debugLog } from '../core/utils';
 import { STORAGE } from '../core/config';
-import wealthsimpleApi from '../api/wealthsimple';
-import monarchApi from '../api/monarch';
 import toast from '../ui/toast';
+import {
+  resolveWealthsimpleAccountMapping,
+  uploadWealthsimpleBalance,
+  uploadWealthsimpleTransactions,
+  markAccountAsSkipped,
+  syncAccountListWithAPI,
+} from './wealthsimple/account';
 
 /**
  * Upload a single Wealthsimple account to Monarch
  * @param {Object} account - Wealthsimple account object
  * @param {string} fromDate - Start date (YYYY-MM-DD)
  * @param {string} toDate - End date (YYYY-MM-DD)
- * @returns {Promise<boolean>} Success status
+ * @returns {Promise<Object>} Result object with success status and optional signals
  */
 export async function uploadWealthsimpleAccountToMonarch(account, fromDate, toDate) {
   try {
     debugLog(`Uploading Wealthsimple account ${account.id} to Monarch...`);
 
-    // Fetch account balance data
-    const balanceData = await wealthsimpleApi.fetchAccountBalance(account.id);
+    // Resolve account mapping (shows selector with create option)
+    const result = await resolveWealthsimpleAccountMapping(account);
 
-    // Convert to CSV format expected by Monarch
-    const csvData = convertBalanceDataToCsv(balanceData, account);
-
-    if (!csvData) {
-      toast.show(`No balance data available for ${account.name || account.id}`, 'warning');
-      return false;
+    // Handle skip signal
+    if (result && result.skipped) {
+      debugLog(`User skipped account ${account.id}`);
+      markAccountAsSkipped(account.id, true);
+      toast.show(`Skipped ${account.nickname || account.id}`, 'info');
+      return { success: false, skipped: true };
     }
 
-    // Resolve account mapping
-    const monarchAccount = await monarchApi.resolveAccountMapping(
-      account.id,
-      STORAGE.WEALTHSIMPLE_ACCOUNT_MAPPING_PREFIX,
-      'brokerage',
-    );
+    // Handle cancel signal
+    if (result && result.cancelled) {
+      debugLog('User cancelled sync');
+      return { success: false, cancelled: true };
+    }
 
-    if (!monarchAccount) {
+    // Handle null (user closed without action)
+    if (!result) {
       debugLog('Account mapping cancelled by user');
-      return false;
+      return { success: false, cancelled: true };
     }
 
-    // Upload to Monarch
-    const success = await monarchApi.uploadBalance(
+    const monarchAccount = result;
+
+    // Upload balance (placeholder for now)
+    const balanceSuccess = await uploadWealthsimpleBalance(
+      account.id,
       monarchAccount.id,
-      csvData,
       fromDate,
       toDate,
     );
 
+    // Upload transactions (placeholder for now)
+    const transactionsSuccess = await uploadWealthsimpleTransactions(
+      account.id,
+      monarchAccount.id,
+      fromDate,
+      toDate,
+    );
+
+    const success = balanceSuccess || transactionsSuccess;
+
     if (success) {
       // Store last upload date
       GM_setValue(`${STORAGE.WEALTHSIMPLE_LAST_UPLOAD_DATE_PREFIX}${account.id}`, toDate);
-      toast.show(`Successfully uploaded ${account.name || account.id} to Monarch`, 'info');
-    } else {
-      toast.show(`Failed to upload ${account.name || account.id}`, 'error');
+      toast.show(`Processed ${account.nickname || account.id}`, 'info');
     }
 
     return success;
@@ -75,84 +90,75 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
   try {
     debugLog('Starting fetch of all Wealthsimple accounts...');
 
-    // Fetch all accounts using GraphQL
-    const accounts = await wealthsimpleApi.fetchAccounts();
+    // Sync account list with API (merges with cached settings like skip flags)
+    const accounts = await syncAccountListWithAPI();
 
     if (!accounts || accounts.length === 0) {
       toast.show('No Wealthsimple accounts found', 'warning');
       return;
     }
 
-    debugLog(`Found ${accounts.length} Wealthsimple accounts:`, accounts);
+    // Filter out skipped accounts
+    const accountsToSync = accounts.filter((acc) => !acc.skipped);
+    const skippedCount = accounts.length - accountsToSync.length;
 
-    // For testing: Just show the accounts in console and toast
-    toast.show(`Successfully fetched ${accounts.length} Wealthsimple accounts. Check console for details.`, 'info');
+    if (skippedCount > 0) {
+      debugLog(`Skipping ${skippedCount} account(s) marked as skipped`);
+    }
 
-    // Log account details
-    accounts.forEach((account, index) => {
-      debugLog(`Account ${index + 1}:`, {
-        id: account.id,
-        nickname: account.nickname,
-        type: account.type,
-        currency: account.currency,
-        branch: account.branch,
-      });
-    });
+    if (accountsToSync.length === 0) {
+      toast.show('All accounts are marked as skipped', 'warning');
+      return;
+    }
 
-    // TODO: Implement actual upload logic when ready
-    // For now, we're just testing the GraphQL fetchAccounts functionality
+    debugLog(`Processing ${accountsToSync.length} Wealthsimple account(s):`, accountsToSync);
 
-    /* Future implementation:
+    // Process all non-skipped accounts
     const toDate = new Date().toISOString().split('T')[0];
     const fromDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
     let successCount = 0;
     let failureCount = 0;
+    let skippedDuringSync = 0;
 
-    for (const account of accounts) {
-      const success = await uploadWealthsimpleAccountToMonarch(account, fromDate, toDate);
-      if (success) {
+    for (const account of accountsToSync) {
+      const result = await uploadWealthsimpleAccountToMonarch(account, fromDate, toDate);
+
+      // Check if user cancelled the entire sync
+      if (result && result.cancelled) {
+        debugLog('Sync cancelled by user, stopping processing');
+        toast.show('Sync cancelled', 'warning');
+        break;
+      }
+
+      // Check if user skipped this account
+      if (result && result.skipped) {
+        skippedDuringSync += 1;
+        continue;
+      }
+
+      // Check success
+      if (result && result.success !== false) {
         successCount += 1;
       } else {
         failureCount += 1;
       }
     }
 
-    if (failureCount === 0) {
-      toast.show(`Successfully uploaded all ${successCount} Wealthsimple accounts`, 'info');
+    // Show final summary
+    const totalSkipped = skippedCount + skippedDuringSync;
+    if (failureCount === 0 && totalSkipped === 0) {
+      toast.show(`Successfully uploaded all ${successCount} Wealthsimple account(s)`, 'info');
     } else {
-      toast.show(`Uploaded ${successCount} accounts, ${failureCount} failed`, 'warning');
+      const parts = [];
+      if (successCount > 0) parts.push(`${successCount} uploaded`);
+      if (failureCount > 0) parts.push(`${failureCount} failed`);
+      if (totalSkipped > 0) parts.push(`${totalSkipped} skipped`);
+      toast.show(parts.join(', '), failureCount > 0 ? 'warning' : 'info');
     }
-    */
   } catch (error) {
     debugLog('Error fetching Wealthsimple accounts:', error);
     toast.show(`Error fetching accounts: ${error.message}`, 'error');
-  }
-}
-
-/**
- * Convert Wealthsimple balance data to CSV format
- * @param {Object} balanceData - Balance data from Wealthsimple API
- * @param {Object} account - Account information
- * @returns {string} CSV formatted data
- */
-function convertBalanceDataToCsv(balanceData, account) {
-  try {
-    // CSV header
-    let csvContent = '"Date","Total Equity","Account Name"\n';
-
-    // Extract balance information
-    const balance = balanceData.current_combined_balance || balanceData.balance || 0;
-    const date = new Date().toISOString().split('T')[0];
-    const accountName = account.name || account.nickname || account.id;
-
-    // Add data row
-    csvContent += `"${date}","${balance}","${accountName}"\n`;
-
-    return csvContent;
-  } catch (error) {
-    debugLog('Error converting balance data to CSV:', error);
-    return null;
   }
 }
 

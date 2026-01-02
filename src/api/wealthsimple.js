@@ -351,6 +351,49 @@ function generateNickname(type, id) {
 }
 
 /**
+ * Fetch and cache Wealthsimple accounts list
+ * Merges with existing cached list to preserve skip flags and other settings
+ * @returns {Promise<Array>} Array of account objects with enhanced properties
+ */
+export async function fetchAndCacheWealthsimpleAccounts() {
+  try {
+    debugLog('Fetching and caching Wealthsimple accounts...');
+
+    // Fetch fresh accounts from API
+    const apiAccounts = await fetchAccounts();
+
+    // Get existing cached accounts
+    const cachedAccounts = JSON.parse(GM_getValue(STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST, '[]'));
+
+    // Create a map of cached accounts by ID
+    const cachedMap = new Map();
+    cachedAccounts.forEach((acc) => {
+      cachedMap.set(acc.id, acc);
+    });
+
+    // Merge API data with cached settings
+    const mergedAccounts = apiAccounts.map((apiAccount) => {
+      const cached = cachedMap.get(apiAccount.id);
+      return {
+        ...apiAccount,
+        // Preserve these settings from cache if they exist
+        skipped: cached?.skipped || false,
+        lastSyncDate: cached?.lastSyncDate || null,
+      };
+    });
+
+    // Save merged list
+    GM_setValue(STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST, JSON.stringify(mergedAccounts));
+    debugLog(`Cached ${mergedAccounts.length} Wealthsimple accounts with settings`);
+
+    return mergedAccounts;
+  } catch (error) {
+    debugLog('Error fetching and caching Wealthsimple accounts:', error);
+    throw error;
+  }
+}
+
+/**
  * Fetch all Wealthsimple accounts using GraphQL
  * @returns {Promise<Array>} Array of account objects
  */
@@ -476,6 +519,7 @@ export default {
   makeGraphQLQuery,
   validateToken,
   fetchAccounts,
+  fetchAndCacheAccounts: fetchAndCacheWealthsimpleAccounts,
   fetchAccountBalance,
   fetchTransactions,
 };
