@@ -1,143 +1,268 @@
 /**
  * Wealthsimple API Client
- * Handles API communication with Wealthsimple
+ * Handles API communication with Wealthsimple GraphQL API
  */
 
 import { debugLog } from '../core/utils';
-import { STORAGE } from '../core/config';
+import { STORAGE, API } from '../core/config';
+import stateManager from '../core/state';
+
+/**
+ * Parse Wealthsimple OAuth cookie and extract token data
+ * @returns {Object|null} Parsed token data or null
+ */
+function parseOAuthCookie() {
+  try {
+    const cookies = document.cookie.split(';');
+    const oauthCookie = cookies.find((cookie) => cookie.trim().startsWith('_oauth2_access_v2='));
+
+    if (!oauthCookie) {
+      return null;
+    }
+
+    // Extract cookie value and decode
+    const cookieValue = oauthCookie.split('=')[1];
+    const decodedValue = decodeURIComponent(cookieValue);
+    const tokenData = JSON.parse(decodedValue);
+
+    return {
+      accessToken: tokenData.access_token,
+      identityId: tokenData.identity_canonical_id,
+      expiresAt: tokenData.expires_at,
+      investProfile: tokenData.profiles?.invest?.default || null,
+      tradeProfile: tokenData.profiles?.trade?.default || null,
+      email: tokenData.email || null,
+    };
+  } catch (error) {
+    debugLog('Error parsing OAuth cookie:', error);
+    return null;
+  }
+}
+
+/**
+ * Save Wealthsimple token data to storage
+ * @param {Object} tokenData - Token data to save
+ */
+function saveTokenData(tokenData) {
+  if (tokenData) {
+    GM_setValue(STORAGE.WEALTHSIMPLE_ACCESS_TOKEN, tokenData.accessToken);
+    GM_setValue(STORAGE.WEALTHSIMPLE_IDENTITY_ID, tokenData.identityId);
+    GM_setValue(STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT, tokenData.expiresAt);
+
+    if (tokenData.investProfile) {
+      GM_setValue(STORAGE.WEALTHSIMPLE_INVEST_PROFILE, tokenData.investProfile);
+    }
+    if (tokenData.tradeProfile) {
+      GM_setValue(STORAGE.WEALTHSIMPLE_TRADE_PROFILE, tokenData.tradeProfile);
+    }
+
+    debugLog('Wealthsimple token data saved:', {
+      identityId: tokenData.identityId,
+      expiresAt: tokenData.expiresAt,
+      hasInvestProfile: Boolean(tokenData.investProfile),
+      hasTradeProfile: Boolean(tokenData.tradeProfile),
+    });
+
+    // Update state manager
+    stateManager.setWealthsimpleAuth({
+      authenticated: true,
+      identityId: tokenData.identityId,
+      expiresAt: tokenData.expiresAt,
+    });
+  } else {
+    clearTokenData();
+  }
+}
+
+/**
+ * Clear all Wealthsimple token data from storage
+ */
+function clearTokenData() {
+  GM_deleteValue(STORAGE.WEALTHSIMPLE_ACCESS_TOKEN);
+  GM_deleteValue(STORAGE.WEALTHSIMPLE_IDENTITY_ID);
+  GM_deleteValue(STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT);
+  GM_deleteValue(STORAGE.WEALTHSIMPLE_INVEST_PROFILE);
+  GM_deleteValue(STORAGE.WEALTHSIMPLE_TRADE_PROFILE);
+
+  debugLog('Wealthsimple token data cleared');
+
+  // Update state manager
+  stateManager.setWealthsimpleAuth(null);
+}
+
+/**
+ * Get stored Wealthsimple token data
+ * @returns {Object|null} Token data or null
+ */
+function getStoredTokenData() {
+  const accessToken = GM_getValue(STORAGE.WEALTHSIMPLE_ACCESS_TOKEN);
+  const identityId = GM_getValue(STORAGE.WEALTHSIMPLE_IDENTITY_ID);
+  const expiresAt = GM_getValue(STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT);
+
+  if (!accessToken || !identityId) {
+    return null;
+  }
+
+  return {
+    accessToken,
+    identityId,
+    expiresAt,
+    investProfile: GM_getValue(STORAGE.WEALTHSIMPLE_INVEST_PROFILE),
+    tradeProfile: GM_getValue(STORAGE.WEALTHSIMPLE_TRADE_PROFILE),
+  };
+}
+
+/**
+ * Check if token is expired
+ * @param {string} expiresAt - ISO timestamp
+ * @returns {boolean} True if expired
+ */
+function isTokenExpired(expiresAt) {
+  if (!expiresAt) return true;
+
+  try {
+    const expiryTime = new Date(expiresAt).getTime();
+    const currentTime = Date.now();
+    return currentTime >= expiryTime;
+  } catch (error) {
+    debugLog('Error checking token expiration:', error);
+    return true;
+  }
+}
 
 /**
  * Check if user is authenticated with Wealthsimple
  * @returns {Object} Authentication status
  */
 export function checkAuth() {
-  const token = GM_getValue(STORAGE.WEALTHSIMPLE_AUTH_TOKEN);
+  const tokenData = getStoredTokenData();
+
+  if (!tokenData) {
+    return {
+      authenticated: false,
+      token: null,
+      identityId: null,
+      expiresAt: null,
+    };
+  }
+
+  // Check if token is expired
+  if (isTokenExpired(tokenData.expiresAt)) {
+    debugLog('Wealthsimple token expired, clearing data');
+    clearTokenData();
+    return {
+      authenticated: false,
+      token: null,
+      identityId: null,
+      expiresAt: tokenData.expiresAt,
+      expired: true,
+    };
+  }
 
   return {
-    authenticated: Boolean(token),
-    token: token || null,
+    authenticated: true,
+    token: tokenData.accessToken,
+    identityId: tokenData.identityId,
+    expiresAt: tokenData.expiresAt,
+    investProfile: tokenData.investProfile,
+    tradeProfile: tokenData.tradeProfile,
   };
 }
 
 /**
- * Save authentication token
- * @param {string} token - Authentication token
- */
-export function saveToken(token) {
-  if (token) {
-    GM_setValue(STORAGE.WEALTHSIMPLE_AUTH_TOKEN, token);
-    debugLog('Wealthsimple auth token saved');
-  } else {
-    GM_deleteValue(STORAGE.WEALTHSIMPLE_AUTH_TOKEN);
-    debugLog('Wealthsimple auth token cleared');
-  }
-}
-
-/**
- * Setup token monitoring to capture Wealthsimple authentication
- * Monitors localStorage and network requests for auth tokens
+ * Setup token monitoring to capture Wealthsimple authentication from cookie
  */
 export function setupTokenMonitoring() {
   debugLog('Setting up Wealthsimple token monitoring...');
 
-  // Check localStorage for existing token
-  const checkLocalStorage = () => {
-    try {
-      // Wealthsimple typically stores tokens in localStorage
-      // Common patterns: auth_token, accessToken, authorization, etc.
-      const storageKeys = Object.keys(localStorage);
-
-      for (const key of storageKeys) {
-        if (key.toLowerCase().includes('auth') ||
-            key.toLowerCase().includes('token') ||
-            key.toLowerCase().includes('access')) {
-          const value = localStorage.getItem(key);
-          if (value && typeof value === 'string' && value.length > 20) {
-            debugLog(`Found potential Wealthsimple token in localStorage: ${key}`);
-            // Store the token for later use
-            saveToken(value);
-            return value;
-          }
-        }
-      }
-    } catch (error) {
-      debugLog('Error checking localStorage for Wealthsimple token:', error);
+  // Function to check and capture token from cookie
+  const captureTokenFromCookie = () => {
+    const tokenData = parseOAuthCookie();
+    if (tokenData) {
+      debugLog('Captured Wealthsimple token from cookie');
+      saveTokenData(tokenData);
+      return true;
     }
-    return null;
+    return false;
   };
 
   // Check immediately
-  checkLocalStorage();
+  captureTokenFromCookie();
 
-  // Monitor localStorage changes
-  window.addEventListener('storage', (event) => {
-    if (event.key &&
-        (event.key.toLowerCase().includes('auth') ||
-         event.key.toLowerCase().includes('token'))) {
-      debugLog('Wealthsimple auth token may have changed');
-      checkLocalStorage();
+  // Monitor cookie changes (check periodically as cookie change events aren't reliable)
+  setInterval(() => {
+    captureTokenFromCookie();
+  }, 30000); // Check every 30 seconds
+
+  // Also check on page visibility change (when user returns to tab)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      captureTokenFromCookie();
     }
   });
-
-  // Intercept XMLHttpRequest to capture auth headers
-  const originalXHROpen = XMLHttpRequest.prototype.open;
-  const originalXHRSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
-
-  XMLHttpRequest.prototype.open = function (...args) {
-    this.requestUrl = args[1];
-    return originalXHROpen.apply(this, args);
-  };
-
-  XMLHttpRequest.prototype.setRequestHeader = function (header, value, ...rest) {
-    if (this.requestUrl && this.requestUrl.includes('wealthsimple.com')) {
-      if (header.toLowerCase() === 'authorization' && value) {
-        debugLog('Captured Wealthsimple authorization header');
-        saveToken(value);
-      }
-    }
-    return originalXHRSetRequestHeader.apply(this, [header, value, ...rest]);
-  };
 
   debugLog('Wealthsimple token monitoring initialized');
 }
 
 /**
- * Make an authenticated API call to Wealthsimple
- * @param {string} endpoint - API endpoint
- * @param {Object} options - Request options
- * @returns {Promise<Object>} API response
+ * Make a GraphQL query to Wealthsimple API
+ * @param {string} operationName - GraphQL operation name
+ * @param {string} query - GraphQL query string
+ * @param {Object} variables - Query variables
+ * @returns {Promise<Object>} API response data
  */
-export async function makeApiCall(endpoint, options = {}) {
+export async function makeGraphQLQuery(operationName, query, variables = {}) {
   const authStatus = checkAuth();
 
   if (!authStatus.authenticated) {
-    throw new Error('Wealthsimple auth token not found. Please log in to Wealthsimple.');
+    throw new Error('Wealthsimple auth token not found. Please refresh the page.');
   }
 
-  const url = endpoint.startsWith('http') ? endpoint : `https://api.wealthsimple.com${endpoint}`;
+  // Inject identity ID into variables if not present
+  if (!variables.identityId && authStatus.identityId) {
+    variables.identityId = authStatus.identityId;
+  }
+
+  const requestBody = {
+    operationName,
+    query,
+    variables,
+  };
+
+  debugLog(`Making GraphQL query: ${operationName}`, { variables });
 
   return new Promise((resolve, reject) => {
     GM_xmlhttpRequest({
-      method: options.method || 'GET',
-      url,
+      method: 'POST',
+      url: API.WEALTHSIMPLE_GRAPHQL_URL,
       headers: {
-        Authorization: authStatus.token,
-        'Content-Type': 'application/json',
-        ...options.headers,
+        authorization: `Bearer ${authStatus.token}`,
+        'content-type': 'application/json',
+        origin: 'https://my.wealthsimple.com',
+        referer: 'https://my.wealthsimple.com/app/home',
       },
-      data: options.data ? JSON.stringify(options.data) : undefined,
+      data: JSON.stringify(requestBody),
       onload: (response) => {
         if (response.status === 401) {
-          saveToken(null);
-          reject(new Error('Auth token expired. Please refresh the page and log in again.'));
+          debugLog('Wealthsimple token expired (401)');
+          clearTokenData();
+          reject(new Error('Auth token expired. Please refresh the page.'));
         } else if (response.status === 404) {
-          reject(new Error(`Resource not found: ${endpoint}`));
+          reject(new Error(`Resource not found: ${operationName}`));
         } else if (response.status >= 500) {
           reject(new Error('Server error. Please try again later.'));
         } else if (response.status >= 200 && response.status < 300) {
           try {
             const data = response.responseText ? JSON.parse(response.responseText) : {};
-            resolve(data);
+
+            // Check for GraphQL errors
+            if (data.errors && data.errors.length > 0) {
+              const errorMessage = data.errors.map((e) => e.message).join(', ');
+              debugLog('GraphQL errors:', data.errors);
+              reject(new Error(`GraphQL Error: ${errorMessage}`));
+            } else {
+              resolve(data.data);
+            }
           } catch (error) {
             reject(new Error(`Failed to parse response: ${error.message}`));
           }
@@ -154,18 +279,148 @@ export async function makeApiCall(endpoint, options = {}) {
 }
 
 /**
- * Fetch all Wealthsimple accounts
+ * Validate token with Wealthsimple token info endpoint
+ * @returns {Promise<Object>} Token info
+ */
+export async function validateToken() {
+  const authStatus = checkAuth();
+
+  if (!authStatus.authenticated) {
+    throw new Error('No token to validate');
+  }
+
+  debugLog('Validating Wealthsimple token...');
+
+  return new Promise((resolve, reject) => {
+    GM_xmlhttpRequest({
+      method: 'GET',
+      url: API.WEALTHSIMPLE_TOKEN_INFO_URL,
+      headers: {
+        authorization: `Bearer ${authStatus.token}`,
+      },
+      onload: (response) => {
+        if (response.status === 200) {
+          try {
+            const data = JSON.parse(response.responseText);
+            debugLog('Token validation successful:', data);
+            resolve(data);
+          } catch (error) {
+            reject(new Error(`Failed to parse token info: ${error.message}`));
+          }
+        } else if (response.status === 401) {
+          debugLog('Token validation failed (401)');
+          clearTokenData();
+          reject(new Error('Token is invalid or expired'));
+        } else {
+          reject(new Error(`Token validation failed: ${response.status}`));
+        }
+      },
+      onerror: (error) => {
+        debugLog('Token validation network error:', error);
+        reject(new Error('Network error during token validation'));
+      },
+    });
+  });
+}
+
+/**
+ * Convert account type to camelCase
+ * @param {string} type - Account type (e.g., 'ca_credit_card')
+ * @returns {string} CamelCase type (e.g., 'caCreditCard')
+ */
+function toCamelCase(type) {
+  return type
+    .split('_')
+    .map((word, index) => {
+      if (index === 0) return word;
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join('');
+}
+
+/**
+ * Generate nickname from account type and ID
+ * @param {string} type - Account type
+ * @param {string} id - Account ID
+ * @returns {string} Generated nickname
+ */
+function generateNickname(type, id) {
+  const camelType = toCamelCase(type);
+  const lastFour = id.slice(-4);
+  return `${camelType} ${lastFour}`;
+}
+
+/**
+ * Fetch all Wealthsimple accounts using GraphQL
  * @returns {Promise<Array>} Array of account objects
  */
 export async function fetchAccounts() {
   try {
-    debugLog('Fetching Wealthsimple accounts...');
+    debugLog('Fetching Wealthsimple accounts via GraphQL...');
 
-    // This endpoint may vary - needs to be verified with actual Wealthsimple API
-    const response = await makeApiCall('/v1/accounts');
+    const query = `query FetchAllAccounts($identityId: ID!, $filter: AccountsFilter = {}, $pageSize: Int = 25, $cursor: String) {
+  identity(id: $identityId) {
+    id
+    accounts(filter: $filter, first: $pageSize, after: $cursor) {
+      pageInfo {
+        hasNextPage
+        endCursor
+        __typename
+      }
+      edges {
+        cursor
+        node {
+          id
+          archivedAt
+          status
+          unifiedAccountType
+          type
+          nickname
+          currency
+          branch
+          __typename
+        }
+        __typename
+      }
+      __typename
+    }
+    __typename
+  }
+}`;
 
-    debugLog(`Fetched ${response.results?.length || 0} Wealthsimple accounts`);
-    return response.results || [];
+    const variables = {
+      filter: {},
+      pageSize: 50,
+      cursor: '',
+    };
+
+    const response = await makeGraphQLQuery('FetchAllAccounts', query, variables);
+
+    if (!response || !response.identity || !response.identity.accounts) {
+      debugLog('No accounts data in response');
+      return [];
+    }
+
+    // Filter and map accounts
+    const accounts = response.identity.accounts.edges
+      .filter((edge) => {
+        const account = edge.node;
+        return account.status === 'open' && account.archivedAt === null;
+      })
+      .map((edge) => {
+        const account = edge.node;
+        return {
+          id: account.id,
+          type: account.unifiedAccountType || account.type,
+          nickname: account.nickname || generateNickname(account.type, account.id),
+          currency: account.currency,
+          branch: account.branch,
+          rawType: account.type,
+        };
+      });
+
+    debugLog(`Fetched ${accounts.length} active Wealthsimple accounts`, accounts);
+    return accounts;
   } catch (error) {
     debugLog('Error fetching Wealthsimple accounts:', error);
     throw error;
@@ -181,7 +436,9 @@ export async function fetchAccountBalance(accountId) {
   try {
     debugLog(`Fetching balance for Wealthsimple account ${accountId}...`);
 
-    const response = await makeApiCall(`/v1/accounts/${accountId}`);
+    // This would use a GraphQL query for account balance
+    // For now, return placeholder
+    const response = { balance: 0 };
 
     debugLog(`Fetched balance for account ${accountId}`);
     return response;
@@ -194,20 +451,16 @@ export async function fetchAccountBalance(accountId) {
 /**
  * Fetch account transactions
  * @param {string} accountId - Account ID
- * @param {Object} options - Query options (startDate, endDate, limit)
+ * @param {Object} _options - Query options (startDate, endDate, limit)
  * @returns {Promise<Array>} Array of transactions
  */
-export async function fetchTransactions(accountId, options = {}) {
+export async function fetchTransactions(accountId, _options = {}) {
   try {
     debugLog(`Fetching transactions for Wealthsimple account ${accountId}...`);
 
-    const queryParams = new URLSearchParams();
-    if (options.startDate) queryParams.append('start_date', options.startDate);
-    if (options.endDate) queryParams.append('end_date', options.endDate);
-    if (options.limit) queryParams.append('limit', options.limit);
-
-    const endpoint = `/v1/accounts/${accountId}/transactions?${queryParams.toString()}`;
-    const response = await makeApiCall(endpoint);
+    // This would use a GraphQL query for transactions
+    // For now, return placeholder
+    const response = { results: [] };
 
     debugLog(`Fetched ${response.results?.length || 0} transactions for account ${accountId}`);
     return response.results || [];
@@ -219,9 +472,9 @@ export async function fetchTransactions(accountId, options = {}) {
 
 export default {
   checkAuth,
-  saveToken,
   setupTokenMonitoring,
-  makeApiCall,
+  makeGraphQLQuery,
+  validateToken,
   fetchAccounts,
   fetchAccountBalance,
   fetchTransactions,

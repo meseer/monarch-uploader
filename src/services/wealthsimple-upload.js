@@ -73,9 +73,9 @@ export async function uploadWealthsimpleAccountToMonarch(account, fromDate, toDa
  */
 export async function uploadAllWealthsimpleAccountsToMonarch() {
   try {
-    debugLog('Starting upload of all Wealthsimple accounts...');
+    debugLog('Starting fetch of all Wealthsimple accounts...');
 
-    // Fetch all accounts
+    // Fetch all accounts using GraphQL
     const accounts = await wealthsimpleApi.fetchAccounts();
 
     if (!accounts || accounts.length === 0) {
@@ -83,16 +83,32 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
       return;
     }
 
-    debugLog(`Found ${accounts.length} Wealthsimple accounts`);
+    debugLog(`Found ${accounts.length} Wealthsimple accounts:`, accounts);
 
-    // Get date range
+    // For testing: Just show the accounts in console and toast
+    toast.show(`Successfully fetched ${accounts.length} Wealthsimple accounts. Check console for details.`, 'info');
+
+    // Log account details
+    accounts.forEach((account, index) => {
+      debugLog(`Account ${index + 1}:`, {
+        id: account.id,
+        nickname: account.nickname,
+        type: account.type,
+        currency: account.currency,
+        branch: account.branch,
+      });
+    });
+
+    // TODO: Implement actual upload logic when ready
+    // For now, we're just testing the GraphQL fetchAccounts functionality
+
+    /* Future implementation:
     const toDate = new Date().toISOString().split('T')[0];
     const fromDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
     let successCount = 0;
     let failureCount = 0;
 
-    // Upload each account
     for (const account of accounts) {
       const success = await uploadWealthsimpleAccountToMonarch(account, fromDate, toDate);
       if (success) {
@@ -102,15 +118,15 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
       }
     }
 
-    // Show summary
     if (failureCount === 0) {
       toast.show(`Successfully uploaded all ${successCount} Wealthsimple accounts`, 'info');
     } else {
       toast.show(`Uploaded ${successCount} accounts, ${failureCount} failed`, 'warning');
     }
+    */
   } catch (error) {
-    debugLog('Error uploading all Wealthsimple accounts:', error);
-    toast.show(`Error uploading accounts: ${error.message}`, 'error');
+    debugLog('Error fetching Wealthsimple accounts:', error);
+    toast.show(`Error fetching accounts: ${error.message}`, 'error');
   }
 }
 

@@ -20,6 +20,8 @@ const monarchDomain = getMonarchApiDomain();
 // API Endpoints - dynamically constructed based on detected domain
 export const API = {
   QUESTRADE_BASE_URL: 'https://api.questrade.com',
+  WEALTHSIMPLE_GRAPHQL_URL: 'https://my.wealthsimple.com/graphql',
+  WEALTHSIMPLE_TOKEN_INFO_URL: 'https://api.production.wealthsimple.com/v1/oauth/v2/token/info',
   MONARCH_GRAPHQL_URL: `https://api.${monarchDomain}/graphql`,
   MONARCH_TRANSACTIONS_UPLOAD_URL: `https://api.${monarchDomain}/statements/upload-async/`,
   MONARCH_BALANCE_UPLOAD_URL: `https://api.${monarchDomain}/account-balance-history/upload/`,
@@ -55,6 +57,11 @@ export const STORAGE = {
   ROGERSBANK_CATEGORY_MAPPINGS: 'rogersbank_category_mappings', // Store bank category to Monarch category mappings
   // Wealthsimple specific storage keys
   WEALTHSIMPLE_AUTH_TOKEN: 'wealthsimple_auth_token',
+  WEALTHSIMPLE_ACCESS_TOKEN: 'wealthsimple_access_token',
+  WEALTHSIMPLE_IDENTITY_ID: 'wealthsimple_identity_id',
+  WEALTHSIMPLE_TOKEN_EXPIRES_AT: 'wealthsimple_token_expires_at',
+  WEALTHSIMPLE_INVEST_PROFILE: 'wealthsimple_invest_profile',
+  WEALTHSIMPLE_TRADE_PROFILE: 'wealthsimple_trade_profile',
   WEALTHSIMPLE_LAST_UPLOAD_DATE_PREFIX: 'wealthsimple_last_upload_date_',
   WEALTHSIMPLE_ACCOUNT_MAPPING_PREFIX: 'wealthsimple_monarch_account_for_',
   // Lookback period storage keys (days to look back from last upload date)

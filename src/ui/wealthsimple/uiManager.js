@@ -337,6 +337,9 @@ export async function initWealthsimpleUI() {
   try {
     debugLog('Initializing Wealthsimple UI...');
 
+    // Set up token monitoring first
+    wealthsimpleApi.setupTokenMonitoring();
+
     // Set up URL change monitoring for SPA navigation
     setupUrlChangeMonitoring();
 
@@ -379,6 +382,65 @@ function setupStatusMonitoring(connectionStatus) {
 }
 
 /**
+ * Format time remaining until expiration
+ * @param {string} expiresAt - ISO timestamp
+ * @returns {string} Formatted time remaining
+ */
+function formatTimeRemaining(expiresAt) {
+  if (!expiresAt) return '';
+
+  try {
+    const expiryTime = new Date(expiresAt).getTime();
+    const currentTime = Date.now();
+    const remainingMs = expiryTime - currentTime;
+
+    if (remainingMs <= 0) {
+      return 'expired';
+    }
+
+    const remainingMinutes = Math.floor(remainingMs / 60000);
+    const remainingHours = Math.floor(remainingMinutes / 60);
+    const remainingDays = Math.floor(remainingHours / 24);
+
+    if (remainingDays > 0) {
+      return `expires in ${remainingDays}d ${remainingHours % 24}h`;
+    }
+    if (remainingHours > 0) {
+      return `expires in ${remainingHours}h ${remainingMinutes % 60}m`;
+    }
+    return `expires in ${remainingMinutes}m`;
+  } catch (error) {
+    return '';
+  }
+}
+
+/**
+ * Get color for expiration status
+ * @param {string} expiresAt - ISO timestamp
+ * @returns {string} Color code
+ */
+function getExpirationColor(expiresAt) {
+  if (!expiresAt) return '#dc3545';
+
+  try {
+    const expiryTime = new Date(expiresAt).getTime();
+    const currentTime = Date.now();
+    const remainingMs = expiryTime - currentTime;
+    const remainingMinutes = Math.floor(remainingMs / 60000);
+
+    if (remainingMinutes <= 0) {
+      return '#dc3545'; // Red for expired
+    }
+    if (remainingMinutes < 10) {
+      return '#ffc107'; // Yellow for <10 minutes
+    }
+    return '#28a745'; // Green for >10 minutes
+  } catch (error) {
+    return '#dc3545';
+  }
+}
+
+/**
  * Update connection status indicators
  * @param {HTMLElement} connectionStatus - Connection status container
  */
@@ -393,9 +455,15 @@ function updateConnectionStatus(connectionStatus) {
     // Update Wealthsimple status
     const wealthsimpleIndicator = connectionStatus.querySelector('.wealthsimple-status');
     if (wealthsimpleIndicator) {
-      if (wealthsimpleAuth.authenticated) {
-        wealthsimpleIndicator.textContent = 'Wealthsimple: Connected';
-        wealthsimpleIndicator.style.color = '#28a745';
+      if (wealthsimpleAuth.authenticated && wealthsimpleAuth.expiresAt) {
+        const timeRemaining = formatTimeRemaining(wealthsimpleAuth.expiresAt);
+        const color = getExpirationColor(wealthsimpleAuth.expiresAt);
+
+        wealthsimpleIndicator.textContent = `Wealthsimple: Connected (${timeRemaining})`;
+        wealthsimpleIndicator.style.color = color;
+      } else if (wealthsimpleAuth.expired) {
+        wealthsimpleIndicator.textContent = 'Wealthsimple: Token expired';
+        wealthsimpleIndicator.style.color = '#dc3545';
       } else {
         wealthsimpleIndicator.textContent = 'Wealthsimple: Not connected';
         wealthsimpleIndicator.style.color = '#dc3545';
@@ -405,14 +473,12 @@ function updateConnectionStatus(connectionStatus) {
     // Update Monarch status
     const monarchIndicator = connectionStatus.querySelector('.monarch-status');
     if (monarchIndicator) {
-      // Clear existing content
-      monarchIndicator.innerHTML = '';
-
       if (monarchToken) {
         monarchIndicator.textContent = 'Monarch: Connected';
         monarchIndicator.style.color = '#28a745';
       } else {
-        // Create clickable login link
+        // Clear and add login link
+        monarchIndicator.textContent = '';
         const loginLink = createMonarchLoginLink('Monarch: Not connected', () => {
           // Callback to update status after successful login
           updateConnectionStatus(connectionStatus);

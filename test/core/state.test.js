@@ -52,6 +52,11 @@ describe('StateManager', () => {
         rogersbank: {
           credentials: null,
         },
+        wealthsimple: {
+          authenticated: false,
+          identityId: null,
+          expiresAt: null,
+        },
       });
     });
 
@@ -289,6 +294,76 @@ describe('StateManager', () => {
       testStateManager.setRogersBankAuth(credentials);
 
       expect(listener).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('setWealthsimpleAuth', () => {
+    it('should update Wealthsimple auth information', () => {
+      const authInfo = {
+        authenticated: true,
+        identityId: 'identity-123',
+        expiresAt: '2026-01-02T22:00:00.000Z',
+      };
+
+      testStateManager.setWealthsimpleAuth(authInfo);
+
+      const state = testStateManager.getState();
+      expect(state.auth.wealthsimple).toEqual(authInfo);
+    });
+
+    it('should handle null auth info', () => {
+      testStateManager.setWealthsimpleAuth(null);
+
+      const state = testStateManager.getState();
+      expect(state.auth.wealthsimple).toEqual({
+        authenticated: false,
+        identityId: null,
+        expiresAt: null,
+      });
+    });
+
+    it('should handle partial auth info', () => {
+      const authInfo = {
+        authenticated: true,
+        identityId: 'identity-456',
+      };
+
+      testStateManager.setWealthsimpleAuth(authInfo);
+
+      const state = testStateManager.getState();
+      expect(state.auth.wealthsimple).toEqual(authInfo);
+    });
+
+    it('should notify auth listeners', () => {
+      const listener = jest.fn();
+      testStateManager.addListener('auth', listener);
+
+      const authInfo = {
+        authenticated: true,
+        identityId: 'identity-789',
+        expiresAt: '2026-01-02T22:00:00.000Z',
+      };
+
+      testStateManager.setWealthsimpleAuth(authInfo);
+
+      expect(listener).toHaveBeenCalledTimes(1);
+    });
+
+    it('should handle clearing auth', () => {
+      // First set auth
+      testStateManager.setWealthsimpleAuth({
+        authenticated: true,
+        identityId: 'identity-999',
+        expiresAt: '2026-01-02T22:00:00.000Z',
+      });
+
+      // Then clear it
+      testStateManager.setWealthsimpleAuth(null);
+
+      const state = testStateManager.getState();
+      expect(state.auth.wealthsimple.authenticated).toBe(false);
+      expect(state.auth.wealthsimple.identityId).toBeNull();
+      expect(state.auth.wealthsimple.expiresAt).toBeNull();
     });
   });
 

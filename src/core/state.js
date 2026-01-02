@@ -43,6 +43,11 @@ class StateManager {
         rogersbank: {
           credentials: null,
         },
+        wealthsimple: {
+          authenticated: false,
+          identityId: null,
+          expiresAt: null,
+        },
       },
     };
 
@@ -141,6 +146,21 @@ class StateManager {
   setRogersBankAuth(credentials) {
     const prevState = { ...this.state };
     this.state.auth.rogersbank = { credentials };
+
+    this.notifyListeners('auth', prevState, this.state);
+  }
+
+  /**
+   * Update Wealthsimple authentication status
+   * @param {Object} authInfo - Wealthsimple auth information
+   */
+  setWealthsimpleAuth(authInfo) {
+    const prevState = { ...this.state };
+    this.state.auth.wealthsimple = authInfo || {
+      authenticated: false,
+      identityId: null,
+      expiresAt: null,
+    };
 
     this.notifyListeners('auth', prevState, this.state);
   }
