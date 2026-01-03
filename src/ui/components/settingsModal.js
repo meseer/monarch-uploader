@@ -7,7 +7,7 @@ import { debugLog, getDefaultLookbackDays } from '../../core/utils';
 import { STORAGE, API } from '../../core/config';
 import { checkMonarchAuth } from '../../services/auth';
 import { checkQuestradeAuth } from '../../services/questrade/auth';
-import { isAccountSkipped, markAccountAsSkipped } from '../../services/wealthsimple/account';
+import { isAccountSkipped, markAccountAsSkipped, getWealthsimpleAccounts } from '../../services/wealthsimple/account';
 import toast from '../toast';
 import { createMonarchLoginLink } from './monarchLoginLink';
 
@@ -725,21 +725,24 @@ function renderWealthsimpleTab(container) {
   const lookbackSection = createLookbackPeriodSection('wealthsimple');
   container.appendChild(lookbackSection);
 
-  // Account Mappings Section
+  // Account Mappings Section with consolidated structure
   const mappingsSection = createSection('Account Mappings', '🔗', 'Wealthsimple to Monarch account mappings');
-  const mappingsData = getStorageData(STORAGE.WEALTHSIMPLE_ACCOUNT_MAPPING_PREFIX);
-  const mappingsCards = createAccountMappingCards(mappingsData, (key) => {
-    GM_deleteValue(key);
-    toast.show('Account mapping deleted', 'info');
-    renderTabContent(container, 'wealthsimple');
-  }, 'Wealthsimple', 'wealthsimple');
-  mappingsSection.appendChild(mappingsCards);
 
-  // TODO: Uploaded Transactions Section (placeholder for future implementation)
-  // Similar to Rogers Bank, this will show transaction IDs per account
+  // Get all accounts from consolidated storage
+  const accounts = getWealthsimpleAccounts();
 
-  // TODO: Merchant Category Mappings Section (placeholder for future implementation)
-  // Similar to Rogers Bank, this will map merchant names to Monarch categories
+  if (accounts.length === 0) {
+    const emptyMessage = document.createElement('p');
+    emptyMessage.textContent = 'No accounts found. Accounts will appear here after syncing with Wealthsimple.';
+    emptyMessage.style.cssText = 'color: #666; font-style: italic; margin: 10px 0;';
+    mappingsSection.appendChild(emptyMessage);
+  } else {
+    const accountCards = createWealthsimpleAccountCards(accounts, () => {
+      // Refresh callback
+      renderTabContent(container, 'wealthsimple');
+    });
+    mappingsSection.appendChild(accountCards);
+  }
 
   container.appendChild(mappingsSection);
 }
@@ -1423,7 +1426,7 @@ function createAccountMappingCards(data, onDelete, institutionName, institutionT
       width: 24px;
       height: 24px;
       cursor: pointer;
-      font-size: 12px;
+      font-size: 24px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -2088,6 +2091,220 @@ function deleteSelectedTransactionRefs(selectedCheckboxes) {
   if (tabContainer) {
     renderTabContent(tabContainer, 'rogersbank');
   }
+}
+
+/**
+ * Creates Wealthsimple account cards from consolidated structure
+ * @param {Array} accounts - Array of consolidated account objects
+ * @param {Function} onRefresh - Refresh callback
+ * @returns {HTMLElement} Cards container element
+ */
+function createWealthsimpleAccountCards(accounts, onRefresh) {
+  const container = document.createElement('div');
+  container.style.cssText = 'margin: 10px 0;';
+
+  accounts.forEach((accountEntry) => {
+    const wsAccount = accountEntry.wealthsimpleAccount;
+    const monarchAccount = accountEntry.monarchAccount;
+    const syncEnabled = accountEntry.syncEnabled;
+    const lastSyncDate = accountEntry.lastSyncDate;
+
+    // Create card container
+    const card = document.createElement('div');
+    card.id = `wealthsimple-account-card-${wsAccount.id}`;
+    card.style.cssText = `
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      margin-bottom: 15px;
+      overflow: hidden;
+      transition: all 0.2s;
+    `;
+
+    // Create card header
+    const cardHeader = document.createElement('div');
+    cardHeader.style.cssText = `
+      display: flex;
+      align-items: center;
+      padding: 15px;
+      background-color: ${!syncEnabled ? '#fafafa' : '#fff'};
+      cursor: pointer;
+      transition: background-color 0.2s;
+    `;
+
+    // Expand/collapse icon
+    const expandIcon = document.createElement('div');
+    expandIcon.style.cssText = `
+      margin-right: 10px;
+      font-size: 1.2em;
+      color: ${!syncEnabled ? '#999' : '#666'};
+      transition: transform 0.2s;
+      cursor: pointer;
+      flex-shrink: 0;
+      transform: rotate(270deg);
+    `;
+    expandIcon.textContent = '▼';
+    cardHeader.appendChild(expandIcon);
+
+    // Logo
+    const logoContainer = document.createElement('div');
+    logoContainer.style.cssText = `margin-right: 15px; flex-shrink: 0; ${!syncEnabled ? 'opacity: 0.5;' : ''}`;
+    try {
+      GM_addElement(logoContainer, 'img', {
+        src: 'https://www.google.com/s2/favicons?domain=wealthsimple.com&sz=128',
+        style: 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;',
+      });
+    } catch (error) {
+      addAccountLogoFallback(logoContainer, 'Wealthsimple');
+    }
+    cardHeader.appendChild(logoContainer);
+
+    // Account info
+    const infoContainer = document.createElement('div');
+    infoContainer.style.cssText = 'flex-grow: 1;';
+
+    const nameDiv = document.createElement('div');
+    nameDiv.style.cssText = `font-weight: bold; font-size: 1.1em; margin-bottom: 2px; color: ${!syncEnabled ? '#999' : '#333'};`;
+    nameDiv.textContent = wsAccount.nickname || 'Unknown Account';
+    infoContainer.appendChild(nameDiv);
+
+    const typeDiv = document.createElement('div');
+    typeDiv.style.cssText = 'font-size: 0.9em; color: #666; margin-bottom: 2px;';
+    typeDiv.textContent = wsAccount.type;
+    infoContainer.appendChild(typeDiv);
+
+    // Mapping status
+    const mappingDiv = document.createElement('div');
+    mappingDiv.style.cssText = 'font-size: 0.8em; margin-top: 5px;';
+    if (monarchAccount) {
+      mappingDiv.innerHTML = `<span style="color: #28a745;">✓ Mapped to:</span> <span style="color: #666;">${monarchAccount.displayName}</span>`;
+    } else {
+      mappingDiv.innerHTML = '<span style="color: #dc3545;">✗ Not mapped</span>';
+    }
+    infoContainer.appendChild(mappingDiv);
+
+    // Last sync date
+    if (lastSyncDate) {
+      const syncDiv = document.createElement('div');
+      syncDiv.style.cssText = 'font-size: 0.8em; color: #555; margin-top: 2px;';
+      syncDiv.textContent = `Last synced: ${formatLastUpdateDate(lastSyncDate)}`;
+      infoContainer.appendChild(syncDiv);
+    }
+
+    cardHeader.appendChild(infoContainer);
+
+    // Toggle switch
+    const toggleContainer = document.createElement('div');
+    toggleContainer.style.cssText = 'margin-left: auto; margin-right: 10px; flex-shrink: 0;';
+    const toggle = createToggleSwitch(syncEnabled, (isEnabled) => {
+      const success = markAccountAsSkipped(wsAccount.id, !isEnabled);
+      if (success) {
+        toast.show(`Account ${wsAccount.nickname} ${isEnabled ? 'enabled' : 'disabled'}`, 'info');
+        // Refresh after a short delay
+        setTimeout(onRefresh, 500);
+      } else {
+        toast.show('Failed to update account status', 'error');
+        // Revert toggle
+        setTimeout(onRefresh, 100);
+      }
+    });
+    toggleContainer.appendChild(toggle);
+    cardHeader.appendChild(toggleContainer);
+
+    // Stop propagation on toggle
+    toggleContainer.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+
+    // Delete button
+    const deleteButton = document.createElement('button');
+    deleteButton.textContent = '🗑️';
+    deleteButton.style.cssText = `
+      margin-left: 10px;
+      background: transparent;
+      color: #dc3545;
+      border: none;
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+      cursor: pointer;
+      font-size: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    `;
+    deleteButton.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const confirmed = await showConfirmDialog(
+        `Are you sure you want to delete the account "${wsAccount.nickname}"?\n\nThis will remove all mappings and settings for this account.`,
+      );
+      if (confirmed) {
+        // Clear the account from the consolidated list
+        const allAccounts = getWealthsimpleAccounts();
+        const filteredAccounts = allAccounts.filter((acc) => acc.wealthsimpleAccount.id !== wsAccount.id);
+        GM_setValue(STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST, JSON.stringify(filteredAccounts));
+        toast.show('Account deleted', 'info');
+        onRefresh();
+      }
+    });
+    deleteButton.addEventListener('mouseover', () => {
+      deleteButton.style.backgroundColor = '#f8d7da';
+    });
+    deleteButton.addEventListener('mouseout', () => {
+      deleteButton.style.backgroundColor = 'transparent';
+    });
+    cardHeader.appendChild(deleteButton);
+
+    // Expandable content (JSON display)
+    const expandableContent = document.createElement('div');
+    expandableContent.style.cssText = 'display: none; padding: 15px; background-color: #f8f9fa; border-top: 1px solid #e0e0e0;';
+
+    const jsonContainer = document.createElement('pre');
+    jsonContainer.style.cssText = `
+      background-color: #2d3748;
+      color: #e2e8f0;
+      padding: 12px;
+      border-radius: 4px;
+      font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+      font-size: 12px;
+      line-height: 1.4;
+      overflow-x: auto;
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+    `;
+    jsonContainer.textContent = JSON.stringify(accountEntry, null, 2);
+    expandableContent.appendChild(jsonContainer);
+
+    card.appendChild(cardHeader);
+    card.appendChild(expandableContent);
+
+    // Toggle functionality
+    let isExpanded = false;
+    cardHeader.addEventListener('click', (e) => {
+      // Don't toggle if interactive elements were clicked
+      if (e.target === deleteButton || e.target.closest('.toggle-container')) return;
+      isExpanded = !isExpanded;
+      expandableContent.style.display = isExpanded ? 'block' : 'none';
+      expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(270deg)';
+    });
+
+    // Hover effects
+    cardHeader.addEventListener('mouseover', () => {
+      if (!isExpanded) {
+        cardHeader.style.backgroundColor = !syncEnabled ? '#f0f0f0' : '#f8f9fa';
+      }
+    });
+    cardHeader.addEventListener('mouseout', () => {
+      if (!isExpanded) {
+        cardHeader.style.backgroundColor = !syncEnabled ? '#fafafa' : '#fff';
+      }
+    });
+
+    container.appendChild(card);
+  });
+
+  return container;
 }
 
 /**

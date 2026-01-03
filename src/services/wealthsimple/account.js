@@ -15,33 +15,28 @@ import { getMonarchAccountTypeMapping } from '../../mappers/wealthsimple-account
 /**
  * Resolve Monarch account mapping for a Wealthsimple account
  * Shows account selector with create option, with pre-filled values based on Wealthsimple account type
- * @param {Object} wealthsimpleAccount - Wealthsimple account object
- * @param {string} wealthsimpleAccount.id - Account ID
- * @param {string} wealthsimpleAccount.nickname - Account nickname
- * @param {string} wealthsimpleAccount.type - Account type (e.g., 'MANAGED_TFSA')
+ * @param {Object} consolidatedAccount - Consolidated account object with wealthsimpleAccount property
+ * @param {Object} consolidatedAccount.wealthsimpleAccount - Wealthsimple account object
+ * @param {string} consolidatedAccount.wealthsimpleAccount.id - Account ID
+ * @param {string} consolidatedAccount.wealthsimpleAccount.nickname - Account nickname
+ * @param {string} consolidatedAccount.wealthsimpleAccount.type - Account type (e.g., 'MANAGED_TFSA')
  * @param {Object} currentBalance - Current balance object {amount, currency} or null
  * @returns {Promise<Object|null>} Monarch account object, or null if cancelled
  */
-export async function resolveWealthsimpleAccountMapping(wealthsimpleAccount, currentBalance = null) {
+export async function resolveWealthsimpleAccountMapping(consolidatedAccount, currentBalance = null) {
   try {
-    const { id: accountId, nickname, type } = wealthsimpleAccount;
+    const { id: accountId, nickname, type } = consolidatedAccount.wealthsimpleAccount;
 
     debugLog(`Resolving Monarch account mapping for Wealthsimple account ${accountId} (${nickname})`);
 
     // Set current account context
     stateManager.setAccount(accountId, nickname || accountId);
 
-    // Check for existing mapping
-    const existingMapping = GM_getValue(`${STORAGE.WEALTHSIMPLE_ACCOUNT_MAPPING_PREFIX}${accountId}`, null);
-    if (existingMapping) {
-      try {
-        const monarchAccount = JSON.parse(existingMapping);
-        debugLog(`Found existing mapping: ${nickname} -> ${monarchAccount.displayName}`);
-        return monarchAccount;
-      } catch (error) {
-        debugLog('Error parsing existing account mapping, will prompt for new one:', error);
-        // Fall through to create new mapping
-      }
+    // Check for existing mapping in consolidated structure
+    const accountData = getAccountData(accountId);
+    if (accountData?.monarchAccount) {
+      debugLog(`Found existing mapping: ${nickname} -> ${accountData.monarchAccount.displayName}`);
+      return accountData.monarchAccount;
     }
 
     debugLog('No existing mapping found, showing account selector with create option');
@@ -68,8 +63,6 @@ export async function resolveWealthsimpleAccountMapping(wealthsimpleAccount, cur
     const monarchAccounts = await monarchApi.listAccounts(accountType);
     if (!monarchAccounts || monarchAccounts.length === 0) {
       debugLog(`No ${accountType} accounts found in Monarch, showing create dialog directly`);
-      // No existing accounts, could show creation dialog directly
-      // But let's still show the selector so user sees the "create" option
     }
 
     // Show enhanced account selector with create option
@@ -89,34 +82,21 @@ export async function resolveWealthsimpleAccountMapping(wealthsimpleAccount, cur
       return null;
     }
 
-    // Handle skip with full context
+    // Handle skip - update consolidated structure
     if (monarchAccount.skipped) {
-      debugLog('Account skipped, saving full details', monarchAccount);
-
-      // Save full account details for skipped accounts
-      const skippedAccountDetails = {
-        id: monarchAccount.accountId || accountId,
-        nickname: monarchAccount.accountName || nickname,
-        type: monarchAccount.accountType || type,
-        skipped: true,
-        skippedAt: new Date().toISOString(),
-        balance: monarchAccount.balance || currentBalance,
-      };
-
-      GM_setValue(
-        `${STORAGE.WEALTHSIMPLE_SKIPPED_ACCOUNT_PREFIX}${accountId}`,
-        JSON.stringify(skippedAccountDetails),
-      );
-
-      debugLog(`Saved skipped account details for ${nickname} (${accountId})`);
+      debugLog('Account skipped by user');
+      updateAccountInList(accountId, {
+        monarchAccount: null,
+        syncEnabled: false,
+      });
       return monarchAccount;
     }
 
-    // Save the mapping for future use
-    GM_setValue(
-      `${STORAGE.WEALTHSIMPLE_ACCOUNT_MAPPING_PREFIX}${accountId}`,
-      JSON.stringify(monarchAccount),
-    );
+    // Save the mapping in consolidated structure
+    updateAccountInList(accountId, {
+      monarchAccount,
+      syncEnabled: true,
+    });
 
     debugLog(`Saved account mapping: ${nickname} (${accountId}) -> ${monarchAccount.displayName} (${monarchAccount.id})`);
 
@@ -242,8 +222,8 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
 }
 
 /**
- * Get cached Wealthsimple accounts list
- * @returns {Array} Array of account objects with enhanced properties
+ * Get cached Wealthsimple accounts list (consolidated structure)
+ * @returns {Array} Array of consolidated account objects
  */
 export function getWealthsimpleAccounts() {
   try {
@@ -256,15 +236,33 @@ export function getWealthsimpleAccounts() {
 }
 
 /**
- * Update specific account properties in the list
- * @param {string} accountId - Account ID to update
+ * Save Wealthsimple accounts list
+ * @param {Array} accounts - Array of consolidated account objects
+ */
+function saveWealthsimpleAccounts(accounts) {
+  GM_setValue(STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST, JSON.stringify(accounts));
+}
+
+/**
+ * Get single account data from consolidated list
+ * @param {string} accountId - Wealthsimple account ID
+ * @returns {Object|null} Consolidated account object or null
+ */
+export function getAccountData(accountId) {
+  const accounts = getWealthsimpleAccounts();
+  return accounts.find((acc) => acc.wealthsimpleAccount?.id === accountId) || null;
+}
+
+/**
+ * Update specific account properties in the consolidated list
+ * @param {string} accountId - Wealthsimple account ID
  * @param {Object} updates - Properties to update
  * @returns {boolean} Success status
  */
 export function updateAccountInList(accountId, updates) {
   try {
     const accounts = getWealthsimpleAccounts();
-    const accountIndex = accounts.findIndex((acc) => acc.id === accountId);
+    const accountIndex = accounts.findIndex((acc) => acc.wealthsimpleAccount?.id === accountId);
 
     if (accountIndex === -1) {
       debugLog(`Account ${accountId} not found in list`);
@@ -278,7 +276,7 @@ export function updateAccountInList(accountId, updates) {
     };
 
     // Save updated list
-    GM_setValue(STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST, JSON.stringify(accounts));
+    saveWealthsimpleAccounts(accounts);
     debugLog(`Updated account ${accountId} in list`, updates);
     return true;
   } catch (error) {
@@ -288,29 +286,28 @@ export function updateAccountInList(accountId, updates) {
 }
 
 /**
- * Mark account as skipped or unskip it
- * @param {string} accountId - Account ID
- * @param {boolean} skipped - Whether to skip this account
+ * Mark account as skipped or unskip it (updates syncEnabled flag)
+ * @param {string} accountId - Wealthsimple account ID
+ * @param {boolean} skipped - Whether to skip this account (inverts to syncEnabled)
  * @returns {boolean} Success status
  */
 export function markAccountAsSkipped(accountId, skipped = true) {
-  const success = updateAccountInList(accountId, { skipped });
+  const success = updateAccountInList(accountId, { syncEnabled: !skipped });
   if (success) {
-    const action = skipped ? 'skipped' : 'unskipped';
-    debugLog(`Account ${accountId} marked as ${action}`);
+    const action = skipped ? 'disabled' : 'enabled';
+    debugLog(`Account ${accountId} sync ${action}`);
   }
   return success;
 }
 
 /**
- * Check if an account is marked as skipped
- * @param {string} accountId - Account ID
- * @returns {boolean} True if account is skipped
+ * Check if an account is marked as skipped (checks syncEnabled flag)
+ * @param {string} accountId - Wealthsimple account ID
+ * @returns {boolean} True if account sync is disabled
  */
 export function isAccountSkipped(accountId) {
-  const accounts = getWealthsimpleAccounts();
-  const account = accounts.find((acc) => acc.id === accountId);
-  return account?.skipped || false;
+  const accountData = getAccountData(accountId);
+  return accountData ? !accountData.syncEnabled : false;
 }
 
 /**

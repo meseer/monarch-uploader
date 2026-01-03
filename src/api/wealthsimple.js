@@ -351,9 +351,9 @@ function generateNickname(type, id) {
 }
 
 /**
- * Fetch and cache Wealthsimple accounts list
- * Merges with existing cached list to preserve skip flags and other settings
- * @returns {Promise<Array>} Array of account objects with enhanced properties
+ * Fetch and cache Wealthsimple accounts list with consolidated structure
+ * Merges with existing cached list to preserve monarch mappings, sync settings, and transaction history
+ * @returns {Promise<Array>} Array of consolidated account objects
  */
 export async function fetchAndCacheWealthsimpleAccounts() {
   try {
@@ -362,29 +362,42 @@ export async function fetchAndCacheWealthsimpleAccounts() {
     // Fetch fresh accounts from API
     const apiAccounts = await fetchAccounts();
 
-    // Get existing cached accounts
-    const cachedAccounts = JSON.parse(GM_getValue(STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST, '[]'));
+    // Get existing cached accounts (consolidated structure)
+    const existingAccounts = JSON.parse(GM_getValue(STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST, '[]'));
 
-    // Create a map of cached accounts by ID
-    const cachedMap = new Map();
-    cachedAccounts.forEach((acc) => {
-      cachedMap.set(acc.id, acc);
+    // Create a map of existing accounts by Wealthsimple account ID
+    const existingMap = new Map();
+    existingAccounts.forEach((acc) => {
+      if (acc.wealthsimpleAccount?.id) {
+        existingMap.set(acc.wealthsimpleAccount.id, acc);
+      }
     });
 
-    // Merge API data with cached settings
+    // Merge API data with existing settings
     const mergedAccounts = apiAccounts.map((apiAccount) => {
-      const cached = cachedMap.get(apiAccount.id);
+      const existing = existingMap.get(apiAccount.id);
+
       return {
-        ...apiAccount,
-        // Preserve these settings from cache if they exist
-        skipped: cached?.skipped || false,
-        lastSyncDate: cached?.lastSyncDate || null,
+        // Wealthsimple account definition (always fresh from API)
+        wealthsimpleAccount: apiAccount,
+
+        // Monarch account mapping (preserve from cache)
+        monarchAccount: existing?.monarchAccount || null,
+
+        // Sync enabled status (preserve from cache, default to true for new accounts)
+        syncEnabled: existing?.syncEnabled ?? true,
+
+        // Last sync date (preserve from cache)
+        lastSyncDate: existing?.lastSyncDate || null,
+
+        // Uploaded transactions (preserve from cache)
+        uploadedTransactions: existing?.uploadedTransactions || [],
       };
     });
 
-    // Save merged list
+    // Save merged list with consolidated structure
     GM_setValue(STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST, JSON.stringify(mergedAccounts));
-    debugLog(`Cached ${mergedAccounts.length} Wealthsimple accounts with settings`);
+    debugLog(`Cached ${mergedAccounts.length} Wealthsimple accounts with consolidated structure`);
 
     return mergedAccounts;
   } catch (error) {

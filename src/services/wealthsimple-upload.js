@@ -17,18 +17,19 @@ import {
 
 /**
  * Upload a single Wealthsimple account to Monarch
- * @param {Object} account - Wealthsimple account object
+ * @param {Object} consolidatedAccount - Consolidated account object with wealthsimpleAccount property
  * @param {string} fromDate - Start date (YYYY-MM-DD)
  * @param {string} toDate - End date (YYYY-MM-DD)
  * @param {Object|null} currentBalance - Current balance object {amount, currency}
  * @returns {Promise<Object>} Result object with success status and optional signals
  */
-export async function uploadWealthsimpleAccountToMonarch(account, fromDate, toDate, currentBalance = null) {
+export async function uploadWealthsimpleAccountToMonarch(consolidatedAccount, fromDate, toDate, currentBalance = null) {
   try {
+    const account = consolidatedAccount.wealthsimpleAccount;
     debugLog(`Uploading Wealthsimple account ${account.id} to Monarch...`);
 
     // Resolve account mapping (shows selector with create option)
-    const result = await resolveWealthsimpleAccountMapping(account, currentBalance);
+    const result = await resolveWealthsimpleAccountMapping(consolidatedAccount, currentBalance);
 
     // Handle skip signal
     if (result && result.skipped) {
@@ -79,6 +80,7 @@ export async function uploadWealthsimpleAccountToMonarch(account, fromDate, toDa
 
     return success;
   } catch (error) {
+    const account = consolidatedAccount.wealthsimpleAccount;
     debugLog(`Error uploading Wealthsimple account ${account.id}:`, error);
     toast.show(`Error uploading account: ${error.message}`, 'error');
     return false;
@@ -101,8 +103,8 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
       return;
     }
 
-    // Filter out skipped accounts
-    const accountsToSync = accounts.filter((acc) => !acc.skipped);
+    // Filter out disabled accounts
+    const accountsToSync = accounts.filter((acc) => acc.syncEnabled !== false);
     const skippedCount = accounts.length - accountsToSync.length;
 
     if (skippedCount > 0) {
@@ -117,7 +119,7 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
     debugLog(`Processing ${accountsToSync.length} Wealthsimple account(s):`, accountsToSync);
 
     // Fetch all account balances upfront
-    const accountIds = accountsToSync.map((acc) => acc.id);
+    const accountIds = accountsToSync.map((acc) => acc.wealthsimpleAccount.id);
     debugLog('Fetching balances for all accounts...');
     const balanceResult = await wealthsimpleApi.fetchAccountBalances(accountIds);
 
@@ -136,7 +138,9 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
     let skippedDuringSync = 0;
     let balanceUnavailableCount = 0;
 
-    for (const account of accountsToSync) {
+    for (const consolidatedAccount of accountsToSync) {
+      const account = consolidatedAccount.wealthsimpleAccount;
+
       // Get balance for this account
       const currentBalance = balanceResult.balances.get(account.id);
 
@@ -147,7 +151,7 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
         continue;
       }
 
-      const result = await uploadWealthsimpleAccountToMonarch(account, fromDate, toDate, currentBalance);
+      const result = await uploadWealthsimpleAccountToMonarch(consolidatedAccount, fromDate, toDate, currentBalance);
 
       // Check if user cancelled the entire sync
       if (result && result.cancelled) {

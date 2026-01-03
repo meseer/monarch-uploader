@@ -34,18 +34,30 @@ describe('Wealthsimple Upload Service', () => {
 
       const mockAccounts = [
         {
-          id: 'acc-1',
-          nickname: 'My TFSA',
-          type: 'TFSA',
-          currency: 'CAD',
-          branch: 'WS',
+          wealthsimpleAccount: {
+            id: 'acc-1',
+            nickname: 'My TFSA',
+            type: 'TFSA',
+            currency: 'CAD',
+            branch: 'WS',
+          },
+          monarchAccount: null,
+          syncEnabled: true,
+          lastSyncDate: null,
+          uploadedTransactions: [],
         },
         {
-          id: 'acc-2',
-          nickname: 'My RRSP',
-          type: 'RRSP',
-          currency: 'CAD',
-          branch: 'WS',
+          wealthsimpleAccount: {
+            id: 'acc-2',
+            nickname: 'My RRSP',
+            type: 'RRSP',
+            currency: 'CAD',
+            branch: 'WS',
+          },
+          monarchAccount: null,
+          syncEnabled: true,
+          lastSyncDate: null,
+          uploadedTransactions: [],
         },
       ];
 
@@ -110,9 +122,15 @@ describe('Wealthsimple Upload Service', () => {
 
       const mockAccounts = [
         {
-          id: 'acc-1',
-          nickname: 'My TFSA',
-          type: 'TFSA',
+          wealthsimpleAccount: {
+            id: 'acc-1',
+            nickname: 'My TFSA',
+            type: 'TFSA',
+          },
+          monarchAccount: null,
+          syncEnabled: true,
+          lastSyncDate: null,
+          uploadedTransactions: [],
         },
       ];
 
