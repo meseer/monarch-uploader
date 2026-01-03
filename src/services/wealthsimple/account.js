@@ -19,9 +19,10 @@ import { getMonarchAccountTypeMapping } from '../../mappers/wealthsimple-account
  * @param {string} wealthsimpleAccount.id - Account ID
  * @param {string} wealthsimpleAccount.nickname - Account nickname
  * @param {string} wealthsimpleAccount.type - Account type (e.g., 'MANAGED_TFSA')
+ * @param {Object} currentBalance - Current balance object {amount, currency} or null
  * @returns {Promise<Object|null>} Monarch account object, or null if cancelled
  */
-export async function resolveWealthsimpleAccountMapping(wealthsimpleAccount) {
+export async function resolveWealthsimpleAccountMapping(wealthsimpleAccount, currentBalance = null) {
   try {
     const { id: accountId, nickname, type } = wealthsimpleAccount;
 
@@ -54,8 +55,10 @@ export async function resolveWealthsimpleAccountMapping(wealthsimpleAccount) {
       defaultName: nickname || accountId,
       defaultType: typeMapping?.type || 'brokerage',
       defaultSubtype: typeMapping?.subtype || 'brokerage',
-      defaultBalance: 0, // TODO: Set to actual balance once we implement balance fetching
+      defaultBalance: currentBalance ? currentBalance.amount : 0,
       defaultIncludeInNetWorth: true,
+      currentBalance, // Pass balance for display in UI
+      accountType: type, // Pass raw account type for display
     };
 
     // Determine account type for filtering Monarch accounts
@@ -84,6 +87,29 @@ export async function resolveWealthsimpleAccountMapping(wealthsimpleAccount) {
       // User cancelled selection
       debugLog('User cancelled account mapping selection');
       return null;
+    }
+
+    // Handle skip with full context
+    if (monarchAccount.skipped) {
+      debugLog('Account skipped, saving full details', monarchAccount);
+
+      // Save full account details for skipped accounts
+      const skippedAccountDetails = {
+        id: monarchAccount.accountId || accountId,
+        nickname: monarchAccount.accountName || nickname,
+        type: monarchAccount.accountType || type,
+        skipped: true,
+        skippedAt: new Date().toISOString(),
+        balance: monarchAccount.balance || currentBalance,
+      };
+
+      GM_setValue(
+        `${STORAGE.WEALTHSIMPLE_SKIPPED_ACCOUNT_PREFIX}${accountId}`,
+        JSON.stringify(skippedAccountDetails),
+      );
+
+      debugLog(`Saved skipped account details for ${nickname} (${accountId})`);
+      return monarchAccount;
     }
 
     // Save the mapping for future use
@@ -135,25 +161,59 @@ export function clearAccountMapping(wealthsimpleAccountId) {
  * Upload Wealthsimple account balance to Monarch
  * @param {string} wealthsimpleAccountId - Wealthsimple account ID
  * @param {string} monarchAccountId - Monarch account ID
- * @param {string} fromDate - Start date (YYYY-MM-DD)
- * @param {string} toDate - End date (YYYY-MM-DD)
+ * @param {string} fromDate - Start date (YYYY-MM-DD) - not used, kept for API compatibility
+ * @param {string} toDate - End date (YYYY-MM-DD) - used as the date for current balance
+ * @param {Object} currentBalance - Current balance object {amount, currency}
  * @returns {Promise<boolean>} Success status
  */
-export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAccountId, fromDate, toDate) {
-  // TODO: Implement once Wealthsimple balance API is available
-  // Will need to:
-  // 1. Fetch balance history from Wealthsimple API
-  // 2. Convert to Monarch CSV format (Date, Total Equity, Account Name)
-  // 3. Upload via monarchApi.uploadBalance()
-  debugLog('Balance upload placeholder - not yet implemented', {
-    wealthsimpleAccountId,
-    monarchAccountId,
-    fromDate,
-    toDate,
-  });
+export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAccountId, fromDate, toDate, currentBalance = null) {
+  try {
+    debugLog('Starting Wealthsimple balance upload', {
+      wealthsimpleAccountId,
+      monarchAccountId,
+      toDate,
+      currentBalance,
+    });
 
-  toast.show('Balance upload not yet implemented for Wealthsimple', 'warning');
-  return false;
+    // Get current balance from Wealthsimple API if not provided
+    let balance = currentBalance;
+    if (!balance) {
+      debugLog('Current balance not provided, fetching from API');
+      const balanceData = await wealthsimpleApi.fetchAccountBalance(wealthsimpleAccountId);
+      balance = balanceData;
+    }
+
+    // Validate balance data
+    if (!balance || balance.amount === null || balance.amount === undefined) {
+      debugLog('No balance data available for account', wealthsimpleAccountId);
+      toast.show('Balance data not available for this account', 'warning');
+      return false;
+    }
+
+    // Get account name from state
+    const accountName = stateManager.getState().currentAccount.nickname || 'Unknown Account';
+
+    // Format current balance as single-day CSV
+    // CSV format: "Date","Total Equity","Account Name"
+    const csvData = `"Date","Total Equity","Account Name"\n"${toDate}","${balance.amount}","${accountName}"`;
+
+    debugLog('Uploading balance CSV to Monarch', { monarchAccountId, toDate, amount: balance.amount });
+
+    // Upload to Monarch
+    const success = await monarchApi.uploadBalance(monarchAccountId, csvData, toDate, toDate);
+
+    if (success) {
+      debugLog(`Successfully uploaded balance for ${accountName} (${wealthsimpleAccountId})`);
+      return true;
+    }
+
+    debugLog(`Failed to upload balance for ${accountName} (${wealthsimpleAccountId})`);
+    return false;
+  } catch (error) {
+    debugLog('Error uploading Wealthsimple balance:', error);
+    toast.show(`Balance upload failed: ${error.message}`, 'error');
+    return false;
+  }
 }
 
 /**

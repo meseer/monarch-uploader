@@ -669,6 +669,30 @@ export async function clearLastUploadedDate(location = window.location) {
   }
 }
 
+/**
+ * Format currency amount with proper thousands separators
+ * @param {number} amount - Amount to format
+ * @returns {string} Formatted amount (e.g., "96,780.95")
+ */
+export function formatCurrencyAmount(amount) {
+  return new Intl.NumberFormat('en-CA', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+/**
+ * Format balance with currency and amount
+ * @param {Object|null} balance - Balance object with amount and currency
+ * @returns {string} Formatted balance string (e.g., "CAD $96,780.95" or "Unknown")
+ */
+export function formatBalance(balance) {
+  if (!balance || balance.amount === null || balance.amount === undefined) {
+    return 'Unknown';
+  }
+  return `${balance.currency} $${formatCurrencyAmount(balance.amount)}`;
+}
+
 // Default export with all utility functions
 export default {
   formatDate,
@@ -690,4 +714,6 @@ export default {
   clearCategoryMappings,
   clearAccountMapping,
   clearLastUploadedDate,
+  formatCurrencyAmount,
+  formatBalance,
 };

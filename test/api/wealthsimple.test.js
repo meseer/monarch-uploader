@@ -568,4 +568,167 @@ describe('Wealthsimple API Client', () => {
       expect(GM_setValue).not.toHaveBeenCalled();
     });
   });
+
+  describe('fetchAccountBalances', () => {
+    beforeEach(() => {
+      const futureDate = new Date(Date.now() + 3600000).toISOString();
+      GM_getValue.mockImplementation((key) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
+        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
+        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
+        return null;
+      });
+    });
+
+    it('should fetch balances for multiple accounts', async () => {
+      const mockResponse = {
+        accounts: [
+          {
+            id: 'acc-1',
+            financials: {
+              currentCombined: {
+                netLiquidationValueV2: {
+                  amount: '96780.948811840969',
+                  currency: 'CAD',
+                },
+              },
+            },
+          },
+          {
+            id: 'acc-2',
+            financials: {
+              currentCombined: {
+                netLiquidationValueV2: {
+                  amount: '45000.50',
+                  currency: 'CAD',
+                },
+              },
+            },
+          },
+        ],
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchAccountBalances(['acc-1', 'acc-2']);
+
+      expect(result.success).toBe(true);
+      expect(result.balances.size).toBe(2);
+      const acc1Balance = result.balances.get('acc-1');
+      expect(acc1Balance.currency).toBe('CAD');
+      expect(acc1Balance.amount).toBeCloseTo(96780.95, 2);
+      expect(result.balances.get('acc-2')).toEqual({
+        amount: 45000.50,
+        currency: 'CAD',
+      });
+    });
+
+    it('should return null for accounts with missing balance data', async () => {
+      const mockResponse = {
+        accounts: [
+          {
+            id: 'acc-1',
+            financials: {
+              currentCombined: {
+                netLiquidationValueV2: {
+                  amount: '1000.00',
+                  currency: 'CAD',
+                },
+              },
+            },
+          },
+          {
+            id: 'acc-2',
+            financials: {},
+          },
+        ],
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchAccountBalances(['acc-1', 'acc-2']);
+
+      expect(result.success).toBe(true);
+      expect(result.balances.get('acc-1')).toEqual({
+        amount: 1000.00,
+        currency: 'CAD',
+      });
+      expect(result.balances.get('acc-2')).toBeNull();
+    });
+
+    it('should return error when no account IDs provided', async () => {
+      const result = await wealthsimpleApi.fetchAccountBalances([]);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('No account IDs provided');
+      expect(result.balances.size).toBe(0);
+    });
+
+    it('should handle invalid balance amounts', async () => {
+      const mockResponse = {
+        accounts: [
+          {
+            id: 'acc-1',
+            financials: {
+              currentCombined: {
+                netLiquidationValueV2: {
+                  amount: 'invalid',
+                  currency: 'CAD',
+                },
+              },
+            },
+          },
+        ],
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchAccountBalances(['acc-1']);
+
+      expect(result.success).toBe(true);
+      expect(result.balances.get('acc-1')).toBeNull();
+    });
+
+    it('should handle API errors', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 500,
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchAccountBalances(['acc-1']);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Server error');
+    });
+
+    it('should handle missing response data', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: {} }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchAccountBalances(['acc-1']);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('No accounts data in response');
+    });
+  });
 });

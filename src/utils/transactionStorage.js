@@ -9,17 +9,29 @@ import { debugLog, getTodayLocal, parseLocalDate } from '../core/utils';
 
 /**
  * Get transaction retention settings for an institution
- * @param {string} institutionType - 'questrade' or 'rogersbank'
+ * @param {string} institutionType - 'questrade', 'rogersbank', or 'wealthsimple'
  * @returns {Object} Object with days and count limits
  */
 export function getTransactionRetentionSettings(institutionType) {
-  const daysKey = institutionType === 'questrade'
-    ? STORAGE.QUESTRADE_TRANSACTION_RETENTION_DAYS
-    : STORAGE.ROGERSBANK_TRANSACTION_RETENTION_DAYS;
+  let daysKey;
+  let countKey;
 
-  const countKey = institutionType === 'questrade'
-    ? STORAGE.QUESTRADE_TRANSACTION_RETENTION_COUNT
-    : STORAGE.ROGERSBANK_TRANSACTION_RETENTION_COUNT;
+  switch (institutionType) {
+  case 'questrade':
+    daysKey = STORAGE.QUESTRADE_TRANSACTION_RETENTION_DAYS;
+    countKey = STORAGE.QUESTRADE_TRANSACTION_RETENTION_COUNT;
+    break;
+  case 'rogersbank':
+    daysKey = STORAGE.ROGERSBANK_TRANSACTION_RETENTION_DAYS;
+    countKey = STORAGE.ROGERSBANK_TRANSACTION_RETENTION_COUNT;
+    break;
+  case 'wealthsimple':
+    daysKey = STORAGE.WEALTHSIMPLE_TRANSACTION_RETENTION_DAYS;
+    countKey = STORAGE.WEALTHSIMPLE_TRANSACTION_RETENTION_COUNT;
+    break;
+  default:
+    throw new Error(`Unknown institution type: ${institutionType}`);
+  }
 
   return {
     days: GM_getValue(daysKey, TRANSACTION_RETENTION_DEFAULTS.DAYS),
@@ -119,13 +131,25 @@ export function applyRetentionLimits(transactions, settings) {
 /**
  * Get stored transactions for an account
  * @param {string} accountId - Account ID
- * @param {string} institutionType - 'questrade' or 'rogersbank'
+ * @param {string} institutionType - 'questrade', 'rogersbank', or 'wealthsimple'
  * @returns {Array} Array of transaction objects with id and date
  */
 export function getStoredTransactions(accountId, institutionType) {
-  const storageKey = institutionType === 'questrade'
-    ? `${STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX}${accountId}`
-    : `${STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX}${accountId}`;
+  let storageKey;
+
+  switch (institutionType) {
+  case 'questrade':
+    storageKey = `${STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX}${accountId}`;
+    break;
+  case 'rogersbank':
+    storageKey = `${STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX}${accountId}`;
+    break;
+  case 'wealthsimple':
+    storageKey = `${STORAGE.WEALTHSIMPLE_UPLOADED_TRANSACTIONS_PREFIX}${accountId}`;
+    break;
+  default:
+    throw new Error(`Unknown institution type: ${institutionType}`);
+  }
 
   try {
     const storedData = GM_getValue(storageKey, []);
@@ -142,13 +166,25 @@ export function getStoredTransactions(accountId, institutionType) {
  * Save transactions after successful upload
  * @param {string} accountId - Account ID
  * @param {Array} newTransactions - Array of transaction objects to add
- * @param {string} institutionType - 'questrade' or 'rogersbank'
+ * @param {string} institutionType - 'questrade', 'rogersbank', or 'wealthsimple'
  * @param {string} transactionDate - Date of the transactions (YYYY-MM-DD format)
  */
 export function saveUploadedTransactions(accountId, newTransactions, institutionType, transactionDate = null) {
-  const storageKey = institutionType === 'questrade'
-    ? `${STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX}${accountId}`
-    : `${STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX}${accountId}`;
+  let storageKey;
+
+  switch (institutionType) {
+  case 'questrade':
+    storageKey = `${STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX}${accountId}`;
+    break;
+  case 'rogersbank':
+    storageKey = `${STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX}${accountId}`;
+    break;
+  case 'wealthsimple':
+    storageKey = `${STORAGE.WEALTHSIMPLE_UPLOADED_TRANSACTIONS_PREFIX}${accountId}`;
+    break;
+  default:
+    throw new Error(`Unknown institution type: ${institutionType}`);
+  }
 
   try {
     // Get existing transactions
@@ -188,7 +224,7 @@ export function saveUploadedTransactions(accountId, newTransactions, institution
 /**
  * Get uploaded transaction IDs as a Set (for backward compatibility)
  * @param {string} accountId - Account ID
- * @param {string} institutionType - 'questrade' or 'rogersbank'
+ * @param {string} institutionType - 'questrade', 'rogersbank', or 'wealthsimple'
  * @returns {Set<string>} Set of transaction IDs
  */
 export function getUploadedTransactionIds(accountId, institutionType) {
@@ -198,12 +234,24 @@ export function getUploadedTransactionIds(accountId, institutionType) {
 
 /**
  * Clear transaction history for an institution
- * @param {string} institutionType - 'questrade' or 'rogersbank'
+ * @param {string} institutionType - 'questrade', 'rogersbank', or 'wealthsimple'
  */
 export async function clearTransactionHistory(institutionType) {
-  const prefix = institutionType === 'questrade'
-    ? STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX
-    : STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX;
+  let prefix;
+
+  switch (institutionType) {
+  case 'questrade':
+    prefix = STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX;
+    break;
+  case 'rogersbank':
+    prefix = STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX;
+    break;
+  case 'wealthsimple':
+    prefix = STORAGE.WEALTHSIMPLE_UPLOADED_TRANSACTIONS_PREFIX;
+    break;
+  default:
+    throw new Error(`Unknown institution type: ${institutionType}`);
+  }
 
   const keys = await GM_listValues();
   const keysToDelete = keys.filter((key) => key.startsWith(prefix));

@@ -7,10 +7,12 @@ import {
 } from '../../src/services/wealthsimple-upload';
 import toast from '../../src/ui/toast';
 import * as accountService from '../../src/services/wealthsimple/account';
+import wealthsimpleApi from '../../src/api/wealthsimple';
 
 // Mock dependencies
 jest.mock('../../src/ui/toast');
 jest.mock('../../src/services/wealthsimple/account');
+jest.mock('../../src/api/wealthsimple');
 jest.mock('../../src/core/utils', () => ({
   debugLog: jest.fn(),
 }));
@@ -22,6 +24,14 @@ describe('Wealthsimple Upload Service', () => {
 
   describe('uploadAllWealthsimpleAccountsToMonarch', () => {
     it('should successfully process accounts', async () => {
+      wealthsimpleApi.fetchAccountBalances.mockResolvedValue({
+        success: true,
+        balances: new Map([
+          ['acc-1', { amount: 10000, currency: 'CAD' }],
+          ['acc-2', { amount: 20000, currency: 'CAD' }],
+        ]),
+      });
+
       const mockAccounts = [
         {
           id: 'acc-1',
@@ -91,6 +101,13 @@ describe('Wealthsimple Upload Service', () => {
     });
 
     it('should handle single account', async () => {
+      wealthsimpleApi.fetchAccountBalances.mockResolvedValue({
+        success: true,
+        balances: new Map([
+          ['acc-1', { amount: 10000, currency: 'CAD' }],
+        ]),
+      });
+
       const mockAccounts = [
         {
           id: 'acc-1',

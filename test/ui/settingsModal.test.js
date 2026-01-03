@@ -177,7 +177,7 @@ describe('Settings Modal Component', () => {
       modal = createSettingsModal();
 
       const tabButtons = modal.querySelectorAll('.settings-tab-button');
-      expect(tabButtons.length).toBe(5); // general, questrade, canadalife, rogersbank, monarch
+      expect(tabButtons.length).toBe(6); // general, questrade, canadalife, rogersbank, wealthsimple, monarch
 
       const buttonTexts = Array.from(tabButtons).map((btn) => btn.textContent);
       expect(buttonTexts.some((text) => text.includes('General'))).toBe(true);
@@ -250,7 +250,7 @@ describe('Settings Modal Component', () => {
       modal = createSettingsModal();
 
       const connectionDots = modal.querySelectorAll('span[style*="background-color: rgb(220, 53, 69)"]');
-      expect(connectionDots.length).toBe(4); // questrade, canadalife, rogersbank, monarch (not general)
+      expect(connectionDots.length).toBe(5); // questrade, canadalife, rogersbank, wealthsimple, monarch (not general)
     });
 
     test('should show connected status when Questrade is authenticated', () => {

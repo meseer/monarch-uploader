@@ -7,6 +7,7 @@ import { debugLog, getDefaultLookbackDays } from '../../core/utils';
 import { STORAGE, API } from '../../core/config';
 import { checkMonarchAuth } from '../../services/auth';
 import { checkQuestradeAuth } from '../../services/questrade/auth';
+import { isAccountSkipped, markAccountAsSkipped } from '../../services/wealthsimple/account';
 import toast from '../toast';
 import { createMonarchLoginLink } from './monarchLoginLink';
 
@@ -83,6 +84,9 @@ function checkInstitutionConnection(institutionId) {
   case 'rogersbank':
     // Check for Rogers Bank auth token
     return Boolean(GM_getValue(STORAGE.ROGERSBANK_AUTH_TOKEN));
+  case 'wealthsimple':
+    // Check for Wealthsimple auth token
+    return Boolean(GM_getValue(STORAGE.WEALTHSIMPLE_ACCESS_TOKEN));
   case 'monarch':
     return checkMonarchAuth().authenticated;
   default:
@@ -224,6 +228,13 @@ export function createSettingsModal() {
       fallbackIcon: '🏦',
       storagePrefix: STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX,
       institutionName: 'Rogers Bank',
+    },
+    {
+      id: 'wealthsimple',
+      label: 'Wealthsimple',
+      fallbackIcon: '💰',
+      storagePrefix: STORAGE.WEALTHSIMPLE_ACCOUNT_MAPPING_PREFIX,
+      institutionName: 'Wealthsimple',
     },
     {
       id: 'monarch',
@@ -392,6 +403,9 @@ function renderTabContent(container, tabId) {
     break;
   case 'rogersbank':
     renderRogersBankTab(container);
+    break;
+  case 'wealthsimple':
+    renderWealthsimpleTab(container);
     break;
   case 'monarch':
     renderMonarchTab(container);
@@ -689,6 +703,34 @@ function renderRogersBankTab(container) {
   container.appendChild(mappingsSection);
   container.appendChild(transactionsSection);
   container.appendChild(categorySection);
+}
+
+/**
+ * Renders the Wealthsimple settings tab
+ * @param {HTMLElement} container - Container element
+ */
+function renderWealthsimpleTab(container) {
+  // Lookback Period Section
+  const lookbackSection = createLookbackPeriodSection('wealthsimple');
+  container.appendChild(lookbackSection);
+
+  // Account Mappings Section
+  const mappingsSection = createSection('Account Mappings', '🔗', 'Wealthsimple to Monarch account mappings');
+  const mappingsData = getStorageData(STORAGE.WEALTHSIMPLE_ACCOUNT_MAPPING_PREFIX);
+  const mappingsCards = createAccountMappingCards(mappingsData, (key) => {
+    GM_deleteValue(key);
+    toast.show('Account mapping deleted', 'info');
+    renderTabContent(container, 'wealthsimple');
+  }, 'Wealthsimple', 'wealthsimple');
+  mappingsSection.appendChild(mappingsCards);
+
+  // TODO: Uploaded Transactions Section (placeholder for future implementation)
+  // Similar to Rogers Bank, this will show transaction IDs per account
+
+  // TODO: Merchant Category Mappings Section (placeholder for future implementation)
+  // Similar to Rogers Bank, this will map merchant names to Monarch categories
+
+  container.appendChild(mappingsSection);
 }
 
 /**
@@ -1063,6 +1105,77 @@ function formatLastUpdateDate(dateValue) {
 }
 
 /**
+ * Creates a styled toggle switch component (AirBnB/iOS style)
+ * @param {boolean} isEnabled - Initial state (true = enabled/on, false = disabled/off)
+ * @param {Function} onChange - Callback when toggle changes
+ * @returns {HTMLElement} Toggle switch element
+ */
+function createToggleSwitch(isEnabled, onChange) {
+  const container = document.createElement('label');
+  container.style.cssText = `
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+  `;
+
+  const label = document.createElement('span');
+  label.textContent = 'Enabled';
+  label.style.cssText = 'font-size: 13px; color: #666;';
+
+  const switchContainer = document.createElement('div');
+  switchContainer.style.cssText = `
+    position: relative;
+    width: 44px;
+    height: 24px;
+    background-color: ${isEnabled ? '#2196F3' : '#ccc'};
+    border-radius: 12px;
+    transition: background-color 0.3s;
+  `;
+
+  const switchSlider = document.createElement('div');
+  switchSlider.style.cssText = `
+    position: absolute;
+    top: 2px;
+    left: ${isEnabled ? '22px' : '2px'};
+    width: 20px;
+    height: 20px;
+    background-color: white;
+    border-radius: 50%;
+    transition: left 0.3s;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  `;
+
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.checked = isEnabled;
+  checkbox.style.cssText = 'display: none;';
+
+  checkbox.addEventListener('change', (e) => {
+    const newState = e.target.checked;
+    switchContainer.style.backgroundColor = newState ? '#2196F3' : '#ccc';
+    switchSlider.style.left = newState ? '22px' : '2px';
+    onChange(newState);
+  });
+
+  switchContainer.appendChild(switchSlider);
+  container.appendChild(label);
+  container.appendChild(switchContainer);
+  container.appendChild(checkbox);
+
+  // Make the container clickable
+  container.addEventListener('click', (e) => {
+    if (e.target !== checkbox) {
+      checkbox.checked = !checkbox.checked;
+      checkbox.dispatchEvent(new Event('change'));
+    }
+  });
+
+  return container;
+}
+
+/**
  * Creates account mapping cards (for Monarch account mappings)
  * @param {Array} data - Array of [key, displayKey, value] tuples
  * @param {Function} onDelete - Delete handler
@@ -1100,20 +1213,37 @@ function createAccountMappingCards(data, onDelete, institutionName, institutionT
       transition: all 0.2s;
     `;
 
+    // Check if account is skipped (from accounts list)
+    const accountId = displayKey;
+    const isSkipped = institutionType === 'wealthsimple' && isAccountSkipped(accountId);
+
     // Create card header (always visible)
     const cardHeader = document.createElement('div');
     cardHeader.style.cssText = `
       display: flex;
       align-items: center;
       padding: 15px;
-      background-color: #fff;
+      background-color: ${isSkipped ? '#fafafa' : '#fff'};
       cursor: pointer;
       transition: background-color 0.2s;
     `;
 
+    // Expand/collapse icon (moved to be first, before logo)
+    const expandIcon = document.createElement('div');
+    expandIcon.style.cssText = `
+      margin-right: 10px;
+      font-size: 1.2em;
+      color: ${isSkipped ? '#999' : '#666'};
+      transition: transform 0.2s;
+      cursor: pointer;
+      flex-shrink: 0;
+    `;
+    expandIcon.textContent = '▼';
+    cardHeader.appendChild(expandIcon);
+
     // Logo container
     const logoContainer = document.createElement('div');
-    logoContainer.style.cssText = 'margin-right: 15px; flex-shrink: 0;';
+    logoContainer.style.cssText = `margin-right: 15px; flex-shrink: 0; ${isSkipped ? 'opacity: 0.5;' : ''}`;
 
     // Use account logo or fallback
     if (accountData.logoUrl) {
@@ -1138,7 +1268,8 @@ function createAccountMappingCards(data, onDelete, institutionName, institutionT
 
     // Account name
     const nameDiv = document.createElement('div');
-    nameDiv.style.cssText = 'font-weight: bold; font-size: 1.1em; margin-bottom: 2px;';
+    nameDiv.className = 'account-name';
+    nameDiv.style.cssText = `font-weight: bold; font-size: 1.1em; margin-bottom: 2px; color: ${isSkipped ? '#999' : '#333'};`;
     nameDiv.textContent = accountData.displayName || 'Unknown Account';
     infoContainer.appendChild(nameDiv);
 
@@ -1215,19 +1346,7 @@ function createAccountMappingCards(data, onDelete, institutionName, institutionT
 
     cardHeader.appendChild(infoContainer);
 
-    // Expand/collapse icon
-    const expandIcon = document.createElement('div');
-    expandIcon.style.cssText = `
-      margin-left: 15px;
-      font-size: 1.2em;
-      color: #666;
-      transition: transform 0.2s;
-      cursor: pointer;
-    `;
-    expandIcon.textContent = '▼';
-    cardHeader.appendChild(expandIcon);
-
-    // Delete button
+    // Delete button (changed from ✕ to trash icon)
     const deleteButton = document.createElement('button');
     deleteButton.textContent = '✕';
     deleteButton.style.cssText = `

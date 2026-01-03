@@ -3,7 +3,7 @@
  * Extends the generic account selector to include account creation functionality
  */
 
-import { debugLog, extractDomain, stringSimilarity } from '../../core/utils';
+import { debugLog, extractDomain, stringSimilarity, formatBalance } from '../../core/utils';
 import stateManager from '../../core/state';
 import monarchApi from '../../api/monarch';
 import toast from '../toast';
@@ -21,6 +21,7 @@ import { showConfirmationDialog } from './confirmationDialog';
  * @param {string} createDefaults.defaultName - Default account name
  * @param {string} createDefaults.defaultType - Default account type
  * @param {string} createDefaults.defaultSubtype - Default account subtype
+ * @param {Object} createDefaults.currentBalance - Current balance object {amount, currency}
  * @returns {Promise} Promise that resolves when selection or creation is complete
  */
 export async function showMonarchAccountSelectorWithCreate(
@@ -161,6 +162,28 @@ function showInstitutionSelectorWithCreate(institutions, callback, accountType, 
   accountNameDiv.textContent = `Mapping: ${currentAccountName}`;
   accountBanner.appendChild(accountNameDiv);
 
+  // Display current balance
+  if (createDefaults.currentBalance) {
+    const balanceDiv = document.createElement('div');
+    balanceDiv.id = 'institution-selector-account-balance';
+    balanceDiv.style.cssText = 'font-size: 0.85em; color: #666; margin-top: 4px;';
+    balanceDiv.textContent = `Balance: ${formatBalance(createDefaults.currentBalance)}`;
+    accountBanner.appendChild(balanceDiv);
+  }
+
+  // Display account type
+  if (createDefaults.accountType) {
+    const accountTypeDiv = document.createElement('div');
+    accountTypeDiv.id = 'institution-selector-account-type';
+    accountTypeDiv.style.cssText = 'font-size: 0.85em; color: #666; margin-top: 4px;';
+    accountTypeDiv.textContent = 'Account Type: ';
+    const typeCode = document.createElement('code');
+    typeCode.style.cssText = 'background-color: #f0f0f0; padding: 2px 4px; border-radius: 3px; font-family: monospace; font-size: 0.95em;';
+    typeCode.textContent = createDefaults.accountType;
+    accountTypeDiv.appendChild(typeCode);
+    accountBanner.appendChild(accountTypeDiv);
+  }
+
   if (currentAccountId) {
     const accountIdDiv = document.createElement('div');
     accountIdDiv.id = 'institution-selector-account-id';
@@ -231,7 +254,14 @@ function showInstitutionSelectorWithCreate(institutions, callback, accountType, 
   skipAccountButton.onclick = () => {
     cleanupKeyboard();
     overlay.remove();
-    callback({ skipped: true });
+    // Pass full account context when skipping
+    callback({
+      skipped: true,
+      accountId: currentState.currentAccount.id,
+      accountName: currentAccountName,
+      balance: createDefaults.currentBalance,
+      accountType: createDefaults.accountType,
+    });
   };
   modal.appendChild(skipAccountButton);
 
@@ -435,6 +465,28 @@ function showAccountSelectorWithCreate(institution, callback, allInstitutions, a
   accountNameDiv.textContent = `Mapping: ${currentAccountName}`;
   accountBanner.appendChild(accountNameDiv);
 
+  // Display current balance
+  if (createDefaults.currentBalance) {
+    const balanceDiv = document.createElement('div');
+    balanceDiv.id = 'account-selector-account-balance';
+    balanceDiv.style.cssText = 'font-size: 0.85em; color: #666; margin-top: 4px;';
+    balanceDiv.textContent = `Balance: ${formatBalance(createDefaults.currentBalance)}`;
+    accountBanner.appendChild(balanceDiv);
+  }
+
+  // Display account type
+  if (createDefaults.accountType) {
+    const accountTypeDiv = document.createElement('div');
+    accountTypeDiv.id = 'account-selector-account-type';
+    accountTypeDiv.style.cssText = 'font-size: 0.85em; color: #666; margin-top: 4px;';
+    accountTypeDiv.textContent = 'Account Type: ';
+    const typeCode = document.createElement('code');
+    typeCode.style.cssText = 'background-color: #f0f0f0; padding: 2px 4px; border-radius: 3px; font-family: monospace; font-size: 0.95em;';
+    typeCode.textContent = createDefaults.accountType;
+    accountTypeDiv.appendChild(typeCode);
+    accountBanner.appendChild(accountTypeDiv);
+  }
+
   if (currentAccountId) {
     const accountIdDiv = document.createElement('div');
     accountIdDiv.id = 'account-selector-account-id';
@@ -505,7 +557,14 @@ function showAccountSelectorWithCreate(institution, callback, allInstitutions, a
   skipAccountButton.onclick = () => {
     cleanupKeyboard();
     overlay.remove();
-    callback({ skipped: true });
+    // Pass full account context when skipping
+    callback({
+      skipped: true,
+      accountId: currentState.currentAccount.id,
+      accountName: currentAccountName,
+      balance: createDefaults.currentBalance,
+      accountType: createDefaults.accountType,
+    });
   };
   modal.appendChild(skipAccountButton);
 
@@ -640,6 +699,28 @@ function showFlatAccountSelectorWithCreate(accounts, callback, createDefaults) {
   accountNameDiv.textContent = `Mapping: ${currentAccountName}`;
   accountBanner.appendChild(accountNameDiv);
 
+  // Display current balance
+  if (createDefaults.currentBalance) {
+    const balanceDiv = document.createElement('div');
+    balanceDiv.id = 'flat-account-selector-account-balance';
+    balanceDiv.style.cssText = 'font-size: 0.85em; color: #666; margin-top: 4px;';
+    balanceDiv.textContent = `Balance: ${formatBalance(createDefaults.currentBalance)}`;
+    accountBanner.appendChild(balanceDiv);
+  }
+
+  // Display account type
+  if (createDefaults.accountType) {
+    const accountTypeDiv = document.createElement('div');
+    accountTypeDiv.id = 'flat-account-selector-account-type';
+    accountTypeDiv.style.cssText = 'font-size: 0.85em; color: #666; margin-top: 4px;';
+    accountTypeDiv.textContent = 'Account Type: ';
+    const typeCode = document.createElement('code');
+    typeCode.style.cssText = 'background-color: #f0f0f0; padding: 2px 4px; border-radius: 3px; font-family: monospace; font-size: 0.95em;';
+    typeCode.textContent = createDefaults.accountType;
+    accountTypeDiv.appendChild(typeCode);
+    accountBanner.appendChild(accountTypeDiv);
+  }
+
   if (currentAccountId) {
     const accountIdDiv = document.createElement('div');
     accountIdDiv.id = 'flat-account-selector-account-id';
@@ -769,6 +850,91 @@ function showFlatAccountSelectorWithCreate(accounts, callback, createDefaults) {
 }
 
 /**
+ * Add a letter-based logo fallback
+ * @param {HTMLElement} container - Container to add logo to
+ * @param {string} name - Name to extract letter from
+ */
+function addLogoFallback(container, name) {
+  const fallback = document.createElement('div');
+  fallback.style.cssText = `
+    width: 40px;
+    height: 40px;
+    background-color: #ddd;
+    color: #666;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 1.2em;
+  `;
+  fallback.textContent = (name || 'U')[0].toUpperCase();
+  container.appendChild(fallback);
+}
+
+/**
+ * Add institution logo to container with proper handling of URLs vs base64
+ * @param {HTMLElement} container - Container to add logo to
+ * @param {Object} cred - Credential object with institution info
+ * @param {Array} accounts - Optional accounts array for fallback logoUrl
+ * @returns {boolean} Whether logo was successfully added
+ */
+function addInstitutionLogo(container, cred, accounts = null) {
+  let logoHandled = false;
+
+  // Priority 1: Institution logo (base64 or URL)
+  if (cred.institution?.logo && !logoHandled) {
+    try {
+      const isUrl = typeof cred.institution.logo === 'string'
+                   && (cred.institution.logo.trim().toLowerCase().startsWith('http')
+                    || cred.institution.logo.trim().toLowerCase().startsWith('//'));
+
+      if (isUrl) {
+        // It's a URL - use GM_addElement to avoid CSP issues
+        GM_addElement(container, 'img', {
+          src: cred.institution.logo,
+          style: 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;',
+        });
+        logoHandled = true;
+      } else {
+        // It's base64 data - add data URI prefix
+        const logoImg = document.createElement('img');
+        logoImg.src = `data:image/png;base64,${cred.institution.logo}`;
+        logoImg.style.cssText = 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;';
+        container.appendChild(logoImg);
+        logoHandled = true;
+      }
+    } catch (e) {
+      debugLog('Error processing institution logo:', e);
+    }
+  }
+
+  // Priority 2: Account logoUrl (fallback)
+  if (!logoHandled && accounts) {
+    const accountWithLogo = accounts.find((acc) => acc.details?.logoUrl);
+    if (accountWithLogo && accountWithLogo.details.logoUrl) {
+      try {
+        GM_addElement(container, 'img', {
+          src: accountWithLogo.details.logoUrl,
+          style: 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;',
+        });
+        logoHandled = true;
+      } catch (e) {
+        debugLog('Error loading account logo:', e);
+      }
+    }
+  }
+
+  // Priority 3: Letter-based fallback
+  if (!logoHandled) {
+    addLogoFallback(container, cred.institution?.name);
+    logoHandled = true;
+  }
+
+  return logoHandled;
+}
+
+/**
  * Create institution item element
  * @param {Object} inst - Institution object
  * @returns {HTMLElement} Institution item element
@@ -791,28 +957,8 @@ function createInstitutionItem(inst) {
   const logoContainer = document.createElement('div');
   logoContainer.style.cssText = 'margin-right: 15px; flex-shrink: 0;';
 
-  // Add logo (simplified - you can expand this based on existing logic)
-  if (cred.institution?.logo) {
-    const logoImg = document.createElement('img');
-    logoImg.src = `data:image/png;base64,${cred.institution.logo}`;
-    logoImg.style.cssText = 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;';
-    logoContainer.appendChild(logoImg);
-  } else {
-    const fallback = document.createElement('div');
-    fallback.style.cssText = `
-      width: 40px;
-      height: 40px;
-      background-color: #ddd;
-      color: #666;
-      border-radius: 5px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: bold;
-    `;
-    fallback.textContent = (cred.institution?.name || '?')[0].toUpperCase();
-    logoContainer.appendChild(fallback);
-  }
+  // Add logo using shared helper
+  addInstitutionLogo(logoContainer, cred, inst.accounts);
   item.appendChild(logoContainer);
 
   const infoDiv = document.createElement('div');
@@ -896,28 +1042,8 @@ function createAccountItem(account, cred, index) {
   const logoContainer = document.createElement('div');
   logoContainer.style.cssText = 'margin-right: 15px; flex-shrink: 0;';
 
-  // Simplified logo handling
-  if (cred.institution?.logo) {
-    const logoImg = document.createElement('img');
-    logoImg.src = `data:image/png;base64,${cred.institution.logo}`;
-    logoImg.style.cssText = 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;';
-    logoContainer.appendChild(logoImg);
-  } else {
-    const fallback = document.createElement('div');
-    fallback.style.cssText = `
-      width: 40px;
-      height: 40px;
-      background-color: #ddd;
-      color: #666;
-      border-radius: 5px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: bold;
-    `;
-    fallback.textContent = (cred.institution?.name || '?')[0].toUpperCase();
-    logoContainer.appendChild(fallback);
-  }
+  // Add logo using shared helper (pass null for accounts since we're already in account view)
+  addInstitutionLogo(logoContainer, cred, null);
   item.appendChild(logoContainer);
 
   const textContainer = document.createElement('div');

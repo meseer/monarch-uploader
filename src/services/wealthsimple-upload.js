@@ -6,6 +6,7 @@
 import { debugLog } from '../core/utils';
 import { STORAGE } from '../core/config';
 import toast from '../ui/toast';
+import wealthsimpleApi from '../api/wealthsimple';
 import {
   resolveWealthsimpleAccountMapping,
   uploadWealthsimpleBalance,
@@ -19,14 +20,15 @@ import {
  * @param {Object} account - Wealthsimple account object
  * @param {string} fromDate - Start date (YYYY-MM-DD)
  * @param {string} toDate - End date (YYYY-MM-DD)
+ * @param {Object|null} currentBalance - Current balance object {amount, currency}
  * @returns {Promise<Object>} Result object with success status and optional signals
  */
-export async function uploadWealthsimpleAccountToMonarch(account, fromDate, toDate) {
+export async function uploadWealthsimpleAccountToMonarch(account, fromDate, toDate, currentBalance = null) {
   try {
     debugLog(`Uploading Wealthsimple account ${account.id} to Monarch...`);
 
     // Resolve account mapping (shows selector with create option)
-    const result = await resolveWealthsimpleAccountMapping(account);
+    const result = await resolveWealthsimpleAccountMapping(account, currentBalance);
 
     // Handle skip signal
     if (result && result.skipped) {
@@ -50,12 +52,13 @@ export async function uploadWealthsimpleAccountToMonarch(account, fromDate, toDa
 
     const monarchAccount = result;
 
-    // Upload balance (placeholder for now)
+    // Upload balance with current balance
     const balanceSuccess = await uploadWealthsimpleBalance(
       account.id,
       monarchAccount.id,
       fromDate,
       toDate,
+      currentBalance,
     );
 
     // Upload transactions (placeholder for now)
@@ -113,6 +116,17 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
 
     debugLog(`Processing ${accountsToSync.length} Wealthsimple account(s):`, accountsToSync);
 
+    // Fetch all account balances upfront
+    const accountIds = accountsToSync.map((acc) => acc.id);
+    debugLog('Fetching balances for all accounts...');
+    const balanceResult = await wealthsimpleApi.fetchAccountBalances(accountIds);
+
+    if (!balanceResult.success) {
+      debugLog('Failed to fetch account balances:', balanceResult.error);
+      toast.show('Failed to fetch account balances. Please try again.', 'error');
+      return;
+    }
+
     // Process all non-skipped accounts
     const toDate = new Date().toISOString().split('T')[0];
     const fromDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -120,9 +134,20 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
     let successCount = 0;
     let failureCount = 0;
     let skippedDuringSync = 0;
+    let balanceUnavailableCount = 0;
 
     for (const account of accountsToSync) {
-      const result = await uploadWealthsimpleAccountToMonarch(account, fromDate, toDate);
+      // Get balance for this account
+      const currentBalance = balanceResult.balances.get(account.id);
+
+      // Skip if balance is unavailable
+      if (currentBalance === null || currentBalance === undefined) {
+        debugLog(`Skipping account ${account.id} (${account.nickname}) - balance unavailable`);
+        balanceUnavailableCount += 1;
+        continue;
+      }
+
+      const result = await uploadWealthsimpleAccountToMonarch(account, fromDate, toDate, currentBalance);
 
       // Check if user cancelled the entire sync
       if (result && result.cancelled) {
@@ -147,14 +172,15 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
 
     // Show final summary
     const totalSkipped = skippedCount + skippedDuringSync;
-    if (failureCount === 0 && totalSkipped === 0) {
+    if (failureCount === 0 && totalSkipped === 0 && balanceUnavailableCount === 0) {
       toast.show(`Successfully uploaded all ${successCount} Wealthsimple account(s)`, 'info');
     } else {
       const parts = [];
       if (successCount > 0) parts.push(`${successCount} uploaded`);
       if (failureCount > 0) parts.push(`${failureCount} failed`);
+      if (balanceUnavailableCount > 0) parts.push(`${balanceUnavailableCount} failed (balance unavailable)`);
       if (totalSkipped > 0) parts.push(`${totalSkipped} skipped`);
-      toast.show(parts.join(', '), failureCount > 0 ? 'warning' : 'info');
+      toast.show(parts.join(', '), failureCount > 0 || balanceUnavailableCount > 0 ? 'warning' : 'info');
     }
   } catch (error) {
     debugLog('Error fetching Wealthsimple accounts:', error);

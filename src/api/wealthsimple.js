@@ -471,6 +471,106 @@ export async function fetchAccounts() {
 }
 
 /**
+ * Fetch current balances for multiple accounts
+ * @param {Array<string>} accountIds - Array of account IDs
+ * @returns {Promise<Object>} Object with success status and balances map
+ */
+export async function fetchAccountBalances(accountIds) {
+  try {
+    if (!accountIds || accountIds.length === 0) {
+      debugLog('No account IDs provided for balance fetch');
+      return { success: false, balances: new Map(), error: 'No account IDs provided' };
+    }
+
+    debugLog(`Fetching balances for ${accountIds.length} Wealthsimple account(s)...`);
+
+    const query = `query FetchAccountCombinedFinancialsPreload($ids: [String!]!, $currency: Currency, $startDate: Date) {
+  accounts(ids: $ids) {
+    id
+    financials {
+      currentCombined(currency: $currency) {
+        id
+        netDepositsV2 {
+          ...Money
+          __typename
+        }
+        netLiquidationValueV2 {
+          ...Money
+          __typename
+        }
+        simpleReturns(referenceDate: $startDate) {
+          ...Returns
+          __typename
+        }
+        __typename
+      }
+      __typename
+    }
+    __typename
+  }
+}
+
+fragment Money on Money {
+  amount
+  cents
+  currency
+  __typename
+}
+
+fragment Returns on SimpleReturns {
+  amount {
+    ...Money
+    __typename
+  }
+  asOf
+  rate
+  referenceDate
+  __typename
+}`;
+
+    const variables = {
+      ids: accountIds,
+    };
+
+    const response = await makeGraphQLQuery('FetchAccountCombinedFinancialsPreload', query, variables);
+
+    if (!response || !response.accounts) {
+      debugLog('No accounts data in balance response');
+      return { success: false, balances: new Map(), error: 'No accounts data in response' };
+    }
+
+    // Parse balances into a map
+    const balances = new Map();
+    response.accounts.forEach((account) => {
+      if (account.financials?.currentCombined?.netLiquidationValueV2) {
+        const balanceData = account.financials.currentCombined.netLiquidationValueV2;
+        const amount = parseFloat(balanceData.amount);
+
+        if (!isNaN(amount) && balanceData.currency) {
+          balances.set(account.id, {
+            amount,
+            currency: balanceData.currency,
+          });
+          debugLog(`Fetched balance for ${account.id}: ${balanceData.currency} ${amount}`);
+        } else {
+          debugLog(`Invalid balance data for ${account.id}`);
+          balances.set(account.id, null);
+        }
+      } else {
+        debugLog(`No balance data available for ${account.id}`);
+        balances.set(account.id, null);
+      }
+    });
+
+    debugLog(`Successfully fetched balances for ${balances.size} account(s)`);
+    return { success: true, balances };
+  } catch (error) {
+    debugLog('Error fetching account balances:', error);
+    return { success: false, balances: new Map(), error: error.message };
+  }
+}
+
+/**
  * Fetch account balance for a specific account
  * @param {string} accountId - Account ID
  * @returns {Promise<Object>} Account balance data
@@ -479,12 +579,20 @@ export async function fetchAccountBalance(accountId) {
   try {
     debugLog(`Fetching balance for Wealthsimple account ${accountId}...`);
 
-    // This would use a GraphQL query for account balance
-    // For now, return placeholder
-    const response = { balance: 0 };
+    // Use the batch API for single account
+    const result = await fetchAccountBalances([accountId]);
 
-    debugLog(`Fetched balance for account ${accountId}`);
-    return response;
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to fetch balance');
+    }
+
+    const balance = result.balances.get(accountId);
+    if (!balance) {
+      throw new Error('Balance not available for account');
+    }
+
+    debugLog(`Fetched balance for account ${accountId}: ${balance.currency} ${balance.amount}`);
+    return balance;
   } catch (error) {
     debugLog(`Error fetching balance for account ${accountId}:`, error);
     throw error;
@@ -521,5 +629,6 @@ export default {
   fetchAccounts,
   fetchAndCacheAccounts: fetchAndCacheWealthsimpleAccounts,
   fetchAccountBalance,
+  fetchAccountBalances,
   fetchTransactions,
 };
