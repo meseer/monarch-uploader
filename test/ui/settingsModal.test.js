@@ -616,7 +616,7 @@ describe('Settings Modal Component', () => {
       questradeTab.click();
 
       const deleteButton = Array.from(modal.querySelectorAll('button'))
-        .find((btn) => btn.textContent === '✕');
+        .find((btn) => btn.textContent === '🗑️');
 
       expect(deleteButton).toBeTruthy();
     });

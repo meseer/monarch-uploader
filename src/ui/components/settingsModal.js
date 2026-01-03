@@ -1346,9 +1346,51 @@ function createAccountMappingCards(data, onDelete, institutionName, institutionT
 
     cardHeader.appendChild(infoContainer);
 
-    // Delete button (changed from ✕ to trash icon)
+    // Add toggle switch for Wealthsimple accounts only (to enable/disable skip)
+    if (institutionType === 'wealthsimple') {
+      const toggleContainer = document.createElement('div');
+      toggleContainer.style.cssText = 'margin-left: auto; margin-right: 10px; flex-shrink: 0;';
+
+      const toggle = createToggleSwitch(!isSkipped, (isEnabled) => {
+        // Update skip status (inverted: enabled = not skipped)
+        const shouldSkip = !isEnabled;
+        const success = markAccountAsSkipped(accountId, shouldSkip);
+
+        if (success) {
+          // Update visual styling immediately
+          cardHeader.style.backgroundColor = shouldSkip ? '#fafafa' : '#fff';
+          nameDiv.style.color = shouldSkip ? '#999' : '#333';
+          expandIcon.style.color = shouldSkip ? '#999' : '#666';
+          logoContainer.style.opacity = shouldSkip ? '0.5' : '1';
+
+          // Show confirmation
+          const status = shouldSkip ? 'disabled' : 'enabled';
+          toast.show(`Account ${accountData.displayName} ${status}`, 'info');
+
+          // Optionally refresh the tab to ensure consistency
+          setTimeout(() => {
+            const tabContainer = document.querySelector('.settings-tab-content');
+            if (tabContainer) {
+              renderTabContent(tabContainer, institutionType);
+            }
+          }, 1500);
+        } else {
+          toast.show('Failed to update account status', 'error');
+        }
+      });
+
+      toggleContainer.appendChild(toggle);
+      cardHeader.appendChild(toggleContainer);
+
+      // Stop propagation on toggle clicks to prevent card expansion
+      toggleContainer.addEventListener('click', (e) => {
+        e.stopPropagation();
+      });
+    }
+
+    // Delete button (changed from ✕ to trash icon 🗑️)
     const deleteButton = document.createElement('button');
-    deleteButton.textContent = '✕';
+    deleteButton.textContent = '🗑️';
     deleteButton.style.cssText = `
       margin-left: 10px;
       background: #dc3545;
