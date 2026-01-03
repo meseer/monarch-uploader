@@ -262,7 +262,18 @@ export function createSettingsModal() {
       logoContainer.style.cssText = 'display: inline-flex; margin-right: 6px;';
 
       GM_addElement(logoContainer, 'img', {
-        src: 'https://www.google.com/s2/favicons?domain=monarch.com&sz=16',
+        src: 'https://www.google.com/s2/favicons?domain=monarch.com&sz=128',
+        style: 'width: 16px; height: 16px; border-radius: 3px; object-fit: contain;',
+      });
+
+      buttonContent.appendChild(logoContainer);
+    } else if (tab.id === 'wealthsimple') {
+      // Use Google Favicon API for Wealthsimple tab
+      const logoContainer = document.createElement('div');
+      logoContainer.style.cssText = 'display: inline-flex; margin-right: 6px;';
+
+      GM_addElement(logoContainer, 'img', {
+        src: 'https://www.google.com/s2/favicons?domain=wealthsimple.com&sz=128',
         style: 'width: 16px; height: 16px; border-radius: 3px; object-fit: contain;',
       });
 
@@ -1237,6 +1248,7 @@ function createAccountMappingCards(data, onDelete, institutionName, institutionT
       transition: transform 0.2s;
       cursor: pointer;
       flex-shrink: 0;
+      transform: rotate(270deg);
     `;
     expandIcon.textContent = '▼';
     cardHeader.appendChild(expandIcon);
@@ -1256,8 +1268,19 @@ function createAccountMappingCards(data, onDelete, institutionName, institutionT
         // Add letter fallback if logo fails
         addAccountLogoFallback(logoContainer, institutionName);
       }
+    } else if (institutionType === 'wealthsimple') {
+      // Use Google Favicon API for Wealthsimple accounts as fallback
+      try {
+        GM_addElement(logoContainer, 'img', {
+          src: 'https://www.google.com/s2/favicons?domain=wealthsimple.com&sz=128',
+          style: 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;',
+        });
+      } catch (error) {
+        // Add letter fallback if favicon fails
+        addAccountLogoFallback(logoContainer, institutionName);
+      }
     } else {
-      // Add letter fallback
+      // Add letter fallback for other institutions
       addAccountLogoFallback(logoContainer, institutionName);
     }
     cardHeader.appendChild(logoContainer);
@@ -1393,8 +1416,8 @@ function createAccountMappingCards(data, onDelete, institutionName, institutionT
     deleteButton.textContent = '🗑️';
     deleteButton.style.cssText = `
       margin-left: 10px;
-      background: #dc3545;
-      color: white;
+      background: transparent;
+      color: #dc3545;
       border: none;
       border-radius: 50%;
       width: 24px;
@@ -1404,7 +1427,7 @@ function createAccountMappingCards(data, onDelete, institutionName, institutionT
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: background-color 0.2s;
+      transition: all 0.2s;
     `;
     deleteButton.addEventListener('click', async (e) => {
       e.stopPropagation(); // Prevent card toggle
@@ -1416,10 +1439,10 @@ function createAccountMappingCards(data, onDelete, institutionName, institutionT
       }
     });
     deleteButton.addEventListener('mouseover', () => {
-      deleteButton.style.backgroundColor = '#c82333';
+      deleteButton.style.backgroundColor = '#f8d7da';
     });
     deleteButton.addEventListener('mouseout', () => {
-      deleteButton.style.backgroundColor = '#dc3545';
+      deleteButton.style.backgroundColor = 'transparent';
     });
     cardHeader.appendChild(deleteButton);
 
@@ -1452,7 +1475,7 @@ function createAccountMappingCards(data, onDelete, institutionName, institutionT
     const toggleCard = () => {
       isExpanded = !isExpanded;
       expandableContent.style.display = isExpanded ? 'block' : 'none';
-      expandIcon.style.transform = isExpanded ? 'rotate(180deg)' : 'rotate(0deg)';
+      expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(270deg)';
     };
 
     cardHeader.addEventListener('click', (e) => {

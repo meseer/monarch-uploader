@@ -379,7 +379,7 @@ describe('Settings Modal Component', () => {
         expect.any(HTMLElement),
         'img',
         expect.objectContaining({
-          src: 'https://www.google.com/s2/favicons?domain=monarch.com&sz=16',
+          src: 'https://www.google.com/s2/favicons?domain=monarch.com&sz=128',
         }),
       );
     });
