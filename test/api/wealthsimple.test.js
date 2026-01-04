@@ -1194,4 +1194,257 @@ describe('Wealthsimple API Client', () => {
       await wealthsimpleApi.fetchTransactions('acc-1', '2025-12-01');
     });
   });
+
+  describe('fetchCreditCardAccountSummary', () => {
+    beforeEach(() => {
+      const futureDate = new Date(Date.now() + 3600000).toISOString();
+      GM_getValue.mockImplementation((key) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
+        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
+        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
+        return null;
+      });
+    });
+
+    it('should require accountId parameter', async () => {
+      await expect(
+        wealthsimpleApi.fetchCreditCardAccountSummary(null),
+      ).rejects.toThrow('Account ID is required');
+
+      await expect(
+        wealthsimpleApi.fetchCreditCardAccountSummary(''),
+      ).rejects.toThrow('Account ID is required');
+    });
+
+    it('should fetch credit card account summary successfully', async () => {
+      const mockResponse = {
+        creditCardAccount: {
+          id: 'ca-credit-card-ABC123',
+          balance: {
+            current: 1500.50,
+            __typename: 'Money',
+          },
+          creditRegistrationStatus: 'REGISTERED',
+          creditLimit: 17000,
+          currentCards: [
+            {
+              id: 'card-1',
+              cardNumberLast4Digits: '1234',
+              cardVariant: 'PRIMARY',
+              __typename: 'CreditCard',
+            },
+          ],
+          __typename: 'CreditCardAccount',
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchCreditCardAccountSummary('ca-credit-card-ABC123');
+
+      expect(result).toEqual(mockResponse.creditCardAccount);
+      expect(result.creditLimit).toBe(17000);
+      expect(result.balance.current).toBe(1500.50);
+      expect(result.creditRegistrationStatus).toBe('REGISTERED');
+      expect(result.currentCards).toHaveLength(1);
+      expect(result.currentCards[0].cardNumberLast4Digits).toBe('1234');
+    });
+
+    it('should pass correct account ID in GraphQL query', async () => {
+      const mockResponse = {
+        creditCardAccount: {
+          id: 'ca-credit-card-XYZ789',
+          balance: { current: 0 },
+          creditRegistrationStatus: 'REGISTERED',
+          creditLimit: 5000,
+          currentCards: [],
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ data, onload }) => {
+        const parsedData = JSON.parse(data);
+        expect(parsedData.operationName).toBe('FetchCreditCardAccountSummary');
+        expect(parsedData.variables.id).toBe('ca-credit-card-XYZ789');
+
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      await wealthsimpleApi.fetchCreditCardAccountSummary('ca-credit-card-XYZ789');
+    });
+
+    it('should handle missing credit card account data in response', async () => {
+      const mockResponse = {};
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      await expect(
+        wealthsimpleApi.fetchCreditCardAccountSummary('ca-credit-card-ABC123'),
+      ).rejects.toThrow('No credit card account data in response');
+    });
+
+    it('should handle null credit card account in response', async () => {
+      const mockResponse = {
+        creditCardAccount: null,
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      await expect(
+        wealthsimpleApi.fetchCreditCardAccountSummary('ca-credit-card-ABC123'),
+      ).rejects.toThrow('No credit card account data in response');
+    });
+
+    it('should handle account with null credit limit', async () => {
+      const mockResponse = {
+        creditCardAccount: {
+          id: 'ca-credit-card-ABC123',
+          balance: { current: 500.00 },
+          creditRegistrationStatus: 'PENDING',
+          creditLimit: null,
+          currentCards: [],
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchCreditCardAccountSummary('ca-credit-card-ABC123');
+
+      expect(result.creditLimit).toBeNull();
+    });
+
+    it('should handle account with zero credit limit', async () => {
+      const mockResponse = {
+        creditCardAccount: {
+          id: 'ca-credit-card-ABC123',
+          balance: { current: 0 },
+          creditRegistrationStatus: 'REGISTERED',
+          creditLimit: 0,
+          currentCards: [],
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchCreditCardAccountSummary('ca-credit-card-ABC123');
+
+      expect(result.creditLimit).toBe(0);
+    });
+
+    it('should handle multiple cards in response', async () => {
+      const mockResponse = {
+        creditCardAccount: {
+          id: 'ca-credit-card-ABC123',
+          balance: { current: 2000.00 },
+          creditRegistrationStatus: 'REGISTERED',
+          creditLimit: 10000,
+          currentCards: [
+            {
+              id: 'card-1',
+              cardNumberLast4Digits: '1234',
+              cardVariant: 'PRIMARY',
+              __typename: 'CreditCard',
+            },
+            {
+              id: 'card-2',
+              cardNumberLast4Digits: '5678',
+              cardVariant: 'SUPPLEMENTARY',
+              __typename: 'CreditCard',
+            },
+          ],
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchCreditCardAccountSummary('ca-credit-card-ABC123');
+
+      expect(result.currentCards).toHaveLength(2);
+      expect(result.currentCards[0].cardVariant).toBe('PRIMARY');
+      expect(result.currentCards[1].cardVariant).toBe('SUPPLEMENTARY');
+    });
+
+    it('should handle auth errors', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({ status: 401 });
+      });
+
+      await expect(
+        wealthsimpleApi.fetchCreditCardAccountSummary('ca-credit-card-ABC123'),
+      ).rejects.toThrow('Auth token expired');
+
+      expect(GM_deleteValue).toHaveBeenCalledWith(STORAGE.WEALTHSIMPLE_ACCESS_TOKEN);
+    });
+
+    it('should handle GraphQL errors', async () => {
+      const errorResponse = {
+        errors: [
+          { message: 'Account not found' },
+        ],
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify(errorResponse),
+        });
+      });
+
+      await expect(
+        wealthsimpleApi.fetchCreditCardAccountSummary('invalid-account'),
+      ).rejects.toThrow('GraphQL Error: Account not found');
+    });
+
+    it('should handle network errors', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onerror }) => {
+        onerror(new Error('Network failure'));
+      });
+
+      await expect(
+        wealthsimpleApi.fetchCreditCardAccountSummary('ca-credit-card-ABC123'),
+      ).rejects.toThrow('Network error');
+    });
+
+    it('should handle server errors', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({ status: 500 });
+      });
+
+      await expect(
+        wealthsimpleApi.fetchCreditCardAccountSummary('ca-credit-card-ABC123'),
+      ).rejects.toThrow('Server error');
+    });
+  });
 });

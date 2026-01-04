@@ -14,6 +14,7 @@ import {
   syncAccountListWithAPI,
   getAccountData,
   applyTransactionRetentionEviction,
+  syncCreditLimit,
 } from './wealthsimple/account';
 import {
   getDefaultDateRange,
@@ -153,6 +154,14 @@ export async function uploadWealthsimpleAccountToMonarch(consolidatedAccount, fr
         updateAccountInList(account.id, { lastSyncDate: toDate });
 
         debugLog(`Updated lastSyncDate for account ${account.id} to ${toDate}`);
+      }
+
+      // Sync credit limit for credit card accounts
+      // This runs after balance/transaction sync to ensure account mapping is established
+      // Re-fetch the consolidated account to get the latest data
+      const updatedConsolidatedAccount = getAccountData(account.id);
+      if (updatedConsolidatedAccount) {
+        await syncCreditLimit(updatedConsolidatedAccount, monarchAccount.id);
       }
 
       // Apply time-based eviction to clean up old transaction IDs

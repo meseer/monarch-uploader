@@ -619,6 +619,99 @@ export async function syncAccountListWithAPI() {
   }
 }
 
+/**
+ * Sync credit limit from Wealthsimple to Monarch for credit card accounts
+ * This function:
+ * 1. Fetches the current credit limit from Wealthsimple
+ * 2. Compares with stored limit (or fetches from Monarch if no stored limit)
+ * 3. Updates Monarch if limits differ
+ * 4. Stores the synced limit for future comparisons
+ *
+ * @param {Object} consolidatedAccount - Consolidated account object
+ * @param {string} monarchAccountId - Monarch account ID
+ * @returns {Promise<boolean>} True if sync was successful (or skipped for non-credit accounts)
+ */
+export async function syncCreditLimit(consolidatedAccount, monarchAccountId) {
+  try {
+    const account = consolidatedAccount.wealthsimpleAccount;
+    const accountType = account?.type || '';
+
+    // Only process credit card accounts
+    if (accountType !== 'CREDIT_CARD') {
+      debugLog(`Skipping credit limit sync for non-credit card account: ${accountType}`);
+      return true;
+    }
+
+    debugLog(`Starting credit limit sync for account ${account.id} (${account.nickname})`);
+
+    // Step 1: Fetch credit limit from Wealthsimple
+    let wsCreditLimit;
+    try {
+      const creditCardSummary = await wealthsimpleApi.fetchCreditCardAccountSummary(account.id);
+      wsCreditLimit = creditCardSummary.creditLimit;
+
+      if (wsCreditLimit === null || wsCreditLimit === undefined) {
+        debugLog(`No credit limit found in Wealthsimple for account ${account.id}`);
+        return true; // Not an error, just no limit to sync
+      }
+
+      debugLog(`Wealthsimple credit limit for ${account.nickname}: ${wsCreditLimit}`);
+    } catch (error) {
+      debugLog(`Failed to fetch Wealthsimple credit card summary for ${account.id}:`, error);
+      toast.show('Warning: Could not fetch credit limit from Wealthsimple', 'warning');
+      return false;
+    }
+
+    // Step 2: Determine the comparison limit (stored or from Monarch)
+    let comparisonLimit = consolidatedAccount.lastSyncedCreditLimit;
+    const needsMonarchFetch = comparisonLimit === null || comparisonLimit === undefined;
+
+    if (needsMonarchFetch) {
+      // First sync or no stored limit - fetch from Monarch
+      debugLog(`No stored credit limit, fetching from Monarch for account ${monarchAccountId}`);
+      try {
+        comparisonLimit = await monarchApi.getCreditLimit(monarchAccountId);
+        debugLog(`Monarch credit limit: ${comparisonLimit}`);
+      } catch (error) {
+        debugLog(`Failed to fetch Monarch credit limit for ${monarchAccountId}:`, error);
+        // Continue with null - we'll update Monarch with WS limit
+        comparisonLimit = null;
+      }
+    } else {
+      debugLog(`Using stored credit limit for comparison: ${comparisonLimit}`);
+    }
+
+    // Step 3: Compare and update if needed
+    if (comparisonLimit !== wsCreditLimit) {
+      debugLog(`Credit limits differ - WS: ${wsCreditLimit}, Comparison: ${comparisonLimit}. Updating Monarch...`);
+
+      try {
+        await monarchApi.setCreditLimit(monarchAccountId, wsCreditLimit);
+        debugLog(`Successfully updated Monarch credit limit to ${wsCreditLimit}`);
+        toast.show(`Updated credit limit for ${account.nickname} to $${wsCreditLimit}`, 'debug');
+      } catch (error) {
+        debugLog('Failed to update Monarch credit limit:', error);
+        toast.show('Warning: Could not update credit limit in Monarch', 'warning');
+        return false;
+      }
+    } else {
+      debugLog(`Credit limits match (${wsCreditLimit}), no update needed`);
+    }
+
+    // Step 4: Store the synced credit limit for future comparisons
+    updateAccountInList(account.id, {
+      lastSyncedCreditLimit: wsCreditLimit,
+    });
+
+    debugLog(`Credit limit sync completed for ${account.nickname}`);
+    return true;
+  } catch (error) {
+    debugLog('Error during credit limit sync:', error);
+    // Don't show error toast here - credit limit sync is not critical
+    return false;
+  }
+}
+
 export default {
   resolveWealthsimpleAccountMapping,
   getExistingAccountMapping,
@@ -630,4 +723,5 @@ export default {
   markAccountAsSkipped,
   isAccountSkipped,
   syncAccountListWithAPI,
+  syncCreditLimit,
 };

@@ -963,6 +963,70 @@ fragment Money on Money {
   }
 }
 
+/**
+ * Fetch credit card account summary from Wealthsimple
+ * Returns credit limit, current balance, and card details
+ * @param {string} accountId - Credit card account ID (e.g., 'ca-credit-card-FYPcSZJeLA')
+ * @returns {Promise<Object>} Credit card account summary
+ * @property {string} id - Account ID
+ * @property {Object} balance - Balance information
+ * @property {number} balance.current - Current balance amount
+ * @property {string} creditRegistrationStatus - Credit registration status
+ * @property {number} creditLimit - Credit limit amount
+ * @property {Array} currentCards - Array of current cards
+ */
+export async function fetchCreditCardAccountSummary(accountId) {
+  try {
+    if (!accountId) {
+      throw new Error('Account ID is required');
+    }
+
+    debugLog(`Fetching credit card account summary for ${accountId}...`);
+
+    const query = `query FetchCreditCardAccountSummary($id: ID!) {
+  creditCardAccount(id: $id) {
+    ...CreditCardAccountSummary
+    __typename
+  }
+}
+
+fragment CreditCardAccountSummary on CreditCardAccount {
+  id
+  balance {
+    current
+    __typename
+  }
+  creditRegistrationStatus
+  creditLimit
+  currentCards {
+    id
+    cardNumberLast4Digits
+    cardVariant
+    __typename
+  }
+  __typename
+}`;
+
+    const response = await makeGraphQLQuery('FetchCreditCardAccountSummary', query, { id: accountId });
+
+    if (!response || !response.creditCardAccount) {
+      throw new Error('No credit card account data in response');
+    }
+
+    const accountSummary = response.creditCardAccount;
+    debugLog(`Fetched credit card summary for ${accountId}:`, {
+      creditLimit: accountSummary.creditLimit,
+      currentBalance: accountSummary.balance?.current,
+      registrationStatus: accountSummary.creditRegistrationStatus,
+    });
+
+    return accountSummary;
+  } catch (error) {
+    debugLog(`Error fetching credit card account summary for ${accountId}:`, error);
+    throw error;
+  }
+}
+
 export default {
   checkAuth,
   setupTokenMonitoring,
@@ -974,4 +1038,5 @@ export default {
   fetchAccountBalances,
   fetchTransactions,
   fetchBalanceHistory,
+  fetchCreditCardAccountSummary,
 };
