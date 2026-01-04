@@ -328,9 +328,9 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
         const updatedUploadedTransactions = [...currentUploadedTransactions, ...transactionIds];
 
         // Update account with new uploaded transactions
+        // Note: lastSyncDate is NOT updated here - it's only updated when BOTH balance and transactions succeed
         updateAccountInList(wealthsimpleAccountId, {
           uploadedTransactions: updatedUploadedTransactions,
-          lastSyncDate: toDate,
         });
       }
 

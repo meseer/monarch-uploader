@@ -63,7 +63,7 @@ export async function uploadWealthsimpleAccountToMonarch(consolidatedAccount, fr
       currentBalance,
     );
 
-    // Upload transactions (placeholder for now)
+    // Upload transactions
     const transactionsSuccess = await uploadWealthsimpleTransactions(
       account.id,
       monarchAccount.id,
@@ -74,8 +74,19 @@ export async function uploadWealthsimpleAccountToMonarch(consolidatedAccount, fr
     const success = balanceSuccess || transactionsSuccess;
 
     if (success) {
-      // Store last upload date
-      GM_setValue(`${STORAGE.WEALTHSIMPLE_LAST_UPLOAD_DATE_PREFIX}${account.id}`, toDate);
+      // Only update lastSyncDate if BOTH balance and transactions were successful
+      // This ensures first sync detection works properly for transactions
+      if (balanceSuccess && transactionsSuccess) {
+        // Store last upload date in GM storage
+        GM_setValue(`${STORAGE.WEALTHSIMPLE_LAST_UPLOAD_DATE_PREFIX}${account.id}`, toDate);
+
+        // Also update in consolidated account data
+        const { updateAccountInList } = await import('./wealthsimple/account');
+        updateAccountInList(account.id, { lastSyncDate: toDate });
+
+        debugLog(`Updated lastSyncDate for account ${account.id} to ${toDate}`);
+      }
+
       toast.show(`Processed ${account.nickname || account.id}`, 'info');
     }
 
