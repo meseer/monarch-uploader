@@ -392,6 +392,9 @@ export async function fetchAndCacheWealthsimpleAccounts() {
 
         // Uploaded transactions (preserve from cache)
         uploadedTransactions: existing?.uploadedTransactions || [],
+
+        // Store number stripping setting (preserve from cache, default to true for new accounts)
+        stripStoreNumbers: existing?.stripStoreNumbers ?? true,
       };
     });
 

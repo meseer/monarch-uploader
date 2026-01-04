@@ -35,7 +35,7 @@ function getLookbackDays() {
  * @param {string} dateString - ISO timestamp or YYYY-MM-DD string
  * @returns {string} YYYY-MM-DD formatted date
  */
-function extractDateFromISO(dateString) {
+export function extractDateFromISO(dateString) {
   if (!dateString) return null;
 
   // If already in YYYY-MM-DD format, return as-is

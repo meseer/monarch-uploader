@@ -57,13 +57,19 @@ describe('Merchant Mapping Utilities', () => {
     });
 
     test('should handle merchant names with numbers', () => {
-      expect(applyMerchantMapping('STORE 123')).toBe('Store 123');
-      expect(applyMerchantMapping('WALMART #1234')).toBe('Walmart #1234');
+      // Store numbers are now stripped by default
+      expect(applyMerchantMapping('STORE 123')).toBe('Store');
+      expect(applyMerchantMapping('WALMART #1234')).toBe('Walmart');
+
+      // Can disable store number stripping
+      expect(applyMerchantMapping('STORE 123', { stripStoreNumbers: false })).toBe('Store 123');
+      expect(applyMerchantMapping('WALMART #1234', { stripStoreNumbers: false })).toBe('Walmart #1234');
     });
 
     test('should handle complex merchant names with location info', () => {
-      expect(applyMerchantMapping('STARBUCKS #1234 VANCOUVER BC')).toBe('Starbucks #1234 Vancouver Bc');
-      expect(applyMerchantMapping('GROCERY STORE 5678 TORONTO ON')).toBe('Grocery Store 5678 Toronto on');
+      // Store numbers are stripped by default
+      expect(applyMerchantMapping('STARBUCKS #1234 VANCOUVER BC')).toBe('Starbucks Vancouver Bc');
+      expect(applyMerchantMapping('GROCERY STORE 5678 TORONTO ON')).toBe('Grocery Store Toronto on');
     });
 
     test('should handle merchant names with various prefixes', () => {
@@ -169,9 +175,10 @@ describe('Merchant Mapping Utilities', () => {
       const result = applyMerchantMappingBatch(transactions);
 
       expect(result).toHaveLength(100);
-      expect(result[0].mappedMerchantName).toBe('Merchant 0');
-      expect(result[50].mappedMerchantName).toBe('Merchant 50');
-      expect(result[99].mappedMerchantName).toBe('Merchant 99');
+      // Store numbers are stripped by default, so all become "Merchant"
+      expect(result[0].mappedMerchantName).toBe('Merchant');
+      expect(result[50].mappedMerchantName).toBe('Merchant');
+      expect(result[99].mappedMerchantName).toBe('Merchant');
     });
   });
 
@@ -192,11 +199,11 @@ describe('Merchant Mapping Utilities', () => {
 
     test('should handle merchant names with various formats', () => {
       const testCases = [
-        { input: 'MCDONALD\'S #1234', expected: 'Mcdonald\'s #1234' },
+        { input: 'MCDONALD\'S #1234', expected: 'Mcdonald\'s' }, // Store numbers stripped
         { input: 'AT&T MOBILITY', expected: 'At&t Mobility' },
         { input: 'H&R BLOCK', expected: 'H&r Block' },
-        { input: '7-ELEVEN STORE #456', expected: '7-eleven Store #456' },
-        { input: 'SHELL OIL 12345678', expected: 'Shell Oil 12345678' },
+        { input: '7-ELEVEN STORE #456', expected: '7-eleven Store' }, // Store numbers stripped
+        { input: 'SHELL OIL 12345678', expected: 'Shell Oil' }, // Store numbers stripped
       ];
 
       testCases.forEach(({ input, expected }) => {

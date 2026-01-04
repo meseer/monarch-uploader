@@ -26,9 +26,13 @@ function convertToLocalDate(isoTimestamp) {
 /**
  * Process credit card transaction to extract relevant data
  * @param {Object} transaction - Raw transaction from Wealthsimple API
+ * @param {Object} options - Processing options
+ * @param {boolean} options.stripStoreNumbers - Whether to strip store numbers from merchant names
  * @returns {Object} Processed transaction object
  */
-function processCreditCardTransaction(transaction) {
+function processCreditCardTransaction(transaction, options = {}) {
+  const { stripStoreNumbers = true } = options;
+
   // Determine merchant name based on subType
   let merchantName;
   if (transaction.subType === 'PAYMENT') {
@@ -37,8 +41,8 @@ function processCreditCardTransaction(transaction) {
     merchantName = transaction.spendMerchant || 'Unknown Merchant';
   }
 
-  // Apply merchant cleanup
-  const cleanedMerchant = applyMerchantMapping(merchantName);
+  // Apply merchant cleanup with store number stripping option
+  const cleanedMerchant = applyMerchantMapping(merchantName, { stripStoreNumbers });
 
   // Determine amount sign (negative means debit/expense, positive means credit/payment)
   const isNegative = transaction.amountSign === 'negative';
@@ -97,6 +101,8 @@ function getAutoCategoryForSubType(subType) {
 
 /**
  * Resolve categories for transactions, handling both automatic and manual selection
+ * Uses dynamic category mapping - after each user selection, re-checks remaining categories
+ * to avoid duplicate prompts
  * @param {Array} transactions - Array of processed transactions
  * @returns {Promise<Array>} Transactions with resolved Monarch categories
  */
@@ -118,23 +124,25 @@ async function resolveCategoriesForTransactions(transactions) {
     debugLog('Failed to fetch categories from Monarch, will use manual selection for all:', error);
   }
 
-  // Track unique categories that need resolution
+  // Auto-categorize transactions with specific subTypes
+  transactions.forEach((transaction) => {
+    const autoCategory = getAutoCategoryForSubType(transaction.subType);
+    if (autoCategory) {
+      transaction.resolvedMonarchCategory = autoCategory;
+    }
+  });
+
+  // Get list of categories that need resolution (not auto-categorized)
   const categoriesToResolve = [];
   const uniqueCategories = new Map();
 
   transactions.forEach((transaction) => {
-    // Check if this subType has an auto-category
-    const autoCategory = getAutoCategoryForSubType(transaction.subType);
-
-    if (autoCategory) {
-      // Auto-categorize, skip resolution
-      transaction.resolvedMonarchCategory = autoCategory;
+    // Skip if already auto-categorized
+    if (transaction.resolvedMonarchCategory) {
       return;
     }
 
-    // Need to resolve category based on merchant
     const categoryKey = transaction.categoryKey;
-
     if (!uniqueCategories.has(categoryKey)) {
       uniqueCategories.set(categoryKey, transaction);
 
@@ -152,16 +160,34 @@ async function resolveCategoriesForTransactions(transactions) {
 
   debugLog(`Found ${uniqueCategories.size} unique merchants, ${categoriesToResolve.length} need manual selection`);
 
-  // Handle categories that need manual selection
+  // Handle categories that need manual selection with dynamic re-checking
   if (categoriesToResolve.length > 0) {
-    toast.show(`Resolving ${categoriesToResolve.length} categories that need manual selection...`, 'debug');
+    const totalCategories = categoriesToResolve.length;
+    toast.show(`Resolving ${totalCategories} categories that need manual selection...`, 'debug');
 
-    for (let i = 0; i < categoriesToResolve.length; i += 1) {
-      const categoryToResolve = categoriesToResolve[i];
+    // Process categories until all are resolved
+    // Always process the first element and remove it when done
+    while (categoriesToResolve.length > 0) {
+      const categoryToResolve = categoriesToResolve[0];
 
-      debugLog(`Showing category selector for: ${categoryToResolve.bankCategory} (${i + 1}/${categoriesToResolve.length})`);
+      // Re-check if this category still needs manual selection
+      // (it might have been automatically mapped after a previous selection)
+      const recheckResult = applyCategoryMapping(categoryToResolve.bankCategory, availableCategories);
 
-      toast.show(`Selecting category ${i + 1} of ${categoriesToResolve.length}: "${categoryToResolve.bankCategory}"`, 'debug');
+      if (typeof recheckResult === 'string') {
+        // Category is now automatically mapped, skip it
+        debugLog(`Category "${categoryToResolve.bankCategory}" now has automatic mapping: ${recheckResult}`);
+        categoriesToResolve.shift(); // Remove first element
+        continue;
+      }
+
+      // Still needs manual selection
+      const remainingCount = categoriesToResolve.length;
+      const progressNum = totalCategories - remainingCount + 1;
+
+      debugLog(`Showing category selector for: ${categoryToResolve.bankCategory} (${progressNum}/${totalCategories})`);
+
+      toast.show(`Selecting category ${progressNum} of ${totalCategories}: "${categoryToResolve.bankCategory}"`, 'debug');
 
       // Calculate similarity data
       const similarityData = calculateAllCategorySimilarities(categoryToResolve.bankCategory, availableCategories);
@@ -174,11 +200,12 @@ async function resolveCategoriesForTransactions(transactions) {
         transactionDetails.merchant = exampleTx.merchant;
         transactionDetails.amount = exampleTx.amount;
         transactionDetails.date = exampleTx.date;
+        transactionDetails.institution = 'wealthsimple'; // Add institution identifier
 
         debugLog('Transaction details for category selector:', transactionDetails);
       }
 
-      // Show the category selector
+      // Show the category selector with institution parameter
       const selectedCategory = await new Promise((resolve) => {
         showMonarchCategorySelector(categoryToResolve.bankCategory, resolve, similarityData, transactionDetails);
       });
@@ -192,10 +219,13 @@ async function resolveCategoriesForTransactions(transactions) {
       debugLog(`User selected category mapping: ${categoryToResolve.bankCategory} -> ${selectedCategory.name}`);
 
       toast.show(`Mapped "${categoryToResolve.bankCategory}" to "${selectedCategory.name}"`, 'debug');
+
+      // Remove this category from the list (dynamic re-checking will happen on next iteration)
+      categoriesToResolve.shift(); // Remove first element
     }
   }
 
-  // Now resolve all categories
+  // Now resolve all categories (should all be mapped now)
   const resolvedTransactions = transactions.map((transaction) => {
     // If already resolved (auto-category), skip
     if (transaction.resolvedMonarchCategory) {
@@ -229,8 +259,10 @@ export async function fetchAndProcessCreditCardTransactions(consolidatedAccount,
   try {
     const accountId = consolidatedAccount.wealthsimpleAccount.id;
     const accountName = consolidatedAccount.wealthsimpleAccount.nickname;
+    const stripStoreNumbers = consolidatedAccount.stripStoreNumbers !== false; // Default true
 
     debugLog(`Fetching credit card transactions for ${accountName} from ${fromDate} to ${toDate}`);
+    debugLog(`Store number stripping: ${stripStoreNumbers ? 'enabled' : 'disabled'}`);
 
     // Fetch raw transactions from API
     const rawTransactions = await wealthsimpleApi.fetchTransactions(accountId, fromDate);
@@ -246,8 +278,10 @@ export async function fetchAndProcessCreditCardTransactions(consolidatedAccount,
       return [];
     }
 
-    // Process transactions
-    const processedTransactions = creditCardTransactions.map(processCreditCardTransaction);
+    // Process transactions with stripStoreNumbers option
+    const processedTransactions = creditCardTransactions.map((transaction) =>
+      processCreditCardTransaction(transaction, { stripStoreNumbers }),
+    );
 
     debugLog(`Processed ${processedTransactions.length} credit card transactions`);
 

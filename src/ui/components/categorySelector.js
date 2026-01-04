@@ -294,7 +294,17 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
         formattedAmount = String(transactionDetails.amount);
       }
 
-      const amountColor = amountValue < 0 ? '#28a745' : '#dc3545';
+      // Determine color based on institution
+      // For Wealthsimple: negative = red (expense), positive = green (credit/payment)
+      // For Rogers and others: negative = green (credit/refund), positive = red (expense)
+      const isWealthsimple = transactionDetails.institution === 'wealthsimple';
+      let amountColor;
+      if (isWealthsimple) {
+        amountColor = amountValue < 0 ? '#dc3545' : '#28a745';
+      } else {
+        amountColor = amountValue < 0 ? '#28a745' : '#dc3545';
+      }
+
       transactionHtml += `<div style="margin-bottom: 4px;">
         <span style="color: #666;">Amount:</span> 
         <span style="font-weight: 500; color: ${amountColor};">${formattedAmount}</span>

@@ -133,8 +133,8 @@ describe('Wealthsimple Transaction Service', () => {
         '2025-01-31',
       );
 
-      // Merchant should be cleaned up (TST- prefix removed, title cased)
-      expect(result[0].merchant).toBe('Starbucks #123');
+      // Merchant should be cleaned up (TST- prefix removed, title cased, store number stripped)
+      expect(result[0].merchant).toBe('Starbucks');
       expect(result[0].originalMerchant).toBe('TST-STARBUCKS #123');
     });
 
