@@ -359,6 +359,7 @@ describe('Utility Functions', () => {
       expect(getDefaultLookbackDays('questrade')).toBe(0);
       expect(getDefaultLookbackDays('canadalife')).toBe(1);
       expect(getDefaultLookbackDays('rogersbank')).toBe(7);
+      expect(getDefaultLookbackDays('wealthsimple')).toBe(7);
       expect(getDefaultLookbackDays('unknown')).toBe(0);
     });
   });

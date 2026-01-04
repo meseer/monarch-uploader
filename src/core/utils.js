@@ -168,7 +168,7 @@ export function getDefaultLookbackDays(institutionType) {
   case 'rogersbank':
     return 7; // Current 7 day lookback behavior
   case 'wealthsimple':
-    return 2; // 2 day lookback for balance checkpoints
+    return 7; // 7 day lookback for balance checkpoints
   default:
     debugLog(`Unknown institution type: ${institutionType}, using 0 days`);
     return 0;
