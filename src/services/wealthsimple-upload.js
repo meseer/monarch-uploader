@@ -4,7 +4,6 @@
  */
 
 import { debugLog } from '../core/utils';
-import { STORAGE } from '../core/config';
 import toast from '../ui/toast';
 import wealthsimpleApi from '../api/wealthsimple';
 import {
@@ -77,10 +76,7 @@ export async function uploadWealthsimpleAccountToMonarch(consolidatedAccount, fr
       // Only update lastSyncDate if BOTH balance and transactions were successful
       // This ensures first sync detection works properly for transactions
       if (balanceSuccess && transactionsSuccess) {
-        // Store last upload date in GM storage
-        GM_setValue(`${STORAGE.WEALTHSIMPLE_LAST_UPLOAD_DATE_PREFIX}${account.id}`, toDate);
-
-        // Also update in consolidated account data
+        // Update lastSyncDate in consolidated account data
         const { updateAccountInList } = await import('./wealthsimple/account');
         updateAccountInList(account.id, { lastSyncDate: toDate });
 
@@ -211,7 +207,9 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
  * @returns {string|null} Last upload date or null
  */
 export function getLastUploadDate(accountId) {
-  return GM_getValue(`${STORAGE.WEALTHSIMPLE_LAST_UPLOAD_DATE_PREFIX}${accountId}`);
+  const { getAccountData } = require('./wealthsimple/account');
+  const accountData = getAccountData(accountId);
+  return accountData?.lastSyncDate || null;
 }
 
 /**
@@ -219,7 +217,8 @@ export function getLastUploadDate(accountId) {
  * @param {string} accountId - Account ID
  */
 export function clearLastUploadDate(accountId) {
-  GM_deleteValue(`${STORAGE.WEALTHSIMPLE_LAST_UPLOAD_DATE_PREFIX}${accountId}`);
+  const { updateAccountInList } = require('./wealthsimple/account');
+  updateAccountInList(accountId, { lastSyncDate: null });
 }
 
 export default {
