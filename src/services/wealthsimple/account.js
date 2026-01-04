@@ -237,18 +237,41 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
       // Fetch and process transactions to use for balance reconstruction
       const processedTransactions = await fetchAndProcessTransactions(accountData, actualFromDate, actualToDate);
 
-      if (!processedTransactions || processedTransactions.length === 0) {
-        debugLog('No transactions available for balance reconstruction');
-        toast.show(`No transactions available for balance reconstruction for ${wealthsimpleAccountName}`, 'warning');
-        return false;
+      const hasTransactions = processedTransactions && processedTransactions.length > 0;
+
+      if (!hasTransactions) {
+        debugLog('No transactions found - will reconstruct with zeros and add current balance for today');
       }
 
-      // Reconstruct balance history from transactions
-      const balanceHistory = reconstructBalanceFromTransactions(
-        processedTransactions,
-        actualFromDate,
-        actualToDate,
-      );
+      // Calculate dates for reconstruction
+      const todayDate = formatDate(new Date());
+      const yesterdayObj = new Date();
+      yesterdayObj.setDate(yesterdayObj.getDate() - 1);
+      const yesterdayDate = formatDate(yesterdayObj);
+
+      // Reconstruct balance history from transactions (zeros if none)
+      // Only go up to yesterday - we'll add today's current balance separately
+      const reconstructionEndDate = actualToDate <= yesterdayDate ? actualToDate : yesterdayDate;
+
+      let balanceHistory = [];
+
+      // Only reconstruct if there's at least one day before today to reconstruct
+      if (actualFromDate <= reconstructionEndDate) {
+        balanceHistory = reconstructBalanceFromTransactions(
+          processedTransactions || [],
+          actualFromDate,
+          reconstructionEndDate,
+        );
+      }
+
+      // Add today's current balance (if available and toDate includes today)
+      if (actualToDate >= todayDate && currentBalance && currentBalance.amount !== undefined) {
+        balanceHistory.push({
+          date: todayDate,
+          amount: currentBalance.amount,
+        });
+        debugLog(`Added current balance for today (${todayDate}): ${currentBalance.amount}`);
+      }
 
       if (!balanceHistory || balanceHistory.length === 0) {
         debugLog('Failed to reconstruct balance history');
@@ -269,7 +292,10 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
       );
 
       if (success) {
-        toast.show(`Reconstructed and uploaded ${balanceHistory.length} days of balance history for ${wealthsimpleAccountName}`, 'info');
+        const message = hasTransactions
+          ? `Reconstructed and uploaded ${balanceHistory.length} days of balance history for ${wealthsimpleAccountName}`
+          : `Uploaded ${balanceHistory.length} days of balance (zero history + current balance) for ${wealthsimpleAccountName}`;
+        toast.show(message, 'info');
       }
 
       return success;
