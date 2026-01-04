@@ -60,7 +60,7 @@ module.exports = (env, argv) => {
       }),
     ],
     // Source maps for better debugging
-    devtool: isProduction ? false : 'source-map',
+    devtool: isProduction ? false : 'inline-source-map',
     // External GM_ functions
     externals: {
       // List Tampermonkey's GM_* functions as externals

@@ -8,6 +8,7 @@ import stateManager from '../../../core/state';
 import toast from '../../toast';
 import { getDateRange, processAccountBalanceHistory } from '../../../services/questrade/account';
 import { ensureMonarchAuthentication } from '../../components/monarchLoginLink';
+import { syncAllAccountsToMonarch } from '../../../services/questrade/sync';
 
 /**
  * Creates a styled button
@@ -217,9 +218,6 @@ export function createBulkUploadButton(accounts) {
     if (!authenticated) {
       return; // User cancelled authentication
     }
-
-    // Import sync service dynamically to avoid circular imports
-    const { syncAllAccountsToMonarch } = await import('../../../services/questrade/sync');
 
     try {
       // Call the comprehensive sync function (balance + positions)

@@ -15,6 +15,8 @@ import {
   getDefaultDateRange,
   processAndUploadBalance,
 } from './balance';
+import { fetchAndProcessTransactions } from './transactions';
+import { convertWealthsimpleTransactionsToMonarchCSV } from '../../utils/csv';
 
 /**
  * Resolve Monarch account mapping for a Wealthsimple account
@@ -199,20 +201,116 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
  * @returns {Promise<boolean>} Success status
  */
 export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, monarchAccountId, fromDate, toDate) {
-  // TODO: Implement once Wealthsimple transactions API is available
-  // Will need to:
-  // 1. Fetch transactions from Wealthsimple API
-  // 2. Convert to Monarch CSV format (Date, Merchant, Category, Amount, Notes)
-  // 3. Upload via monarchApi.uploadTransactions()
-  debugLog('Transaction upload placeholder - not yet implemented', {
-    wealthsimpleAccountId,
-    monarchAccountId,
-    fromDate,
-    toDate,
-  });
+  try {
+    debugLog('Starting Wealthsimple transaction upload', {
+      wealthsimpleAccountId,
+      monarchAccountId,
+      fromDate,
+      toDate,
+    });
 
-  toast.show('Transaction upload not yet implemented for Wealthsimple', 'warning');
-  return false;
+    // Get consolidated account data
+    const accountData = getAccountData(wealthsimpleAccountId);
+    if (!accountData) {
+      throw new Error('Account data not found');
+    }
+
+    const accountName = accountData.wealthsimpleAccount.nickname;
+    const accountType = accountData.wealthsimpleAccount.type;
+
+    // Check if this account type supports transactions
+    // Currently only credit cards are supported
+    if (!accountType.includes('CREDIT')) {
+      debugLog(`Transaction upload not supported for account type: ${accountType}`);
+      return false; // Silently skip unsupported account types
+    }
+
+    // Fetch and process transactions
+    const processedTransactions = await fetchAndProcessTransactions(accountData, fromDate, toDate);
+
+    if (!processedTransactions || processedTransactions.length === 0) {
+      debugLog('No transactions to upload');
+      return true; // Success, just no transactions
+    }
+
+    debugLog(`Found ${processedTransactions.length} processed transactions`);
+
+    // Filter out duplicate transactions using account's uploadedTransactions array
+    const uploadedIds = new Set(accountData.uploadedTransactions || []);
+    const originalCount = processedTransactions.length;
+
+    const newTransactions = processedTransactions.filter(
+      (transaction) => !uploadedIds.has(transaction.id),
+    );
+
+    const duplicateCount = originalCount - newTransactions.length;
+
+    if (duplicateCount > 0) {
+      debugLog(`Filtered out ${duplicateCount} duplicate transactions`);
+      toast.show(`Skipping ${duplicateCount} already uploaded transactions`, 'debug');
+    }
+
+    if (newTransactions.length === 0) {
+      const message = duplicateCount > 0
+        ? `All ${duplicateCount} transactions have already been uploaded`
+        : 'No new transactions to upload';
+      debugLog(message);
+      toast.show(message, 'info');
+      return true; // Success, just no new transactions
+    }
+
+    debugLog(`Uploading ${newTransactions.length} new transactions`);
+
+    // Convert to Monarch CSV format
+    const csvData = convertWealthsimpleTransactionsToMonarchCSV(newTransactions, accountName);
+
+    if (!csvData) {
+      throw new Error('Failed to convert transactions to CSV');
+    }
+
+    // Upload to Monarch
+    const filename = `wealthsimple_transactions_${wealthsimpleAccountId}_${fromDate}_to_${toDate}.csv`;
+    const uploadSuccess = await monarchApi.uploadTransactions(
+      monarchAccountId,
+      csvData,
+      filename,
+      false, // shouldUpdateBalance = false (balance is uploaded separately)
+      false, // skipCheckForDuplicates = false
+    );
+
+    if (uploadSuccess) {
+      // Add new transaction IDs to account's uploadedTransactions array
+      const transactionIds = newTransactions
+        .map((transaction) => transaction.id)
+        .filter((id) => id);
+
+      if (transactionIds.length > 0) {
+        const currentUploadedTransactions = accountData.uploadedTransactions || [];
+        const updatedUploadedTransactions = [...currentUploadedTransactions, ...transactionIds];
+
+        // Update account with new uploaded transactions
+        updateAccountInList(wealthsimpleAccountId, {
+          uploadedTransactions: updatedUploadedTransactions,
+          lastSyncDate: toDate,
+        });
+      }
+
+      const successMessage = duplicateCount > 0
+        ? `Successfully uploaded ${newTransactions.length} new transactions (${duplicateCount} duplicates skipped)`
+        : `Successfully uploaded ${newTransactions.length} transactions`;
+
+      debugLog(successMessage);
+      toast.show(successMessage, 'info');
+
+      return true;
+    }
+
+    throw new Error('Transaction upload failed');
+  } catch (error) {
+    debugLog('Error uploading Wealthsimple transactions:', error);
+    toast.show(`Transaction upload failed: ${error.message}`, 'error');
+    return false;
+  }
 }
 
 /**

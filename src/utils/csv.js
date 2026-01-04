@@ -137,6 +137,55 @@ export function convertTransactionsToMonarchCSV(transactions, accountName) {
 }
 
 /**
+ * Convert Wealthsimple transactions to Monarch CSV format
+ * @param {Array} transactions - Array of processed Wealthsimple transaction objects
+ * @param {string} accountName - Wealthsimple account name for the Account column
+ * @returns {string} CSV string formatted for Monarch
+ */
+export function convertWealthsimpleTransactionsToMonarchCSV(transactions, accountName) {
+  if (!transactions || transactions.length === 0) {
+    return '';
+  }
+
+  // Define Monarch CSV columns
+  const columns = [
+    'Date',
+    'Merchant',
+    'Category',
+    'Account',
+    'Original Statement',
+    'Notes',
+    'Amount',
+    'Tags',
+  ];
+
+  // Transform transactions to Monarch format
+  const monarchRows = transactions.map((transaction) => {
+    // Build notes field with transaction details
+    const notes = `${transaction.subType || ''} / ${transaction.id || ''}`.trim();
+
+    return {
+      Date: transaction.date || '',
+      Merchant: transaction.merchant || '',
+      Category: transaction.resolvedMonarchCategory || 'Uncategorized',
+      Account: accountName,
+      'Original Statement': transaction.originalMerchant || '',
+      Notes: notes,
+      Amount: transaction.amount || 0,
+      Tags: '', // Empty for now
+    };
+  });
+
+  debugLog('Transformed Wealthsimple transactions for CSV:', {
+    originalCount: transactions.length,
+    transformedCount: monarchRows.length,
+    sample: monarchRows[0], // Log first row as sample
+  });
+
+  return convertToCSV(monarchRows, columns);
+}
+
+/**
  * Convert Questrade orders to Monarch CSV format
  * @param {Array} orders - Array of Questrade order objects
  * @param {string} accountName - Questrade account name for the Account column

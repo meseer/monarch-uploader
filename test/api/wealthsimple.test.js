@@ -731,4 +731,467 @@ describe('Wealthsimple API Client', () => {
       expect(result.error).toBe('No accounts data in response');
     });
   });
+
+  describe('fetchTransactions', () => {
+    beforeEach(() => {
+      // Mock Date.now() to return a consistent timestamp
+      jest.spyOn(Date, 'now').mockReturnValue(new Date('2026-01-03T16:00:00.000Z').getTime());
+
+      const futureDate = new Date(Date.now() + 3600000).toISOString();
+      GM_getValue.mockImplementation((key) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
+        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
+        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
+        return null;
+      });
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('should require accountId parameter', async () => {
+      await expect(
+        wealthsimpleApi.fetchTransactions(null, '2025-01-01'),
+      ).rejects.toThrow('Account ID is required');
+    });
+
+    it('should require startDate parameter', async () => {
+      await expect(
+        wealthsimpleApi.fetchTransactions('acc-1', null),
+      ).rejects.toThrow('Start date is required');
+    });
+
+    it('should validate startDate format', async () => {
+      await expect(
+        wealthsimpleApi.fetchTransactions('acc-1', 'invalid-date'),
+      ).rejects.toThrow('Start date must be in YYYY-MM-DD format');
+
+      await expect(
+        wealthsimpleApi.fetchTransactions('acc-1', '01/01/2025'),
+      ).rejects.toThrow('Start date must be in YYYY-MM-DD format');
+    });
+
+    it('should fetch single page of transactions', async () => {
+      const mockResponse = {
+        activityFeedItems: {
+          edges: [
+            {
+              node: {
+                accountId: 'acc-1',
+                canonicalId: 'txn-1',
+                amount: '100.00',
+                currency: 'CAD',
+                occurredAt: '2025-12-15T10:00:00.000000+00:00',
+                spendMerchant: 'Test Merchant',
+                status: 'settled',
+                type: 'CREDIT_CARD',
+                subType: 'PURCHASE',
+              },
+            },
+            {
+              node: {
+                accountId: 'acc-1',
+                canonicalId: 'txn-2',
+                amount: '50.00',
+                currency: 'CAD',
+                occurredAt: '2025-12-10T14:30:00.000000+00:00',
+                spendMerchant: 'Another Merchant',
+                status: 'settled',
+                type: 'CREDIT_CARD',
+                subType: 'PURCHASE',
+              },
+            },
+          ],
+          pageInfo: {
+            hasNextPage: false,
+            endCursor: null,
+          },
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchTransactions('acc-1', '2025-12-01');
+
+      expect(result).toHaveLength(2);
+      expect(result[0].canonicalId).toBe('txn-1');
+      expect(result[1].canonicalId).toBe('txn-2');
+    });
+
+    it('should fetch multiple pages of transactions', async () => {
+      let callCount = 0;
+
+      GM_xmlhttpRequest.mockImplementation(({ data, onload }) => {
+        callCount++;
+        const variables = JSON.parse(data).variables;
+
+        if (callCount === 1) {
+          // First page
+          expect(variables.cursor).toBeUndefined();
+          onload({
+            status: 200,
+            responseText: JSON.stringify({
+              data: {
+                activityFeedItems: {
+                  edges: [
+                    {
+                      node: {
+                        canonicalId: 'txn-1',
+                        occurredAt: '2025-12-15T10:00:00.000000+00:00',
+                        amount: '100.00',
+                        currency: 'CAD',
+                      },
+                    },
+                  ],
+                  pageInfo: {
+                    hasNextPage: true,
+                    endCursor: 'cursor-page-2',
+                  },
+                },
+              },
+            }),
+          });
+        } else {
+          // Second page
+          expect(variables.cursor).toBe('cursor-page-2');
+          onload({
+            status: 200,
+            responseText: JSON.stringify({
+              data: {
+                activityFeedItems: {
+                  edges: [
+                    {
+                      node: {
+                        canonicalId: 'txn-2',
+                        occurredAt: '2025-12-10T14:30:00.000000+00:00',
+                        amount: '50.00',
+                        currency: 'CAD',
+                      },
+                    },
+                  ],
+                  pageInfo: {
+                    hasNextPage: false,
+                    endCursor: null,
+                  },
+                },
+              },
+            }),
+          });
+        }
+      });
+
+      const result = await wealthsimpleApi.fetchTransactions('acc-1', '2025-12-01');
+
+      expect(callCount).toBe(2);
+      expect(result).toHaveLength(2);
+      expect(result[0].canonicalId).toBe('txn-1');
+      expect(result[1].canonicalId).toBe('txn-2');
+    });
+
+    it('should stop pagination when hitting startDate', async () => {
+      let callCount = 0;
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        callCount++;
+
+        if (callCount === 1) {
+          // First page with recent transactions
+          onload({
+            status: 200,
+            responseText: JSON.stringify({
+              data: {
+                activityFeedItems: {
+                  edges: [
+                    {
+                      node: {
+                        canonicalId: 'txn-1',
+                        occurredAt: '2025-12-15T10:00:00.000000+00:00',
+                        amount: '100.00',
+                      },
+                    },
+                    {
+                      node: {
+                        canonicalId: 'txn-2',
+                        occurredAt: '2025-12-10T14:30:00.000000+00:00',
+                        amount: '50.00',
+                      },
+                    },
+                  ],
+                  pageInfo: {
+                    hasNextPage: true,
+                    endCursor: 'cursor-page-2',
+                  },
+                },
+              },
+            }),
+          });
+        } else {
+          // Second page with older transactions (before startDate)
+          onload({
+            status: 200,
+            responseText: JSON.stringify({
+              data: {
+                activityFeedItems: {
+                  edges: [
+                    {
+                      node: {
+                        canonicalId: 'txn-3',
+                        occurredAt: '2025-11-25T10:00:00.000000+00:00', // Before startDate
+                        amount: '75.00',
+                      },
+                    },
+                  ],
+                  pageInfo: {
+                    hasNextPage: true,
+                    endCursor: 'cursor-page-3',
+                  },
+                },
+              },
+            }),
+          });
+        }
+      });
+
+      const result = await wealthsimpleApi.fetchTransactions('acc-1', '2025-12-01');
+
+      // Should only make 2 API calls, stopping when we hit old transaction
+      expect(callCount).toBe(2);
+      // Should only include transactions from page 1 (before hitting startDate)
+      expect(result).toHaveLength(2);
+      expect(result[0].canonicalId).toBe('txn-1');
+      expect(result[1].canonicalId).toBe('txn-2');
+    });
+
+    it('should convert UTC dates to local dates for comparison', async () => {
+      const mockResponse = {
+        activityFeedItems: {
+          edges: [
+            {
+              node: {
+                canonicalId: 'txn-1',
+                // Dec 15, 2025 in UTC
+                occurredAt: '2025-12-15T10:00:00.000000+00:00',
+                amount: '100.00',
+              },
+            },
+            {
+              node: {
+                canonicalId: 'txn-2',
+                // Nov 30, 2025 in UTC (before startDate)
+                occurredAt: '2025-11-30T10:00:00.000000+00:00',
+                amount: '50.00',
+              },
+            },
+          ],
+          pageInfo: {
+            hasNextPage: false,
+            endCursor: null,
+          },
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchTransactions('acc-1', '2025-12-01');
+
+      // Should only include txn-1 (Dec 15) but not txn-2 (Nov 30)
+      // because txn-2's local date (2025-11-30) is before startDate (2025-12-01)
+      expect(result).toHaveLength(1);
+      expect(result[0].canonicalId).toBe('txn-1');
+    });
+
+    it('should return empty array when no transactions found', async () => {
+      const mockResponse = {
+        activityFeedItems: {
+          edges: [],
+          pageInfo: {
+            hasNextPage: false,
+            endCursor: null,
+          },
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchTransactions('acc-1', '2025-12-01');
+
+      expect(result).toEqual([]);
+    });
+
+    it('should handle missing activityFeedItems in response', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: {} }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchTransactions('acc-1', '2025-12-01');
+
+      expect(result).toEqual([]);
+    });
+
+    it('should handle auth errors', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({ status: 401 });
+      });
+
+      await expect(
+        wealthsimpleApi.fetchTransactions('acc-1', '2025-12-01'),
+      ).rejects.toThrow('Auth token expired');
+    });
+
+    it('should handle network errors', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onerror }) => {
+        onerror(new Error('Network failure'));
+      });
+
+      await expect(
+        wealthsimpleApi.fetchTransactions('acc-1', '2025-12-01'),
+      ).rejects.toThrow('Network error');
+    });
+
+    it('should include all Activity fragment fields', async () => {
+      const fullTransaction = {
+        accountId: 'acc-1',
+        aftOriginatorName: null,
+        aftTransactionCategory: null,
+        aftTransactionType: null,
+        amount: '37.16',
+        amountSign: 'negative',
+        assetQuantity: null,
+        assetSymbol: null,
+        canonicalId: 'credit-transaction-123',
+        currency: 'CAD',
+        eTransferEmail: null,
+        eTransferName: null,
+        externalCanonicalId: 'external-123',
+        groupId: null,
+        identityId: 'identity-123',
+        institutionName: null,
+        occurredAt: '2025-12-04T22:32:38.000000+00:00',
+        p2pHandle: null,
+        p2pMessage: null,
+        spendMerchant: 'Test Merchant',
+        securityId: null,
+        billPayCompanyName: null,
+        billPayPayeeNickname: null,
+        redactedExternalAccountNumber: null,
+        opposingAccountId: null,
+        status: 'settled',
+        subType: 'PURCHASE',
+        type: 'CREDIT_CARD',
+        strikePrice: null,
+        contractType: null,
+        expiryDate: null,
+        chequeNumber: null,
+        provisionalCreditAmount: null,
+        primaryBlocker: null,
+        interestRate: null,
+        frequency: null,
+        counterAssetSymbol: null,
+        rewardProgram: null,
+        counterPartyCurrency: null,
+        counterPartyCurrencyAmount: null,
+        counterPartyName: null,
+        fxRate: null,
+        fees: null,
+        reference: null,
+        transferType: null,
+        optionStrategy: null,
+        rejectionReason: null,
+        resolvable: null,
+        withholdingTaxAmount: null,
+        announcementDate: null,
+        recordDate: null,
+        payableDate: null,
+        grossDividendRate: null,
+        unifiedStatus: 'COMPLETED',
+        estimatedCompletionDate: null,
+      };
+
+      const mockResponse = {
+        activityFeedItems: {
+          edges: [{ node: fullTransaction }],
+          pageInfo: { hasNextPage: false, endCursor: null },
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchTransactions('acc-1', '2025-12-01');
+
+      expect(result).toHaveLength(1);
+      // Verify all fields are present
+      expect(result[0]).toEqual(fullTransaction);
+      expect(result[0].spendMerchant).toBe('Test Merchant');
+      expect(result[0].unifiedStatus).toBe('COMPLETED');
+    });
+
+    it('should use maximum page size of 50', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ data, onload }) => {
+        const variables = JSON.parse(data).variables;
+        expect(variables.first).toBe(50);
+
+        onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              activityFeedItems: {
+                edges: [],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+          }),
+        });
+      });
+
+      await wealthsimpleApi.fetchTransactions('acc-1', '2025-12-01');
+    });
+
+    it('should set endDate to current time', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ data, onload }) => {
+        const variables = JSON.parse(data).variables;
+        const endDate = variables.condition.endDate;
+
+        // Should be an ISO string close to current time
+        expect(endDate).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+
+        onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              activityFeedItems: {
+                edges: [],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+          }),
+        });
+      });
+
+      await wealthsimpleApi.fetchTransactions('acc-1', '2025-12-01');
+    });
+  });
 });

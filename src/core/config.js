@@ -66,19 +66,13 @@ export const STORAGE = {
   WEALTHSIMPLE_TOKEN_EXPIRES_AT: 'wealthsimple_token_expires_at',
   WEALTHSIMPLE_INVEST_PROFILE: 'wealthsimple_invest_profile',
   WEALTHSIMPLE_TRADE_PROFILE: 'wealthsimple_trade_profile',
-  WEALTHSIMPLE_LAST_UPLOAD_DATE_PREFIX: 'wealthsimple_last_upload_date_',
-  WEALTHSIMPLE_ACCOUNT_MAPPING_PREFIX: 'wealthsimple_monarch_account_for_',
-  WEALTHSIMPLE_SKIPPED_ACCOUNT_PREFIX: 'wealthsimple_skipped_account_',
-  WEALTHSIMPLE_UPLOADED_TRANSACTIONS_PREFIX: 'wealthsimple_uploaded_transactions_',
-  WEALTHSIMPLE_MERCHANT_CATEGORY_MAPPINGS: 'wealthsimple_merchant_category_mappings',
+  WEALTHSIMPLE_CATEGORY_MAPPINGS: 'wealthsimple_category_mappings', // Shared across all Wealthsimple accounts
   // Lookback period storage keys (days to look back from last upload date)
   QUESTRADE_LOOKBACK_DAYS: 'questrade_lookback_days',
   CANADALIFE_LOOKBACK_DAYS: 'canadalife_lookback_days',
   ROGERSBANK_LOOKBACK_DAYS: 'rogersbank_lookback_days',
   WEALTHSIMPLE_LOOKBACK_DAYS: 'wealthsimple_lookback_days',
   // Transaction retention settings (separate from lookback - for deduplication)
-  WEALTHSIMPLE_TRANSACTION_RETENTION_DAYS: 'wealthsimple_transaction_retention_days',
-  WEALTHSIMPLE_TRANSACTION_RETENTION_COUNT: 'wealthsimple_transaction_retention_count',
   QUESTRADE_TRANSACTION_RETENTION_DAYS: 'questrade_transaction_retention_days',
   QUESTRADE_TRANSACTION_RETENTION_COUNT: 'questrade_transaction_retention_count',
   ROGERSBANK_TRANSACTION_RETENTION_DAYS: 'rogersbank_transaction_retention_days',

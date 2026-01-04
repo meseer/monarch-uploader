@@ -3,7 +3,7 @@
  * Handles API communication with Wealthsimple GraphQL API
  */
 
-import { debugLog } from '../core/utils';
+import { debugLog, formatDate } from '../core/utils';
 import { STORAGE, API } from '../core/config';
 import stateManager from '../core/state';
 
@@ -615,21 +615,189 @@ export async function fetchAccountBalance(accountId) {
 }
 
 /**
- * Fetch account transactions
+ * Fetch account transactions using paginated GraphQL operation
+ * Loads all pages until reaching transactions older than startDate
  * @param {string} accountId - Account ID
- * @param {Object} _options - Query options (startDate, endDate, limit)
- * @returns {Promise<Array>} Array of transactions
+ * @param {string} startDate - Start date in YYYY-MM-DD format (local timezone)
+ * @returns {Promise<Array>} Array of transaction objects with all Activity fields
  */
-export async function fetchTransactions(accountId, _options = {}) {
+export async function fetchTransactions(accountId, startDate) {
   try {
-    debugLog(`Fetching transactions for Wealthsimple account ${accountId}...`);
+    if (!accountId) {
+      throw new Error('Account ID is required');
+    }
 
-    // This would use a GraphQL query for transactions
-    // For now, return placeholder
-    const response = { results: [] };
+    if (!startDate) {
+      throw new Error('Start date is required');
+    }
 
-    debugLog(`Fetched ${response.results?.length || 0} transactions for account ${accountId}`);
-    return response.results || [];
+    // Validate startDate format (YYYY-MM-DD)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+      throw new Error('Start date must be in YYYY-MM-DD format');
+    }
+
+    debugLog(`Fetching transactions for Wealthsimple account ${accountId} from ${startDate}...`);
+
+    const query = `query FetchActivityFeedItems($first: Int, $cursor: Cursor, $condition: ActivityCondition, $orderBy: [ActivitiesOrderBy!] = OCCURRED_AT_DESC) {
+  activityFeedItems(
+    first: $first
+    after: $cursor
+    condition: $condition
+    orderBy: $orderBy
+  ) {
+    edges {
+      node {
+        ...Activity
+        __typename
+      }
+      __typename
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+      __typename
+    }
+    __typename
+  }
+}
+
+fragment Activity on ActivityFeedItem {
+  accountId
+  aftOriginatorName
+  aftTransactionCategory
+  aftTransactionType
+  amount
+  amountSign
+  assetQuantity
+  assetSymbol
+  canonicalId
+  currency
+  eTransferEmail
+  eTransferName
+  externalCanonicalId
+  groupId
+  identityId
+  institutionName
+  occurredAt
+  p2pHandle
+  p2pMessage
+  spendMerchant
+  securityId
+  billPayCompanyName
+  billPayPayeeNickname
+  redactedExternalAccountNumber
+  opposingAccountId
+  status
+  subType
+  type
+  strikePrice
+  contractType
+  expiryDate
+  chequeNumber
+  provisionalCreditAmount
+  primaryBlocker
+  interestRate
+  frequency
+  counterAssetSymbol
+  rewardProgram
+  counterPartyCurrency
+  counterPartyCurrencyAmount
+  counterPartyName
+  fxRate
+  fees
+  reference
+  transferType
+  optionStrategy
+  rejectionReason
+  resolvable
+  withholdingTaxAmount
+  announcementDate
+  recordDate
+  payableDate
+  grossDividendRate
+  unifiedStatus
+  estimatedCompletionDate
+  __typename
+}`;
+
+    const allTransactions = [];
+    let cursor = null;
+    let hasNextPage = true;
+    let pageCount = 0;
+
+    // Set endDate to current moment in ISO format
+    const endDate = new Date().toISOString();
+
+    while (hasNextPage) {
+      pageCount += 1;
+      debugLog(`Fetching page ${pageCount} of transactions...`);
+
+      const variables = {
+        first: 50, // Maximum page size
+        orderBy: 'OCCURRED_AT_DESC',
+        condition: {
+          accountIds: [accountId],
+          endDate,
+        },
+      };
+
+      // Add cursor for pagination after first page
+      if (cursor) {
+        variables.cursor = cursor;
+      }
+
+      const response = await makeGraphQLQuery('FetchActivityFeedItems', query, variables);
+
+      if (!response || !response.activityFeedItems) {
+        debugLog('No activityFeedItems in response');
+        break;
+      }
+
+      const { edges, pageInfo } = response.activityFeedItems;
+
+      if (!edges || edges.length === 0) {
+        debugLog('No more transactions found');
+        break;
+      }
+
+      // Process transactions and check dates
+      let shouldStopPagination = false;
+
+      for (const edge of edges) {
+        const transaction = edge.node;
+
+        // Convert transaction date to local date for comparison
+        const transactionDate = formatDate(new Date(transaction.occurredAt));
+
+        // Check if this transaction is older than startDate
+        if (transactionDate < startDate) {
+          debugLog(`Reached transaction older than startDate: ${transactionDate} < ${startDate}. Stopping pagination.`);
+          shouldStopPagination = true;
+          break;
+        }
+
+        // Add transaction to results
+        allTransactions.push(transaction);
+      }
+
+      debugLog(`Processed ${edges.length} transactions from page ${pageCount}`);
+
+      // Check if we should continue pagination
+      if (shouldStopPagination) {
+        break;
+      }
+
+      // Update pagination state
+      hasNextPage = pageInfo?.hasNextPage || false;
+      cursor = pageInfo?.endCursor || null;
+
+      if (!hasNextPage) {
+        debugLog('No more pages available');
+      }
+    }
+
+    debugLog(`Fetched ${allTransactions.length} transactions across ${pageCount} page(s) for account ${accountId}`);
+    return allTransactions;
   } catch (error) {
     debugLog(`Error fetching transactions for account ${accountId}:`, error);
     throw error;
