@@ -12,6 +12,7 @@ import {
   calculateCheckpointDate,
   getBalanceAtDate,
   createCurrentBalanceOnly,
+  extractDateFromISO,
 } from '../../../src/services/wealthsimple/balance';
 import { formatDate } from '../../../src/core/utils';
 
@@ -494,6 +495,44 @@ describe('Wealthsimple Balance Service', () => {
       expect(result[0]).toEqual({ date: '2025-01-01', amount: -100 });
       expect(result[1]).toEqual({ date: '2025-01-02', amount: -100 }); // Same as checkpoint, no transactions
       expect(result[2]).toEqual({ date: '2025-01-03', amount: -100 }); // Current balance
+    });
+  });
+
+  describe('extractDateFromISO', () => {
+    test('extracts date from ISO timestamp', () => {
+      expect(extractDateFromISO('2025-02-18T21:16:55.685461Z')).toBe('2025-02-18');
+    });
+
+    test('extracts date from ISO timestamp with timezone', () => {
+      expect(extractDateFromISO('2025-12-31T23:59:59.000000+00:00')).toBe('2025-12-31');
+    });
+
+    test('returns YYYY-MM-DD as-is', () => {
+      expect(extractDateFromISO('2025-01-15')).toBe('2025-01-15');
+    });
+
+    test('returns null for null input', () => {
+      expect(extractDateFromISO(null)).toBeNull();
+    });
+
+    test('returns null for undefined input', () => {
+      expect(extractDateFromISO(undefined)).toBeNull();
+    });
+
+    test('returns null for empty string', () => {
+      expect(extractDateFromISO('')).toBeNull();
+    });
+
+    test('handles various ISO formats', () => {
+      expect(extractDateFromISO('2025-06-15T00:00:00Z')).toBe('2025-06-15');
+      expect(extractDateFromISO('2025-01-01T12:30:00.000Z')).toBe('2025-01-01');
+      expect(extractDateFromISO('2020-03-25T09:15:30.123456+05:30')).toBe('2020-03-25');
+    });
+
+    test('returns null for invalid format', () => {
+      expect(extractDateFromISO('invalid-date')).toBeNull();
+      expect(extractDateFromISO('25-01-2025')).toBeNull();
+      expect(extractDateFromISO('2025/01/15')).toBeNull();
     });
   });
 });
