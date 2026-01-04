@@ -781,6 +781,39 @@ function renderWealthsimpleTab(container) {
   }
 
   container.appendChild(mappingsSection);
+
+  // Category Mappings Section (shared across all Wealthsimple accounts)
+  const categorySection = createSection('Category Mappings', '🏷️', 'Merchant name to Monarch category mappings (shared across all accounts)');
+  const categoryMappings = GM_getValue(STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS, '{}');
+  let categoryData = [];
+
+  try {
+    const mappings = JSON.parse(categoryMappings);
+    categoryData = Object.entries(mappings).map(([merchantName, monarchCategory]) => [
+      `${STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS}.${merchantName}`,
+      merchantName,
+      monarchCategory,
+    ]);
+  } catch (error) {
+    debugLog('Error parsing Wealthsimple category mappings:', error);
+  }
+
+  const categoryTable = createDataTable(['Merchant Name', 'Monarch Category', 'Actions'], categoryData, (key) => {
+    const [, merchantName] = key.split('.');
+    try {
+      const currentMappings = JSON.parse(GM_getValue(STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS, '{}'));
+      delete currentMappings[merchantName];
+      GM_setValue(STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS, JSON.stringify(currentMappings));
+      toast.show('Category mapping deleted', 'info');
+      renderTabContent(container, 'wealthsimple');
+    } catch (error) {
+      toast.show('Error deleting category mapping', 'error');
+      debugLog('Error deleting Wealthsimple category mapping:', error);
+    }
+  });
+  categorySection.appendChild(categoryTable);
+
+  container.appendChild(categorySection);
 }
 
 /**

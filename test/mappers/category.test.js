@@ -11,6 +11,10 @@ import {
   getAllSavedCategoryMappings,
   calculateAllCategorySimilarities,
   applyCategoryMappingBatch,
+  applyWealthsimpleCategoryMapping,
+  saveUserWealthsimpleCategorySelection,
+  clearSavedWealthsimpleCategoryMappings,
+  getAllSavedWealthsimpleCategoryMappings,
 } from '../../src/mappers/category';
 
 // Mock dependencies
@@ -28,6 +32,7 @@ jest.mock('../../src/core/utils', () => ({
 jest.mock('../../src/core/config', () => ({
   STORAGE: {
     ROGERSBANK_CATEGORY_MAPPINGS: 'rogersbank_category_mappings',
+    WEALTHSIMPLE_CATEGORY_MAPPINGS: 'wealthsimple_category_mappings',
   },
 }));
 
@@ -501,6 +506,203 @@ describe('Category Mapper', () => {
         date: '2024-01-15',
         description: 'Test Restaurant',
         merchant: { categoryDescription: 'Restaurants' },
+      });
+    });
+  });
+
+  describe('Wealthsimple Category Mapping Functions', () => {
+    describe('applyWealthsimpleCategoryMapping', () => {
+      test('should return Uncategorized for null/undefined merchant', () => {
+        expect(applyWealthsimpleCategoryMapping(null, mockAvailableCategories)).toBe('Uncategorized');
+        expect(applyWealthsimpleCategoryMapping(undefined, mockAvailableCategories)).toBe('Uncategorized');
+        expect(applyWealthsimpleCategoryMapping('', mockAvailableCategories)).toBe('Uncategorized');
+      });
+
+      test('should return saved mapping when exists', () => {
+        globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
+          if (key === 'wealthsimple_category_mappings') {
+            return JSON.stringify({ STARBUCKS: 'Dining' });
+          }
+          return defaultVal;
+        });
+
+        const result = applyWealthsimpleCategoryMapping('Starbucks', mockAvailableCategories);
+        expect(result).toBe('Dining');
+      });
+
+      test('should apply automatic mapping for high similarity score', () => {
+        globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
+          if (key === 'wealthsimple_category_mappings') {
+            return '{}';
+          }
+          return defaultVal;
+        });
+        stringSimilarity.mockReturnValue(0.97);
+
+        const result = applyWealthsimpleCategoryMapping('Coffee Shop', mockAvailableCategories);
+
+        expect(result).toBe('Dining');
+        expect(globalThis.GM_setValue).toHaveBeenCalledWith(
+          'wealthsimple_category_mappings',
+          expect.stringContaining('COFFEE SHOP'),
+        );
+      });
+
+      test('should request manual selection for low similarity score', () => {
+        globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
+          if (key === 'wealthsimple_category_mappings') {
+            return '{}';
+          }
+          return defaultVal;
+        });
+        stringSimilarity.mockReturnValue(0.5);
+
+        const result = applyWealthsimpleCategoryMapping('Unknown Merchant', mockAvailableCategories);
+
+        expect(result).toMatchObject({
+          needsManualSelection: true,
+          bankCategory: 'Unknown Merchant',
+          suggestedCategory: 'Dining',
+          similarityScore: 0.5,
+        });
+      });
+    });
+
+    describe('saveUserWealthsimpleCategorySelection', () => {
+      test('should save user category selection to Wealthsimple storage', () => {
+        globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
+          if (key === 'wealthsimple_category_mappings') {
+            return '{}';
+          }
+          return defaultVal;
+        });
+
+        saveUserWealthsimpleCategorySelection('Tim Hortons', 'Dining');
+
+        expect(globalThis.GM_setValue).toHaveBeenCalledWith(
+          'wealthsimple_category_mappings',
+          JSON.stringify({ 'TIM HORTONS': 'Dining' }),
+        );
+      });
+
+      test('should update existing mappings', () => {
+        globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
+          if (key === 'wealthsimple_category_mappings') {
+            return JSON.stringify({ EXISTING: 'Old Category' });
+          }
+          return defaultVal;
+        });
+
+        saveUserWealthsimpleCategorySelection('New Merchant', 'Shopping');
+
+        const savedData = JSON.parse(globalThis.GM_setValue.mock.calls[0][1]);
+        expect(savedData).toEqual({
+          EXISTING: 'Old Category',
+          'NEW MERCHANT': 'Shopping',
+        });
+      });
+    });
+
+    describe('clearSavedWealthsimpleCategoryMappings', () => {
+      test('should clear all saved Wealthsimple mappings', () => {
+        clearSavedWealthsimpleCategoryMappings();
+
+        expect(globalThis.GM_setValue).toHaveBeenCalledWith(
+          'wealthsimple_category_mappings',
+          '{}',
+        );
+      });
+    });
+
+    describe('getAllSavedWealthsimpleCategoryMappings', () => {
+      test('should return saved Wealthsimple mappings', () => {
+        const mockMappings = {
+          STARBUCKS: 'Dining',
+          UBER: 'Transportation',
+        };
+        globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
+          if (key === 'wealthsimple_category_mappings') {
+            return JSON.stringify(mockMappings);
+          }
+          return defaultVal;
+        });
+
+        const result = getAllSavedWealthsimpleCategoryMappings();
+        expect(result).toEqual(mockMappings);
+      });
+
+      test('should return empty object for no saved mappings', () => {
+        globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
+          if (key === 'wealthsimple_category_mappings') {
+            return '{}';
+          }
+          return defaultVal;
+        });
+
+        const result = getAllSavedWealthsimpleCategoryMappings();
+        expect(result).toEqual({});
+      });
+
+      test('should handle JSON parse errors', () => {
+        globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
+          if (key === 'wealthsimple_category_mappings') {
+            return 'invalid json';
+          }
+          return defaultVal;
+        });
+
+        const result = getAllSavedWealthsimpleCategoryMappings();
+        expect(result).toEqual({});
+      });
+    });
+
+    describe('Separation between Rogers Bank and Wealthsimple', () => {
+      test('should store mappings in separate keys', () => {
+        // Save Rogers Bank mapping
+        globalThis.GM_getValue.mockReturnValue('{}');
+        saveUserCategorySelection('Rogers Category', 'Dining');
+
+        expect(globalThis.GM_setValue).toHaveBeenCalledWith(
+          'rogersbank_category_mappings',
+          expect.any(String),
+        );
+
+        jest.clearAllMocks();
+
+        // Save Wealthsimple mapping
+        globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
+          if (key === 'wealthsimple_category_mappings') {
+            return '{}';
+          }
+          return defaultVal;
+        });
+        saveUserWealthsimpleCategorySelection('Wealthsimple Merchant', 'Shopping');
+
+        expect(globalThis.GM_setValue).toHaveBeenCalledWith(
+          'wealthsimple_category_mappings',
+          expect.any(String),
+        );
+      });
+
+      test('should retrieve mappings from correct keys', () => {
+        const rogersMappings = { ROGERS_CAT: 'Dining' };
+        const wealthsimpleMappings = { WS_MERCHANT: 'Shopping' };
+
+        globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
+          if (key === 'rogersbank_category_mappings') {
+            return JSON.stringify(rogersMappings);
+          }
+          if (key === 'wealthsimple_category_mappings') {
+            return JSON.stringify(wealthsimpleMappings);
+          }
+          return defaultVal;
+        });
+
+        const rogersResult = getAllSavedCategoryMappings();
+        const wealthsimpleResult = getAllSavedWealthsimpleCategoryMappings();
+
+        expect(rogersResult).toEqual(rogersMappings);
+        expect(wealthsimpleResult).toEqual(wealthsimpleMappings);
       });
     });
   });

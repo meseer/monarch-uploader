@@ -531,6 +531,7 @@ export function getCurrentInstitution(location = window.location) {
   if (hostname.includes('questrade.com')) return 'questrade';
   if (hostname.includes('canadalife.com')) return 'canadalife';
   if (hostname.includes('rogersbank.com')) return 'rogersbank';
+  if (hostname.includes('wealthsimple.com')) return 'wealthsimple';
   if (hostname.includes('monarch.com')) return 'monarch';
   return 'unknown';
 }
@@ -572,6 +573,10 @@ export async function clearCategoryMappings(location = window.location) {
     case 'rogersbank':
       await GM_deleteValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS);
       institutionName = 'Rogers Bank';
+      break;
+    case 'wealthsimple':
+      await GM_deleteValue(STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS);
+      institutionName = 'Wealthsimple';
       break;
     default:
       debugLog('No category mappings to clear for this institution');

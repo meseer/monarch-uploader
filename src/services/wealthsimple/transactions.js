@@ -6,7 +6,7 @@
 import { debugLog, formatDate } from '../../core/utils';
 import wealthsimpleApi from '../../api/wealthsimple';
 import { applyMerchantMapping } from '../../mappers/merchant';
-import { applyCategoryMapping, saveUserCategorySelection, calculateAllCategorySimilarities } from '../../mappers/category';
+import { applyWealthsimpleCategoryMapping, saveUserWealthsimpleCategorySelection, calculateAllCategorySimilarities } from '../../mappers/category';
 import { showMonarchCategorySelector } from '../../ui/components/categorySelector';
 import monarchApi from '../../api/monarch';
 import toast from '../../ui/toast';
@@ -146,8 +146,8 @@ async function resolveCategoriesForTransactions(transactions) {
     if (!uniqueCategories.has(categoryKey)) {
       uniqueCategories.set(categoryKey, transaction);
 
-      // Test the category mapping
-      const mappingResult = applyCategoryMapping(categoryKey, availableCategories);
+      // Test the category mapping using Wealthsimple-specific function
+      const mappingResult = applyWealthsimpleCategoryMapping(categoryKey, availableCategories);
 
       if (mappingResult && typeof mappingResult === 'object' && mappingResult.needsManualSelection) {
         categoriesToResolve.push({
@@ -172,7 +172,7 @@ async function resolveCategoriesForTransactions(transactions) {
 
       // Re-check if this category still needs manual selection
       // (it might have been automatically mapped after a previous selection)
-      const recheckResult = applyCategoryMapping(categoryToResolve.bankCategory, availableCategories);
+      const recheckResult = applyWealthsimpleCategoryMapping(categoryToResolve.bankCategory, availableCategories);
 
       if (typeof recheckResult === 'string') {
         // Category is now automatically mapped, skip it
@@ -214,8 +214,8 @@ async function resolveCategoriesForTransactions(transactions) {
         throw new Error(`Category selection cancelled for "${categoryToResolve.bankCategory}". Upload aborted.`);
       }
 
-      // Save the selection
-      saveUserCategorySelection(categoryToResolve.bankCategory, selectedCategory.name);
+      // Save the selection using Wealthsimple-specific function
+      saveUserWealthsimpleCategorySelection(categoryToResolve.bankCategory, selectedCategory.name);
       debugLog(`User selected category mapping: ${categoryToResolve.bankCategory} -> ${selectedCategory.name}`);
 
       toast.show(`Mapped "${categoryToResolve.bankCategory}" to "${selectedCategory.name}"`, 'debug');
@@ -232,9 +232,9 @@ async function resolveCategoriesForTransactions(transactions) {
       return transaction;
     }
 
-    // Resolve based on merchant
+    // Resolve based on merchant using Wealthsimple-specific function
     const categoryKey = transaction.categoryKey;
-    const mappingResult = applyCategoryMapping(categoryKey, availableCategories);
+    const mappingResult = applyWealthsimpleCategoryMapping(categoryKey, availableCategories);
 
     const resolvedCategory = typeof mappingResult === 'string' ? mappingResult : 'Uncategorized';
 

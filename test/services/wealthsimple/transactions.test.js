@@ -8,7 +8,7 @@ import {
 } from '../../../src/services/wealthsimple/transactions';
 import wealthsimpleApi from '../../../src/api/wealthsimple';
 import monarchApi from '../../../src/api/monarch';
-import { applyCategoryMapping } from '../../../src/mappers/category';
+import { applyWealthsimpleCategoryMapping } from '../../../src/mappers/category';
 
 // Mock dependencies
 jest.mock('../../../src/api/wealthsimple');
@@ -72,7 +72,7 @@ describe('Wealthsimple Transaction Service', () => {
           { id: '1', name: 'Shopping', group: { name: 'Shopping' } },
         ],
       });
-      applyCategoryMapping.mockReturnValue('Shopping');
+      applyWealthsimpleCategoryMapping.mockReturnValue('Shopping');
 
       const result = await fetchAndProcessCreditCardTransactions(
         mockConsolidatedAccount,
@@ -125,7 +125,7 @@ describe('Wealthsimple Transaction Service', () => {
       monarchApi.getCategoriesAndGroups.mockResolvedValue({
         categories: [],
       });
-      applyCategoryMapping.mockReturnValue('Coffee Shops');
+      applyWealthsimpleCategoryMapping.mockReturnValue('Coffee Shops');
 
       const result = await fetchAndProcessCreditCardTransactions(
         mockConsolidatedAccount,
@@ -184,7 +184,7 @@ describe('Wealthsimple Transaction Service', () => {
       monarchApi.getCategoriesAndGroups.mockResolvedValue({
         categories: [],
       });
-      applyCategoryMapping.mockReturnValue('Shopping');
+      applyWealthsimpleCategoryMapping.mockReturnValue('Shopping');
 
       const result = await fetchAndProcessCreditCardTransactions(
         mockConsolidatedAccount,
@@ -250,7 +250,7 @@ describe('Wealthsimple Transaction Service', () => {
       monarchApi.getCategoriesAndGroups.mockResolvedValue({
         categories: [],
       });
-      applyCategoryMapping.mockReturnValue('Shopping');
+      applyWealthsimpleCategoryMapping.mockReturnValue('Shopping');
 
       const result = await fetchAndProcessCreditCardTransactions(
         mockConsolidatedAccount,
@@ -354,7 +354,7 @@ describe('Wealthsimple Transaction Service', () => {
 
       wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
       monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [] });
-      applyCategoryMapping.mockReturnValue('Shopping');
+      applyWealthsimpleCategoryMapping.mockReturnValue('Shopping');
 
       const result = await fetchAndProcessCreditCardTransactions(
         mockConsolidatedAccount,

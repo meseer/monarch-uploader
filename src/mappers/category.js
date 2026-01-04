@@ -1,18 +1,21 @@
 /**
  * Category Mapper
  * Maps transaction categories to Monarch Money categories
+ *
+ * This module provides separate category mapping storage for different institutions:
+ * - Rogers Bank: Uses merchant codes (stored in ROGERSBANK_CATEGORY_MAPPINGS)
+ * - Wealthsimple: Uses merchant names only (stored in WEALTHSIMPLE_CATEGORY_MAPPINGS)
  */
 
 import { debugLog, stringSimilarity } from '../core/utils';
 import { STORAGE } from '../core/config';
 
-/**
- * Monarch Money category list
- * These are the standard categories available in Monarch
- */
+// ============================================================================
+// ROGERS BANK CATEGORY MAPPINGS
+// ============================================================================
 
 /**
- * Get saved category mappings from storage
+ * Get saved Rogers Bank category mappings from storage
  * @returns {Object} Saved category mappings
  */
 function getSavedCategoryMappings() {
@@ -20,13 +23,13 @@ function getSavedCategoryMappings() {
     const saved = GM_getValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS, '{}');
     return JSON.parse(saved);
   } catch (error) {
-    debugLog('Error loading saved category mappings:', error);
+    debugLog('Error loading saved Rogers Bank category mappings:', error);
     return {};
   }
 }
 
 /**
- * Save category mapping to storage
+ * Save Rogers Bank category mapping to storage
  * @param {string} bankCategory - Bank category name
  * @param {string} monarchCategory - Monarch category name
  */
@@ -35,11 +38,50 @@ function saveCategoryMapping(bankCategory, monarchCategory) {
     const savedMappings = getSavedCategoryMappings();
     savedMappings[bankCategory.toUpperCase()] = monarchCategory;
     GM_setValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS, JSON.stringify(savedMappings));
-    debugLog('Saved category mapping:', { bankCategory, monarchCategory });
+    debugLog('Saved Rogers Bank category mapping:', { bankCategory, monarchCategory });
   } catch (error) {
-    debugLog('Error saving category mapping:', error);
+    debugLog('Error saving Rogers Bank category mapping:', error);
   }
 }
+
+// ============================================================================
+// WEALTHSIMPLE CATEGORY MAPPINGS
+// ============================================================================
+
+/**
+ * Get saved Wealthsimple category mappings from storage
+ * Shared across all Wealthsimple accounts
+ * @returns {Object} Saved category mappings (merchant name -> Monarch category)
+ */
+function getSavedWealthsimpleCategoryMappings() {
+  try {
+    const saved = GM_getValue(STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS, '{}');
+    return JSON.parse(saved);
+  } catch (error) {
+    debugLog('Error loading saved Wealthsimple category mappings:', error);
+    return {};
+  }
+}
+
+/**
+ * Save Wealthsimple category mapping to storage
+ * @param {string} merchantName - Merchant name (cleaned)
+ * @param {string} monarchCategory - Monarch category name
+ */
+function saveWealthsimpleCategoryMapping(merchantName, monarchCategory) {
+  try {
+    const savedMappings = getSavedWealthsimpleCategoryMappings();
+    savedMappings[merchantName.toUpperCase()] = monarchCategory;
+    GM_setValue(STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS, JSON.stringify(savedMappings));
+    debugLog('Saved Wealthsimple category mapping:', { merchantName, monarchCategory });
+  } catch (error) {
+    debugLog('Error saving Wealthsimple category mapping:', error);
+  }
+}
+
+// ============================================================================
+// SHARED UTILITY FUNCTIONS
+// ============================================================================
 
 /**
  * Find the best matching Monarch category using similarity scoring
@@ -87,8 +129,8 @@ function findBestMonarchCategoryMatch(bankCategory, availableCategories = []) {
 }
 
 /**
- * Apply category mapping with similarity scoring and user selection
- * @param {string} category - Original category from Rogers Bank
+ * Apply category mapping with similarity scoring and user selection (Rogers Bank)
+ * @param {string} category - Original category from Rogers Bank (merchant code)
  * @param {Array} availableCategories - Available Monarch categories to match against
  * @returns {string|Object} Mapped category for Monarch, or object indicating manual selection needed
  */
@@ -146,13 +188,83 @@ export function applyCategoryMapping(category, availableCategories = []) {
 }
 
 /**
- * Save a user-selected category mapping
+ * Save a user-selected category mapping (Rogers Bank)
  * @param {string} bankCategory - Bank category name
  * @param {string} monarchCategory - Selected Monarch category name
  */
 export function saveUserCategorySelection(bankCategory, monarchCategory) {
   saveCategoryMapping(bankCategory, monarchCategory);
-  debugLog('User category selection saved:', { bankCategory, monarchCategory });
+  debugLog('Rogers Bank user category selection saved:', { bankCategory, monarchCategory });
+}
+
+/**
+ * Apply Wealthsimple category mapping with similarity scoring
+ * Uses merchant names for matching (no merchant codes available)
+ * @param {string} merchantName - Cleaned merchant name
+ * @param {Array} availableCategories - Available Monarch categories to match against
+ * @returns {string|Object} Mapped category for Monarch, or object indicating manual selection needed
+ */
+export function applyWealthsimpleCategoryMapping(merchantName, availableCategories = []) {
+  if (!merchantName) {
+    return 'Uncategorized';
+  }
+
+  const cleanedMerchant = merchantName.trim();
+  const upperMerchant = cleanedMerchant.toUpperCase();
+
+  // First, check if we have a saved mapping for this merchant
+  const savedMappings = getSavedWealthsimpleCategoryMappings();
+  if (savedMappings[upperMerchant]) {
+    const mapped = savedMappings[upperMerchant];
+    debugLog('Using saved Wealthsimple category mapping:', { original: cleanedMerchant, mapped });
+    return mapped;
+  }
+
+  // Find the best matching Monarch category using similarity
+  const matchResult = findBestMonarchCategoryMatch(cleanedMerchant, availableCategories);
+
+  debugLog('Wealthsimple category similarity analysis:', {
+    merchantName: cleanedMerchant,
+    bestMatch: matchResult.bestMatch,
+    score: matchResult.score,
+  });
+
+  // If similarity score is above 0.95, use it automatically
+  if (matchResult.score > 0.95) {
+    const mapped = matchResult.bestMatch;
+    // Save this automatic mapping for future use
+    saveWealthsimpleCategoryMapping(cleanedMerchant, mapped);
+    debugLog('Automatic Wealthsimple category mapping applied:', {
+      original: cleanedMerchant,
+      mapped,
+      score: matchResult.score,
+    });
+    return mapped;
+  }
+
+  // If similarity score is low, return a special object indicating manual selection is needed
+  debugLog('Manual Wealthsimple category selection needed:', {
+    original: cleanedMerchant,
+    bestGuess: matchResult.bestMatch,
+    score: matchResult.score,
+  });
+
+  return {
+    needsManualSelection: true,
+    bankCategory: cleanedMerchant,
+    suggestedCategory: matchResult.bestMatch,
+    similarityScore: matchResult.score,
+  };
+}
+
+/**
+ * Save a user-selected Wealthsimple category mapping
+ * @param {string} merchantName - Merchant name
+ * @param {string} monarchCategory - Selected Monarch category name
+ */
+export function saveUserWealthsimpleCategorySelection(merchantName, monarchCategory) {
+  saveWealthsimpleCategoryMapping(merchantName, monarchCategory);
+  debugLog('Wealthsimple user category selection saved:', { merchantName, monarchCategory });
 }
 
 /**
@@ -193,23 +305,43 @@ export function getClosestMonarchCategory(category, availableCategories = []) {
 }
 
 /**
- * Clear all saved category mappings
+ * Clear all saved Rogers Bank category mappings
  */
 export function clearSavedCategoryMappings() {
   try {
     GM_setValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS, '{}');
-    debugLog('Cleared all saved category mappings');
+    debugLog('Cleared all saved Rogers Bank category mappings');
   } catch (error) {
-    debugLog('Error clearing category mappings:', error);
+    debugLog('Error clearing Rogers Bank category mappings:', error);
   }
 }
 
 /**
- * Get all saved category mappings for display/management
+ * Get all saved Rogers Bank category mappings for display/management
  * @returns {Object} All saved category mappings
  */
 export function getAllSavedCategoryMappings() {
   return getSavedCategoryMappings();
+}
+
+/**
+ * Clear all saved Wealthsimple category mappings
+ */
+export function clearSavedWealthsimpleCategoryMappings() {
+  try {
+    GM_setValue(STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS, '{}');
+    debugLog('Cleared all saved Wealthsimple category mappings');
+  } catch (error) {
+    debugLog('Error clearing Wealthsimple category mappings:', error);
+  }
+}
+
+/**
+ * Get all saved Wealthsimple category mappings for display/management
+ * @returns {Object} All saved Wealthsimple category mappings
+ */
+export function getAllSavedWealthsimpleCategoryMappings() {
+  return getSavedWealthsimpleCategoryMappings();
 }
 
 /**
@@ -327,12 +459,19 @@ export function applyCategoryMappingBatch(transactions, availableCategories = []
 }
 
 export default {
+  // Rogers Bank functions
   applyCategoryMapping,
   applyCategoryMappingBatch,
-  isValidMonarchCategory,
-  getClosestMonarchCategory,
   saveUserCategorySelection,
   clearSavedCategoryMappings,
   getAllSavedCategoryMappings,
+  // Wealthsimple functions
+  applyWealthsimpleCategoryMapping,
+  saveUserWealthsimpleCategorySelection,
+  clearSavedWealthsimpleCategoryMappings,
+  getAllSavedWealthsimpleCategoryMappings,
+  // Shared utility functions
+  isValidMonarchCategory,
+  getClosestMonarchCategory,
   calculateAllCategorySimilarities,
 };
