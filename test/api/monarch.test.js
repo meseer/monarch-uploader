@@ -20,6 +20,7 @@ import {
   getHoldings,
   checkTokenStatus,
   getToken,
+  setAccountLogo,
 } from '../../src/api/monarch';
 import authService from '../../src/services/auth';
 import stateManager from '../../src/core/state';
@@ -1082,6 +1083,148 @@ describe('Monarch API', () => {
       await expect(updateHolding('holding123', { quantity: 150 }))
         .rejects
         .toThrow('Monarch token not found.');
+    });
+  });
+
+  describe('setAccountLogo', () => {
+    test('sets account logo successfully', async () => {
+      const mockResponse = {
+        id: 'account123',
+        name: 'Test Account',
+        logoUrl: 'https://res.cloudinary.com/monarch-money/image/authenticated/test-logo',
+        hasCustomizedLogo: true,
+      };
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.operationName).toBe('Common_SetAccountLogo');
+        expect(data.variables.input.accountId).toBe('account123');
+        expect(data.variables.input.cloudinaryPublicId).toBe('production/account_logos/test-logo');
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              setAccountLogo: {
+                account: mockResponse,
+                errors: null,
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      const result = await setAccountLogo('account123', 'production/account_logos/test-logo');
+
+      expect(result).toEqual(mockResponse);
+      expect(debugLog).toHaveBeenCalledWith('Setting account logo:', {
+        accountId: 'account123',
+        cloudinaryPublicId: 'production/account_logos/test-logo',
+      });
+      expect(debugLog).toHaveBeenCalledWith(
+        'Successfully set logo for account Test Account (ID: account123)',
+      );
+    });
+
+    test('throws error when accountId is missing', async () => {
+      await expect(setAccountLogo(null, 'production/account_logos/test-logo'))
+        .rejects
+        .toThrow('Account ID is required');
+    });
+
+    test('throws error when cloudinaryPublicId is missing', async () => {
+      await expect(setAccountLogo('account123', null))
+        .rejects
+        .toThrow('Cloudinary public ID is required');
+    });
+
+    test('throws error when cloudinaryPublicId is empty string', async () => {
+      await expect(setAccountLogo('account123', ''))
+        .rejects
+        .toThrow('Cloudinary public ID is required');
+    });
+
+    test('throws error when API returns errors', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              setAccountLogo: {
+                account: null,
+                errors: {
+                  message: 'Invalid cloudinary public ID',
+                  code: 'INVALID_CLOUDINARY_ID',
+                },
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      await expect(setAccountLogo('account123', 'invalid-logo-id'))
+        .rejects
+        .toThrow('Invalid cloudinary public ID');
+    });
+
+    test('throws default error message when API errors have no message', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              setAccountLogo: {
+                account: null,
+                errors: {
+                  code: 'UNKNOWN_ERROR',
+                },
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      await expect(setAccountLogo('account123', 'some-logo-id'))
+        .rejects
+        .toThrow('Failed to set account logo');
+    });
+
+    test('handles network errors', async () => {
+      const mockError = new Error('Network error');
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onerror(mockError), 0);
+      });
+
+      await expect(setAccountLogo('account123', 'production/account_logos/test-logo'))
+        .rejects
+        .toThrow('Network error');
+    });
+
+    test('handles authentication errors', async () => {
+      authService.checkMonarchAuth.mockReturnValue({
+        authenticated: false,
+        token: null,
+      });
+
+      await expect(setAccountLogo('account123', 'production/account_logos/test-logo'))
+        .rejects
+        .toThrow('Monarch token not found.');
+    });
+
+    test('handles 401 authentication error', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 401,
+        }), 0);
+      });
+
+      await expect(setAccountLogo('account123', 'production/account_logos/test-logo'))
+        .rejects
+        .toThrow('Monarch Auth Error (401): Token was invalid or expired.');
+
+      expect(authService.saveMonarchToken).toHaveBeenCalledWith(null);
+      expect(stateManager.setMonarchAuth).toHaveBeenCalledWith(null);
     });
   });
 

@@ -98,6 +98,12 @@ export const COLORS = {
   WEALTHSIMPLE_BRAND: 'rgb(50, 48, 47)', // Wealthsimple dark gray
 };
 
+// Cloudinary public IDs for institution logos (pre-uploaded to Monarch)
+// These are used to set logos for manually created accounts
+export const LOGO_CLOUDINARY_IDS = {
+  WEALTHSIMPLE: 'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/qpy5muxbdwcuzpq2krap',
+};
+
 // UI settings
 export const UI = {
   TOAST_DURATION: 5000, // 5 seconds for toast notifications
@@ -112,5 +118,6 @@ export default {
   STORAGE,
   TRANSACTION_RETENTION_DEFAULTS,
   COLORS,
+  LOGO_CLOUDINARY_IDS,
   UI,
 };

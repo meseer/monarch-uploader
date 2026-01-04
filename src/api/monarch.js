@@ -1139,6 +1139,93 @@ export async function createManualAccount(accountData) {
   return result.createManualAccount.account.id;
 }
 
+/**
+ * @typedef {Object} SetAccountLogoInput
+ * @property {string} accountId - Monarch account ID
+ * @property {string} cloudinaryPublicId - Cloudinary public ID for the logo image
+ */
+
+/**
+ * @typedef {Object} SetAccountLogoResult
+ * @property {string} id - Account ID
+ * @property {string} name - Account name
+ * @property {string} logoUrl - URL of the set logo
+ * @property {boolean} hasCustomizedLogo - Whether the account has a customized logo
+ */
+
+/**
+ * Set logo for a Monarch account using a pre-uploaded Cloudinary image
+ * @param {string} accountId - Monarch account ID
+ * @param {string} cloudinaryPublicId - Cloudinary public ID for the logo
+ * @returns {Promise<SetAccountLogoResult>} Updated account with logo information
+ * @throws {Error} If logo setting fails
+ * @example
+ * // Set Wealthsimple logo for an account
+ * const result = await setAccountLogo(
+ *   '231963875890199554',
+ *   'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/qpy5muxbdwcuzpq2krap'
+ * );
+ * console.log(result.logoUrl); // https://res.cloudinary.com/...
+ */
+export async function setAccountLogo(accountId, cloudinaryPublicId) {
+  if (!accountId) {
+    throw new Error('Account ID is required');
+  }
+
+  if (!cloudinaryPublicId) {
+    throw new Error('Cloudinary public ID is required');
+  }
+
+  debugLog('Setting account logo:', { accountId, cloudinaryPublicId });
+
+  const result = await callMonarchGraphQL(
+    'Common_SetAccountLogo',
+    `mutation Common_SetAccountLogo($input: SetAccountLogoInput!) {
+      setAccountLogo(input: $input) {
+        account {
+          id
+          name
+          logoUrl
+          hasCustomizedLogo
+          __typename
+        }
+        errors {
+          ...PayloadErrorFields
+          __typename
+        }
+        __typename
+      }
+    }
+    
+    fragment PayloadErrorFields on PayloadError {
+      fieldErrors {
+        field
+        messages
+        __typename
+      }
+      message
+      code
+      __typename
+    }`,
+    {
+      input: {
+        accountId,
+        cloudinaryPublicId,
+      },
+    },
+  );
+
+  if (result.setAccountLogo.errors) {
+    const errorMsg = result.setAccountLogo.errors.message || 'Failed to set account logo';
+    throw new Error(errorMsg);
+  }
+
+  const account = result.setAccountLogo.account;
+  debugLog(`Successfully set logo for account ${account.name} (ID: ${account.id})`);
+
+  return account;
+}
+
 // Export as default object
 export default {
   callGraphQL,
@@ -1159,4 +1246,5 @@ export default {
   getToken,
   getAccountTypeOptions,
   createManualAccount,
+  setAccountLogo,
 };

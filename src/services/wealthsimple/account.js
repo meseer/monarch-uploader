@@ -4,7 +4,7 @@
  */
 
 import { debugLog, formatDate } from '../../core/utils';
-import { STORAGE, TRANSACTION_RETENTION_DEFAULTS } from '../../core/config';
+import { STORAGE, TRANSACTION_RETENTION_DEFAULTS, LOGO_CLOUDINARY_IDS } from '../../core/config';
 import stateManager from '../../core/state';
 import monarchApi from '../../api/monarch';
 import wealthsimpleApi from '../../api/wealthsimple';
@@ -108,6 +108,20 @@ export async function resolveWealthsimpleAccountMapping(consolidatedAccount, cur
         syncEnabled: false,
       });
       return monarchAccount;
+    }
+
+    // If this is a newly created account, set the Wealthsimple logo
+    if (monarchAccount.newlyCreated) {
+      try {
+        debugLog(`Setting Wealthsimple logo for newly created account ${monarchAccount.id}`);
+        await monarchApi.setAccountLogo(monarchAccount.id, LOGO_CLOUDINARY_IDS.WEALTHSIMPLE);
+        debugLog(`Successfully set Wealthsimple logo for account ${monarchAccount.displayName}`);
+        toast.show(`Set Wealthsimple logo for ${monarchAccount.displayName}`, 'debug');
+      } catch (logoError) {
+        // Logo setting failed, but account creation succeeded - continue with warning
+        debugLog('Failed to set Wealthsimple logo for account:', logoError);
+        toast.show(`Warning: Failed to set logo for ${monarchAccount.displayName}`, 'warning');
+      }
     }
 
     // Save the mapping in consolidated structure

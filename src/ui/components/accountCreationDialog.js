@@ -284,7 +284,8 @@ export async function showAccountCreationDialog(options = {}) {
         if (createdAccount) {
           cleanupKeyboard();
           overlay.remove();
-          resolve(createdAccount);
+          // Add newlyCreated flag so callers can set institution-specific logos
+          resolve({ ...createdAccount, newlyCreated: true });
         } else {
           // Fallback: return minimal account object
           cleanupKeyboard();
@@ -294,6 +295,7 @@ export async function showAccountCreationDialog(options = {}) {
             displayName: accountName,
             type: { name: accountType },
             subtype: { name: accountSubtype },
+            newlyCreated: true,
           });
         }
       } catch (error) {
