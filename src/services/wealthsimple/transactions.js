@@ -33,9 +33,14 @@ function convertToLocalDate(isoTimestamp) {
 function processCreditCardTransaction(transaction, options = {}) {
   const { stripStoreNumbers = true } = options;
 
-  // Determine merchant name based on subType
+  // Check for auto-mapping first
+  const autoMapping = getAutoMappingForSubType(transaction.subType);
+
+  // Determine merchant name based on subType or auto-mapping
   let merchantName;
-  if (transaction.subType === 'PAYMENT') {
+  if (autoMapping && autoMapping.merchant) {
+    merchantName = autoMapping.merchant;
+  } else if (transaction.subType === 'PAYMENT') {
     merchantName = 'Credit Card Payment';
   } else {
     merchantName = transaction.spendMerchant || 'Unknown Merchant';
@@ -84,16 +89,18 @@ function filterCreditCardTransactions(transactions) {
 }
 
 /**
- * Get auto-category for specific transaction subtypes
+ * Get auto-category and merchant for specific transaction subtypes
  * @param {string} subType - Transaction subtype
- * @returns {string|null} Category name or null if should use mapping
+ * @returns {Object|null} Object with category and optionally merchant, or null if should use mapping
  */
-function getAutoCategoryForSubType(subType) {
+function getAutoMappingForSubType(subType) {
   switch (subType) {
   case 'PAYMENT':
-    return 'Credit Card Payment';
+    return { category: 'Credit Card Payment' };
   case 'CASH_WITHDRAWAL':
-    return 'Cash & ATM';
+    return { category: 'Cash & ATM' };
+  case 'INTEREST':
+    return { category: 'Financial Fees', merchant: 'Cash Advance Interest' };
   default:
     return null; // Use merchant-based category mapping
   }
@@ -126,9 +133,9 @@ async function resolveCategoriesForTransactions(transactions) {
 
   // Auto-categorize transactions with specific subTypes
   transactions.forEach((transaction) => {
-    const autoCategory = getAutoCategoryForSubType(transaction.subType);
-    if (autoCategory) {
-      transaction.resolvedMonarchCategory = autoCategory;
+    const autoMapping = getAutoMappingForSubType(transaction.subType);
+    if (autoMapping && autoMapping.category) {
+      transaction.resolvedMonarchCategory = autoMapping.category;
     }
   });
 

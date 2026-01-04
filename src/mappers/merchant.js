@@ -32,6 +32,7 @@ function toTitleCase(str) {
 const PREFIXES_TO_REMOVE = [
   { prefix: 'tst-', description: 'Toast transactions' },
   { prefix: 'sq *', description: 'Square transactions' },
+  { prefix: 'sp ', description: 'SP transactions' },
   { prefix: 'ls ', description: 'Lightspeed transactions' },
   { prefix: 'str*', description: 'Stripe transactions' },
 ];
@@ -113,13 +114,24 @@ export function applyMerchantMapping(merchantName, options = {}) {
   // Rule 1: Remove leading prefixes (TST-, Sq *, Ls, Str*)
   let transformed = removeLeadingPrefixes(merchantName);
 
-  // Rule 2: Strip store numbers (configurable)
+  // Rule 2: Transform Impark variants to standardized name
+  // Matches merchant names starting with "Impark" followed by alphanumeric codes
+  if (/^impark/i.test(transformed)) {
+    const originalImpark = transformed;
+    transformed = 'Impark';
+    debugLog('Transformed Impark variant to standardized name:', {
+      original: originalImpark,
+      transformed,
+    });
+  }
+
+  // Rule 3: Strip store numbers (configurable)
   transformed = stripStoreNumbers(transformed, shouldStripStoreNumbers);
 
-  // Rule 3: Convert to title case (as last step to ensure proper capitalization)
+  // Rule 4: Convert to title case (as last step to ensure proper capitalization)
   transformed = toTitleCase(transformed);
 
-  // Rule 4: Specific merchant name corrections
+  // Rule 5: Specific merchant name corrections
   const merchantCorrections = {
     // 'OLD NAME': 'NEW NAME',
     // Add specific corrections as needed
@@ -129,7 +141,7 @@ export function applyMerchantMapping(merchantName, options = {}) {
     transformed = merchantCorrections[transformed.toUpperCase()];
   }
 
-  // Rule 5: Clean up extra spaces
+  // Rule 6: Clean up extra spaces
   transformed = transformed.replace(/\s+/g, ' ').trim();
 
   debugLog('Merchant mapping applied:', { original: merchantName, transformed, options });

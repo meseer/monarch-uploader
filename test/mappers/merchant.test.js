@@ -45,6 +45,21 @@ describe('Merchant Mapping Utilities', () => {
       expect(applyMerchantMapping('ls boutique store')).toBe('Boutique Store');
     });
 
+    test('should remove SP prefix', () => {
+      expect(applyMerchantMapping('SP COFFEE SHOP')).toBe('Coffee Shop');
+      expect(applyMerchantMapping('sp local bakery')).toBe('Local Bakery');
+      expect(applyMerchantMapping('Sp Restaurant')).toBe('Restaurant');
+    });
+
+    test('should transform Impark variants to standardized name', () => {
+      expect(applyMerchantMapping('Impark00661600u')).toBe('Impark');
+      expect(applyMerchantMapping('IMPARK12345678')).toBe('Impark');
+      expect(applyMerchantMapping('impark00012')).toBe('Impark');
+      expect(applyMerchantMapping('Impark')).toBe('Impark');
+      // Should not transform merchants that don't start with Impark
+      expect(applyMerchantMapping('NotImpark Store')).toBe('Notimpark Store');
+    });
+
     test('should handle multiple spaces and clean them up', () => {
       expect(applyMerchantMapping('STARBUCKS    COFFEE   SHOP')).toBe('Starbucks Coffee Shop');
       expect(applyMerchantMapping('  WALMART  SUPERCENTER  ')).toBe('Walmart Supercenter');

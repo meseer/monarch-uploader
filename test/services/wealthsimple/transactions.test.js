@@ -166,6 +166,38 @@ describe('Wealthsimple Transaction Service', () => {
       expect(result[0].resolvedMonarchCategory).toBe('Cash & ATM');
     });
 
+    it('should auto-categorize INTEREST transactions with custom merchant', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-1',
+          occurredAt: '2025-01-15T10:30:00.000000+00:00',
+          type: 'CREDIT_CARD',
+          subType: 'INTEREST',
+          status: 'settled',
+          spendMerchant: 'Some Interest Merchant',
+          amount: 12.50,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({
+        categories: [],
+      });
+
+      const result = await fetchAndProcessCreditCardTransactions(
+        mockConsolidatedAccount,
+        '2025-01-01',
+        '2025-01-31',
+      );
+
+      // Should auto-categorize to Financial Fees
+      expect(result[0].resolvedMonarchCategory).toBe('Financial Fees');
+      // Should override merchant to 'Cash Advance Interest'
+      expect(result[0].merchant).toBe('Cash Advance Interest');
+      expect(result[0].originalMerchant).toBe('Cash Advance Interest');
+    });
+
     it('should handle REFUND transactions correctly', async () => {
       const mockRawTransactions = [
         {
