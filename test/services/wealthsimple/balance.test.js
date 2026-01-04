@@ -8,6 +8,9 @@ import {
   BalanceError,
   accountNeedsBalanceReconstruction,
   reconstructBalanceFromTransactions,
+  reconstructBalanceFromCheckpoint,
+  calculateCheckpointDate,
+  getBalanceAtDate,
   createCurrentBalanceOnly,
 } from '../../../src/services/wealthsimple/balance';
 import { formatDate } from '../../../src/core/utils';
@@ -306,6 +309,191 @@ describe('Wealthsimple Balance Service', () => {
       const currentBalance = { amount: 1234.56, currency: 'CAD' };
       expect(createCurrentBalanceOnly(currentBalance, null)).toEqual([]);
       expect(createCurrentBalanceOnly(currentBalance, '')).toEqual([]);
+    });
+  });
+
+  describe('reconstructBalanceFromTransactions with startingBalance', () => {
+    test('uses starting balance when provided', () => {
+      const transactions = [
+        { date: '2025-01-01', amount: -100 },
+        { date: '2025-01-02', amount: -50 },
+      ];
+
+      const result = reconstructBalanceFromTransactions(transactions, '2025-01-01', '2025-01-02', -500);
+
+      expect(result).toHaveLength(2);
+      expect(result[0]).toEqual({ date: '2025-01-01', amount: -600 }); // -500 + (-100)
+      expect(result[1]).toEqual({ date: '2025-01-02', amount: -650 }); // -600 + (-50)
+    });
+
+    test('defaults to 0 starting balance when not provided', () => {
+      const transactions = [
+        { date: '2025-01-01', amount: -100 },
+      ];
+
+      const result = reconstructBalanceFromTransactions(transactions, '2025-01-01', '2025-01-01');
+
+      expect(result[0].amount).toBe(-100); // 0 + (-100)
+    });
+
+    test('handles positive starting balance', () => {
+      const transactions = [
+        { date: '2025-01-01', amount: -50 },
+      ];
+
+      const result = reconstructBalanceFromTransactions(transactions, '2025-01-01', '2025-01-01', 100);
+
+      expect(result[0].amount).toBe(50); // 100 + (-50)
+    });
+  });
+
+  describe('calculateCheckpointDate', () => {
+    test('calculates checkpoint date from lastSyncDate minus lookbackDays', () => {
+      const result = calculateCheckpointDate('2025-12-10', 2, null);
+
+      expect(result).toBe('2025-12-08');
+    });
+
+    test('respects account creation date boundary', () => {
+      // If calculated date is before account creation, should return account creation date
+      const result = calculateCheckpointDate('2025-12-05', 10, '2025-12-01');
+
+      expect(result).toBe('2025-12-01');
+    });
+
+    test('handles ISO timestamp format for account creation', () => {
+      const result = calculateCheckpointDate('2025-12-05', 10, '2025-12-01T12:00:00Z');
+
+      expect(result).toBe('2025-12-01');
+    });
+
+    test('returns null for missing lastSyncDate', () => {
+      const result = calculateCheckpointDate(null, 2, '2025-01-01');
+
+      expect(result).toBeNull();
+    });
+
+    test('handles various lookback day values', () => {
+      expect(calculateCheckpointDate('2025-12-15', 0, null)).toBe('2025-12-15');
+      expect(calculateCheckpointDate('2025-12-15', 1, null)).toBe('2025-12-14');
+      expect(calculateCheckpointDate('2025-12-15', 7, null)).toBe('2025-12-08');
+      expect(calculateCheckpointDate('2025-12-15', 30, null)).toBe('2025-11-15');
+    });
+  });
+
+  describe('getBalanceAtDate', () => {
+    test('returns balance for exact date match', () => {
+      const balanceHistory = [
+        { date: '2025-01-01', amount: 100 },
+        { date: '2025-01-02', amount: 150 },
+        { date: '2025-01-03', amount: 200 },
+      ];
+
+      expect(getBalanceAtDate(balanceHistory, '2025-01-02')).toBe(150);
+    });
+
+    test('returns null for date not in history', () => {
+      const balanceHistory = [
+        { date: '2025-01-01', amount: 100 },
+        { date: '2025-01-03', amount: 200 },
+      ];
+
+      expect(getBalanceAtDate(balanceHistory, '2025-01-02')).toBeNull();
+    });
+
+    test('returns null for empty balance history', () => {
+      expect(getBalanceAtDate([], '2025-01-01')).toBeNull();
+    });
+
+    test('returns null for null or undefined inputs', () => {
+      const balanceHistory = [{ date: '2025-01-01', amount: 100 }];
+
+      expect(getBalanceAtDate(null, '2025-01-01')).toBeNull();
+      expect(getBalanceAtDate(undefined, '2025-01-01')).toBeNull();
+      expect(getBalanceAtDate(balanceHistory, null)).toBeNull();
+      expect(getBalanceAtDate(balanceHistory, undefined)).toBeNull();
+    });
+
+    test('handles zero balance', () => {
+      const balanceHistory = [
+        { date: '2025-01-01', amount: 0 },
+      ];
+
+      expect(getBalanceAtDate(balanceHistory, '2025-01-01')).toBe(0);
+    });
+  });
+
+  describe('reconstructBalanceFromCheckpoint', () => {
+    test('reconstructs balance from checkpoint to today', () => {
+      const checkpoint = { date: '2025-01-01', amount: -100 };
+      const transactions = [
+        { date: '2025-01-02', amount: -50 },
+        { date: '2025-01-03', amount: 75 },
+      ];
+      const currentBalance = { amount: -75 };
+
+      const result = reconstructBalanceFromCheckpoint(transactions, checkpoint, '2025-01-04', currentBalance);
+
+      expect(result).toHaveLength(4);
+      expect(result[0]).toEqual({ date: '2025-01-01', amount: -100 }); // Checkpoint
+      expect(result[1]).toEqual({ date: '2025-01-02', amount: -150 }); // -100 + (-50)
+      expect(result[2]).toEqual({ date: '2025-01-03', amount: -75 }); // -150 + 75
+      expect(result[3]).toEqual({ date: '2025-01-04', amount: -75 }); // Current balance for today
+    });
+
+    test('uses current balance for today instead of reconstructed value', () => {
+      const checkpoint = { date: '2025-01-01', amount: -100 };
+      const transactions = [
+        { date: '2025-01-02', amount: -50 },
+      ];
+      // Even if calculated would be different, we use the actual current balance
+      const currentBalance = { amount: -200 };
+
+      const result = reconstructBalanceFromCheckpoint(transactions, checkpoint, '2025-01-03', currentBalance);
+
+      expect(result[result.length - 1]).toEqual({ date: '2025-01-03', amount: -200 });
+    });
+
+    test('handles checkpoint date being yesterday', () => {
+      const checkpoint = { date: '2025-01-02', amount: -100 };
+      const transactions = [];
+      const currentBalance = { amount: -100 };
+
+      const result = reconstructBalanceFromCheckpoint(transactions, checkpoint, '2025-01-03', currentBalance);
+
+      expect(result).toHaveLength(2);
+      expect(result[0]).toEqual({ date: '2025-01-02', amount: -100 });
+      expect(result[1]).toEqual({ date: '2025-01-03', amount: -100 });
+    });
+
+    test('returns empty array for invalid checkpoint', () => {
+      const transactions = [{ date: '2025-01-01', amount: -100 }];
+      const currentBalance = { amount: -100 };
+
+      expect(reconstructBalanceFromCheckpoint(transactions, null, '2025-01-02', currentBalance)).toEqual([]);
+      expect(reconstructBalanceFromCheckpoint(transactions, {}, '2025-01-02', currentBalance)).toEqual([]);
+      expect(reconstructBalanceFromCheckpoint(transactions, { date: null }, '2025-01-02', currentBalance)).toEqual([]);
+    });
+
+    test('returns empty array for invalid toDate', () => {
+      const checkpoint = { date: '2025-01-01', amount: -100 };
+      const transactions = [];
+      const currentBalance = { amount: -100 };
+
+      expect(reconstructBalanceFromCheckpoint(transactions, checkpoint, null, currentBalance)).toEqual([]);
+    });
+
+    test('handles empty transactions array', () => {
+      const checkpoint = { date: '2025-01-01', amount: -100 };
+      const transactions = [];
+      const currentBalance = { amount: -100 };
+
+      const result = reconstructBalanceFromCheckpoint(transactions, checkpoint, '2025-01-03', currentBalance);
+
+      expect(result).toHaveLength(3);
+      expect(result[0]).toEqual({ date: '2025-01-01', amount: -100 });
+      expect(result[1]).toEqual({ date: '2025-01-02', amount: -100 }); // Same as checkpoint, no transactions
+      expect(result[2]).toEqual({ date: '2025-01-03', amount: -100 }); // Current balance
     });
   });
 });

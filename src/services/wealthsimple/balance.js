@@ -36,14 +36,15 @@ export function accountNeedsBalanceReconstruction(accountType) {
 /**
  * Reconstruct balance history from transactions
  * Calculates daily ending balance by accumulating transaction amounts
- * Starting with 0 balance on the day before fromDate
+ * Starting with specified balance (default 0) on fromDate
  *
  * @param {Array} transactions - Array of processed transactions with date and amount
  * @param {string} fromDate - Start date in YYYY-MM-DD format
  * @param {string} toDate - End date in YYYY-MM-DD format
+ * @param {number} startingBalance - Initial balance to start reconstruction from (default 0)
  * @returns {Array} Array of balance history objects {date, amount}
  */
-export function reconstructBalanceFromTransactions(transactions, fromDate, toDate) {
+export function reconstructBalanceFromTransactions(transactions, fromDate, toDate, startingBalance = 0) {
   if (!transactions || !Array.isArray(transactions)) {
     debugLog('No transactions provided for balance reconstruction');
     return [];
@@ -54,7 +55,7 @@ export function reconstructBalanceFromTransactions(transactions, fromDate, toDat
     return [];
   }
 
-  debugLog(`Reconstructing balance from ${transactions.length} transactions (${fromDate} to ${toDate})`);
+  debugLog(`Reconstructing balance from ${transactions.length} transactions (${fromDate} to ${toDate}), starting balance: ${startingBalance}`);
 
   // Group transactions by date
   const transactionsByDate = new Map();
@@ -72,7 +73,7 @@ export function reconstructBalanceFromTransactions(transactions, fromDate, toDat
 
   // Generate all dates from fromDate to toDate
   const balanceHistory = [];
-  let runningBalance = 0; // Start with zero balance
+  let runningBalance = startingBalance;
 
   const fromDateObj = parseLocalDate(fromDate);
   const toDateObj = parseLocalDate(toDate);
@@ -105,6 +106,135 @@ export function reconstructBalanceFromTransactions(transactions, fromDate, toDat
   }
 
   return balanceHistory;
+}
+
+/**
+ * Reconstruct balance history from a checkpoint
+ * Uses checkpoint as starting point, applies transactions, and uses current balance for today
+ *
+ * @param {Array} transactions - Array of processed transactions with date and amount
+ * @param {Object} checkpoint - Balance checkpoint {date, amount}
+ * @param {string} toDate - End date in YYYY-MM-DD format (today)
+ * @param {Object} currentBalance - Current balance object {amount} for today
+ * @returns {Array} Array of balance history objects {date, amount}
+ */
+export function reconstructBalanceFromCheckpoint(transactions, checkpoint, toDate, currentBalance) {
+  if (!checkpoint || !checkpoint.date || checkpoint.amount === undefined) {
+    debugLog('Invalid checkpoint provided for balance reconstruction');
+    return [];
+  }
+
+  if (!toDate) {
+    debugLog('Invalid toDate for checkpoint reconstruction');
+    return [];
+  }
+
+  debugLog(`Reconstructing balance from checkpoint: ${checkpoint.date} (${checkpoint.amount}) to ${toDate}`);
+
+  // Reconstruct balance from checkpoint date to the day before today
+  const yesterdayObj = parseLocalDate(toDate);
+  yesterdayObj.setDate(yesterdayObj.getDate() - 1);
+  const yesterday = formatDate(yesterdayObj);
+
+  // If checkpoint date is yesterday or later, we only need today's balance
+  if (checkpoint.date >= yesterday) {
+    debugLog('Checkpoint is recent enough, returning checkpoint and current balance');
+    const result = [];
+
+    // Include checkpoint date balance
+    result.push({
+      date: checkpoint.date,
+      amount: Math.round(checkpoint.amount * 100) / 100,
+    });
+
+    // Add today's current balance
+    if (currentBalance && currentBalance.amount !== undefined) {
+      result.push({
+        date: toDate,
+        amount: currentBalance.amount,
+      });
+    }
+
+    return result;
+  }
+
+  // Reconstruct balance from checkpoint.date to yesterday
+  const reconstructed = reconstructBalanceFromTransactions(
+    transactions,
+    checkpoint.date,
+    yesterday,
+    checkpoint.amount,
+  );
+
+  // Replace the first entry (checkpoint date) with the exact checkpoint amount
+  // This ensures we don't double-count transactions on checkpoint day
+  if (reconstructed.length > 0 && reconstructed[0].date === checkpoint.date) {
+    reconstructed[0].amount = Math.round(checkpoint.amount * 100) / 100;
+  }
+
+  // Add today's current balance (not reconstructed, actual from API)
+  if (currentBalance && currentBalance.amount !== undefined) {
+    reconstructed.push({
+      date: toDate,
+      amount: currentBalance.amount,
+    });
+  }
+
+  debugLog(`Checkpoint reconstruction completed: ${reconstructed.length} records`);
+  return reconstructed;
+}
+
+/**
+ * Calculate the checkpoint date based on lastSyncDate and lookback days
+ * Ensures the date is not before account creation
+ *
+ * @param {string} lastSyncDate - Last sync date in YYYY-MM-DD format
+ * @param {number} lookbackDays - Number of days to look back
+ * @param {string} accountCreatedAt - Account creation date (ISO timestamp or YYYY-MM-DD)
+ * @returns {string} Checkpoint date in YYYY-MM-DD format
+ */
+export function calculateCheckpointDate(lastSyncDate, lookbackDays, accountCreatedAt) {
+  if (!lastSyncDate) {
+    debugLog('No lastSyncDate provided for checkpoint calculation');
+    return null;
+  }
+
+  // Calculate checkpoint date: lastSyncDate - lookbackDays
+  const checkpointDateObj = parseLocalDate(lastSyncDate);
+  checkpointDateObj.setDate(checkpointDateObj.getDate() - lookbackDays);
+  let checkpointDate = formatDate(checkpointDateObj);
+
+  debugLog(`Calculated checkpoint date: ${checkpointDate} (${lastSyncDate} - ${lookbackDays} days)`);
+
+  // Ensure checkpoint date is not before account creation
+  if (accountCreatedAt) {
+    const createdDateStr = extractDateFromISO(accountCreatedAt);
+    if (createdDateStr) {
+      const createdDateObj = parseLocalDate(createdDateStr);
+      if (checkpointDateObj < createdDateObj) {
+        checkpointDate = createdDateStr;
+        debugLog(`Adjusted checkpoint date to account creation: ${checkpointDate}`);
+      }
+    }
+  }
+
+  return checkpointDate;
+}
+
+/**
+ * Extract balance at a specific date from balance history array
+ *
+ * @param {Array} balanceHistory - Array of balance history objects {date, amount}
+ * @param {string} targetDate - Date to find balance for (YYYY-MM-DD)
+ * @returns {number|null} Balance amount at target date, or null if not found
+ */
+export function getBalanceAtDate(balanceHistory, targetDate) {
+  if (!balanceHistory || !Array.isArray(balanceHistory) || !targetDate) {
+    return null;
+  }
+
+  const entry = balanceHistory.find((item) => item.date === targetDate);
+  return entry ? entry.amount : null;
 }
 
 /**
@@ -508,6 +638,9 @@ export default {
   processAndUploadBalance,
   accountNeedsBalanceReconstruction,
   reconstructBalanceFromTransactions,
+  reconstructBalanceFromCheckpoint,
+  calculateCheckpointDate,
+  getBalanceAtDate,
   createCurrentBalanceOnly,
   BalanceError,
 };

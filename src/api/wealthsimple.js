@@ -6,6 +6,7 @@
 import { debugLog, formatDate } from '../core/utils';
 import { STORAGE, API } from '../core/config';
 import stateManager from '../core/state';
+import { getAccountTypeDisplayName } from '../mappers/wealthsimple-account-types';
 
 /**
  * Parse Wealthsimple OAuth cookie and extract token data
@@ -324,35 +325,26 @@ export async function validateToken() {
 }
 
 /**
- * Convert account type to camelCase
- * @param {string} type - Account type (e.g., 'ca_credit_card')
- * @returns {string} CamelCase type (e.g., 'caCreditCard')
+ * Generate default account name from account type and last 4 characters/digits
+ * Format: "Wealthsimple {Display Name} ({last4})"
+ * Example: "Wealthsimple Credit Card (6903)"
+ *
+ * Note: For credit cards, the last4 should be from cardNumberLast4Digits (API).
+ * For other accounts, it's the last 4 characters of the account ID.
+ *
+ * @param {string} unifiedType - Unified account type (e.g., 'CREDIT_CARD', 'MANAGED_TFSA')
+ * @param {string} last4 - Last 4 digits/characters to display
+ * @returns {string} Generated account name
  */
-function toCamelCase(type) {
-  return type
-    .split('_')
-    .map((word, index) => {
-      if (index === 0) return word;
-      return word.charAt(0).toUpperCase() + word.slice(1);
-    })
-    .join('');
-}
-
-/**
- * Generate nickname from account type and ID
- * @param {string} type - Account type
- * @param {string} id - Account ID
- * @returns {string} Generated nickname
- */
-function generateNickname(type, id) {
-  const camelType = toCamelCase(type);
-  const lastFour = id.slice(-4);
-  return `${camelType} ${lastFour}`;
+function generateAccountName(unifiedType, last4) {
+  const displayName = getAccountTypeDisplayName(unifiedType);
+  return `Wealthsimple ${displayName} (${last4})`;
 }
 
 /**
  * Fetch and cache Wealthsimple accounts list with consolidated structure
  * Merges with existing cached list to preserve monarch mappings, sync settings, and transaction history
+ * For credit cards without user nicknames, enriches the name with actual card last 4 digits
  * @returns {Promise<Array>} Array of consolidated account objects
  */
 export async function fetchAndCacheWealthsimpleAccounts() {
@@ -361,6 +353,9 @@ export async function fetchAndCacheWealthsimpleAccounts() {
 
     // Fetch fresh accounts from API
     const apiAccounts = await fetchAccounts();
+
+    // Enrich credit card accounts with actual card last 4 digits
+    const enrichedAccounts = await enrichCreditCardNicknames(apiAccounts);
 
     // Get existing cached accounts (consolidated structure)
     const existingAccounts = JSON.parse(GM_getValue(STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST, '[]'));
@@ -374,7 +369,7 @@ export async function fetchAndCacheWealthsimpleAccounts() {
     });
 
     // Merge API data with existing settings
-    const mergedAccounts = apiAccounts.map((apiAccount) => {
+    const mergedAccounts = enrichedAccounts.map((apiAccount) => {
       const existing = existingMap.get(apiAccount.id);
 
       return {
@@ -407,6 +402,53 @@ export async function fetchAndCacheWealthsimpleAccounts() {
     debugLog('Error fetching and caching Wealthsimple accounts:', error);
     throw error;
   }
+}
+
+/**
+ * Enrich credit card account nicknames with actual card last 4 digits
+ * For credit cards that need nickname enrichment (no user-set nickname),
+ * fetches the credit card summary to get the actual card's last 4 digits
+ * @param {Array} accounts - Array of account objects from fetchAccounts
+ * @returns {Promise<Array>} Array of accounts with enriched nicknames
+ */
+async function enrichCreditCardNicknames(accounts) {
+  const enrichedAccounts = [];
+
+  for (const account of accounts) {
+    if (account.needsNicknameEnrichment) {
+      try {
+        debugLog(`Enriching credit card nickname for account ${account.id}...`);
+        const creditCardSummary = await fetchCreditCardAccountSummary(account.id);
+
+        // Get the first card's last 4 digits
+        const cardLast4 = creditCardSummary.currentCards?.[0]?.cardNumberLast4Digits;
+
+        if (cardLast4) {
+          // Update nickname with actual card last 4 digits
+          const enrichedNickname = generateAccountName(account.type, cardLast4);
+          debugLog(`Enriched credit card nickname: ${enrichedNickname}`);
+
+          enrichedAccounts.push({
+            ...account,
+            nickname: enrichedNickname,
+            needsNicknameEnrichment: false, // Mark as enriched
+          });
+        } else {
+          debugLog(`No card last 4 digits found for account ${account.id}, using default nickname`);
+          enrichedAccounts.push(account);
+        }
+      } catch (error) {
+        debugLog(`Failed to enrich credit card nickname for ${account.id}:`, error);
+        // Keep original account data if enrichment fails
+        enrichedAccounts.push(account);
+      }
+    } else {
+      // Non-credit card accounts or accounts with user nicknames - no enrichment needed
+      enrichedAccounts.push(account);
+    }
+  }
+
+  return enrichedAccounts;
 }
 
 /**
@@ -469,10 +511,20 @@ export async function fetchAccounts() {
       })
       .map((edge) => {
         const account = edge.node;
+        const unifiedType = account.unifiedAccountType || account.type;
+
+        // For accounts with user-set nicknames, use them
+        // For accounts without nicknames, generate default name using last 4 of account ID
+        // Note: For credit cards, fetchAndCacheWealthsimpleAccounts will update
+        // the nickname with the actual card's last 4 digits
+        const nickname = account.nickname || generateAccountName(unifiedType, account.id.slice(-4));
+
         return {
           id: account.id,
-          type: account.unifiedAccountType || account.type,
-          nickname: account.nickname || generateNickname(account.type, account.id),
+          type: unifiedType,
+          nickname,
+          // Flag to indicate if this account needs nickname enrichment (credit card without user nickname)
+          needsNicknameEnrichment: !account.nickname && unifiedType === 'CREDIT_CARD',
           currency: account.currency,
           branch: account.branch,
           rawType: account.type,

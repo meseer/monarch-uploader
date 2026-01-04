@@ -527,6 +527,10 @@ function createLookbackPeriodSection(institutionType) {
     storageKey = STORAGE.ROGERSBANK_LOOKBACK_DAYS;
     institutionName = 'Rogers Bank';
     break;
+  case 'wealthsimple':
+    storageKey = STORAGE.WEALTHSIMPLE_LOOKBACK_DAYS;
+    institutionName = 'Wealthsimple';
+    break;
   default:
     console.error('Unknown institution type:', institutionType);
     return section;
@@ -2433,13 +2437,13 @@ function createWealthsimpleAccountCards(accounts, onRefresh) {
       retentionDaysInput.type = 'number';
       retentionDaysInput.min = '0';
       retentionDaysInput.max = '3650';
-      retentionDaysInput.value = accountEntry.transactionRetentionDays ?? 365;
+      retentionDaysInput.value = accountEntry.transactionRetentionDays ?? 91;
       retentionDaysInput.style.cssText = 'width: 70px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px;';
 
       retentionDaysInput.addEventListener('change', () => {
         const value = parseInt(retentionDaysInput.value, 10);
         if (Number.isNaN(value) || value < 0) {
-          retentionDaysInput.value = accountEntry.transactionRetentionDays ?? 365;
+          retentionDaysInput.value = accountEntry.transactionRetentionDays ?? 91;
           toast.show('Please enter a valid number (0 or greater)', 'error');
           return;
         }
@@ -2485,13 +2489,13 @@ function createWealthsimpleAccountCards(accounts, onRefresh) {
       retentionCountInput.type = 'number';
       retentionCountInput.min = '0';
       retentionCountInput.max = '100000';
-      retentionCountInput.value = accountEntry.transactionRetentionCount ?? 10000;
+      retentionCountInput.value = accountEntry.transactionRetentionCount ?? 1000;
       retentionCountInput.style.cssText = 'width: 70px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px;';
 
       retentionCountInput.addEventListener('change', () => {
         const value = parseInt(retentionCountInput.value, 10);
         if (Number.isNaN(value) || value < 0) {
-          retentionCountInput.value = accountEntry.transactionRetentionCount ?? 10000;
+          retentionCountInput.value = accountEntry.transactionRetentionCount ?? 1000;
           toast.show('Please enter a valid number (0 or greater)', 'error');
           return;
         }

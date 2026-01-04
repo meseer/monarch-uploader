@@ -16,6 +16,7 @@ import {
   processAndUploadBalance,
   accountNeedsBalanceReconstruction,
   reconstructBalanceFromTransactions,
+  reconstructBalanceFromCheckpoint,
   createCurrentBalanceOnly,
   processBalanceData,
   uploadBalanceToMonarch,
@@ -275,8 +276,8 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
     }
 
     // Scenario 3: Credit/Cash accounts - subsequent sync (has lastSyncDate)
-    // Only upload today's current balance
-    debugLog('Subsequent sync for non-investment account - uploading current balance only');
+    // Check if we have a balance checkpoint to use for reconstruction
+    const checkpoint = accountData.balanceCheckpoint;
 
     if (!currentBalance) {
       debugLog('No current balance available for subsequent sync');
@@ -284,8 +285,51 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
       return false;
     }
 
-    // Create single-day balance entry for today
     const todayDate = formatDate(new Date());
+
+    // Scenario 3a: If checkpoint exists, reconstruct balance from checkpoint
+    if (checkpoint && checkpoint.date && checkpoint.amount !== undefined) {
+      debugLog('Subsequent sync with checkpoint - reconstructing balance from checkpoint');
+      debugLog(`Checkpoint: ${checkpoint.date} = ${checkpoint.amount}`);
+
+      // Fetch and process transactions from checkpoint date to today
+      const processedTransactions = await fetchAndProcessTransactions(accountData, checkpoint.date, todayDate);
+
+      // Reconstruct balance from checkpoint to today
+      const balanceHistory = reconstructBalanceFromCheckpoint(
+        processedTransactions || [],
+        checkpoint,
+        todayDate,
+        currentBalance,
+      );
+
+      if (!balanceHistory || balanceHistory.length === 0) {
+        debugLog('Failed to reconstruct balance from checkpoint, falling back to current balance only');
+        // Fall through to current balance only logic below
+      } else {
+        // Convert to CSV and upload
+        const csvData = processBalanceData(balanceHistory, monarchAccountName);
+        debugLog(`Generated checkpoint-reconstructed balance CSV for ${monarchAccountName} (${balanceHistory.length} days)`);
+
+        const success = await uploadBalanceToMonarch(
+          wealthsimpleAccountId,
+          monarchAccountId,
+          csvData,
+          checkpoint.date,
+          todayDate,
+        );
+
+        if (success) {
+          toast.show(`Reconstructed and uploaded ${balanceHistory.length} days of balance for ${wealthsimpleAccountName}`, 'info');
+        }
+
+        return success;
+      }
+    } else {
+      debugLog('No checkpoint available - uploading current balance only');
+    }
+
+    // Scenario 3b: No checkpoint - upload current balance only
     const balanceHistory = createCurrentBalanceOnly(currentBalance, todayDate);
 
     if (!balanceHistory || balanceHistory.length === 0) {

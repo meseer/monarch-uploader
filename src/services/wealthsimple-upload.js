@@ -3,7 +3,8 @@
  * Handles uploading Wealthsimple account data to Monarch
  */
 
-import { debugLog } from '../core/utils';
+import { debugLog, getDefaultLookbackDays } from '../core/utils';
+import { STORAGE } from '../core/config';
 import toast from '../ui/toast';
 import wealthsimpleApi from '../api/wealthsimple';
 import {
@@ -20,8 +21,154 @@ import {
   getDefaultDateRange,
   extractDateFromISO,
   accountNeedsBalanceReconstruction,
+  calculateCheckpointDate,
+  getBalanceAtDate,
+  reconstructBalanceFromTransactions,
 } from './wealthsimple/balance';
+import { fetchAndProcessTransactions } from './wealthsimple/transactions';
 import { showDatePickerWithOptionsPromise } from '../ui/components/datePicker';
+
+/**
+ * Create a balance checkpoint after first sync with reconstruction
+ * The checkpoint date is set to toDate - lookbackDays so it aligns with the next sync's transaction fetch window
+ *
+ * @param {string} accountId - Wealthsimple account ID
+ * @param {string} fromDate - Start date of the sync (YYYY-MM-DD)
+ * @param {string} toDate - End date of the sync (YYYY-MM-DD)
+ * @returns {Promise<boolean>} Success status
+ */
+async function createBalanceCheckpoint(accountId, fromDate, toDate) {
+  try {
+    const accountData = getAccountData(accountId);
+    if (!accountData) {
+      debugLog(`Cannot create checkpoint: account ${accountId} not found`);
+      return false;
+    }
+
+    const account = accountData.wealthsimpleAccount;
+    const lookbackDays = GM_getValue(STORAGE.WEALTHSIMPLE_LOOKBACK_DAYS, getDefaultLookbackDays('wealthsimple'));
+
+    // Calculate checkpoint date: toDate - lookbackDays
+    const checkpointDate = calculateCheckpointDate(toDate, lookbackDays, account.createdAt);
+
+    if (!checkpointDate) {
+      debugLog('Failed to calculate checkpoint date');
+      return false;
+    }
+
+    // Fetch transactions from fromDate to toDate to calculate checkpoint balance
+    const transactions = await fetchAndProcessTransactions(accountData, fromDate, toDate);
+
+    // Reconstruct balance history to get the balance at checkpoint date
+    const balanceHistory = reconstructBalanceFromTransactions(transactions || [], fromDate, toDate, 0);
+
+    // Get the balance at checkpoint date
+    const checkpointBalance = getBalanceAtDate(balanceHistory, checkpointDate);
+
+    if (checkpointBalance === null) {
+      debugLog(`Could not find balance at checkpoint date ${checkpointDate}`);
+      return false;
+    }
+
+    // Store the checkpoint
+    const { updateAccountInList } = await import('./wealthsimple/account');
+    updateAccountInList(accountId, {
+      balanceCheckpoint: {
+        date: checkpointDate,
+        amount: checkpointBalance,
+      },
+    });
+
+    debugLog(`Created balance checkpoint for account ${accountId}: ${checkpointDate} = ${checkpointBalance}`);
+    return true;
+  } catch (error) {
+    debugLog('Error creating balance checkpoint:', error);
+    return false;
+  }
+}
+
+/**
+ * Update balance checkpoint after subsequent sync
+ * The new checkpoint is set to toDate - lookbackDays for the next sync
+ *
+ * @param {string} accountId - Wealthsimple account ID
+ * @param {string} toDate - End date of the sync (YYYY-MM-DD)
+ * @param {Object} currentBalance - Current balance object {amount, currency}
+ * @returns {Promise<boolean>} Success status
+ */
+async function updateBalanceCheckpoint(accountId, toDate, _currentBalance) {
+  try {
+    const accountData = getAccountData(accountId);
+    if (!accountData) {
+      debugLog(`Cannot update checkpoint: account ${accountId} not found`);
+      return false;
+    }
+
+    const account = accountData.wealthsimpleAccount;
+    const existingCheckpoint = accountData.balanceCheckpoint;
+
+    if (!existingCheckpoint) {
+      debugLog(`No existing checkpoint for account ${accountId}, cannot update`);
+      return false;
+    }
+
+    const lookbackDays = GM_getValue(STORAGE.WEALTHSIMPLE_LOOKBACK_DAYS, getDefaultLookbackDays('wealthsimple'));
+
+    // Calculate new checkpoint date: toDate - lookbackDays
+    const newCheckpointDate = calculateCheckpointDate(toDate, lookbackDays, account.createdAt);
+
+    if (!newCheckpointDate) {
+      debugLog('Failed to calculate new checkpoint date');
+      return false;
+    }
+
+    // Fetch transactions from existing checkpoint date to today
+    const transactions = await fetchAndProcessTransactions(accountData, existingCheckpoint.date, toDate);
+
+    // Reconstruct balance history from existing checkpoint
+    const balanceHistory = reconstructBalanceFromTransactions(
+      transactions || [],
+      existingCheckpoint.date,
+      toDate,
+      existingCheckpoint.amount,
+    );
+
+    // Get the balance at new checkpoint date
+    let newCheckpointBalance = getBalanceAtDate(balanceHistory, newCheckpointDate);
+
+    // If we couldn't calculate, use reconstructed value or fallback
+    if (newCheckpointBalance === null) {
+      debugLog(`Could not find balance at new checkpoint date ${newCheckpointDate}, using last reconstructed value`);
+      // Try to find the closest available date
+      if (balanceHistory && balanceHistory.length > 0) {
+        const closestEntry = balanceHistory.find((entry) => entry.date <= newCheckpointDate);
+        if (closestEntry) {
+          newCheckpointBalance = closestEntry.amount;
+        }
+      }
+    }
+
+    if (newCheckpointBalance === null) {
+      debugLog('Failed to determine new checkpoint balance');
+      return false;
+    }
+
+    // Store the updated checkpoint
+    const { updateAccountInList } = await import('./wealthsimple/account');
+    updateAccountInList(accountId, {
+      balanceCheckpoint: {
+        date: newCheckpointDate,
+        amount: newCheckpointBalance,
+      },
+    });
+
+    debugLog(`Updated balance checkpoint for account ${accountId}: ${newCheckpointDate} = ${newCheckpointBalance}`);
+    return true;
+  } catch (error) {
+    debugLog('Error updating balance checkpoint:', error);
+    return false;
+  }
+}
 
 /**
  * Check if this is the first sync for an account that needs balance reconstruction
@@ -154,6 +301,16 @@ export async function uploadWealthsimpleAccountToMonarch(consolidatedAccount, fr
         updateAccountInList(account.id, { lastSyncDate: toDate });
 
         debugLog(`Updated lastSyncDate for account ${account.id} to ${toDate}`);
+
+        // Create balance checkpoint for accounts that need balance reconstruction
+        // This enables ongoing balance reconstruction for subsequent syncs
+        if (accountNeedsBalanceReconstruction(account.type) && reconstructBalance) {
+          // For first sync with reconstruction, calculate and store the checkpoint
+          await createBalanceCheckpoint(account.id, actualFromDate, toDate);
+        } else if (accountNeedsBalanceReconstruction(account.type) && consolidatedAccount.balanceCheckpoint) {
+          // For subsequent syncs with existing checkpoint, update the checkpoint
+          await updateBalanceCheckpoint(account.id, toDate, currentBalance);
+        }
       }
 
       // Sync credit limit for credit card accounts

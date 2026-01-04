@@ -366,7 +366,7 @@ describe('Wealthsimple API Client', () => {
                   id: 'acc-1',
                   status: 'open',
                   archivedAt: null,
-                  unifiedAccountType: 'TFSA',
+                  unifiedAccountType: 'MANAGED_TFSA',
                   type: 'ca_tfsa',
                   nickname: 'My TFSA',
                   currency: 'CAD',
@@ -378,7 +378,7 @@ describe('Wealthsimple API Client', () => {
                   id: 'acc-2',
                   status: 'closed',
                   archivedAt: null,
-                  unifiedAccountType: 'RRSP',
+                  unifiedAccountType: 'MANAGED_RRSP',
                   type: 'ca_rrsp',
                   nickname: null,
                   currency: 'CAD',
@@ -399,11 +399,11 @@ describe('Wealthsimple API Client', () => {
               },
               {
                 node: {
-                  id: 'acc-4',
+                  id: 'acc-4abc',
                   status: 'open',
                   archivedAt: null,
-                  unifiedAccountType: 'PERSONAL',
-                  type: 'ca_personal',
+                  unifiedAccountType: 'CASH',
+                  type: 'ca_cash',
                   nickname: null,
                   currency: 'CAD',
                   branch: 'WS',
@@ -427,8 +427,9 @@ describe('Wealthsimple API Client', () => {
       expect(result).toHaveLength(2);
       expect(result[0].id).toBe('acc-1');
       expect(result[0].nickname).toBe('My TFSA');
-      expect(result[1].id).toBe('acc-4');
-      expect(result[1].nickname).toBe('caPersonal cc-4'); // Generated nickname (last 4 chars)
+      expect(result[1].id).toBe('acc-4abc');
+      // New format: "Wealthsimple {Display Name} ({last4})"
+      expect(result[1].nickname).toBe('Wealthsimple Cash (4abc)');
     });
 
     it('should generate nicknames when not provided', async () => {
@@ -441,6 +442,7 @@ describe('Wealthsimple API Client', () => {
                   id: 'account-1234',
                   status: 'open',
                   archivedAt: null,
+                  unifiedAccountType: 'CREDIT_CARD',
                   type: 'ca_credit_card',
                   nickname: null,
                   currency: 'CAD',
@@ -460,7 +462,167 @@ describe('Wealthsimple API Client', () => {
 
       const result = await wealthsimpleApi.fetchAccounts();
 
-      expect(result[0].nickname).toBe('caCreditCard 1234');
+      // New format: "Wealthsimple {Display Name} ({last4})"
+      // For credit cards without user nickname, it initially uses account ID last 4
+      // (enrichCreditCardNicknames in fetchAndCacheAccounts will update with actual card digits)
+      expect(result[0].nickname).toBe('Wealthsimple Credit Card (1234)');
+      expect(result[0].needsNicknameEnrichment).toBe(true);
+    });
+
+    it('should set needsNicknameEnrichment flag for credit cards without user nickname', async () => {
+      const mockResponse = {
+        identity: {
+          accounts: {
+            edges: [
+              {
+                node: {
+                  id: 'cc-account-1234',
+                  status: 'open',
+                  archivedAt: null,
+                  unifiedAccountType: 'CREDIT_CARD',
+                  type: 'ca_credit_card',
+                  nickname: null, // No user-set nickname
+                  currency: 'CAD',
+                },
+              },
+              {
+                node: {
+                  id: 'cc-account-5678',
+                  status: 'open',
+                  archivedAt: null,
+                  unifiedAccountType: 'CREDIT_CARD',
+                  type: 'ca_credit_card',
+                  nickname: 'My Credit Card', // User-set nickname
+                  currency: 'CAD',
+                },
+              },
+              {
+                node: {
+                  id: 'tfsa-account-9999',
+                  status: 'open',
+                  archivedAt: null,
+                  unifiedAccountType: 'MANAGED_TFSA',
+                  type: 'ca_tfsa',
+                  nickname: null, // No user-set nickname, but not a credit card
+                  currency: 'CAD',
+                },
+              },
+            ],
+          },
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchAccounts();
+
+      // Credit card without user nickname should need enrichment
+      expect(result[0].needsNicknameEnrichment).toBe(true);
+      expect(result[0].nickname).toBe('Wealthsimple Credit Card (1234)');
+
+      // Credit card with user nickname should NOT need enrichment
+      expect(result[1].needsNicknameEnrichment).toBe(false);
+      expect(result[1].nickname).toBe('My Credit Card');
+
+      // Non-credit card without user nickname should NOT need enrichment
+      expect(result[2].needsNicknameEnrichment).toBe(false);
+      expect(result[2].nickname).toBe('Wealthsimple Managed TFSA (9999)');
+    });
+
+    it('should generate nicknames with display names for known account types', async () => {
+      const mockResponse = {
+        identity: {
+          accounts: {
+            edges: [
+              {
+                node: {
+                  id: 'acc-tfsa-1234',
+                  status: 'open',
+                  archivedAt: null,
+                  unifiedAccountType: 'MANAGED_TFSA',
+                  type: 'ca_tfsa',
+                  nickname: null,
+                  currency: 'CAD',
+                },
+              },
+              {
+                node: {
+                  id: 'acc-rrsp-5678',
+                  status: 'open',
+                  archivedAt: null,
+                  unifiedAccountType: 'SELF_DIRECTED_RRSP',
+                  type: 'ca_rrsp',
+                  nickname: null,
+                  currency: 'CAD',
+                },
+              },
+              {
+                node: {
+                  id: 'acc-cash-9012',
+                  status: 'open',
+                  archivedAt: null,
+                  unifiedAccountType: 'CASH_USD',
+                  type: 'ca_cash_usd',
+                  nickname: null,
+                  currency: 'USD',
+                },
+              },
+            ],
+          },
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchAccounts();
+
+      expect(result[0].nickname).toBe('Wealthsimple Managed TFSA (1234)');
+      expect(result[1].nickname).toBe('Wealthsimple Self Directed RRSP (5678)');
+      expect(result[2].nickname).toBe('Wealthsimple Cash USD (9012)');
+    });
+
+    it('should fallback to raw type for unknown account types', async () => {
+      const mockResponse = {
+        identity: {
+          accounts: {
+            edges: [
+              {
+                node: {
+                  id: 'acc-unknown-1234',
+                  status: 'open',
+                  archivedAt: null,
+                  unifiedAccountType: 'UNKNOWN_TYPE',
+                  type: 'ca_unknown',
+                  nickname: null,
+                  currency: 'CAD',
+                },
+              },
+            ],
+          },
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchAccounts();
+
+      // Falls back to raw type when not in display names mapping
+      expect(result[0].nickname).toBe('Wealthsimple UNKNOWN_TYPE (1234)');
     });
 
     it('should return empty array when no accounts in response', async () => {
