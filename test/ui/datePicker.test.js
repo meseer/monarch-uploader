@@ -2,7 +2,7 @@
  * Tests for Date Picker Component
  */
 
-import { showDatePicker, showDatePickerPromise } from '../../src/ui/components/datePicker';
+import { showDatePicker, showDatePickerPromise, showDatePickerWithOptionsPromise } from '../../src/ui/components/datePicker';
 
 // Mock dependencies
 jest.mock('../../src/core/utils', () => ({
@@ -702,6 +702,184 @@ describe('Date Picker Component', () => {
 
       expect(description.textContent).toBe(longPromptText);
       expect(description.textContent.length).toBe(1000);
+    });
+  });
+
+  describe('showDatePickerWithOptionsPromise', () => {
+    test('should return object with date when select is clicked', async () => {
+      const defaultDate = '2024-01-15';
+      const promptText = 'Select a date';
+
+      const resultPromise = showDatePickerWithOptionsPromise(defaultDate, promptText);
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const modal = document.querySelector('[style*="position: fixed"]');
+      const selectBtn = Array.from(modal.querySelectorAll('button')).find(
+        (btn) => btn.textContent === 'Select',
+      );
+
+      selectBtn.click();
+
+      const result = await resultPromise;
+      expect(result).toEqual({ date: defaultDate, reconstructBalance: false });
+    });
+
+    test('should return null when cancelled', async () => {
+      const defaultDate = '2024-01-15';
+      const promptText = 'Select a date';
+
+      const resultPromise = showDatePickerWithOptionsPromise(defaultDate, promptText);
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const modal = document.querySelector('[style*="position: fixed"]');
+      const cancelBtn = Array.from(modal.querySelectorAll('button')).find(
+        (btn) => btn.textContent === 'Cancel',
+      );
+
+      cancelBtn.click();
+
+      const result = await resultPromise;
+      expect(result).toBeNull();
+    });
+
+    test('should show reconstruction checkbox when option is enabled', async () => {
+      const defaultDate = '2024-01-15';
+      const promptText = 'Select a date';
+      const options = { showReconstructCheckbox: true };
+
+      showDatePickerWithOptionsPromise(defaultDate, promptText, options);
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const modal = document.querySelector('[style*="position: fixed"]');
+      const checkbox = modal.querySelector('input[type="checkbox"]');
+
+      expect(checkbox).toBeTruthy();
+    });
+
+    test('should not show reconstruction checkbox by default', async () => {
+      const defaultDate = '2024-01-15';
+      const promptText = 'Select a date';
+
+      showDatePickerWithOptionsPromise(defaultDate, promptText);
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const modal = document.querySelector('[style*="position: fixed"]');
+      const checkbox = modal.querySelector('input[type="checkbox"]');
+
+      expect(checkbox).toBeFalsy();
+    });
+
+    test('should check reconstruction checkbox when reconstructCheckedByDefault is true', async () => {
+      const defaultDate = '2024-01-15';
+      const promptText = 'Select a date';
+      const options = { showReconstructCheckbox: true, reconstructCheckedByDefault: true };
+
+      showDatePickerWithOptionsPromise(defaultDate, promptText, options);
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const modal = document.querySelector('[style*="position: fixed"]');
+      const checkbox = modal.querySelector('input[type="checkbox"]');
+
+      expect(checkbox).toBeTruthy();
+      expect(checkbox.checked).toBe(true);
+    });
+
+    test('should return reconstructBalance true when checkbox is checked', async () => {
+      const defaultDate = '2024-01-15';
+      const promptText = 'Select a date';
+      const options = { showReconstructCheckbox: true, reconstructCheckedByDefault: true };
+
+      const resultPromise = showDatePickerWithOptionsPromise(defaultDate, promptText, options);
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const modal = document.querySelector('[style*="position: fixed"]');
+      const selectBtn = Array.from(modal.querySelectorAll('button')).find(
+        (btn) => btn.textContent === 'Select',
+      );
+
+      selectBtn.click();
+
+      const result = await resultPromise;
+      expect(result).toEqual({ date: defaultDate, reconstructBalance: true });
+    });
+
+    test('should return reconstructBalance false when checkbox is unchecked', async () => {
+      const defaultDate = '2024-01-15';
+      const promptText = 'Select a date';
+      const options = { showReconstructCheckbox: true, reconstructCheckedByDefault: false };
+
+      const resultPromise = showDatePickerWithOptionsPromise(defaultDate, promptText, options);
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const modal = document.querySelector('[style*="position: fixed"]');
+      const selectBtn = Array.from(modal.querySelectorAll('button')).find(
+        (btn) => btn.textContent === 'Select',
+      );
+
+      selectBtn.click();
+
+      const result = await resultPromise;
+      expect(result).toEqual({ date: defaultDate, reconstructBalance: false });
+    });
+
+    test('should allow toggling reconstruction checkbox', async () => {
+      const defaultDate = '2024-01-15';
+      const promptText = 'Select a date';
+      const options = { showReconstructCheckbox: true, reconstructCheckedByDefault: false };
+
+      const resultPromise = showDatePickerWithOptionsPromise(defaultDate, promptText, options);
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const modal = document.querySelector('[style*="position: fixed"]');
+      const checkbox = modal.querySelector('input[type="checkbox"]');
+      const selectBtn = Array.from(modal.querySelectorAll('button')).find(
+        (btn) => btn.textContent === 'Select',
+      );
+
+      // Initially unchecked, toggle to checked
+      expect(checkbox.checked).toBe(false);
+      checkbox.click();
+      expect(checkbox.checked).toBe(true);
+
+      selectBtn.click();
+
+      const result = await resultPromise;
+      expect(result).toEqual({ date: defaultDate, reconstructBalance: true });
+    });
+
+    test('should return modified date and checkbox state', async () => {
+      const defaultDate = '2024-01-15';
+      const newDate = '2024-02-20';
+      const promptText = 'Select a date';
+      const options = { showReconstructCheckbox: true, reconstructCheckedByDefault: true };
+
+      const resultPromise = showDatePickerWithOptionsPromise(defaultDate, promptText, options);
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const modal = document.querySelector('[style*="position: fixed"]');
+      const dateInput = modal.querySelector('input[type="date"]');
+      const checkbox = modal.querySelector('input[type="checkbox"]');
+      const selectBtn = Array.from(modal.querySelectorAll('button')).find(
+        (btn) => btn.textContent === 'Select',
+      );
+
+      // Change date and uncheck checkbox
+      dateInput.value = newDate;
+      checkbox.click();
+
+      selectBtn.click();
+
+      const result = await resultPromise;
+      expect(result).toEqual({ date: newDate, reconstructBalance: false });
     });
   });
 });

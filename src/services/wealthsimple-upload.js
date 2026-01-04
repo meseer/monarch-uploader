@@ -14,20 +14,26 @@ import {
   syncAccountListWithAPI,
   getAccountData,
 } from './wealthsimple/account';
-import { getDefaultDateRange, extractDateFromISO } from './wealthsimple/balance';
-import { showDatePickerPromise } from '../ui/components/datePicker';
+import {
+  getDefaultDateRange,
+  extractDateFromISO,
+  accountNeedsBalanceReconstruction,
+} from './wealthsimple/balance';
+import { showDatePickerWithOptionsPromise } from '../ui/components/datePicker';
 
 /**
- * Check if this is the first sync for a credit card account
+ * Check if this is the first sync for an account that needs balance reconstruction
+ * These are accounts where the FetchIdentityHistoricalFinancials API doesn't work
+ * (credit cards and cash accounts)
  * @param {Object} consolidatedAccount - Consolidated account object
- * @returns {boolean} True if first sync for credit card
+ * @returns {boolean} True if first sync for non-investment account
  */
-function isFirstSyncCreditCard(consolidatedAccount) {
+function isFirstSyncNonInvestment(consolidatedAccount) {
   const account = consolidatedAccount.wealthsimpleAccount;
   const accountType = account?.type || '';
 
-  // Only apply to credit card accounts
-  if (!accountType.includes('CREDIT')) {
+  // Only apply to accounts that need balance reconstruction
+  if (!accountNeedsBalanceReconstruction(accountType)) {
     return false;
   }
 
@@ -76,12 +82,13 @@ export async function uploadWealthsimpleAccountToMonarch(consolidatedAccount, fr
 
     const monarchAccount = result;
 
-    // Determine the actual from date
+    // Determine the actual from date and whether to reconstruct balance
     let actualFromDate = fromDate;
+    let reconstructBalance = false;
 
-    // For first sync of credit card accounts, show date picker
-    if (isFirstSyncCreditCard(consolidatedAccount)) {
-      debugLog('First sync for credit card account detected, showing date picker');
+    // For first sync of non-investment accounts (credit cards, cash), show date picker with reconstruction option
+    if (isFirstSyncNonInvestment(consolidatedAccount)) {
+      debugLog('First sync for non-investment account detected, showing date picker with reconstruction option');
 
       // Get account creation date as default
       const accountCreatedAt = account.createdAt;
@@ -95,29 +102,35 @@ export async function uploadWealthsimpleAccountToMonarch(consolidatedAccount, fr
         }
       }
 
-      // Show date picker
-      const selectedDate = await showDatePickerPromise(
+      // Show date picker with reconstruction checkbox
+      const datePickerResult = await showDatePickerWithOptionsPromise(
         defaultDate,
         `Select the start date for syncing "${account.nickname || account.id}". Default is the account creation date.`,
+        {
+          showReconstructCheckbox: true,
+          reconstructCheckedByDefault: true,
+        },
       );
 
-      if (!selectedDate) {
+      if (!datePickerResult) {
         debugLog('User cancelled date selection');
         toast.show('Sync cancelled', 'info');
         return { success: false, cancelled: true };
       }
 
-      actualFromDate = selectedDate;
-      debugLog(`User selected start date: ${actualFromDate}`);
+      actualFromDate = datePickerResult.date;
+      reconstructBalance = datePickerResult.reconstructBalance;
+      debugLog(`User selected start date: ${actualFromDate}, reconstruct balance: ${reconstructBalance}`);
     }
 
-    // Upload balance with current balance
+    // Upload balance with current balance and reconstruction flag
     const balanceSuccess = await uploadWealthsimpleBalance(
       account.id,
       monarchAccount.id,
       actualFromDate,
       toDate,
       currentBalance,
+      reconstructBalance,
     );
 
     // Upload transactions

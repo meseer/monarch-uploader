@@ -3,7 +3,7 @@
  * Handles Wealthsimple account mapping and synchronization
  */
 
-import { debugLog } from '../../core/utils';
+import { debugLog, formatDate } from '../../core/utils';
 import { STORAGE } from '../../core/config';
 import stateManager from '../../core/state';
 import monarchApi from '../../api/monarch';
@@ -14,6 +14,11 @@ import { getMonarchAccountTypeMapping } from '../../mappers/wealthsimple-account
 import {
   getDefaultDateRange,
   processAndUploadBalance,
+  accountNeedsBalanceReconstruction,
+  reconstructBalanceFromTransactions,
+  createCurrentBalanceOnly,
+  processBalanceData,
+  uploadBalanceToMonarch,
 } from './balance';
 import { fetchAndProcessTransactions } from './transactions';
 import { convertWealthsimpleTransactionsToMonarchCSV } from '../../utils/csv';
@@ -145,20 +150,27 @@ export function clearAccountMapping(wealthsimpleAccountId) {
 
 /**
  * Upload Wealthsimple account balance history to Monarch
+ * Handles three scenarios:
+ * 1. Investment accounts: Fetch balance history from API
+ * 2. Credit/Cash accounts - first sync with reconstruction: Build balance from transactions
+ * 3. Credit/Cash accounts - subsequent sync: Upload current balance for today only
+ *
  * @param {string} wealthsimpleAccountId - Wealthsimple account ID
  * @param {string} monarchAccountId - Monarch account ID
  * @param {string} fromDate - Start date (YYYY-MM-DD)
  * @param {string} toDate - End date (YYYY-MM-DD)
- * @param {Object} _currentBalance - Current balance object {amount, currency} (unused, kept for compatibility)
+ * @param {Object} currentBalance - Current balance object {amount, currency}
+ * @param {boolean} reconstructBalance - Whether to reconstruct balance from transactions (first sync)
  * @returns {Promise<boolean>} Success status
  */
-export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAccountId, fromDate, toDate, _currentBalance = null) {
+export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAccountId, fromDate, toDate, currentBalance = null, reconstructBalance = false) {
   try {
     debugLog('Starting Wealthsimple balance history upload', {
       wealthsimpleAccountId,
       monarchAccountId,
       fromDate,
       toDate,
+      reconstructBalance,
     });
 
     // Get consolidated account data
@@ -166,6 +178,11 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
     if (!accountData) {
       throw new Error('Account data not found');
     }
+
+    const account = accountData.wealthsimpleAccount;
+    const accountType = account?.type || '';
+    const wealthsimpleAccountName = account.nickname || wealthsimpleAccountId;
+    const monarchAccountName = accountData.monarchAccount?.displayName || wealthsimpleAccountName;
 
     // If dates not provided, calculate them
     let actualFromDate = fromDate;
@@ -176,13 +193,100 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
       actualToDate = dateRange.toDate;
     }
 
-    // Use the balance service to process and upload
-    const success = await processAndUploadBalance(
-      accountData,
+    // Check if this account type needs special handling (credit cards, cash accounts)
+    const needsReconstruction = accountNeedsBalanceReconstruction(accountType);
+
+    // Scenario 1: Investment accounts - use standard API-based balance fetch
+    if (!needsReconstruction) {
+      debugLog('Investment account - using standard balance history fetch');
+      const success = await processAndUploadBalance(
+        accountData,
+        monarchAccountId,
+        actualFromDate,
+        actualToDate,
+      );
+      return success;
+    }
+
+    // Scenario 2: Credit/Cash accounts - first sync with reconstruction enabled
+    if (reconstructBalance) {
+      debugLog('First sync with reconstruction enabled - building balance from transactions');
+
+      // Fetch and process transactions to use for balance reconstruction
+      const processedTransactions = await fetchAndProcessTransactions(accountData, actualFromDate, actualToDate);
+
+      if (!processedTransactions || processedTransactions.length === 0) {
+        debugLog('No transactions available for balance reconstruction');
+        toast.show(`No transactions available for balance reconstruction for ${wealthsimpleAccountName}`, 'warning');
+        return false;
+      }
+
+      // Reconstruct balance history from transactions
+      const balanceHistory = reconstructBalanceFromTransactions(
+        processedTransactions,
+        actualFromDate,
+        actualToDate,
+      );
+
+      if (!balanceHistory || balanceHistory.length === 0) {
+        debugLog('Failed to reconstruct balance history');
+        toast.show(`Failed to reconstruct balance history for ${wealthsimpleAccountName}`, 'error');
+        return false;
+      }
+
+      // Convert to CSV and upload
+      const csvData = processBalanceData(balanceHistory, monarchAccountName);
+      debugLog(`Generated reconstructed balance CSV for ${monarchAccountName} (${balanceHistory.length} days)`);
+
+      const success = await uploadBalanceToMonarch(
+        wealthsimpleAccountId,
+        monarchAccountId,
+        csvData,
+        actualFromDate,
+        actualToDate,
+      );
+
+      if (success) {
+        toast.show(`Reconstructed and uploaded ${balanceHistory.length} days of balance history for ${wealthsimpleAccountName}`, 'info');
+      }
+
+      return success;
+    }
+
+    // Scenario 3: Credit/Cash accounts - subsequent sync (has lastSyncDate)
+    // Only upload today's current balance
+    debugLog('Subsequent sync for non-investment account - uploading current balance only');
+
+    if (!currentBalance) {
+      debugLog('No current balance available for subsequent sync');
+      toast.show(`No current balance available for ${wealthsimpleAccountName}`, 'warning');
+      return false;
+    }
+
+    // Create single-day balance entry for today
+    const todayDate = formatDate(new Date());
+    const balanceHistory = createCurrentBalanceOnly(currentBalance, todayDate);
+
+    if (!balanceHistory || balanceHistory.length === 0) {
+      debugLog('Failed to create current balance entry');
+      return false;
+    }
+
+    // Convert to CSV and upload
+    const csvData = processBalanceData(balanceHistory, monarchAccountName);
+    debugLog(`Generated current balance CSV for ${monarchAccountName}: ${currentBalance.amount}`);
+
+    const success = await uploadBalanceToMonarch(
+      wealthsimpleAccountId,
       monarchAccountId,
-      actualFromDate,
-      actualToDate,
+      csvData,
+      todayDate,
+      todayDate,
     );
+
+    if (success) {
+      toast.show(`Updated today's balance for ${wealthsimpleAccountName}`, 'info');
+    }
 
     return success;
   } catch (error) {

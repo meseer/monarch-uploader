@@ -22,6 +22,120 @@ export class BalanceError extends Error {
 }
 
 /**
+ * Check if an account type requires balance reconstruction instead of API fetch
+ * These account types don't support the FetchIdentityHistoricalFinancials API
+ * @param {string} accountType - Wealthsimple account type
+ * @returns {boolean} True if account needs balance reconstruction
+ */
+export function accountNeedsBalanceReconstruction(accountType) {
+  if (!accountType) return false;
+  const upperType = accountType.toUpperCase();
+  return upperType.includes('CREDIT') || upperType.includes('CASH');
+}
+
+/**
+ * Reconstruct balance history from transactions
+ * Calculates daily ending balance by accumulating transaction amounts
+ * Starting with 0 balance on the day before fromDate
+ *
+ * @param {Array} transactions - Array of processed transactions with date and amount
+ * @param {string} fromDate - Start date in YYYY-MM-DD format
+ * @param {string} toDate - End date in YYYY-MM-DD format
+ * @returns {Array} Array of balance history objects {date, amount}
+ */
+export function reconstructBalanceFromTransactions(transactions, fromDate, toDate) {
+  if (!transactions || !Array.isArray(transactions)) {
+    debugLog('No transactions provided for balance reconstruction');
+    return [];
+  }
+
+  if (!fromDate || !toDate) {
+    debugLog('Invalid date range for balance reconstruction');
+    return [];
+  }
+
+  debugLog(`Reconstructing balance from ${transactions.length} transactions (${fromDate} to ${toDate})`);
+
+  // Group transactions by date
+  const transactionsByDate = new Map();
+  transactions.forEach((tx) => {
+    if (!tx.date || tx.amount === undefined || tx.amount === null) return;
+
+    const dateKey = tx.date;
+    if (!transactionsByDate.has(dateKey)) {
+      transactionsByDate.set(dateKey, []);
+    }
+    transactionsByDate.get(dateKey).push(tx);
+  });
+
+  debugLog(`Transactions grouped into ${transactionsByDate.size} unique dates`);
+
+  // Generate all dates from fromDate to toDate
+  const balanceHistory = [];
+  let runningBalance = 0; // Start with zero balance
+
+  const fromDateObj = parseLocalDate(fromDate);
+  const toDateObj = parseLocalDate(toDate);
+  const currentDateObj = new Date(fromDateObj);
+
+  while (currentDateObj <= toDateObj) {
+    const dateStr = formatDate(currentDateObj);
+
+    // Add all transactions for this date to the balance
+    const dayTransactions = transactionsByDate.get(dateStr) || [];
+    const dayTotal = dayTransactions.reduce((sum, tx) => sum + tx.amount, 0);
+    runningBalance += dayTotal;
+
+    // Record the end-of-day balance
+    balanceHistory.push({
+      date: dateStr,
+      amount: Math.round(runningBalance * 100) / 100, // Round to 2 decimal places
+    });
+
+    // Move to next day
+    currentDateObj.setDate(currentDateObj.getDate() + 1);
+  }
+
+  debugLog(`Reconstructed ${balanceHistory.length} daily balance records`);
+
+  // Log first and last few records for debugging
+  if (balanceHistory.length > 0) {
+    debugLog('First balance record:', balanceHistory[0]);
+    debugLog('Last balance record:', balanceHistory[balanceHistory.length - 1]);
+  }
+
+  return balanceHistory;
+}
+
+/**
+ * Create a single balance entry for the current day only
+ * Used for subsequent syncs of credit card/cash accounts
+ *
+ * @param {Object} currentBalance - Current balance object {amount, currency}
+ * @param {string} toDate - Date in YYYY-MM-DD format
+ * @returns {Array} Array with single balance history object {date, amount}
+ */
+export function createCurrentBalanceOnly(currentBalance, toDate) {
+  if (!currentBalance || currentBalance.amount === undefined) {
+    debugLog('No current balance provided for single-day balance');
+    return [];
+  }
+
+  if (!toDate) {
+    debugLog('No date provided for single-day balance');
+    return [];
+  }
+
+  const balanceHistory = [{
+    date: toDate,
+    amount: currentBalance.amount,
+  }];
+
+  debugLog(`Created single-day balance for ${toDate}: ${currentBalance.amount}`);
+  return balanceHistory;
+}
+
+/**
  * Get default lookback days from settings
  * @returns {number} Number of days to look back
  */
@@ -392,5 +506,8 @@ export default {
   getDefaultDateRange,
   uploadBalanceToMonarch,
   processAndUploadBalance,
+  accountNeedsBalanceReconstruction,
+  reconstructBalanceFromTransactions,
+  createCurrentBalanceOnly,
   BalanceError,
 };
