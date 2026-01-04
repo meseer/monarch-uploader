@@ -3,8 +3,8 @@
  * Provides a unified interface for managing application settings and stored data
  */
 
-import { debugLog, getDefaultLookbackDays } from '../../core/utils';
-import { STORAGE, API } from '../../core/config';
+import { debugLog, getDefaultLookbackDays, validateLookbackVsRetention, getMinRetentionForInstitution, getLookbackForInstitution } from '../../core/utils';
+import { STORAGE, API, TRANSACTION_RETENTION_DEFAULTS } from '../../core/config';
 import { checkMonarchAuth } from '../../services/auth';
 import { checkQuestradeAuth } from '../../services/questrade/auth';
 import { isAccountSkipped, markAccountAsSkipped, getWealthsimpleAccounts } from '../../services/wealthsimple/account';
@@ -581,6 +581,15 @@ function createLookbackPeriodSection(institutionType) {
       return;
     }
 
+    // Validate lookback vs retention
+    const minRetention = getMinRetentionForInstitution(institutionType);
+    const validation = validateLookbackVsRetention(value, minRetention);
+    if (!validation.valid) {
+      input.value = currentValue; // Reset to previous valid value
+      toast.show(validation.error, 'error');
+      return;
+    }
+
     GM_setValue(storageKey, value);
     toast.show(`${institutionName} lookback period set to ${value} day${value !== 1 ? 's' : ''}`, 'info');
     debugLog(`${institutionName} lookback period updated to: ${value} days`);
@@ -588,6 +597,14 @@ function createLookbackPeriodSection(institutionType) {
 
   // Reset to default
   resetButton.addEventListener('click', () => {
+    // Validate default lookback vs retention
+    const minRetention = getMinRetentionForInstitution(institutionType);
+    const validation = validateLookbackVsRetention(defaultLookback, minRetention);
+    if (!validation.valid) {
+      toast.show(`Cannot reset: ${validation.error}`, 'error');
+      return;
+    }
+
     input.value = defaultLookback;
     GM_setValue(storageKey, defaultLookback);
     toast.show(`${institutionName} lookback period reset to default (${defaultLookback} day${defaultLookback !== 1 ? 's' : ''})`, 'info');
@@ -2442,11 +2459,22 @@ function createWealthsimpleAccountCards(accounts, onRefresh) {
 
       retentionDaysInput.addEventListener('change', () => {
         const value = parseInt(retentionDaysInput.value, 10);
+        const previousValue = accountEntry.transactionRetentionDays ?? TRANSACTION_RETENTION_DEFAULTS.DAYS;
         if (Number.isNaN(value) || value < 0) {
-          retentionDaysInput.value = accountEntry.transactionRetentionDays ?? 91;
+          retentionDaysInput.value = previousValue;
           toast.show('Please enter a valid number (0 or greater)', 'error');
           return;
         }
+
+        // Validate retention vs lookback (retention must be > lookback)
+        const currentLookback = getLookbackForInstitution('wealthsimple');
+        const validation = validateLookbackVsRetention(currentLookback, value);
+        if (!validation.valid) {
+          retentionDaysInput.value = previousValue;
+          toast.show(`Retention period (${value} days) must be greater than lookback period (${currentLookback} days)`, 'error');
+          return;
+        }
+
         const { updateAccountInList } = require('../../services/wealthsimple/account');
         const success = updateAccountInList(wsAccount.id, { transactionRetentionDays: value });
         if (success) {

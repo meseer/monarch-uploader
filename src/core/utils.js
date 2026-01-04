@@ -3,7 +3,7 @@
  * This file will gradually replace inline utility functions in the original script
  */
 
-import { STORAGE } from './config';
+import { STORAGE, TRANSACTION_RETENTION_DEFAULTS } from './config';
 import toast from '../ui/toast';
 
 /**
@@ -698,6 +698,121 @@ export function formatBalance(balance) {
     return 'Unknown';
   }
   return `${balance.currency} $${formatCurrencyAmount(balance.amount)}`;
+}
+
+/**
+ * Validates that the lookback period is less than the retention period.
+ * The lookback period must be smaller than retention to avoid losing transaction IDs
+ * that were recently uploaded but haven't been evicted yet.
+ *
+ * @param {number} lookbackDays - Proposed lookback period in days
+ * @param {number} retentionDays - Retention period in days (0 = unlimited)
+ * @returns {Object} Validation result with { valid: boolean, error?: string }
+ */
+export function validateLookbackVsRetention(lookbackDays, retentionDays) {
+  // If retention is 0 (unlimited), any lookback value is valid
+  if (retentionDays === 0) {
+    return { valid: true };
+  }
+
+  // Lookback must be strictly less than retention
+  if (lookbackDays >= retentionDays) {
+    return {
+      valid: false,
+      error: `Lookback period (${lookbackDays} days) must be less than retention period (${retentionDays} days). ` +
+        'This ensures transaction IDs are retained long enough to detect duplicates during the lookback window.',
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Gets the minimum retention period across all accounts for an institution.
+ * Used to validate that global lookback doesn't exceed any account's retention.
+ *
+ * @param {string} institutionType - Institution type ('wealthsimple', 'questrade', 'rogersbank')
+ * @returns {number} Minimum retention days across all accounts (0 = unlimited)
+ */
+export function getMinRetentionForInstitution(institutionType) {
+  if (institutionType === 'wealthsimple') {
+    // Wealthsimple uses consolidated account structure
+    try {
+      const accounts = JSON.parse(GM_getValue(STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST, '[]'));
+      if (accounts.length === 0) {
+        return TRANSACTION_RETENTION_DEFAULTS.DAYS;
+      }
+
+      // Get minimum retention from all accounts that have transactions (credit cards)
+      let minRetention = Infinity;
+      let hasTransactionAccounts = false;
+
+      accounts.forEach((account) => {
+        const accountType = account.wealthsimpleAccount?.type || '';
+        // Only consider credit card accounts that have transactions
+        if (accountType.includes('CREDIT')) {
+          hasTransactionAccounts = true;
+          const retention = account.transactionRetentionDays ?? TRANSACTION_RETENTION_DEFAULTS.DAYS;
+          // 0 means unlimited, so skip it when finding minimum
+          if (retention > 0 && retention < minRetention) {
+            minRetention = retention;
+          }
+        }
+      });
+
+      // If no transaction accounts or all have unlimited retention
+      if (!hasTransactionAccounts || minRetention === Infinity) {
+        return TRANSACTION_RETENTION_DEFAULTS.DAYS;
+      }
+
+      return minRetention;
+    } catch (error) {
+      debugLog('Error getting min retention for Wealthsimple:', error);
+      return TRANSACTION_RETENTION_DEFAULTS.DAYS;
+    }
+  }
+
+  // For other institutions, use per-key storage
+  let retentionDaysKey;
+  switch (institutionType) {
+  case 'questrade':
+    retentionDaysKey = STORAGE.QUESTRADE_TRANSACTION_RETENTION_DAYS;
+    break;
+  case 'rogersbank':
+    retentionDaysKey = STORAGE.ROGERSBANK_TRANSACTION_RETENTION_DAYS;
+    break;
+  default:
+    return TRANSACTION_RETENTION_DEFAULTS.DAYS;
+  }
+
+  return GM_getValue(retentionDaysKey, TRANSACTION_RETENTION_DEFAULTS.DAYS);
+}
+
+/**
+ * Gets the current lookback period for an institution
+ * @param {string} institutionType - Institution type
+ * @returns {number} Current lookback days
+ */
+export function getLookbackForInstitution(institutionType) {
+  let lookbackKey;
+  switch (institutionType) {
+  case 'questrade':
+    lookbackKey = STORAGE.QUESTRADE_LOOKBACK_DAYS;
+    break;
+  case 'canadalife':
+    lookbackKey = STORAGE.CANADALIFE_LOOKBACK_DAYS;
+    break;
+  case 'rogersbank':
+    lookbackKey = STORAGE.ROGERSBANK_LOOKBACK_DAYS;
+    break;
+  case 'wealthsimple':
+    lookbackKey = STORAGE.WEALTHSIMPLE_LOOKBACK_DAYS;
+    break;
+  default:
+    return 0;
+  }
+
+  return GM_getValue(lookbackKey, getDefaultLookbackDays(institutionType));
 }
 
 // Default export with all utility functions

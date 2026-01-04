@@ -86,7 +86,7 @@ export const STORAGE = {
 // Transaction retention defaults (for deduplication storage)
 // Used for both legacy per-key storage and consolidated account structures
 export const TRANSACTION_RETENTION_DEFAULTS = {
-  DAYS: 45, // Keep transactions from last 45 days
+  DAYS: 91, // Keep transactions from last 91 days (must be > default lookback period)
   COUNT: 1000, // Keep last 1000 transactions
 };
 
