@@ -4,7 +4,7 @@
  */
 
 import { debugLog, formatDate } from '../../core/utils';
-import { STORAGE } from '../../core/config';
+import { STORAGE, TRANSACTION_RETENTION_DEFAULTS } from '../../core/config';
 import stateManager from '../../core/state';
 import monarchApi from '../../api/monarch';
 import wealthsimpleApi from '../../api/wealthsimple';
@@ -22,6 +22,13 @@ import {
 } from './balance';
 import { fetchAndProcessTransactions } from './transactions';
 import { convertWealthsimpleTransactionsToMonarchCSV } from '../../utils/csv';
+import {
+  migrateLegacyTransactions,
+  applyRetentionLimits,
+  mergeAndRetainTransactions,
+  getRetentionSettingsFromAccount,
+  getTransactionIdsFromArray,
+} from '../../utils/transactionStorage';
 
 /**
  * Resolve Monarch account mapping for a Wealthsimple account
@@ -343,8 +350,9 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
 
     debugLog(`Found ${processedTransactions.length} processed transactions`);
 
-    // Filter out duplicate transactions using account's uploadedTransactions array
-    const uploadedIds = new Set(accountData.uploadedTransactions || []);
+    // Get existing uploaded transactions and migrate if needed
+    const existingTransactions = migrateLegacyTransactions(accountData.uploadedTransactions || []);
+    const uploadedIds = getTransactionIdsFromArray(existingTransactions);
     const originalCount = processedTransactions.length;
 
     const newTransactions = processedTransactions.filter(
@@ -369,8 +377,11 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
 
     debugLog(`Uploading ${newTransactions.length} new transactions`);
 
-    // Convert to Monarch CSV format
-    const csvData = convertWealthsimpleTransactionsToMonarchCSV(newTransactions, accountName);
+    // Convert to Monarch CSV format with account-specific options
+    const csvOptions = {
+      storeTransactionIdInNotes: accountData.storeTransactionIdInNotes ?? false,
+    };
+    const csvData = convertWealthsimpleTransactionsToMonarchCSV(newTransactions, accountName, csvOptions);
 
     if (!csvData) {
       throw new Error('Failed to convert transactions to CSV');
@@ -387,20 +398,32 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
     );
 
     if (uploadSuccess) {
-      // Add new transaction IDs to account's uploadedTransactions array
-      const transactionIds = newTransactions
-        .map((transaction) => transaction.id)
-        .filter((id) => id);
+      // Prepare new transactions with their dates for storage
+      const transactionsToStore = newTransactions
+        .filter((transaction) => transaction.id)
+        .map((transaction) => ({
+          id: transaction.id,
+          date: transaction.date, // Use the transaction's actual date
+        }));
 
-      if (transactionIds.length > 0) {
-        const currentUploadedTransactions = accountData.uploadedTransactions || [];
-        const updatedUploadedTransactions = [...currentUploadedTransactions, ...transactionIds];
+      if (transactionsToStore.length > 0) {
+        // Get retention settings from account
+        const retentionSettings = getRetentionSettingsFromAccount(accountData);
+
+        // Merge new transactions with existing and apply retention
+        const updatedUploadedTransactions = mergeAndRetainTransactions(
+          existingTransactions,
+          transactionsToStore,
+          retentionSettings,
+        );
 
         // Update account with new uploaded transactions
         // Note: lastSyncDate is NOT updated here - it's only updated when BOTH balance and transactions succeed
         updateAccountInList(wealthsimpleAccountId, {
           uploadedTransactions: updatedUploadedTransactions,
         });
+
+        debugLog(`Stored ${transactionsToStore.length} new transaction IDs, total after retention: ${updatedUploadedTransactions.length}`);
       }
 
       const successMessage = duplicateCount > 0
@@ -419,6 +442,62 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
     toast.show(`Transaction upload failed: ${error.message}`, 'error');
     return false;
   }
+}
+
+/**
+ * Apply transaction retention eviction for an account
+ * Should be called after each successful sync to clean up old transaction IDs
+ * @param {string} accountId - Wealthsimple account ID
+ * @returns {boolean} True if eviction was performed
+ */
+export function applyTransactionRetentionEviction(accountId) {
+  try {
+    const accountData = getAccountData(accountId);
+    if (!accountData) {
+      debugLog(`Cannot apply retention eviction: account ${accountId} not found`);
+      return false;
+    }
+
+    const existingTransactions = accountData.uploadedTransactions || [];
+    if (existingTransactions.length === 0) {
+      return true; // Nothing to evict
+    }
+
+    // Migrate legacy format if needed
+    const migrated = migrateLegacyTransactions(existingTransactions);
+
+    // Get retention settings from account
+    const retentionSettings = getRetentionSettingsFromAccount(accountData);
+
+    // Apply retention limits
+    const retained = applyRetentionLimits(migrated, retentionSettings);
+
+    // Only update if something changed
+    if (retained.length !== migrated.length) {
+      updateAccountInList(accountId, {
+        uploadedTransactions: retained,
+      });
+      debugLog(`Transaction retention eviction: ${migrated.length} -> ${retained.length} for account ${accountId}`);
+    }
+
+    return true;
+  } catch (error) {
+    debugLog('Error applying transaction retention eviction:', error);
+    return false;
+  }
+}
+
+/**
+ * Get default account settings for new accounts
+ * @returns {Object} Default settings object
+ */
+export function getDefaultAccountSettings() {
+  return {
+    syncEnabled: true,
+    storeTransactionIdInNotes: false, // Default: don't store transaction ID in notes
+    transactionRetentionDays: TRANSACTION_RETENTION_DEFAULTS.DAYS,
+    transactionRetentionCount: TRANSACTION_RETENTION_DEFAULTS.COUNT,
+  };
 }
 
 /**

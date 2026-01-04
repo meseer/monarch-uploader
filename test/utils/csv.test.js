@@ -6,6 +6,7 @@ import {
   convertToCSV,
   convertTransactionsToMonarchCSV,
   convertQuestradeOrdersToMonarchCSV,
+  convertWealthsimpleTransactionsToMonarchCSV,
   parseCSV,
 } from '../../src/utils/csv';
 
@@ -392,11 +393,11 @@ describe('CSV Conversion Utilities', () => {
       ];
 
       const result = convertQuestradeOrdersToMonarchCSV(orders, 'Test Account');
-      
+
       // Check the CSV contains both positive and negative amounts
       expect(result).toContain('500,'); // Buy: positive
       expect(result).toContain('-600,'); // Sell: negative
-      
+
       // Verify it has 2 data rows plus header
       expect(result).toContain('2024-01-15');
       expect(result).toContain('2024-01-16');
@@ -499,6 +500,195 @@ describe('CSV Conversion Utilities', () => {
 
       const result = convertQuestradeOrdersToMonarchCSV(orders, 'Test Account');
       expect(result).toContain('Uncategorized');
+    });
+  });
+
+  describe('convertWealthsimpleTransactionsToMonarchCSV', () => {
+    test('should convert Wealthsimple transactions to Monarch CSV format', () => {
+      const transactions = [
+        {
+          id: 'tx123',
+          date: '2024-01-15',
+          merchant: 'STARBUCKS',
+          originalMerchant: 'STARBUCKS #1234',
+          amount: -5.50,
+          subType: 'PURCHASE',
+          resolvedMonarchCategory: 'Dining & Drinks',
+        },
+        {
+          id: 'tx124',
+          date: '2024-01-14',
+          merchant: 'GROCERY STORE',
+          originalMerchant: 'GROCERY STORE LTD',
+          amount: -75.25,
+          subType: 'PURCHASE',
+          resolvedMonarchCategory: 'Groceries',
+        },
+      ];
+
+      const accountName = 'Wealthsimple Cash Card';
+      const result = convertWealthsimpleTransactionsToMonarchCSV(transactions, accountName);
+
+      expect(result).toContain('Date,Merchant,Category,Account,Original Statement,Notes,Amount,Tags');
+      expect(result).toContain('2024-01-15');
+      expect(result).toContain('STARBUCKS');
+      expect(result).toContain('Wealthsimple Cash Card');
+      expect(result).toContain('-5.5');
+      expect(result).toContain('-75.25');
+    });
+
+    test('should include transaction ID in notes when storeTransactionIdInNotes is true', () => {
+      const transactions = [
+        {
+          id: 'tx-unique-123',
+          date: '2024-01-15',
+          merchant: 'STARBUCKS',
+          originalMerchant: 'STARBUCKS #1234',
+          amount: -5.50,
+          subType: 'PURCHASE',
+          resolvedMonarchCategory: 'Dining & Drinks',
+        },
+      ];
+
+      const result = convertWealthsimpleTransactionsToMonarchCSV(
+        transactions,
+        'Test Account',
+        { storeTransactionIdInNotes: true },
+      );
+
+      expect(result).toContain('PURCHASE / tx-unique-123');
+    });
+
+    test('should NOT include transaction ID in notes when storeTransactionIdInNotes is false', () => {
+      const transactions = [
+        {
+          id: 'tx-unique-123',
+          date: '2024-01-15',
+          merchant: 'STARBUCKS',
+          originalMerchant: 'STARBUCKS #1234',
+          amount: -5.50,
+          subType: 'PURCHASE',
+          resolvedMonarchCategory: 'Dining & Drinks',
+        },
+      ];
+
+      const result = convertWealthsimpleTransactionsToMonarchCSV(
+        transactions,
+        'Test Account',
+        { storeTransactionIdInNotes: false },
+      );
+
+      expect(result).toContain('PURCHASE');
+      expect(result).not.toContain('tx-unique-123');
+    });
+
+    test('should default to NOT including transaction ID in notes', () => {
+      const transactions = [
+        {
+          id: 'tx-unique-123',
+          date: '2024-01-15',
+          merchant: 'STARBUCKS',
+          originalMerchant: 'STARBUCKS #1234',
+          amount: -5.50,
+          subType: 'PURCHASE',
+          resolvedMonarchCategory: 'Dining & Drinks',
+        },
+      ];
+
+      // No options provided (should default to false)
+      const result = convertWealthsimpleTransactionsToMonarchCSV(transactions, 'Test Account');
+
+      expect(result).toContain('PURCHASE');
+      expect(result).not.toContain('tx-unique-123');
+    });
+
+    test('should handle empty options object', () => {
+      const transactions = [
+        {
+          id: 'tx-unique-123',
+          date: '2024-01-15',
+          merchant: 'STARBUCKS',
+          subType: 'PURCHASE',
+          resolvedMonarchCategory: 'Dining & Drinks',
+        },
+      ];
+
+      const result = convertWealthsimpleTransactionsToMonarchCSV(transactions, 'Test Account', {});
+
+      expect(result).toContain('PURCHASE');
+      expect(result).not.toContain('tx-unique-123');
+    });
+
+    test('should handle transactions without subType', () => {
+      const transactions = [
+        {
+          id: 'tx123',
+          date: '2024-01-15',
+          merchant: 'MERCHANT',
+          amount: -10.00,
+          // No subType
+          resolvedMonarchCategory: 'Shopping',
+        },
+      ];
+
+      const resultWithId = convertWealthsimpleTransactionsToMonarchCSV(
+        transactions,
+        'Test Account',
+        { storeTransactionIdInNotes: true },
+      );
+      expect(resultWithId).toContain('/ tx123');
+
+      const resultWithoutId = convertWealthsimpleTransactionsToMonarchCSV(
+        transactions,
+        'Test Account',
+        { storeTransactionIdInNotes: false },
+      );
+      // Should be empty or just spaces in notes
+      const lines = resultWithoutId.split('\n');
+      expect(lines.length).toBe(2); // Header + data row
+    });
+
+    test('should handle empty transactions array', () => {
+      const result = convertWealthsimpleTransactionsToMonarchCSV([], 'Test Account');
+      expect(result).toBe('');
+    });
+
+    test('should handle null transactions', () => {
+      const result = convertWealthsimpleTransactionsToMonarchCSV(null, 'Test Account');
+      expect(result).toBe('');
+    });
+
+    test('should use Uncategorized for missing resolvedMonarchCategory', () => {
+      const transactions = [
+        {
+          id: 'tx123',
+          date: '2024-01-15',
+          merchant: 'MERCHANT',
+          amount: -10.00,
+          subType: 'PURCHASE',
+          // No resolvedMonarchCategory
+        },
+      ];
+
+      const result = convertWealthsimpleTransactionsToMonarchCSV(transactions, 'Test Account');
+      expect(result).toContain('Uncategorized');
+    });
+
+    test('should preserve original merchant in Original Statement field', () => {
+      const transactions = [
+        {
+          id: 'tx123',
+          date: '2024-01-15',
+          merchant: 'Starbucks', // Cleaned up merchant name
+          originalMerchant: 'STARBUCKS #1234 VANCOUVER BC', // Original from bank
+          amount: -5.50,
+          subType: 'PURCHASE',
+          resolvedMonarchCategory: 'Dining & Drinks',
+        },
+      ];
+
+      const result = convertWealthsimpleTransactionsToMonarchCSV(transactions, 'Test Account');
+      expect(result).toContain('STARBUCKS #1234 VANCOUVER BC');
     });
   });
 

@@ -2323,9 +2323,60 @@ function createWealthsimpleAccountCards(accounts, onRefresh) {
     });
     cardHeader.appendChild(deleteButton);
 
-    // Expandable content (JSON display)
+    // Expandable content with settings
     const expandableContent = document.createElement('div');
     expandableContent.style.cssText = 'display: none; padding: 15px; background-color: #f8f9fa; border-top: 1px solid #e0e0e0;';
+
+    // Account Settings Section
+    const settingsSection = document.createElement('div');
+    settingsSection.style.cssText = 'margin-bottom: 15px;';
+
+    const settingsTitle = document.createElement('h4');
+    settingsTitle.textContent = 'Account Settings';
+    settingsTitle.style.cssText = 'margin: 0 0 10px 0; font-size: 14px; color: #333;';
+    settingsSection.appendChild(settingsTitle);
+
+    // Store transaction ID in notes toggle
+    const transactionIdSetting = document.createElement('div');
+    transactionIdSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: white; border-radius: 6px; margin-bottom: 8px;';
+
+    const transactionIdLabel = document.createElement('div');
+    transactionIdLabel.innerHTML = `
+      <div style="font-weight: 500; font-size: 13px;">Store transaction ID in notes</div>
+      <div style="font-size: 11px; color: #666;">When enabled, transaction IDs will be included in the Notes field for Monarch</div>
+    `;
+
+    const transactionIdToggle = createToggleSwitch(
+      accountEntry.storeTransactionIdInNotes ?? false,
+      (isEnabled) => {
+        const { updateAccountInList } = require('../../services/wealthsimple/account');
+        const success = updateAccountInList(wsAccount.id, { storeTransactionIdInNotes: isEnabled });
+        if (success) {
+          toast.show(`Transaction ID in notes ${isEnabled ? 'enabled' : 'disabled'}`, 'info');
+        } else {
+          toast.show('Failed to update setting', 'error');
+          setTimeout(onRefresh, 100);
+        }
+      },
+    );
+
+    transactionIdSetting.appendChild(transactionIdLabel);
+    transactionIdSetting.appendChild(transactionIdToggle);
+
+    // Stop propagation on this toggle too
+    transactionIdSetting.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+
+    settingsSection.appendChild(transactionIdSetting);
+    expandableContent.appendChild(settingsSection);
+
+    // JSON Debug Info Section
+    const debugSection = document.createElement('div');
+    const debugTitle = document.createElement('h4');
+    debugTitle.textContent = 'Debug Information';
+    debugTitle.style.cssText = 'margin: 0 0 10px 0; font-size: 14px; color: #333;';
+    debugSection.appendChild(debugTitle);
 
     const jsonContainer = document.createElement('pre');
     jsonContainer.style.cssText = `
@@ -2342,7 +2393,8 @@ function createWealthsimpleAccountCards(accounts, onRefresh) {
       word-break: break-word;
     `;
     jsonContainer.textContent = JSON.stringify(accountEntry, null, 2);
-    expandableContent.appendChild(jsonContainer);
+    debugSection.appendChild(jsonContainer);
+    expandableContent.appendChild(debugSection);
 
     card.appendChild(cardHeader);
     card.appendChild(expandableContent);

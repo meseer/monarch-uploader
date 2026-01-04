@@ -8,6 +8,9 @@ import {
   applyRetentionLimits,
   saveUploadedTransactions,
   getUploadedTransactionIds,
+  getRetentionSettingsFromAccount,
+  getTransactionIdsFromArray,
+  mergeAndRetainTransactions,
 } from '../../src/utils/transactionStorage';
 import { STORAGE, TRANSACTION_RETENTION_DEFAULTS } from '../../src/core/config';
 import * as utils from '../../src/core/utils';
@@ -60,6 +63,46 @@ describe('Transaction Storage Utilities', () => {
       expect(settings).toEqual({
         days: 60,
         count: 750,
+      });
+    });
+
+    test('throws error for wealthsimple (uses consolidated account structure)', () => {
+      expect(() => getTransactionRetentionSettings('wealthsimple')).toThrow(
+        'Unknown institution type: wealthsimple. Wealthsimple uses consolidated account structure.',
+      );
+    });
+  });
+
+  describe('getRetentionSettingsFromAccount', () => {
+    test('returns default settings when account has no retention config', () => {
+      const accountData = {};
+      const settings = getRetentionSettingsFromAccount(accountData);
+
+      expect(settings).toEqual({
+        days: TRANSACTION_RETENTION_DEFAULTS.DAYS,
+        count: TRANSACTION_RETENTION_DEFAULTS.COUNT,
+      });
+    });
+
+    test('returns custom settings from account', () => {
+      const accountData = {
+        transactionRetentionDays: 60,
+        transactionRetentionCount: 500,
+      };
+      const settings = getRetentionSettingsFromAccount(accountData);
+
+      expect(settings).toEqual({
+        days: 60,
+        count: 500,
+      });
+    });
+
+    test('handles null account data', () => {
+      const settings = getRetentionSettingsFromAccount(null);
+
+      expect(settings).toEqual({
+        days: TRANSACTION_RETENTION_DEFAULTS.DAYS,
+        count: TRANSACTION_RETENTION_DEFAULTS.COUNT,
       });
     });
   });
@@ -283,6 +326,128 @@ describe('Transaction Storage Utilities', () => {
       const savedData = GM_setValue.mock.calls[0][1];
       // Should be limited by retention count (default 500)
       expect(savedData.length).toBeLessThanOrEqual(500);
+    });
+  });
+
+  describe('getTransactionIdsFromArray', () => {
+    test('returns Set of IDs from transaction array', () => {
+      const transactions = [
+        { id: 'tx1', date: '2025-10-20' },
+        { id: 'tx2', date: '2025-10-21' },
+      ];
+
+      const result = getTransactionIdsFromArray(transactions);
+
+      expect(result).toBeInstanceOf(Set);
+      expect(result.size).toBe(2);
+      expect(result.has('tx1')).toBe(true);
+      expect(result.has('tx2')).toBe(true);
+    });
+
+    test('handles legacy string array format', () => {
+      const legacyTransactions = ['id1', 'id2', 'id3'];
+
+      const result = getTransactionIdsFromArray(legacyTransactions);
+
+      expect(result).toBeInstanceOf(Set);
+      expect(result.size).toBe(3);
+      expect(result.has('id1')).toBe(true);
+    });
+
+    test('returns empty Set for null input', () => {
+      const result = getTransactionIdsFromArray(null);
+
+      expect(result).toBeInstanceOf(Set);
+      expect(result.size).toBe(0);
+    });
+
+    test('returns empty Set for undefined input', () => {
+      const result = getTransactionIdsFromArray(undefined);
+
+      expect(result).toBeInstanceOf(Set);
+      expect(result.size).toBe(0);
+    });
+  });
+
+  describe('mergeAndRetainTransactions', () => {
+    test('merges new transactions with existing and applies retention', () => {
+      const existing = [
+        { id: 'tx1', date: '2025-10-20' },
+      ];
+      const newTransactions = ['tx2', 'tx3'];
+      const settings = { days: 90, count: 1000 };
+
+      const result = mergeAndRetainTransactions(existing, newTransactions, settings, '2025-10-24');
+
+      expect(result.length).toBe(3);
+      expect(result.some((t) => t.id === 'tx1')).toBe(true);
+      expect(result.some((t) => t.id === 'tx2')).toBe(true);
+      expect(result.some((t) => t.id === 'tx3')).toBe(true);
+    });
+
+    test('skips duplicate transactions', () => {
+      const existing = [
+        { id: 'tx1', date: '2025-10-20' },
+      ];
+      const newTransactions = ['tx1', 'tx2']; // tx1 already exists
+      const settings = { days: 90, count: 1000 };
+
+      const result = mergeAndRetainTransactions(existing, newTransactions, settings, '2025-10-24');
+
+      expect(result.length).toBe(2);
+      expect(result.filter((t) => t.id === 'tx1').length).toBe(1);
+    });
+
+    test('preserves date from transaction objects', () => {
+      const existing = [];
+      const newTransactions = [
+        { id: 'tx1', date: '2025-10-22' },
+        { id: 'tx2', date: '2025-10-23' },
+      ];
+      const settings = { days: 90, count: 1000 };
+
+      const result = mergeAndRetainTransactions(existing, newTransactions, settings, '2025-10-24');
+
+      expect(result.length).toBe(2);
+      const tx1 = result.find((t) => t.id === 'tx1');
+      expect(tx1.date).toBe('2025-10-22');
+    });
+
+    test('uses default date for string transactions', () => {
+      const existing = [];
+      const newTransactions = ['tx1', 'tx2'];
+      const settings = { days: 90, count: 1000 };
+      const defaultDate = '2025-10-24';
+
+      const result = mergeAndRetainTransactions(existing, newTransactions, settings, defaultDate);
+
+      expect(result.every((t) => t.date === defaultDate)).toBe(true);
+    });
+
+    test('handles legacy existing format', () => {
+      const existing = ['tx1', 'tx2']; // Legacy string format
+      const newTransactions = ['tx3'];
+      const settings = { days: 90, count: 1000 };
+
+      const result = mergeAndRetainTransactions(existing, newTransactions, settings, '2025-10-24');
+
+      expect(result.length).toBe(3);
+      // Legacy transactions should have null date
+      const tx1 = result.find((t) => t.id === 'tx1');
+      expect(tx1.date).toBe(null);
+    });
+
+    test('applies count limit', () => {
+      const existing = Array.from({ length: 10 }, (_, i) => ({
+        id: `old${i}`,
+        date: '2025-10-20',
+      }));
+      const newTransactions = ['new1', 'new2'];
+      const settings = { days: 90, count: 5 };
+
+      const result = mergeAndRetainTransactions(existing, newTransactions, settings, '2025-10-24');
+
+      expect(result.length).toBe(5);
     });
   });
 

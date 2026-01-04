@@ -29,6 +29,10 @@ export const API = {
 };
 
 // Storage keys
+// TODO: Future migration - Questrade, Rogers Bank, and CanadaLife should migrate
+// to a consolidated account structure like Wealthsimple uses (wealthsimple_accounts_list).
+// This will allow storing all account-specific settings (retention, mappings, etc.)
+// in a single unified structure per institution instead of scattered storage keys.
 export const STORAGE = {
   ACCOUNTS_LIST: 'questrade_accounts_list',
   MONARCH_TOKEN: 'monarch_graphql_token',
@@ -80,6 +84,7 @@ export const STORAGE = {
 };
 
 // Transaction retention defaults (for deduplication storage)
+// Used for both legacy per-key storage and consolidated account structures
 export const TRANSACTION_RETENTION_DEFAULTS = {
   DAYS: 45, // Keep transactions from last 45 days
   COUNT: 1000, // Keep last 1000 transactions

@@ -13,6 +13,7 @@ import {
   markAccountAsSkipped,
   syncAccountListWithAPI,
   getAccountData,
+  applyTransactionRetentionEviction,
 } from './wealthsimple/account';
 import {
   getDefaultDateRange,
@@ -153,6 +154,10 @@ export async function uploadWealthsimpleAccountToMonarch(consolidatedAccount, fr
 
         debugLog(`Updated lastSyncDate for account ${account.id} to ${toDate}`);
       }
+
+      // Apply time-based eviction to clean up old transaction IDs
+      // This is performed after each successful account sync
+      applyTransactionRetentionEviction(account.id);
 
       toast.show(`Processed ${account.nickname || account.id}`, 'info');
     }
