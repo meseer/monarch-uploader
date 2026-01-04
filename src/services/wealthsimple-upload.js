@@ -12,8 +12,31 @@ import {
   uploadWealthsimpleTransactions,
   markAccountAsSkipped,
   syncAccountListWithAPI,
+  getAccountData,
 } from './wealthsimple/account';
-import { getDefaultDateRange } from './wealthsimple/balance';
+import { getDefaultDateRange, extractDateFromISO } from './wealthsimple/balance';
+import { showDatePickerPromise } from '../ui/components/datePicker';
+
+/**
+ * Check if this is the first sync for a credit card account
+ * @param {Object} consolidatedAccount - Consolidated account object
+ * @returns {boolean} True if first sync for credit card
+ */
+function isFirstSyncCreditCard(consolidatedAccount) {
+  const account = consolidatedAccount.wealthsimpleAccount;
+  const accountType = account?.type || '';
+
+  // Only apply to credit card accounts
+  if (!accountType.includes('CREDIT')) {
+    return false;
+  }
+
+  // First sync if no lastSyncDate and no uploaded transactions
+  const hasLastSyncDate = Boolean(consolidatedAccount.lastSyncDate);
+  const hasUploadedTransactions = consolidatedAccount.uploadedTransactions && consolidatedAccount.uploadedTransactions.length > 0;
+
+  return !hasLastSyncDate && !hasUploadedTransactions;
+}
 
 /**
  * Upload a single Wealthsimple account to Monarch
@@ -53,11 +76,46 @@ export async function uploadWealthsimpleAccountToMonarch(consolidatedAccount, fr
 
     const monarchAccount = result;
 
+    // Determine the actual from date
+    let actualFromDate = fromDate;
+
+    // For first sync of credit card accounts, show date picker
+    if (isFirstSyncCreditCard(consolidatedAccount)) {
+      debugLog('First sync for credit card account detected, showing date picker');
+
+      // Get account creation date as default
+      const accountCreatedAt = account.createdAt;
+      let defaultDate = fromDate; // Fallback to provided fromDate
+
+      if (accountCreatedAt) {
+        const createdDateStr = extractDateFromISO(accountCreatedAt);
+        if (createdDateStr) {
+          defaultDate = createdDateStr;
+          debugLog(`Using account creation date as default: ${defaultDate} (from ${accountCreatedAt})`);
+        }
+      }
+
+      // Show date picker
+      const selectedDate = await showDatePickerPromise(
+        defaultDate,
+        `Select the start date for syncing "${account.nickname || account.id}". Default is the account creation date.`,
+      );
+
+      if (!selectedDate) {
+        debugLog('User cancelled date selection');
+        toast.show('Sync cancelled', 'info');
+        return { success: false, cancelled: true };
+      }
+
+      actualFromDate = selectedDate;
+      debugLog(`User selected start date: ${actualFromDate}`);
+    }
+
     // Upload balance with current balance
     const balanceSuccess = await uploadWealthsimpleBalance(
       account.id,
       monarchAccount.id,
-      fromDate,
+      actualFromDate,
       toDate,
       currentBalance,
     );
@@ -66,7 +124,7 @@ export async function uploadWealthsimpleAccountToMonarch(consolidatedAccount, fr
     const transactionsSuccess = await uploadWealthsimpleTransactions(
       account.id,
       monarchAccount.id,
-      fromDate,
+      actualFromDate,
       toDate,
     );
 
@@ -207,7 +265,6 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
  * @returns {string|null} Last upload date or null
  */
 export function getLastUploadDate(accountId) {
-  const { getAccountData } = require('./wealthsimple/account');
   const accountData = getAccountData(accountId);
   return accountData?.lastSyncDate || null;
 }

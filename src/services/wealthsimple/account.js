@@ -11,11 +11,9 @@ import wealthsimpleApi from '../../api/wealthsimple';
 import toast from '../../ui/toast';
 import { showMonarchAccountSelectorWithCreate } from '../../ui/components/accountSelectorWithCreate';
 import { getMonarchAccountTypeMapping } from '../../mappers/wealthsimple-account-types';
-import { showDatePickerPromise } from '../../ui/components/datePicker';
 import {
   getDefaultDateRange,
   processAndUploadBalance,
-  extractDateFromISO,
 } from './balance';
 import { fetchAndProcessTransactions } from './transactions';
 import { convertWealthsimpleTransactionsToMonarchCSV } from '../../utils/csv';
@@ -228,44 +226,11 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
       return false; // Silently skip unsupported account types
     }
 
-    // Check if this is the first transaction sync (no lastSyncDate and no uploaded transactions)
-    const isFirstSync = !accountData.lastSyncDate && (!accountData.uploadedTransactions || accountData.uploadedTransactions.length === 0);
-
-    let actualFromDate = fromDate;
-
-    if (isFirstSync) {
-      debugLog('First transaction sync detected, prompting user for start date');
-
-      // Get account creation date as default
-      const accountCreatedAt = accountData.wealthsimpleAccount?.createdAt;
-      let defaultDate = fromDate; // Fallback to provided fromDate
-
-      if (accountCreatedAt) {
-        const createdDateStr = extractDateFromISO(accountCreatedAt);
-        if (createdDateStr) {
-          defaultDate = createdDateStr;
-          debugLog(`Using account creation date as default: ${defaultDate} (from ${accountCreatedAt})`);
-        }
-      }
-
-      // Show date picker
-      const selectedDate = await showDatePickerPromise(
-        defaultDate,
-        `Select the start date for syncing transactions for ${accountName}. Default is the account creation date.`,
-      );
-
-      if (!selectedDate) {
-        debugLog('User cancelled date selection');
-        toast.show('Transaction sync cancelled', 'info');
-        return false;
-      }
-
-      actualFromDate = selectedDate;
-      debugLog(`User selected start date: ${actualFromDate}`);
-    }
+    // Note: First sync date picker is handled in wealthsimple-upload.js
+    // The fromDate passed here is already the correct date (either user-selected or default)
 
     // Fetch and process transactions
-    const processedTransactions = await fetchAndProcessTransactions(accountData, actualFromDate, toDate);
+    const processedTransactions = await fetchAndProcessTransactions(accountData, fromDate, toDate);
 
     if (!processedTransactions || processedTransactions.length === 0) {
       debugLog('No transactions to upload');
@@ -308,7 +273,7 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
     }
 
     // Upload to Monarch
-    const filename = `wealthsimple_transactions_${wealthsimpleAccountId}_${actualFromDate}_to_${toDate}.csv`;
+    const filename = `wealthsimple_transactions_${wealthsimpleAccountId}_${fromDate}_to_${toDate}.csv`;
     const uploadSuccess = await monarchApi.uploadTransactions(
       monarchAccountId,
       csvData,

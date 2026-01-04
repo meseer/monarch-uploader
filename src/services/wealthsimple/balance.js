@@ -9,7 +9,6 @@ import stateManager from '../../core/state';
 import wealthsimpleApi from '../../api/wealthsimple';
 import monarchApi from '../../api/monarch';
 import toast from '../../ui/toast';
-import { updateAccountInList } from './account';
 
 /**
  * Custom balance error class
@@ -275,6 +274,8 @@ export function processBalanceData(balanceHistory, accountName) {
 
 /**
  * Upload balance history to Monarch
+ * Note: lastSyncDate is NOT updated here - it's only updated in wealthsimple-upload.js
+ * when BOTH balance and transactions succeed.
  * @param {string} accountId - Wealthsimple account ID
  * @param {string} monarchAccountId - Monarch account ID
  * @param {string} csvData - CSV data to upload
@@ -298,9 +299,6 @@ export async function uploadBalanceToMonarch(accountId, monarchAccountId, csvDat
 
     if (success) {
       debugLog(`Successfully uploaded ${accountName} balance history to Monarch`);
-
-      // Update lastSyncDate in consolidated account structure
-      updateAccountInList(accountId, { lastSyncDate: toDate });
     }
 
     return success;
