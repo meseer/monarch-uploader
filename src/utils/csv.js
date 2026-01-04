@@ -141,7 +141,7 @@ export function convertTransactionsToMonarchCSV(transactions, accountName) {
  * @param {Array} transactions - Array of processed Wealthsimple transaction objects
  * @param {string} accountName - Wealthsimple account name for the Account column
  * @param {Object} options - Conversion options
- * @param {boolean} options.storeTransactionIdInNotes - Whether to include transaction ID in notes (default: false)
+ * @param {boolean} options.storeTransactionDetailsInNotes - Whether to include subType and transaction ID in notes (default: false)
  * @returns {string} CSV string formatted for Monarch
  */
 export function convertWealthsimpleTransactionsToMonarchCSV(transactions, accountName, options = {}) {
@@ -149,7 +149,7 @@ export function convertWealthsimpleTransactionsToMonarchCSV(transactions, accoun
     return '';
   }
 
-  const { storeTransactionIdInNotes = false } = options;
+  const { storeTransactionDetailsInNotes = false } = options;
 
   // Define Monarch CSV columns
   const columns = [
@@ -167,12 +167,12 @@ export function convertWealthsimpleTransactionsToMonarchCSV(transactions, accoun
   const monarchRows = transactions.map((transaction) => {
     // Build notes field based on settings
     let notes;
-    if (storeTransactionIdInNotes) {
-      // Include transaction ID in notes for traceability
+    if (storeTransactionDetailsInNotes) {
+      // Include subType and transaction ID in notes for traceability
       notes = `${transaction.subType || ''} / ${transaction.id || ''}`.trim();
     } else {
-      // Only include subType, exclude transaction ID
-      notes = transaction.subType || '';
+      // Leave notes empty when disabled
+      notes = '';
     }
 
     return {
@@ -190,7 +190,7 @@ export function convertWealthsimpleTransactionsToMonarchCSV(transactions, accoun
   debugLog('Transformed Wealthsimple transactions for CSV:', {
     originalCount: transactions.length,
     transformedCount: monarchRows.length,
-    storeTransactionIdInNotes,
+    storeTransactionDetailsInNotes,
     sample: monarchRows[0], // Log first row as sample
   });
 

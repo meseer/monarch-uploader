@@ -537,7 +537,7 @@ describe('CSV Conversion Utilities', () => {
       expect(result).toContain('-75.25');
     });
 
-    test('should include transaction ID in notes when storeTransactionIdInNotes is true', () => {
+    test('should include transaction details in notes when storeTransactionDetailsInNotes is true', () => {
       const transactions = [
         {
           id: 'tx-unique-123',
@@ -553,13 +553,13 @@ describe('CSV Conversion Utilities', () => {
       const result = convertWealthsimpleTransactionsToMonarchCSV(
         transactions,
         'Test Account',
-        { storeTransactionIdInNotes: true },
+        { storeTransactionDetailsInNotes: true },
       );
 
       expect(result).toContain('PURCHASE / tx-unique-123');
     });
 
-    test('should NOT include transaction ID in notes when storeTransactionIdInNotes is false', () => {
+    test('should NOT include transaction details in notes when storeTransactionDetailsInNotes is false', () => {
       const transactions = [
         {
           id: 'tx-unique-123',
@@ -575,14 +575,15 @@ describe('CSV Conversion Utilities', () => {
       const result = convertWealthsimpleTransactionsToMonarchCSV(
         transactions,
         'Test Account',
-        { storeTransactionIdInNotes: false },
+        { storeTransactionDetailsInNotes: false },
       );
 
-      expect(result).toContain('PURCHASE');
+      // Notes should be empty when disabled
+      expect(result).not.toContain('PURCHASE');
       expect(result).not.toContain('tx-unique-123');
     });
 
-    test('should default to NOT including transaction ID in notes', () => {
+    test('should default to NOT including transaction details in notes', () => {
       const transactions = [
         {
           id: 'tx-unique-123',
@@ -598,7 +599,7 @@ describe('CSV Conversion Utilities', () => {
       // No options provided (should default to false)
       const result = convertWealthsimpleTransactionsToMonarchCSV(transactions, 'Test Account');
 
-      expect(result).toContain('PURCHASE');
+      // Notes should be empty when disabled (default)
       expect(result).not.toContain('tx-unique-123');
     });
 
@@ -615,7 +616,7 @@ describe('CSV Conversion Utilities', () => {
 
       const result = convertWealthsimpleTransactionsToMonarchCSV(transactions, 'Test Account', {});
 
-      expect(result).toContain('PURCHASE');
+      // Notes should be empty when disabled (default)
       expect(result).not.toContain('tx-unique-123');
     });
 
@@ -631,20 +632,20 @@ describe('CSV Conversion Utilities', () => {
         },
       ];
 
-      const resultWithId = convertWealthsimpleTransactionsToMonarchCSV(
+      const resultWithDetails = convertWealthsimpleTransactionsToMonarchCSV(
         transactions,
         'Test Account',
-        { storeTransactionIdInNotes: true },
+        { storeTransactionDetailsInNotes: true },
       );
-      expect(resultWithId).toContain('/ tx123');
+      expect(resultWithDetails).toContain('/ tx123');
 
-      const resultWithoutId = convertWealthsimpleTransactionsToMonarchCSV(
+      const resultWithoutDetails = convertWealthsimpleTransactionsToMonarchCSV(
         transactions,
         'Test Account',
-        { storeTransactionIdInNotes: false },
+        { storeTransactionDetailsInNotes: false },
       );
-      // Should be empty or just spaces in notes
-      const lines = resultWithoutId.split('\n');
+      // Notes should be empty when disabled
+      const lines = resultWithoutDetails.split('\n');
       expect(lines.length).toBe(2); // Header + data row
     });
 

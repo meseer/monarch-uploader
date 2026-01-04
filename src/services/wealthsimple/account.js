@@ -379,7 +379,7 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
 
     // Convert to Monarch CSV format with account-specific options
     const csvOptions = {
-      storeTransactionIdInNotes: accountData.storeTransactionIdInNotes ?? false,
+      storeTransactionDetailsInNotes: accountData.storeTransactionDetailsInNotes ?? false,
     };
     const csvData = convertWealthsimpleTransactionsToMonarchCSV(newTransactions, accountName, csvOptions);
 
@@ -494,7 +494,8 @@ export function applyTransactionRetentionEviction(accountId) {
 export function getDefaultAccountSettings() {
   return {
     syncEnabled: true,
-    storeTransactionIdInNotes: false, // Default: don't store transaction ID in notes
+    storeTransactionDetailsInNotes: false, // Default: don't store transaction details in notes
+    stripStoreNumbers: true, // Default: strip store numbers from merchant names
     transactionRetentionDays: TRANSACTION_RETENTION_DEFAULTS.DAYS,
     transactionRetentionCount: TRANSACTION_RETENTION_DEFAULTS.COUNT,
   };

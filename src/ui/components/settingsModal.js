@@ -1191,9 +1191,10 @@ function formatLastUpdateDate(dateValue) {
  * Creates a styled toggle switch component (AirBnB/iOS style)
  * @param {boolean} isEnabled - Initial state (true = enabled/on, false = disabled/off)
  * @param {Function} onChange - Callback when toggle changes
+ * @param {boolean} showLabel - Whether to show the Enabled/Disabled label (default: true)
  * @returns {HTMLElement} Toggle switch element
  */
-function createToggleSwitch(isEnabled, onChange) {
+function createToggleSwitch(isEnabled, onChange, showLabel = true) {
   const container = document.createElement('label');
   container.style.cssText = `
     display: inline-flex;
@@ -1203,9 +1204,12 @@ function createToggleSwitch(isEnabled, onChange) {
     user-select: none;
   `;
 
-  const label = document.createElement('span');
-  label.textContent = 'Enabled';
-  label.style.cssText = 'font-size: 13px; color: #666;';
+  let label = null;
+  if (showLabel) {
+    label = document.createElement('span');
+    label.textContent = isEnabled ? 'Enabled' : 'Disabled';
+    label.style.cssText = 'font-size: 13px; color: #666;';
+  }
 
   const switchContainer = document.createElement('div');
   switchContainer.style.cssText = `
@@ -1239,11 +1243,17 @@ function createToggleSwitch(isEnabled, onChange) {
     const newState = e.target.checked;
     switchContainer.style.backgroundColor = newState ? '#2196F3' : '#ccc';
     switchSlider.style.left = newState ? '22px' : '2px';
+    // Update label text if it exists
+    if (label) {
+      label.textContent = newState ? 'Enabled' : 'Disabled';
+    }
     onChange(newState);
   });
 
   switchContainer.appendChild(switchSlider);
-  container.appendChild(label);
+  if (label) {
+    container.appendChild(label);
+  }
   container.appendChild(switchContainer);
   container.appendChild(checkbox);
 
@@ -2336,39 +2346,181 @@ function createWealthsimpleAccountCards(accounts, onRefresh) {
     settingsTitle.style.cssText = 'margin: 0 0 10px 0; font-size: 14px; color: #333;';
     settingsSection.appendChild(settingsTitle);
 
-    // Store transaction ID in notes toggle
-    const transactionIdSetting = document.createElement('div');
-    transactionIdSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: white; border-radius: 6px; margin-bottom: 8px;';
+    // Store transaction details in notes toggle
+    const transactionDetailsSetting = document.createElement('div');
+    transactionDetailsSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: white; border-radius: 6px; margin-bottom: 8px;';
 
-    const transactionIdLabel = document.createElement('div');
-    transactionIdLabel.innerHTML = `
-      <div style="font-weight: 500; font-size: 13px;">Store transaction ID in notes</div>
-      <div style="font-size: 11px; color: #666;">When enabled, transaction IDs will be included in the Notes field for Monarch</div>
+    const transactionDetailsLabel = document.createElement('div');
+    transactionDetailsLabel.innerHTML = `
+      <div style="font-weight: 500; font-size: 13px;">Store transaction details in notes</div>
+      <div style="font-size: 11px; color: #666;">When enabled, subType and transaction ID will be included in the Notes field</div>
     `;
 
-    const transactionIdToggle = createToggleSwitch(
-      accountEntry.storeTransactionIdInNotes ?? false,
+    const transactionDetailsToggle = createToggleSwitch(
+      accountEntry.storeTransactionDetailsInNotes ?? false,
       (isEnabled) => {
         const { updateAccountInList } = require('../../services/wealthsimple/account');
-        const success = updateAccountInList(wsAccount.id, { storeTransactionIdInNotes: isEnabled });
+        const success = updateAccountInList(wsAccount.id, { storeTransactionDetailsInNotes: isEnabled });
         if (success) {
-          toast.show(`Transaction ID in notes ${isEnabled ? 'enabled' : 'disabled'}`, 'info');
+          toast.show(`Transaction details in notes ${isEnabled ? 'enabled' : 'disabled'}`, 'info');
         } else {
           toast.show('Failed to update setting', 'error');
           setTimeout(onRefresh, 100);
         }
       },
+      false, // Don't show Enabled/Disabled label
     );
 
-    transactionIdSetting.appendChild(transactionIdLabel);
-    transactionIdSetting.appendChild(transactionIdToggle);
+    transactionDetailsSetting.appendChild(transactionDetailsLabel);
+    transactionDetailsSetting.appendChild(transactionDetailsToggle);
 
-    // Stop propagation on this toggle too
-    transactionIdSetting.addEventListener('click', (e) => {
+    transactionDetailsSetting.addEventListener('click', (e) => {
       e.stopPropagation();
     });
 
-    settingsSection.appendChild(transactionIdSetting);
+    settingsSection.appendChild(transactionDetailsSetting);
+
+    // Strip store numbers toggle
+    const stripStoreNumbersSetting = document.createElement('div');
+    stripStoreNumbersSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: white; border-radius: 6px; margin-bottom: 8px;';
+
+    const stripStoreNumbersLabel = document.createElement('div');
+    stripStoreNumbersLabel.innerHTML = `
+      <div style="font-weight: 500; font-size: 13px;">Strip store numbers from merchants</div>
+      <div style="font-size: 11px; color: #666;">Remove store numbers from merchant names (e.g., "WALMART #1234" → "WALMART")</div>
+    `;
+
+    const stripStoreNumbersToggle = createToggleSwitch(
+      accountEntry.stripStoreNumbers ?? true, // Default true
+      (isEnabled) => {
+        const { updateAccountInList } = require('../../services/wealthsimple/account');
+        const success = updateAccountInList(wsAccount.id, { stripStoreNumbers: isEnabled });
+        if (success) {
+          toast.show(`Store number stripping ${isEnabled ? 'enabled' : 'disabled'}`, 'info');
+        } else {
+          toast.show('Failed to update setting', 'error');
+          setTimeout(onRefresh, 100);
+        }
+      },
+      false, // Don't show Enabled/Disabled label
+    );
+
+    stripStoreNumbersSetting.appendChild(stripStoreNumbersLabel);
+    stripStoreNumbersSetting.appendChild(stripStoreNumbersToggle);
+
+    stripStoreNumbersSetting.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+
+    settingsSection.appendChild(stripStoreNumbersSetting);
+
+    // Transaction retention settings (only for credit card accounts)
+    if (wsAccount.type && wsAccount.type.includes('CREDIT')) {
+      // Transaction Retention Days
+      const retentionDaysSetting = document.createElement('div');
+      retentionDaysSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: white; border-radius: 6px; margin-bottom: 8px;';
+
+      const retentionDaysLabel = document.createElement('div');
+      retentionDaysLabel.innerHTML = `
+        <div style="font-weight: 500; font-size: 13px;">Transaction retention days</div>
+        <div style="font-size: 11px; color: #666;">Number of days to keep transaction IDs (0 = unlimited)</div>
+      `;
+
+      const retentionDaysInputContainer = document.createElement('div');
+      retentionDaysInputContainer.style.cssText = 'display: flex; align-items: center; gap: 4px;';
+
+      const retentionDaysInput = document.createElement('input');
+      retentionDaysInput.type = 'number';
+      retentionDaysInput.min = '0';
+      retentionDaysInput.max = '3650';
+      retentionDaysInput.value = accountEntry.transactionRetentionDays ?? 365;
+      retentionDaysInput.style.cssText = 'width: 70px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px;';
+
+      retentionDaysInput.addEventListener('change', () => {
+        const value = parseInt(retentionDaysInput.value, 10);
+        if (Number.isNaN(value) || value < 0) {
+          retentionDaysInput.value = accountEntry.transactionRetentionDays ?? 365;
+          toast.show('Please enter a valid number (0 or greater)', 'error');
+          return;
+        }
+        const { updateAccountInList } = require('../../services/wealthsimple/account');
+        const success = updateAccountInList(wsAccount.id, { transactionRetentionDays: value });
+        if (success) {
+          toast.show(`Transaction retention days set to ${value === 0 ? 'unlimited' : value}`, 'info');
+        } else {
+          toast.show('Failed to update setting', 'error');
+        }
+      });
+
+      const daysLabel = document.createElement('span');
+      daysLabel.textContent = 'days';
+      daysLabel.style.cssText = 'font-size: 12px; color: #666;';
+
+      retentionDaysInputContainer.appendChild(retentionDaysInput);
+      retentionDaysInputContainer.appendChild(daysLabel);
+
+      retentionDaysSetting.appendChild(retentionDaysLabel);
+      retentionDaysSetting.appendChild(retentionDaysInputContainer);
+
+      retentionDaysSetting.addEventListener('click', (e) => {
+        e.stopPropagation();
+      });
+
+      settingsSection.appendChild(retentionDaysSetting);
+
+      // Transaction Retention Count
+      const retentionCountSetting = document.createElement('div');
+      retentionCountSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: white; border-radius: 6px; margin-bottom: 8px;';
+
+      const retentionCountLabel = document.createElement('div');
+      retentionCountLabel.innerHTML = `
+        <div style="font-weight: 500; font-size: 13px;">Transaction retention count</div>
+        <div style="font-size: 11px; color: #666;">Maximum number of transaction IDs to keep (0 = unlimited)</div>
+      `;
+
+      const retentionCountInputContainer = document.createElement('div');
+      retentionCountInputContainer.style.cssText = 'display: flex; align-items: center; gap: 4px;';
+
+      const retentionCountInput = document.createElement('input');
+      retentionCountInput.type = 'number';
+      retentionCountInput.min = '0';
+      retentionCountInput.max = '100000';
+      retentionCountInput.value = accountEntry.transactionRetentionCount ?? 10000;
+      retentionCountInput.style.cssText = 'width: 70px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px;';
+
+      retentionCountInput.addEventListener('change', () => {
+        const value = parseInt(retentionCountInput.value, 10);
+        if (Number.isNaN(value) || value < 0) {
+          retentionCountInput.value = accountEntry.transactionRetentionCount ?? 10000;
+          toast.show('Please enter a valid number (0 or greater)', 'error');
+          return;
+        }
+        const { updateAccountInList } = require('../../services/wealthsimple/account');
+        const success = updateAccountInList(wsAccount.id, { transactionRetentionCount: value });
+        if (success) {
+          toast.show(`Transaction retention count set to ${value === 0 ? 'unlimited' : value}`, 'info');
+        } else {
+          toast.show('Failed to update setting', 'error');
+        }
+      });
+
+      const countLabel = document.createElement('span');
+      countLabel.textContent = 'IDs';
+      countLabel.style.cssText = 'font-size: 12px; color: #666;';
+
+      retentionCountInputContainer.appendChild(retentionCountInput);
+      retentionCountInputContainer.appendChild(countLabel);
+
+      retentionCountSetting.appendChild(retentionCountLabel);
+      retentionCountSetting.appendChild(retentionCountInputContainer);
+
+      retentionCountSetting.addEventListener('click', (e) => {
+        e.stopPropagation();
+      });
+
+      settingsSection.appendChild(retentionCountSetting);
+    }
+
     expandableContent.appendChild(settingsSection);
 
     // JSON Debug Info Section
