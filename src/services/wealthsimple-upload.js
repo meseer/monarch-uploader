@@ -14,6 +14,7 @@ import {
   markAccountAsSkipped,
   syncAccountListWithAPI,
 } from './wealthsimple/account';
+import { getDefaultDateRange } from './wealthsimple/balance';
 
 /**
  * Upload a single Wealthsimple account to Monarch
@@ -130,9 +131,6 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
     }
 
     // Process all non-skipped accounts
-    const toDate = new Date().toISOString().split('T')[0];
-    const fromDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-
     let successCount = 0;
     let failureCount = 0;
     let skippedDuringSync = 0;
@@ -150,6 +148,10 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
         balanceUnavailableCount += 1;
         continue;
       }
+
+      // Get date range for this account (respects account creation date and last sync)
+      const { fromDate, toDate } = getDefaultDateRange(consolidatedAccount);
+      debugLog(`Using date range for ${account.nickname}: ${fromDate} to ${toDate}`);
 
       const result = await uploadWealthsimpleAccountToMonarch(consolidatedAccount, fromDate, toDate, currentBalance);
 

@@ -1,0 +1,398 @@
+/**
+ * Wealthsimple Balance Service
+ * Handles fetching, processing, and uploading balance history data
+ */
+
+import { debugLog, formatDate, parseLocalDate } from '../../core/utils';
+import { STORAGE } from '../../core/config';
+import stateManager from '../../core/state';
+import wealthsimpleApi from '../../api/wealthsimple';
+import monarchApi from '../../api/monarch';
+import toast from '../../ui/toast';
+import { updateAccountInList } from './account';
+
+/**
+ * Custom balance error class
+ */
+export class BalanceError extends Error {
+  constructor(message, accountId) {
+    super(message);
+    this.name = 'BalanceError';
+    this.accountId = accountId;
+  }
+}
+
+/**
+ * Get default lookback days from settings
+ * @returns {number} Number of days to look back
+ */
+function getLookbackDays() {
+  return GM_getValue(STORAGE.WEALTHSIMPLE_LOOKBACK_DAYS, 2);
+}
+
+/**
+ * Extract YYYY-MM-DD date from ISO timestamp or date string
+ * @param {string} dateString - ISO timestamp or YYYY-MM-DD string
+ * @returns {string} YYYY-MM-DD formatted date
+ */
+function extractDateFromISO(dateString) {
+  if (!dateString) return null;
+
+  // If already in YYYY-MM-DD format, return as-is
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+    return dateString;
+  }
+
+  // Extract date part from ISO timestamp (e.g., "2025-02-18T21:16:55.685561Z" -> "2025-02-18")
+  const match = dateString.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : null;
+}
+
+/**
+ * Get the appropriate date range for balance history
+ * @param {Object} accountData - Consolidated account data
+ * @returns {Object} Object with fromDate and toDate in YYYY-MM-DD format
+ */
+export function getDefaultDateRange(accountData) {
+  const today = new Date();
+  const toDate = formatDate(today);
+
+  const accountCreatedAt = accountData.wealthsimpleAccount?.createdAt;
+  const lastSyncDate = accountData.lastSyncDate;
+
+  // Determine start date
+  let fromDate;
+
+  if (lastSyncDate) {
+    // Subsequent sync: use last sync date minus lookback days
+    const lookbackDays = getLookbackDays();
+    const startDate = parseLocalDate(lastSyncDate);
+    startDate.setDate(startDate.getDate() - lookbackDays);
+    fromDate = formatDate(startDate);
+
+    // Ensure start date is not before account creation
+    if (accountCreatedAt) {
+      const createdDateStr = extractDateFromISO(accountCreatedAt);
+      if (createdDateStr) {
+        const createdDate = parseLocalDate(createdDateStr);
+        const fromDateObj = parseLocalDate(fromDate);
+        if (fromDateObj < createdDate) {
+          fromDate = createdDateStr;
+          debugLog(`Adjusted start date to account creation date: ${fromDate}`);
+        }
+      }
+    }
+  } else {
+    // First sync: use account creation date to get complete history
+    if (accountCreatedAt) {
+      const createdDateStr = extractDateFromISO(accountCreatedAt);
+      if (createdDateStr) {
+        fromDate = createdDateStr;
+        debugLog(`First sync: using account creation date ${fromDate} (extracted from ${accountCreatedAt})`);
+      } else {
+        // Fallback if date extraction fails
+        const oneYearAgo = new Date(today);
+        oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+        fromDate = formatDate(oneYearAgo);
+        debugLog(`Could not extract date from createdAt, defaulting to 1 year ago: ${fromDate}`);
+      }
+    } else {
+      // Fallback if createdAt not available: use 1 year ago
+      const oneYearAgo = new Date(today);
+      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+      fromDate = formatDate(oneYearAgo);
+      debugLog(`Account creation date not available, defaulting to 1 year ago: ${fromDate}`);
+    }
+  }
+
+  return { fromDate, toDate };
+}
+
+/**
+ * Merge balance history arrays, with newer data taking precedence
+ * @param {Array} olderData - Array of balance history from older period (weekly data)
+ * @param {Array} newerData - Array of balance history from recent period (daily data)
+ * @returns {Array} Merged and sorted balance history
+ */
+function mergeBalanceData(olderData, newerData) {
+  debugLog(`Merging balance data: ${olderData.length} older records + ${newerData.length} newer records`);
+
+  // Use Map for O(1) lookup and automatic deduplication
+  const balanceMap = new Map();
+
+  // Add older data first (weekly granularity)
+  olderData.forEach((item) => {
+    balanceMap.set(item.date, item);
+  });
+
+  // Add newer data (daily granularity) - overwrites any overlapping dates
+  newerData.forEach((item) => {
+    balanceMap.set(item.date, item);
+  });
+
+  // Convert back to sorted array
+  const merged = Array.from(balanceMap.values())
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  debugLog(`Merged result: ${merged.length} total balance records`);
+  return merged;
+}
+
+/**
+ * Fetch balance history from Wealthsimple
+ * Uses two-step strategy for accounts older than 1 year:
+ * 1. Fetch all history (returns weekly data for periods > 1 year ago)
+ * 2. Fetch recent year (returns daily data)
+ * 3. Merge with daily data taking precedence
+ *
+ * @param {string} accountId - Account ID to fetch balance for
+ * @param {string} currency - Currency code (e.g., 'CAD')
+ * @param {string} fromDate - Start date in YYYY-MM-DD format
+ * @param {string} toDate - End date in YYYY-MM-DD format
+ * @returns {Promise<Array>} Array of balance history objects
+ */
+export async function fetchBalanceHistory(accountId, currency, fromDate, toDate) {
+  try {
+    debugLog(`Fetching balance history for account ${accountId} from ${fromDate} to ${toDate}`);
+
+    // Validate inputs
+    if (!accountId) {
+      throw new BalanceError('Account ID is required', accountId);
+    }
+
+    if (!currency) {
+      throw new BalanceError('Currency is required', accountId);
+    }
+
+    if (!fromDate || !toDate) {
+      throw new BalanceError('Invalid date range provided', accountId);
+    }
+
+    // Calculate date range span in days
+    const fromDateObj = parseLocalDate(fromDate);
+    const toDateObj = parseLocalDate(toDate);
+    const daysDifference = Math.floor((toDateObj - fromDateObj) / (1000 * 60 * 60 * 24));
+
+    debugLog(`Date range span: ${daysDifference} days`);
+
+    // If range is > 1 year, use two-step fetch strategy
+    if (daysDifference > 365) {
+      debugLog('Range > 1 year detected, using two-step fetch strategy');
+
+      // Calculate boundary date (1 year ago from toDate)
+      const oneYearAgo = new Date(toDateObj);
+      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+      const oneYearAgoDate = formatDate(oneYearAgo);
+
+      debugLog(`Step 1: Fetching older data (weekly) from ${fromDate} to ${oneYearAgoDate}`);
+      const olderData = await wealthsimpleApi.fetchBalanceHistory(
+        [accountId],
+        currency,
+        fromDate,
+        oneYearAgoDate,
+      );
+      debugLog(`Received ${olderData.length} older balance records (weekly granularity)`);
+
+      debugLog(`Step 2: Fetching recent data (daily) from ${oneYearAgoDate} to ${toDate}`);
+      const recentData = await wealthsimpleApi.fetchBalanceHistory(
+        [accountId],
+        currency,
+        oneYearAgoDate,
+        toDate,
+      );
+      debugLog(`Received ${recentData.length} recent balance records (daily granularity)`);
+
+      // Merge the two datasets
+      const mergedData = mergeBalanceData(olderData, recentData);
+
+      if (!mergedData || mergedData.length === 0) {
+        debugLog('No balance history data after merge');
+        return [];
+      }
+
+      debugLog(`Final merged balance history: ${mergedData.length} records`);
+      return mergedData;
+    }
+
+    // For ranges <= 1 year, use single fetch (daily data)
+    debugLog('Range <= 1 year, using single fetch (daily data)');
+    const balanceHistory = await wealthsimpleApi.fetchBalanceHistory(
+      [accountId],
+      currency,
+      fromDate,
+      toDate,
+    );
+
+    if (!balanceHistory || balanceHistory.length === 0) {
+      debugLog('No balance history data returned from API');
+      return [];
+    }
+
+    debugLog(`Received ${balanceHistory.length} balance history records`);
+    return balanceHistory;
+  } catch (error) {
+    debugLog(`Error fetching balance history for account ${accountId}:`, error);
+    if (error instanceof BalanceError) {
+      throw error;
+    }
+    throw new BalanceError(`Failed to fetch balance history: ${error.message}`, accountId);
+  }
+}
+
+/**
+ * Process balance data into CSV format for Monarch
+ * @param {Array} balanceHistory - Array of balance history objects
+ * @param {string} accountName - Account name for CSV output
+ * @returns {string} CSV formatted data
+ */
+export function processBalanceData(balanceHistory, accountName) {
+  try {
+    if (!balanceHistory || !Array.isArray(balanceHistory)) {
+      throw new Error('Invalid balance history data provided');
+    }
+
+    if (!accountName) {
+      throw new Error('Account name is required');
+    }
+
+    // Initialize CSV with header
+    let csvContent = '"Date","Total Equity","Account Name"\n';
+
+    // Add historical data
+    balanceHistory.forEach((item) => {
+      const date = item.date || '';
+      // Use explicit check for undefined to handle zero amounts correctly
+      const amount = item.amount !== undefined ? item.amount : '';
+      csvContent += `"${date}","${amount}","${accountName}"\n`;
+    });
+
+    return csvContent;
+  } catch (error) {
+    debugLog('Error processing balance data:', error);
+    throw new Error(`Failed to process balance data: ${error.message}`);
+  }
+}
+
+/**
+ * Upload balance history to Monarch
+ * @param {string} accountId - Wealthsimple account ID
+ * @param {string} monarchAccountId - Monarch account ID
+ * @param {string} csvData - CSV data to upload
+ * @param {string} fromDate - Start date in YYYY-MM-DD format
+ * @param {string} toDate - End date in YYYY-MM-DD format
+ * @returns {Promise<boolean>} Success status
+ */
+export async function uploadBalanceToMonarch(accountId, monarchAccountId, csvData, fromDate, toDate) {
+  try {
+    debugLog(`Uploading balance for account ${accountId} from ${fromDate} to ${toDate}`);
+
+    if (!csvData) {
+      throw new BalanceError('No CSV data to upload', accountId);
+    }
+
+    // Get account name from state
+    const accountName = stateManager.getState().currentAccount?.nickname || 'Unknown Account';
+
+    // Upload using Monarch API
+    const success = await monarchApi.uploadBalance(monarchAccountId, csvData, fromDate, toDate);
+
+    if (success) {
+      debugLog(`Successfully uploaded ${accountName} balance history to Monarch`);
+
+      // Update lastSyncDate in consolidated account structure
+      updateAccountInList(accountId, { lastSyncDate: toDate });
+    }
+
+    return success;
+  } catch (error) {
+    debugLog(`Error uploading balance for account ${accountId}:`, error);
+    if (error instanceof BalanceError) {
+      throw error;
+    }
+    throw new BalanceError(`Failed to upload balance: ${error.message}`, accountId);
+  }
+}
+
+/**
+ * Complete process to fetch, process and upload balance history for an account
+ * @param {Object} consolidatedAccount - Consolidated account object
+ * @param {string} monarchAccountId - Monarch account ID
+ * @param {string} fromDate - Start date in YYYY-MM-DD format
+ * @param {string} toDate - End date in YYYY-MM-DD format
+ * @returns {Promise<boolean>} Success status
+ */
+export async function processAndUploadBalance(consolidatedAccount, monarchAccountId, fromDate, toDate) {
+  try {
+    const account = consolidatedAccount.wealthsimpleAccount;
+    const accountId = account.id;
+    const wealthsimpleAccountName = account.nickname || accountId;
+
+    // Use Monarch account name for CSV, fallback to Wealthsimple name if Monarch account not mapped
+    const monarchAccountName = consolidatedAccount.monarchAccount?.displayName || wealthsimpleAccountName;
+
+    if (!accountId) {
+      throw new BalanceError('Account information missing', accountId);
+    }
+
+    // Set current account in state (using Wealthsimple name for logging)
+    stateManager.setAccount(accountId, wealthsimpleAccountName);
+
+    // Step 1: Fetch balance history
+    debugLog(`Fetching balance history for ${wealthsimpleAccountName} (Monarch: ${monarchAccountName})...`);
+    const balanceHistory = await fetchBalanceHistory(
+      accountId,
+      account.currency,
+      fromDate,
+      toDate,
+    );
+
+    if (!balanceHistory || balanceHistory.length === 0) {
+      debugLog('No balance history data available');
+      toast.show(`No balance history data available for ${wealthsimpleAccountName}`, 'warning');
+      return false;
+    }
+
+    // Step 2: Process the data - use Monarch account name in CSV
+    const csvData = processBalanceData(balanceHistory, monarchAccountName);
+
+    // Log the CSV content for debugging
+    debugLog(`Generated CSV for ${monarchAccountName} (${csvData.split('\n').length - 1} lines including header):`);
+    debugLog(csvData);
+
+    // Step 3: Upload to Monarch
+    debugLog(`Uploading ${monarchAccountName} balance history to Monarch...`);
+    const success = await uploadBalanceToMonarch(
+      accountId,
+      monarchAccountId,
+      csvData,
+      fromDate,
+      toDate,
+    );
+
+    // Step 4: Show result notification
+    if (success) {
+      toast.show(`Successfully uploaded ${wealthsimpleAccountName} balance history to Monarch`, 'info');
+      return true;
+    }
+
+    toast.show(`Failed to upload ${wealthsimpleAccountName} balance history to Monarch`, 'error');
+    return false;
+  } catch (error) {
+    const account = consolidatedAccount.wealthsimpleAccount;
+    const errorMessage = error instanceof BalanceError
+      ? error.message
+      : `Error processing account: ${error.message}`;
+    toast.show(errorMessage, 'error');
+    debugLog(`Error in processAndUploadBalance for ${account.id}:`, error);
+    return false;
+  }
+}
+
+export default {
+  fetchBalanceHistory,
+  processBalanceData,
+  getDefaultDateRange,
+  uploadBalanceToMonarch,
+  processAndUploadBalance,
+  BalanceError,
+};

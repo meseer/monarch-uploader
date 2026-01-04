@@ -112,12 +112,15 @@ export async function showAccountCreationDialog(options = {}) {
     );
     form.appendChild(subtypeGroup.container);
 
-    // Initial Balance field
+    // Initial Balance field (round to 2 decimal places)
+    const roundedBalance = typeof defaultBalance === 'number'
+      ? Math.round(defaultBalance * 100) / 100
+      : defaultBalance;
     const balanceGroup = createFormGroup(
       'account-balance',
       'Initial Balance:',
       'number',
-      defaultBalance,
+      roundedBalance,
       '0.00',
       true,
     );

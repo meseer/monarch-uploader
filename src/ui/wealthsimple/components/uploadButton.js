@@ -9,6 +9,7 @@ import wealthsimpleApi from '../../../api/wealthsimple';
 import toast from '../../toast';
 import { uploadAllWealthsimpleAccountsToMonarch, uploadWealthsimpleAccountToMonarch } from '../../../services/wealthsimple-upload';
 import { ensureMonarchAuthentication } from '../../components/monarchLoginLink';
+import { syncAccountListWithAPI } from '../../../services/wealthsimple/account';
 
 /**
  * Determine button label based on current page
@@ -145,18 +146,28 @@ export function createWealthsimpleUploadButton() {
       debugLog(`Starting Wealthsimple sync... (Account detail page: ${isAccountDetailPage})`);
 
       if (isAccountDetailPage) {
-        // Sync single account
-        const accounts = await wealthsimpleApi.fetchAccounts();
-        const account = accounts.find((acc) => acc.id === accountId);
+        // Sync single account - get consolidated account list
+        const consolidatedAccounts = await syncAccountListWithAPI();
+        const consolidatedAccount = consolidatedAccounts.find(
+          (acc) => acc.wealthsimpleAccount.id === accountId,
+        );
 
-        if (!account) {
+        if (!consolidatedAccount) {
           throw new Error('Account not found');
         }
+
+        // Fetch balance for this specific account
+        const balanceResult = await wealthsimpleApi.fetchAccountBalances([accountId]);
+        if (!balanceResult.success) {
+          throw new Error('Failed to fetch account balance');
+        }
+
+        const currentBalance = balanceResult.balances.get(accountId);
 
         const toDate = new Date().toISOString().split('T')[0];
         const fromDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-        await uploadWealthsimpleAccountToMonarch(account, fromDate, toDate);
+        await uploadWealthsimpleAccountToMonarch(consolidatedAccount, fromDate, toDate, currentBalance);
       } else {
         // Sync all accounts
         await uploadAllWealthsimpleAccountsToMonarch();

@@ -10,6 +10,7 @@ import { checkQuestradeAuth } from '../../services/questrade/auth';
 import { isAccountSkipped, markAccountAsSkipped, getWealthsimpleAccounts } from '../../services/wealthsimple/account';
 import toast from '../toast';
 import { createMonarchLoginLink } from './monarchLoginLink';
+import { getMonarchAccountTypeMapping } from '../../mappers/wealthsimple-account-types';
 
 /**
  * Gets institution logo from stored account mappings
@@ -717,6 +718,38 @@ function renderRogersBankTab(container) {
 }
 
 /**
+ * Sort Wealthsimple accounts by sync status and account type
+ * Priority: Enabled first, then by type (credit > cash > investment)
+ * @param {Array} accounts - Array of consolidated account objects
+ * @returns {Array} Sorted array of accounts
+ */
+function sortWealthsimpleAccounts(accounts) {
+  return accounts.sort((a, b) => {
+    // First: Sort by enabled status (enabled first)
+    if (a.syncEnabled !== b.syncEnabled) {
+      return b.syncEnabled - a.syncEnabled; // true before false
+    }
+
+    // Second: Sort by account type priority
+    const getTypePriority = (account) => {
+      const accountType = account.wealthsimpleAccount.type;
+      const mapping = getMonarchAccountTypeMapping(accountType);
+
+      if (!mapping) return 999; // Unknown types last
+
+      switch (mapping.type) {
+      case 'credit': return 1; // Credit cards
+      case 'depository': return 2; // Cash accounts
+      case 'brokerage': return 3; // Investment accounts
+      default: return 4; // Other types
+      }
+    };
+
+    return getTypePriority(a) - getTypePriority(b);
+  });
+}
+
+/**
  * Renders the Wealthsimple settings tab
  * @param {HTMLElement} container - Container element
  */
@@ -737,7 +770,10 @@ function renderWealthsimpleTab(container) {
     emptyMessage.style.cssText = 'color: #666; font-style: italic; margin: 10px 0;';
     mappingsSection.appendChild(emptyMessage);
   } else {
-    const accountCards = createWealthsimpleAccountCards(accounts, () => {
+    // Sort accounts before rendering
+    const sortedAccounts = sortWealthsimpleAccounts(accounts);
+
+    const accountCards = createWealthsimpleAccountCards(sortedAccounts, () => {
       // Refresh callback
       renderTabContent(container, 'wealthsimple');
     });
@@ -1180,10 +1216,9 @@ function createToggleSwitch(isEnabled, onChange) {
 
   // Make the container clickable
   container.addEventListener('click', (e) => {
-    if (e.target !== checkbox) {
-      checkbox.checked = !checkbox.checked;
-      checkbox.dispatchEvent(new Event('change'));
-    }
+    e.preventDefault(); // Prevent default label behavior to avoid double-toggle
+    checkbox.checked = !checkbox.checked;
+    checkbox.dispatchEvent(new Event('change'));
   });
 
   return container;

@@ -293,12 +293,22 @@ export async function uploadBalanceToMonarch(monarchAccountId, csvData, fromDate
     }));
 
     if (previewResponse.status !== 200) {
-      throw new Error(`Monarch upload failed: ${previewResponse.statusText}`);
+      debugLog('Monarch upload failed with status:', previewResponse.status);
+      debugLog('Response:', previewResponse.responseText);
+      throw new Error(`Monarch upload failed: ${previewResponse.status} ${previewResponse.statusText}`);
     }
 
     const response = JSON.parse(previewResponse.responseText);
+    debugLog('Monarch upload response:', response);
+
     if (!response.session_key) {
+      debugLog('No session_key in response. Full response:', response);
       throw new Error('Upload failed: Monarch did not return a session key.');
+    }
+
+    // Log preview data if available
+    if (response.previews && response.previews.length > 0) {
+      debugLog(`Upload preview: ${response.previews[0].count} days of data will be uploaded`);
     }
 
     // Finalize the upload

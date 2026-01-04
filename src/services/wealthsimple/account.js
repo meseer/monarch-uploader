@@ -11,6 +11,10 @@ import wealthsimpleApi from '../../api/wealthsimple';
 import toast from '../../ui/toast';
 import { showMonarchAccountSelectorWithCreate } from '../../ui/components/accountSelectorWithCreate';
 import { getMonarchAccountTypeMapping } from '../../mappers/wealthsimple-account-types';
+import {
+  getDefaultDateRange,
+  processAndUploadBalance,
+} from './balance';
 
 /**
  * Resolve Monarch account mapping for a Wealthsimple account
@@ -138,57 +142,47 @@ export function clearAccountMapping(wealthsimpleAccountId) {
 }
 
 /**
- * Upload Wealthsimple account balance to Monarch
+ * Upload Wealthsimple account balance history to Monarch
  * @param {string} wealthsimpleAccountId - Wealthsimple account ID
  * @param {string} monarchAccountId - Monarch account ID
- * @param {string} fromDate - Start date (YYYY-MM-DD) - not used, kept for API compatibility
- * @param {string} toDate - End date (YYYY-MM-DD) - used as the date for current balance
- * @param {Object} currentBalance - Current balance object {amount, currency}
+ * @param {string} fromDate - Start date (YYYY-MM-DD)
+ * @param {string} toDate - End date (YYYY-MM-DD)
+ * @param {Object} _currentBalance - Current balance object {amount, currency} (unused, kept for compatibility)
  * @returns {Promise<boolean>} Success status
  */
-export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAccountId, fromDate, toDate, currentBalance = null) {
+export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAccountId, fromDate, toDate, _currentBalance = null) {
   try {
-    debugLog('Starting Wealthsimple balance upload', {
+    debugLog('Starting Wealthsimple balance history upload', {
       wealthsimpleAccountId,
       monarchAccountId,
+      fromDate,
       toDate,
-      currentBalance,
     });
 
-    // Get current balance from Wealthsimple API if not provided
-    let balance = currentBalance;
-    if (!balance) {
-      debugLog('Current balance not provided, fetching from API');
-      const balanceData = await wealthsimpleApi.fetchAccountBalance(wealthsimpleAccountId);
-      balance = balanceData;
+    // Get consolidated account data
+    const accountData = getAccountData(wealthsimpleAccountId);
+    if (!accountData) {
+      throw new Error('Account data not found');
     }
 
-    // Validate balance data
-    if (!balance || balance.amount === null || balance.amount === undefined) {
-      debugLog('No balance data available for account', wealthsimpleAccountId);
-      toast.show('Balance data not available for this account', 'warning');
-      return false;
+    // If dates not provided, calculate them
+    let actualFromDate = fromDate;
+    let actualToDate = toDate;
+    if (!fromDate || !toDate) {
+      const dateRange = getDefaultDateRange(accountData);
+      actualFromDate = dateRange.fromDate;
+      actualToDate = dateRange.toDate;
     }
 
-    // Get account name from state
-    const accountName = stateManager.getState().currentAccount.nickname || 'Unknown Account';
+    // Use the balance service to process and upload
+    const success = await processAndUploadBalance(
+      accountData,
+      monarchAccountId,
+      actualFromDate,
+      actualToDate,
+    );
 
-    // Format current balance as single-day CSV
-    // CSV format: "Date","Total Equity","Account Name"
-    const csvData = `"Date","Total Equity","Account Name"\n"${toDate}","${balance.amount}","${accountName}"`;
-
-    debugLog('Uploading balance CSV to Monarch', { monarchAccountId, toDate, amount: balance.amount });
-
-    // Upload to Monarch
-    const success = await monarchApi.uploadBalance(monarchAccountId, csvData, toDate, toDate);
-
-    if (success) {
-      debugLog(`Successfully uploaded balance for ${accountName} (${wealthsimpleAccountId})`);
-      return true;
-    }
-
-    debugLog(`Failed to upload balance for ${accountName} (${wealthsimpleAccountId})`);
-    return false;
+    return success;
   } catch (error) {
     debugLog('Error uploading Wealthsimple balance:', error);
     toast.show(`Balance upload failed: ${error.message}`, 'error');

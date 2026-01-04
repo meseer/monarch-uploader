@@ -434,6 +434,7 @@ export async function fetchAccounts() {
           nickname
           currency
           branch
+          createdAt
           __typename
         }
         __typename
@@ -472,6 +473,7 @@ export async function fetchAccounts() {
           currency: account.currency,
           branch: account.branch,
           rawType: account.type,
+          createdAt: account.createdAt,
         };
       });
 
@@ -634,6 +636,162 @@ export async function fetchTransactions(accountId, _options = {}) {
   }
 }
 
+/**
+ * Fetch balance history for an account
+ * @param {Array<string>} accountIds - Array of account IDs (typically single account)
+ * @param {string} currency - Currency code (e.g., 'CAD')
+ * @param {string} startDate - Start date in YYYY-MM-DD format
+ * @param {string} endDate - End date in YYYY-MM-DD format (optional, defaults to today)
+ * @returns {Promise<Array>} Array of balance history objects with {date, amount}
+ */
+export async function fetchBalanceHistory(accountIds, currency, startDate, endDate = null) {
+  try {
+    if (!accountIds || accountIds.length === 0) {
+      throw new Error('No account IDs provided');
+    }
+
+    if (!currency) {
+      throw new Error('Currency is required');
+    }
+
+    if (!startDate) {
+      throw new Error('Start date is required');
+    }
+
+    debugLog(`Fetching balance history for account(s): ${accountIds.join(', ')} from ${startDate} to ${endDate || 'today'}`);
+
+    const query = `query FetchIdentityHistoricalFinancials($identityId: ID!, $currency: Currency!, $startDate: Date, $endDate: Date, $first: Int, $cursor: String, $accountIds: [ID!], $includeSimpleReturns: Boolean = false) {
+  identity(id: $identityId) {
+    id
+    financials(filter: {accounts: $accountIds}) {
+      historicalDaily(
+        currency: $currency
+        startDate: $startDate
+        endDate: $endDate
+        first: $first
+        after: $cursor
+      ) {
+        edges {
+          node {
+            ...IdentityHistoricalFinancials
+            __typename
+          }
+          __typename
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+          __typename
+        }
+        __typename
+      }
+      __typename
+    }
+    __typename
+  }
+}
+
+fragment IdentityHistoricalFinancials on IdentityHistoricalDailyFinancials {
+  date
+  netLiquidationValueV2 {
+    amount
+    currency
+    __typename
+  }
+  netDepositsV2 {
+    amount
+    currency
+    __typename
+  }
+  simpleReturns(referenceDate: $startDate) @include(if: $includeSimpleReturns) {
+    ...SimpleReturns
+    __typename
+  }
+  __typename
+}
+
+fragment SimpleReturns on SimpleReturns {
+  amount {
+    ...Money
+    __typename
+  }
+  asOf
+  rate
+  referenceDate
+  __typename
+}
+
+fragment Money on Money {
+  amount
+  cents
+  currency
+  __typename
+}`;
+
+    const variables = {
+      includeSimpleReturns: false,
+      accountIds,
+      currency,
+      startDate,
+    };
+
+    if (endDate) {
+      variables.endDate = endDate;
+    }
+
+    const response = await makeGraphQLQuery('FetchIdentityHistoricalFinancials', query, variables);
+
+    if (!response || !response.identity || !response.identity.financials) {
+      debugLog('No financials data in response');
+      return [];
+    }
+
+    const historicalData = response.identity.financials.historicalDaily;
+    if (!historicalData || !historicalData.edges) {
+      debugLog('No historical daily data in response');
+      return [];
+    }
+
+    // Extract balance history
+    const balanceHistory = historicalData.edges.map((edge) => {
+      const node = edge.node;
+      return {
+        date: node.date,
+        amount: parseFloat(node.netLiquidationValueV2?.amount || 0),
+        currency: node.netLiquidationValueV2?.currency || currency,
+      };
+    });
+
+    // Handle pagination if needed
+    if (historicalData.pageInfo?.hasNextPage) {
+      debugLog('Balance history has more pages, fetching next page...');
+      const nextPageVariables = {
+        ...variables,
+        cursor: historicalData.pageInfo.endCursor,
+      };
+
+      const nextPageData = await makeGraphQLQuery('FetchIdentityHistoricalFinancials', query, nextPageVariables);
+      if (nextPageData?.identity?.financials?.historicalDaily?.edges) {
+        const nextPageHistory = nextPageData.identity.financials.historicalDaily.edges.map((edge) => {
+          const node = edge.node;
+          return {
+            date: node.date,
+            amount: parseFloat(node.netLiquidationValueV2?.amount || 0),
+            currency: node.netLiquidationValueV2?.currency || currency,
+          };
+        });
+        balanceHistory.push(...nextPageHistory);
+      }
+    }
+
+    debugLog(`Fetched ${balanceHistory.length} balance history records`);
+    return balanceHistory;
+  } catch (error) {
+    debugLog('Error fetching balance history:', error);
+    throw error;
+  }
+}
+
 export default {
   checkAuth,
   setupTokenMonitoring,
@@ -644,4 +802,5 @@ export default {
   fetchAccountBalance,
   fetchAccountBalances,
   fetchTransactions,
+  fetchBalanceHistory,
 };

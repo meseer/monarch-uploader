@@ -13,6 +13,12 @@ import wealthsimpleApi from '../../src/api/wealthsimple';
 jest.mock('../../src/ui/toast');
 jest.mock('../../src/services/wealthsimple/account');
 jest.mock('../../src/api/wealthsimple');
+jest.mock('../../src/services/wealthsimple/balance', () => ({
+  getDefaultDateRange: jest.fn(() => ({
+    fromDate: '2025-10-05',
+    toDate: '2026-01-03',
+  })),
+}));
 jest.mock('../../src/core/utils', () => ({
   debugLog: jest.fn(),
 }));

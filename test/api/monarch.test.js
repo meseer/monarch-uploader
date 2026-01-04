@@ -388,7 +388,7 @@ describe('Monarch API', () => {
         'date,balance\n2024-01-01,1000',
         '2024-01-01',
         '2024-01-31',
-      )).rejects.toThrow('Monarch upload failed: Server Error');
+      )).rejects.toThrow('Monarch upload failed: 500 Server Error');
     });
 
     test('throws error when not authenticated', async () => {
