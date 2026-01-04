@@ -21,6 +21,10 @@ import {
   checkTokenStatus,
   getToken,
   setAccountLogo,
+  getFilteredAccounts,
+  updateAccount,
+  getCreditLimit,
+  setCreditLimit,
 } from '../../src/api/monarch';
 import authService from '../../src/services/auth';
 import stateManager from '../../src/core/state';
@@ -1364,6 +1368,530 @@ describe('Monarch API', () => {
       await expect(getHoldings(['invalid']))
         .rejects
         .toThrow();
+    });
+  });
+
+  describe('getFilteredAccounts', () => {
+    const mockAccountsData = {
+      accounts: [
+        {
+          id: '225927715198893500',
+          createdAt: '2025-10-29T18:24:19.347081+00:00',
+          displayName: 'Tangerine US$ Savings Account (...1187)',
+          displayBalance: 0.0,
+          displayLastUpdatedAt: '2026-01-04T06:46:53.151486+00:00',
+          dataProvider: 'plaid',
+          icon: 'dollar-sign',
+          logoUrl: 'https://api.monarchmoney.com/cdn-cgi/image/width=128/images/institution/75103676797753434',
+          order: 51,
+          isAsset: true,
+          includeBalanceInNetWorth: true,
+          deactivatedAt: null,
+          manualInvestmentsTrackingMethod: null,
+          isManual: false,
+          syncDisabled: false,
+          type: { display: 'Cash', name: 'depository', __typename: 'AccountType' },
+          credential: { updateRequired: false, syncDisabledAt: null, __typename: 'Credential' },
+          institution: { status: 'DOWN', newConnectionsDisabled: false, __typename: 'Institution' },
+          ownedByUser: null,
+          __typename: 'Account',
+        },
+        {
+          id: '231996536253873225',
+          createdAt: '2026-01-04T18:05:38.118698+00:00',
+          displayName: 'Wealthsimple CC',
+          displayBalance: -0.0,
+          displayLastUpdatedAt: '2026-01-04T18:05:45.363126+00:00',
+          dataProvider: '',
+          icon: 'credit-card',
+          logoUrl: null,
+          order: 34,
+          isAsset: false,
+          includeBalanceInNetWorth: true,
+          deactivatedAt: null,
+          manualInvestmentsTrackingMethod: null,
+          isManual: true,
+          syncDisabled: false,
+          type: { display: 'Credit Cards', name: 'credit', __typename: 'AccountType' },
+          credential: null,
+          institution: null,
+          ownedByUser: null,
+          limit: 17000,
+          __typename: 'Account',
+        },
+      ],
+    };
+
+    test('retrieves all accounts with empty filters', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.operationName).toBe('Web_GetFilteredAccounts');
+        expect(data.variables.filters).toEqual({});
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockAccountsData }),
+        }), 0);
+      });
+
+      const result = await getFilteredAccounts({});
+
+      expect(result).toHaveLength(2);
+      expect(result[0].id).toBe('225927715198893500');
+      expect(result[1].id).toBe('231996536253873225');
+    });
+
+    test('returns empty array when no accounts exist', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: { accounts: [] } }),
+        }), 0);
+      });
+
+      const result = await getFilteredAccounts({});
+
+      expect(result).toEqual([]);
+    });
+
+    test('returns empty array when accounts is null', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: { accounts: null } }),
+        }), 0);
+      });
+
+      const result = await getFilteredAccounts({});
+
+      expect(result).toEqual([]);
+    });
+
+    test('handles authentication errors', async () => {
+      authService.checkMonarchAuth.mockReturnValue({
+        authenticated: false,
+        token: null,
+      });
+
+      await expect(getFilteredAccounts({}))
+        .rejects
+        .toThrow('Monarch token not found.');
+    });
+
+    test('handles network errors', async () => {
+      const mockError = new Error('Network error');
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onerror(mockError), 0);
+      });
+
+      await expect(getFilteredAccounts({}))
+        .rejects
+        .toThrow('Network error');
+    });
+  });
+
+  describe('updateAccount', () => {
+    const mockUpdatedAccount = {
+      id: '231838722038464342',
+      displayName: 'Wealthsimple CC',
+      syncDisabled: false,
+      deactivatedAt: null,
+      isHidden: false,
+      isAsset: false,
+      mask: null,
+      createdAt: '2026-01-03T00:17:14.753804+00:00',
+      updatedAt: '2026-01-03T02:48:42.946842+00:00',
+      displayLastUpdatedAt: '2026-01-03T02:48:42.946842+00:00',
+      currentBalance: 0.0,
+      displayBalance: 0.0,
+      includeInNetWorth: true,
+      hideFromList: false,
+      hideTransactionsFromReports: false,
+      includeBalanceInNetWorth: true,
+      includeInGoalBalance: true,
+      excludeFromDebtPaydown: false,
+      dataProvider: '',
+      dataProviderAccountId: null,
+      isManual: true,
+      transactionsCount: 0,
+      holdingsCount: 0,
+      manualInvestmentsTrackingMethod: null,
+      order: 34,
+      icon: 'credit-card',
+      logoUrl: null,
+      limit: 17000.0,
+      apr: null,
+      minimumPayment: null,
+      plannedPayment: null,
+      interestRate: null,
+      type: { name: 'credit', display: 'Credit Cards', group: 'liability', __typename: 'AccountType' },
+      subtype: { name: 'credit_card', display: 'Credit Card', __typename: 'AccountSubtype' },
+      credential: null,
+      institution: null,
+      ownedByUser: null,
+      connectionStatus: null,
+      __typename: 'Account',
+    };
+
+    test('updates account successfully', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.operationName).toBe('Common_UpdateAccount');
+        expect(data.variables.input.id).toBe('231838722038464342');
+        expect(data.variables.input.limit).toBe(17000);
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              updateAccount: {
+                account: mockUpdatedAccount,
+                errors: null,
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      const result = await updateAccount({
+        id: '231838722038464342',
+        dataProvider: '',
+        name: 'Wealthsimple CC',
+        type: 'credit',
+        subtype: 'credit_card',
+        displayBalance: 0,
+        limit: 17000,
+        includeInNetWorth: true,
+      });
+
+      expect(result).toEqual(mockUpdatedAccount);
+      expect(debugLog).toHaveBeenCalledWith('Updating account:', expect.objectContaining({
+        id: '231838722038464342',
+      }));
+    });
+
+    test('throws error when account ID is missing', async () => {
+      await expect(updateAccount({ name: 'Test' }))
+        .rejects
+        .toThrow('Account ID is required for update');
+    });
+
+    test('throws error when input is null', async () => {
+      await expect(updateAccount(null))
+        .rejects
+        .toThrow('Account ID is required for update');
+    });
+
+    test('throws error when API returns errors', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              updateAccount: {
+                account: null,
+                errors: {
+                  message: 'Invalid account type',
+                  code: 'INVALID_TYPE',
+                },
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      await expect(updateAccount({ id: 'account123', type: 'invalid' }))
+        .rejects
+        .toThrow('Invalid account type');
+    });
+
+    test('throws default error when API errors have no message', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              updateAccount: {
+                account: null,
+                errors: {
+                  code: 'UNKNOWN_ERROR',
+                },
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      await expect(updateAccount({ id: 'account123' }))
+        .rejects
+        .toThrow('Failed to update account');
+    });
+
+    test('handles authentication errors', async () => {
+      authService.checkMonarchAuth.mockReturnValue({
+        authenticated: false,
+        token: null,
+      });
+
+      await expect(updateAccount({ id: 'account123' }))
+        .rejects
+        .toThrow('Monarch token not found.');
+    });
+
+    test('handles network errors', async () => {
+      const mockError = new Error('Network error');
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onerror(mockError), 0);
+      });
+
+      await expect(updateAccount({ id: 'account123' }))
+        .rejects
+        .toThrow('Network error');
+    });
+  });
+
+  describe('getCreditLimit', () => {
+    const mockAccountsData = {
+      accounts: [
+        {
+          id: 'account123',
+          displayName: 'My Credit Card',
+          type: { name: 'credit' },
+          limit: 15000,
+        },
+        {
+          id: 'account456',
+          displayName: 'Savings',
+          type: { name: 'depository' },
+          limit: null,
+        },
+      ],
+    };
+
+    test('returns credit limit for existing account', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockAccountsData }),
+        }), 0);
+      });
+
+      const result = await getCreditLimit('account123');
+
+      expect(result).toBe(15000);
+      expect(debugLog).toHaveBeenCalledWith('Getting credit limit for account: account123');
+    });
+
+    test('returns null when limit is not set', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              accounts: [
+                { id: 'account123', displayName: 'Test', type: { name: 'credit' } },
+              ],
+            },
+          }),
+        }), 0);
+      });
+
+      const result = await getCreditLimit('account123');
+
+      expect(result).toBeNull();
+    });
+
+    test('throws error when account ID is missing', async () => {
+      await expect(getCreditLimit(null))
+        .rejects
+        .toThrow('Account ID is required');
+
+      await expect(getCreditLimit(''))
+        .rejects
+        .toThrow('Account ID is required');
+    });
+
+    test('throws error when account not found', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockAccountsData }),
+        }), 0);
+      });
+
+      await expect(getCreditLimit('nonexistent'))
+        .rejects
+        .toThrow('Account not found: nonexistent');
+    });
+
+    test('handles authentication errors', async () => {
+      authService.checkMonarchAuth.mockReturnValue({
+        authenticated: false,
+        token: null,
+      });
+
+      await expect(getCreditLimit('account123'))
+        .rejects
+        .toThrow('Monarch token not found.');
+    });
+  });
+
+  describe('setCreditLimit', () => {
+    const mockCreditAccount = {
+      id: 'account123',
+      displayName: 'My Credit Card',
+      displayBalance: -500,
+      dataProvider: '',
+      isManual: true,
+      deactivatedAt: null,
+      includeBalanceInNetWorth: true,
+      type: { name: 'credit', display: 'Credit Cards' },
+      ownedByUser: null,
+      limit: 15000,
+    };
+
+    const mockUpdatedAccount = {
+      ...mockCreditAccount,
+      limit: 20000,
+    };
+
+    test('sets new credit limit successfully', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+
+        if (data.operationName === 'Web_GetFilteredAccounts') {
+          // First call - get accounts
+          setTimeout(() => options.onload({
+            status: 200,
+            responseText: JSON.stringify({
+              data: { accounts: [mockCreditAccount] },
+            }),
+          }), 0);
+        } else if (data.operationName === 'Common_UpdateAccount') {
+          // Second call - update account
+          expect(data.variables.input.id).toBe('account123');
+          expect(data.variables.input.limit).toBe(20000);
+          setTimeout(() => options.onload({
+            status: 200,
+            responseText: JSON.stringify({
+              data: {
+                updateAccount: {
+                  account: mockUpdatedAccount,
+                  errors: null,
+                },
+              },
+            }),
+          }), 0);
+        }
+      });
+
+      const result = await setCreditLimit('account123', 20000);
+
+      expect(result.limit).toBe(20000);
+      expect(debugLog).toHaveBeenCalledWith('Setting credit limit for account account123 to 20000');
+    });
+
+    test('throws error when account ID is missing', async () => {
+      await expect(setCreditLimit(null, 20000))
+        .rejects
+        .toThrow('Account ID is required');
+
+      await expect(setCreditLimit('', 20000))
+        .rejects
+        .toThrow('Account ID is required');
+    });
+
+    test('throws error when newLimit is invalid', async () => {
+      await expect(setCreditLimit('account123', undefined))
+        .rejects
+        .toThrow('Valid credit limit value is required');
+
+      await expect(setCreditLimit('account123', null))
+        .rejects
+        .toThrow('Valid credit limit value is required');
+
+      await expect(setCreditLimit('account123', 'not-a-number'))
+        .rejects
+        .toThrow('Valid credit limit value is required');
+    });
+
+    test('throws error when account not found', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: { accounts: [] } }),
+        }), 0);
+      });
+
+      await expect(setCreditLimit('nonexistent', 20000))
+        .rejects
+        .toThrow('Account not found: nonexistent');
+    });
+
+    test('throws error when account is not a credit account', async () => {
+      const depositoryAccount = {
+        id: 'account123',
+        displayName: 'Savings',
+        type: { name: 'depository', display: 'Cash' },
+      };
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: { accounts: [depositoryAccount] },
+          }),
+        }), 0);
+      });
+
+      await expect(setCreditLimit('account123', 20000))
+        .rejects
+        .toThrow('Account account123 is not a credit account (type: depository)');
+    });
+
+    test('handles authentication errors', async () => {
+      authService.checkMonarchAuth.mockReturnValue({
+        authenticated: false,
+        token: null,
+      });
+
+      await expect(setCreditLimit('account123', 20000))
+        .rejects
+        .toThrow('Monarch token not found.');
+    });
+
+    test('sets limit to zero', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+
+        if (data.operationName === 'Web_GetFilteredAccounts') {
+          setTimeout(() => options.onload({
+            status: 200,
+            responseText: JSON.stringify({
+              data: { accounts: [mockCreditAccount] },
+            }),
+          }), 0);
+        } else if (data.operationName === 'Common_UpdateAccount') {
+          expect(data.variables.input.limit).toBe(0);
+          setTimeout(() => options.onload({
+            status: 200,
+            responseText: JSON.stringify({
+              data: {
+                updateAccount: {
+                  account: { ...mockUpdatedAccount, limit: 0 },
+                  errors: null,
+                },
+              },
+            }),
+          }), 0);
+        }
+      });
+
+      const result = await setCreditLimit('account123', 0);
+
+      expect(result.limit).toBe(0);
     });
   });
 });
