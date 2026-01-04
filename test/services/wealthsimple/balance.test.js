@@ -163,16 +163,10 @@ describe('Wealthsimple Balance Service', () => {
   });
 
   describe('accountNeedsBalanceReconstruction', () => {
-    test('returns true for credit card accounts', () => {
-      expect(accountNeedsBalanceReconstruction('CA_CREDIT_CARD')).toBe(true);
-      expect(accountNeedsBalanceReconstruction('credit_card')).toBe(true);
-      expect(accountNeedsBalanceReconstruction('CREDIT')).toBe(true);
-    });
-
-    test('returns true for cash accounts', () => {
-      expect(accountNeedsBalanceReconstruction('CA_CASH')).toBe(true);
-      expect(accountNeedsBalanceReconstruction('cash')).toBe(true);
-      expect(accountNeedsBalanceReconstruction('CASH')).toBe(true);
+    test('returns true for supported account types', () => {
+      // Only exact matches in WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES Set
+      expect(accountNeedsBalanceReconstruction('CREDIT_CARD')).toBe(true);
+      expect(accountNeedsBalanceReconstruction('PORTFOLIO_LINE_OF_CREDIT')).toBe(true);
     });
 
     test('returns false for investment accounts', () => {
@@ -180,6 +174,12 @@ describe('Wealthsimple Balance Service', () => {
       expect(accountNeedsBalanceReconstruction('CA_RRSP')).toBe(false);
       expect(accountNeedsBalanceReconstruction('TRADE_TFSA')).toBe(false);
       expect(accountNeedsBalanceReconstruction('brokerage')).toBe(false);
+    });
+
+    test('returns false for cash accounts (not yet supported)', () => {
+      expect(accountNeedsBalanceReconstruction('CA_CASH')).toBe(false);
+      expect(accountNeedsBalanceReconstruction('cash')).toBe(false);
+      expect(accountNeedsBalanceReconstruction('CASH')).toBe(false);
     });
 
     test('returns false for null or undefined', () => {

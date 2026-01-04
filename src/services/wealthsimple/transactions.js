@@ -4,6 +4,7 @@
  */
 
 import { debugLog, formatDate } from '../../core/utils';
+import { WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES } from '../../core/config';
 import wealthsimpleApi from '../../api/wealthsimple';
 import { applyMerchantMapping } from '../../mappers/merchant';
 import { applyWealthsimpleCategoryMapping, saveUserWealthsimpleCategorySelection, calculateAllCategorySimilarities } from '../../mappers/category';
@@ -68,24 +69,14 @@ function processCreditCardTransaction(transaction, options = {}) {
 }
 
 /**
- * Filter credit card transactions (only settled transactions)
+ * Filter transactions (only settled transactions)
+ * Note: Transaction type filtering is not needed here since transactions are fetched per account.
+ * Each account's transactions will already be of the correct type.
  * @param {Array} transactions - Raw transactions from API
- * @returns {Array} Filtered transactions
+ * @returns {Array} Filtered transactions (only settled)
  */
-function filterCreditCardTransactions(transactions) {
-  return transactions.filter((transaction) => {
-    // Only process settled transactions
-    if (transaction.status !== 'settled') {
-      return false;
-    }
-
-    // Must be credit card type
-    if (transaction.type !== 'CREDIT_CARD') {
-      return false;
-    }
-
-    return true;
-  });
+function filterSettledTransactions(transactions) {
+  return transactions.filter((transaction) => transaction.status === 'settled');
 }
 
 /**
@@ -276,17 +267,17 @@ export async function fetchAndProcessCreditCardTransactions(consolidatedAccount,
 
     debugLog(`Fetched ${rawTransactions.length} total transactions from API`);
 
-    // Filter for credit card settled transactions
-    const creditCardTransactions = filterCreditCardTransactions(rawTransactions);
+    // Filter for settled transactions only
+    const settledTransactions = filterSettledTransactions(rawTransactions);
 
-    debugLog(`Filtered to ${creditCardTransactions.length} settled credit card transactions`);
+    debugLog(`Filtered to ${settledTransactions.length} settled transactions`);
 
-    if (creditCardTransactions.length === 0) {
+    if (settledTransactions.length === 0) {
       return [];
     }
 
     // Process transactions with stripStoreNumbers option
-    const processedTransactions = creditCardTransactions.map((transaction) =>
+    const processedTransactions = settledTransactions.map((transaction) =>
       processCreditCardTransaction(transaction, { stripStoreNumbers }),
     );
 
@@ -374,17 +365,15 @@ export async function fetchAndProcessTransactions(consolidatedAccount, fromDate,
 
   debugLog(`Processing transactions for account type: ${accountType}`);
 
-  // Route to appropriate processor based on account type
-  if (accountType.includes('CREDIT')) {
+  // Route account types that support transaction upload to the credit card processor
+  // This includes CREDIT_CARD and PORTFOLIO_LINE_OF_CREDIT
+  if (WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType)) {
     return fetchAndProcessCreditCardTransactions(consolidatedAccount, fromDate, toDate);
   }
 
+  // Route other account types to their specific processors (if implemented)
   if (accountType.includes('CASH')) {
     return fetchAndProcessCashTransactions(consolidatedAccount, fromDate, toDate);
-  }
-
-  if (accountType.includes('LOAN')) {
-    return fetchAndProcessLoanTransactions(consolidatedAccount, fromDate, toDate);
   }
 
   // Default to investment account processing for all other types

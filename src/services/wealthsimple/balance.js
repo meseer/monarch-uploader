@@ -4,7 +4,7 @@
  */
 
 import { debugLog, formatDate, parseLocalDate } from '../../core/utils';
-import { STORAGE } from '../../core/config';
+import { STORAGE, WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES } from '../../core/config';
 import stateManager from '../../core/state';
 import wealthsimpleApi from '../../api/wealthsimple';
 import monarchApi from '../../api/monarch';
@@ -24,13 +24,13 @@ export class BalanceError extends Error {
 /**
  * Check if an account type requires balance reconstruction instead of API fetch
  * These account types don't support the FetchIdentityHistoricalFinancials API
+ * Uses the same Set as transaction upload support for consistency
  * @param {string} accountType - Wealthsimple account type
  * @returns {boolean} True if account needs balance reconstruction
  */
 export function accountNeedsBalanceReconstruction(accountType) {
   if (!accountType) return false;
-  const upperType = accountType.toUpperCase();
-  return upperType.includes('CREDIT') || upperType.includes('CASH');
+  return WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType);
 }
 
 /**

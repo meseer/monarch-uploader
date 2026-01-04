@@ -23,7 +23,7 @@ describe('Wealthsimple Transaction Service', () => {
     wealthsimpleAccount: {
       id: 'test-account-id',
       nickname: 'Test Credit Card',
-      type: 'CA_CREDIT_CARD',
+      type: 'CREDIT_CARD',
     },
   };
 
@@ -254,7 +254,10 @@ describe('Wealthsimple Transaction Service', () => {
       expect(result).toEqual([]);
     });
 
-    it('should filter out non-credit card transactions', async () => {
+    it('should process all settled transactions regardless of type', async () => {
+      // Note: We no longer filter by transaction type, only by settled status.
+      // This is because transactions are fetched per-account, so they're already
+      // of the correct type for that account.
       const mockRawTransactions = [
         {
           externalCanonicalId: 'tx-1',
@@ -290,8 +293,10 @@ describe('Wealthsimple Transaction Service', () => {
         '2025-01-31',
       );
 
-      expect(result).toHaveLength(1);
-      expect(result[0].id).toBe('tx-2');
+      // Both settled transactions are processed (no type filtering)
+      expect(result).toHaveLength(2);
+      expect(result[0].id).toBe('tx-1');
+      expect(result[1].id).toBe('tx-2');
     });
 
     it('should handle API errors gracefully', async () => {
@@ -308,12 +313,12 @@ describe('Wealthsimple Transaction Service', () => {
   });
 
   describe('fetchAndProcessTransactions', () => {
-    it('should route credit card accounts to credit card processor', async () => {
+    it('should route CREDIT_CARD accounts to transaction processor', async () => {
       const creditCardAccount = {
         wealthsimpleAccount: {
           id: 'test-id',
           nickname: 'Credit Card',
-          type: 'CA_CREDIT_CARD',
+          type: 'CREDIT_CARD',
         },
       };
 
@@ -322,6 +327,28 @@ describe('Wealthsimple Transaction Service', () => {
 
       const result = await fetchAndProcessTransactions(
         creditCardAccount,
+        '2025-01-01',
+        '2025-01-31',
+      );
+
+      expect(wealthsimpleApi.fetchTransactions).toHaveBeenCalled();
+      expect(result).toEqual([]);
+    });
+
+    it('should route PORTFOLIO_LINE_OF_CREDIT accounts to transaction processor', async () => {
+      const locAccount = {
+        wealthsimpleAccount: {
+          id: 'test-id',
+          nickname: 'Line of Credit',
+          type: 'PORTFOLIO_LINE_OF_CREDIT',
+        },
+      };
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue([]);
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [] });
+
+      const result = await fetchAndProcessTransactions(
+        locAccount,
         '2025-01-01',
         '2025-01-31',
       );

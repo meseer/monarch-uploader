@@ -90,6 +90,13 @@ export const TRANSACTION_RETENTION_DEFAULTS = {
   COUNT: 1000, // Keep last 1000 transactions
 };
 
+// Wealthsimple account types that support transaction upload and balance reconstruction
+// These accounts don't have balance history API support and need transactions for balance calculation
+export const WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES = new Set([
+  'CREDIT_CARD',
+  'PORTFOLIO_LINE_OF_CREDIT',
+]);
+
 // Brand colors
 export const COLORS = {
   CANADALIFE_BRAND: '#A20A29',

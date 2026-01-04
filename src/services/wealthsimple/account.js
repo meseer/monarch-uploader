@@ -4,7 +4,7 @@
  */
 
 import { debugLog, formatDate } from '../../core/utils';
-import { STORAGE, TRANSACTION_RETENTION_DEFAULTS, LOGO_CLOUDINARY_IDS } from '../../core/config';
+import { STORAGE, TRANSACTION_RETENTION_DEFAULTS, LOGO_CLOUDINARY_IDS, WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES } from '../../core/config';
 import stateManager from '../../core/state';
 import monarchApi from '../../api/monarch';
 import wealthsimpleApi from '../../api/wealthsimple';
@@ -389,8 +389,7 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
     const accountType = accountData.wealthsimpleAccount.type;
 
     // Check if this account type supports transactions
-    // Currently only credit cards are supported
-    if (!accountType.includes('CREDIT')) {
+    if (!WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType)) {
       debugLog(`Transaction upload not supported for account type: ${accountType}`);
       return false; // Silently skip unsupported account types
     }
