@@ -74,6 +74,8 @@ jest.mock('../../src/ui/components/progressDialog', () => ({
     showSummary: jest.fn(),
     onCancel: jest.fn(),
     showError: jest.fn(),
+    initSteps: jest.fn(),
+    updateStepStatus: jest.fn(),
   })),
 }));
 
@@ -269,6 +271,8 @@ describe('Canada Life Upload Service', () => {
         showSummary: jest.fn(),
         onCancel: jest.fn(),
         showError: jest.fn().mockResolvedValue(),
+        initSteps: jest.fn(),
+        updateStepStatus: jest.fn(),
       };
       showProgressDialog.mockReturnValue(mockProgressDialog);
 

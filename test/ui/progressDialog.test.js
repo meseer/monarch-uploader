@@ -37,6 +37,15 @@ describe('Progress Dialog Component', () => {
         id: '',
         dataset: {},
         disabled: false,
+        addEventListener: jest.fn(),
+        querySelector: jest.fn(() => null),
+        querySelectorAll: jest.fn(() => []),
+        classList: {
+          add: jest.fn(),
+          remove: jest.fn(),
+          toggle: jest.fn(),
+          contains: jest.fn(() => false),
+        },
       };
 
       // Add style property that accepts cssText
@@ -458,6 +467,8 @@ describe('Progress Dialog Component', () => {
       expect(typeof dialog.isCancelled).toBe('function');
       expect(typeof dialog.hideCancel).toBe('function');
       expect(typeof dialog.close).toBe('function');
+      expect(typeof dialog.initSteps).toBe('function');
+      expect(typeof dialog.updateStepStatus).toBe('function');
     });
 
     test('should maintain state consistency', () => {

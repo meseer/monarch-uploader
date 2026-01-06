@@ -2,9 +2,98 @@
  * Progress Dialog Component
  * Creates and manages the sophisticated progress dialog for bulk account uploads
  * Based on the original script's showProgressDialog functionality
+ *
+ * Features:
+ * - Accordion-style expandable account rows (collapsed by default)
+ * - Per-step progress tracking within each account
+ * - Dynamic step initialization based on sync process scope
+ * - Balance change display with amounts, days, and percentage
  */
 
 import { debugLog } from '../../core/utils';
+
+/**
+ * Calculate step summary for display in collapsed account row
+ * @param {Array} steps - Array of step objects with status
+ * @returns {Object} Summary object with counts and display text
+ */
+function calculateStepSummary(steps) {
+  if (!steps || steps.length === 0) {
+    return { complete: 0, total: 0, hasError: false, text: '' };
+  }
+
+  let complete = 0;
+  let errors = 0;
+  let skipped = 0;
+
+  steps.forEach((step) => {
+    if (step.status === 'success') {
+      complete += 1;
+    } else if (step.status === 'error') {
+      errors += 1;
+    } else if (step.status === 'skipped') {
+      skipped += 1;
+    }
+  });
+
+  const total = steps.length;
+  const hasError = errors > 0;
+
+  let text;
+  if (hasError) {
+    text = `${complete}/${total} complete, ${errors} error${errors > 1 ? 's' : ''}`;
+  } else if (skipped > 0) {
+    text = `${complete}/${total} complete, ${skipped} skipped`;
+  } else if (complete === total) {
+    text = `${complete}/${total} complete`;
+  } else {
+    text = `${complete}/${total}`;
+  }
+
+  return { complete, total, hasError, text };
+}
+
+/**
+ * Get status icon for a step
+ * @param {string} status - Step status
+ * @returns {string} Icon character
+ */
+function getStepIcon(status) {
+  switch (status) {
+  case 'processing':
+    return '⟳';
+  case 'success':
+    return '✓';
+  case 'error':
+    return '✗';
+  case 'skipped':
+    return '○';
+  case 'pending':
+  default:
+    return '○';
+  }
+}
+
+/**
+ * Get status color for a step
+ * @param {string} status - Step status
+ * @returns {string} CSS color value
+ */
+function getStepColor(status) {
+  switch (status) {
+  case 'processing':
+    return '#1565c0';
+  case 'success':
+    return '#2e7d32';
+  case 'error':
+    return '#c62828';
+  case 'skipped':
+    return '#888';
+  case 'pending':
+  default:
+    return '#888';
+  }
+}
 
 /**
  * Creates and displays a progress dialog for tracking bulk account uploads
@@ -39,7 +128,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     padding: 25px;
     border-radius: 8px;
     width: 90%;
-    max-width: 600px;
+    max-width: 650px;
     max-height: 80vh;
     overflow-y: auto;
     display: flex;
@@ -62,7 +151,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
   accountList.id = `balance-uploader-account-list-${timestamp}`;
   accountList.style.cssText = `
     margin-bottom: 20px;
-    max-height: 300px;
+    max-height: 400px;
     overflow-y: auto;
   `;
   modal.appendChild(accountList);
@@ -81,19 +170,35 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     const accountContainer = document.createElement('div');
     accountContainer.id = `balance-uploader-account-container-${accountKey}`;
     accountContainer.style.cssText = `
-      border-bottom: 1px solid #eee;
-      padding-bottom: 5px;
-      margin-bottom: 5px;
+      border: 1px solid #eee;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      overflow: hidden;
     `;
 
-    // Account row
+    // Account header row (clickable for accordion)
     const accountRow = document.createElement('div');
     accountRow.id = `balance-uploader-account-row-${accountKey}`;
     accountRow.style.cssText = `
       display: flex;
       align-items: center;
-      padding: 10px;
+      padding: 12px;
+      cursor: pointer;
+      transition: background-color 0.2s;
     `;
+
+    // Expand/collapse indicator
+    const expandIcon = document.createElement('span');
+    expandIcon.id = `balance-uploader-expand-icon-${accountKey}`;
+    expandIcon.style.cssText = `
+      margin-right: 8px;
+      font-size: 0.8em;
+      color: #666;
+      transition: transform 0.2s;
+      display: inline-block;
+    `;
+    expandIcon.textContent = '▶';
+    accountRow.appendChild(expandIcon);
 
     // Status icon
     const statusIcon = document.createElement('span');
@@ -123,55 +228,105 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     accountNameContainer.appendChild(accountName);
 
     // Account ID
-    const accountId = document.createElement('div');
-    accountId.style.cssText = `
+    const accountIdDiv = document.createElement('div');
+    accountIdDiv.style.cssText = `
       font-size: 0.85em;
       color: #888;
       font-weight: normal;
     `;
-    accountId.textContent = accountKey;
-    accountNameContainer.appendChild(accountId);
+    accountIdDiv.textContent = accountKey;
+    accountNameContainer.appendChild(accountIdDiv);
 
     accountRow.appendChild(accountNameContainer);
 
-    // Status text
+    // Status text / Step summary
     const statusText = document.createElement('div');
     statusText.id = `balance-uploader-account-status-${accountKey}`;
     statusText.style.cssText = `
       margin-left: 10px;
       color: #888;
       min-width: 120px;
-      max-width: 150px;
+      max-width: 180px;
       word-wrap: break-word;
       text-align: right;
+      font-size: 0.9em;
     `;
     statusText.textContent = 'Pending';
     accountRow.appendChild(statusText);
 
-    // Balance change section (initially hidden)
+    accountContainer.appendChild(accountRow);
+
+    // Expandable steps container (initially hidden)
+    const stepsContainer = document.createElement('div');
+    stepsContainer.id = `balance-uploader-steps-container-${accountKey}`;
+    stepsContainer.style.cssText = `
+      display: none;
+      background: #f9f9f9;
+      border-top: 1px solid #eee;
+      padding: 0;
+    `;
+    accountContainer.appendChild(stepsContainer);
+
+    // Balance change section (will be added to steps container when expanded)
     const balanceChangeDiv = document.createElement('div');
     balanceChangeDiv.id = `balance-uploader-balance-change-${accountKey}`;
     balanceChangeDiv.style.cssText = `
       display: none;
-      width: 100%;
       padding: 8px 15px;
+      margin: 8px 12px;
       border-radius: 4px;
       font-size: 0.9em;
       font-weight: 500;
       text-align: center;
     `;
 
-    // Add elements to container
-    accountContainer.appendChild(accountRow);
-    accountContainer.appendChild(balanceChangeDiv);
+    // Track expansion state
+    let isExpanded = false;
+
+    // Toggle expand/collapse on row click
+    accountRow.addEventListener('click', () => {
+      isExpanded = !isExpanded;
+      stepsContainer.style.display = isExpanded ? 'block' : 'none';
+      expandIcon.style.transform = isExpanded ? 'rotate(90deg)' : 'rotate(0deg)';
+    });
+
+    // Hover effect
+    accountRow.addEventListener('mouseenter', () => {
+      if (accountRow.style.backgroundColor === '' || accountRow.style.backgroundColor === 'transparent') {
+        accountRow.style.backgroundColor = '#f5f5f5';
+      }
+    });
+    accountRow.addEventListener('mouseleave', () => {
+      // Restore the status-based background color
+      const currentStatus = statusIcon.dataset.status;
+      if (currentStatus === 'processing') {
+        accountRow.style.backgroundColor = '#e3f2fd';
+      } else if (currentStatus === 'success') {
+        accountRow.style.backgroundColor = '#e8f5e9';
+      } else if (currentStatus === 'error') {
+        accountRow.style.backgroundColor = '#ffebee';
+      } else {
+        accountRow.style.backgroundColor = 'transparent';
+      }
+    });
+
     accountList.appendChild(accountContainer);
 
     accountElements[accountKey] = {
       container: accountContainer,
       row: accountRow,
+      expandIcon,
       icon: statusIcon,
       status: statusText,
+      stepsContainer,
       balanceChange: balanceChangeDiv,
+      steps: [], // Array of step objects: { key, name, status, message, element }
+      isExpanded: () => isExpanded,
+      setExpanded: (expanded) => {
+        isExpanded = expanded;
+        stepsContainer.style.display = isExpanded ? 'block' : 'none';
+        expandIcon.style.transform = isExpanded ? 'rotate(90deg)' : 'rotate(0deg)';
+      },
     };
   });
 
@@ -249,10 +404,203 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
   let isCancelled = false;
   let uploadState = 'pending'; // 'pending', 'active', 'completed'
 
+  /**
+   * Update the step summary display in the account row
+   * @param {string} accountId - Account ID
+   */
+  function updateStepSummaryDisplay(accountId) {
+    const el = accountElements[accountId];
+    if (!el || !el.steps || el.steps.length === 0) {
+      return;
+    }
+
+    const summaryData = calculateStepSummary(el.steps);
+    if (summaryData.text) {
+      el.status.textContent = summaryData.text;
+    }
+  }
+
+  /**
+   * Create a step element in the steps container
+   * @param {string} accountId - Account ID
+   * @param {Object} step - Step object with key, name, status, message
+   * @returns {HTMLElement} The created step element
+   */
+  function createStepElement(accountId, step) {
+    const el = accountElements[accountId];
+    if (!el) return null;
+
+    const stepDiv = document.createElement('div');
+    stepDiv.id = `balance-uploader-step-${accountId}-${step.key}`;
+    stepDiv.style.cssText = `
+      display: flex;
+      align-items: flex-start;
+      padding: 8px 12px 8px 36px;
+      border-bottom: 1px solid #eee;
+      font-size: 0.9em;
+    `;
+
+    // Step icon
+    const stepIconSpan = document.createElement('span');
+    stepIconSpan.id = `balance-uploader-step-icon-${accountId}-${step.key}`;
+    stepIconSpan.style.cssText = `
+      margin-right: 8px;
+      color: ${getStepColor(step.status)};
+    `;
+    stepIconSpan.textContent = getStepIcon(step.status);
+    stepDiv.appendChild(stepIconSpan);
+
+    // Step name
+    const stepNameSpan = document.createElement('span');
+    stepNameSpan.id = `balance-uploader-step-name-${accountId}-${step.key}`;
+    stepNameSpan.style.cssText = `
+      flex-grow: 1;
+      color: #333;
+    `;
+    stepNameSpan.textContent = step.name;
+    stepDiv.appendChild(stepNameSpan);
+
+    // Step message
+    const stepMessageSpan = document.createElement('span');
+    stepMessageSpan.id = `balance-uploader-step-message-${accountId}-${step.key}`;
+    stepMessageSpan.style.cssText = `
+      color: ${getStepColor(step.status)};
+      text-align: right;
+      max-width: 250px;
+      word-wrap: break-word;
+    `;
+    stepMessageSpan.textContent = step.message || '';
+    stepDiv.appendChild(stepMessageSpan);
+
+    el.stepsContainer.appendChild(stepDiv);
+
+    return stepDiv;
+  }
+
+  /**
+   * Update a step element's display
+   * @param {string} accountId - Account ID
+   * @param {Object} step - Step object
+   */
+  function updateStepElement(accountId, step) {
+    const iconEl = document.getElementById(`balance-uploader-step-icon-${accountId}-${step.key}`);
+    const messageEl = document.getElementById(`balance-uploader-step-message-${accountId}-${step.key}`);
+
+    if (iconEl) {
+      iconEl.textContent = getStepIcon(step.status);
+      iconEl.style.color = getStepColor(step.status);
+    }
+
+    if (messageEl) {
+      messageEl.textContent = step.message || '';
+      messageEl.style.color = getStepColor(step.status);
+    }
+  }
+
   // Dialog API
   const dialog = {
     /**
-     * Update progress for a specific account
+     * Initialize steps for an account (called before sync starts)
+     * @param {string} accountId - Account ID
+     * @param {Array} steps - Array of step definitions [{key, name}]
+     */
+    initSteps: (accountId, steps) => {
+      const el = accountElements[accountId];
+      if (!el) {
+        debugLog(`Warning: Account element not found for ID: ${accountId}`);
+        return;
+      }
+
+      // Clear existing steps
+      el.stepsContainer.innerHTML = '';
+      el.steps = [];
+
+      // Create step elements
+      steps.forEach((stepDef) => {
+        const step = {
+          key: stepDef.key,
+          name: stepDef.name,
+          status: 'pending',
+          message: '',
+        };
+        el.steps.push(step);
+        step.element = createStepElement(accountId, step);
+      });
+
+      // Add balance change div at the end (will be shown when balance is uploaded)
+      el.stepsContainer.appendChild(el.balanceChange);
+
+      debugLog(`Initialized ${steps.length} steps for account ${accountId}`);
+    },
+
+    /**
+     * Update a specific step's status
+     * @param {string} accountId - Account ID
+     * @param {string} stepKey - Step key to update
+     * @param {string} status - Step status: 'pending', 'processing', 'success', 'error', 'skipped'
+     * @param {string} message - Optional message to display
+     */
+    updateStepStatus: (accountId, stepKey, status, message = '') => {
+      const el = accountElements[accountId];
+      if (!el) {
+        debugLog(`Warning: Account element not found for ID: ${accountId}`);
+        return;
+      }
+
+      // Find the step
+      const step = el.steps.find((s) => s.key === stepKey);
+      if (!step) {
+        debugLog(`Warning: Step ${stepKey} not found for account ${accountId}`);
+        return;
+      }
+
+      // Update step data
+      step.status = status;
+      step.message = message;
+
+      // Update the DOM element
+      updateStepElement(accountId, step);
+
+      // Update step summary display
+      updateStepSummaryDisplay(accountId);
+
+      // Update account-level icon and colors based on overall status
+      const allSuccess = el.steps.every((s) => s.status === 'success' || s.status === 'skipped');
+      const hasError = el.steps.some((s) => s.status === 'error');
+      const hasProcessing = el.steps.some((s) => s.status === 'processing');
+
+      let accountStatus;
+      if (hasError) {
+        accountStatus = 'error';
+      } else if (hasProcessing) {
+        accountStatus = 'processing';
+      } else if (allSuccess && el.steps.length > 0) {
+        accountStatus = 'success';
+      } else {
+        accountStatus = 'pending';
+      }
+
+      // Update account icon
+      el.icon.textContent = getStepIcon(accountStatus);
+      el.icon.style.color = getStepColor(accountStatus);
+      el.icon.dataset.status = accountStatus;
+
+      // Update row background
+      if (accountStatus === 'processing') {
+        el.row.style.backgroundColor = '#e3f2fd';
+      } else if (accountStatus === 'success') {
+        el.row.style.backgroundColor = '#e8f5e9';
+      } else if (accountStatus === 'error') {
+        el.row.style.backgroundColor = '#ffebee';
+      } else {
+        el.row.style.backgroundColor = 'transparent';
+      }
+
+      debugLog(`Updated step ${stepKey} for account ${accountId}: ${status} - ${message}`);
+    },
+
+    /**
+     * Update progress for a specific account (legacy method for backward compatibility)
      * @param {string} accountId - Account ID to update
      * @param {string} status - Status: 'processing', 'success', 'error', 'pending'
      * @param {string} message - Status message to display
@@ -269,22 +617,23 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
         uploadState = 'active';
         debugLog('Upload state changed to active');
       } else if ((status === 'success' || status === 'error') && uploadState === 'active') {
-        // Don't change to completed here - let the service layer decide when all processing is done
         debugLog(`Account ${accountId} finished with status: ${status}`);
       }
 
-      // Update status text
-      el.status.textContent = message || status;
-
-      // Update icon
-      if (status === 'processing') {
-        el.icon.textContent = '⟳';
-      } else if (status === 'success') {
-        el.icon.textContent = '✓';
-      } else if (status === 'error') {
-        el.icon.textContent = '✗';
+      // If steps are initialized, update summary; otherwise use the message directly
+      if (el.steps && el.steps.length > 0) {
+        // Steps are being used, let step updates handle the status
+        // Only update if this is a final status
+        if (status === 'success' || status === 'error') {
+          el.icon.textContent = getStepIcon(status);
+          el.icon.style.color = getStepColor(status);
+          el.icon.dataset.status = status;
+        }
       } else {
-        el.icon.textContent = '○';
+        // No steps initialized, use legacy behavior
+        el.status.textContent = message || status;
+        el.icon.textContent = getStepIcon(status);
+        el.icon.dataset.status = status;
       }
 
       // Update colors
@@ -307,14 +656,16 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
 
     /**
      * Update balance change information for a specific account
+     * This is displayed in the expandable steps section
      * @param {string} accountId - Account ID to update
      * @param {Object} balanceChangeData - Balance change data
-     * @param {number} balanceChangeData.oldBalance - Previous balance
+     * @param {number} balanceChangeData.oldBalance - Previous balance (optional)
      * @param {number} balanceChangeData.newBalance - Current balance
-     * @param {string} balanceChangeData.lastUploadDate - Last upload date in YYYY-MM-DD format
-     * @param {number} balanceChangeData.changePercent - Percentage change
+     * @param {string} balanceChangeData.lastUploadDate - Last upload date in YYYY-MM-DD format (optional)
+     * @param {number} balanceChangeData.changePercent - Percentage change (optional)
+     * @param {number} balanceChangeData.daysUploaded - Number of days uploaded (optional)
      */
-    updateBalanceChange: (accountId, { oldBalance, newBalance, lastUploadDate, changePercent }) => {
+    updateBalanceChange: (accountId, balanceChangeData) => {
       const el = accountElements[accountId];
       if (!el || !el.balanceChange) {
         debugLog(`Warning: Balance change element not found for ID: ${accountId}`);
@@ -322,34 +673,57 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
       }
 
       try {
-        // Format the balance change display
-        const changeSymbol = changePercent > 0 ? '+' : '';
-        const formattedOldBalance = `$${Math.abs(oldBalance).toFixed(2)}`;
-        const formattedNewBalance = `$${Math.abs(newBalance).toFixed(2)}`;
-        const formattedChangePercent = `${changeSymbol}${changePercent.toFixed(2)}%`;
+        const { oldBalance, newBalance, changePercent, daysUploaded } = balanceChangeData;
+
+        // Build display string based on available data
+        const parts = [];
+
+        // Current balance (always shown)
+        if (newBalance !== undefined && newBalance !== null) {
+          const formattedNewBalance = `$${Math.abs(newBalance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+          parts.push(`${formattedNewBalance} today`);
+        }
+
+        // Days uploaded (if available)
+        if (daysUploaded && daysUploaded > 1) {
+          parts.push(`${daysUploaded} days`);
+        }
+
+        // Change percentage (if available and we have history)
+        if (changePercent !== undefined && changePercent !== null && oldBalance !== undefined) {
+          const changeSymbol = changePercent > 0 ? '+' : '';
+          const formattedChangePercent = `${changeSymbol}${changePercent.toFixed(2)}%`;
+          parts.push(formattedChangePercent);
+        }
 
         // Set the content
-        el.balanceChange.textContent = `${formattedOldBalance} (${lastUploadDate}) → ${formattedNewBalance} (${formattedChangePercent})`;
+        el.balanceChange.textContent = parts.join(' | ');
 
-        // Set colors based on change
+        // Set colors based on change (or neutral if no change data)
         let backgroundColor;
         let textColor;
-        if (changePercent > 0) {
-          backgroundColor = '#e8f5e9';
-          textColor = '#2e7d32';
-        } else if (changePercent < 0) {
-          backgroundColor = '#ffebee';
-          textColor = '#c62828';
+        if (changePercent !== undefined && changePercent !== null) {
+          if (changePercent > 0) {
+            backgroundColor = '#e8f5e9';
+            textColor = '#2e7d32';
+          } else if (changePercent < 0) {
+            backgroundColor = '#ffebee';
+            textColor = '#c62828';
+          } else {
+            backgroundColor = '#f5f5f5';
+            textColor = '#666';
+          }
         } else {
-          backgroundColor = '#f5f5f5';
-          textColor = '#666';
+          // Neutral color when no change data
+          backgroundColor = '#e3f2fd';
+          textColor = '#1565c0';
         }
 
         el.balanceChange.style.backgroundColor = backgroundColor;
         el.balanceChange.style.color = textColor;
         el.balanceChange.style.display = 'block';
 
-        debugLog(`Updated balance change for ${accountId}: ${formattedOldBalance} → ${formattedNewBalance} (${formattedChangePercent})`);
+        debugLog(`Updated balance change for ${accountId}: ${parts.join(' | ')}`);
       } catch (error) {
         debugLog(`Error updating balance change for ${accountId}:`, error);
       }

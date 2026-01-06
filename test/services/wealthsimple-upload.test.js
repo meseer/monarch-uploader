@@ -43,6 +43,9 @@ describe('Wealthsimple Upload Service', () => {
     close: jest.fn(),
     onCancel: jest.fn(),
     isCancelled: jest.fn(() => false),
+    initSteps: jest.fn(),
+    updateStepStatus: jest.fn(),
+    updateBalanceChange: jest.fn(),
   };
 
   beforeEach(() => {
@@ -281,7 +284,9 @@ describe('Wealthsimple Upload Service', () => {
       await uploadAllWealthsimpleAccountsToMonarch();
 
       expect(accountService.resolveWealthsimpleAccountMapping).not.toHaveBeenCalled();
-      expect(mockProgressDialog.updateProgress).toHaveBeenCalledWith('acc-1', 'error', 'Balance unavailable');
+      // Check that initSteps was called and the balance step was set to error
+      expect(mockProgressDialog.initSteps).toHaveBeenCalledWith('acc-1', expect.any(Array));
+      expect(mockProgressDialog.updateStepStatus).toHaveBeenCalledWith('acc-1', 'balance', 'error', 'Balance unavailable');
       expect(mockProgressDialog.showSummary).toHaveBeenCalledWith({
         success: 0,
         failed: 1,

@@ -333,6 +333,23 @@ async function fetchRogersBankTransactions(fromDate, toDate) {
 }
 
 /**
+ * Build the list of sync steps for a Rogers Bank account
+ * @param {boolean} hasTransactions - Whether transactions will be processed
+ * @returns {Array} Array of step definitions [{key, name}]
+ */
+function buildRogersBankSteps(hasTransactions = true) {
+  const steps = [
+    { key: 'balance', name: 'Balance upload' },
+  ];
+
+  if (hasTransactions) {
+    steps.push({ key: 'transactions', name: 'Transaction sync' });
+  }
+
+  return steps;
+}
+
+/**
  * Generate CSV data for Rogers Bank balance
  * @param {number} balance - Current balance (negative value)
  * @param {string} accountName - Rogers account name
@@ -410,6 +427,9 @@ export async function uploadRogersBankToMonarch() {
       'Uploading Rogers Bank Data to Monarch Money',
     );
 
+    // Initialize steps for this account
+    progressDialog.initSteps(rogersAccountId, buildRogersBankSteps(true));
+
     // Set up cancellation callback
     progressDialog.onCancel(() => {
       debugLog('Upload cancellation requested by user');
@@ -471,15 +491,15 @@ export async function uploadRogersBankToMonarch() {
     // STEP 2: Upload current balance to Monarch (now that we have account mapping)
     try {
       // Fetch current balance from Rogers Bank
-      progressDialog.updateProgress(rogersAccountId, 'processing', 'Fetching current account balance...');
+      progressDialog.updateStepStatus(rogersAccountId, 'balance', 'processing', 'Fetching balance...');
       const currentBalance = await fetchRogersBankBalance();
 
       // Generate balance CSV
-      progressDialog.updateProgress(rogersAccountId, 'processing', 'Preparing balance data for upload...');
+      progressDialog.updateStepStatus(rogersAccountId, 'balance', 'processing', 'Preparing data...');
       const balanceCSV = generateBalanceCSV(currentBalance, rogersAccountName);
 
       // Upload balance to Monarch
-      progressDialog.updateProgress(rogersAccountId, 'processing', 'Uploading current balance to Monarch...');
+      progressDialog.updateStepStatus(rogersAccountId, 'balance', 'processing', 'Uploading...');
       const todayFormatted = getTodayLocal();
       const balanceUploadSuccess = await monarchApi.uploadBalance(
         monarchAccount.id, // Use actual Monarch account ID
@@ -489,21 +509,23 @@ export async function uploadRogersBankToMonarch() {
       );
 
       if (balanceUploadSuccess) {
-        progressDialog.updateProgress(rogersAccountId, 'processing', 'Balance uploaded successfully');
+        const formattedBalance = `$${Math.abs(currentBalance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        progressDialog.updateStepStatus(rogersAccountId, 'balance', 'success', formattedBalance);
+        progressDialog.updateBalanceChange(rogersAccountId, { newBalance: currentBalance });
         debugLog(`Successfully uploaded balance ${currentBalance} for ${rogersAccountName}`);
       } else {
         // Balance upload failed, but continue with transactions
-        progressDialog.updateProgress(rogersAccountId, 'processing', 'Balance upload failed, continuing with transactions...');
+        progressDialog.updateStepStatus(rogersAccountId, 'balance', 'error', 'Upload failed');
         debugLog('Balance upload failed, but continuing with transaction upload');
       }
     } catch (balanceError) {
       // Balance upload failed, but continue with transactions
-      progressDialog.updateProgress(rogersAccountId, 'processing', `Balance upload failed: ${balanceError.message}, continuing with transactions...`);
+      progressDialog.updateStepStatus(rogersAccountId, 'balance', 'error', balanceError.message);
       debugLog('Balance upload failed:', balanceError);
     }
 
     // STEP 3: Fetch and process transactions if any exist
-    progressDialog.updateProgress(rogersAccountId, 'processing', `Fetching transactions from ${fromDate} to ${toDate}...`);
+    progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Fetching...');
 
     // Check for cancellation before fetching
     if (abortController.signal.aborted) {
@@ -527,7 +549,7 @@ export async function uploadRogersBankToMonarch() {
       debugLog('First 3 transactions:', result.transactions.slice(0, 3));
 
       // Update progress - filtering transactions
-      progressDialog.updateProgress(rogersAccountId, 'processing', `Processing ${result.transactions.length} transactions...`);
+      progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', `Processing ${result.transactions.length}...`);
 
       // Filter only approved transactions
       const approvedTransactions = result.transactions.filter(
@@ -537,7 +559,7 @@ export async function uploadRogersBankToMonarch() {
       debugLog(`Filtered ${approvedTransactions.length} approved transactions from ${result.transactions.length} total`);
 
       if (approvedTransactions.length === 0) {
-        progressDialog.updateProgress(rogersAccountId, 'success', 'No approved transactions found to upload');
+        progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', 'No transactions');
         progressDialog.hideCancel();
         progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
         toast.show('Balance uploaded successfully. No approved transactions found to upload', 'info');
@@ -549,15 +571,15 @@ export async function uploadRogersBankToMonarch() {
       }
 
       // Filter out duplicate transactions
-      progressDialog.updateProgress(rogersAccountId, 'processing', `Checking for duplicate transactions among ${approvedTransactions.length} approved transactions...`);
+      progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Checking duplicates...');
       const filterResult = filterDuplicateTransactions(approvedTransactions, rogersAccountId);
       const transactionsToUpload = filterResult.transactions;
 
       if (transactionsToUpload.length === 0) {
         const message = filterResult.duplicateCount > 0
-          ? `All ${filterResult.duplicateCount} transactions have already been uploaded`
-          : 'No new transactions to upload';
-        progressDialog.updateProgress(rogersAccountId, 'success', `Balance uploaded successfully. ${message}`);
+          ? `${filterResult.duplicateCount} already uploaded`
+          : 'No new transactions';
+        progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', message);
         progressDialog.hideCancel();
         progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
         toast.show(`Balance uploaded successfully. ${message}`, 'info');
@@ -575,9 +597,9 @@ export async function uploadRogersBankToMonarch() {
       // Show info about duplicates if any
       if (filterResult.duplicateCount > 0) {
         debugLog(`Processing ${transactionsToUpload.length} new transactions (skipped ${filterResult.duplicateCount} duplicates)`);
-        progressDialog.updateProgress(rogersAccountId, 'processing', `Found ${transactionsToUpload.length} new transactions (${filterResult.duplicateCount} duplicates skipped)`);
+        progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', `${transactionsToUpload.length} new (${filterResult.duplicateCount} skipped)`);
       } else {
-        progressDialog.updateProgress(rogersAccountId, 'processing', `Found ${transactionsToUpload.length} new transactions to upload`);
+        progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', `${transactionsToUpload.length} to upload`);
       }
 
       // Check for cancellation before category resolution
@@ -588,7 +610,7 @@ export async function uploadRogersBankToMonarch() {
       }
 
       // Resolve categories for all transactions (handle automatic mapping and manual selection)
-      progressDialog.updateProgress(rogersAccountId, 'processing', 'Resolving transaction categories...');
+      progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Resolving categories...');
       const transactionsWithResolvedCategories = await resolveCategoriesForTransactions(transactionsToUpload);
 
       // Check for cancellation after category resolution
@@ -599,7 +621,7 @@ export async function uploadRogersBankToMonarch() {
       }
 
       // Convert transactions to Monarch CSV format (use transactions with resolved categories)
-      progressDialog.updateProgress(rogersAccountId, 'processing', `Converting ${transactionsToUpload.length} transactions to CSV format...`);
+      progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Converting to CSV...');
       const csvData = convertTransactionsToMonarchCSV(transactionsWithResolvedCategories, rogersAccountName);
 
       if (!csvData) {
@@ -614,10 +636,7 @@ export async function uploadRogersBankToMonarch() {
       }
 
       // Upload to Monarch with balance update enabled
-      const uploadMessage = filterResult.duplicateCount > 0
-        ? `Uploading ${transactionsToUpload.length} new transactions to Monarch (${filterResult.duplicateCount} duplicates skipped)...`
-        : `Uploading ${transactionsToUpload.length} transactions to Monarch...`;
-      progressDialog.updateProgress(rogersAccountId, 'processing', uploadMessage);
+      progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Uploading...');
 
       const filename = `rogers_transactions_${fromDate}_to_${toDate}.csv`;
       const uploadSuccess = await monarchApi.uploadTransactions(
@@ -654,10 +673,10 @@ export async function uploadRogersBankToMonarch() {
         saveLastUploadDate(rogersAccountId, getTodayLocal(), 'rogersbank');
 
         const successMessage = filterResult.duplicateCount > 0
-          ? `Successfully uploaded balance and ${transactionsToUpload.length} new transactions (${filterResult.duplicateCount} duplicates skipped)`
-          : `Successfully uploaded balance and ${transactionsToUpload.length} transactions`;
+          ? `${transactionsToUpload.length} uploaded (${filterResult.duplicateCount} skipped)`
+          : `${transactionsToUpload.length} uploaded`;
 
-        progressDialog.updateProgress(rogersAccountId, 'success', successMessage);
+        progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', successMessage);
         progressDialog.hideCancel();
         progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
 
@@ -680,7 +699,7 @@ export async function uploadRogersBankToMonarch() {
     }
 
     if (result.transactions.length === 0) {
-      progressDialog.updateProgress(rogersAccountId, 'success', 'Balance uploaded successfully. No transactions found in the specified date range');
+      progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', 'No transactions');
       progressDialog.hideCancel();
       progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
       toast.show('Balance uploaded successfully. No transactions found in the specified date range', 'info');

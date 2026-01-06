@@ -339,8 +339,40 @@ export async function uploadWealthsimpleAccountToMonarch(consolidatedAccount, fr
 }
 
 /**
+ * Build the list of sync steps for a Wealthsimple account
+ * Steps are dynamically determined based on account type
+ * @param {Object} consolidatedAccount - Consolidated account object
+ * @returns {Array} Array of step definitions [{key, name}]
+ */
+function buildSyncStepsForAccount(consolidatedAccount) {
+  const steps = [];
+  const accountType = consolidatedAccount.wealthsimpleAccount?.type || '';
+
+  // Balance upload is always a step
+  steps.push({ key: 'balance', name: 'Balance upload' });
+
+  // Credit limit sync only for credit card accounts
+  if (accountType === 'CREDIT_CARD') {
+    steps.push({ key: 'creditLimit', name: 'Credit limit sync' });
+  }
+
+  // Transaction sync for supported account types
+  const transactionSupportedTypes = ['CREDIT_CARD', 'CHEQUING', 'SAVINGS', 'JOINT'];
+  if (transactionSupportedTypes.includes(accountType)) {
+    steps.push({ key: 'transactions', name: 'Transaction sync' });
+  }
+
+  // TODO: Add position sync step when implemented for investment accounts
+  // if (isInvestmentAccount(accountType)) {
+  //   steps.push({ key: 'positions', name: 'Position sync' });
+  // }
+
+  return steps;
+}
+
+/**
  * Upload all Wealthsimple accounts to Monarch
- * Uses progress dialog to show per-account status and summary
+ * Uses progress dialog to show per-account status and summary with step-by-step tracking
  * @returns {Promise<void>}
  */
 export async function uploadAllWealthsimpleAccountsToMonarch() {
@@ -418,20 +450,20 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
 
       const account = consolidatedAccount.wealthsimpleAccount;
 
+      // Initialize steps for this account
+      const steps = buildSyncStepsForAccount(consolidatedAccount);
+      progressDialog.initSteps(account.id, steps);
+
       // Get balance for this account
       const currentBalance = balanceResult.balances.get(account.id);
 
       // Skip if balance is unavailable
       if (currentBalance === null || currentBalance === undefined) {
         debugLog(`Skipping account ${account.id} (${account.nickname}) - balance unavailable`);
-        progressDialog.updateProgress(account.id, 'error', 'Balance unavailable');
+        progressDialog.updateStepStatus(account.id, 'balance', 'error', 'Balance unavailable');
         balanceUnavailableCount += 1;
-        // Note: Don't increment stats.failed here - balanceUnavailableCount is tracked separately
         continue;
       }
-
-      // Update progress - starting
-      progressDialog.updateProgress(account.id, 'processing', 'Fetching data...');
 
       // Get date range for this account (respects account creation date and last sync)
       const { fromDate, toDate } = getDefaultDateRange(consolidatedAccount);
@@ -440,31 +472,32 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
       // Check cancellation before upload
       if (isCancelled) break;
 
-      progressDialog.updateProgress(account.id, 'processing', 'Uploading to Monarch...');
-
-      const result = await uploadWealthsimpleAccountToMonarch(consolidatedAccount, fromDate, toDate, currentBalance);
+      // Process the account with step-by-step progress tracking
+      const result = await uploadWealthsimpleAccountToMonarchWithSteps(
+        consolidatedAccount,
+        fromDate,
+        toDate,
+        currentBalance,
+        progressDialog,
+      );
 
       // Check if user cancelled the entire sync
       if (result && result.cancelled) {
         debugLog('Sync cancelled by user, stopping processing');
         isCancelled = true;
-        progressDialog.updateProgress(account.id, 'error', 'Cancelled');
         break;
       }
 
       // Check if user skipped this account
       if (result && result.skipped) {
-        progressDialog.updateProgress(account.id, 'success', 'Skipped by user');
         skippedDuringSync += 1;
         continue;
       }
 
       // Check success
-      if (result && result.success !== false) {
-        progressDialog.updateProgress(account.id, 'success', 'Upload complete');
+      if (result && result.success) {
         stats.success += 1;
       } else {
-        progressDialog.updateProgress(account.id, 'error', 'Upload failed');
         stats.failed += 1;
       }
     }
@@ -501,6 +534,215 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
       progressDialog.hideCancel();
     }
   }
+}
+
+/**
+ * Upload a single Wealthsimple account to Monarch with step-by-step progress tracking
+ * @param {Object} consolidatedAccount - Consolidated account object
+ * @param {string} fromDate - Start date (YYYY-MM-DD)
+ * @param {string} toDate - End date (YYYY-MM-DD)
+ * @param {Object} currentBalance - Current balance object {amount, currency}
+ * @param {Object} progressDialog - Progress dialog instance
+ * @returns {Promise<Object>} Result object with success status
+ */
+async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAccount, fromDate, toDate, currentBalance, progressDialog) {
+  const account = consolidatedAccount.wealthsimpleAccount;
+  const accountType = account?.type || '';
+
+  try {
+    debugLog(`Uploading Wealthsimple account ${account.id} to Monarch with step tracking...`);
+
+    // Step 1: Balance upload
+    progressDialog.updateStepStatus(account.id, 'balance', 'processing', 'Uploading...');
+
+    // Resolve account mapping (shows selector with create option)
+    const mappingResult = await resolveWealthsimpleAccountMapping(consolidatedAccount, currentBalance);
+
+    // Handle skip signal
+    if (mappingResult && mappingResult.skipped) {
+      debugLog(`User skipped account ${account.id}`);
+      markAccountAsSkipped(account.id, true);
+      progressDialog.updateStepStatus(account.id, 'balance', 'skipped', 'Skipped by user');
+      return { success: false, skipped: true };
+    }
+
+    // Handle cancel signal
+    if (mappingResult && mappingResult.cancelled) {
+      debugLog('User cancelled sync');
+      progressDialog.updateStepStatus(account.id, 'balance', 'error', 'Cancelled');
+      return { success: false, cancelled: true };
+    }
+
+    // Handle null (user closed without action)
+    if (!mappingResult) {
+      debugLog('Account mapping cancelled by user');
+      progressDialog.updateStepStatus(account.id, 'balance', 'error', 'Cancelled');
+      return { success: false, cancelled: true };
+    }
+
+    const monarchAccount = mappingResult;
+
+    // Determine the actual from date and whether to reconstruct balance
+    let actualFromDate = fromDate;
+    let reconstructBalance = false;
+
+    // For first sync of non-investment accounts, show date picker with reconstruction option
+    if (isFirstSyncNonInvestment(consolidatedAccount)) {
+      debugLog('First sync for non-investment account detected, showing date picker with reconstruction option');
+
+      const accountCreatedAt = account.createdAt;
+      let defaultDate = fromDate;
+
+      if (accountCreatedAt) {
+        const createdDateStr = extractDateFromISO(accountCreatedAt);
+        if (createdDateStr) {
+          defaultDate = createdDateStr;
+        }
+      }
+
+      const datePickerResult = await showDatePickerWithOptionsPromise(
+        defaultDate,
+        `Select the start date for syncing "${account.nickname || account.id}". Default is the account creation date.`,
+        {
+          showReconstructCheckbox: true,
+          reconstructCheckedByDefault: true,
+        },
+      );
+
+      if (!datePickerResult) {
+        debugLog('User cancelled date selection');
+        progressDialog.updateStepStatus(account.id, 'balance', 'error', 'Date selection cancelled');
+        return { success: false, cancelled: true };
+      }
+
+      actualFromDate = datePickerResult.date;
+      reconstructBalance = datePickerResult.reconstructBalance;
+    }
+
+    // Upload balance
+    const balanceSuccess = await uploadWealthsimpleBalance(
+      account.id,
+      monarchAccount.id,
+      actualFromDate,
+      toDate,
+      currentBalance,
+      reconstructBalance,
+    );
+
+    if (balanceSuccess) {
+      // Calculate balance info for display
+      const daysUploaded = calculateDaysBetween(actualFromDate, toDate);
+      const balanceMessage = formatBalanceMessage(currentBalance?.amount, daysUploaded);
+      progressDialog.updateStepStatus(account.id, 'balance', 'success', balanceMessage);
+
+      // Update balance change display with current balance
+      progressDialog.updateBalanceChange(account.id, {
+        newBalance: currentBalance?.amount,
+        daysUploaded,
+      });
+    } else {
+      progressDialog.updateStepStatus(account.id, 'balance', 'error', 'Upload failed');
+      return { success: false };
+    }
+
+    // Step 2: Credit limit sync (for credit cards only)
+    if (accountType === 'CREDIT_CARD') {
+      progressDialog.updateStepStatus(account.id, 'creditLimit', 'processing', 'Syncing...');
+
+      // Re-fetch the consolidated account to get the latest data
+      const updatedConsolidatedAccount = getAccountData(account.id);
+      if (updatedConsolidatedAccount) {
+        const creditLimitSuccess = await syncCreditLimit(updatedConsolidatedAccount, monarchAccount.id);
+        if (creditLimitSuccess) {
+          // Get the synced credit limit for display
+          const refreshedAccount = getAccountData(account.id);
+          const creditLimit = refreshedAccount?.lastSyncedCreditLimit;
+          const message = creditLimit ? `$${creditLimit.toLocaleString()}` : 'Synced';
+          progressDialog.updateStepStatus(account.id, 'creditLimit', 'success', message);
+        } else {
+          progressDialog.updateStepStatus(account.id, 'creditLimit', 'error', 'Sync failed');
+        }
+      } else {
+        progressDialog.updateStepStatus(account.id, 'creditLimit', 'skipped', 'Account data unavailable');
+      }
+    }
+
+    // Step 3: Transaction sync (for supported account types)
+    const transactionSupportedTypes = ['CREDIT_CARD', 'CHEQUING', 'SAVINGS', 'JOINT'];
+    if (transactionSupportedTypes.includes(accountType)) {
+      progressDialog.updateStepStatus(account.id, 'transactions', 'processing', 'Syncing...');
+
+      const transactionsSuccess = await uploadWealthsimpleTransactions(
+        account.id,
+        monarchAccount.id,
+        actualFromDate,
+        toDate,
+      );
+
+      if (transactionsSuccess) {
+        progressDialog.updateStepStatus(account.id, 'transactions', 'success', 'Synced');
+      } else {
+        progressDialog.updateStepStatus(account.id, 'transactions', 'error', 'Sync failed');
+      }
+    }
+
+    // Update lastSyncDate after successful sync
+    if (balanceSuccess) {
+      const { updateAccountInList } = await import('./wealthsimple/account');
+      updateAccountInList(account.id, { lastSyncDate: toDate });
+      debugLog(`Updated lastSyncDate for account ${account.id} to ${toDate}`);
+
+      // Handle balance checkpoint for accounts that need reconstruction
+      if (accountNeedsBalanceReconstruction(accountType) && reconstructBalance) {
+        await createBalanceCheckpoint(account.id, actualFromDate, toDate);
+      } else if (accountNeedsBalanceReconstruction(accountType) && consolidatedAccount.balanceCheckpoint) {
+        await updateBalanceCheckpoint(account.id, toDate, currentBalance);
+      }
+
+      // Apply time-based eviction
+      applyTransactionRetentionEviction(account.id);
+    }
+
+    return { success: true };
+  } catch (error) {
+    debugLog(`Error uploading Wealthsimple account ${account.id}:`, error);
+    progressDialog.updateStepStatus(account.id, 'balance', 'error', error.message);
+    return { success: false };
+  }
+}
+
+/**
+ * Calculate number of days between two dates
+ * @param {string} fromDate - Start date (YYYY-MM-DD)
+ * @param {string} toDate - End date (YYYY-MM-DD)
+ * @returns {number} Number of days
+ */
+function calculateDaysBetween(fromDate, toDate) {
+  const from = new Date(fromDate);
+  const to = new Date(toDate);
+  const diffTime = Math.abs(to - from);
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include both start and end dates
+}
+
+/**
+ * Format balance message for display in step status
+ * @param {number} balance - Current balance amount
+ * @param {number} daysUploaded - Number of days uploaded
+ * @returns {string} Formatted message
+ */
+function formatBalanceMessage(balance, daysUploaded) {
+  const parts = [];
+
+  if (balance !== undefined && balance !== null) {
+    const formattedBalance = `$${Math.abs(balance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    parts.push(formattedBalance);
+  }
+
+  if (daysUploaded && daysUploaded > 1) {
+    parts.push(`${daysUploaded} days`);
+  }
+
+  return parts.length > 0 ? parts.join(' | ') : 'Uploaded';
 }
 
 /**

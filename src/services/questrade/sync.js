@@ -19,7 +19,19 @@ import { showMonarchAccountSelector } from '../../ui/questrade/components/accoun
 import { ensureMonarchAuthentication } from '../../ui/components/monarchLoginLink';
 
 /**
- * Sync a single account to Monarch (balance + positions)
+ * Build the list of sync steps for a Questrade account
+ * @returns {Array} Array of step definitions [{key, name}]
+ */
+function buildQuestradeSteps() {
+  return [
+    { key: 'balance', name: 'Balance history' },
+    { key: 'positions', name: 'Positions sync' },
+    { key: 'transactions', name: 'Transactions sync' },
+  ];
+}
+
+/**
+ * Sync a single account to Monarch (balance + positions + transactions)
  * @param {string} accountId - Questrade account ID
  * @param {string} accountName - Account name for display
  * @param {string} fromDate - Start date for balance history
@@ -34,9 +46,14 @@ export async function syncAccountToMonarch(accountId, accountName, fromDate, toD
     // Set current account in state
     stateManager.setAccount(accountId, accountName);
 
+    // Initialize steps if progress dialog is available
+    if (progressDialog) {
+      progressDialog.initSteps(accountId, buildQuestradeSteps());
+    }
+
     // Step 1: Sync balance history
     if (progressDialog) {
-      progressDialog.updateProgress(accountId, 'processing', 'Syncing balance history...');
+      progressDialog.updateStepStatus(accountId, 'balance', 'processing', 'Uploading...');
     }
 
     const balanceSuccess = await balanceService.processAndUploadBalance(
@@ -47,12 +64,22 @@ export async function syncAccountToMonarch(accountId, accountName, fromDate, toD
     );
 
     if (!balanceSuccess) {
+      if (progressDialog) {
+        progressDialog.updateStepStatus(accountId, 'balance', 'error', 'Upload failed');
+      }
       throw new Error('Balance sync failed');
+    }
+
+    // Calculate days for display
+    const daysUploaded = calculateDaysBetween(fromDate, toDate);
+    const balanceMessage = daysUploaded > 1 ? `${daysUploaded} days` : 'Uploaded';
+    if (progressDialog) {
+      progressDialog.updateStepStatus(accountId, 'balance', 'success', balanceMessage);
     }
 
     // Step 2: Sync positions (gracefully handle failures)
     if (progressDialog) {
-      progressDialog.updateProgress(accountId, 'processing', 'Syncing positions...');
+      progressDialog.updateStepStatus(accountId, 'positions', 'processing', 'Syncing...');
     }
 
     try {
@@ -66,36 +93,40 @@ export async function syncAccountToMonarch(accountId, accountName, fromDate, toD
       if (!monarchAccount) {
         debugLog(`No Monarch account mapping for ${accountId}, skipping positions sync`);
         if (progressDialog) {
-          progressDialog.updateProgress(accountId, 'success', 'Balance synced (positions skipped)');
+          progressDialog.updateStepStatus(accountId, 'positions', 'skipped', 'No account mapping');
         }
-        return true;
-      }
-
-      // Process positions
-      const positionsResult = await positionsService.processAccountPositions(
-        accountId,
-        accountName,
-        monarchAccount.id,
-        progressDialog,
-      );
-
-      if (positionsResult.success) {
-        debugLog(`Positions sync completed: ${positionsResult.positionsProcessed} processed, ${positionsResult.positionsSkipped} skipped`);
       } else {
-        debugLog(`Positions sync had errors: ${positionsResult.error}`);
-        // Don't fail the entire sync if positions fail
+        // Process positions
+        const positionsResult = await positionsService.processAccountPositions(
+          accountId,
+          accountName,
+          monarchAccount.id,
+          progressDialog,
+        );
+
+        if (positionsResult.success) {
+          const positionsMessage = `${positionsResult.positionsProcessed} synced`;
+          if (progressDialog) {
+            progressDialog.updateStepStatus(accountId, 'positions', 'success', positionsMessage);
+          }
+          debugLog(`Positions sync completed: ${positionsResult.positionsProcessed} processed, ${positionsResult.positionsSkipped} skipped`);
+        } else {
+          if (progressDialog) {
+            progressDialog.updateStepStatus(accountId, 'positions', 'error', positionsResult.error || 'Sync failed');
+          }
+          debugLog(`Positions sync had errors: ${positionsResult.error}`);
+        }
       }
     } catch (positionsError) {
       debugLog('Error syncing positions (non-fatal):', positionsError);
-      // Don't fail the entire sync if positions fail
       if (progressDialog) {
-        progressDialog.updateProgress(accountId, 'success', 'Balance synced (positions error)');
+        progressDialog.updateStepStatus(accountId, 'positions', 'error', positionsError.message);
       }
     }
 
     // Step 3: Sync transactions (gracefully handle failures)
     if (progressDialog) {
-      progressDialog.updateProgress(accountId, 'processing', 'Syncing transactions...');
+      progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Syncing...');
     }
 
     try {
@@ -107,27 +138,45 @@ export async function syncAccountToMonarch(accountId, accountName, fromDate, toD
       );
 
       if (transactionsResult.success) {
-        debugLog(`Transactions sync completed: ${transactionsResult.ordersProcessed} processed`);
+        const ordersCount = transactionsResult.ordersProcessed || 0;
+        const transactionsMessage = ordersCount > 0 ? `${ordersCount} orders` : 'No new orders';
+        if (progressDialog) {
+          progressDialog.updateStepStatus(accountId, 'transactions', 'success', transactionsMessage);
+        }
+        debugLog(`Transactions sync completed: ${ordersCount} processed`);
         if (transactionsResult.skippedDuplicates) {
           debugLog(`Skipped ${transactionsResult.skippedDuplicates} duplicate orders`);
+        }
+      } else {
+        if (progressDialog) {
+          progressDialog.updateStepStatus(accountId, 'transactions', 'error', 'Sync failed');
         }
       }
     } catch (transactionsError) {
       debugLog('Error syncing transactions (non-fatal):', transactionsError);
-      // Don't fail the entire sync if transactions fail
       if (progressDialog) {
-        progressDialog.updateProgress(accountId, 'success', 'Balance and positions synced (transactions error)');
+        progressDialog.updateStepStatus(accountId, 'transactions', 'error', transactionsError.message);
       }
     }
 
     return true;
   } catch (error) {
     debugLog(`Error syncing account ${accountId}:`, error);
-    if (progressDialog) {
-      progressDialog.updateProgress(accountId, 'error', error.message);
-    }
     throw error;
   }
+}
+
+/**
+ * Calculate number of days between two dates
+ * @param {string} fromDate - Start date (YYYY-MM-DD)
+ * @param {string} toDate - End date (YYYY-MM-DD)
+ * @returns {number} Number of days
+ */
+function calculateDaysBetween(fromDate, toDate) {
+  const from = new Date(fromDate);
+  const to = new Date(toDate);
+  const diffTime = Math.abs(to - from);
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 }
 
 /**

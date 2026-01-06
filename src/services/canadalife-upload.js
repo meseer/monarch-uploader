@@ -343,6 +343,30 @@ function extractCanadaLifeBalanceChange(accountId, historicalData) {
 }
 
 /**
+ * Build the list of sync steps for a Canada Life account
+ * @returns {Array} Array of step definitions [{key, name}]
+ */
+function buildCanadaLifeSteps() {
+  return [
+    { key: 'fetchHistory', name: 'Fetch balance history' },
+    { key: 'upload', name: 'Upload to Monarch' },
+  ];
+}
+
+/**
+ * Calculate number of days between two dates
+ * @param {string} startDate - Start date (YYYY-MM-DD)
+ * @param {string} endDate - End date (YYYY-MM-DD)
+ * @returns {number} Number of days
+ */
+function calculateDaysBetween(startDate, endDate) {
+  const from = new Date(startDate);
+  const to = new Date(endDate);
+  const diffTime = Math.abs(to - from);
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+}
+
+/**
  * Upload balance history for a single Canada Life account
  * @param {Object} canadalifAccount - Canada Life account object
  * @param {string} startDate - Start date in YYYY-MM-DD format
@@ -360,36 +384,42 @@ async function uploadSingleAccount(canadalifAccount, startDate, endDate, progres
     // Set current account context
     stateManager.setAccount(accountId, accountName);
 
-    // Update progress
+    // Initialize steps if progress dialog is available
     if (progressDialog) {
-      progressDialog.updateProgress(accountId, 'processing', 'Getting account mapping...');
+      progressDialog.initSteps(accountId, buildCanadaLifeSteps());
+      progressDialog.updateStepStatus(accountId, 'fetchHistory', 'processing', 'Getting account mapping...');
     }
 
     // Get Monarch account mapping
     const monarchAccount = await getMonarchAccountMapping(canadalifAccount);
     if (!monarchAccount) {
+      if (progressDialog) {
+        progressDialog.updateStepStatus(accountId, 'fetchHistory', 'error', 'Mapping cancelled');
+      }
       throw new CanadaLifeUploadError('Account mapping cancelled by user', accountId);
     }
 
     // Validate date range including account creation date (allow today for auto uploads)
     validateDateRange(startDate, endDate, isAutoUpload, canadalifAccount);
 
-    // Update progress
+    // Update progress - fetching
     if (progressDialog) {
       const businessDays = calculateBusinessDays(startDate, endDate);
-      progressDialog.updateProgress(
+      progressDialog.updateStepStatus(
         accountId,
+        'fetchHistory',
         'processing',
-        `Loading ${businessDays} business days of balance history...`,
+        `Fetching ${businessDays} business days...`,
       );
     }
 
     // Create progress callback for historical data loading
     const historyProgressCallback = progressDialog ? (current, total, percentage) => {
-      progressDialog.updateProgress(
+      progressDialog.updateStepStatus(
         accountId,
+        'fetchHistory',
         'processing',
-        `Loaded balance for ${current} days out of ${total} (${percentage}%)`,
+        `${current}/${total} days (${percentage}%)`,
       );
     } : null;
 
@@ -402,36 +432,29 @@ async function uploadSingleAccount(canadalifAccount, startDate, endDate, progres
       signal,
     );
 
-    // Extract and display balance change information
+    // Mark fetch step as complete
+    const recordCount = historicalData.data.length - 1; // Exclude header
+    const daysCount = calculateDaysBetween(startDate, endDate);
     if (progressDialog) {
-      const balanceChange = extractCanadaLifeBalanceChange(accountId, historicalData);
-      if (balanceChange) {
-        progressDialog.updateBalanceChange(accountId, balanceChange);
-      }
-    }
-
-    // Update progress
-    if (progressDialog) {
-      const recordCount = historicalData.data.length - 1; // Exclude header
-      progressDialog.updateProgress(
-        accountId,
-        'processing',
-        `Converting ${recordCount} balance records to CSV...`,
-      );
+      progressDialog.updateStepStatus(accountId, 'fetchHistory', 'success', `${recordCount} records`);
+      progressDialog.updateStepStatus(accountId, 'upload', 'processing', 'Converting...');
     }
 
     // Convert to CSV format
     const csvData = convertCanadaLifeDataToCSV(historicalData);
 
-    // Update progress
+    // Update progress - uploading
     if (progressDialog) {
-      progressDialog.updateProgress(accountId, 'processing', 'Uploading to Monarch...');
+      progressDialog.updateStepStatus(accountId, 'upload', 'processing', 'Uploading to Monarch...');
     }
 
     // Upload to Monarch
     const success = await monarchApi.uploadBalance(monarchAccount.id, csvData, startDate, endDate);
 
     if (!success) {
+      if (progressDialog) {
+        progressDialog.updateStepStatus(accountId, 'upload', 'error', 'Upload failed');
+      }
       throw new CanadaLifeUploadError('Failed to upload to Monarch', accountId);
     }
 
@@ -441,14 +464,16 @@ async function uploadSingleAccount(canadalifAccount, startDate, endDate, progres
       saveLastUploadDate(accountId, endDate, 'canadalife');
     }
 
-    // Update progress
+    // Mark upload step as complete
     if (progressDialog) {
-      const recordCount = historicalData.data.length - 1;
-      progressDialog.updateProgress(
-        accountId,
-        'success',
-        `Successfully uploaded ${recordCount} balance records`,
-      );
+      const uploadMessage = daysCount > 1 ? `${daysCount} days uploaded` : 'Uploaded';
+      progressDialog.updateStepStatus(accountId, 'upload', 'success', uploadMessage);
+
+      // Extract and display balance change information
+      const balanceChange = extractCanadaLifeBalanceChange(accountId, historicalData);
+      if (balanceChange) {
+        progressDialog.updateBalanceChange(accountId, balanceChange);
+      }
     }
 
     debugLog(`Successfully uploaded ${accountName} balance history to Monarch`);
@@ -457,7 +482,8 @@ async function uploadSingleAccount(canadalifAccount, startDate, endDate, progres
     debugLog(`Error uploading ${accountName} balance history:`, error);
 
     if (progressDialog) {
-      progressDialog.updateProgress(accountId, 'error', error.message);
+      // Update the appropriate step based on error context
+      progressDialog.updateStepStatus(accountId, 'fetchHistory', 'error', error.message);
     }
 
     if (error instanceof CanadaLifeUploadError) {

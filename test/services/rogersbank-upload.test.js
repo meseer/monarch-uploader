@@ -91,6 +91,9 @@ jest.mock('../../src/ui/components/progressDialog', () => ({
     hideCancel: jest.fn(),
     showSummary: jest.fn(),
     onCancel: jest.fn(),
+    initSteps: jest.fn(),
+    updateStepStatus: jest.fn(),
+    updateBalanceChange: jest.fn(),
   })),
 }));
 
@@ -936,6 +939,9 @@ describe('Rogers Bank Upload Service', () => {
         hideCancel: jest.fn(),
         showSummary: jest.fn(),
         onCancel: jest.fn(),
+        initSteps: jest.fn(),
+        updateStepStatus: jest.fn(),
+        updateBalanceChange: jest.fn(),
       };
 
       showProgressDialog.mockReturnValueOnce(mockProgressDialog);
@@ -1011,6 +1017,9 @@ describe('Rogers Bank Upload Service', () => {
         hideCancel: jest.fn(),
         showSummary: jest.fn(),
         onCancel: jest.fn(),
+        initSteps: jest.fn(),
+        updateStepStatus: jest.fn(),
+        updateBalanceChange: jest.fn(),
       };
 
       showProgressDialog.mockReturnValueOnce(mockProgressDialog);
