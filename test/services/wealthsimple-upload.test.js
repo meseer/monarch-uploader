@@ -10,11 +10,13 @@ import {
 import toast from '../../src/ui/toast';
 import * as accountService from '../../src/services/wealthsimple/account';
 import wealthsimpleApi from '../../src/api/wealthsimple';
+import { showProgressDialog } from '../../src/ui/components/progressDialog';
 
 // Mock dependencies
 jest.mock('../../src/ui/toast');
 jest.mock('../../src/services/wealthsimple/account');
 jest.mock('../../src/api/wealthsimple');
+jest.mock('../../src/ui/components/progressDialog');
 jest.mock('../../src/services/wealthsimple/balance', () => ({
   getDefaultDateRange: jest.fn(() => ({
     fromDate: '2025-10-05',
@@ -32,8 +34,20 @@ jest.mock('../../src/core/utils', () => ({
 }));
 
 describe('Wealthsimple Upload Service', () => {
+  // Mock progress dialog object
+  const mockProgressDialog = {
+    updateProgress: jest.fn(),
+    showSummary: jest.fn(),
+    showError: jest.fn(),
+    hideCancel: jest.fn(),
+    close: jest.fn(),
+    onCancel: jest.fn(),
+    isCancelled: jest.fn(() => false),
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
+    showProgressDialog.mockReturnValue(mockProgressDialog);
   });
 
   describe('uploadAllWealthsimpleAccountsToMonarch', () => {
@@ -86,10 +100,11 @@ describe('Wealthsimple Upload Service', () => {
 
       expect(accountService.syncAccountListWithAPI).toHaveBeenCalled();
       expect(accountService.resolveWealthsimpleAccountMapping).toHaveBeenCalledTimes(2);
-      expect(toast.show).toHaveBeenCalledWith(
-        '2 failed',
-        'warning',
-      );
+      expect(mockProgressDialog.showSummary).toHaveBeenCalledWith({
+        success: 0,
+        failed: 2,
+        total: 2,
+      });
     });
 
     it('should handle no accounts found', async () => {
@@ -157,10 +172,11 @@ describe('Wealthsimple Upload Service', () => {
 
       await uploadAllWealthsimpleAccountsToMonarch();
 
-      expect(toast.show).toHaveBeenCalledWith(
-        '1 failed',
-        'warning',
-      );
+      expect(mockProgressDialog.showSummary).toHaveBeenCalledWith({
+        success: 0,
+        failed: 1,
+        total: 1,
+      });
     });
 
     it('should skip accounts with syncEnabled false', async () => {
@@ -265,10 +281,12 @@ describe('Wealthsimple Upload Service', () => {
       await uploadAllWealthsimpleAccountsToMonarch();
 
       expect(accountService.resolveWealthsimpleAccountMapping).not.toHaveBeenCalled();
-      expect(toast.show).toHaveBeenCalledWith(
-        '1 failed (balance unavailable)',
-        'warning',
-      );
+      expect(mockProgressDialog.updateProgress).toHaveBeenCalledWith('acc-1', 'error', 'Balance unavailable');
+      expect(mockProgressDialog.showSummary).toHaveBeenCalledWith({
+        success: 0,
+        failed: 1,
+        total: 1,
+      });
     });
 
     it('should handle successful upload of all accounts', async () => {
@@ -329,7 +347,7 @@ describe('Wealthsimple Upload Service', () => {
 
       // Should only process first account (cancelled stops processing)
       expect(accountService.resolveWealthsimpleAccountMapping).toHaveBeenCalledTimes(1);
-      expect(toast.show).toHaveBeenCalledWith('Sync cancelled', 'warning');
+      expect(toast.show).toHaveBeenCalledWith('Upload process was cancelled', 'warning');
     });
 
     it('should continue processing when user skips an account', async () => {

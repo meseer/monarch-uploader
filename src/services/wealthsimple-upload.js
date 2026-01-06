@@ -27,6 +27,7 @@ import {
 } from './wealthsimple/balance';
 import { fetchAndProcessTransactions } from './wealthsimple/transactions';
 import { showDatePickerWithOptionsPromise } from '../ui/components/datePicker';
+import { showProgressDialog } from '../ui/components/progressDialog';
 
 /**
  * Create a balance checkpoint after first sync with reconstruction
@@ -213,7 +214,7 @@ export async function uploadWealthsimpleAccountToMonarch(consolidatedAccount, fr
     if (result && result.skipped) {
       debugLog(`User skipped account ${account.id}`);
       markAccountAsSkipped(account.id, true);
-      toast.show(`Skipped ${account.nickname || account.id}`, 'info');
+      toast.show(`Skipped ${account.nickname || account.id}`, 'debug');
       return { success: false, skipped: true };
     }
 
@@ -263,7 +264,7 @@ export async function uploadWealthsimpleAccountToMonarch(consolidatedAccount, fr
 
       if (!datePickerResult) {
         debugLog('User cancelled date selection');
-        toast.show('Sync cancelled', 'info');
+        toast.show('Sync cancelled', 'debug');
         return { success: false, cancelled: true };
       }
 
@@ -325,7 +326,7 @@ export async function uploadWealthsimpleAccountToMonarch(consolidatedAccount, fr
       // This is performed after each successful account sync
       applyTransactionRetentionEviction(account.id);
 
-      toast.show(`Processed ${account.nickname || account.id}`, 'info');
+      toast.show(`Processed ${account.nickname || account.id}`, 'debug');
     }
 
     return success;
@@ -339,9 +340,13 @@ export async function uploadWealthsimpleAccountToMonarch(consolidatedAccount, fr
 
 /**
  * Upload all Wealthsimple accounts to Monarch
+ * Uses progress dialog to show per-account status and summary
  * @returns {Promise<void>}
  */
 export async function uploadAllWealthsimpleAccountsToMonarch() {
+  let progressDialog = null;
+  let isCancelled = false;
+
   try {
     debugLog('Starting fetch of all Wealthsimple accounts...');
 
@@ -368,6 +373,23 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
 
     debugLog(`Processing ${accountsToSync.length} Wealthsimple account(s):`, accountsToSync);
 
+    // Prepare accounts for progress dialog
+    const accountsForDialog = accountsToSync.map((acc) => ({
+      key: acc.wealthsimpleAccount.id,
+      nickname: acc.wealthsimpleAccount.nickname,
+      name: acc.wealthsimpleAccount.nickname || acc.wealthsimpleAccount.id,
+    }));
+
+    // Create progress dialog
+    progressDialog = showProgressDialog(accountsForDialog, 'Uploading Wealthsimple Accounts to Monarch');
+
+    // Set up cancel callback
+    progressDialog.onCancel(() => {
+      debugLog('Upload cancellation requested');
+      isCancelled = true;
+      toast.show('Upload cancelled by user', 'warning');
+    });
+
     // Fetch all account balances upfront
     const accountIds = accountsToSync.map((acc) => acc.wealthsimpleAccount.id);
     debugLog('Fetching balances for all accounts...');
@@ -376,16 +398,24 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
     if (!balanceResult.success) {
       debugLog('Failed to fetch account balances:', balanceResult.error);
       toast.show('Failed to fetch account balances. Please try again.', 'error');
+      progressDialog.hideCancel();
+      progressDialog.close();
       return;
     }
 
-    // Process all non-skipped accounts
-    let successCount = 0;
-    let failureCount = 0;
+    // Initialize stats
+    const stats = { success: 0, failed: 0, total: accountsToSync.length };
     let skippedDuringSync = 0;
     let balanceUnavailableCount = 0;
 
+    // Process all non-skipped accounts
     for (const consolidatedAccount of accountsToSync) {
+      // Check for cancellation before processing each account
+      if (isCancelled) {
+        debugLog('Upload cancelled, stopping account processing');
+        break;
+      }
+
       const account = consolidatedAccount.wealthsimpleAccount;
 
       // Get balance for this account
@@ -394,52 +424,82 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
       // Skip if balance is unavailable
       if (currentBalance === null || currentBalance === undefined) {
         debugLog(`Skipping account ${account.id} (${account.nickname}) - balance unavailable`);
+        progressDialog.updateProgress(account.id, 'error', 'Balance unavailable');
         balanceUnavailableCount += 1;
+        // Note: Don't increment stats.failed here - balanceUnavailableCount is tracked separately
         continue;
       }
+
+      // Update progress - starting
+      progressDialog.updateProgress(account.id, 'processing', 'Fetching data...');
 
       // Get date range for this account (respects account creation date and last sync)
       const { fromDate, toDate } = getDefaultDateRange(consolidatedAccount);
       debugLog(`Using date range for ${account.nickname}: ${fromDate} to ${toDate}`);
+
+      // Check cancellation before upload
+      if (isCancelled) break;
+
+      progressDialog.updateProgress(account.id, 'processing', 'Uploading to Monarch...');
 
       const result = await uploadWealthsimpleAccountToMonarch(consolidatedAccount, fromDate, toDate, currentBalance);
 
       // Check if user cancelled the entire sync
       if (result && result.cancelled) {
         debugLog('Sync cancelled by user, stopping processing');
-        toast.show('Sync cancelled', 'warning');
+        isCancelled = true;
+        progressDialog.updateProgress(account.id, 'error', 'Cancelled');
         break;
       }
 
       // Check if user skipped this account
       if (result && result.skipped) {
+        progressDialog.updateProgress(account.id, 'success', 'Skipped by user');
         skippedDuringSync += 1;
         continue;
       }
 
       // Check success
       if (result && result.success !== false) {
-        successCount += 1;
+        progressDialog.updateProgress(account.id, 'success', 'Upload complete');
+        stats.success += 1;
       } else {
-        failureCount += 1;
+        progressDialog.updateProgress(account.id, 'error', 'Upload failed');
+        stats.failed += 1;
       }
     }
 
-    // Show final summary
+    // Show final summary in progress dialog
     const totalSkipped = skippedCount + skippedDuringSync;
-    if (failureCount === 0 && totalSkipped === 0 && balanceUnavailableCount === 0) {
-      toast.show(`Successfully uploaded all ${successCount} Wealthsimple account(s)`, 'info');
-    } else {
+    const totalFailed = stats.failed + balanceUnavailableCount;
+    progressDialog.showSummary({
+      success: stats.success,
+      failed: totalFailed,
+      total: stats.total,
+    });
+    progressDialog.hideCancel();
+
+    // Show final summary toast
+    if (isCancelled) {
+      toast.show('Upload process was cancelled', 'warning');
+    } else if (totalFailed === 0 && totalSkipped === 0) {
+      toast.show(`Successfully uploaded all ${stats.success} Wealthsimple account(s)`, 'info');
+    } else if (stats.success > 0) {
       const parts = [];
-      if (successCount > 0) parts.push(`${successCount} uploaded`);
-      if (failureCount > 0) parts.push(`${failureCount} failed`);
-      if (balanceUnavailableCount > 0) parts.push(`${balanceUnavailableCount} failed (balance unavailable)`);
+      if (stats.success > 0) parts.push(`${stats.success} uploaded`);
+      if (stats.failed > 0) parts.push(`${stats.failed} failed`);
+      if (balanceUnavailableCount > 0) parts.push(`${balanceUnavailableCount} balance unavailable`);
       if (totalSkipped > 0) parts.push(`${totalSkipped} skipped`);
-      toast.show(parts.join(', '), failureCount > 0 || balanceUnavailableCount > 0 ? 'warning' : 'info');
+      toast.show(parts.join(', '), totalFailed > 0 ? 'warning' : 'info');
     }
   } catch (error) {
     debugLog('Error fetching Wealthsimple accounts:', error);
     toast.show(`Error fetching accounts: ${error.message}`, 'error');
+
+    // Clean up progress dialog on error
+    if (progressDialog) {
+      progressDialog.hideCancel();
+    }
   }
 }
 

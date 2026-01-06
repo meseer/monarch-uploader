@@ -133,7 +133,7 @@ export async function resolveWealthsimpleAccountMapping(consolidatedAccount, cur
 
     debugLog(`Saved account mapping: ${nickname} (${accountId}) -> ${monarchAccount.displayName} (${monarchAccount.id})`);
 
-    toast.show(`Mapped ${nickname} to ${monarchAccount.displayName} in Monarch`, 'info');
+    toast.show(`Mapped ${nickname} to ${monarchAccount.displayName} in Monarch`, 'debug');
 
     return monarchAccount;
   } catch (error) {
@@ -295,7 +295,7 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
         const message = hasTransactions
           ? `Reconstructed and uploaded ${balanceHistory.length} days of balance history for ${wealthsimpleAccountName}`
           : `Uploaded ${balanceHistory.length} days of balance (zero history + current balance) for ${wealthsimpleAccountName}`;
-        toast.show(message, 'info');
+        toast.show(message, 'debug');
       }
 
       return success;
@@ -346,7 +346,7 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
         );
 
         if (success) {
-          toast.show(`Reconstructed and uploaded ${balanceHistory.length} days of balance for ${wealthsimpleAccountName}`, 'info');
+          toast.show(`Reconstructed and uploaded ${balanceHistory.length} days of balance for ${wealthsimpleAccountName}`, 'debug');
         }
 
         return success;
@@ -376,7 +376,7 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
     );
 
     if (success) {
-      toast.show(`Updated today's balance for ${wealthsimpleAccountName}`, 'info');
+      toast.show(`Updated today's balance for ${wealthsimpleAccountName}`, 'debug');
     }
 
     return success;
@@ -454,7 +454,7 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
         ? `All ${duplicateCount} transactions have already been uploaded`
         : 'No new transactions to upload';
       debugLog(message);
-      toast.show(message, 'info');
+      toast.show(message, 'debug');
       return true; // Success, just no new transactions
     }
 
@@ -514,7 +514,7 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
         : `Successfully uploaded ${newTransactions.length} transactions`;
 
       debugLog(successMessage);
-      toast.show(successMessage, 'info');
+      toast.show(successMessage, 'debug');
 
       return true;
     }
