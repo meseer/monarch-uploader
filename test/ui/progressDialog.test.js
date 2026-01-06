@@ -282,8 +282,22 @@ describe('Progress Dialog Component', () => {
       expect(result).toBe(dialog);
     });
 
-    test('should calculate pending correctly', () => {
-      const stats = { success: 1, failed: 1, total: 5 };
+    test('should handle skipped count when provided', () => {
+      const stats = { success: 2, failed: 1, skipped: 5 };
+      const result = dialog.showSummary(stats);
+
+      expect(result).toBe(dialog);
+    });
+
+    test('should handle skipped count of zero', () => {
+      const stats = { success: 2, failed: 1, skipped: 0 };
+      const result = dialog.showSummary(stats);
+
+      expect(result).toBe(dialog);
+    });
+
+    test('should work without skipped property for backward compatibility', () => {
+      const stats = { success: 2, failed: 1 };
       const result = dialog.showSummary(stats);
 
       expect(result).toBe(dialog);

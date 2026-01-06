@@ -475,7 +475,7 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
     progressDialog.showSummary({
       success: stats.success,
       failed: totalFailed,
-      total: stats.total,
+      skipped: totalSkipped,
     });
     progressDialog.hideCancel();
 

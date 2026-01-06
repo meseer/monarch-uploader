@@ -422,12 +422,16 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
 
     /**
      * Show summary of results
-     * @param {Object} stats - Statistics object with success, failed, total counts
+     * @param {Object} stats - Statistics object with success, failed, skipped (optional) counts
      * @returns {Object} Dialog instance for chaining
      */
     showSummary: (stats) => {
-      const pendingCount = stats.total - stats.success - stats.failed;
-      summary.textContent = `Summary: ${stats.success} success, ${stats.failed} failed, ${pendingCount} pending`;
+      const skipped = stats.skipped || 0;
+      let summaryText = `Summary: ${stats.success} success, ${stats.failed} failed`;
+      if (skipped > 0) {
+        summaryText += `, ${skipped} skipped`;
+      }
+      summary.textContent = summaryText;
       return dialog;
     },
 

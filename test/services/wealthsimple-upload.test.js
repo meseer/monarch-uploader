@@ -103,7 +103,7 @@ describe('Wealthsimple Upload Service', () => {
       expect(mockProgressDialog.showSummary).toHaveBeenCalledWith({
         success: 0,
         failed: 2,
-        total: 2,
+        skipped: 0,
       });
     });
 
@@ -175,7 +175,7 @@ describe('Wealthsimple Upload Service', () => {
       expect(mockProgressDialog.showSummary).toHaveBeenCalledWith({
         success: 0,
         failed: 1,
-        total: 1,
+        skipped: 0,
       });
     });
 
@@ -285,7 +285,7 @@ describe('Wealthsimple Upload Service', () => {
       expect(mockProgressDialog.showSummary).toHaveBeenCalledWith({
         success: 0,
         failed: 1,
-        total: 1,
+        skipped: 0,
       });
     });
 
