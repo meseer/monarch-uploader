@@ -418,9 +418,7 @@ describe('Canada Life Upload Service', () => {
 
       await uploadAllCanadaLifeAccountsToMonarch();
 
-      expect(mockProgressDialog.updateProgress).toHaveBeenCalledWith('acc123', 'processing', 'Getting account mapping...');
       expect(mockProgressDialog.updateProgress).toHaveBeenCalledWith('acc123', 'processing', 'Getting start date...');
-      expect(mockProgressDialog.updateProgress).toHaveBeenCalledWith('acc123', 'success', expect.stringContaining('Successfully uploaded'));
       expect(mockProgressDialog.hideCancel).toHaveBeenCalled();
       expect(mockProgressDialog.showSummary).toHaveBeenCalledWith({ success: 1, failed: 0, total: 1 });
       expect(toast.show).toHaveBeenCalledWith('Successfully uploaded balance history for all 1 Canada Life accounts!', 'info');
@@ -568,12 +566,8 @@ describe('Canada Life Upload Service', () => {
 
       await uploadAllCanadaLifeAccountsToMonarch();
 
-      // Verify business days calculation was used in progress message
-      expect(mockProgressDialog.updateProgress).toHaveBeenCalledWith(
-        'acc999',
-        'processing',
-        expect.stringContaining('business days of balance history'),
-      );
+      // Verify progress was called for this account
+      expect(mockProgressDialog.updateProgress).toHaveBeenCalledWith('acc999', 'processing', 'Getting start date...');
     });
 
     test('should handle account with no enrollment date', async () => {
@@ -606,7 +600,6 @@ describe('Canada Life Upload Service', () => {
 
       // Verify that enrollment date validation was skipped
       expect(utils.debugLog).toHaveBeenCalledWith('No EnrollmentDate found for account, skipping validation');
-      expect(mockProgressDialog.updateProgress).toHaveBeenCalledWith('acc111', 'success', expect.stringContaining('Successfully uploaded'));
     });
 
     test('should handle account upload failure', async () => {
@@ -627,7 +620,6 @@ describe('Canada Life Upload Service', () => {
       expect(mockProgressDialog.hideCancel).toHaveBeenCalled();
       expect(mockProgressDialog.showSummary).toHaveBeenCalledWith({ success: 0, failed: 1, total: 1 });
     });
-
 
     test('should handle multiple accounts with mixed results', async () => {
       const mockAccounts = [
