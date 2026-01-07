@@ -53,7 +53,7 @@ export async function syncAccountToMonarch(accountId, accountName, fromDate, toD
 
     // Step 1: Sync balance history
     if (progressDialog) {
-      progressDialog.updateStepStatus(accountId, 'balance', 'processing', 'Uploading...');
+      progressDialog.updateStepStatus(accountId, 'balance', 'processing', 'Uploading balance');
     }
 
     const balanceSuccess = await balanceService.processAndUploadBalance(
@@ -79,7 +79,7 @@ export async function syncAccountToMonarch(accountId, accountName, fromDate, toD
 
     // Step 2: Sync positions (gracefully handle failures)
     if (progressDialog) {
-      progressDialog.updateStepStatus(accountId, 'positions', 'processing', 'Syncing...');
+      progressDialog.updateStepStatus(accountId, 'positions', 'processing', 'Syncing positions');
     }
 
     try {
@@ -126,7 +126,7 @@ export async function syncAccountToMonarch(accountId, accountName, fromDate, toD
 
     // Step 3: Sync transactions (gracefully handle failures)
     if (progressDialog) {
-      progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Syncing...');
+      progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Syncing orders');
     }
 
     try {

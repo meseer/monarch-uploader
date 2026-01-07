@@ -394,7 +394,11 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
  * @param {string} monarchAccountId - Monarch account ID
  * @param {string} fromDate - Start date (YYYY-MM-DD)
  * @param {string} toDate - End date (YYYY-MM-DD)
- * @returns {Promise<boolean>} Success status
+ * @returns {Promise<Object>} Result object with success status and counts
+ *   - success: boolean - Whether the upload succeeded
+ *   - synced: number - Number of transactions synced (uploaded)
+ *   - skipped: number - Number of duplicate transactions skipped
+ *   - total: number - Total transactions found
  */
 export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, monarchAccountId, fromDate, toDate) {
   try {
@@ -417,7 +421,7 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
     // Check if this account type supports transactions
     if (!WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType)) {
       debugLog(`Transaction upload not supported for account type: ${accountType}`);
-      return false; // Silently skip unsupported account types
+      return { success: false, synced: 0, skipped: 0, total: 0, unsupported: true };
     }
 
     // Note: First sync date picker is handled in wealthsimple-upload.js
@@ -428,7 +432,7 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
 
     if (!processedTransactions || processedTransactions.length === 0) {
       debugLog('No transactions to upload');
-      return true; // Success, just no transactions
+      return { success: true, synced: 0, skipped: 0, total: 0 };
     }
 
     debugLog(`Found ${processedTransactions.length} processed transactions`);
@@ -455,7 +459,7 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
         : 'No new transactions to upload';
       debugLog(message);
       toast.show(message, 'debug');
-      return true; // Success, just no new transactions
+      return { success: true, synced: 0, skipped: duplicateCount, total: originalCount };
     }
 
     debugLog(`Uploading ${newTransactions.length} new transactions`);
@@ -516,14 +520,14 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
       debugLog(successMessage);
       toast.show(successMessage, 'debug');
 
-      return true;
+      return { success: true, synced: newTransactions.length, skipped: duplicateCount, total: originalCount };
     }
 
     throw new Error('Transaction upload failed');
   } catch (error) {
     debugLog('Error uploading Wealthsimple transactions:', error);
     toast.show(`Transaction upload failed: ${error.message}`, 'error');
-    return false;
+    return { success: false, synced: 0, skipped: 0, total: 0, error: error.message };
   }
 }
 

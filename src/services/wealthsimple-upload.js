@@ -553,7 +553,7 @@ async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAccount, 
     debugLog(`Uploading Wealthsimple account ${account.id} to Monarch with step tracking...`);
 
     // Step 1: Balance upload
-    progressDialog.updateStepStatus(account.id, 'balance', 'processing', 'Uploading...');
+    progressDialog.updateStepStatus(account.id, 'balance', 'processing', 'Uploading balance');
 
     // Resolve account mapping (shows selector with create option)
     const mappingResult = await resolveWealthsimpleAccountMapping(consolidatedAccount, currentBalance);
@@ -647,7 +647,7 @@ async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAccount, 
 
     // Step 2: Credit limit sync (for credit cards only)
     if (accountType === 'CREDIT_CARD') {
-      progressDialog.updateStepStatus(account.id, 'creditLimit', 'processing', 'Syncing...');
+      progressDialog.updateStepStatus(account.id, 'creditLimit', 'processing', 'Syncing credit limit');
 
       // Re-fetch the consolidated account to get the latest data
       const updatedConsolidatedAccount = getAccountData(account.id);
@@ -670,19 +670,24 @@ async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAccount, 
     // Step 3: Transaction sync (for supported account types)
     const transactionSupportedTypes = ['CREDIT_CARD', 'CHEQUING', 'SAVINGS', 'JOINT'];
     if (transactionSupportedTypes.includes(accountType)) {
-      progressDialog.updateStepStatus(account.id, 'transactions', 'processing', 'Syncing...');
+      progressDialog.updateStepStatus(account.id, 'transactions', 'processing', 'Syncing transactions');
 
-      const transactionsSuccess = await uploadWealthsimpleTransactions(
+      const transactionsResult = await uploadWealthsimpleTransactions(
         account.id,
         monarchAccount.id,
         actualFromDate,
         toDate,
       );
 
-      if (transactionsSuccess) {
-        progressDialog.updateStepStatus(account.id, 'transactions', 'success', 'Synced');
+      if (transactionsResult && transactionsResult.success) {
+        // Format transaction count message
+        const txMessage = formatTransactionCountMessage(transactionsResult.synced, transactionsResult.skipped);
+        progressDialog.updateStepStatus(account.id, 'transactions', 'success', txMessage);
+      } else if (transactionsResult && transactionsResult.unsupported) {
+        progressDialog.updateStepStatus(account.id, 'transactions', 'skipped', 'Not supported');
       } else {
-        progressDialog.updateStepStatus(account.id, 'transactions', 'error', 'Sync failed');
+        const errorMsg = transactionsResult?.error || 'Sync failed';
+        progressDialog.updateStepStatus(account.id, 'transactions', 'error', errorMsg);
       }
     }
 
@@ -722,6 +727,30 @@ function calculateDaysBetween(fromDate, toDate) {
   const to = new Date(toDate);
   const diffTime = Math.abs(to - from);
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include both start and end dates
+}
+
+/**
+ * Format transaction count message for display in step status
+ * @param {number} synced - Number of transactions synced
+ * @param {number} skipped - Number of transactions skipped (duplicates)
+ * @returns {string} Formatted message
+ */
+function formatTransactionCountMessage(synced, skipped) {
+  const parts = [];
+
+  if (synced > 0) {
+    parts.push(`${synced} synced`);
+  }
+
+  if (skipped > 0) {
+    parts.push(`${skipped} skipped`);
+  }
+
+  if (parts.length === 0) {
+    return 'No transactions';
+  }
+
+  return parts.join(', ');
 }
 
 /**

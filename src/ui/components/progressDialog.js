@@ -14,17 +14,19 @@ import { debugLog } from '../../core/utils';
 
 /**
  * Calculate step summary for display in collapsed account row
+ * Shows the current step being processed, or final status when complete
  * @param {Array} steps - Array of step objects with status
  * @returns {Object} Summary object with counts and display text
  */
 function calculateStepSummary(steps) {
   if (!steps || steps.length === 0) {
-    return { complete: 0, total: 0, hasError: false, text: '' };
+    return { complete: 0, total: 0, hasError: false, currentStep: null, text: '' };
   }
 
   let complete = 0;
   let errors = 0;
   let skipped = 0;
+  let currentStep = null;
 
   steps.forEach((step) => {
     if (step.status === 'success') {
@@ -33,24 +35,28 @@ function calculateStepSummary(steps) {
       errors += 1;
     } else if (step.status === 'skipped') {
       skipped += 1;
+    } else if (step.status === 'processing' && !currentStep) {
+      currentStep = step;
     }
   });
 
   const total = steps.length;
   const hasError = errors > 0;
+  const allDone = complete + errors + skipped === total;
 
   let text;
-  if (hasError) {
+  if (currentStep) {
+    // Show current step being processed
+    text = currentStep.message || currentStep.name || 'Processing...';
+  } else if (hasError) {
     text = `${complete}/${total} complete, ${errors} error${errors > 1 ? 's' : ''}`;
-  } else if (skipped > 0) {
-    text = `${complete}/${total} complete, ${skipped} skipped`;
-  } else if (complete === total) {
-    text = `${complete}/${total} complete`;
+  } else if (allDone) {
+    text = 'Complete';
   } else {
-    text = `${complete}/${total}`;
+    text = 'Pending';
   }
 
-  return { complete, total, hasError, text };
+  return { complete, total, hasError, currentStep, text };
 }
 
 /**
@@ -657,12 +663,13 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     /**
      * Update balance change information for a specific account
      * This is displayed in the expandable steps section
+     * Display order: days synced → current balance → percentage change
      * @param {string} accountId - Account ID to update
      * @param {Object} balanceChangeData - Balance change data
      * @param {number} balanceChangeData.oldBalance - Previous balance (optional)
      * @param {number} balanceChangeData.newBalance - Current balance
      * @param {string} balanceChangeData.lastUploadDate - Last upload date in YYYY-MM-DD format (optional)
-     * @param {number} balanceChangeData.changePercent - Percentage change (optional)
+     * @param {number} balanceChangeData.changePercent - Percentage change (optional, null means no history)
      * @param {number} balanceChangeData.daysUploaded - Number of days uploaded (optional)
      */
     updateBalanceChange: (accountId, balanceChangeData) => {
@@ -676,24 +683,28 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
         const { oldBalance, newBalance, changePercent, daysUploaded } = balanceChangeData;
 
         // Build display string based on available data
+        // Order: days synced → current balance → percentage change
         const parts = [];
 
-        // Current balance (always shown)
+        // Days uploaded (first, if available)
+        if (daysUploaded && daysUploaded > 0) {
+          parts.push(`${daysUploaded} day${daysUploaded > 1 ? 's' : ''}`);
+        }
+
+        // Current balance
         if (newBalance !== undefined && newBalance !== null) {
           const formattedNewBalance = `$${Math.abs(newBalance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-          parts.push(`${formattedNewBalance} today`);
+          parts.push(formattedNewBalance);
         }
 
-        // Days uploaded (if available)
-        if (daysUploaded && daysUploaded > 1) {
-          parts.push(`${daysUploaded} days`);
-        }
-
-        // Change percentage (if available and we have history)
-        if (changePercent !== undefined && changePercent !== null && oldBalance !== undefined) {
+        // Change percentage (always show if we have old balance data, including 0%)
+        if (changePercent !== undefined && changePercent !== null) {
           const changeSymbol = changePercent > 0 ? '+' : '';
           const formattedChangePercent = `${changeSymbol}${changePercent.toFixed(2)}%`;
           parts.push(formattedChangePercent);
+        } else if (oldBalance !== undefined && newBalance !== undefined) {
+          // Calculate and show 0% if balances are the same but no changePercent provided
+          parts.push('0.00%');
         }
 
         // Set the content
@@ -710,6 +721,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
             backgroundColor = '#ffebee';
             textColor = '#c62828';
           } else {
+            // Zero change - neutral gray
             backgroundColor = '#f5f5f5';
             textColor = '#666';
           }

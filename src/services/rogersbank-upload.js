@@ -499,7 +499,7 @@ export async function uploadRogersBankToMonarch() {
       const balanceCSV = generateBalanceCSV(currentBalance, rogersAccountName);
 
       // Upload balance to Monarch
-      progressDialog.updateStepStatus(rogersAccountId, 'balance', 'processing', 'Uploading...');
+      progressDialog.updateStepStatus(rogersAccountId, 'balance', 'processing', 'Uploading balance');
       const todayFormatted = getTodayLocal();
       const balanceUploadSuccess = await monarchApi.uploadBalance(
         monarchAccount.id, // Use actual Monarch account ID
@@ -525,7 +525,7 @@ export async function uploadRogersBankToMonarch() {
     }
 
     // STEP 3: Fetch and process transactions if any exist
-    progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Fetching...');
+    progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Fetching transactions');
 
     // Check for cancellation before fetching
     if (abortController.signal.aborted) {

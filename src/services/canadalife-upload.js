@@ -445,7 +445,7 @@ async function uploadSingleAccount(canadalifAccount, startDate, endDate, progres
 
     // Update progress - uploading
     if (progressDialog) {
-      progressDialog.updateStepStatus(accountId, 'upload', 'processing', 'Uploading to Monarch...');
+      progressDialog.updateStepStatus(accountId, 'upload', 'processing', 'Uploading balance');
     }
 
     // Upload to Monarch
