@@ -691,6 +691,138 @@ describe('CSV Conversion Utilities', () => {
       const result = convertWealthsimpleTransactionsToMonarchCSV(transactions, 'Test Account');
       expect(result).toContain('STARBUCKS #1234 VANCOUVER BC');
     });
+
+    test('should add "Pending" tag for authorized transactions', () => {
+      const transactions = [
+        {
+          id: 'tx-authorized',
+          date: '2024-01-15',
+          merchant: 'STARBUCKS',
+          originalMerchant: 'STARBUCKS #1234',
+          amount: -5.50,
+          subType: 'PURCHASE',
+          status: 'authorized',
+          resolvedMonarchCategory: 'Dining & Drinks',
+        },
+      ];
+
+      const result = convertWealthsimpleTransactionsToMonarchCSV(transactions, 'Test Account');
+      expect(result).toContain('Pending');
+    });
+
+    test('should NOT add "Pending" tag for settled transactions', () => {
+      const transactions = [
+        {
+          id: 'tx-settled',
+          date: '2024-01-15',
+          merchant: 'STARBUCKS',
+          originalMerchant: 'STARBUCKS #1234',
+          amount: -5.50,
+          subType: 'PURCHASE',
+          status: 'settled',
+          resolvedMonarchCategory: 'Dining & Drinks',
+        },
+      ];
+
+      const result = convertWealthsimpleTransactionsToMonarchCSV(transactions, 'Test Account');
+      // Tags column should be empty for settled transactions
+      const lines = result.split('\n');
+      const dataRow = lines[1]; // Second line is data
+      // The last field (Tags) should be empty
+      expect(dataRow.endsWith(',')).toBe(true);
+    });
+
+    test('should always include transaction ID in notes for authorized transactions', () => {
+      const transactions = [
+        {
+          id: 'tx-unique-pending-123',
+          date: '2024-01-15',
+          merchant: 'STARBUCKS',
+          originalMerchant: 'STARBUCKS #1234',
+          amount: -5.50,
+          subType: 'PURCHASE',
+          status: 'authorized',
+          resolvedMonarchCategory: 'Dining & Drinks',
+        },
+      ];
+
+      // Even with storeTransactionDetailsInNotes = false, pending transactions should have ID in notes
+      const result = convertWealthsimpleTransactionsToMonarchCSV(
+        transactions,
+        'Test Account',
+        { storeTransactionDetailsInNotes: false },
+      );
+
+      expect(result).toContain('tx-unique-pending-123');
+      expect(result).toContain('PURCHASE');
+    });
+
+    test('should NOT include transaction ID in notes for settled transactions when storeTransactionDetailsInNotes is false', () => {
+      const transactions = [
+        {
+          id: 'tx-settled-456',
+          date: '2024-01-15',
+          merchant: 'STARBUCKS',
+          originalMerchant: 'STARBUCKS #1234',
+          amount: -5.50,
+          subType: 'PURCHASE',
+          status: 'settled',
+          resolvedMonarchCategory: 'Dining & Drinks',
+        },
+      ];
+
+      const result = convertWealthsimpleTransactionsToMonarchCSV(
+        transactions,
+        'Test Account',
+        { storeTransactionDetailsInNotes: false },
+      );
+
+      // Notes should NOT contain transaction ID for settled transactions when setting is disabled
+      expect(result).not.toContain('tx-settled-456');
+    });
+
+    test('should handle mixed settled and authorized transactions correctly', () => {
+      const transactions = [
+        {
+          id: 'tx-settled',
+          date: '2024-01-15',
+          merchant: 'SETTLED MERCHANT',
+          originalMerchant: 'SETTLED MERCHANT',
+          amount: -10.00,
+          subType: 'PURCHASE',
+          status: 'settled',
+          resolvedMonarchCategory: 'Shopping',
+        },
+        {
+          id: 'tx-pending',
+          date: '2024-01-16',
+          merchant: 'PENDING MERCHANT',
+          originalMerchant: 'PENDING MERCHANT',
+          amount: -20.00,
+          subType: 'PURCHASE',
+          status: 'authorized',
+          resolvedMonarchCategory: 'Shopping',
+        },
+      ];
+
+      const result = convertWealthsimpleTransactionsToMonarchCSV(
+        transactions,
+        'Test Account',
+        { storeTransactionDetailsInNotes: false },
+      );
+
+      const lines = result.split('\n');
+      expect(lines).toHaveLength(3); // Header + 2 data rows
+
+      // First transaction (settled) should NOT have Pending tag or transaction ID in notes
+      expect(lines[1]).toContain('SETTLED MERCHANT');
+      expect(lines[1]).not.toContain('tx-settled');
+
+      // Second transaction (authorized) should have Pending tag and transaction ID in notes
+      expect(lines[2]).toContain('PENDING MERCHANT');
+      expect(lines[2]).toContain('Pending');
+      expect(lines[2]).toContain('tx-pending');
+    });
   });
 
   describe('escapeCSVField (internal function)', () => {

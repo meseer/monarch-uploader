@@ -69,14 +69,19 @@ function processCreditCardTransaction(transaction, options = {}) {
 }
 
 /**
- * Filter transactions (only settled transactions)
+ * Filter transactions for syncing
  * Note: Transaction type filtering is not needed here since transactions are fetched per account.
  * Each account's transactions will already be of the correct type.
  * @param {Array} transactions - Raw transactions from API
- * @returns {Array} Filtered transactions (only settled)
+ * @param {boolean} includePending - Whether to include pending (authorized) transactions
+ * @returns {Array} Filtered transactions (settled, and optionally authorized)
  */
-function filterSettledTransactions(transactions) {
-  return transactions.filter((transaction) => transaction.status === 'settled');
+function filterSyncableTransactions(transactions, includePending = true) {
+  return transactions.filter((transaction) => {
+    if (transaction.status === 'settled') return true;
+    if (includePending && transaction.status === 'authorized') return true;
+    return false;
+  });
 }
 
 /**
@@ -259,25 +264,29 @@ export async function fetchAndProcessCreditCardTransactions(consolidatedAccount,
     const accountName = consolidatedAccount.wealthsimpleAccount.nickname;
     const stripStoreNumbers = consolidatedAccount.stripStoreNumbers !== false; // Default true
 
+    // Get pending transactions setting (default true)
+    const includePendingTransactions = consolidatedAccount.includePendingTransactions !== false;
+
     debugLog(`Fetching credit card transactions for ${accountName} from ${fromDate} to ${toDate}`);
     debugLog(`Store number stripping: ${stripStoreNumbers ? 'enabled' : 'disabled'}`);
+    debugLog(`Include pending transactions: ${includePendingTransactions ? 'enabled' : 'disabled'}`);
 
     // Fetch raw transactions from API
     const rawTransactions = await wealthsimpleApi.fetchTransactions(accountId, fromDate);
 
     debugLog(`Fetched ${rawTransactions.length} total transactions from API`);
 
-    // Filter for settled transactions only
-    const settledTransactions = filterSettledTransactions(rawTransactions);
+    // Filter for syncable transactions (settled + optionally authorized/pending)
+    const syncableTransactions = filterSyncableTransactions(rawTransactions, includePendingTransactions);
 
-    debugLog(`Filtered to ${settledTransactions.length} settled transactions`);
+    debugLog(`Filtered to ${syncableTransactions.length} syncable transactions (includePending: ${includePendingTransactions})`);
 
-    if (settledTransactions.length === 0) {
+    if (syncableTransactions.length === 0) {
       return [];
     }
 
     // Process transactions with stripStoreNumbers option
-    const processedTransactions = settledTransactions.map((transaction) =>
+    const processedTransactions = syncableTransactions.map((transaction) =>
       processCreditCardTransaction(transaction, { stripStoreNumbers }),
     );
 

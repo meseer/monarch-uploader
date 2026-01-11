@@ -2435,6 +2435,40 @@ function createWealthsimpleAccountCards(accounts, onRefresh) {
 
     settingsSection.appendChild(stripStoreNumbersSetting);
 
+    // Include pending transactions toggle
+    const includePendingSetting = document.createElement('div');
+    includePendingSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: white; border-radius: 6px; margin-bottom: 8px;';
+
+    const includePendingLabel = document.createElement('div');
+    includePendingLabel.innerHTML = `
+      <div style="font-weight: 500; font-size: 13px;">Include pending transactions</div>
+      <div style="font-size: 11px; color: #666;">When enabled, authorized (pending) transactions are included with a "Pending" tag</div>
+    `;
+
+    const includePendingToggle = createToggleSwitch(
+      accountEntry.includePendingTransactions !== false, // Default true
+      (isEnabled) => {
+        const { updateAccountInList } = require('../../services/wealthsimple/account');
+        const success = updateAccountInList(wsAccount.id, { includePendingTransactions: isEnabled });
+        if (success) {
+          toast.show(`Pending transactions ${isEnabled ? 'enabled' : 'disabled'}`, 'info');
+        } else {
+          toast.show('Failed to update setting', 'error');
+          setTimeout(onRefresh, 100);
+        }
+      },
+      false, // Don't show Enabled/Disabled label
+    );
+
+    includePendingSetting.appendChild(includePendingLabel);
+    includePendingSetting.appendChild(includePendingToggle);
+
+    includePendingSetting.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+
+    settingsSection.appendChild(includePendingSetting);
+
     // Transaction retention settings (only for credit card accounts)
     if (wsAccount.type && wsAccount.type.includes('CREDIT')) {
       // Transaction Retention Days

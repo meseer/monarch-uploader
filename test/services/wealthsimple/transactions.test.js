@@ -229,14 +229,14 @@ describe('Wealthsimple Transaction Service', () => {
       expect(result[0].resolvedMonarchCategory).toBe('Shopping');
     });
 
-    it('should return empty array when no settled transactions found', async () => {
+    it('should return empty array when no syncable transactions found', async () => {
       const mockRawTransactions = [
         {
           externalCanonicalId: 'tx-1',
           occurredAt: '2025-01-15T10:30:00.000000+00:00',
           type: 'CREDIT_CARD',
           subType: 'PURCHASE',
-          status: 'pending',
+          status: 'pending', // Neither settled nor authorized
           spendMerchant: 'Test Merchant',
           amount: 10.00,
           amountSign: 'negative',
@@ -252,6 +252,139 @@ describe('Wealthsimple Transaction Service', () => {
       );
 
       expect(result).toEqual([]);
+    });
+
+    it('should include authorized (pending) transactions when includePendingTransactions is true', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-settled',
+          occurredAt: '2025-01-15T10:30:00.000000+00:00',
+          type: 'CREDIT_CARD',
+          subType: 'PURCHASE',
+          status: 'settled',
+          spendMerchant: 'Settled Merchant',
+          amount: 50.00,
+          amountSign: 'negative',
+        },
+        {
+          externalCanonicalId: 'tx-authorized',
+          occurredAt: '2025-01-16T14:20:00.000000+00:00',
+          type: 'CREDIT_CARD',
+          subType: 'PURCHASE',
+          status: 'authorized',
+          spendMerchant: 'Pending Merchant',
+          amount: 25.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [] });
+      applyWealthsimpleCategoryMapping.mockReturnValue('Shopping');
+
+      // Account with includePendingTransactions = true (default)
+      const accountWithPending = {
+        ...mockConsolidatedAccount,
+        includePendingTransactions: true,
+      };
+
+      const result = await fetchAndProcessCreditCardTransactions(
+        accountWithPending,
+        '2025-01-01',
+        '2025-01-31',
+      );
+
+      // Should include both settled and authorized transactions
+      expect(result).toHaveLength(2);
+      expect(result[0].id).toBe('tx-settled');
+      expect(result[0].status).toBe('settled');
+      expect(result[1].id).toBe('tx-authorized');
+      expect(result[1].status).toBe('authorized');
+    });
+
+    it('should exclude authorized transactions when includePendingTransactions is false', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-settled',
+          occurredAt: '2025-01-15T10:30:00.000000+00:00',
+          type: 'CREDIT_CARD',
+          subType: 'PURCHASE',
+          status: 'settled',
+          spendMerchant: 'Settled Merchant',
+          amount: 50.00,
+          amountSign: 'negative',
+        },
+        {
+          externalCanonicalId: 'tx-authorized',
+          occurredAt: '2025-01-16T14:20:00.000000+00:00',
+          type: 'CREDIT_CARD',
+          subType: 'PURCHASE',
+          status: 'authorized',
+          spendMerchant: 'Pending Merchant',
+          amount: 25.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [] });
+      applyWealthsimpleCategoryMapping.mockReturnValue('Shopping');
+
+      // Account with includePendingTransactions = false
+      const accountWithoutPending = {
+        ...mockConsolidatedAccount,
+        includePendingTransactions: false,
+      };
+
+      const result = await fetchAndProcessCreditCardTransactions(
+        accountWithoutPending,
+        '2025-01-01',
+        '2025-01-31',
+      );
+
+      // Should only include settled transactions
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('tx-settled');
+      expect(result[0].status).toBe('settled');
+    });
+
+    it('should include pending transactions by default when includePendingTransactions is not set', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-authorized',
+          occurredAt: '2025-01-16T14:20:00.000000+00:00',
+          type: 'CREDIT_CARD',
+          subType: 'PURCHASE',
+          status: 'authorized',
+          spendMerchant: 'Pending Merchant',
+          amount: 25.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [] });
+      applyWealthsimpleCategoryMapping.mockReturnValue('Shopping');
+
+      // Account without includePendingTransactions property (should default to true)
+      const accountDefault = {
+        wealthsimpleAccount: {
+          id: 'test-account-id',
+          nickname: 'Test Credit Card',
+          type: 'CREDIT_CARD',
+        },
+      };
+
+      const result = await fetchAndProcessCreditCardTransactions(
+        accountDefault,
+        '2025-01-01',
+        '2025-01-31',
+      );
+
+      // Should include authorized transaction by default
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('tx-authorized');
+      expect(result[0].status).toBe('authorized');
     });
 
     it('should process all settled transactions regardless of type', async () => {

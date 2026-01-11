@@ -165,10 +165,17 @@ export function convertWealthsimpleTransactionsToMonarchCSV(transactions, accoun
 
   // Transform transactions to Monarch format
   const monarchRows = transactions.map((transaction) => {
+    // Check if transaction is pending (authorized status)
+    const isPending = transaction.status === 'authorized';
+
     // Build notes field based on settings
+    // For pending transactions, always include transaction ID for de-duplication
     let notes;
-    if (storeTransactionDetailsInNotes) {
-      // Include subType and transaction ID in notes for traceability
+    if (isPending) {
+      // Always include transaction ID for pending transactions (for de-duplication)
+      notes = `${transaction.subType || ''} / ${transaction.id || ''}`.trim();
+    } else if (storeTransactionDetailsInNotes) {
+      // Include subType and transaction ID in notes for traceability (when setting enabled)
       notes = `${transaction.subType || ''} / ${transaction.id || ''}`.trim();
     } else {
       // Leave notes empty when disabled
@@ -183,7 +190,7 @@ export function convertWealthsimpleTransactionsToMonarchCSV(transactions, accoun
       'Original Statement': transaction.originalMerchant || '',
       Notes: notes,
       Amount: transaction.amount || 0,
-      Tags: '', // Empty for now
+      Tags: isPending ? 'Pending' : '',
     };
   });
 
