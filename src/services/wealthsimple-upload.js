@@ -423,9 +423,14 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
     });
 
     // Fetch all account balances upfront
-    const accountIds = accountsToSync.map((acc) => acc.wealthsimpleAccount.id);
+    // Pass account objects with id, type, and currency for proper API selection
+    const accountsForBalanceFetch = accountsToSync.map((acc) => ({
+      id: acc.wealthsimpleAccount.id,
+      type: acc.wealthsimpleAccount.type,
+      currency: acc.wealthsimpleAccount.currency,
+    }));
     debugLog('Fetching balances for all accounts...');
-    const balanceResult = await wealthsimpleApi.fetchAccountBalances(accountIds);
+    const balanceResult = await wealthsimpleApi.fetchAccountBalances(accountsForBalanceFetch);
 
     if (!balanceResult.success) {
       debugLog('Failed to fetch account balances:', balanceResult.error);

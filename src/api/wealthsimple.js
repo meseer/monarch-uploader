@@ -542,19 +542,69 @@ export async function fetchAccounts() {
 
 /**
  * Fetch current balances for multiple accounts
- * @param {Array<string>} accountIds - Array of account IDs
+ * Handles credit cards separately using FetchCreditCardAccountSummary API
+ * since FetchAccountCombinedFinancialsPreload doesn't work for credit cards
+ *
+ * @param {Array<Object>} accounts - Array of account objects with {id, type} properties
  * @returns {Promise<Object>} Object with success status and balances map
  */
-export async function fetchAccountBalances(accountIds) {
+export async function fetchAccountBalances(accounts) {
   try {
-    if (!accountIds || accountIds.length === 0) {
-      debugLog('No account IDs provided for balance fetch');
-      return { success: false, balances: new Map(), error: 'No account IDs provided' };
+    if (!accounts || accounts.length === 0) {
+      debugLog('No accounts provided for balance fetch');
+      return { success: false, balances: new Map(), error: 'No accounts provided' };
     }
 
-    debugLog(`Fetching balances for ${accountIds.length} Wealthsimple account(s)...`);
+    debugLog(`Fetching balances for ${accounts.length} Wealthsimple account(s)...`);
 
-    const query = `query FetchAccountCombinedFinancialsPreload($ids: [String!]!, $currency: Currency, $startDate: Date) {
+    // Separate credit cards from other accounts
+    const creditCardAccounts = accounts.filter((acc) => acc.type === 'CREDIT_CARD');
+    const otherAccounts = accounts.filter((acc) => acc.type !== 'CREDIT_CARD');
+
+    debugLog(`Account split: ${creditCardAccounts.length} credit card(s), ${otherAccounts.length} other account(s)`);
+
+    const balances = new Map();
+
+    // Fetch credit card balances using FetchCreditCardAccountSummary
+    if (creditCardAccounts.length > 0) {
+      debugLog(`Fetching balances for ${creditCardAccounts.length} credit card(s)...`);
+
+      for (const creditCard of creditCardAccounts) {
+        try {
+          const summary = await fetchCreditCardAccountSummary(creditCard.id);
+
+          if (summary?.balance?.current !== undefined) {
+            const amount = parseFloat(summary.balance.current);
+
+            if (!isNaN(amount)) {
+              // Negate credit card balance: Wealthsimple returns positive (amount owed),
+              // but Monarch expects negative (liability)
+              const negatedAmount = -amount;
+              balances.set(creditCard.id, {
+                amount: negatedAmount,
+                currency: creditCard.currency || 'CAD', // Default to CAD for credit cards
+              });
+              debugLog(`Fetched credit card balance for ${creditCard.id}: ${negatedAmount} (raw: ${amount})`);
+            } else {
+              debugLog(`Invalid credit card balance data for ${creditCard.id}`);
+              balances.set(creditCard.id, null);
+            }
+          } else {
+            debugLog(`No balance data in credit card summary for ${creditCard.id}`);
+            balances.set(creditCard.id, null);
+          }
+        } catch (error) {
+          debugLog(`Error fetching credit card balance for ${creditCard.id}:`, error);
+          balances.set(creditCard.id, null);
+        }
+      }
+    }
+
+    // Fetch other account balances using FetchAccountCombinedFinancialsPreload
+    if (otherAccounts.length > 0) {
+      debugLog(`Fetching balances for ${otherAccounts.length} non-credit-card account(s)...`);
+
+      const query = `query FetchAccountCombinedFinancialsPreload($ids: [String!]!, $currency: Currency, $startDate: Date) {
   accounts(ids: $ids) {
     id
     financials {
@@ -598,39 +648,43 @@ fragment Returns on SimpleReturns {
   __typename
 }`;
 
-    const variables = {
-      ids: accountIds,
-    };
+      const variables = {
+        ids: otherAccounts.map((acc) => acc.id),
+      };
 
-    const response = await makeGraphQLQuery('FetchAccountCombinedFinancialsPreload', query, variables);
+      const response = await makeGraphQLQuery('FetchAccountCombinedFinancialsPreload', query, variables);
 
-    if (!response || !response.accounts) {
-      debugLog('No accounts data in balance response');
-      return { success: false, balances: new Map(), error: 'No accounts data in response' };
-    }
+      if (response && response.accounts) {
+        response.accounts.forEach((account) => {
+          if (account.financials?.currentCombined?.netLiquidationValueV2) {
+            const balanceData = account.financials.currentCombined.netLiquidationValueV2;
+            const amount = parseFloat(balanceData.amount);
 
-    // Parse balances into a map
-    const balances = new Map();
-    response.accounts.forEach((account) => {
-      if (account.financials?.currentCombined?.netLiquidationValueV2) {
-        const balanceData = account.financials.currentCombined.netLiquidationValueV2;
-        const amount = parseFloat(balanceData.amount);
-
-        if (!isNaN(amount) && balanceData.currency) {
-          balances.set(account.id, {
-            amount,
-            currency: balanceData.currency,
-          });
-          debugLog(`Fetched balance for ${account.id}: ${balanceData.currency} ${amount}`);
-        } else {
-          debugLog(`Invalid balance data for ${account.id}`);
-          balances.set(account.id, null);
-        }
+            if (!isNaN(amount) && balanceData.currency) {
+              balances.set(account.id, {
+                amount,
+                currency: balanceData.currency,
+              });
+              debugLog(`Fetched balance for ${account.id}: ${balanceData.currency} ${amount}`);
+            } else {
+              debugLog(`Invalid balance data for ${account.id}`);
+              balances.set(account.id, null);
+            }
+          } else {
+            debugLog(`No balance data available for ${account.id}`);
+            balances.set(account.id, null);
+          }
+        });
       } else {
-        debugLog(`No balance data available for ${account.id}`);
-        balances.set(account.id, null);
+        debugLog('No accounts data in balance response for non-credit-card accounts');
+        // Set null for all non-credit-card accounts that failed
+        otherAccounts.forEach((acc) => {
+          if (!balances.has(acc.id)) {
+            balances.set(acc.id, null);
+          }
+        });
       }
-    });
+    }
 
     debugLog(`Successfully fetched balances for ${balances.size} account(s)`);
     return { success: true, balances };
@@ -643,14 +697,20 @@ fragment Returns on SimpleReturns {
 /**
  * Fetch account balance for a specific account
  * @param {string} accountId - Account ID
+ * @param {string} accountType - Account type (e.g., 'CREDIT_CARD', 'MANAGED_TFSA')
+ * @param {string} currency - Account currency (e.g., 'CAD')
  * @returns {Promise<Object>} Account balance data
  */
-export async function fetchAccountBalance(accountId) {
+export async function fetchAccountBalance(accountId, accountType = null, currency = 'CAD') {
   try {
     debugLog(`Fetching balance for Wealthsimple account ${accountId}...`);
 
-    // Use the batch API for single account
-    const result = await fetchAccountBalances([accountId]);
+    // Use the batch API for single account - pass account object with type info
+    const result = await fetchAccountBalances([{
+      id: accountId,
+      type: accountType,
+      currency,
+    }]);
 
     if (!result.success) {
       throw new Error(result.error || 'Failed to fetch balance');

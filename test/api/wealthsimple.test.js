@@ -742,7 +742,7 @@ describe('Wealthsimple API Client', () => {
       });
     });
 
-    it('should fetch balances for multiple accounts', async () => {
+    it('should fetch balances for multiple non-credit-card accounts', async () => {
       const mockResponse = {
         accounts: [
           {
@@ -777,7 +777,11 @@ describe('Wealthsimple API Client', () => {
         });
       });
 
-      const result = await wealthsimpleApi.fetchAccountBalances(['acc-1', 'acc-2']);
+      const accounts = [
+        { id: 'acc-1', type: 'MANAGED_TFSA', currency: 'CAD' },
+        { id: 'acc-2', type: 'MANAGED_RRSP', currency: 'CAD' },
+      ];
+      const result = await wealthsimpleApi.fetchAccountBalances(accounts);
 
       expect(result.success).toBe(true);
       expect(result.balances.size).toBe(2);
@@ -786,6 +790,104 @@ describe('Wealthsimple API Client', () => {
       expect(acc1Balance.amount).toBeCloseTo(96780.95, 2);
       expect(result.balances.get('acc-2')).toEqual({
         amount: 45000.50,
+        currency: 'CAD',
+      });
+    });
+
+    it('should fetch balances for credit card accounts using FetchCreditCardAccountSummary and negate the amount', async () => {
+      const mockCreditCardResponse = {
+        creditCardAccount: {
+          id: 'cc-1',
+          balance: {
+            current: '30.53',
+          },
+          creditLimit: 17000,
+          currentCards: [{ cardNumberLast4Digits: '6903' }],
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ data, onload }) => {
+        const parsedData = JSON.parse(data);
+        if (parsedData.operationName === 'FetchCreditCardAccountSummary') {
+          onload({
+            status: 200,
+            responseText: JSON.stringify({ data: mockCreditCardResponse }),
+          });
+        }
+      });
+
+      const accounts = [
+        { id: 'cc-1', type: 'CREDIT_CARD', currency: 'CAD' },
+      ];
+      const result = await wealthsimpleApi.fetchAccountBalances(accounts);
+
+      expect(result.success).toBe(true);
+      expect(result.balances.size).toBe(1);
+      const ccBalance = result.balances.get('cc-1');
+      // Credit card balance should be negated (Wealthsimple returns positive, Monarch expects negative)
+      expect(ccBalance.amount).toBeCloseTo(-30.53, 2);
+      expect(ccBalance.currency).toBe('CAD');
+    });
+
+    it('should fetch balances for mixed account types with negated credit card balance', async () => {
+      const mockInvestmentResponse = {
+        accounts: [
+          {
+            id: 'tfsa-1',
+            financials: {
+              currentCombined: {
+                netLiquidationValueV2: {
+                  amount: '50000.00',
+                  currency: 'CAD',
+                },
+              },
+            },
+          },
+        ],
+      };
+
+      const mockCreditCardResponse = {
+        creditCardAccount: {
+          id: 'cc-1',
+          balance: {
+            current: '150.75',
+          },
+          creditLimit: 10000,
+          currentCards: [],
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ data, onload }) => {
+        const parsedData = JSON.parse(data);
+        if (parsedData.operationName === 'FetchCreditCardAccountSummary') {
+          onload({
+            status: 200,
+            responseText: JSON.stringify({ data: mockCreditCardResponse }),
+          });
+        } else if (parsedData.operationName === 'FetchAccountCombinedFinancialsPreload') {
+          onload({
+            status: 200,
+            responseText: JSON.stringify({ data: mockInvestmentResponse }),
+          });
+        }
+      });
+
+      const accounts = [
+        { id: 'cc-1', type: 'CREDIT_CARD', currency: 'CAD' },
+        { id: 'tfsa-1', type: 'MANAGED_TFSA', currency: 'CAD' },
+      ];
+      const result = await wealthsimpleApi.fetchAccountBalances(accounts);
+
+      expect(result.success).toBe(true);
+      expect(result.balances.size).toBe(2);
+      // Credit card balance should be negated
+      expect(result.balances.get('cc-1')).toEqual({
+        amount: -150.75,
+        currency: 'CAD',
+      });
+      // Investment account balance stays positive
+      expect(result.balances.get('tfsa-1')).toEqual({
+        amount: 50000.00,
         currency: 'CAD',
       });
     });
@@ -818,7 +920,11 @@ describe('Wealthsimple API Client', () => {
         });
       });
 
-      const result = await wealthsimpleApi.fetchAccountBalances(['acc-1', 'acc-2']);
+      const accounts = [
+        { id: 'acc-1', type: 'MANAGED_TFSA', currency: 'CAD' },
+        { id: 'acc-2', type: 'MANAGED_RRSP', currency: 'CAD' },
+      ];
+      const result = await wealthsimpleApi.fetchAccountBalances(accounts);
 
       expect(result.success).toBe(true);
       expect(result.balances.get('acc-1')).toEqual({
@@ -828,11 +934,11 @@ describe('Wealthsimple API Client', () => {
       expect(result.balances.get('acc-2')).toBeNull();
     });
 
-    it('should return error when no account IDs provided', async () => {
+    it('should return error when no accounts provided', async () => {
       const result = await wealthsimpleApi.fetchAccountBalances([]);
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('No account IDs provided');
+      expect(result.error).toBe('No accounts provided');
       expect(result.balances.size).toBe(0);
     });
 
@@ -860,26 +966,43 @@ describe('Wealthsimple API Client', () => {
         });
       });
 
-      const result = await wealthsimpleApi.fetchAccountBalances(['acc-1']);
+      const accounts = [{ id: 'acc-1', type: 'MANAGED_TFSA', currency: 'CAD' }];
+      const result = await wealthsimpleApi.fetchAccountBalances(accounts);
 
       expect(result.success).toBe(true);
       expect(result.balances.get('acc-1')).toBeNull();
     });
 
-    it('should handle API errors', async () => {
+    it('should handle API errors for non-credit-card accounts', async () => {
       GM_xmlhttpRequest.mockImplementation(({ onload }) => {
         onload({
           status: 500,
         });
       });
 
-      const result = await wealthsimpleApi.fetchAccountBalances(['acc-1']);
+      const accounts = [{ id: 'acc-1', type: 'MANAGED_TFSA', currency: 'CAD' }];
+      const result = await wealthsimpleApi.fetchAccountBalances(accounts);
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('Server error');
     });
 
-    it('should handle missing response data', async () => {
+    it('should handle credit card API errors gracefully and set null balance', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 500,
+        });
+      });
+
+      const accounts = [{ id: 'cc-1', type: 'CREDIT_CARD', currency: 'CAD' }];
+      const result = await wealthsimpleApi.fetchAccountBalances(accounts);
+
+      // Credit card errors are handled per-account, so success is still true
+      expect(result.success).toBe(true);
+      expect(result.balances.get('cc-1')).toBeNull();
+    });
+
+    it('should handle missing response data for non-credit-card accounts', async () => {
       GM_xmlhttpRequest.mockImplementation(({ onload }) => {
         onload({
           status: 200,
@@ -887,10 +1010,65 @@ describe('Wealthsimple API Client', () => {
         });
       });
 
-      const result = await wealthsimpleApi.fetchAccountBalances(['acc-1']);
+      const accounts = [{ id: 'acc-1', type: 'MANAGED_TFSA', currency: 'CAD' }];
+      const result = await wealthsimpleApi.fetchAccountBalances(accounts);
 
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('No accounts data in response');
+      // Sets null for accounts that failed
+      expect(result.success).toBe(true);
+      expect(result.balances.get('acc-1')).toBeNull();
+    });
+
+    it('should handle credit card with missing balance.current', async () => {
+      const mockCreditCardResponse = {
+        creditCardAccount: {
+          id: 'cc-1',
+          balance: {},
+          creditLimit: 17000,
+          currentCards: [],
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockCreditCardResponse }),
+        });
+      });
+
+      const accounts = [{ id: 'cc-1', type: 'CREDIT_CARD', currency: 'CAD' }];
+      const result = await wealthsimpleApi.fetchAccountBalances(accounts);
+
+      expect(result.success).toBe(true);
+      expect(result.balances.get('cc-1')).toBeNull();
+    });
+
+    it('should default currency to CAD for credit cards and negate the balance', async () => {
+      const mockCreditCardResponse = {
+        creditCardAccount: {
+          id: 'cc-1',
+          balance: {
+            current: '100.00',
+          },
+          creditLimit: 5000,
+          currentCards: [],
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockCreditCardResponse }),
+        });
+      });
+
+      // Credit card without explicit currency
+      const accounts = [{ id: 'cc-1', type: 'CREDIT_CARD' }];
+      const result = await wealthsimpleApi.fetchAccountBalances(accounts);
+
+      expect(result.success).toBe(true);
+      expect(result.balances.get('cc-1').currency).toBe('CAD');
+      // Balance should be negated
+      expect(result.balances.get('cc-1').amount).toBe(-100.00);
     });
   });
 
