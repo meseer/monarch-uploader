@@ -212,6 +212,31 @@ describe('Wealthsimple API Client', () => {
       });
     });
 
+    it('should NOT inject identity ID for FetchFundingIntent operation', async () => {
+      const futureDate = new Date(Date.now() + 3600000).toISOString();
+      GM_getValue.mockImplementation((key) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
+        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
+        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
+        return null;
+      });
+
+      GM_xmlhttpRequest.mockImplementation(({ data, onload }) => {
+        const parsedData = JSON.parse(data);
+        // FetchFundingIntent should NOT have identityId injected
+        expect(parsedData.variables.identityId).toBeUndefined();
+        expect(parsedData.variables.ids).toEqual(['funding_intent-abc123']);
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: { searchFundingIntents: { edges: [] } } }),
+        });
+      });
+
+      await wealthsimpleApi.makeGraphQLQuery('FetchFundingIntent', 'query { ... }', {
+        ids: ['funding_intent-abc123'],
+      });
+    });
+
     it('should throw error when not authenticated', async () => {
       GM_getValue.mockReturnValue(null);
 

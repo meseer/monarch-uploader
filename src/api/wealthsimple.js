@@ -220,7 +220,9 @@ export async function makeGraphQLQuery(operationName, query, variables = {}) {
   }
 
   // Inject identity ID into variables if not present
-  if (!variables.identityId && authStatus.identityId) {
+  // Note: FetchFundingIntent doesn't accept identityId and returns 403 if it's passed
+  const skipIdentityInjection = ['FetchFundingIntent'];
+  if (!variables.identityId && authStatus.identityId && !skipIdentityInjection.includes(operationName)) {
     variables.identityId = authStatus.identityId;
   }
 
