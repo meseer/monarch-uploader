@@ -62,6 +62,17 @@ jest.mock('../../src/ui/components/monarchLoginLink', () => ({
   createMonarchLoginLink: jest.fn(),
 }));
 
+jest.mock('../../src/services/wealthsimple/account', () => ({
+  isAccountSkipped: jest.fn(() => false),
+  markAccountAsSkipped: jest.fn(() => true),
+  getWealthsimpleAccounts: jest.fn(() => []),
+  updateAccountInList: jest.fn(() => true),
+}));
+
+jest.mock('../../src/mappers/wealthsimple-account-types', () => ({
+  getMonarchAccountTypeMapping: jest.fn(() => ({ type: 'credit' })),
+}));
+
 // Mock localStorage
 const localStorageMock = {
   getItem: jest.fn(),
@@ -1001,6 +1012,42 @@ describe('Settings Modal Component', () => {
 
       const modals = document.querySelectorAll('.settings-modal-backdrop');
       expect(modals.length).toBe(1);
+    });
+  });
+
+  describe('Wealthsimple Tab', () => {
+    test('should render Wealthsimple tab with lookback period section', () => {
+      modal = createSettingsModal();
+
+      const wealthsimpleTab = Array.from(modal.querySelectorAll('.settings-tab-button'))
+        .find((btn) => btn.textContent.includes('Wealthsimple'));
+      wealthsimpleTab.click();
+
+      const tabContent = modal.querySelector('.settings-tab-content');
+      expect(tabContent).toBeTruthy();
+      expect(tabContent.textContent).toContain('Lookback Period');
+    });
+
+    test('should show empty message when no Wealthsimple accounts exist', () => {
+      modal = createSettingsModal();
+
+      const wealthsimpleTab = Array.from(modal.querySelectorAll('.settings-tab-button'))
+        .find((btn) => btn.textContent.includes('Wealthsimple'));
+      wealthsimpleTab.click();
+
+      const tabContent = modal.querySelector('.settings-tab-content');
+      expect(tabContent.textContent).toContain('No accounts found');
+    });
+
+    test('should display Category Mappings section', () => {
+      modal = createSettingsModal();
+
+      const wealthsimpleTab = Array.from(modal.querySelectorAll('.settings-tab-button'))
+        .find((btn) => btn.textContent.includes('Wealthsimple'));
+      wealthsimpleTab.click();
+
+      const tabContent = modal.querySelector('.settings-tab-content');
+      expect(tabContent.textContent).toContain('Category Mappings');
     });
   });
 

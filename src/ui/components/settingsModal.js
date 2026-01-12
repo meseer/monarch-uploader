@@ -2591,12 +2591,104 @@ function createWealthsimpleAccountCards(accounts, onRefresh) {
 
     // JSON Debug Info Section
     const debugSection = document.createElement('div');
+    debugSection.id = `debug-section-${wsAccount.id}`;
+
+    const debugHeader = document.createElement('div');
+    debugHeader.style.cssText = 'display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;';
+
     const debugTitle = document.createElement('h4');
     debugTitle.textContent = 'Debug Information';
-    debugTitle.style.cssText = 'margin: 0 0 10px 0; font-size: 14px; color: #333;';
-    debugSection.appendChild(debugTitle);
+    debugTitle.style.cssText = 'margin: 0; font-size: 14px; color: #333;';
+    debugHeader.appendChild(debugTitle);
 
+    // Button container for Edit/Save/Cancel
+    const buttonContainer = document.createElement('div');
+    buttonContainer.id = `debug-buttons-${wsAccount.id}`;
+    buttonContainer.style.cssText = 'display: flex; gap: 8px;';
+
+    // Edit button (visible in view mode)
+    const editButton = document.createElement('button');
+    editButton.id = `debug-edit-btn-${wsAccount.id}`;
+    editButton.textContent = '✍️ Edit';
+    editButton.style.cssText = `
+      padding: 4px 10px;
+      border: 1px solid #6c757d;
+      border-radius: 4px;
+      background: white;
+      color: #6c757d;
+      cursor: pointer;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.2s;
+    `;
+    editButton.addEventListener('mouseover', () => {
+      editButton.style.backgroundColor = '#f8f9fa';
+      editButton.style.borderColor = '#5a6268';
+    });
+    editButton.addEventListener('mouseout', () => {
+      editButton.style.backgroundColor = 'white';
+      editButton.style.borderColor = '#6c757d';
+    });
+
+    // Save button (hidden in view mode)
+    const saveButton = document.createElement('button');
+    saveButton.id = `debug-save-btn-${wsAccount.id}`;
+    saveButton.textContent = '✔ Save';
+    saveButton.style.cssText = `
+      padding: 4px 10px;
+      border: none;
+      border-radius: 4px;
+      background: #28a745;
+      color: white;
+      cursor: pointer;
+      font-size: 12px;
+      display: none;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.2s;
+    `;
+    saveButton.addEventListener('mouseover', () => {
+      saveButton.style.backgroundColor = '#218838';
+    });
+    saveButton.addEventListener('mouseout', () => {
+      saveButton.style.backgroundColor = '#28a745';
+    });
+
+    // Cancel button (hidden in view mode)
+    const cancelButton = document.createElement('button');
+    cancelButton.id = `debug-cancel-btn-${wsAccount.id}`;
+    cancelButton.textContent = '✘ Cancel';
+    cancelButton.style.cssText = `
+      padding: 4px 10px;
+      border: 1px solid #dc3545;
+      border-radius: 4px;
+      background: white;
+      color: #dc3545;
+      cursor: pointer;
+      font-size: 12px;
+      display: none;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.2s;
+    `;
+    cancelButton.addEventListener('mouseover', () => {
+      cancelButton.style.backgroundColor = '#f8d7da';
+    });
+    cancelButton.addEventListener('mouseout', () => {
+      cancelButton.style.backgroundColor = 'white';
+    });
+
+    buttonContainer.appendChild(editButton);
+    buttonContainer.appendChild(saveButton);
+    buttonContainer.appendChild(cancelButton);
+    debugHeader.appendChild(buttonContainer);
+    debugSection.appendChild(debugHeader);
+
+    // JSON container (view mode)
     const jsonContainer = document.createElement('pre');
+    jsonContainer.id = `debug-json-view-${wsAccount.id}`;
     jsonContainer.style.cssText = `
       background-color: #2d3748;
       color: #e2e8f0;
@@ -2612,6 +2704,93 @@ function createWealthsimpleAccountCards(accounts, onRefresh) {
     `;
     jsonContainer.textContent = JSON.stringify(accountEntry, null, 2);
     debugSection.appendChild(jsonContainer);
+
+    // JSON textarea (edit mode - hidden by default)
+    const jsonTextarea = document.createElement('textarea');
+    jsonTextarea.id = `debug-json-edit-${wsAccount.id}`;
+    jsonTextarea.style.cssText = `
+      width: 100%;
+      min-height: 300px;
+      padding: 12px;
+      border: 2px solid #0073b1;
+      border-radius: 4px;
+      font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+      font-size: 12px;
+      line-height: 1.4;
+      resize: vertical;
+      display: none;
+      box-sizing: border-box;
+      background-color: #2d3748;
+      color: #e2e8f0;
+    `;
+    jsonTextarea.value = JSON.stringify(accountEntry, null, 2);
+    debugSection.appendChild(jsonTextarea);
+
+    // Store original JSON for cancel functionality
+    let originalJson = JSON.stringify(accountEntry, null, 2);
+
+    // Edit button click handler
+    editButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      // Switch to edit mode
+      jsonContainer.style.display = 'none';
+      jsonTextarea.style.display = 'block';
+      editButton.style.display = 'none';
+      saveButton.style.display = 'flex';
+      cancelButton.style.display = 'flex';
+      // Store current value as original for cancel
+      originalJson = jsonTextarea.value;
+    });
+
+    // Save button click handler
+    saveButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const newJsonValue = jsonTextarea.value;
+
+      // Validate JSON
+      let parsedJson;
+      try {
+        parsedJson = JSON.parse(newJsonValue);
+      } catch (error) {
+        toast.show('Invalid JSON format. Please fix the syntax and try again.', 'error');
+        return;
+      }
+
+      // Update the account in storage
+      const { updateAccountInList } = require('../../services/wealthsimple/account');
+      const success = updateAccountInList(wsAccount.id, parsedJson);
+
+      if (success) {
+        toast.show('Debug information saved successfully', 'info');
+        // Update the view
+        jsonContainer.textContent = JSON.stringify(parsedJson, null, 2);
+        originalJson = newJsonValue;
+        // Switch back to view mode
+        jsonContainer.style.display = 'block';
+        jsonTextarea.style.display = 'none';
+        editButton.style.display = 'flex';
+        saveButton.style.display = 'none';
+        cancelButton.style.display = 'none';
+        // Refresh the tab to reflect changes
+        setTimeout(onRefresh, 500);
+      } else {
+        toast.show('Failed to save debug information', 'error');
+      }
+    });
+
+    // Cancel button click handler
+    cancelButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      // Restore original JSON
+      jsonTextarea.value = originalJson;
+      // Switch back to view mode
+      jsonContainer.style.display = 'block';
+      jsonTextarea.style.display = 'none';
+      editButton.style.display = 'flex';
+      saveButton.style.display = 'none';
+      cancelButton.style.display = 'none';
+    });
+
     expandableContent.appendChild(debugSection);
 
     card.appendChild(cardHeader);
