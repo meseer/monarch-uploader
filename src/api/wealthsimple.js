@@ -1213,82 +1213,152 @@ fragment FundingIntentFundableDeposit on FundingIntentDeposit {
   __typename
 }
 
+fragment WSBankAccountTransferMetadata on WsBankAccountTransferMetadata {
+  originatorName: originator_name
+  transactionCode: transaction_code
+  transactionType: transaction_type
+  transactionCategory: transaction_category
+  settlementDate: settlement_date
+  __typename
+}
+
+fragment WireSendTransactionMetadata on WireSendTransactionMetadata {
+  fee
+  __typename
+}
+
+fragment FundingIntentETransferP2PTransactionMetadata on FundingIntentETransferP2PTransactionMetadata {
+  recipientName: recipient_name
+  recipientIdentifier: recipient_identifier
+  autodeposit: autodeposit
+  securityQuestion: security_question
+  securityAnswer: security_answer
+  memo: memo
+  __typename
+}
+
+fragment FundingIntentETransferReceiveMetadata on FundingIntentETransferReceiveMetadata {
+  memo
+  paymentType
+  recipient_email
+  __typename
+}
+
+fragment FundingIntentETransferTransactionMetadata on FundingIntentETransferTransactionMetadata {
+  autoDeposit: auto_deposit
+  securityQuestion: security_question
+  securityAnswer: security_answer
+  recipientIdentifier: recipient_identifier
+  networkPaymentRefId
+  memo
+  __typename
+}
+
+fragment FundingIntentETransferRequestTransactionMetadata on FundingIntentETransferRequestTransactionMetadata {
+  sourceEmail: source_email
+  sourceFinancialInstitution: source_financial_institution
+  sourceName: source_name
+  sourceProvider: source_provider
+  sourceProviderStatus: source_provider_status
+  sourceProviderStatusUpdatedAt: source_provider_status_updated_at
+  lastErrorStatus: last_error_status
+  lastErrorStatusUpdatedAt: last_error_status_updated_at
+  __typename
+}
+
+fragment FundingIntentBankDraftSendTransactionMetadata on FundingIntentBankDraftSendTransactionMetadata {
+  bankDraftReason
+  bankDraftRecipient
+  bankDraftDeliveryInstructions
+  bankDraftDueDate
+  shippingType
+  bankDraftMailingAddress {
+    apartment_number
+    city
+    country_code
+    postal_code
+    province_state
+    street_address
+    __typename
+  }
+  __typename
+}
+
+fragment FundingIntentWireSendTransactionMetadata on FundingIntentWireSendTransactionMetadata {
+  beneficiary_account_number
+  beneficiary_address {
+    apartment_number
+    city
+    country_code
+    postal_code
+    province_state
+    street_address
+    __typename
+  }
+  beneficiary_bank {
+    bic
+    name
+    routing_number
+    __typename
+  }
+  beneficiary_name
+  beneficiary_type
+  wire_type
+  memo
+  reason
+  fee
+  amount_excluding_fee
+  __typename
+}
+
+fragment ChequeDepositTransactionMetadata on ChequeDepositTransactionMetadata {
+  rejectionReason
+  estimatedCompletionAt
+  state
+  __typename
+}
+
 fragment FundingIntentFundableWithdrawal on FundingIntentWithdrawal {
-  createdAt: created_at
-  amount
-  currency
+  requestedAmountValue: requested_amount_value
+  requestedAmountUnit: requested_amount_unit
+  finalAmount: final_amount {
+    ...Money
+    __typename
+  }
+  notifiedCustodianAt: notified_custodian_at
   completedAt: completed_at
+  taxWithholding: tax_withholding {
+    ...TaxWithholding
+    __typename
+  }
+  __typename
+}
+
+fragment Money on Money {
+  amount
+  cents
+  currency
+  __typename
+}
+
+fragment TaxWithholding on TaxWithholding {
+  id
+  netAmount: net_amount
+  __typename
+}
+
+fragment FundingIntentRecurrence on FundingIntentRecurrence {
+  id
+  every
+  interval
+  next
+  latestFundingIntentId
   __typename
 }
 
 fragment FundingPoint on FundingPoint {
   id
   type
-  __typename
-}
-
-fragment FundingIntentETransferP2PTransactionMetadata on FundingIntentETransferP2PTransactionMetadata {
-  message
-  __typename
-}
-
-fragment FundingIntentBankDraftSendTransactionMetadata on FundingIntentBankDraftSendTransactionMetadata {
-  amountExcludingFee: amount_excluding_fee
-  fee
-  totalAmount: total_amount
-  mailingAddress: mailing_address
-  __typename
-}
-
-fragment FundingIntentWireSendTransactionMetadata on FundingIntentWireSendTransactionMetadata {
-  amountExcludingFee: amount_excluding_fee
-  fee
-  totalAmount: total_amount
-  __typename
-}
-
-fragment FundingIntentETransferTransactionMetadata on FundingIntentETransferTransactionMetadata {
-  message
-  securityAnswer: security_answer
-  __typename
-}
-
-fragment FundingIntentETransferReceiveMetadata on FundingIntentETransferReceiveMetadata {
-  memo
-  paymentType: payment_type
-  recipient_email
-  __typename
-}
-
-fragment FundingIntentETransferRequestTransactionMetadata on FundingIntentETransferRequestTransactionMetadata {
-  message
-  __typename
-}
-
-fragment WSBankAccountTransferMetadata on WsBankAccountTransferMetadata {
-  originatorName: originator_name
-  transactionCode: transaction_code
-  __typename
-}
-
-fragment ChequeDepositTransactionMetadata on ChequeDepositTransactionMetadata {
-  chequeAmount
-  chequeDate
-  chequeFrontImageUrl
-  chequeBackImageUrl
-  __typename
-}
-
-fragment WireSendTransactionMetadata on WireSendTransactionMetadata {
-  amountExcludingFee
-  fee
-  totalAmount
-  __typename
-}
-
-fragment FundingIntentRecurrence on FundingIntentRecurrence {
-  id
-  schedule
   __typename
 }`;
 
