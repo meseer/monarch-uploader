@@ -944,6 +944,267 @@ export async function getHoldings(accountIds, options = {}) {
 }
 
 /**
+ * @typedef {Object} TransactionFilters
+ * @property {string[]} [accounts] - Array of account IDs to filter by
+ * @property {string[]} [tags] - Array of tag IDs to filter by
+ * @property {string} [startDate] - Start date in YYYY-MM-DD format
+ * @property {string} [endDate] - End date in YYYY-MM-DD format
+ * @property {string} [transactionVisibility] - Visibility filter ('all_transactions', etc.)
+ */
+
+/**
+ * @typedef {Object} TransactionCategory
+ * @property {string} id - Category ID
+ * @property {string} name - Category name
+ * @property {string} icon - Category icon emoji
+ * @property {Object} group - Category group info
+ * @property {string} group.id - Group ID
+ * @property {string} group.type - Group type (expense, income, etc.)
+ */
+
+/**
+ * @typedef {Object} TransactionMerchant
+ * @property {string} id - Merchant ID
+ * @property {string} name - Merchant name
+ * @property {number} transactionsCount - Number of transactions with this merchant
+ * @property {string|null} logoUrl - Merchant logo URL
+ * @property {Object|null} recurringTransactionStream - Recurring transaction info
+ */
+
+/**
+ * @typedef {Object} TransactionTag
+ * @property {string} id - Tag ID
+ * @property {string} name - Tag name
+ * @property {string} color - Tag color hex code
+ * @property {number} order - Tag display order
+ */
+
+/**
+ * @typedef {Object} TransactionAccount
+ * @property {string} id - Account ID
+ * @property {string} displayName - Account display name
+ * @property {string} icon - Account icon
+ * @property {string|null} logoUrl - Account logo URL
+ */
+
+/**
+ * @typedef {Object} Transaction
+ * @property {string} id - Transaction ID
+ * @property {number} amount - Transaction amount (negative for expenses)
+ * @property {boolean} pending - Whether transaction is pending
+ * @property {string} date - Transaction date in YYYY-MM-DD format
+ * @property {boolean} hideFromReports - Hidden from reports
+ * @property {boolean} hiddenByAccount - Hidden by account setting
+ * @property {string} plaidName - Original name from Plaid
+ * @property {string} notes - User notes
+ * @property {boolean} isRecurring - Whether transaction is recurring
+ * @property {string|null} reviewStatus - Review status
+ * @property {boolean} needsReview - Whether transaction needs review
+ * @property {boolean} isSplitTransaction - Whether transaction is split
+ * @property {string} dataProviderDescription - Description from data provider
+ * @property {Array} attachments - Attached files
+ * @property {Object|null} goal - Associated goal
+ * @property {Object|null} savingsGoalEvent - Savings goal event
+ * @property {TransactionCategory} category - Transaction category
+ * @property {TransactionMerchant} merchant - Transaction merchant
+ * @property {TransactionTag[]} tags - Transaction tags
+ * @property {TransactionAccount} account - Transaction account
+ * @property {Object|null} ownedByUser - Owner info if shared
+ */
+
+/**
+ * @typedef {Object} TransactionListResult
+ * @property {number} totalCount - Total number of matching transactions
+ * @property {number} totalSelectableCount - Number of selectable transactions
+ * @property {Transaction[]} results - Array of transaction objects
+ */
+
+/**
+ * @typedef {Object} GetTransactionsListOptions
+ * @property {string[]} accountIds - Array of account IDs to filter by (required)
+ * @property {string} startDate - Start date in YYYY-MM-DD format (required)
+ * @property {string} endDate - End date in YYYY-MM-DD format (required)
+ * @property {string[]} [tags] - Array of tag IDs to filter by
+ * @property {number} [limit=100] - Maximum results to return
+ * @property {number} [offset=0] - Offset for pagination
+ * @property {string} [orderBy='date'] - Field to order by
+ * @property {string} [transactionVisibility='all_transactions'] - Visibility filter
+ */
+
+/**
+ * Get transactions list from Monarch
+ * Uses the Web_GetTransactionsList operation to retrieve filtered transactions.
+ * @param {GetTransactionsListOptions} options - Query options
+ * @returns {Promise<TransactionListResult>} Transaction list with totalCount and results
+ * @throws {Error} If required parameters are missing or API call fails
+ * @example
+ * // Get all transactions for an account in a date range
+ * const result = await getTransactionsList({
+ *   accountIds: ['232004378673314879'],
+ *   startDate: '2025-01-01',
+ *   endDate: '2025-12-31'
+ * });
+ *
+ * @example
+ * // Get transactions with specific tags
+ * const result = await getTransactionsList({
+ *   accountIds: ['232004378673314879'],
+ *   startDate: '2025-01-01',
+ *   endDate: '2025-12-31',
+ *   tags: ['162625044964998399'],
+ *   limit: 20
+ * });
+ */
+export async function getTransactionsList(options) {
+  const {
+    accountIds,
+    startDate,
+    endDate,
+    tags = null,
+    limit = 100,
+    offset = 0,
+    orderBy = 'date',
+    transactionVisibility = 'all_transactions',
+  } = options || {};
+
+  // Validate required parameters
+  if (!accountIds || !Array.isArray(accountIds) || accountIds.length === 0) {
+    throw new Error('accountIds is required and must be a non-empty array');
+  }
+
+  if (!startDate) {
+    throw new Error('startDate is required (format: YYYY-MM-DD)');
+  }
+
+  if (!endDate) {
+    throw new Error('endDate is required (format: YYYY-MM-DD)');
+  }
+
+  // Build filters object
+  const filters = {
+    accounts: accountIds,
+    startDate,
+    endDate,
+    transactionVisibility,
+  };
+
+  // Add optional tags filter
+  if (tags && Array.isArray(tags) && tags.length > 0) {
+    filters.tags = tags;
+  }
+
+  debugLog('Getting transactions list with filters:', filters);
+
+  const query = `query Web_GetTransactionsList($offset: Int, $limit: Int, $filters: TransactionFilterInput, $orderBy: TransactionOrdering) {
+  allTransactions(filters: $filters) {
+    totalCount
+    totalSelectableCount
+    results(offset: $offset, limit: $limit, orderBy: $orderBy) {
+      id
+      ...TransactionOverviewFields
+      __typename
+    }
+    __typename
+  }
+}
+
+fragment TransactionOverviewFields on Transaction {
+  id
+  amount
+  pending
+  date
+  hideFromReports
+  hiddenByAccount
+  plaidName
+  notes
+  isRecurring
+  reviewStatus
+  needsReview
+  isSplitTransaction
+  dataProviderDescription
+  attachments {
+    id
+    __typename
+  }
+  goal {
+    id
+    name
+    __typename
+  }
+  savingsGoalEvent {
+    id
+    goal {
+      id
+      name
+      __typename
+    }
+    __typename
+  }
+  category {
+    id
+    name
+    icon
+    group {
+      id
+      type
+      __typename
+    }
+    __typename
+  }
+  merchant {
+    name
+    id
+    transactionsCount
+    logoUrl
+    recurringTransactionStream {
+      frequency
+      isActive
+      __typename
+    }
+    __typename
+  }
+  tags {
+    id
+    name
+    color
+    order
+    __typename
+  }
+  account {
+    id
+    displayName
+    icon
+    logoUrl
+    __typename
+  }
+  ownedByUser {
+    id
+    displayName
+    profilePictureUrl
+    __typename
+  }
+  __typename
+}`;
+
+  const variables = {
+    offset,
+    limit,
+    filters,
+    orderBy,
+  };
+
+  const data = await callMonarchGraphQL('Web_GetTransactionsList', query, variables);
+
+  debugLog(`Retrieved ${data.allTransactions.results.length} transactions (total: ${data.allTransactions.totalCount})`);
+
+  return {
+    totalCount: data.allTransactions.totalCount,
+    totalSelectableCount: data.allTransactions.totalSelectableCount,
+    results: data.allTransactions.results,
+  };
+}
+
+/**
  * Check token status and update state
  * @returns {Object} Auth status information
  */
@@ -1640,6 +1901,7 @@ export default {
   updateHolding,
   deleteHolding,
   getHoldings,
+  getTransactionsList,
   checkTokenStatus,
   getToken,
   getAccountTypeOptions,

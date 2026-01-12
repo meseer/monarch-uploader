@@ -18,6 +18,7 @@ import {
   createManualHolding,
   updateHolding,
   getHoldings,
+  getTransactionsList,
   checkTokenStatus,
   getToken,
   setAccountLogo,
@@ -1735,6 +1736,413 @@ describe('Monarch API', () => {
       await expect(getCreditLimit('account123'))
         .rejects
         .toThrow('Monarch token not found.');
+    });
+  });
+
+  describe('getTransactionsList', () => {
+    const mockTransactionsResponse = {
+      allTransactions: {
+        totalCount: 5,
+        totalSelectableCount: 5,
+        results: [
+          {
+            id: '232004636869426225',
+            amount: -52.5,
+            pending: false,
+            date: '2025-05-28',
+            hideFromReports: true,
+            hiddenByAccount: false,
+            plaidName: 'Beta Chocolates',
+            notes: 'Planning chocolates',
+            isRecurring: false,
+            reviewStatus: null,
+            needsReview: false,
+            isSplitTransaction: false,
+            dataProviderDescription: 'Beta Chocolates',
+            attachments: [],
+            goal: null,
+            savingsGoalEvent: null,
+            category: {
+              id: '162625045061467426',
+              name: 'Restaurants & Bars',
+              icon: '🍽',
+              group: { id: '162625045019525029', type: 'expense' },
+            },
+            merchant: {
+              name: 'Beta Chocolates',
+              id: '162626687081152169',
+              transactionsCount: 7,
+              logoUrl: null,
+              recurringTransactionStream: null,
+            },
+            tags: [
+              {
+                id: '162625044964998399',
+                name: 'Reimburse',
+                color: '#32AAF0',
+                order: 1,
+              },
+            ],
+            account: {
+              id: '232004378673314879',
+              displayName: 'Wealthsimple Credit Card (6903)',
+              icon: 'credit-card',
+              logoUrl: null,
+            },
+            ownedByUser: null,
+          },
+          {
+            id: '232004636869426231',
+            amount: -55.74,
+            pending: false,
+            date: '2025-05-27',
+            hideFromReports: true,
+            hiddenByAccount: false,
+            plaidName: 'Bahar Cafe',
+            notes: '',
+            isRecurring: false,
+            reviewStatus: null,
+            needsReview: false,
+            isSplitTransaction: false,
+            dataProviderDescription: 'Bahar Cafe',
+            attachments: [],
+            goal: null,
+            savingsGoalEvent: null,
+            category: {
+              id: '162625045061467426',
+              name: 'Restaurants & Bars',
+              icon: '🍽',
+              group: { id: '162625045019525029', type: 'expense' },
+            },
+            merchant: {
+              name: 'Bahar Cafe',
+              id: '178398432126861126',
+              transactionsCount: 4,
+              logoUrl: null,
+              recurringTransactionStream: null,
+            },
+            tags: [
+              {
+                id: '162625044964998399',
+                name: 'Reimburse',
+                color: '#32AAF0',
+                order: 1,
+              },
+            ],
+            account: {
+              id: '232004378673314879',
+              displayName: 'Wealthsimple Credit Card (6903)',
+              icon: 'credit-card',
+              logoUrl: null,
+            },
+            ownedByUser: null,
+          },
+        ],
+      },
+    };
+
+    test('retrieves transactions with required filters', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.operationName).toBe('Web_GetTransactionsList');
+        expect(data.variables.filters.accounts).toEqual(['232004378673314879']);
+        expect(data.variables.filters.startDate).toBe('2025-01-01');
+        expect(data.variables.filters.endDate).toBe('2025-12-31');
+        expect(data.variables.filters.transactionVisibility).toBe('all_transactions');
+        expect(data.variables.limit).toBe(100);
+        expect(data.variables.offset).toBe(0);
+        expect(data.variables.orderBy).toBe('date');
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockTransactionsResponse }),
+        }), 0);
+      });
+
+      const result = await getTransactionsList({
+        accountIds: ['232004378673314879'],
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+      });
+
+      expect(result.totalCount).toBe(5);
+      expect(result.totalSelectableCount).toBe(5);
+      expect(result.results).toHaveLength(2);
+      expect(result.results[0].id).toBe('232004636869426225');
+      expect(result.results[0].amount).toBe(-52.5);
+      expect(result.results[0].merchant.name).toBe('Beta Chocolates');
+    });
+
+    test('retrieves transactions with tag filters', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.variables.filters.tags).toEqual(['162625044964998399']);
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockTransactionsResponse }),
+        }), 0);
+      });
+
+      const result = await getTransactionsList({
+        accountIds: ['232004378673314879'],
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+        tags: ['162625044964998399'],
+      });
+
+      expect(result.totalCount).toBe(5);
+      expect(result.results[0].tags[0].name).toBe('Reimburse');
+    });
+
+    test('retrieves transactions with pagination options', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.variables.limit).toBe(20);
+        expect(data.variables.offset).toBe(40);
+        expect(data.variables.orderBy).toBe('amount');
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockTransactionsResponse }),
+        }), 0);
+      });
+
+      const result = await getTransactionsList({
+        accountIds: ['232004378673314879'],
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+        limit: 20,
+        offset: 40,
+        orderBy: 'amount',
+      });
+
+      expect(result.results).toHaveLength(2);
+    });
+
+    test('retrieves transactions with multiple account IDs', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.variables.filters.accounts).toEqual(['acc1', 'acc2', 'acc3']);
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockTransactionsResponse }),
+        }), 0);
+      });
+
+      const result = await getTransactionsList({
+        accountIds: ['acc1', 'acc2', 'acc3'],
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+      });
+
+      expect(result.totalCount).toBe(5);
+    });
+
+    test('retrieves transactions with custom visibility filter', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.variables.filters.transactionVisibility).toBe('only_visible');
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockTransactionsResponse }),
+        }), 0);
+      });
+
+      const result = await getTransactionsList({
+        accountIds: ['232004378673314879'],
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+        transactionVisibility: 'only_visible',
+      });
+
+      expect(result.totalCount).toBe(5);
+    });
+
+    test('handles empty results gracefully', async () => {
+      const emptyResponse = {
+        allTransactions: {
+          totalCount: 0,
+          totalSelectableCount: 0,
+          results: [],
+        },
+      };
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: emptyResponse }),
+        }), 0);
+      });
+
+      const result = await getTransactionsList({
+        accountIds: ['232004378673314879'],
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+      });
+
+      expect(result.totalCount).toBe(0);
+      expect(result.totalSelectableCount).toBe(0);
+      expect(result.results).toEqual([]);
+    });
+
+    test('throws error when accountIds is missing', async () => {
+      await expect(getTransactionsList({
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+      })).rejects.toThrow('accountIds is required and must be a non-empty array');
+    });
+
+    test('throws error when accountIds is empty array', async () => {
+      await expect(getTransactionsList({
+        accountIds: [],
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+      })).rejects.toThrow('accountIds is required and must be a non-empty array');
+    });
+
+    test('throws error when accountIds is not an array', async () => {
+      await expect(getTransactionsList({
+        accountIds: '232004378673314879',
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+      })).rejects.toThrow('accountIds is required and must be a non-empty array');
+    });
+
+    test('throws error when startDate is missing', async () => {
+      await expect(getTransactionsList({
+        accountIds: ['232004378673314879'],
+        endDate: '2025-12-31',
+      })).rejects.toThrow('startDate is required (format: YYYY-MM-DD)');
+    });
+
+    test('throws error when endDate is missing', async () => {
+      await expect(getTransactionsList({
+        accountIds: ['232004378673314879'],
+        startDate: '2025-01-01',
+      })).rejects.toThrow('endDate is required (format: YYYY-MM-DD)');
+    });
+
+    test('throws error when options is null', async () => {
+      await expect(getTransactionsList(null))
+        .rejects.toThrow('accountIds is required and must be a non-empty array');
+    });
+
+    test('throws error when options is undefined', async () => {
+      await expect(getTransactionsList())
+        .rejects.toThrow('accountIds is required and must be a non-empty array');
+    });
+
+    test('handles authentication errors', async () => {
+      authService.checkMonarchAuth.mockReturnValue({
+        authenticated: false,
+        token: null,
+      });
+
+      await expect(getTransactionsList({
+        accountIds: ['232004378673314879'],
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+      })).rejects.toThrow('Monarch token not found.');
+    });
+
+    test('handles network errors', async () => {
+      const mockError = new Error('Network error');
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onerror(mockError), 0);
+      });
+
+      await expect(getTransactionsList({
+        accountIds: ['232004378673314879'],
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+      })).rejects.toThrow('Network error');
+    });
+
+    test('handles GraphQL errors', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            errors: [{ message: 'Invalid account ID' }],
+          }),
+        }), 0);
+      });
+
+      await expect(getTransactionsList({
+        accountIds: ['invalid-account'],
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+      })).rejects.toThrow();
+    });
+
+    test('does not include tags filter when tags is null', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.variables.filters.tags).toBeUndefined();
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockTransactionsResponse }),
+        }), 0);
+      });
+
+      await getTransactionsList({
+        accountIds: ['232004378673314879'],
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+        tags: null,
+      });
+    });
+
+    test('does not include tags filter when tags is empty array', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.variables.filters.tags).toBeUndefined();
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockTransactionsResponse }),
+        }), 0);
+      });
+
+      await getTransactionsList({
+        accountIds: ['232004378673314879'],
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+        tags: [],
+      });
+    });
+
+    test('logs debug information', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockTransactionsResponse }),
+        }), 0);
+      });
+
+      await getTransactionsList({
+        accountIds: ['232004378673314879'],
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+      });
+
+      expect(debugLog).toHaveBeenCalledWith(
+        'Getting transactions list with filters:',
+        expect.objectContaining({
+          accounts: ['232004378673314879'],
+          startDate: '2025-01-01',
+          endDate: '2025-12-31',
+          transactionVisibility: 'all_transactions',
+        }),
+      );
+      expect(debugLog).toHaveBeenCalledWith(
+        'Retrieved 2 transactions (total: 5)',
+      );
     });
   });
 
