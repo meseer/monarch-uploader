@@ -647,8 +647,8 @@ async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAccount, 
     if (transactionSupportedTypes.includes(accountType)) {
       progressDialog.updateStepStatus(account.id, 'transactions', 'processing', 'Syncing transactions');
 
-      // Fetch raw transactions from Wealthsimple API for pending reconciliation
-      // We need to fetch them here to pass to both transaction sync and pending reconciliation
+      // Fetch raw transactions from Wealthsimple API ONCE
+      // These are passed to both transaction sync (for early filtering) and pending reconciliation
       try {
         rawWealthsimpleTransactions = await wealthsimpleApi.fetchTransactions(account.id, actualFromDate);
         debugLog(`Fetched ${rawWealthsimpleTransactions?.length || 0} raw transactions for account ${account.id}`);
@@ -657,11 +657,13 @@ async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAccount, 
         rawWealthsimpleTransactions = [];
       }
 
+      // Pass raw transactions to avoid duplicate fetch
       const transactionsResult = await uploadWealthsimpleTransactions(
         account.id,
         monarchAccount.id,
         actualFromDate,
         toDate,
+        { rawTransactions: rawWealthsimpleTransactions },
       );
 
       if (transactionsResult && transactionsResult.success) {

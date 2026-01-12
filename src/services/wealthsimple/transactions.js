@@ -10,7 +10,7 @@ import { applyWealthsimpleCategoryMapping, saveUserWealthsimpleCategorySelection
 import { showMonarchCategorySelector } from '../../ui/components/categorySelector';
 import monarchApi from '../../api/monarch';
 import toast from '../../ui/toast';
-import { applyTransactionRule } from './transactionRules';
+import { applyTransactionRule, CASH_TRANSACTION_RULES } from './transactionRules';
 
 /**
  * Convert ISO timestamp to local date in YYYY-MM-DD format
@@ -253,47 +253,89 @@ async function resolveCategoriesForTransactions(transactions) {
 
 /**
  * Fetch and process transactions for a credit card account
+ *
+ * Optimized flow:
+ * 1. Fetch raw transactions (if not provided)
+ * 2. Filter by status (settled + optionally authorized/pending)
+ * 3. Filter out already-uploaded settled transactions (keep pending for reconciliation)
+ * 4. Process transactions (merchant cleanup, amount conversion)
+ * 5. Resolve categories (with potential user prompts)
+ *
  * @param {Object} consolidatedAccount - Consolidated account object
  * @param {string} fromDate - Start date (YYYY-MM-DD)
  * @param {string} toDate - End date (YYYY-MM-DD)
+ * @param {Object} options - Processing options
+ * @param {Array} options.rawTransactions - Pre-fetched raw transactions (optional, will fetch if not provided)
+ * @param {Set<string>} options.uploadedTransactionIds - Set of already-uploaded transaction IDs to skip
  * @returns {Promise<Array>} Processed transactions ready for upload
  */
-export async function fetchAndProcessCreditCardTransactions(consolidatedAccount, fromDate, toDate) {
+export async function fetchAndProcessCreditCardTransactions(consolidatedAccount, fromDate, toDate, options = {}) {
   try {
     const accountId = consolidatedAccount.wealthsimpleAccount.id;
     const accountName = consolidatedAccount.wealthsimpleAccount.nickname;
     const stripStoreNumbers = consolidatedAccount.stripStoreNumbers !== false; // Default true
+    const { rawTransactions: providedTransactions, uploadedTransactionIds = new Set() } = options;
 
     // Get pending transactions setting (default true)
     const includePendingTransactions = consolidatedAccount.includePendingTransactions !== false;
 
-    debugLog(`Fetching credit card transactions for ${accountName} from ${fromDate} to ${toDate}`);
+    debugLog(`Processing credit card transactions for ${accountName} from ${fromDate} to ${toDate}`);
     debugLog(`Store number stripping: ${stripStoreNumbers ? 'enabled' : 'disabled'}`);
     debugLog(`Include pending transactions: ${includePendingTransactions ? 'enabled' : 'disabled'}`);
+    debugLog(`Already uploaded transactions to skip: ${uploadedTransactionIds.size}`);
 
-    // Fetch raw transactions from API
-    const rawTransactions = await wealthsimpleApi.fetchTransactions(accountId, fromDate);
+    // Step 1: Use provided transactions or fetch from API
+    let rawTransactions;
+    if (providedTransactions && Array.isArray(providedTransactions)) {
+      rawTransactions = providedTransactions;
+      debugLog(`Using ${rawTransactions.length} pre-fetched transactions`);
+    } else {
+      rawTransactions = await wealthsimpleApi.fetchTransactions(accountId, fromDate);
+      debugLog(`Fetched ${rawTransactions.length} total transactions from API`);
+    }
 
-    debugLog(`Fetched ${rawTransactions.length} total transactions from API`);
-
-    // Filter for syncable transactions (settled + optionally authorized/pending)
+    // Step 2: Filter for syncable transactions (settled + optionally authorized/pending)
     const syncableTransactions = filterSyncableTransactions(rawTransactions, includePendingTransactions);
-
     debugLog(`Filtered to ${syncableTransactions.length} syncable transactions (includePending: ${includePendingTransactions})`);
 
     if (syncableTransactions.length === 0) {
       return [];
     }
 
-    // Process transactions with stripStoreNumbers option
-    const processedTransactions = syncableTransactions.map((transaction) =>
+    // Step 3: Filter out already-uploaded settled transactions
+    // Keep pending transactions (authorized) - they may need to be re-processed if status changed
+    const notYetUploadedTransactions = syncableTransactions.filter((tx) => {
+      const isSettled = tx.status === 'settled';
+      const isAlreadyUploaded = uploadedTransactionIds.has(tx.externalCanonicalId);
+
+      // Skip only settled transactions that are already uploaded
+      if (isSettled && isAlreadyUploaded) {
+        return false;
+      }
+      return true;
+    });
+
+    const uploadedSkipCount = syncableTransactions.length - notYetUploadedTransactions.length;
+    if (uploadedSkipCount > 0) {
+      debugLog(`Skipped ${uploadedSkipCount} already-uploaded settled transactions`);
+    }
+
+    if (notYetUploadedTransactions.length === 0) {
+      debugLog('No new transactions to process after filtering already-uploaded');
+      return [];
+    }
+
+    // Step 4: Process transactions with stripStoreNumbers option
+    const processedTransactions = notYetUploadedTransactions.map((transaction) =>
       processCreditCardTransaction(transaction, { stripStoreNumbers }),
     );
 
     debugLog(`Processed ${processedTransactions.length} credit card transactions`);
 
-    // Resolve categories
+    // Step 5: Resolve categories (will prompt user for unknown merchants)
     const transactionsWithCategories = await resolveCategoriesForTransactions(processedTransactions);
+
+    debugLog(`Category resolution complete, returning ${transactionsWithCategories.length} transactions (${uploadedSkipCount} already uploaded)`);
 
     return transactionsWithCategories;
   } catch (error) {
@@ -391,38 +433,94 @@ function collectFundingIntentIds(transactions) {
  * Uses the transaction rules engine to categorize and format transactions
  * Fetches funding intent data to enrich e-transfer transactions with memos
  *
+ * Optimized flow:
+ * 1. Fetch raw transactions (if not provided)
+ * 2. Filter by status (COMPLETED, IN_PROGRESS, PENDING)
+ * 3. Filter out already-uploaded COMPLETED transactions (keep pending for reconciliation)
+ * 4. Filter by rules engine match (only process supported transaction types)
+ * 5. Fetch funding intents only for transactions that will be processed
+ * 6. Process transactions through rules engine
+ *
  * @param {Object} consolidatedAccount - Consolidated account object
  * @param {string} fromDate - Start date (YYYY-MM-DD)
  * @param {string} toDate - End date (YYYY-MM-DD)
+ * @param {Object} options - Processing options
+ * @param {Array} options.rawTransactions - Pre-fetched raw transactions (optional, will fetch if not provided)
+ * @param {Set<string>} options.uploadedTransactionIds - Set of already-uploaded transaction IDs to skip
  * @returns {Promise<Array>} Processed transactions ready for upload
  */
-export async function fetchAndProcessCashTransactions(consolidatedAccount, fromDate, toDate) {
+export async function fetchAndProcessCashTransactions(consolidatedAccount, fromDate, toDate, options = {}) {
   try {
     const accountId = consolidatedAccount.wealthsimpleAccount.id;
     const accountName = consolidatedAccount.wealthsimpleAccount.nickname;
+    const { rawTransactions: providedTransactions, uploadedTransactionIds = new Set() } = options;
 
     // Get pending transactions setting (default true)
     const includePendingTransactions = consolidatedAccount.includePendingTransactions !== false;
 
-    debugLog(`Fetching CASH transactions for ${accountName} from ${fromDate} to ${toDate}`);
+    debugLog(`Processing CASH transactions for ${accountName} from ${fromDate} to ${toDate}`);
     debugLog(`Include pending transactions: ${includePendingTransactions ? 'enabled' : 'disabled'}`);
+    debugLog(`Already uploaded transactions to skip: ${uploadedTransactionIds.size}`);
 
-    // Fetch raw transactions from API
-    const rawTransactions = await wealthsimpleApi.fetchTransactions(accountId, fromDate);
+    // Step 1: Use provided transactions or fetch from API
+    let rawTransactions;
+    if (providedTransactions && Array.isArray(providedTransactions)) {
+      rawTransactions = providedTransactions;
+      debugLog(`Using ${rawTransactions.length} pre-fetched transactions`);
+    } else {
+      rawTransactions = await wealthsimpleApi.fetchTransactions(accountId, fromDate);
+      debugLog(`Fetched ${rawTransactions.length} total transactions from API`);
+    }
 
-    debugLog(`Fetched ${rawTransactions.length} total transactions from API`);
-
-    // Filter for syncable transactions based on unifiedStatus
+    // Step 2: Filter for syncable transactions based on unifiedStatus
     const syncableTransactions = filterCashSyncableTransactions(rawTransactions, includePendingTransactions);
-
     debugLog(`Filtered to ${syncableTransactions.length} syncable transactions (includePending: ${includePendingTransactions})`);
 
     if (syncableTransactions.length === 0) {
       return [];
     }
 
-    // Collect funding intent IDs for batch fetch (e-transfers)
-    const fundingIntentIds = collectFundingIntentIds(syncableTransactions);
+    // Step 3: Filter out already-uploaded COMPLETED transactions
+    // Keep pending transactions (IN_PROGRESS/PENDING) - they may need to be re-processed if status changed
+    const notYetUploadedTransactions = syncableTransactions.filter((tx) => {
+      const isCompleted = tx.unifiedStatus === 'COMPLETED';
+      const isAlreadyUploaded = uploadedTransactionIds.has(tx.externalCanonicalId);
+
+      // Skip only COMPLETED transactions that are already uploaded
+      if (isCompleted && isAlreadyUploaded) {
+        return false;
+      }
+      return true;
+    });
+
+    const uploadedSkipCount = syncableTransactions.length - notYetUploadedTransactions.length;
+    if (uploadedSkipCount > 0) {
+      debugLog(`Skipped ${uploadedSkipCount} already-uploaded COMPLETED transactions`);
+    }
+
+    if (notYetUploadedTransactions.length === 0) {
+      debugLog('No new transactions to process after filtering already-uploaded');
+      return [];
+    }
+
+    // Step 4: Filter by rules engine match BEFORE fetching funding intents
+    // This avoids fetching funding intents for transactions that won't be processed
+    const transactionsWithRules = notYetUploadedTransactions.filter((tx) =>
+      CASH_TRANSACTION_RULES.some((rule) => rule.match(tx)),
+    );
+
+    const noRuleSkipCount = notYetUploadedTransactions.length - transactionsWithRules.length;
+    if (noRuleSkipCount > 0) {
+      debugLog(`Skipped ${noRuleSkipCount} transactions with no matching rule (before funding intent fetch)`);
+    }
+
+    if (transactionsWithRules.length === 0) {
+      debugLog('No transactions with matching rules to process');
+      return [];
+    }
+
+    // Step 5: Collect funding intent IDs only for transactions that will be processed
+    const fundingIntentIds = collectFundingIntentIds(transactionsWithRules);
     let fundingIntentMap = new Map();
 
     if (fundingIntentIds.length > 0) {
@@ -431,11 +529,11 @@ export async function fetchAndProcessCashTransactions(consolidatedAccount, fromD
       debugLog(`Fetched ${fundingIntentMap.size} funding intent(s)`);
     }
 
-    // Process each transaction through the rules engine
+    // Step 6: Process each transaction through the rules engine
     const processedTransactions = [];
     let skippedCount = 0;
 
-    for (const transaction of syncableTransactions) {
+    for (const transaction of transactionsWithRules) {
       const processed = processCashTransaction(transaction, fundingIntentMap);
       if (processed) {
         processedTransactions.push(processed);
@@ -445,10 +543,10 @@ export async function fetchAndProcessCashTransactions(consolidatedAccount, fromD
     }
 
     if (skippedCount > 0) {
-      debugLog(`Skipped ${skippedCount} transactions with no matching rule`);
+      debugLog(`Skipped ${skippedCount} transactions during processing`);
     }
 
-    debugLog(`Processed ${processedTransactions.length} CASH transactions (${skippedCount} skipped)`);
+    debugLog(`Processed ${processedTransactions.length} CASH transactions (${uploadedSkipCount} already uploaded, ${noRuleSkipCount} no rule, ${skippedCount} processing skipped)`);
 
     return processedTransactions;
   } catch (error) {
@@ -502,9 +600,12 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
  * @param {Object} consolidatedAccount - Consolidated account object
  * @param {string} fromDate - Start date (YYYY-MM-DD)
  * @param {string} toDate - End date (YYYY-MM-DD)
+ * @param {Object} options - Processing options
+ * @param {Array} options.rawTransactions - Pre-fetched raw transactions (optional)
+ * @param {Set<string>} options.uploadedTransactionIds - Set of already-uploaded transaction IDs to skip
  * @returns {Promise<Array>} Processed transactions ready for upload
  */
-export async function fetchAndProcessTransactions(consolidatedAccount, fromDate, toDate) {
+export async function fetchAndProcessTransactions(consolidatedAccount, fromDate, toDate, options = {}) {
   const accountType = consolidatedAccount.wealthsimpleAccount.type;
 
   debugLog(`Processing transactions for account type: ${accountType}`);
@@ -512,13 +613,13 @@ export async function fetchAndProcessTransactions(consolidatedAccount, fromDate,
   // Route CASH and CASH_USD accounts to the CASH transaction processor
   // These accounts have different transaction structure (unifiedStatus, type/subType rules)
   if (accountType === 'CASH' || accountType === 'CASH_USD') {
-    return fetchAndProcessCashTransactions(consolidatedAccount, fromDate, toDate);
+    return fetchAndProcessCashTransactions(consolidatedAccount, fromDate, toDate, options);
   }
 
   // Route credit card-like accounts (CREDIT_CARD, PORTFOLIO_LINE_OF_CREDIT) to credit card processor
   // These accounts use the same transaction structure (status: authorized/settled, spendMerchant)
   if (accountType === 'CREDIT_CARD' || accountType === 'PORTFOLIO_LINE_OF_CREDIT') {
-    return fetchAndProcessCreditCardTransactions(consolidatedAccount, fromDate, toDate);
+    return fetchAndProcessCreditCardTransactions(consolidatedAccount, fromDate, toDate, options);
   }
 
   // Default to investment account processing for all other types

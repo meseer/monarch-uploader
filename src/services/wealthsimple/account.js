@@ -390,23 +390,32 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
 /**
  * Upload Wealthsimple account transactions to Monarch
  * For first sync, prompts user for start date with account creation date as default
+ *
+ * Optimized: Accepts pre-fetched raw transactions to avoid duplicate API calls,
+ * and passes uploadedTransactionIds to processing for early filtering.
+ *
  * @param {string} wealthsimpleAccountId - Wealthsimple account ID
  * @param {string} monarchAccountId - Monarch account ID
  * @param {string} fromDate - Start date (YYYY-MM-DD)
  * @param {string} toDate - End date (YYYY-MM-DD)
+ * @param {Object} options - Upload options
+ * @param {Array} options.rawTransactions - Pre-fetched raw transactions (optional)
  * @returns {Promise<Object>} Result object with success status and counts
  *   - success: boolean - Whether the upload succeeded
  *   - synced: number - Number of transactions synced (uploaded)
  *   - skipped: number - Number of duplicate transactions skipped
  *   - total: number - Total transactions found
  */
-export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, monarchAccountId, fromDate, toDate) {
+export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, monarchAccountId, fromDate, toDate, options = {}) {
   try {
+    const { rawTransactions } = options;
+
     debugLog('Starting Wealthsimple transaction upload', {
       wealthsimpleAccountId,
       monarchAccountId,
       fromDate,
       toDate,
+      hasRawTransactions: Boolean(rawTransactions),
     });
 
     // Get consolidated account data
@@ -427,39 +436,41 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
     // Note: First sync date picker is handled in wealthsimple-upload.js
     // The fromDate passed here is already the correct date (either user-selected or default)
 
-    // Fetch and process transactions
-    const processedTransactions = await fetchAndProcessTransactions(accountData, fromDate, toDate);
+    // Get existing uploaded transactions and migrate if needed
+    // Build the Set BEFORE processing so we can pass it for early filtering
+    const existingTransactions = migrateLegacyTransactions(accountData.uploadedTransactions || []);
+    const uploadedTransactionIds = getTransactionIdsFromArray(existingTransactions);
+
+    debugLog(`Account has ${uploadedTransactionIds.size} previously uploaded transaction IDs`);
+
+    // Fetch and process transactions with early duplicate filtering
+    // Pass raw transactions if provided, and uploadedTransactionIds for early filtering
+    const processedTransactions = await fetchAndProcessTransactions(accountData, fromDate, toDate, {
+      rawTransactions,
+      uploadedTransactionIds,
+    });
 
     if (!processedTransactions || processedTransactions.length === 0) {
       debugLog('No transactions to upload');
       return { success: true, synced: 0, skipped: 0, total: 0 };
     }
 
-    debugLog(`Found ${processedTransactions.length} processed transactions`);
+    debugLog(`Found ${processedTransactions.length} processed transactions (after early filtering)`);
 
-    // Get existing uploaded transactions and migrate if needed
-    const existingTransactions = migrateLegacyTransactions(accountData.uploadedTransactions || []);
-    const uploadedIds = getTransactionIdsFromArray(existingTransactions);
-    const originalCount = processedTransactions.length;
-
+    // Final duplicate check (belt-and-suspenders, should be few/none after early filtering)
     const newTransactions = processedTransactions.filter(
-      (transaction) => !uploadedIds.has(transaction.id),
+      (transaction) => !uploadedTransactionIds.has(transaction.id),
     );
 
-    const duplicateCount = originalCount - newTransactions.length;
+    const duplicateCount = processedTransactions.length - newTransactions.length;
 
     if (duplicateCount > 0) {
-      debugLog(`Filtered out ${duplicateCount} duplicate transactions`);
-      toast.show(`Skipping ${duplicateCount} already uploaded transactions`, 'debug');
+      debugLog(`Final filter removed ${duplicateCount} additional duplicate transactions`);
     }
 
     if (newTransactions.length === 0) {
-      const message = duplicateCount > 0
-        ? `All ${duplicateCount} transactions have already been uploaded`
-        : 'No new transactions to upload';
-      debugLog(message);
-      toast.show(message, 'debug');
-      return { success: true, synced: 0, skipped: duplicateCount, total: originalCount };
+      debugLog('No new transactions to upload after final filtering');
+      return { success: true, synced: 0, skipped: duplicateCount, total: processedTransactions.length };
     }
 
     debugLog(`Uploading ${newTransactions.length} new transactions`);
@@ -513,6 +524,7 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
         debugLog(`Stored ${transactionsToStore.length} new transaction IDs, total after retention: ${updatedUploadedTransactions.length}`);
       }
 
+      const totalProcessed = processedTransactions.length;
       const successMessage = duplicateCount > 0
         ? `Successfully uploaded ${newTransactions.length} new transactions (${duplicateCount} duplicates skipped)`
         : `Successfully uploaded ${newTransactions.length} transactions`;
@@ -520,7 +532,7 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
       debugLog(successMessage);
       toast.show(successMessage, 'debug');
 
-      return { success: true, synced: newTransactions.length, skipped: duplicateCount, total: originalCount };
+      return { success: true, synced: newTransactions.length, skipped: duplicateCount, total: totalProcessed };
     }
 
     throw new Error('Transaction upload failed');
