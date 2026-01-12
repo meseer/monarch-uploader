@@ -1205,6 +1205,121 @@ fragment TransactionOverviewFields on Transaction {
 }
 
 /**
+ * @typedef {Object} HouseholdTransactionTag
+ * @property {string} id - Tag ID
+ * @property {string} name - Tag name
+ * @property {string} color - Tag color hex code
+ * @property {number} order - Tag display order
+ * @property {number} [transactionCount] - Number of transactions with this tag (if includeTransactionCount is true)
+ */
+
+/**
+ * @typedef {Object} GetHouseholdTransactionTagsOptions
+ * @property {string} [search] - Search term to filter tags by name
+ * @property {number} [limit] - Maximum number of tags to return
+ * @property {Object} [bulkParams] - Bulk transaction data params
+ * @property {boolean} [includeTransactionCount=false] - Whether to include transaction count for each tag
+ */
+
+/**
+ * Get household transaction tags from Monarch
+ * @param {GetHouseholdTransactionTagsOptions} options - Query options
+ * @returns {Promise<HouseholdTransactionTag[]>} Array of transaction tags
+ * @example
+ * // Get all tags
+ * const tags = await getHouseholdTransactionTags();
+ *
+ * @example
+ * // Search for tags
+ * const tags = await getHouseholdTransactionTags({ search: 'Pending', limit: 5 });
+ *
+ * @example
+ * // Include transaction counts
+ * const tags = await getHouseholdTransactionTags({ includeTransactionCount: true });
+ */
+export async function getHouseholdTransactionTags(options = {}) {
+  const {
+    search = null,
+    limit = null,
+    bulkParams = null,
+    includeTransactionCount = false,
+  } = options;
+
+  const variables = {
+    includeTransactionCount,
+  };
+
+  if (search !== null) {
+    variables.search = search;
+  }
+
+  if (limit !== null) {
+    variables.limit = limit;
+  }
+
+  if (bulkParams !== null) {
+    variables.bulkParams = bulkParams;
+  }
+
+  debugLog('Getting household transaction tags with options:', variables);
+
+  const query = `query Common_GetHouseholdTransactionTags($search: String, $limit: Int, $bulkParams: BulkTransactionDataParams, $includeTransactionCount: Boolean = false) {
+  householdTransactionTags(
+    search: $search
+    limit: $limit
+    bulkParams: $bulkParams
+  ) {
+    id
+    name
+    color
+    order
+    transactionCount @include(if: $includeTransactionCount)
+    __typename
+  }
+}`;
+
+  const data = await callMonarchGraphQL('Common_GetHouseholdTransactionTags', query, variables);
+
+  debugLog(`Retrieved ${data.householdTransactionTags?.length || 0} transaction tags`);
+
+  return data.householdTransactionTags || [];
+}
+
+/**
+ * Get a tag by name (case-insensitive)
+ * @param {string} tagName - Tag name to search for
+ * @returns {Promise<HouseholdTransactionTag|null>} Tag object or null if not found
+ * @example
+ * // Find the "Pending" tag
+ * const pendingTag = await getTagByName('Pending');
+ * if (pendingTag) {
+ *   console.log(`Found tag with ID: ${pendingTag.id}`);
+ * }
+ */
+export async function getTagByName(tagName) {
+  if (!tagName || typeof tagName !== 'string') {
+    throw new Error('Tag name is required and must be a string');
+  }
+
+  debugLog(`Looking up tag by name: ${tagName}`);
+
+  const tags = await getHouseholdTransactionTags();
+  const normalizedSearchName = tagName.toLowerCase().trim();
+
+  const matchingTag = tags.find(
+    (tag) => tag.name.toLowerCase().trim() === normalizedSearchName,
+  );
+
+  if (matchingTag) {
+    debugLog(`Found tag: ${matchingTag.name} (ID: ${matchingTag.id})`);
+  } else {
+    debugLog(`Tag not found: ${tagName}`);
+  }
+
+  return matchingTag || null;
+}
+
+/**
  * Check token status and update state
  * @returns {Object} Auth status information
  */
@@ -1902,6 +2017,8 @@ export default {
   deleteHolding,
   getHoldings,
   getTransactionsList,
+  getHouseholdTransactionTags,
+  getTagByName,
   checkTokenStatus,
   getToken,
   getAccountTypeOptions,

@@ -19,6 +19,8 @@ import {
   updateHolding,
   getHoldings,
   getTransactionsList,
+  getHouseholdTransactionTags,
+  getTagByName,
   checkTokenStatus,
   getToken,
   setAccountLogo,
@@ -2143,6 +2145,370 @@ describe('Monarch API', () => {
       expect(debugLog).toHaveBeenCalledWith(
         'Retrieved 2 transactions (total: 5)',
       );
+    });
+  });
+
+  describe('getHouseholdTransactionTags', () => {
+    const mockTagsResponse = {
+      householdTransactionTags: [
+        {
+          id: '162625044964998398',
+          name: 'Tax',
+          color: '#1E5AC3',
+          order: 0,
+          __typename: 'TransactionTag',
+        },
+        {
+          id: '162625044964998399',
+          name: 'Reimburse',
+          color: '#32AAF0',
+          order: 1,
+          __typename: 'TransactionTag',
+        },
+        {
+          id: '232589874561580130',
+          name: 'Pending',
+          color: '#7ce2fe',
+          order: 13,
+          __typename: 'TransactionTag',
+        },
+      ],
+    };
+
+    test('retrieves all tags with default options', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.operationName).toBe('Common_GetHouseholdTransactionTags');
+        expect(data.variables.includeTransactionCount).toBe(false);
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockTagsResponse }),
+        }), 0);
+      });
+
+      const result = await getHouseholdTransactionTags();
+
+      expect(result).toHaveLength(3);
+      expect(result[0].name).toBe('Tax');
+      expect(result[1].name).toBe('Reimburse');
+      expect(result[2].name).toBe('Pending');
+      expect(debugLog).toHaveBeenCalledWith(
+        'Getting household transaction tags with options:',
+        { includeTransactionCount: false },
+      );
+    });
+
+    test('retrieves tags with search filter', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.variables.search).toBe('Pending');
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              householdTransactionTags: [mockTagsResponse.householdTransactionTags[2]],
+            },
+          }),
+        }), 0);
+      });
+
+      const result = await getHouseholdTransactionTags({ search: 'Pending' });
+
+      expect(result).toHaveLength(1);
+      expect(result[0].name).toBe('Pending');
+    });
+
+    test('retrieves tags with limit', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.variables.limit).toBe(2);
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              householdTransactionTags: mockTagsResponse.householdTransactionTags.slice(0, 2),
+            },
+          }),
+        }), 0);
+      });
+
+      const result = await getHouseholdTransactionTags({ limit: 2 });
+
+      expect(result).toHaveLength(2);
+    });
+
+    test('retrieves tags with transaction count', async () => {
+      const tagsWithCount = mockTagsResponse.householdTransactionTags.map((tag) => ({
+        ...tag,
+        transactionCount: 10,
+      }));
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.variables.includeTransactionCount).toBe(true);
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: { householdTransactionTags: tagsWithCount },
+          }),
+        }), 0);
+      });
+
+      const result = await getHouseholdTransactionTags({ includeTransactionCount: true });
+
+      expect(result).toHaveLength(3);
+      expect(result[0].transactionCount).toBe(10);
+    });
+
+    test('returns empty array when no tags exist', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: { householdTransactionTags: [] },
+          }),
+        }), 0);
+      });
+
+      const result = await getHouseholdTransactionTags();
+
+      expect(result).toEqual([]);
+    });
+
+    test('returns empty array when householdTransactionTags is null', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: { householdTransactionTags: null },
+          }),
+        }), 0);
+      });
+
+      const result = await getHouseholdTransactionTags();
+
+      expect(result).toEqual([]);
+    });
+
+    test('handles authentication errors', async () => {
+      authService.checkMonarchAuth.mockReturnValue({
+        authenticated: false,
+        token: null,
+      });
+
+      await expect(getHouseholdTransactionTags())
+        .rejects
+        .toThrow('Monarch token not found.');
+    });
+
+    test('handles network errors', async () => {
+      const mockError = new Error('Network error');
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onerror(mockError), 0);
+      });
+
+      await expect(getHouseholdTransactionTags())
+        .rejects
+        .toThrow('Network error');
+    });
+
+    test('passes bulkParams when provided', async () => {
+      const bulkParams = { someParam: 'value' };
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.variables.bulkParams).toEqual(bulkParams);
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockTagsResponse }),
+        }), 0);
+      });
+
+      await getHouseholdTransactionTags({ bulkParams });
+    });
+
+    test('logs retrieved tag count', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockTagsResponse }),
+        }), 0);
+      });
+
+      await getHouseholdTransactionTags();
+
+      expect(debugLog).toHaveBeenCalledWith('Retrieved 3 transaction tags');
+    });
+  });
+
+  describe('getTagByName', () => {
+    const mockTagsResponse = {
+      householdTransactionTags: [
+        {
+          id: '162625044964998398',
+          name: 'Tax',
+          color: '#1E5AC3',
+          order: 0,
+        },
+        {
+          id: '162625044964998399',
+          name: 'Reimburse',
+          color: '#32AAF0',
+          order: 1,
+        },
+        {
+          id: '232589874561580130',
+          name: 'Pending',
+          color: '#7ce2fe',
+          order: 13,
+        },
+      ],
+    };
+
+    test('finds tag by exact name', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockTagsResponse }),
+        }), 0);
+      });
+
+      const result = await getTagByName('Pending');
+
+      expect(result).not.toBeNull();
+      expect(result.id).toBe('232589874561580130');
+      expect(result.name).toBe('Pending');
+      expect(debugLog).toHaveBeenCalledWith('Looking up tag by name: Pending');
+      expect(debugLog).toHaveBeenCalledWith('Found tag: Pending (ID: 232589874561580130)');
+    });
+
+    test('finds tag case-insensitively', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockTagsResponse }),
+        }), 0);
+      });
+
+      const result = await getTagByName('pending');
+
+      expect(result).not.toBeNull();
+      expect(result.id).toBe('232589874561580130');
+      expect(result.name).toBe('Pending');
+    });
+
+    test('finds tag with uppercase search', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockTagsResponse }),
+        }), 0);
+      });
+
+      const result = await getTagByName('PENDING');
+
+      expect(result).not.toBeNull();
+      expect(result.name).toBe('Pending');
+    });
+
+    test('trims whitespace from tag name', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockTagsResponse }),
+        }), 0);
+      });
+
+      const result = await getTagByName('  Pending  ');
+
+      expect(result).not.toBeNull();
+      expect(result.name).toBe('Pending');
+    });
+
+    test('returns null when tag not found', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockTagsResponse }),
+        }), 0);
+      });
+
+      const result = await getTagByName('NonexistentTag');
+
+      expect(result).toBeNull();
+      expect(debugLog).toHaveBeenCalledWith('Tag not found: NonexistentTag');
+    });
+
+    test('throws error when tagName is null', async () => {
+      await expect(getTagByName(null))
+        .rejects
+        .toThrow('Tag name is required and must be a string');
+    });
+
+    test('throws error when tagName is undefined', async () => {
+      await expect(getTagByName(undefined))
+        .rejects
+        .toThrow('Tag name is required and must be a string');
+    });
+
+    test('throws error when tagName is empty string', async () => {
+      await expect(getTagByName(''))
+        .rejects
+        .toThrow('Tag name is required and must be a string');
+    });
+
+    test('throws error when tagName is not a string', async () => {
+      await expect(getTagByName(123))
+        .rejects
+        .toThrow('Tag name is required and must be a string');
+
+      await expect(getTagByName({}))
+        .rejects
+        .toThrow('Tag name is required and must be a string');
+    });
+
+    test('handles authentication errors', async () => {
+      authService.checkMonarchAuth.mockReturnValue({
+        authenticated: false,
+        token: null,
+      });
+
+      await expect(getTagByName('Pending'))
+        .rejects
+        .toThrow('Monarch token not found.');
+    });
+
+    test('handles network errors', async () => {
+      const mockError = new Error('Network error');
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onerror(mockError), 0);
+      });
+
+      await expect(getTagByName('Pending'))
+        .rejects
+        .toThrow('Network error');
+    });
+
+    test('returns null when tags list is empty', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: { householdTransactionTags: [] },
+          }),
+        }), 0);
+      });
+
+      const result = await getTagByName('Pending');
+
+      expect(result).toBeNull();
     });
   });
 
