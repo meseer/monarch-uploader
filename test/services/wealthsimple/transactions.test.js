@@ -608,6 +608,7 @@ describe('Wealthsimple Transaction Service', () => {
             amount: -50.00,
             date: '2025-01-10',
             notes: 'PURCHASE / credit-transaction-527000993851-20260111-00-32943086',
+            ownedByUser: { id: 'user-123' },
           },
         ],
       });
@@ -632,11 +633,13 @@ describe('Wealthsimple Transaction Service', () => {
       expect(result.success).toBe(true);
       expect(result.settled).toBe(1);
       expect(result.cancelled).toBe(0);
+      expect(result.failed).toBe(0);
 
-      // Should update transaction with settled amount and cleaned notes
+      // Should update transaction with settled amount, cleaned notes, and ownerUserId
       expect(monarchApi.updateTransaction).toHaveBeenCalledWith('monarch-tx-1', {
         amount: -52.00,
         notes: '',
+        ownerUserId: 'user-123',
       });
 
       // Should remove Pending tag
@@ -652,6 +655,7 @@ describe('Wealthsimple Transaction Service', () => {
             amount: -50.00,
             date: '2025-01-10',
             notes: 'PURCHASE / credit-transaction-527000993851-20260111-00-32943086 | My custom note',
+            ownedByUser: null,
           },
         ],
       });
@@ -676,9 +680,11 @@ describe('Wealthsimple Transaction Service', () => {
       expect(result.settled).toBe(1);
 
       // Should preserve user notes (system notes and separators are cleaned)
+      // ownerUserId should be null when ownedByUser is null
       expect(monarchApi.updateTransaction).toHaveBeenCalledWith('monarch-tx-1', {
         amount: -50.00,
         notes: 'My custom note',
+        ownerUserId: null,
       });
     });
 
@@ -824,6 +830,7 @@ describe('Wealthsimple Transaction Service', () => {
             amount: -50.00,
             date: '2025-01-10',
             notes: 'credit-transaction-527000993851-20260111-00-32943086', // Just ID, no type prefix
+            ownedByUser: { id: 'user-456' },
           },
         ],
       });
@@ -846,7 +853,11 @@ describe('Wealthsimple Transaction Service', () => {
       );
 
       expect(result.settled).toBe(1);
-      expect(monarchApi.updateTransaction).toHaveBeenCalled();
+      expect(monarchApi.updateTransaction).toHaveBeenCalledWith('monarch-tx-1', {
+        amount: -50.00,
+        notes: '',
+        ownerUserId: 'user-456',
+      });
     });
 
     it('should handle multiple pending transactions', async () => {
@@ -858,18 +869,21 @@ describe('Wealthsimple Transaction Service', () => {
             amount: -50.00,
             date: '2025-01-10',
             notes: 'PURCHASE / credit-transaction-settled-one',
+            ownedByUser: { id: 'user-123' },
           },
           {
             id: 'monarch-tx-2',
             amount: -25.00,
             date: '2025-01-11',
             notes: 'PURCHASE / credit-transaction-cancelled-one',
+            ownedByUser: null,
           },
           {
             id: 'monarch-tx-3',
             amount: -75.00,
             date: '2025-01-12',
             notes: 'PURCHASE / credit-transaction-still-pending',
+            ownedByUser: { id: 'user-456' },
           },
         ],
       });
@@ -902,12 +916,13 @@ describe('Wealthsimple Transaction Service', () => {
       expect(result.success).toBe(true);
       expect(result.settled).toBe(1);
       expect(result.cancelled).toBe(1);
+      expect(result.failed).toBe(0);
 
       expect(monarchApi.updateTransaction).toHaveBeenCalledTimes(1);
       expect(monarchApi.deleteTransaction).toHaveBeenCalledTimes(1);
     });
 
-    it('should continue processing if one transaction fails', async () => {
+    it('should continue processing if one transaction fails and track failed count', async () => {
       monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
       monarchApi.getTransactionsList.mockResolvedValue({
         results: [
@@ -916,12 +931,14 @@ describe('Wealthsimple Transaction Service', () => {
             amount: -50.00,
             date: '2025-01-10',
             notes: 'PURCHASE / credit-transaction-first',
+            ownedByUser: { id: 'user-123' },
           },
           {
             id: 'monarch-tx-2',
             amount: -25.00,
             date: '2025-01-11',
             notes: 'PURCHASE / credit-transaction-second',
+            ownedByUser: null,
           },
         ],
       });
@@ -952,8 +969,9 @@ describe('Wealthsimple Transaction Service', () => {
         30,
       );
 
-      // Should continue despite first failure
+      // Should continue despite first failure and track failed count
       expect(result.settled).toBe(1);
+      expect(result.failed).toBe(1);
       expect(monarchApi.updateTransaction).toHaveBeenCalledTimes(2);
     });
   });
@@ -969,24 +987,39 @@ describe('Wealthsimple Transaction Service', () => {
       expect(result).toBe('No pending transactions');
     });
 
-    it('should return "No pending transactions" when both settled and cancelled are 0', () => {
-      const result = formatReconciliationMessage({ settled: 0, cancelled: 0 });
+    it('should return "No pending transactions" when all counts are 0', () => {
+      const result = formatReconciliationMessage({ settled: 0, cancelled: 0, failed: 0 });
       expect(result).toBe('No pending transactions');
     });
 
     it('should format message with only settled count', () => {
-      const result = formatReconciliationMessage({ settled: 3, cancelled: 0 });
+      const result = formatReconciliationMessage({ settled: 3, cancelled: 0, failed: 0 });
       expect(result).toBe('3 settled');
     });
 
     it('should format message with only cancelled count', () => {
-      const result = formatReconciliationMessage({ settled: 0, cancelled: 2 });
+      const result = formatReconciliationMessage({ settled: 0, cancelled: 2, failed: 0 });
       expect(result).toBe('2 cancelled');
     });
 
+    it('should format message with only failed count', () => {
+      const result = formatReconciliationMessage({ settled: 0, cancelled: 0, failed: 2 });
+      expect(result).toBe('2 failed');
+    });
+
     it('should format message with both settled and cancelled counts', () => {
-      const result = formatReconciliationMessage({ settled: 3, cancelled: 2 });
+      const result = formatReconciliationMessage({ settled: 3, cancelled: 2, failed: 0 });
       expect(result).toBe('3 settled, 2 cancelled');
+    });
+
+    it('should format message with settled, cancelled, and failed counts', () => {
+      const result = formatReconciliationMessage({ settled: 3, cancelled: 2, failed: 1 });
+      expect(result).toBe('3 settled, 2 cancelled, 1 failed');
+    });
+
+    it('should format message with settled and failed counts', () => {
+      const result = formatReconciliationMessage({ settled: 5, cancelled: 0, failed: 2 });
+      expect(result).toBe('5 settled, 2 failed');
     });
   });
 });

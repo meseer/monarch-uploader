@@ -469,7 +469,7 @@ function cleanSystemNotesFromNotes(notes) {
  * @returns {Promise<Object>} Reconciliation result { success, settled, cancelled, error }
  */
 export async function reconcilePendingTransactions(monarchAccountId, wealthsimpleTransactions, lookbackDays) {
-  const result = { success: true, settled: 0, cancelled: 0, error: null };
+  const result = { success: true, settled: 0, cancelled: 0, failed: 0, error: null };
 
   try {
     debugLog('Starting pending transaction reconciliation', {
@@ -593,9 +593,11 @@ export async function reconcilePendingTransactions(monarchAccountId, wealthsimpl
           });
 
           // Update transaction amount and notes
+          // Include ownerUserId from the original transaction as Monarch requires it
           await monarchApi.updateTransaction(monarchTxId, {
             amount: settledAmount,
             notes: cleanedNotes,
+            ownerUserId: monarchTx.ownedByUser?.id || null,
           });
 
           // Remove Pending tag
@@ -614,6 +616,7 @@ export async function reconcilePendingTransactions(monarchAccountId, wealthsimpl
         debugLog(`Deleted transaction ${monarchTxId} with unknown status from Monarch`);
       } catch (txError) {
         debugLog(`Error reconciling transaction ${monarchTx.id}:`, txError);
+        result.failed += 1;
         // Continue with other transactions
       }
     }
@@ -621,6 +624,7 @@ export async function reconcilePendingTransactions(monarchAccountId, wealthsimpl
     debugLog('Pending transaction reconciliation completed', {
       settled: result.settled,
       cancelled: result.cancelled,
+      failed: result.failed,
     });
 
     return result;
@@ -648,6 +652,10 @@ export function formatReconciliationMessage(result) {
 
   if (result.cancelled > 0) {
     parts.push(`${result.cancelled} cancelled`);
+  }
+
+  if (result.failed > 0) {
+    parts.push(`${result.failed} failed`);
   }
 
   if (parts.length === 0) {
