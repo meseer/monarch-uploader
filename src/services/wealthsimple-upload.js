@@ -350,15 +350,17 @@ function buildSyncStepsForAccount(consolidatedAccount) {
   const steps = [];
   const accountType = consolidatedAccount.wealthsimpleAccount?.type || '';
 
-  // Transaction sync for supported account types (first)
-  const transactionSupportedTypes = ['CREDIT_CARD', 'CHEQUING', 'SAVINGS', 'JOINT'];
+  // Account types that support transaction sync
+  // Note: Using WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES from config
+  const transactionSupportedTypes = ['CREDIT_CARD', 'PORTFOLIO_LINE_OF_CREDIT', 'CASH', 'CASH_USD'];
   if (transactionSupportedTypes.includes(accountType)) {
     steps.push({ key: 'transactions', name: 'Transaction sync' });
   }
 
-  // Pending transaction reconciliation for credit card accounts
+  // Pending transaction reconciliation for credit card and CASH accounts
   // Deleting cancelled transactions may adjust balance in Monarch
-  if (accountType === 'CREDIT_CARD') {
+  const pendingReconciliationTypes = ['CREDIT_CARD', 'CASH', 'CASH_USD'];
+  if (pendingReconciliationTypes.includes(accountType)) {
     steps.push({ key: 'pendingReconciliation', name: 'Pending reconciliation' });
   }
 
@@ -568,12 +570,14 @@ async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAccount, 
     // Resolve account mapping first (shows selector with create option)
     const mappingResult = await resolveWealthsimpleAccountMapping(consolidatedAccount, currentBalance);
 
+    // Account types that support transaction sync (same as buildSyncStepsForAccount)
+    const transactionSupportedTypes = ['CREDIT_CARD', 'PORTFOLIO_LINE_OF_CREDIT', 'CASH', 'CASH_USD'];
+
     // Handle skip signal
     if (mappingResult && mappingResult.skipped) {
       debugLog(`User skipped account ${account.id}`);
       markAccountAsSkipped(account.id, true);
       // Update first visible step
-      const transactionSupportedTypes = ['CREDIT_CARD', 'CHEQUING', 'SAVINGS', 'JOINT'];
       const firstStep = transactionSupportedTypes.includes(accountType) ? 'transactions' : 'balance';
       progressDialog.updateStepStatus(account.id, firstStep, 'skipped', 'Skipped by user');
       return { success: false, skipped: true };
@@ -582,7 +586,6 @@ async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAccount, 
     // Handle cancel signal
     if (mappingResult && mappingResult.cancelled) {
       debugLog('User cancelled sync');
-      const transactionSupportedTypes = ['CREDIT_CARD', 'CHEQUING', 'SAVINGS', 'JOINT'];
       const firstStep = transactionSupportedTypes.includes(accountType) ? 'transactions' : 'balance';
       progressDialog.updateStepStatus(account.id, firstStep, 'error', 'Cancelled');
       return { success: false, cancelled: true };
@@ -591,7 +594,6 @@ async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAccount, 
     // Handle null (user closed without action)
     if (!mappingResult) {
       debugLog('Account mapping cancelled by user');
-      const transactionSupportedTypes = ['CREDIT_CARD', 'CHEQUING', 'SAVINGS', 'JOINT'];
       const firstStep = transactionSupportedTypes.includes(accountType) ? 'transactions' : 'balance';
       progressDialog.updateStepStatus(account.id, firstStep, 'error', 'Cancelled');
       return { success: false, cancelled: true };
@@ -628,7 +630,6 @@ async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAccount, 
 
       if (!datePickerResult) {
         debugLog('User cancelled date selection');
-        const transactionSupportedTypes = ['CREDIT_CARD', 'CHEQUING', 'SAVINGS', 'JOINT'];
         const firstStep = transactionSupportedTypes.includes(accountType) ? 'transactions' : 'balance';
         progressDialog.updateStepStatus(account.id, firstStep, 'error', 'Date selection cancelled');
         return { success: false, cancelled: true };
@@ -641,7 +642,6 @@ async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAccount, 
     // Step 1: Transaction sync (for supported account types)
     // Transactions are synced first so pending reconciliation can delete cancelled transactions
     // before balance upload captures any implicit balance adjustments
-    const transactionSupportedTypes = ['CREDIT_CARD', 'CHEQUING', 'SAVINGS', 'JOINT'];
     let rawWealthsimpleTransactions = null; // Store for pending reconciliation
 
     if (transactionSupportedTypes.includes(accountType)) {
@@ -676,9 +676,10 @@ async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAccount, 
       }
     }
 
-    // Step 2: Pending transaction reconciliation (for credit card accounts only)
+    // Step 2: Pending transaction reconciliation (for credit card and CASH accounts)
     // Deleting cancelled transactions may implicitly adjust the balance in Monarch
-    if (accountType === 'CREDIT_CARD') {
+    const pendingReconciliationTypes = ['CREDIT_CARD', 'CASH', 'CASH_USD'];
+    if (pendingReconciliationTypes.includes(accountType)) {
       progressDialog.updateStepStatus(account.id, 'pendingReconciliation', 'processing', 'Reconciling pending');
 
       try {
@@ -686,10 +687,12 @@ async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAccount, 
         const lookbackDays = GM_getValue(STORAGE.WEALTHSIMPLE_LOOKBACK_DAYS, getDefaultLookbackDays('wealthsimple'));
 
         // Run pending transaction reconciliation
+        // Pass account type so reconciliation can handle different status fields
         const reconciliationResult = await reconcilePendingTransactions(
           monarchAccount.id,
           rawWealthsimpleTransactions || [],
           lookbackDays,
+          accountType,
         );
 
         // Format and display the result
@@ -774,8 +777,8 @@ async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAccount, 
     return { success: true };
   } catch (error) {
     debugLog(`Error uploading Wealthsimple account ${account.id}:`, error);
-    const transactionSupportedTypes = ['CREDIT_CARD', 'CHEQUING', 'SAVINGS', 'JOINT'];
-    const firstStep = transactionSupportedTypes.includes(accountType) ? 'transactions' : 'balance';
+    const errorSupportedTypes = ['CREDIT_CARD', 'PORTFOLIO_LINE_OF_CREDIT', 'CASH', 'CASH_USD'];
+    const firstStep = errorSupportedTypes.includes(accountType) ? 'transactions' : 'balance';
     progressDialog.updateStepStatus(account.id, firstStep, 'error', error.message);
     return { success: false };
   }

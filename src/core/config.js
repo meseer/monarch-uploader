@@ -90,9 +90,19 @@ export const TRANSACTION_RETENTION_DEFAULTS = {
   COUNT: 1000, // Keep last 1000 transactions
 };
 
-// Wealthsimple account types that support transaction upload and balance reconstruction
-// These accounts don't have balance history API support and need transactions for balance calculation
+// Wealthsimple account types that support transaction upload
+// These accounts have transactions that can be synced to Monarch
 export const WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES = new Set([
+  'CREDIT_CARD',
+  'PORTFOLIO_LINE_OF_CREDIT',
+  'CASH',
+  'CASH_USD',
+]);
+
+// Wealthsimple account types that require balance reconstruction from transactions
+// These accounts don't have balance history API support - balance must be calculated from transactions
+// Note: CASH accounts get balance from API and don't need reconstruction
+export const WEALTHSIMPLE_BALANCE_RECONSTRUCTION_TYPES = new Set([
   'CREDIT_CARD',
   'PORTFOLIO_LINE_OF_CREDIT',
 ]);

@@ -4,6 +4,7 @@
 
 import {
   fetchAndProcessCreditCardTransactions,
+  fetchAndProcessCashTransactions,
   fetchAndProcessTransactions,
   reconcilePendingTransactions,
   formatReconciliationMessage,
@@ -492,14 +493,16 @@ describe('Wealthsimple Transaction Service', () => {
       expect(result).toEqual([]);
     });
 
-    it('should return empty array for unsupported account types (CASH)', async () => {
+    it('should route CASH account types to cash transaction processor', async () => {
       const cashAccount = {
         wealthsimpleAccount: {
           id: 'test-id',
           nickname: 'Cash Account',
-          type: 'CA_CASH',
+          type: 'CASH', // Matches the routing check for 'CASH' or 'CASH_USD'
         },
       };
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue([]);
 
       const result = await fetchAndProcessTransactions(
         cashAccount,
@@ -507,8 +510,31 @@ describe('Wealthsimple Transaction Service', () => {
         '2025-01-31',
       );
 
+      // CASH accounts are now processed via fetchAndProcessCashTransactions
       expect(result).toEqual([]);
-      expect(wealthsimpleApi.fetchTransactions).not.toHaveBeenCalled();
+      expect(wealthsimpleApi.fetchTransactions).toHaveBeenCalled();
+    });
+
+    it('should route CASH_USD account types to cash transaction processor', async () => {
+      const cashUsdAccount = {
+        wealthsimpleAccount: {
+          id: 'test-id',
+          nickname: 'Cash USD Account',
+          type: 'CASH_USD', // Matches the routing check for 'CASH' or 'CASH_USD'
+        },
+      };
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue([]);
+
+      const result = await fetchAndProcessTransactions(
+        cashUsdAccount,
+        '2025-01-01',
+        '2025-01-31',
+      );
+
+      // CASH_USD accounts are processed via fetchAndProcessCashTransactions
+      expect(result).toEqual([]);
+      expect(wealthsimpleApi.fetchTransactions).toHaveBeenCalled();
     });
 
     it('should return empty array for unsupported account types (TFSA)', async () => {
@@ -1030,6 +1056,330 @@ describe('Wealthsimple Transaction Service', () => {
       expect(result.settled).toBe(1);
       expect(result.failed).toBe(1);
       expect(monarchApi.updateTransaction).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('fetchAndProcessCashTransactions', () => {
+    const mockCashAccount = {
+      wealthsimpleAccount: {
+        id: 'cash-account-id',
+        nickname: 'Cash Account',
+        type: 'CASH', // Updated to match routing logic
+      },
+    };
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('should process E_TRANSFER deposit transactions', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-etransfer-1',
+          occurredAt: '2026-01-15T10:30:00.000000+00:00',
+          type: 'DEPOSIT',
+          subType: 'E_TRANSFER',
+          unifiedStatus: 'COMPLETED',
+          eTransferName: 'John Doe',
+          eTransferEmail: 'john@example.com',
+          amount: 100.00,
+          amountSign: 'positive',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+      const result = await fetchAndProcessCashTransactions(
+        mockCashAccount,
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        id: 'tx-etransfer-1',
+        date: '2026-01-15',
+        merchant: 'e-Transfer from John Doe',
+        originalMerchant: 'Interac e-Transfer from John Doe (john@example.com)',
+        amount: 100.00, // positive (deposit)
+        resolvedMonarchCategory: 'Transfer',
+        isPending: false,
+        ruleId: 'e-transfer',
+      });
+    });
+
+    it('should process E_TRANSFER withdrawal transactions', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-etransfer-2',
+          occurredAt: '2026-01-16T14:30:00.000000+00:00',
+          type: 'WITHDRAWAL',
+          subType: 'E_TRANSFER',
+          unifiedStatus: 'COMPLETED',
+          eTransferName: 'Jane Smith',
+          eTransferEmail: 'jane@example.com',
+          amount: 50.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+      const result = await fetchAndProcessCashTransactions(
+        mockCashAccount,
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        id: 'tx-etransfer-2',
+        merchant: 'e-Transfer to Jane Smith',
+        originalMerchant: 'Interac e-Transfer to Jane Smith (jane@example.com)',
+        amount: -50.00, // negative (withdrawal)
+        resolvedMonarchCategory: 'Transfer',
+      });
+    });
+
+    it('should filter transactions by unifiedStatus - only COMPLETED', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-completed',
+          type: 'DEPOSIT',
+          subType: 'E_TRANSFER',
+          unifiedStatus: 'COMPLETED',
+          eTransferName: 'Completed',
+          amount: 100.00,
+          amountSign: 'positive',
+          occurredAt: '2026-01-15T10:00:00.000000+00:00',
+        },
+        {
+          externalCanonicalId: 'tx-cancelled',
+          type: 'DEPOSIT',
+          subType: 'E_TRANSFER',
+          unifiedStatus: 'CANCELLED', // Should be excluded
+          eTransferName: 'Cancelled',
+          amount: 50.00,
+          amountSign: 'positive',
+          occurredAt: '2026-01-16T10:00:00.000000+00:00',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+      const result = await fetchAndProcessCashTransactions(
+        mockCashAccount,
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      // Should only include COMPLETED transaction
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('tx-completed');
+    });
+
+    it('should include IN_PROGRESS transactions as pending when includePendingTransactions is true', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-in-progress',
+          type: 'DEPOSIT',
+          subType: 'E_TRANSFER',
+          unifiedStatus: 'IN_PROGRESS',
+          eTransferName: 'Pending Person',
+          eTransferEmail: 'pending@example.com',
+          amount: 75.00,
+          amountSign: 'positive',
+          occurredAt: '2026-01-17T10:00:00.000000+00:00',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+      const result = await fetchAndProcessCashTransactions(
+        { ...mockCashAccount, includePendingTransactions: true },
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('tx-in-progress');
+      expect(result[0].isPending).toBe(true);
+      expect(result[0].unifiedStatus).toBe('IN_PROGRESS');
+    });
+
+    it('should include PENDING transactions as pending when includePendingTransactions is true', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-pending',
+          type: 'DEPOSIT',
+          subType: 'E_TRANSFER',
+          unifiedStatus: 'PENDING',
+          eTransferName: 'Pending Person',
+          amount: 60.00,
+          amountSign: 'positive',
+          occurredAt: '2026-01-18T10:00:00.000000+00:00',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+      const result = await fetchAndProcessCashTransactions(
+        { ...mockCashAccount, includePendingTransactions: true },
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].isPending).toBe(true);
+    });
+
+    it('should exclude pending transactions when includePendingTransactions is false', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-completed',
+          type: 'DEPOSIT',
+          subType: 'E_TRANSFER',
+          unifiedStatus: 'COMPLETED',
+          eTransferName: 'Completed',
+          amount: 100.00,
+          amountSign: 'positive',
+          occurredAt: '2026-01-15T10:00:00.000000+00:00',
+        },
+        {
+          externalCanonicalId: 'tx-in-progress',
+          type: 'DEPOSIT',
+          subType: 'E_TRANSFER',
+          unifiedStatus: 'IN_PROGRESS',
+          eTransferName: 'Pending',
+          amount: 50.00,
+          amountSign: 'positive',
+          occurredAt: '2026-01-16T10:00:00.000000+00:00',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+      const result = await fetchAndProcessCashTransactions(
+        { ...mockCashAccount, includePendingTransactions: false },
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      // Should only include COMPLETED transaction
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('tx-completed');
+    });
+
+    it('should skip transactions with no matching rule', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-unsupported',
+          type: 'INTEREST',
+          subType: 'MARGIN_INTEREST', // No rule for this
+          unifiedStatus: 'COMPLETED',
+          amount: 5.00,
+          amountSign: 'negative',
+          occurredAt: '2026-01-15T10:00:00.000000+00:00',
+        },
+        {
+          externalCanonicalId: 'tx-etransfer',
+          type: 'DEPOSIT',
+          subType: 'E_TRANSFER', // Has a rule
+          unifiedStatus: 'COMPLETED',
+          eTransferName: 'John',
+          amount: 100.00,
+          amountSign: 'positive',
+          occurredAt: '2026-01-16T10:00:00.000000+00:00',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+      const result = await fetchAndProcessCashTransactions(
+        mockCashAccount,
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      // Should only include the e-transfer (has a rule)
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('tx-etransfer');
+    });
+
+    it('should return empty array when no transactions found', async () => {
+      wealthsimpleApi.fetchTransactions.mockResolvedValue([]);
+
+      const result = await fetchAndProcessCashTransactions(
+        mockCashAccount,
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      expect(result).toEqual([]);
+    });
+
+    it('should handle API errors gracefully', async () => {
+      wealthsimpleApi.fetchTransactions.mockRejectedValue(new Error('API Error'));
+
+      await expect(
+        fetchAndProcessCashTransactions(
+          mockCashAccount,
+          '2026-01-01',
+          '2026-01-31',
+        ),
+      ).rejects.toThrow('API Error');
+    });
+
+    it('should fall back to email when eTransferName is missing', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-no-name',
+          type: 'DEPOSIT',
+          subType: 'E_TRANSFER',
+          unifiedStatus: 'COMPLETED',
+          eTransferName: null,
+          eTransferEmail: 'person@example.com',
+          amount: 100.00,
+          amountSign: 'positive',
+          occurredAt: '2026-01-15T10:00:00.000000+00:00',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+      const result = await fetchAndProcessCashTransactions(
+        mockCashAccount,
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      expect(result[0].merchant).toBe('e-Transfer from person@example.com');
+    });
+
+    it('should use Unknown when both name and email are missing', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-unknown',
+          type: 'DEPOSIT',
+          subType: 'E_TRANSFER',
+          unifiedStatus: 'COMPLETED',
+          eTransferName: null,
+          eTransferEmail: null,
+          amount: 100.00,
+          amountSign: 'positive',
+          occurredAt: '2026-01-15T10:00:00.000000+00:00',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+      const result = await fetchAndProcessCashTransactions(
+        mockCashAccount,
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      expect(result[0].merchant).toBe('e-Transfer from Unknown');
     });
   });
 

@@ -4,13 +4,13 @@
  */
 
 import { debugLog, formatDate } from '../../core/utils';
-import { WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES } from '../../core/config';
 import wealthsimpleApi from '../../api/wealthsimple';
 import { applyMerchantMapping } from '../../mappers/merchant';
 import { applyWealthsimpleCategoryMapping, saveUserWealthsimpleCategorySelection, calculateAllCategorySimilarities } from '../../mappers/category';
 import { showMonarchCategorySelector } from '../../ui/components/categorySelector';
 import monarchApi from '../../api/monarch';
 import toast from '../../ui/toast';
+import { applyTransactionRule } from './transactionRules';
 
 /**
  * Convert ISO timestamp to local date in YYYY-MM-DD format
@@ -303,23 +303,127 @@ export async function fetchAndProcessCreditCardTransactions(consolidatedAccount,
 }
 
 /**
- * Placeholder for cash account transaction processing
+ * Filter CASH account transactions based on unifiedStatus
+ * - COMPLETED: Sync as normal transaction
+ * - IN_PROGRESS / PENDING: Sync with "Pending" tag
+ * - Other statuses: Exclude (will be deleted on reconciliation if exists)
+ *
+ * @param {Array} transactions - Raw transactions from API
+ * @param {boolean} includePending - Whether to include pending (IN_PROGRESS/PENDING) transactions
+ * @returns {Array} Filtered transactions ready for processing
+ */
+function filterCashSyncableTransactions(transactions, includePending = true) {
+  return transactions.filter((transaction) => {
+    const status = transaction.unifiedStatus;
+
+    if (status === 'COMPLETED') return true;
+    if (includePending && (status === 'IN_PROGRESS' || status === 'PENDING')) return true;
+    return false;
+  });
+}
+
+/**
+ * Process a CASH account transaction using the rules engine
+ * @param {Object} transaction - Raw transaction from Wealthsimple API
+ * @returns {Object|null} Processed transaction object, or null if no rule matches
+ */
+function processCashTransaction(transaction) {
+  // Apply the matching rule from the rules engine
+  const ruleResult = applyTransactionRule(transaction);
+
+  if (!ruleResult) {
+    // No rule matched - skip this transaction
+    debugLog(`Skipping CASH transaction ${transaction.externalCanonicalId} - no matching rule`, {
+      type: transaction.type,
+      subType: transaction.subType,
+    });
+    return null;
+  }
+
+  // Determine amount sign (based on amountSign field, NOT inverted like credit cards)
+  const isNegative = transaction.amountSign === 'negative';
+  const finalAmount = isNegative ? -Math.abs(transaction.amount) : Math.abs(transaction.amount);
+
+  // Determine pending status based on unifiedStatus
+  const isPending = transaction.unifiedStatus === 'IN_PROGRESS' || transaction.unifiedStatus === 'PENDING';
+
+  return {
+    id: transaction.externalCanonicalId,
+    date: convertToLocalDate(transaction.occurredAt),
+    merchant: ruleResult.merchant,
+    originalMerchant: ruleResult.originalStatement,
+    amount: finalAmount,
+    type: transaction.type,
+    subType: transaction.subType,
+    unifiedStatus: transaction.unifiedStatus,
+    isPending,
+    // Category comes from the rule (auto-assigned)
+    resolvedMonarchCategory: ruleResult.category,
+    // Rule metadata for debugging
+    ruleId: ruleResult.ruleId,
+    // Notes from rule (can be overridden based on settings)
+    notes: ruleResult.notes || '',
+  };
+}
+
+/**
+ * Fetch and process transactions for a CASH account
+ * Uses the transaction rules engine to categorize and format transactions
+ *
  * @param {Object} consolidatedAccount - Consolidated account object
  * @param {string} fromDate - Start date (YYYY-MM-DD)
  * @param {string} toDate - End date (YYYY-MM-DD)
- * @returns {Promise<Array>} Processed transactions
+ * @returns {Promise<Array>} Processed transactions ready for upload
  */
 export async function fetchAndProcessCashTransactions(consolidatedAccount, fromDate, toDate) {
-  debugLog('Cash account transaction processing not yet implemented', {
-    accountId: consolidatedAccount.wealthsimpleAccount.id,
-    fromDate,
-    toDate,
-  });
+  try {
+    const accountId = consolidatedAccount.wealthsimpleAccount.id;
+    const accountName = consolidatedAccount.wealthsimpleAccount.nickname;
 
-  // TODO: Implement cash account transaction logic
-  // Will need different filtering and categorization rules
+    // Get pending transactions setting (default true)
+    const includePendingTransactions = consolidatedAccount.includePendingTransactions !== false;
 
-  return [];
+    debugLog(`Fetching CASH transactions for ${accountName} from ${fromDate} to ${toDate}`);
+    debugLog(`Include pending transactions: ${includePendingTransactions ? 'enabled' : 'disabled'}`);
+
+    // Fetch raw transactions from API
+    const rawTransactions = await wealthsimpleApi.fetchTransactions(accountId, fromDate);
+
+    debugLog(`Fetched ${rawTransactions.length} total transactions from API`);
+
+    // Filter for syncable transactions based on unifiedStatus
+    const syncableTransactions = filterCashSyncableTransactions(rawTransactions, includePendingTransactions);
+
+    debugLog(`Filtered to ${syncableTransactions.length} syncable transactions (includePending: ${includePendingTransactions})`);
+
+    if (syncableTransactions.length === 0) {
+      return [];
+    }
+
+    // Process each transaction through the rules engine
+    const processedTransactions = [];
+    let skippedCount = 0;
+
+    for (const transaction of syncableTransactions) {
+      const processed = processCashTransaction(transaction);
+      if (processed) {
+        processedTransactions.push(processed);
+      } else {
+        skippedCount += 1;
+      }
+    }
+
+    if (skippedCount > 0) {
+      debugLog(`Skipped ${skippedCount} transactions with no matching rule`);
+    }
+
+    debugLog(`Processed ${processedTransactions.length} CASH transactions (${skippedCount} skipped)`);
+
+    return processedTransactions;
+  } catch (error) {
+    debugLog('Error fetching and processing CASH transactions:', error);
+    throw error;
+  }
 }
 
 /**
@@ -374,15 +478,16 @@ export async function fetchAndProcessTransactions(consolidatedAccount, fromDate,
 
   debugLog(`Processing transactions for account type: ${accountType}`);
 
-  // Route account types that support transaction upload to the credit card processor
-  // This includes CREDIT_CARD and PORTFOLIO_LINE_OF_CREDIT
-  if (WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType)) {
-    return fetchAndProcessCreditCardTransactions(consolidatedAccount, fromDate, toDate);
+  // Route CASH and CASH_USD accounts to the CASH transaction processor
+  // These accounts have different transaction structure (unifiedStatus, type/subType rules)
+  if (accountType === 'CASH' || accountType === 'CASH_USD') {
+    return fetchAndProcessCashTransactions(consolidatedAccount, fromDate, toDate);
   }
 
-  // Route other account types to their specific processors (if implemented)
-  if (accountType.includes('CASH')) {
-    return fetchAndProcessCashTransactions(consolidatedAccount, fromDate, toDate);
+  // Route credit card-like accounts (CREDIT_CARD, PORTFOLIO_LINE_OF_CREDIT) to credit card processor
+  // These accounts use the same transaction structure (status: authorized/settled, spendMerchant)
+  if (accountType === 'CREDIT_CARD' || accountType === 'PORTFOLIO_LINE_OF_CREDIT') {
+    return fetchAndProcessCreditCardTransactions(consolidatedAccount, fromDate, toDate);
   }
 
   // Default to investment account processing for all other types
@@ -390,20 +495,43 @@ export async function fetchAndProcessTransactions(consolidatedAccount, fromDate,
 }
 
 /**
- * Regex pattern to extract Wealthsimple transaction ID from notes
- * Matches: credit-transaction-{digits}-{digits}-{digits}-{digits}
- * Example: credit-transaction-527000993851-20260111-00-32943086
+ * Custom prefix for Wealthsimple transaction IDs stored in Monarch notes
+ * This prefix is used to identify and extract transaction IDs from notes
+ * Format: ws-tx:{original_transaction_id}
+ * Examples:
+ * - ws-tx:funding_intent-DzO09kH88ikMLBaZ76BLXNE3rYM
+ * - ws-tx:credit-transaction-527000993851-20260111-00-32943086
+ * - ws-tx:credit-payment-123456
+ * - ws-tx:user_bonus_9898300
  */
-const WEALTHSIMPLE_TX_ID_PATTERN = /credit-transaction-[\w-]+/;
+const WEALTHSIMPLE_TX_ID_PREFIX = 'ws-tx:';
+
+/**
+ * Format a Wealthsimple transaction ID for storage in Monarch notes
+ * @param {string} transactionId - Original Wealthsimple transaction ID
+ * @returns {string} Formatted ID with prefix (e.g., "ws-tx:funding_intent-xxx")
+ */
+export function formatTransactionIdForNotes(transactionId) {
+  if (!transactionId) return '';
+  return `${WEALTHSIMPLE_TX_ID_PREFIX}${transactionId}`;
+}
+
+/**
+ * Regex pattern to extract Wealthsimple transaction ID from notes
+ * Matches both formats:
+ * - New format: ws-tx:{any_transaction_id}
+ * - Legacy format: credit-transaction-{digits}-{digits}-{digits}-{digits}
+ */
+const WEALTHSIMPLE_TX_ID_PATTERN = /ws-tx:([\w-]+)|credit-transaction-[\w-]+/;
 
 /**
  * Extract Wealthsimple transaction ID from Monarch transaction notes
- * Handles both formats:
- * - "TYPE / credit-transaction-xxx"
- * - "credit-transaction-xxx"
+ * Handles multiple formats:
+ * - New format: "TYPE / ws-tx:xxx" or "ws-tx:xxx"
+ * - Legacy format: "TYPE / credit-transaction-xxx" or "credit-transaction-xxx"
  * Also handles user-added notes anywhere in the string
  * @param {string} notes - Transaction notes from Monarch
- * @returns {string|null} Extracted transaction ID or null if not found
+ * @returns {string|null} Extracted transaction ID (without ws-tx: prefix) or null if not found
  */
 function extractTransactionIdFromNotes(notes) {
   if (!notes || typeof notes !== 'string') {
@@ -411,17 +539,29 @@ function extractTransactionIdFromNotes(notes) {
   }
 
   const match = notes.match(WEALTHSIMPLE_TX_ID_PATTERN);
-  return match ? match[0] : null;
+  if (!match) {
+    return null;
+  }
+
+  // If it matched the ws-tx: format, return the captured group (without prefix)
+  if (match[1]) {
+    return match[1];
+  }
+
+  // If it matched the legacy credit-transaction format, return the whole match
+  return match[0];
 }
 
 /**
  * Remove Wealthsimple system notes (type and transaction ID) from notes
  * Preserves any user-added notes
  * Handles formats:
- * - "TYPE / credit-transaction-xxx" -> ""
- * - "TYPE / credit-transaction-xxx | User note" -> "User note"
- * - "credit-transaction-xxx" -> ""
- * - "User note | TYPE / credit-transaction-xxx" -> "User note"
+ * - "TYPE / ws-tx:xxx" -> ""
+ * - "TYPE / ws-tx:xxx | User note" -> "User note"
+ * - "ws-tx:xxx" -> ""
+ * - "TYPE / credit-transaction-xxx" -> "" (legacy)
+ * - "credit-transaction-xxx" -> "" (legacy)
+ * - "User note | TYPE / ws-tx:xxx" -> "User note"
  * @param {string} notes - Transaction notes
  * @returns {string} Cleaned notes
  */
@@ -430,16 +570,18 @@ function cleanSystemNotesFromNotes(notes) {
     return '';
   }
 
-  // Pattern to match: "TYPE / credit-transaction-xxx" or just "credit-transaction-xxx"
-  // TYPE can be things like PURCHASE, PAYMENT, INTEREST, etc.
-  // Also handle the surrounding separators like " / " or " | "
   let cleaned = notes;
 
-  // Remove "TYPE / credit-transaction-xxx" pattern
-  // \w+ matches the type (e.g., PURCHASE, PAYMENT)
+  // Remove "TYPE / ws-tx:xxx" pattern (new format)
+  cleaned = cleaned.replace(/\w+\s*\/\s*ws-tx:[\w-]+/g, '');
+
+  // Remove standalone "ws-tx:xxx" pattern (new format)
+  cleaned = cleaned.replace(/ws-tx:[\w-]+/g, '');
+
+  // Remove "TYPE / credit-transaction-xxx" pattern (legacy)
   cleaned = cleaned.replace(/\w+\s*\/\s*credit-transaction-[\w-]+/g, '');
 
-  // Remove standalone "credit-transaction-xxx" pattern
+  // Remove standalone "credit-transaction-xxx" pattern (legacy)
   cleaned = cleaned.replace(/credit-transaction-[\w-]+/g, '');
 
   // Clean up separators and whitespace
@@ -454,21 +596,52 @@ function cleanSystemNotesFromNotes(notes) {
 }
 
 /**
- * Reconcile pending transactions for a Wealthsimple credit card account
+ * Get the transaction status for reconciliation based on account type
+ * Credit cards use 'status' field, CASH accounts use 'unifiedStatus' field
+ *
+ * @param {Object} transaction - Raw Wealthsimple transaction
+ * @param {string} accountType - Account type (CREDIT_CARD, CASH, CASH_USD, etc.)
+ * @returns {Object} Status info { isPending, isSettled, rawStatus }
+ */
+function getTransactionStatusForReconciliation(transaction, accountType) {
+  const isCashAccount = accountType === 'CASH' || accountType === 'CASH_USD';
+
+  if (isCashAccount) {
+    // CASH accounts use unifiedStatus field
+    const status = transaction.unifiedStatus;
+    return {
+      isPending: status === 'IN_PROGRESS' || status === 'PENDING',
+      isSettled: status === 'COMPLETED',
+      rawStatus: status,
+    };
+  }
+
+  // Credit cards and other accounts use status field
+  const status = transaction.status;
+  return {
+    isPending: status === 'authorized',
+    isSettled: status === 'settled',
+    rawStatus: status,
+  };
+}
+
+/**
+ * Reconcile pending transactions for a Wealthsimple account (credit card or CASH)
  * This function:
  * 1. Finds all Monarch transactions with "Pending" tag for the account
  * 2. For each pending transaction, extracts the Wealthsimple transaction ID from notes
  * 3. Checks the status in the loaded Wealthsimple transactions:
- *    - Still 'authorized': No action needed
- *    - 'settled': Update amount, clean notes, remove Pending tag
+ *    - Credit cards: 'authorized' = pending, 'settled' = completed
+ *    - CASH accounts: 'IN_PROGRESS'/'PENDING' = pending, 'COMPLETED' = completed
  *    - Other status or not found: Delete from Monarch (cancelled)
  *
  * @param {string} monarchAccountId - Monarch account ID
  * @param {Array} wealthsimpleTransactions - Array of raw transactions from Wealthsimple API
  * @param {number} lookbackDays - Number of days to look back for pending transactions
+ * @param {string} accountType - Account type for status field interpretation (default: 'CREDIT_CARD')
  * @returns {Promise<Object>} Reconciliation result { success, settled, cancelled, error }
  */
-export async function reconcilePendingTransactions(monarchAccountId, wealthsimpleTransactions, lookbackDays) {
+export async function reconcilePendingTransactions(monarchAccountId, wealthsimpleTransactions, lookbackDays, accountType = 'CREDIT_CARD') {
   const result = { success: true, settled: 0, cancelled: 0, failed: 0, error: null };
 
   try {
@@ -564,17 +737,22 @@ export async function reconcilePendingTransactions(monarchAccountId, wealthsimpl
           continue;
         }
 
-        // Check transaction status
-        const status = wsTx.status;
-        debugLog(`Wealthsimple transaction ${wsTransactionId} has status: ${status}`);
+        // Check transaction status using account-type-aware helper
+        const statusInfo = getTransactionStatusForReconciliation(wsTx, accountType);
+        debugLog(`Wealthsimple transaction ${wsTransactionId} status:`, {
+          rawStatus: statusInfo.rawStatus,
+          isPending: statusInfo.isPending,
+          isSettled: statusInfo.isSettled,
+          accountType,
+        });
 
-        if (status === 'authorized') {
+        if (statusInfo.isPending) {
           // Still pending, no action needed
-          debugLog(`Transaction ${wsTransactionId} is still authorized (pending), no action needed`);
+          debugLog(`Transaction ${wsTransactionId} is still pending, no action needed`);
           continue;
         }
 
-        if (status === 'settled') {
+        if (statusInfo.isSettled) {
           // Transaction has settled - update amount (if changed), clean notes, remove Pending tag
           debugLog(`Transaction ${wsTransactionId} has settled, updating Monarch transaction`);
 
@@ -621,8 +799,8 @@ export async function reconcilePendingTransactions(monarchAccountId, wealthsimpl
           continue;
         }
 
-        // Unknown status - treat as cancelled (not authorized or settled)
-        debugLog(`Transaction ${wsTransactionId} has unknown status "${status}", deleting from Monarch`);
+        // Unknown status - treat as cancelled (not pending or settled)
+        debugLog(`Transaction ${wsTransactionId} has unknown status "${statusInfo.rawStatus}", deleting from Monarch`);
         await monarchApi.deleteTransaction(monarchTxId);
         result.cancelled += 1;
         debugLog(`Deleted transaction ${monarchTxId} with unknown status from Monarch`);

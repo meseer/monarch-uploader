@@ -556,7 +556,8 @@ describe('CSV Conversion Utilities', () => {
         { storeTransactionDetailsInNotes: true },
       );
 
-      expect(result).toContain('PURCHASE / tx-unique-123');
+      // Notes now use ws-tx: prefix format for reconciliation support
+      expect(result).toContain('PURCHASE / ws-tx:tx-unique-123');
     });
 
     test('should NOT include transaction details in notes when storeTransactionDetailsInNotes is false', () => {
@@ -637,7 +638,8 @@ describe('CSV Conversion Utilities', () => {
         'Test Account',
         { storeTransactionDetailsInNotes: true },
       );
-      expect(resultWithDetails).toContain('/ tx123');
+      // Notes now use ws-tx: prefix format for reconciliation support
+      expect(resultWithDetails).toContain('/ ws-tx:tx123');
 
       const resultWithoutDetails = convertWealthsimpleTransactionsToMonarchCSV(
         transactions,

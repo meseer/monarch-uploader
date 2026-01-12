@@ -137,7 +137,21 @@ export function convertTransactionsToMonarchCSV(transactions, accountName) {
 }
 
 /**
+ * Format a Wealthsimple transaction ID for storage in Monarch notes
+ * Uses the ws-tx: prefix format for consistent detection during reconciliation
+ *
+ * @param {string} transactionId - Original Wealthsimple transaction ID
+ * @returns {string} Formatted ID with prefix (e.g., "ws-tx:funding_intent-xxx")
+ */
+function formatTransactionIdForNotes(transactionId) {
+  if (!transactionId) return '';
+  return `ws-tx:${transactionId}`;
+}
+
+/**
  * Convert Wealthsimple transactions to Monarch CSV format
+ * Handles both credit card transactions (using status field) and CASH transactions (using isPending flag)
+ *
  * @param {Array} transactions - Array of processed Wealthsimple transaction objects
  * @param {string} accountName - Wealthsimple account name for the Account column
  * @param {Object} options - Conversion options
@@ -165,18 +179,23 @@ export function convertWealthsimpleTransactionsToMonarchCSV(transactions, accoun
 
   // Transform transactions to Monarch format
   const monarchRows = transactions.map((transaction) => {
-    // Check if transaction is pending (authorized status)
-    const isPending = transaction.status === 'authorized';
+    // Check if transaction is pending
+    // For credit cards: status === 'authorized'
+    // For CASH accounts: isPending flag is set by the rules engine
+    const isPending = transaction.isPending === true || transaction.status === 'authorized';
+
+    // Format the transaction ID with ws-tx: prefix for reconciliation
+    const formattedTxId = formatTransactionIdForNotes(transaction.id);
 
     // Build notes field based on settings
-    // For pending transactions, always include transaction ID for de-duplication
+    // For pending transactions, always include transaction ID for de-duplication/reconciliation
     let notes;
     if (isPending) {
       // Always include transaction ID for pending transactions (for de-duplication)
-      notes = `${transaction.subType || ''} / ${transaction.id || ''}`.trim();
+      notes = `${transaction.subType || ''} / ${formattedTxId}`.trim();
     } else if (storeTransactionDetailsInNotes) {
       // Include subType and transaction ID in notes for traceability (when setting enabled)
-      notes = `${transaction.subType || ''} / ${transaction.id || ''}`.trim();
+      notes = `${transaction.subType || ''} / ${formattedTxId}`.trim();
     } else {
       // Leave notes empty when disabled
       notes = '';
