@@ -537,7 +537,7 @@ describe('CSV Conversion Utilities', () => {
       expect(result).toContain('-75.25');
     });
 
-    test('should include transaction details in notes when storeTransactionDetailsInNotes is true', () => {
+    test('should NOT include transaction details in notes for settled transactions (storeTransactionDetailsInNotes has no effect)', () => {
       const transactions = [
         {
           id: 'tx-unique-123',
@@ -546,21 +546,24 @@ describe('CSV Conversion Utilities', () => {
           originalMerchant: 'STARBUCKS #1234',
           amount: -5.50,
           subType: 'PURCHASE',
+          status: 'settled',
           resolvedMonarchCategory: 'Dining & Drinks',
         },
       ];
 
+      // Even with storeTransactionDetailsInNotes: true, settled transactions don't include transaction ID
       const result = convertWealthsimpleTransactionsToMonarchCSV(
         transactions,
         'Test Account',
         { storeTransactionDetailsInNotes: true },
       );
 
-      // Notes now use ws-tx: prefix format for reconciliation support
-      expect(result).toContain('PURCHASE / ws-tx:tx-unique-123');
+      // Settled transactions should NOT have transaction ID in notes
+      expect(result).not.toContain('tx-unique-123');
+      expect(result).not.toContain('PURCHASE');
     });
 
-    test('should NOT include transaction details in notes when storeTransactionDetailsInNotes is false', () => {
+    test('should NOT include transaction details in notes for settled transactions when storeTransactionDetailsInNotes is false', () => {
       const transactions = [
         {
           id: 'tx-unique-123',
@@ -628,18 +631,20 @@ describe('CSV Conversion Utilities', () => {
           date: '2024-01-15',
           merchant: 'MERCHANT',
           amount: -10.00,
+          status: 'settled',
           // No subType
           resolvedMonarchCategory: 'Shopping',
         },
       ];
 
+      // Settled transactions don't include transaction ID regardless of storeTransactionDetailsInNotes
       const resultWithDetails = convertWealthsimpleTransactionsToMonarchCSV(
         transactions,
         'Test Account',
         { storeTransactionDetailsInNotes: true },
       );
-      // Notes now use ws-tx: prefix format for reconciliation support
-      expect(resultWithDetails).toContain('/ ws-tx:tx123');
+      // Settled transactions should NOT have transaction ID in notes
+      expect(resultWithDetails).not.toContain('tx123');
 
       const resultWithoutDetails = convertWealthsimpleTransactionsToMonarchCSV(
         transactions,
@@ -755,8 +760,10 @@ describe('CSV Conversion Utilities', () => {
         { storeTransactionDetailsInNotes: false },
       );
 
-      expect(result).toContain('tx-unique-pending-123');
-      expect(result).toContain('PURCHASE');
+      // Pending transactions include transaction ID with ws-tx: prefix (no transaction type)
+      expect(result).toContain('ws-tx:tx-unique-pending-123');
+      // Transaction type is NOT included in notes anymore
+      expect(result).not.toContain('PURCHASE /');
     });
 
     test('should NOT include transaction ID in notes for settled transactions when storeTransactionDetailsInNotes is false', () => {
@@ -855,7 +862,7 @@ describe('CSV Conversion Utilities', () => {
         expect(result).not.toContain('funding_intent-abc123');
       });
 
-      test('should include memo, technical details, and transaction ID in new format when storeTransactionDetailsInNotes is true', () => {
+      test('should include memo and technical details only for settled transactions (storeTransactionDetailsInNotes has no effect on transaction ID)', () => {
         const transactions = [
           {
             id: 'funding_intent-def456',
@@ -877,10 +884,12 @@ describe('CSV Conversion Utilities', () => {
           { storeTransactionDetailsInNotes: true },
         );
 
-        // New format: memo first, then empty line, then technical details, then transaction ID
+        // Settled transactions: include memo and technical details, but NOT transaction ID
         expect(result).toContain('Payment for groceries');
         expect(result).toContain('Auto Deposit: No; Reference Number: CAkJgEwf');
-        expect(result).toContain('E_TRANSFER / ws-tx:funding_intent-def456');
+        // Transaction ID is never stored for settled transactions
+        expect(result).not.toContain('ws-tx:funding_intent-def456');
+        expect(result).not.toContain('E_TRANSFER');
       });
 
       test('should include Interac memo and transaction ID in notes for pending transactions', () => {
@@ -905,10 +914,12 @@ describe('CSV Conversion Utilities', () => {
           { storeTransactionDetailsInNotes: false },
         );
 
-        // Pending transactions always include transaction ID, plus memo and technical details
+        // Pending transactions always include transaction ID (just ws-tx: format, no transaction type)
         expect(result).toContain('Pending transfer memo');
         expect(result).toContain('Auto Deposit: Yes; Reference Number: XYZ123');
-        expect(result).toContain('E_TRANSFER / ws-tx:funding_intent-pending123');
+        expect(result).toContain('ws-tx:funding_intent-pending123');
+        // Transaction type is no longer included in notes
+        expect(result).not.toContain('E_TRANSFER /');
         expect(result).toContain('Pending'); // Tag
       });
 
@@ -1020,7 +1031,7 @@ describe('CSV Conversion Utilities', () => {
         expect(result).toContain('"Memo with ""quotes"" and, commas"');
       });
 
-      test('should format notes with memo, technical details, and transaction ID on separate lines', () => {
+      test('should format notes with memo and technical details for settled transactions (no transaction ID)', () => {
         const transactions = [
           {
             id: 'funding_intent-fullformat',
@@ -1042,14 +1053,15 @@ describe('CSV Conversion Utilities', () => {
           { storeTransactionDetailsInNotes: true },
         );
 
-        // The new format has memo first, empty line, technical details, then transaction ID
-        // Format: "memo\n\ntechnicalDetails\ntxIdLine"
+        // Settled transactions include memo and technical details, but NOT transaction ID
         expect(result).toContain('Testing interac notes');
         expect(result).toContain('Auto Deposit: No; Reference Number: CAkJgEwf');
-        expect(result).toContain('E_TRANSFER / ws-tx:funding_intent-fullformat');
+        // Transaction ID is never stored for settled transactions
+        expect(result).not.toContain('ws-tx:funding_intent-fullformat');
+        expect(result).not.toContain('E_TRANSFER /');
       });
 
-      test('should format notes correctly when only memo exists (no technical details)', () => {
+      test('should format notes correctly when only memo exists for settled transactions', () => {
         const transactions = [
           {
             id: 'funding_intent-memoonly',
@@ -1071,12 +1083,13 @@ describe('CSV Conversion Utilities', () => {
           { storeTransactionDetailsInNotes: true },
         );
 
-        // Format: "memo\ntxIdLine" (no empty line since no technical details)
+        // Settled transactions: only memo, no transaction ID
         expect(result).toContain('Just a memo');
-        expect(result).toContain('E_TRANSFER / ws-tx:funding_intent-memoonly');
+        expect(result).not.toContain('ws-tx:funding_intent-memoonly');
+        expect(result).not.toContain('E_TRANSFER /');
       });
 
-      test('should format notes correctly when only technical details exist (no memo)', () => {
+      test('should format notes correctly when only technical details exist for settled transactions', () => {
         const transactions = [
           {
             id: 'funding_intent-techonly2',
@@ -1098,9 +1111,10 @@ describe('CSV Conversion Utilities', () => {
           { storeTransactionDetailsInNotes: true },
         );
 
-        // Format: "technicalDetails\ntxIdLine" (no empty line since no memo)
+        // Settled transactions: only technical details, no transaction ID
         expect(result).toContain('Auto Deposit: Yes; Reference Number: XYZ789');
-        expect(result).toContain('E_TRANSFER / ws-tx:funding_intent-techonly2');
+        expect(result).not.toContain('ws-tx:funding_intent-techonly2');
+        expect(result).not.toContain('E_TRANSFER /');
       });
     });
   });

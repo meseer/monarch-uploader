@@ -687,17 +687,16 @@ function extractTransactionIdFromNotes(notes) {
 }
 
 /**
- * Remove Wealthsimple system notes (type and transaction ID) from notes
- * Preserves any user-added notes
+ * Remove Wealthsimple system notes (transaction ID) from notes
+ * Preserves any user-added notes (memo, technical details)
  * Handles formats:
- * - "TYPE / ws-tx:xxx" -> ""
- * - "TYPE / ws-tx:xxx | User note" -> "User note"
- * - "ws-tx:xxx" -> ""
- * - "TYPE / credit-transaction-xxx" -> "" (legacy)
- * - "credit-transaction-xxx" -> "" (legacy)
- * - "User note | TYPE / ws-tx:xxx" -> "User note"
+ * - "ws-tx:xxx" -> "" (current format)
+ * - "memo\nws-tx:xxx" -> "memo"
+ * - "memo\n\ntechnical\nws-tx:xxx" -> "memo\n\ntechnical"
+ * - "TYPE / ws-tx:xxx" -> "" (legacy format)
+ * - "credit-transaction-xxx" -> "" (legacy format)
  * @param {string} notes - Transaction notes
- * @returns {string} Cleaned notes
+ * @returns {string} Cleaned notes (memo and technical details preserved)
  */
 function cleanSystemNotesFromNotes(notes) {
   if (!notes || typeof notes !== 'string') {
@@ -706,10 +705,10 @@ function cleanSystemNotesFromNotes(notes) {
 
   let cleaned = notes;
 
-  // Remove "TYPE / ws-tx:xxx" pattern (new format)
+  // Remove "TYPE / ws-tx:xxx" pattern (legacy format)
   cleaned = cleaned.replace(/\w+\s*\/\s*ws-tx:[\w-]+/g, '');
 
-  // Remove standalone "ws-tx:xxx" pattern (new format)
+  // Remove standalone "ws-tx:xxx" pattern (current format - just the transaction ID)
   cleaned = cleaned.replace(/ws-tx:[\w-]+/g, '');
 
   // Remove "TYPE / credit-transaction-xxx" pattern (legacy)
@@ -723,8 +722,11 @@ function cleanSystemNotesFromNotes(notes) {
   cleaned = cleaned.replace(/^\s*[/|]\s*/g, '');
   cleaned = cleaned.replace(/\s*[/|]\s*$/g, '');
 
-  // Clean up multiple spaces
-  cleaned = cleaned.replace(/\s+/g, ' ');
+  // Clean up trailing newlines from removed transaction ID line
+  cleaned = cleaned.replace(/\n+$/g, '');
+
+  // Clean up multiple consecutive spaces (but preserve newlines for memo formatting)
+  cleaned = cleaned.replace(/ +/g, ' ');
 
   return cleaned.trim();
 }

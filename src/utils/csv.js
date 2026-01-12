@@ -149,28 +149,33 @@ function formatTransactionIdForNotes(transactionId) {
 }
 
 /**
- * Build notes field for Wealthsimple transaction in new format:
+ * Build notes field for Wealthsimple transaction
+ *
+ * Format for pending transactions (always includes transaction ID for reconciliation):
  * 1. Memo (if present)
  * 2. Empty line separator (if both memo and technical details exist)
  * 3. Technical details (if present)
- * 4. New line
- * 5. Transaction ID line (at the bottom)
+ * 4. Transaction ID (ws-tx:xxx format, only for pending)
  *
- * Example output:
- * "Testing interac notes and status sync
+ * Example output for pending:
+ * "Testing interac notes
  *
  * Auto Deposit: No; Reference Number: CAkJgEwf
- * E_TRANSFER / ws-tx:funding_intent-4x01q2I19RLZcT1DscfyciJbtn2"
+ * ws-tx:funding_intent-4x01q2I19RLZcT1DscfyciJbtn2"
+ *
+ * Format for settled transactions (never includes transaction ID):
+ * 1. Memo (if present)
+ * 2. Empty line separator (if both memo and technical details exist)
+ * 3. Technical details (if present)
  *
  * @param {Object} params - Parameters for building notes
  * @param {string} params.memo - Transaction memo (e.g., Interac memo)
  * @param {string} params.technicalDetails - Technical details (e.g., auto-deposit, reference number)
- * @param {string} params.subType - Transaction subType (e.g., E_TRANSFER)
  * @param {string} params.formattedTxId - Formatted transaction ID with ws-tx: prefix
- * @param {boolean} params.includeTransactionId - Whether to include the transaction ID line
+ * @param {boolean} params.includeTransactionId - Whether to include the transaction ID line (for pending only)
  * @returns {string} Formatted notes string
  */
-function buildWealthsimpleNotes({ memo, technicalDetails, subType, formattedTxId, includeTransactionId }) {
+function buildWealthsimpleNotes({ memo, technicalDetails, formattedTxId, includeTransactionId }) {
   const parts = [];
 
   // 1. Memo first (if present)
@@ -187,10 +192,10 @@ function buildWealthsimpleNotes({ memo, technicalDetails, subType, formattedTxId
     parts.push(technicalDetails);
   }
 
-  // 4-5. Transaction ID line at the bottom (if included)
+  // 4. Transaction ID at the bottom (only for pending transactions)
+  // Uses just the ws-tx: prefix format, without transaction type
   if (includeTransactionId && formattedTxId) {
-    const txIdLine = `${subType || ''} / ${formattedTxId}`.trim();
-    parts.push(txIdLine);
+    parts.push(formattedTxId);
   }
 
   return parts.join('\n');
@@ -250,29 +255,19 @@ export function convertWealthsimpleTransactionsToMonarchCSV(transactions, accoun
     let notes;
 
     if (isPending) {
-      // Always include transaction ID for pending transactions (for de-duplication)
+      // Always include transaction ID for pending transactions (for de-duplication/reconciliation)
       notes = buildWealthsimpleNotes({
         memo,
         technicalDetails,
-        subType: transaction.subType,
-        formattedTxId,
-        includeTransactionId: true,
-      });
-    } else if (storeTransactionDetailsInNotes) {
-      // Include subType and transaction ID in notes for traceability (when setting enabled)
-      notes = buildWealthsimpleNotes({
-        memo,
-        technicalDetails,
-        subType: transaction.subType,
         formattedTxId,
         includeTransactionId: true,
       });
     } else {
-      // Only include memo and technical details when storeTransactionDetailsInNotes is disabled
+      // Settled transactions: only include memo and technical details
+      // Transaction ID is not stored in notes for settled transactions
       notes = buildWealthsimpleNotes({
         memo,
         technicalDetails,
-        subType: transaction.subType,
         formattedTxId,
         includeTransactionId: false,
       });
