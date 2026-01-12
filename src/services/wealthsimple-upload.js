@@ -25,7 +25,7 @@ import {
   getBalanceAtDate,
   reconstructBalanceFromTransactions,
 } from './wealthsimple/balance';
-import { fetchAndProcessTransactions } from './wealthsimple/transactions';
+import { fetchAndProcessTransactions, reconcilePendingTransactions, formatReconciliationMessage } from './wealthsimple/transactions';
 import { showDatePickerWithOptionsPromise } from '../ui/components/datePicker';
 import { showProgressDialog } from '../ui/components/progressDialog';
 
@@ -341,6 +341,8 @@ export async function uploadWealthsimpleAccountToMonarch(consolidatedAccount, fr
 /**
  * Build the list of sync steps for a Wealthsimple account
  * Steps are dynamically determined based on account type
+ * Order is important: transaction sync and reconciliation happen before balance upload
+ * because deleting pending transactions may implicitly adjust the balance in Monarch
  * @param {Object} consolidatedAccount - Consolidated account object
  * @returns {Array} Array of step definitions [{key, name}]
  */
@@ -348,19 +350,25 @@ function buildSyncStepsForAccount(consolidatedAccount) {
   const steps = [];
   const accountType = consolidatedAccount.wealthsimpleAccount?.type || '';
 
-  // Balance upload is always a step
-  steps.push({ key: 'balance', name: 'Balance upload' });
+  // Transaction sync for supported account types (first)
+  const transactionSupportedTypes = ['CREDIT_CARD', 'CHEQUING', 'SAVINGS', 'JOINT'];
+  if (transactionSupportedTypes.includes(accountType)) {
+    steps.push({ key: 'transactions', name: 'Transaction sync' });
+  }
+
+  // Pending transaction reconciliation for credit card accounts
+  // Deleting cancelled transactions may adjust balance in Monarch
+  if (accountType === 'CREDIT_CARD') {
+    steps.push({ key: 'pendingReconciliation', name: 'Pending reconciliation' });
+  }
 
   // Credit limit sync only for credit card accounts
   if (accountType === 'CREDIT_CARD') {
     steps.push({ key: 'creditLimit', name: 'Credit limit sync' });
   }
 
-  // Transaction sync for supported account types
-  const transactionSupportedTypes = ['CREDIT_CARD', 'CHEQUING', 'SAVINGS', 'JOINT'];
-  if (transactionSupportedTypes.includes(accountType)) {
-    steps.push({ key: 'transactions', name: 'Transaction sync' });
-  }
+  // Balance upload is always a step (last, to capture any adjustments from reconciliation)
+  steps.push({ key: 'balance', name: 'Balance upload' });
 
   // TODO: Add position sync step when implemented for investment accounts
   // if (isInvestmentAccount(accountType)) {
@@ -557,31 +565,35 @@ async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAccount, 
   try {
     debugLog(`Uploading Wealthsimple account ${account.id} to Monarch with step tracking...`);
 
-    // Step 1: Balance upload
-    progressDialog.updateStepStatus(account.id, 'balance', 'processing', 'Uploading balance');
-
-    // Resolve account mapping (shows selector with create option)
+    // Resolve account mapping first (shows selector with create option)
     const mappingResult = await resolveWealthsimpleAccountMapping(consolidatedAccount, currentBalance);
 
     // Handle skip signal
     if (mappingResult && mappingResult.skipped) {
       debugLog(`User skipped account ${account.id}`);
       markAccountAsSkipped(account.id, true);
-      progressDialog.updateStepStatus(account.id, 'balance', 'skipped', 'Skipped by user');
+      // Update first visible step
+      const transactionSupportedTypes = ['CREDIT_CARD', 'CHEQUING', 'SAVINGS', 'JOINT'];
+      const firstStep = transactionSupportedTypes.includes(accountType) ? 'transactions' : 'balance';
+      progressDialog.updateStepStatus(account.id, firstStep, 'skipped', 'Skipped by user');
       return { success: false, skipped: true };
     }
 
     // Handle cancel signal
     if (mappingResult && mappingResult.cancelled) {
       debugLog('User cancelled sync');
-      progressDialog.updateStepStatus(account.id, 'balance', 'error', 'Cancelled');
+      const transactionSupportedTypes = ['CREDIT_CARD', 'CHEQUING', 'SAVINGS', 'JOINT'];
+      const firstStep = transactionSupportedTypes.includes(accountType) ? 'transactions' : 'balance';
+      progressDialog.updateStepStatus(account.id, firstStep, 'error', 'Cancelled');
       return { success: false, cancelled: true };
     }
 
     // Handle null (user closed without action)
     if (!mappingResult) {
       debugLog('Account mapping cancelled by user');
-      progressDialog.updateStepStatus(account.id, 'balance', 'error', 'Cancelled');
+      const transactionSupportedTypes = ['CREDIT_CARD', 'CHEQUING', 'SAVINGS', 'JOINT'];
+      const firstStep = transactionSupportedTypes.includes(accountType) ? 'transactions' : 'balance';
+      progressDialog.updateStepStatus(account.id, firstStep, 'error', 'Cancelled');
       return { success: false, cancelled: true };
     }
 
@@ -616,7 +628,9 @@ async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAccount, 
 
       if (!datePickerResult) {
         debugLog('User cancelled date selection');
-        progressDialog.updateStepStatus(account.id, 'balance', 'error', 'Date selection cancelled');
+        const transactionSupportedTypes = ['CREDIT_CARD', 'CHEQUING', 'SAVINGS', 'JOINT'];
+        const firstStep = transactionSupportedTypes.includes(accountType) ? 'transactions' : 'balance';
+        progressDialog.updateStepStatus(account.id, firstStep, 'error', 'Date selection cancelled');
         return { success: false, cancelled: true };
       }
 
@@ -624,7 +638,97 @@ async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAccount, 
       reconstructBalance = datePickerResult.reconstructBalance;
     }
 
-    // Upload balance
+    // Step 1: Transaction sync (for supported account types)
+    // Transactions are synced first so pending reconciliation can delete cancelled transactions
+    // before balance upload captures any implicit balance adjustments
+    const transactionSupportedTypes = ['CREDIT_CARD', 'CHEQUING', 'SAVINGS', 'JOINT'];
+    let rawWealthsimpleTransactions = null; // Store for pending reconciliation
+
+    if (transactionSupportedTypes.includes(accountType)) {
+      progressDialog.updateStepStatus(account.id, 'transactions', 'processing', 'Syncing transactions');
+
+      // Fetch raw transactions from Wealthsimple API for pending reconciliation
+      // We need to fetch them here to pass to both transaction sync and pending reconciliation
+      try {
+        rawWealthsimpleTransactions = await wealthsimpleApi.fetchTransactions(account.id, actualFromDate);
+        debugLog(`Fetched ${rawWealthsimpleTransactions?.length || 0} raw transactions for account ${account.id}`);
+      } catch (fetchError) {
+        debugLog('Error fetching raw transactions:', fetchError);
+        rawWealthsimpleTransactions = [];
+      }
+
+      const transactionsResult = await uploadWealthsimpleTransactions(
+        account.id,
+        monarchAccount.id,
+        actualFromDate,
+        toDate,
+      );
+
+      if (transactionsResult && transactionsResult.success) {
+        // Format transaction count message
+        const txMessage = formatTransactionCountMessage(transactionsResult.synced, transactionsResult.skipped);
+        progressDialog.updateStepStatus(account.id, 'transactions', 'success', txMessage);
+      } else if (transactionsResult && transactionsResult.unsupported) {
+        progressDialog.updateStepStatus(account.id, 'transactions', 'skipped', 'Not supported');
+      } else {
+        const errorMsg = transactionsResult?.error || 'Sync failed';
+        progressDialog.updateStepStatus(account.id, 'transactions', 'error', errorMsg);
+      }
+    }
+
+    // Step 2: Pending transaction reconciliation (for credit card accounts only)
+    // Deleting cancelled transactions may implicitly adjust the balance in Monarch
+    if (accountType === 'CREDIT_CARD') {
+      progressDialog.updateStepStatus(account.id, 'pendingReconciliation', 'processing', 'Reconciling pending');
+
+      try {
+        // Get lookback days from settings
+        const lookbackDays = GM_getValue(STORAGE.WEALTHSIMPLE_LOOKBACK_DAYS, getDefaultLookbackDays('wealthsimple'));
+
+        // Run pending transaction reconciliation
+        const reconciliationResult = await reconcilePendingTransactions(
+          monarchAccount.id,
+          rawWealthsimpleTransactions || [],
+          lookbackDays,
+        );
+
+        // Format and display the result
+        const reconciliationMessage = formatReconciliationMessage(reconciliationResult);
+        const reconciliationStatus = reconciliationResult.success ? 'success' : 'error';
+
+        progressDialog.updateStepStatus(account.id, 'pendingReconciliation', reconciliationStatus, reconciliationMessage);
+        debugLog(`Pending reconciliation completed for ${account.id}:`, reconciliationResult);
+      } catch (reconciliationError) {
+        debugLog('Error during pending transaction reconciliation:', reconciliationError);
+        progressDialog.updateStepStatus(account.id, 'pendingReconciliation', 'error', reconciliationError.message);
+      }
+    }
+
+    // Step 3: Credit limit sync (for credit cards only)
+    if (accountType === 'CREDIT_CARD') {
+      progressDialog.updateStepStatus(account.id, 'creditLimit', 'processing', 'Syncing credit limit');
+
+      // Re-fetch the consolidated account to get the latest data
+      const updatedConsolidatedAccount = getAccountData(account.id);
+      if (updatedConsolidatedAccount) {
+        const creditLimitSuccess = await syncCreditLimit(updatedConsolidatedAccount, monarchAccount.id);
+        if (creditLimitSuccess) {
+          // Get the synced credit limit for display
+          const refreshedAccount = getAccountData(account.id);
+          const creditLimit = refreshedAccount?.lastSyncedCreditLimit;
+          const message = creditLimit ? `$${creditLimit.toLocaleString()}` : 'Synced';
+          progressDialog.updateStepStatus(account.id, 'creditLimit', 'success', message);
+        } else {
+          progressDialog.updateStepStatus(account.id, 'creditLimit', 'error', 'Sync failed');
+        }
+      } else {
+        progressDialog.updateStepStatus(account.id, 'creditLimit', 'skipped', 'Account data unavailable');
+      }
+    }
+
+    // Step 4: Balance upload (last, to capture any implicit balance adjustments from transaction deletion)
+    progressDialog.updateStepStatus(account.id, 'balance', 'processing', 'Uploading balance');
+
     const balanceSuccess = await uploadWealthsimpleBalance(
       account.id,
       monarchAccount.id,
@@ -650,52 +754,6 @@ async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAccount, 
       return { success: false };
     }
 
-    // Step 2: Credit limit sync (for credit cards only)
-    if (accountType === 'CREDIT_CARD') {
-      progressDialog.updateStepStatus(account.id, 'creditLimit', 'processing', 'Syncing credit limit');
-
-      // Re-fetch the consolidated account to get the latest data
-      const updatedConsolidatedAccount = getAccountData(account.id);
-      if (updatedConsolidatedAccount) {
-        const creditLimitSuccess = await syncCreditLimit(updatedConsolidatedAccount, monarchAccount.id);
-        if (creditLimitSuccess) {
-          // Get the synced credit limit for display
-          const refreshedAccount = getAccountData(account.id);
-          const creditLimit = refreshedAccount?.lastSyncedCreditLimit;
-          const message = creditLimit ? `$${creditLimit.toLocaleString()}` : 'Synced';
-          progressDialog.updateStepStatus(account.id, 'creditLimit', 'success', message);
-        } else {
-          progressDialog.updateStepStatus(account.id, 'creditLimit', 'error', 'Sync failed');
-        }
-      } else {
-        progressDialog.updateStepStatus(account.id, 'creditLimit', 'skipped', 'Account data unavailable');
-      }
-    }
-
-    // Step 3: Transaction sync (for supported account types)
-    const transactionSupportedTypes = ['CREDIT_CARD', 'CHEQUING', 'SAVINGS', 'JOINT'];
-    if (transactionSupportedTypes.includes(accountType)) {
-      progressDialog.updateStepStatus(account.id, 'transactions', 'processing', 'Syncing transactions');
-
-      const transactionsResult = await uploadWealthsimpleTransactions(
-        account.id,
-        monarchAccount.id,
-        actualFromDate,
-        toDate,
-      );
-
-      if (transactionsResult && transactionsResult.success) {
-        // Format transaction count message
-        const txMessage = formatTransactionCountMessage(transactionsResult.synced, transactionsResult.skipped);
-        progressDialog.updateStepStatus(account.id, 'transactions', 'success', txMessage);
-      } else if (transactionsResult && transactionsResult.unsupported) {
-        progressDialog.updateStepStatus(account.id, 'transactions', 'skipped', 'Not supported');
-      } else {
-        const errorMsg = transactionsResult?.error || 'Sync failed';
-        progressDialog.updateStepStatus(account.id, 'transactions', 'error', errorMsg);
-      }
-    }
-
     // Update lastSyncDate after successful sync
     if (balanceSuccess) {
       const { updateAccountInList } = await import('./wealthsimple/account');
@@ -716,7 +774,9 @@ async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAccount, 
     return { success: true };
   } catch (error) {
     debugLog(`Error uploading Wealthsimple account ${account.id}:`, error);
-    progressDialog.updateStepStatus(account.id, 'balance', 'error', error.message);
+    const transactionSupportedTypes = ['CREDIT_CARD', 'CHEQUING', 'SAVINGS', 'JOINT'];
+    const firstStep = transactionSupportedTypes.includes(accountType) ? 'transactions' : 'balance';
+    progressDialog.updateStepStatus(account.id, firstStep, 'error', error.message);
     return { success: false };
   }
 }

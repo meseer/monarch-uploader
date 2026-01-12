@@ -5,6 +5,8 @@
 import {
   fetchAndProcessCreditCardTransactions,
   fetchAndProcessTransactions,
+  reconcilePendingTransactions,
+  formatReconciliationMessage,
 } from '../../../src/services/wealthsimple/transactions';
 import wealthsimpleApi from '../../../src/api/wealthsimple';
 import monarchApi from '../../../src/api/monarch';
@@ -556,6 +558,435 @@ describe('Wealthsimple Transaction Service', () => {
 
       // Date should be in YYYY-MM-DD format
       expect(result[0].date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+  });
+
+  describe('reconcilePendingTransactions', () => {
+    const mockMonarchAccountId = 'monarch-account-123';
+    const mockPendingTagId = 'pending-tag-456';
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('should return early if Pending tag does not exist in Monarch', async () => {
+      monarchApi.getTagByName.mockResolvedValue(null);
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        [],
+        30,
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.noPendingTag).toBe(true);
+      expect(monarchApi.getTransactionsList).not.toHaveBeenCalled();
+    });
+
+    it('should return early if no pending transactions found in Monarch', async () => {
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({ results: [] });
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        [],
+        30,
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.noPendingTransactions).toBe(true);
+      expect(result.settled).toBe(0);
+      expect(result.cancelled).toBe(0);
+    });
+
+    it('should update transaction and remove tag when status changes to settled', async () => {
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [
+          {
+            id: 'monarch-tx-1',
+            amount: -50.00,
+            date: '2025-01-10',
+            notes: 'PURCHASE / credit-transaction-527000993851-20260111-00-32943086',
+          },
+        ],
+      });
+      monarchApi.updateTransaction.mockResolvedValue({});
+      monarchApi.setTransactionTags.mockResolvedValue({});
+
+      const wealthsimpleTransactions = [
+        {
+          externalCanonicalId: 'credit-transaction-527000993851-20260111-00-32943086',
+          status: 'settled',
+          amount: 52.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        wealthsimpleTransactions,
+        30,
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.settled).toBe(1);
+      expect(result.cancelled).toBe(0);
+
+      // Should update transaction with settled amount and cleaned notes
+      expect(monarchApi.updateTransaction).toHaveBeenCalledWith('monarch-tx-1', {
+        amount: -52.00,
+        notes: '',
+      });
+
+      // Should remove Pending tag
+      expect(monarchApi.setTransactionTags).toHaveBeenCalledWith('monarch-tx-1', []);
+    });
+
+    it('should preserve user notes when cleaning system notes', async () => {
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [
+          {
+            id: 'monarch-tx-1',
+            amount: -50.00,
+            date: '2025-01-10',
+            notes: 'PURCHASE / credit-transaction-527000993851-20260111-00-32943086 | My custom note',
+          },
+        ],
+      });
+      monarchApi.updateTransaction.mockResolvedValue({});
+      monarchApi.setTransactionTags.mockResolvedValue({});
+
+      const wealthsimpleTransactions = [
+        {
+          externalCanonicalId: 'credit-transaction-527000993851-20260111-00-32943086',
+          status: 'settled',
+          amount: 50.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        wealthsimpleTransactions,
+        30,
+      );
+
+      expect(result.settled).toBe(1);
+
+      // Should preserve user notes (system notes and separators are cleaned)
+      expect(monarchApi.updateTransaction).toHaveBeenCalledWith('monarch-tx-1', {
+        amount: -50.00,
+        notes: 'My custom note',
+      });
+    });
+
+    it('should delete transaction when not found in Wealthsimple (cancelled)', async () => {
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [
+          {
+            id: 'monarch-tx-1',
+            amount: -50.00,
+            date: '2025-01-10',
+            notes: 'PURCHASE / credit-transaction-not-found-in-ws',
+          },
+        ],
+      });
+      monarchApi.deleteTransaction.mockResolvedValue(true);
+
+      // Empty Wealthsimple transactions - the pending transaction was cancelled
+      const wealthsimpleTransactions = [];
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        wealthsimpleTransactions,
+        30,
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.settled).toBe(0);
+      expect(result.cancelled).toBe(1);
+
+      expect(monarchApi.deleteTransaction).toHaveBeenCalledWith('monarch-tx-1');
+    });
+
+    it('should delete transaction when status is unknown (not authorized or settled)', async () => {
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [
+          {
+            id: 'monarch-tx-1',
+            amount: -50.00,
+            date: '2025-01-10',
+            notes: 'PURCHASE / credit-transaction-unknown-status',
+          },
+        ],
+      });
+      monarchApi.deleteTransaction.mockResolvedValue(true);
+
+      const wealthsimpleTransactions = [
+        {
+          externalCanonicalId: 'credit-transaction-unknown-status',
+          status: 'rejected', // Unknown status - should be deleted
+          amount: 50.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        wealthsimpleTransactions,
+        30,
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.settled).toBe(0);
+      expect(result.cancelled).toBe(1);
+
+      expect(monarchApi.deleteTransaction).toHaveBeenCalledWith('monarch-tx-1');
+    });
+
+    it('should skip transaction if still authorized (pending)', async () => {
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [
+          {
+            id: 'monarch-tx-1',
+            amount: -50.00,
+            date: '2025-01-10',
+            notes: 'PURCHASE / credit-transaction-still-pending',
+          },
+        ],
+      });
+
+      const wealthsimpleTransactions = [
+        {
+          externalCanonicalId: 'credit-transaction-still-pending',
+          status: 'authorized', // Still pending
+          amount: 50.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        wealthsimpleTransactions,
+        30,
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.settled).toBe(0);
+      expect(result.cancelled).toBe(0);
+
+      // Should not call update or delete
+      expect(monarchApi.updateTransaction).not.toHaveBeenCalled();
+      expect(monarchApi.deleteTransaction).not.toHaveBeenCalled();
+    });
+
+    it('should skip transaction if cannot extract transaction ID from notes', async () => {
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [
+          {
+            id: 'monarch-tx-1',
+            amount: -50.00,
+            date: '2025-01-10',
+            notes: 'Some random notes without transaction ID',
+          },
+        ],
+      });
+
+      const wealthsimpleTransactions = [];
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        wealthsimpleTransactions,
+        30,
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.settled).toBe(0);
+      expect(result.cancelled).toBe(0);
+
+      // Should not call update or delete
+      expect(monarchApi.updateTransaction).not.toHaveBeenCalled();
+      expect(monarchApi.deleteTransaction).not.toHaveBeenCalled();
+    });
+
+    it('should handle transaction ID without type prefix', async () => {
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [
+          {
+            id: 'monarch-tx-1',
+            amount: -50.00,
+            date: '2025-01-10',
+            notes: 'credit-transaction-527000993851-20260111-00-32943086', // Just ID, no type prefix
+          },
+        ],
+      });
+      monarchApi.updateTransaction.mockResolvedValue({});
+      monarchApi.setTransactionTags.mockResolvedValue({});
+
+      const wealthsimpleTransactions = [
+        {
+          externalCanonicalId: 'credit-transaction-527000993851-20260111-00-32943086',
+          status: 'settled',
+          amount: 50.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        wealthsimpleTransactions,
+        30,
+      );
+
+      expect(result.settled).toBe(1);
+      expect(monarchApi.updateTransaction).toHaveBeenCalled();
+    });
+
+    it('should handle multiple pending transactions', async () => {
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [
+          {
+            id: 'monarch-tx-1',
+            amount: -50.00,
+            date: '2025-01-10',
+            notes: 'PURCHASE / credit-transaction-settled-one',
+          },
+          {
+            id: 'monarch-tx-2',
+            amount: -25.00,
+            date: '2025-01-11',
+            notes: 'PURCHASE / credit-transaction-cancelled-one',
+          },
+          {
+            id: 'monarch-tx-3',
+            amount: -75.00,
+            date: '2025-01-12',
+            notes: 'PURCHASE / credit-transaction-still-pending',
+          },
+        ],
+      });
+      monarchApi.updateTransaction.mockResolvedValue({});
+      monarchApi.setTransactionTags.mockResolvedValue({});
+      monarchApi.deleteTransaction.mockResolvedValue(true);
+
+      const wealthsimpleTransactions = [
+        {
+          externalCanonicalId: 'credit-transaction-settled-one',
+          status: 'settled',
+          amount: 50.00,
+          amountSign: 'negative',
+        },
+        // credit-transaction-cancelled-one is not in the list (cancelled)
+        {
+          externalCanonicalId: 'credit-transaction-still-pending',
+          status: 'authorized',
+          amount: 75.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        wealthsimpleTransactions,
+        30,
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.settled).toBe(1);
+      expect(result.cancelled).toBe(1);
+
+      expect(monarchApi.updateTransaction).toHaveBeenCalledTimes(1);
+      expect(monarchApi.deleteTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('should continue processing if one transaction fails', async () => {
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [
+          {
+            id: 'monarch-tx-1',
+            amount: -50.00,
+            date: '2025-01-10',
+            notes: 'PURCHASE / credit-transaction-first',
+          },
+          {
+            id: 'monarch-tx-2',
+            amount: -25.00,
+            date: '2025-01-11',
+            notes: 'PURCHASE / credit-transaction-second',
+          },
+        ],
+      });
+      // First update fails
+      monarchApi.updateTransaction
+        .mockRejectedValueOnce(new Error('API Error'))
+        .mockResolvedValueOnce({});
+      monarchApi.setTransactionTags.mockResolvedValue({});
+
+      const wealthsimpleTransactions = [
+        {
+          externalCanonicalId: 'credit-transaction-first',
+          status: 'settled',
+          amount: 50.00,
+          amountSign: 'negative',
+        },
+        {
+          externalCanonicalId: 'credit-transaction-second',
+          status: 'settled',
+          amount: 25.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        wealthsimpleTransactions,
+        30,
+      );
+
+      // Should continue despite first failure
+      expect(result.settled).toBe(1);
+      expect(monarchApi.updateTransaction).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('formatReconciliationMessage', () => {
+    it('should return "No pending transactions" when noPendingTag is true', () => {
+      const result = formatReconciliationMessage({ noPendingTag: true });
+      expect(result).toBe('No pending transactions');
+    });
+
+    it('should return "No pending transactions" when noPendingTransactions is true', () => {
+      const result = formatReconciliationMessage({ noPendingTransactions: true });
+      expect(result).toBe('No pending transactions');
+    });
+
+    it('should return "No pending transactions" when both settled and cancelled are 0', () => {
+      const result = formatReconciliationMessage({ settled: 0, cancelled: 0 });
+      expect(result).toBe('No pending transactions');
+    });
+
+    it('should format message with only settled count', () => {
+      const result = formatReconciliationMessage({ settled: 3, cancelled: 0 });
+      expect(result).toBe('3 settled');
+    });
+
+    it('should format message with only cancelled count', () => {
+      const result = formatReconciliationMessage({ settled: 0, cancelled: 2 });
+      expect(result).toBe('2 cancelled');
+    });
+
+    it('should format message with both settled and cancelled counts', () => {
+      const result = formatReconciliationMessage({ settled: 3, cancelled: 2 });
+      expect(result).toBe('3 settled, 2 cancelled');
     });
   });
 });
