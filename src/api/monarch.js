@@ -1907,6 +1907,385 @@ fragment PayloadErrorFields on PayloadError {
 }
 
 /**
+ * @typedef {Object} UpdateTransactionInput
+ * @property {string} id - Transaction ID (required)
+ * @property {number} [amount] - Transaction amount (negative for expenses)
+ * @property {string} [notes] - Transaction notes
+ * @property {string} [date] - Transaction date in YYYY-MM-DD format
+ * @property {string} [category] - Category ID
+ * @property {string} [merchant] - Merchant ID
+ * @property {string[]} [tags] - Array of tag IDs
+ * @property {boolean} [hideFromReports] - Hide transaction from reports
+ * @property {boolean} [needsReview] - Mark transaction as needing review
+ * @property {string|null} [ownerUserId] - Owner user ID (for shared accounts)
+ * @property {string} [goal] - Goal ID
+ * @property {string} [reviewStatus] - Review status
+ */
+
+/**
+ * @typedef {Object} UpdatedTransactionCategory
+ * @property {string} id - Category ID
+ * @property {string} name - Category name
+ * @property {string} icon - Category icon emoji
+ * @property {Object} group - Category group info
+ * @property {string} group.id - Group ID
+ * @property {string} group.type - Group type (expense, income, etc.)
+ */
+
+/**
+ * @typedef {Object} UpdatedTransactionMerchant
+ * @property {string} id - Merchant ID
+ * @property {string} name - Merchant name
+ * @property {number} transactionCount - Number of transactions
+ * @property {number} transactionsCount - Number of transactions (alias)
+ * @property {string|null} logoUrl - Merchant logo URL
+ * @property {boolean} hasActiveRecurringStreams - Has active recurring streams
+ * @property {Object|null} recurringTransactionStream - Recurring transaction info
+ */
+
+/**
+ * @typedef {Object} UpdatedTransactionAccount
+ * @property {string} id - Account ID
+ * @property {string} displayName - Account display name
+ * @property {string} icon - Account icon
+ * @property {string|null} logoUrl - Account logo URL
+ * @property {boolean} hideTransactionsFromReports - Hide transactions from reports
+ * @property {Object|null} ownedByUser - Owner info
+ */
+
+/**
+ * @typedef {Object} UpdatedTransaction
+ * @property {string} id - Transaction ID
+ * @property {number} amount - Transaction amount
+ * @property {boolean} pending - Whether transaction is pending
+ * @property {boolean} isRecurring - Whether transaction is recurring
+ * @property {string} date - Transaction date in YYYY-MM-DD format
+ * @property {string} originalDate - Original transaction date
+ * @property {boolean} hideFromReports - Hidden from reports
+ * @property {boolean} needsReview - Whether transaction needs review
+ * @property {string|null} reviewedAt - Review timestamp
+ * @property {Object|null} reviewedByUser - Reviewer info
+ * @property {string} plaidName - Original name from Plaid
+ * @property {string} notes - User notes
+ * @property {boolean} hasSplitTransactions - Has split transactions
+ * @property {boolean} isSplitTransaction - Is a split transaction
+ * @property {boolean} isManual - Is a manual transaction
+ * @property {boolean} updatedByRetailSync - Updated by retail sync
+ * @property {Array} splitTransactions - Split transaction details
+ * @property {Object|null} originalTransaction - Original transaction if split
+ * @property {Array} attachments - Attached files
+ * @property {UpdatedTransactionAccount} account - Transaction account
+ * @property {UpdatedTransactionCategory} category - Transaction category
+ * @property {Object|null} goal - Associated goal
+ * @property {Object|null} savingsGoalEvent - Savings goal event
+ * @property {UpdatedTransactionMerchant} merchant - Transaction merchant
+ * @property {Array} tags - Transaction tags
+ * @property {Object|null} needsReviewByUser - User who needs to review
+ * @property {Object|null} ownedByUser - Owner info
+ * @property {string|null} ownershipOverriddenAt - Ownership override timestamp
+ * @property {boolean} hiddenByAccount - Hidden by account setting
+ * @property {string|null} reviewStatus - Review status
+ * @property {string} dataProviderDescription - Description from data provider
+ */
+
+/**
+ * Update a transaction's details
+ * Uses the Web_TransactionDrawerUpdateTransaction mutation to modify transaction properties.
+ * @param {string} transactionId - Transaction ID to update (required)
+ * @param {UpdateTransactionInput} updates - Fields to update
+ * @returns {Promise<UpdatedTransaction>} Updated transaction object
+ * @throws {Error} If transaction ID is missing or update fails
+ * @example
+ * // Update transaction amount and notes
+ * const updated = await updateTransaction('232589874618203361', {
+ *   amount: -5.6,
+ *   notes: 'Updated note'
+ * });
+ *
+ * @example
+ * // Update transaction category
+ * const updated = await updateTransaction('232589874618203361', {
+ *   category: '162625045061467415'
+ * });
+ *
+ * @example
+ * // Mark transaction as hidden from reports
+ * const updated = await updateTransaction('232589874618203361', {
+ *   hideFromReports: true
+ * });
+ */
+export async function updateTransaction(transactionId, updates = {}) {
+  if (!transactionId) {
+    throw new Error('Transaction ID is required');
+  }
+
+  const input = {
+    id: transactionId,
+    ...updates,
+  };
+
+  debugLog('Updating transaction:', input);
+
+  const query = `mutation Web_TransactionDrawerUpdateTransaction($input: UpdateTransactionMutationInput!) {
+  updateTransaction(input: $input) {
+    transaction {
+      id
+      ...TransactionDrawerFields
+      __typename
+    }
+    errors {
+      ...PayloadErrorFields
+      __typename
+    }
+    __typename
+  }
+}
+
+fragment TransactionDrawerSplitMessageFields on Transaction {
+  id
+  amount
+  merchant {
+    id
+    name
+    __typename
+  }
+  category {
+    id
+    icon
+    name
+    __typename
+  }
+  __typename
+}
+
+fragment OriginalTransactionFields on Transaction {
+  id
+  date
+  amount
+  merchant {
+    id
+    name
+    __typename
+  }
+  __typename
+}
+
+fragment AccountLinkFields on Account {
+  id
+  displayName
+  icon
+  logoUrl
+  id
+  __typename
+}
+
+fragment TransactionOverviewFields on Transaction {
+  id
+  amount
+  pending
+  date
+  hideFromReports
+  hiddenByAccount
+  plaidName
+  notes
+  isRecurring
+  reviewStatus
+  needsReview
+  isSplitTransaction
+  dataProviderDescription
+  attachments {
+    id
+    __typename
+  }
+  goal {
+    id
+    name
+    __typename
+  }
+  savingsGoalEvent {
+    id
+    goal {
+      id
+      name
+      __typename
+    }
+    __typename
+  }
+  category {
+    id
+    name
+    icon
+    group {
+      id
+      type
+      __typename
+    }
+    __typename
+  }
+  merchant {
+    name
+    id
+    transactionsCount
+    logoUrl
+    recurringTransactionStream {
+      frequency
+      isActive
+      __typename
+    }
+    __typename
+  }
+  tags {
+    id
+    name
+    color
+    order
+    __typename
+  }
+  account {
+    id
+    displayName
+    icon
+    logoUrl
+    __typename
+  }
+  ownedByUser {
+    id
+    displayName
+    profilePictureUrl
+    __typename
+  }
+  __typename
+}
+
+fragment TransactionDrawerFields on Transaction {
+  id
+  amount
+  pending
+  isRecurring
+  date
+  originalDate
+  hideFromReports
+  needsReview
+  reviewedAt
+  reviewedByUser {
+    id
+    name
+    __typename
+  }
+  plaidName
+  notes
+  hasSplitTransactions
+  isSplitTransaction
+  isManual
+  updatedByRetailSync
+  splitTransactions {
+    id
+    ...TransactionDrawerSplitMessageFields
+    __typename
+  }
+  originalTransaction {
+    id
+    updatedByRetailSync
+    ...OriginalTransactionFields
+    __typename
+  }
+  attachments {
+    id
+    extension
+    sizeBytes
+    filename
+    originalAssetUrl
+    __typename
+  }
+  account {
+    id
+    hideTransactionsFromReports
+    ownedByUser {
+      id
+      __typename
+    }
+    ...AccountLinkFields
+    __typename
+  }
+  category {
+    id
+    __typename
+  }
+  goal {
+    id
+    __typename
+  }
+  savingsGoalEvent {
+    id
+    goal {
+      id
+      __typename
+    }
+    account {
+      id
+      __typename
+    }
+    __typename
+  }
+  merchant {
+    id
+    name
+    transactionCount
+    logoUrl
+    hasActiveRecurringStreams
+    recurringTransactionStream {
+      frequency
+      isActive
+      __typename
+    }
+    transactionsCount
+    __typename
+  }
+  tags {
+    id
+    name
+    color
+    order
+    __typename
+  }
+  needsReviewByUser {
+    id
+    __typename
+  }
+  ownedByUser {
+    id
+    __typename
+  }
+  ownershipOverriddenAt
+  hiddenByAccount
+  reviewStatus
+  dataProviderDescription
+  __typename
+}
+
+fragment PayloadErrorFields on PayloadError {
+  fieldErrors {
+    field
+    messages
+    __typename
+  }
+  message
+  code
+  __typename
+}`;
+
+  const result = await callMonarchGraphQL('Web_TransactionDrawerUpdateTransaction', query, { input });
+
+  if (result.updateTransaction.errors) {
+    const errorMsg = result.updateTransaction.errors.message || 'Failed to update transaction';
+    throw new Error(errorMsg);
+  }
+
+  debugLog(`Successfully updated transaction: ${result.updateTransaction.transaction.id}`);
+  return result.updateTransaction.transaction;
+}
+
+/**
  * Get the credit limit for a credit card account
  * @param {string} accountId - Monarch account ID
  * @returns {Promise<number|null>} Credit limit value, or null if not set
@@ -2026,6 +2405,7 @@ export default {
   setAccountLogo,
   getFilteredAccounts,
   updateAccount,
+  updateTransaction,
   getCreditLimit,
   setCreditLimit,
 };

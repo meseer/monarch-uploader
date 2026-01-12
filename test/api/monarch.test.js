@@ -26,6 +26,7 @@ import {
   setAccountLogo,
   getFilteredAccounts,
   updateAccount,
+  updateTransaction,
   getCreditLimit,
   setCreditLimit,
 } from '../../src/api/monarch';
@@ -2509,6 +2510,329 @@ describe('Monarch API', () => {
       const result = await getTagByName('Pending');
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe('updateTransaction', () => {
+    const mockUpdatedTransaction = {
+      id: '232589874618203361',
+      amount: -5.6,
+      pending: false,
+      isRecurring: false,
+      date: '2026-01-10',
+      originalDate: '2026-01-10',
+      hideFromReports: false,
+      needsReview: false,
+      reviewedAt: null,
+      reviewedByUser: null,
+      plaidName: 'Impark00011928U',
+      notes: 'Updated note',
+      hasSplitTransactions: false,
+      isSplitTransaction: false,
+      isManual: true,
+      updatedByRetailSync: false,
+      splitTransactions: [],
+      originalTransaction: null,
+      attachments: [],
+      account: {
+        id: '232004378673314879',
+        hideTransactionsFromReports: false,
+        ownedByUser: null,
+        displayName: 'Wealthsimple Credit Card (6903)',
+        icon: 'credit-card',
+        logoUrl: null,
+        __typename: 'Account',
+      },
+      category: {
+        id: '162625045061467415',
+        __typename: 'Category',
+      },
+      goal: null,
+      savingsGoalEvent: null,
+      merchant: {
+        id: '162626669064519255',
+        name: 'Impark',
+        transactionCount: 14,
+        logoUrl: null,
+        hasActiveRecurringStreams: false,
+        recurringTransactionStream: null,
+        transactionsCount: 14,
+        __typename: 'Merchant',
+      },
+      tags: [],
+      needsReviewByUser: null,
+      ownedByUser: null,
+      ownershipOverriddenAt: null,
+      hiddenByAccount: false,
+      reviewStatus: null,
+      dataProviderDescription: 'Impark00011928U',
+      __typename: 'Transaction',
+    };
+
+    test('updates transaction amount successfully', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.operationName).toBe('Web_TransactionDrawerUpdateTransaction');
+        expect(data.variables.input.id).toBe('232589874618203361');
+        expect(data.variables.input.amount).toBe(-5.6);
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              updateTransaction: {
+                transaction: mockUpdatedTransaction,
+                errors: null,
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      const result = await updateTransaction('232589874618203361', { amount: -5.6 });
+
+      expect(result.id).toBe('232589874618203361');
+      expect(result.amount).toBe(-5.6);
+      expect(debugLog).toHaveBeenCalledWith('Updating transaction:', {
+        id: '232589874618203361',
+        amount: -5.6,
+      });
+      expect(debugLog).toHaveBeenCalledWith('Successfully updated transaction: 232589874618203361');
+    });
+
+    test('updates transaction notes successfully', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.variables.input.notes).toBe('Updated note');
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              updateTransaction: {
+                transaction: mockUpdatedTransaction,
+                errors: null,
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      const result = await updateTransaction('232589874618203361', { notes: 'Updated note' });
+
+      expect(result.notes).toBe('Updated note');
+    });
+
+    test('updates multiple fields at once', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.variables.input.id).toBe('232589874618203361');
+        expect(data.variables.input.amount).toBe(-10.5);
+        expect(data.variables.input.notes).toBe('New note');
+        expect(data.variables.input.hideFromReports).toBe(true);
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              updateTransaction: {
+                transaction: {
+                  ...mockUpdatedTransaction,
+                  amount: -10.5,
+                  notes: 'New note',
+                  hideFromReports: true,
+                },
+                errors: null,
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      const result = await updateTransaction('232589874618203361', {
+        amount: -10.5,
+        notes: 'New note',
+        hideFromReports: true,
+      });
+
+      expect(result.amount).toBe(-10.5);
+      expect(result.notes).toBe('New note');
+      expect(result.hideFromReports).toBe(true);
+    });
+
+    test('updates transaction with ownerUserId null', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.variables.input.ownerUserId).toBeNull();
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              updateTransaction: {
+                transaction: mockUpdatedTransaction,
+                errors: null,
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      const result = await updateTransaction('232589874618203361', { ownerUserId: null });
+
+      expect(result.id).toBe('232589874618203361');
+    });
+
+    test('throws error when transaction ID is missing', async () => {
+      await expect(updateTransaction(null, { amount: -5.6 }))
+        .rejects
+        .toThrow('Transaction ID is required');
+    });
+
+    test('throws error when transaction ID is empty string', async () => {
+      await expect(updateTransaction('', { amount: -5.6 }))
+        .rejects
+        .toThrow('Transaction ID is required');
+    });
+
+    test('throws error when transaction ID is undefined', async () => {
+      await expect(updateTransaction(undefined, { amount: -5.6 }))
+        .rejects
+        .toThrow('Transaction ID is required');
+    });
+
+    test('throws error when API returns validation errors', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              updateTransaction: {
+                transaction: null,
+                errors: {
+                  message: 'Invalid transaction amount',
+                  code: 'INVALID_AMOUNT',
+                },
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      await expect(updateTransaction('232589874618203361', { amount: 'invalid' }))
+        .rejects
+        .toThrow('Invalid transaction amount');
+    });
+
+    test('throws default error message when API errors have no message', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              updateTransaction: {
+                transaction: null,
+                errors: {
+                  code: 'UNKNOWN_ERROR',
+                },
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      await expect(updateTransaction('232589874618203361', { amount: -5 }))
+        .rejects
+        .toThrow('Failed to update transaction');
+    });
+
+    test('handles authentication errors', async () => {
+      authService.checkMonarchAuth.mockReturnValue({
+        authenticated: false,
+        token: null,
+      });
+
+      await expect(updateTransaction('232589874618203361', { amount: -5.6 }))
+        .rejects
+        .toThrow('Monarch token not found.');
+    });
+
+    test('handles 401 authentication error', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 401,
+        }), 0);
+      });
+
+      await expect(updateTransaction('232589874618203361', { amount: -5.6 }))
+        .rejects
+        .toThrow('Monarch Auth Error (401): Token was invalid or expired.');
+
+      expect(authService.saveMonarchToken).toHaveBeenCalledWith(null);
+      expect(stateManager.setMonarchAuth).toHaveBeenCalledWith(null);
+    });
+
+    test('handles network errors', async () => {
+      const mockError = new Error('Network error');
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onerror(mockError), 0);
+      });
+
+      await expect(updateTransaction('232589874618203361', { amount: -5.6 }))
+        .rejects
+        .toThrow('Network error');
+    });
+
+    test('works with empty updates object', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.variables.input).toEqual({ id: '232589874618203361' });
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              updateTransaction: {
+                transaction: mockUpdatedTransaction,
+                errors: null,
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      const result = await updateTransaction('232589874618203361');
+
+      expect(result.id).toBe('232589874618203361');
+    });
+
+    test('returns full transaction object', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              updateTransaction: {
+                transaction: mockUpdatedTransaction,
+                errors: null,
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      const result = await updateTransaction('232589874618203361', { amount: -5.6 });
+
+      // Verify full transaction object is returned
+      expect(result.id).toBe('232589874618203361');
+      expect(result.amount).toBe(-5.6);
+      expect(result.pending).toBe(false);
+      expect(result.date).toBe('2026-01-10');
+      expect(result.plaidName).toBe('Impark00011928U');
+      expect(result.notes).toBe('Updated note');
+      expect(result.account.displayName).toBe('Wealthsimple Credit Card (6903)');
+      expect(result.merchant.name).toBe('Impark');
     });
   });
 
