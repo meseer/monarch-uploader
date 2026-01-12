@@ -7,6 +7,8 @@ import {
   applyTransactionRule,
   hasRuleForTransaction,
   extractInteracMemo,
+  extractOutgoingETransferDetails,
+  formatOutgoingETransferDetails,
 } from '../../../src/services/wealthsimple/transactionRules';
 
 describe('Wealthsimple Transaction Rules Engine', () => {
@@ -477,6 +479,308 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       };
 
       const fundingIntentMap = new Map();
+
+      const result = applyTransactionRule(transaction, fundingIntentMap);
+
+      expect(result).not.toBeNull();
+      expect(result.notes).toBe('');
+    });
+  });
+
+  describe('extractOutgoingETransferDetails', () => {
+    it('should return nulls for null funding intent', () => {
+      const result = extractOutgoingETransferDetails(null);
+      expect(result).toEqual({ autoDeposit: null, networkPaymentRefId: null });
+    });
+
+    it('should return nulls for undefined funding intent', () => {
+      const result = extractOutgoingETransferDetails(undefined);
+      expect(result).toEqual({ autoDeposit: null, networkPaymentRefId: null });
+    });
+
+    it('should return nulls when no transferMetadata', () => {
+      const fundingIntent = {
+        id: 'funding_intent-123',
+        state: 'completed',
+        transferMetadata: null,
+      };
+      const result = extractOutgoingETransferDetails(fundingIntent);
+      expect(result).toEqual({ autoDeposit: null, networkPaymentRefId: null });
+    });
+
+    it('should extract autoDeposit true as Yes', () => {
+      const fundingIntent = {
+        id: 'funding_intent-123',
+        transferMetadata: {
+          autoDeposit: true,
+          networkPaymentRefId: 'CAkJgEwf',
+        },
+      };
+      const result = extractOutgoingETransferDetails(fundingIntent);
+      expect(result.autoDeposit).toBe('Yes');
+    });
+
+    it('should extract autoDeposit false as No', () => {
+      const fundingIntent = {
+        id: 'funding_intent-123',
+        transferMetadata: {
+          autoDeposit: false,
+          networkPaymentRefId: 'CAkJgEwf',
+        },
+      };
+      const result = extractOutgoingETransferDetails(fundingIntent);
+      expect(result.autoDeposit).toBe('No');
+    });
+
+    it('should extract networkPaymentRefId', () => {
+      const fundingIntent = {
+        id: 'funding_intent-123',
+        transferMetadata: {
+          autoDeposit: true,
+          networkPaymentRefId: 'C1AnSCH9shHa',
+        },
+      };
+      const result = extractOutgoingETransferDetails(fundingIntent);
+      expect(result.networkPaymentRefId).toBe('C1AnSCH9shHa');
+    });
+
+    it('should handle missing autoDeposit field', () => {
+      const fundingIntent = {
+        id: 'funding_intent-123',
+        transferMetadata: {
+          networkPaymentRefId: 'CAkJgEwf',
+        },
+      };
+      const result = extractOutgoingETransferDetails(fundingIntent);
+      expect(result.autoDeposit).toBeNull();
+      expect(result.networkPaymentRefId).toBe('CAkJgEwf');
+    });
+
+    it('should handle missing networkPaymentRefId field', () => {
+      const fundingIntent = {
+        id: 'funding_intent-123',
+        transferMetadata: {
+          autoDeposit: false,
+        },
+      };
+      const result = extractOutgoingETransferDetails(fundingIntent);
+      expect(result.autoDeposit).toBe('No');
+      expect(result.networkPaymentRefId).toBeNull();
+    });
+
+    it('should extract both fields from complete transferMetadata', () => {
+      const fundingIntent = {
+        id: 'funding_intent-123',
+        state: 'completed',
+        transactionType: 'e_transfer_send',
+        transferMetadata: {
+          autoDeposit: true,
+          securityQuestion: null,
+          securityAnswer: null,
+          recipientIdentifier: 'test@example.com',
+          networkPaymentRefId: 'C1AnSCH9shHa',
+          memo: 'Line Honeybadger Skis',
+          __typename: 'FundingIntentETransferTransactionMetadata',
+        },
+      };
+      const result = extractOutgoingETransferDetails(fundingIntent);
+      expect(result).toEqual({
+        autoDeposit: 'Yes',
+        networkPaymentRefId: 'C1AnSCH9shHa',
+      });
+    });
+  });
+
+  describe('formatOutgoingETransferDetails', () => {
+    it('should return empty string for null details', () => {
+      expect(formatOutgoingETransferDetails(null)).toBe('');
+    });
+
+    it('should return empty string for undefined details', () => {
+      expect(formatOutgoingETransferDetails(undefined)).toBe('');
+    });
+
+    it('should format both autoDeposit and networkPaymentRefId', () => {
+      const details = {
+        autoDeposit: 'No',
+        networkPaymentRefId: 'CAkJgEwf',
+      };
+      expect(formatOutgoingETransferDetails(details)).toBe('Auto Deposit: No; Reference Number: CAkJgEwf');
+    });
+
+    it('should format only autoDeposit when networkPaymentRefId is null', () => {
+      const details = {
+        autoDeposit: 'Yes',
+        networkPaymentRefId: null,
+      };
+      expect(formatOutgoingETransferDetails(details)).toBe('Auto Deposit: Yes');
+    });
+
+    it('should format only networkPaymentRefId when autoDeposit is null', () => {
+      const details = {
+        autoDeposit: null,
+        networkPaymentRefId: 'C1AnSCH9shHa',
+      };
+      expect(formatOutgoingETransferDetails(details)).toBe('Reference Number: C1AnSCH9shHa');
+    });
+
+    it('should return empty string when both are null', () => {
+      const details = {
+        autoDeposit: null,
+        networkPaymentRefId: null,
+      };
+      expect(formatOutgoingETransferDetails(details)).toBe('');
+    });
+  });
+
+  describe('E_TRANSFER rule with outgoing transfer details', () => {
+    it('should include auto-deposit and reference number for outgoing e-transfer', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-out123',
+        type: 'WITHDRAWAL',
+        subType: 'E_TRANSFER',
+        eTransferName: 'Jane Smith',
+        eTransferEmail: 'jane@example.com',
+      };
+
+      const fundingIntentMap = new Map();
+      fundingIntentMap.set('funding_intent-out123', {
+        id: 'funding_intent-out123',
+        state: 'completed',
+        transactionType: 'e_transfer_send',
+        transferMetadata: {
+          autoDeposit: false,
+          networkPaymentRefId: 'CAkJgEwf',
+        },
+      });
+
+      const result = applyTransactionRule(transaction, fundingIntentMap);
+
+      expect(result).not.toBeNull();
+      expect(result.notes).toBe('Auto Deposit: No; Reference Number: CAkJgEwf');
+    });
+
+    it('should include memo and transfer details on separate lines for outgoing e-transfer', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-out456',
+        type: 'WITHDRAWAL',
+        subType: 'E_TRANSFER',
+        eTransferName: 'Jane Smith',
+        eTransferEmail: 'jane@example.com',
+      };
+
+      const fundingIntentMap = new Map();
+      fundingIntentMap.set('funding_intent-out456', {
+        id: 'funding_intent-out456',
+        state: 'completed',
+        transactionType: 'e_transfer_send',
+        transferMetadata: {
+          autoDeposit: true,
+          networkPaymentRefId: 'C1AnSCH9shHa',
+          memo: 'Line Honeybadger Skis',
+        },
+      });
+
+      const result = applyTransactionRule(transaction, fundingIntentMap);
+
+      expect(result).not.toBeNull();
+      expect(result.notes).toBe('Line Honeybadger Skis\nAuto Deposit: Yes; Reference Number: C1AnSCH9shHa');
+    });
+
+    it('should NOT include transfer details for incoming e-transfer', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-in123',
+        type: 'DEPOSIT',
+        subType: 'E_TRANSFER',
+        eTransferName: 'John Doe',
+        eTransferEmail: 'john@example.com',
+      };
+
+      const fundingIntentMap = new Map();
+      fundingIntentMap.set('funding_intent-in123', {
+        id: 'funding_intent-in123',
+        state: 'completed',
+        transactionType: 'e_transfer_receive',
+        transferMetadata: {
+          memo: 'Payment for groceries',
+          // These fields exist but should NOT be included for incoming transfers
+          autoDeposit: true,
+          networkPaymentRefId: 'SomeRefId',
+        },
+      });
+
+      const result = applyTransactionRule(transaction, fundingIntentMap);
+
+      expect(result).not.toBeNull();
+      // Only memo should be present, no transfer details
+      expect(result.notes).toBe('Payment for groceries');
+    });
+
+    it('should handle outgoing e-transfer with partial details (only autoDeposit)', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-partial1',
+        type: 'WITHDRAWAL',
+        subType: 'E_TRANSFER',
+        eTransferName: 'Jane Smith',
+        eTransferEmail: 'jane@example.com',
+      };
+
+      const fundingIntentMap = new Map();
+      fundingIntentMap.set('funding_intent-partial1', {
+        id: 'funding_intent-partial1',
+        state: 'completed',
+        transferMetadata: {
+          autoDeposit: false,
+          // No networkPaymentRefId
+        },
+      });
+
+      const result = applyTransactionRule(transaction, fundingIntentMap);
+
+      expect(result).not.toBeNull();
+      expect(result.notes).toBe('Auto Deposit: No');
+    });
+
+    it('should handle outgoing e-transfer with partial details (only networkPaymentRefId)', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-partial2',
+        type: 'WITHDRAWAL',
+        subType: 'E_TRANSFER',
+        eTransferName: 'Jane Smith',
+        eTransferEmail: 'jane@example.com',
+      };
+
+      const fundingIntentMap = new Map();
+      fundingIntentMap.set('funding_intent-partial2', {
+        id: 'funding_intent-partial2',
+        state: 'completed',
+        transferMetadata: {
+          // No autoDeposit
+          networkPaymentRefId: 'CAkJgEwf',
+        },
+      });
+
+      const result = applyTransactionRule(transaction, fundingIntentMap);
+
+      expect(result).not.toBeNull();
+      expect(result.notes).toBe('Reference Number: CAkJgEwf');
+    });
+
+    it('should handle outgoing e-transfer with no transferMetadata', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-nodata',
+        type: 'WITHDRAWAL',
+        subType: 'E_TRANSFER',
+        eTransferName: 'Jane Smith',
+        eTransferEmail: 'jane@example.com',
+      };
+
+      const fundingIntentMap = new Map();
+      fundingIntentMap.set('funding_intent-nodata', {
+        id: 'funding_intent-nodata',
+        state: 'completed',
+        transferMetadata: null,
+      });
 
       const result = applyTransactionRule(transaction, fundingIntentMap);
 

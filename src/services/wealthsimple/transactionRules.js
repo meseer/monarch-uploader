@@ -31,7 +31,7 @@ function getETransferDisplayName(transaction) {
 /**
  * Extract Interac memo from funding intent data
  * For incoming transfers (e_transfer_receive): memo is in transferMetadata.memo
- * For outgoing transfers (e_transfer_send): memo is in transferMetadata.message
+ * For outgoing transfers (e_transfer_send): memo is in transferMetadata.message or transferMetadata.memo
  *
  * @param {Object|null} fundingIntent - Funding intent data from FetchFundingIntent API
  * @returns {string} Memo text or empty string if not found
@@ -54,6 +54,63 @@ export function extractInteracMemo(fundingIntent) {
   }
 
   return '';
+}
+
+/**
+ * Extract outgoing e-transfer details from funding intent data
+ * For outgoing transfers: extracts autoDeposit status and network payment reference ID
+ *
+ * @param {Object|null} fundingIntent - Funding intent data from FetchFundingIntent API
+ * @returns {Object} Object with { autoDeposit: string|null, networkPaymentRefId: string|null }
+ */
+export function extractOutgoingETransferDetails(fundingIntent) {
+  const result = {
+    autoDeposit: null,
+    networkPaymentRefId: null,
+  };
+
+  if (!fundingIntent || !fundingIntent.transferMetadata) {
+    return result;
+  }
+
+  const metadata = fundingIntent.transferMetadata;
+
+  // Extract auto-deposit status (convert boolean to Yes/No)
+  if (typeof metadata.autoDeposit === 'boolean') {
+    result.autoDeposit = metadata.autoDeposit ? 'Yes' : 'No';
+  }
+
+  // Extract network payment reference ID
+  if (metadata.networkPaymentRefId) {
+    result.networkPaymentRefId = metadata.networkPaymentRefId;
+  }
+
+  return result;
+}
+
+/**
+ * Format outgoing e-transfer details as a string for notes
+ * Format: "Auto Deposit: Yes; Reference Number: CAkJgEwf"
+ *
+ * @param {Object} details - Object from extractOutgoingETransferDetails
+ * @returns {string} Formatted string or empty if no details available
+ */
+export function formatOutgoingETransferDetails(details) {
+  if (!details) {
+    return '';
+  }
+
+  const parts = [];
+
+  if (details.autoDeposit !== null) {
+    parts.push(`Auto Deposit: ${details.autoDeposit}`);
+  }
+
+  if (details.networkPaymentRefId !== null) {
+    parts.push(`Reference Number: ${details.networkPaymentRefId}`);
+  }
+
+  return parts.join('; ');
 }
 
 /**
@@ -95,14 +152,28 @@ export const CASH_TRANSACTION_RULES = [
           : `Interac e-Transfer from ${displayName}`;
       }
 
-      // Extract Interac memo from funding intent data if available
+      // Extract Interac memo and additional details from funding intent data if available
       let notes = '';
       if (fundingIntentMap && tx.externalCanonicalId) {
         const fundingIntent = fundingIntentMap.get(tx.externalCanonicalId);
         if (fundingIntent) {
-          notes = extractInteracMemo(fundingIntent);
-          if (notes) {
-            debugLog(`Found Interac memo for ${tx.externalCanonicalId}: "${notes}"`);
+          // Extract memo for all e-transfers
+          const memo = extractInteracMemo(fundingIntent);
+          if (memo) {
+            debugLog(`Found Interac memo for ${tx.externalCanonicalId}: "${memo}"`);
+            notes = memo;
+          }
+
+          // For outgoing transfers, also extract auto-deposit and reference number
+          if (tx.type === 'WITHDRAWAL') {
+            const outgoingDetails = extractOutgoingETransferDetails(fundingIntent);
+            const formattedDetails = formatOutgoingETransferDetails(outgoingDetails);
+
+            if (formattedDetails) {
+              debugLog(`Found outgoing e-transfer details for ${tx.externalCanonicalId}: "${formattedDetails}"`);
+              // Append on new line after memo (if memo exists), otherwise just use the details
+              notes = notes ? `${notes}\n${formattedDetails}` : formattedDetails;
+            }
           }
         }
       }
