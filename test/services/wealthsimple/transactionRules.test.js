@@ -359,6 +359,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
       expect(result).not.toBeNull();
       expect(result.notes).toBe('Oven for Unit 202 Trinity');
+      expect(result.technicalDetails).toBe(''); // No technical details for incoming
     });
 
     it('should include message in notes for outgoing e-transfers', () => {
@@ -387,7 +388,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       expect(result.notes).toBe('Rent payment for January');
     });
 
-    it('should return empty notes when fundingIntentMap is null', () => {
+    it('should return empty notes and technicalDetails when fundingIntentMap is null', () => {
       const transaction = {
         externalCanonicalId: 'funding_intent-abc123',
         type: 'DEPOSIT',
@@ -400,6 +401,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
       expect(result).not.toBeNull();
       expect(result.notes).toBe('');
+      expect(result.technicalDetails).toBe('');
     });
 
     it('should return empty notes when transaction ID not in fundingIntentMap', () => {
@@ -421,6 +423,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
       expect(result).not.toBeNull();
       expect(result.notes).toBe('');
+      expect(result.technicalDetails).toBe('');
     });
 
     it('should return empty notes when funding intent has no memo/message', () => {
@@ -467,6 +470,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
       expect(result).not.toBeNull();
       expect(result.notes).toBe('');
+      expect(result.technicalDetails).toBe('');
     });
 
     it('should handle empty fundingIntentMap', () => {
@@ -484,6 +488,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
       expect(result).not.toBeNull();
       expect(result.notes).toBe('');
+      expect(result.technicalDetails).toBe('');
     });
   });
 
@@ -634,7 +639,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
   });
 
   describe('E_TRANSFER rule with outgoing transfer details', () => {
-    it('should include auto-deposit and reference number for outgoing e-transfer', () => {
+    it('should include auto-deposit and reference number in technicalDetails for outgoing e-transfer', () => {
       const transaction = {
         externalCanonicalId: 'funding_intent-out123',
         type: 'WITHDRAWAL',
@@ -657,10 +662,11 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       const result = applyTransactionRule(transaction, fundingIntentMap);
 
       expect(result).not.toBeNull();
-      expect(result.notes).toBe('Auto Deposit: No; Reference Number: CAkJgEwf');
+      expect(result.notes).toBe('');
+      expect(result.technicalDetails).toBe('Auto Deposit: No; Reference Number: CAkJgEwf');
     });
 
-    it('should include memo and transfer details on separate lines for outgoing e-transfer', () => {
+    it('should have memo in notes and transfer details in technicalDetails for outgoing e-transfer', () => {
       const transaction = {
         externalCanonicalId: 'funding_intent-out456',
         type: 'WITHDRAWAL',
@@ -684,7 +690,9 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       const result = applyTransactionRule(transaction, fundingIntentMap);
 
       expect(result).not.toBeNull();
-      expect(result.notes).toBe('Line Honeybadger Skis\nAuto Deposit: Yes; Reference Number: C1AnSCH9shHa');
+      // Memo should be in notes, technical details separate
+      expect(result.notes).toBe('Line Honeybadger Skis');
+      expect(result.technicalDetails).toBe('Auto Deposit: Yes; Reference Number: C1AnSCH9shHa');
     });
 
     it('should NOT include transfer details for incoming e-transfer', () => {
@@ -712,8 +720,9 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       const result = applyTransactionRule(transaction, fundingIntentMap);
 
       expect(result).not.toBeNull();
-      // Only memo should be present, no transfer details
+      // Only memo should be present in notes, no technical details
       expect(result.notes).toBe('Payment for groceries');
+      expect(result.technicalDetails).toBe('');
     });
 
     it('should handle outgoing e-transfer with partial details (only autoDeposit)', () => {
@@ -738,7 +747,8 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       const result = applyTransactionRule(transaction, fundingIntentMap);
 
       expect(result).not.toBeNull();
-      expect(result.notes).toBe('Auto Deposit: No');
+      expect(result.notes).toBe('');
+      expect(result.technicalDetails).toBe('Auto Deposit: No');
     });
 
     it('should handle outgoing e-transfer with partial details (only networkPaymentRefId)', () => {
@@ -763,7 +773,8 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       const result = applyTransactionRule(transaction, fundingIntentMap);
 
       expect(result).not.toBeNull();
-      expect(result.notes).toBe('Reference Number: CAkJgEwf');
+      expect(result.notes).toBe('');
+      expect(result.technicalDetails).toBe('Reference Number: CAkJgEwf');
     });
 
     it('should handle outgoing e-transfer with no transferMetadata', () => {
@@ -786,6 +797,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
       expect(result).not.toBeNull();
       expect(result.notes).toBe('');
+      expect(result.technicalDetails).toBe('');
     });
   });
 });

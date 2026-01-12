@@ -149,8 +149,62 @@ function formatTransactionIdForNotes(transactionId) {
 }
 
 /**
+ * Build notes field for Wealthsimple transaction in new format:
+ * 1. Memo (if present)
+ * 2. Empty line separator (if both memo and technical details exist)
+ * 3. Technical details (if present)
+ * 4. New line
+ * 5. Transaction ID line (at the bottom)
+ *
+ * Example output:
+ * "Testing interac notes and status sync
+ *
+ * Auto Deposit: No; Reference Number: CAkJgEwf
+ * E_TRANSFER / ws-tx:funding_intent-4x01q2I19RLZcT1DscfyciJbtn2"
+ *
+ * @param {Object} params - Parameters for building notes
+ * @param {string} params.memo - Transaction memo (e.g., Interac memo)
+ * @param {string} params.technicalDetails - Technical details (e.g., auto-deposit, reference number)
+ * @param {string} params.subType - Transaction subType (e.g., E_TRANSFER)
+ * @param {string} params.formattedTxId - Formatted transaction ID with ws-tx: prefix
+ * @param {boolean} params.includeTransactionId - Whether to include the transaction ID line
+ * @returns {string} Formatted notes string
+ */
+function buildWealthsimpleNotes({ memo, technicalDetails, subType, formattedTxId, includeTransactionId }) {
+  const parts = [];
+
+  // 1. Memo first (if present)
+  if (memo) {
+    parts.push(memo);
+  }
+
+  // 2-3. Technical details (if present), with empty line separator if memo exists
+  if (technicalDetails) {
+    if (memo) {
+      // Add empty line separator between memo and technical details
+      parts.push('');
+    }
+    parts.push(technicalDetails);
+  }
+
+  // 4-5. Transaction ID line at the bottom (if included)
+  if (includeTransactionId && formattedTxId) {
+    const txIdLine = `${subType || ''} / ${formattedTxId}`.trim();
+    parts.push(txIdLine);
+  }
+
+  return parts.join('\n');
+}
+
+/**
  * Convert Wealthsimple transactions to Monarch CSV format
  * Handles both credit card transactions (using status field) and CASH transactions (using isPending flag)
+ *
+ * Notes format:
+ * - Memo/message first (if present)
+ * - Empty line separator
+ * - Technical details (auto-deposit, reference number)
+ * - Transaction ID line at the bottom
  *
  * @param {Array} transactions - Array of processed Wealthsimple transaction objects
  * @param {string} accountName - Wealthsimple account name for the Account column
@@ -187,29 +241,41 @@ export function convertWealthsimpleTransactionsToMonarchCSV(transactions, accoun
     // Format the transaction ID with ws-tx: prefix for reconciliation
     const formattedTxId = formatTransactionIdForNotes(transaction.id);
 
+    // Get memo and technical details from transaction
+    const memo = transaction.notes || '';
+    const technicalDetails = transaction.technicalDetails || '';
+
     // Build notes field based on settings
     // For pending transactions, always include transaction ID for de-duplication/reconciliation
-    // Also include any notes from the transaction (e.g., Interac memo from funding intents)
     let notes;
-    const transactionMemo = transaction.notes || '';
 
     if (isPending) {
       // Always include transaction ID for pending transactions (for de-duplication)
-      notes = `${transaction.subType || ''} / ${formattedTxId}`.trim();
-      // Append Interac memo if present
-      if (transactionMemo) {
-        notes = notes ? `${notes} | ${transactionMemo}` : transactionMemo;
-      }
+      notes = buildWealthsimpleNotes({
+        memo,
+        technicalDetails,
+        subType: transaction.subType,
+        formattedTxId,
+        includeTransactionId: true,
+      });
     } else if (storeTransactionDetailsInNotes) {
       // Include subType and transaction ID in notes for traceability (when setting enabled)
-      notes = `${transaction.subType || ''} / ${formattedTxId}`.trim();
-      // Append Interac memo if present
-      if (transactionMemo) {
-        notes = notes ? `${notes} | ${transactionMemo}` : transactionMemo;
-      }
+      notes = buildWealthsimpleNotes({
+        memo,
+        technicalDetails,
+        subType: transaction.subType,
+        formattedTxId,
+        includeTransactionId: true,
+      });
     } else {
-      // Only include Interac memo when storeTransactionDetailsInNotes is disabled
-      notes = transactionMemo;
+      // Only include memo and technical details when storeTransactionDetailsInNotes is disabled
+      notes = buildWealthsimpleNotes({
+        memo,
+        technicalDetails,
+        subType: transaction.subType,
+        formattedTxId,
+        includeTransactionId: false,
+      });
     }
 
     return {

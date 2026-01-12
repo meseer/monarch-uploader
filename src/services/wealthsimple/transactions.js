@@ -404,8 +404,10 @@ function processCashTransaction(transaction, fundingIntentMap = null) {
     resolvedMonarchCategory: ruleResult.category,
     // Rule metadata for debugging
     ruleId: ruleResult.ruleId,
-    // Notes from rule (can be overridden based on settings)
+    // Notes from rule - memo only (e.g., Interac memo)
     notes: ruleResult.notes || '',
+    // Technical details from rule (e.g., auto-deposit status, reference number)
+    technicalDetails: ruleResult.technicalDetails || '',
   };
 }
 

@@ -124,7 +124,8 @@ export function formatOutgoingETransferDetails(details) {
  * - category: Monarch category name
  * - merchant: Merchant name for display
  * - originalStatement: Original statement text
- * - notes: Optional notes (default empty, may include Interac memo)
+ * - notes: Optional notes (memo only, e.g., Interac memo from funding intent)
+ * - technicalDetails: Optional technical details (e.g., auto-deposit status, reference number)
  */
 export const CASH_TRANSACTION_RULES = [
   {
@@ -154,6 +155,7 @@ export const CASH_TRANSACTION_RULES = [
 
       // Extract Interac memo and additional details from funding intent data if available
       let notes = '';
+      let technicalDetails = '';
       if (fundingIntentMap && tx.externalCanonicalId) {
         const fundingIntent = fundingIntentMap.get(tx.externalCanonicalId);
         if (fundingIntent) {
@@ -171,8 +173,7 @@ export const CASH_TRANSACTION_RULES = [
 
             if (formattedDetails) {
               debugLog(`Found outgoing e-transfer details for ${tx.externalCanonicalId}: "${formattedDetails}"`);
-              // Append on new line after memo (if memo exists), otherwise just use the details
-              notes = notes ? `${notes}\n${formattedDetails}` : formattedDetails;
+              technicalDetails = formattedDetails;
             }
           }
         }
@@ -183,6 +184,7 @@ export const CASH_TRANSACTION_RULES = [
         merchant,
         originalStatement,
         notes,
+        technicalDetails,
       };
     },
   },

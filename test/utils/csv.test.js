@@ -839,6 +839,7 @@ describe('CSV Conversion Utilities', () => {
             status: 'settled',
             resolvedMonarchCategory: 'Transfer',
             notes: 'Rent payment for January', // Interac memo from funding intent
+            technicalDetails: '', // No technical details for incoming
           },
         ];
 
@@ -854,7 +855,7 @@ describe('CSV Conversion Utilities', () => {
         expect(result).not.toContain('funding_intent-abc123');
       });
 
-      test('should include Interac memo AND transaction details in notes when storeTransactionDetailsInNotes is true', () => {
+      test('should include memo, technical details, and transaction ID in new format when storeTransactionDetailsInNotes is true', () => {
         const transactions = [
           {
             id: 'funding_intent-def456',
@@ -866,6 +867,7 @@ describe('CSV Conversion Utilities', () => {
             status: 'settled',
             resolvedMonarchCategory: 'Transfer',
             notes: 'Payment for groceries',
+            technicalDetails: 'Auto Deposit: No; Reference Number: CAkJgEwf',
           },
         ];
 
@@ -875,14 +877,13 @@ describe('CSV Conversion Utilities', () => {
           { storeTransactionDetailsInNotes: true },
         );
 
-        // Both transaction details and Interac memo should appear
-        expect(result).toContain('E_TRANSFER');
-        expect(result).toContain('ws-tx:funding_intent-def456');
+        // New format: memo first, then empty line, then technical details, then transaction ID
         expect(result).toContain('Payment for groceries');
-        expect(result).toContain('|'); // Separator between system notes and memo
+        expect(result).toContain('Auto Deposit: No; Reference Number: CAkJgEwf');
+        expect(result).toContain('E_TRANSFER / ws-tx:funding_intent-def456');
       });
 
-      test('should include Interac memo in notes for pending transactions', () => {
+      test('should include Interac memo and transaction ID in notes for pending transactions', () => {
         const transactions = [
           {
             id: 'funding_intent-pending123',
@@ -894,6 +895,7 @@ describe('CSV Conversion Utilities', () => {
             isPending: true,
             resolvedMonarchCategory: 'Transfer',
             notes: 'Pending transfer memo',
+            technicalDetails: 'Auto Deposit: Yes; Reference Number: XYZ123',
           },
         ];
 
@@ -903,14 +905,41 @@ describe('CSV Conversion Utilities', () => {
           { storeTransactionDetailsInNotes: false },
         );
 
-        // Pending transactions always include transaction ID, plus memo
-        expect(result).toContain('E_TRANSFER');
-        expect(result).toContain('ws-tx:funding_intent-pending123');
+        // Pending transactions always include transaction ID, plus memo and technical details
         expect(result).toContain('Pending transfer memo');
+        expect(result).toContain('Auto Deposit: Yes; Reference Number: XYZ123');
+        expect(result).toContain('E_TRANSFER / ws-tx:funding_intent-pending123');
         expect(result).toContain('Pending'); // Tag
       });
 
-      test('should handle transactions with empty notes', () => {
+      test('should handle transactions with empty notes but technical details', () => {
+        const transactions = [
+          {
+            id: 'funding_intent-techonly',
+            date: '2024-01-15',
+            merchant: 'e-Transfer to Unknown',
+            originalMerchant: 'Interac e-Transfer to Unknown',
+            amount: -50.00,
+            subType: 'E_TRANSFER',
+            status: 'settled',
+            resolvedMonarchCategory: 'Transfer',
+            notes: '', // Empty memo
+            technicalDetails: 'Auto Deposit: No; Reference Number: ABC123',
+          },
+        ];
+
+        const result = convertWealthsimpleTransactionsToMonarchCSV(
+          transactions,
+          'Test Account',
+          { storeTransactionDetailsInNotes: false },
+        );
+
+        // Technical details should be present even without memo
+        expect(result).toContain('Auto Deposit: No; Reference Number: ABC123');
+        expect(result).not.toContain('E_TRANSFER'); // No transaction ID when storeTransactionDetailsInNotes is false
+      });
+
+      test('should handle transactions with empty notes and technicalDetails', () => {
         const transactions = [
           {
             id: 'funding_intent-nomemo',
@@ -922,6 +951,7 @@ describe('CSV Conversion Utilities', () => {
             status: 'settled',
             resolvedMonarchCategory: 'Transfer',
             notes: '', // Empty memo
+            technicalDetails: '', // Empty technical details
           },
         ];
 
@@ -931,14 +961,14 @@ describe('CSV Conversion Utilities', () => {
           { storeTransactionDetailsInNotes: false },
         );
 
-        // Notes should be empty when no memo and details are disabled
+        // Notes should be empty when no memo, no technical details, and details are disabled
         const lines = result.split('\n');
         expect(lines).toHaveLength(2);
         // The Notes field should be empty (empty string between commas)
         expect(lines[1]).toContain(',,'); // Empty notes field
       });
 
-      test('should handle transactions without notes property', () => {
+      test('should handle transactions without notes or technicalDetails properties', () => {
         const transactions = [
           {
             id: 'funding_intent-nonotesprop',
@@ -949,7 +979,7 @@ describe('CSV Conversion Utilities', () => {
             subType: 'E_TRANSFER',
             status: 'settled',
             resolvedMonarchCategory: 'Transfer',
-            // No notes property at all
+            // No notes or technicalDetails properties at all
           },
         ];
 
@@ -976,6 +1006,7 @@ describe('CSV Conversion Utilities', () => {
             status: 'settled',
             resolvedMonarchCategory: 'Transfer',
             notes: 'Memo with "quotes" and, commas',
+            technicalDetails: '',
           },
         ];
 
@@ -989,18 +1020,19 @@ describe('CSV Conversion Utilities', () => {
         expect(result).toContain('"Memo with ""quotes"" and, commas"');
       });
 
-      test('should properly separate system notes and memo with pipe character', () => {
+      test('should format notes with memo, technical details, and transaction ID on separate lines', () => {
         const transactions = [
           {
-            id: 'funding_intent-separator',
+            id: 'funding_intent-fullformat',
             date: '2024-01-15',
-            merchant: 'e-Transfer from Test',
-            originalMerchant: 'Interac e-Transfer from Test',
-            amount: 100.00,
+            merchant: 'e-Transfer to Test',
+            originalMerchant: 'Interac e-Transfer to Test',
+            amount: -100.00,
             subType: 'E_TRANSFER',
             status: 'settled',
             resolvedMonarchCategory: 'Transfer',
-            notes: 'Test memo',
+            notes: 'Testing interac notes',
+            technicalDetails: 'Auto Deposit: No; Reference Number: CAkJgEwf',
           },
         ];
 
@@ -1010,8 +1042,65 @@ describe('CSV Conversion Utilities', () => {
           { storeTransactionDetailsInNotes: true },
         );
 
-        // The format should be "E_TRANSFER / ws-tx:funding_intent-separator | Test memo"
-        expect(result).toContain('E_TRANSFER / ws-tx:funding_intent-separator | Test memo');
+        // The new format has memo first, empty line, technical details, then transaction ID
+        // Format: "memo\n\ntechnicalDetails\ntxIdLine"
+        expect(result).toContain('Testing interac notes');
+        expect(result).toContain('Auto Deposit: No; Reference Number: CAkJgEwf');
+        expect(result).toContain('E_TRANSFER / ws-tx:funding_intent-fullformat');
+      });
+
+      test('should format notes correctly when only memo exists (no technical details)', () => {
+        const transactions = [
+          {
+            id: 'funding_intent-memoonly',
+            date: '2024-01-15',
+            merchant: 'e-Transfer from Test',
+            originalMerchant: 'Interac e-Transfer from Test',
+            amount: 100.00,
+            subType: 'E_TRANSFER',
+            status: 'settled',
+            resolvedMonarchCategory: 'Transfer',
+            notes: 'Just a memo',
+            technicalDetails: '',
+          },
+        ];
+
+        const result = convertWealthsimpleTransactionsToMonarchCSV(
+          transactions,
+          'Test Account',
+          { storeTransactionDetailsInNotes: true },
+        );
+
+        // Format: "memo\ntxIdLine" (no empty line since no technical details)
+        expect(result).toContain('Just a memo');
+        expect(result).toContain('E_TRANSFER / ws-tx:funding_intent-memoonly');
+      });
+
+      test('should format notes correctly when only technical details exist (no memo)', () => {
+        const transactions = [
+          {
+            id: 'funding_intent-techonly2',
+            date: '2024-01-15',
+            merchant: 'e-Transfer to Test',
+            originalMerchant: 'Interac e-Transfer to Test',
+            amount: -100.00,
+            subType: 'E_TRANSFER',
+            status: 'settled',
+            resolvedMonarchCategory: 'Transfer',
+            notes: '',
+            technicalDetails: 'Auto Deposit: Yes; Reference Number: XYZ789',
+          },
+        ];
+
+        const result = convertWealthsimpleTransactionsToMonarchCSV(
+          transactions,
+          'Test Account',
+          { storeTransactionDetailsInNotes: true },
+        );
+
+        // Format: "technicalDetails\ntxIdLine" (no empty line since no memo)
+        expect(result).toContain('Auto Deposit: Yes; Reference Number: XYZ789');
+        expect(result).toContain('E_TRANSFER / ws-tx:funding_intent-techonly2');
       });
     });
   });
