@@ -1787,4 +1787,368 @@ describe('Wealthsimple API Client', () => {
       ).rejects.toThrow('Server error');
     });
   });
+
+  describe('fetchFundingIntents', () => {
+    beforeEach(() => {
+      const futureDate = new Date(Date.now() + 3600000).toISOString();
+      GM_getValue.mockImplementation((key) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
+        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
+        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
+        return null;
+      });
+    });
+
+    it('should return empty map for empty array', async () => {
+      const result = await wealthsimpleApi.fetchFundingIntents([]);
+      expect(result).toBeInstanceOf(Map);
+      expect(result.size).toBe(0);
+    });
+
+    it('should return empty map for null input', async () => {
+      const result = await wealthsimpleApi.fetchFundingIntents(null);
+      expect(result).toBeInstanceOf(Map);
+      expect(result.size).toBe(0);
+    });
+
+    it('should filter out non-funding_intent- IDs', async () => {
+      const result = await wealthsimpleApi.fetchFundingIntents([
+        'credit-transaction-123',
+        'some-other-id',
+      ]);
+      expect(result).toBeInstanceOf(Map);
+      expect(result.size).toBe(0);
+      // Should not make any API call since no valid IDs
+      expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
+    });
+
+    it('should fetch funding intents for valid IDs', async () => {
+      const mockResponse = {
+        searchFundingIntents: {
+          edges: [
+            {
+              node: {
+                id: 'funding_intent-abc123',
+                state: 'completed',
+                transactionType: 'e_transfer_receive',
+                transferMetadata: {
+                  memo: 'Test memo message',
+                  paymentType: 'ACCOUNT_ALIAS_PAYMENT',
+                  recipient_email: 'test@example.com',
+                  __typename: 'FundingIntentETransferReceiveMetadata',
+                },
+                __typename: 'FundingIntent',
+              },
+              __typename: 'FundingIntentEdge',
+            },
+          ],
+          pageInfo: {
+            hasNextPage: false,
+            endCursor: 'MQ',
+            __typename: 'PageInfo',
+          },
+          __typename: 'FundingIntentConnection',
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchFundingIntents([
+        'funding_intent-abc123',
+      ]);
+
+      expect(result).toBeInstanceOf(Map);
+      expect(result.size).toBe(1);
+      expect(result.has('funding_intent-abc123')).toBe(true);
+      expect(result.get('funding_intent-abc123').transferMetadata.memo).toBe('Test memo message');
+    });
+
+    it('should fetch multiple funding intents in single request', async () => {
+      const mockResponse = {
+        searchFundingIntents: {
+          edges: [
+            {
+              node: {
+                id: 'funding_intent-abc123',
+                state: 'completed',
+                transactionType: 'e_transfer_receive',
+                transferMetadata: {
+                  memo: 'First memo',
+                  __typename: 'FundingIntentETransferReceiveMetadata',
+                },
+              },
+            },
+            {
+              node: {
+                id: 'funding_intent-def456',
+                state: 'completed',
+                transactionType: 'e_transfer_send',
+                transferMetadata: {
+                  message: 'Second memo',
+                  __typename: 'FundingIntentETransferTransactionMetadata',
+                },
+              },
+            },
+          ],
+          pageInfo: {
+            hasNextPage: false,
+            endCursor: 'Mg',
+          },
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ data, onload }) => {
+        const parsedData = JSON.parse(data);
+        expect(parsedData.operationName).toBe('FetchFundingIntent');
+        expect(parsedData.variables.ids).toEqual([
+          'funding_intent-abc123',
+          'funding_intent-def456',
+        ]);
+
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchFundingIntents([
+        'funding_intent-abc123',
+        'funding_intent-def456',
+      ]);
+
+      expect(result.size).toBe(2);
+      expect(result.get('funding_intent-abc123').transferMetadata.memo).toBe('First memo');
+      expect(result.get('funding_intent-def456').transferMetadata.message).toBe('Second memo');
+    });
+
+    it('should filter valid IDs from mixed input', async () => {
+      const mockResponse = {
+        searchFundingIntents: {
+          edges: [
+            {
+              node: {
+                id: 'funding_intent-valid123',
+                state: 'completed',
+                transferMetadata: null,
+              },
+            },
+          ],
+          pageInfo: {
+            hasNextPage: false,
+            endCursor: null,
+          },
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ data, onload }) => {
+        const parsedData = JSON.parse(data);
+        // Should only include funding_intent- prefixed IDs
+        expect(parsedData.variables.ids).toEqual(['funding_intent-valid123']);
+
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchFundingIntents([
+        'credit-transaction-123',
+        'funding_intent-valid123',
+        'other-id',
+      ]);
+
+      expect(result.size).toBe(1);
+      expect(result.has('funding_intent-valid123')).toBe(true);
+    });
+
+    it('should return empty map when no searchFundingIntents in response', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: {} }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchFundingIntents([
+        'funding_intent-abc123',
+      ]);
+
+      expect(result).toBeInstanceOf(Map);
+      expect(result.size).toBe(0);
+    });
+
+    it('should return empty map on API error without failing', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({ status: 500 });
+      });
+
+      // Should not throw, just return empty map
+      const result = await wealthsimpleApi.fetchFundingIntents([
+        'funding_intent-abc123',
+      ]);
+
+      expect(result).toBeInstanceOf(Map);
+      expect(result.size).toBe(0);
+    });
+
+    it('should return empty map on network error without failing', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onerror }) => {
+        onerror(new Error('Network failure'));
+      });
+
+      // Should not throw, just return empty map
+      const result = await wealthsimpleApi.fetchFundingIntents([
+        'funding_intent-abc123',
+      ]);
+
+      expect(result).toBeInstanceOf(Map);
+      expect(result.size).toBe(0);
+    });
+
+    it('should handle empty edges array', async () => {
+      const mockResponse = {
+        searchFundingIntents: {
+          edges: [],
+          pageInfo: {
+            hasNextPage: false,
+            endCursor: null,
+          },
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchFundingIntents([
+        'funding_intent-abc123',
+      ]);
+
+      expect(result.size).toBe(0);
+    });
+
+    it('should handle funding intent with incoming e-transfer metadata', async () => {
+      const mockResponse = {
+        searchFundingIntents: {
+          edges: [
+            {
+              node: {
+                id: 'funding_intent-l1CpBeHrJabDfHWKDucwgX6LXWV',
+                state: 'completed',
+                idempotencyKey: 'transaction-ZJVwl7rkDaRe7uPMmaWncbo8JQa',
+                createdAt: '2025-10-29T20:43:21.327576Z',
+                updatedAt: '2025-10-29T22:20:19.213103Z',
+                externalReferenceId: 'transaction-ZJVwl7rkDaRe7uPMmaWncbo8JQa',
+                fundableType: 'Deposit',
+                transactionType: 'e_transfer_receive',
+                fundableDetails: {
+                  createdAt: '2025-10-29T20:43:21.317164Z',
+                  amount: '450.0',
+                  currency: 'CAD',
+                  completedAt: '2025-10-29T22:20:19.234950Z',
+                  provisionalCredit: null,
+                  __typename: 'FundingIntentDeposit',
+                },
+                source: {
+                  id: 'funding_method-3NGF5M4kBwjIGkrPvqZo28CF0qb',
+                  type: 'FundingMethod',
+                  __typename: 'FundingPoint',
+                },
+                destination: {
+                  id: 'ca-cash-msb-iusfagkx',
+                  type: 'Account',
+                  __typename: 'FundingPoint',
+                },
+                postDated: null,
+                transactionMetadata: null,
+                transferMetadata: {
+                  memo: 'Oven for Unit 202 Trinity',
+                  paymentType: 'ACCOUNT_ALIAS_PAYMENT',
+                  recipient_email: 'mykhailo@wealthsimple.me',
+                  __typename: 'FundingIntentETransferReceiveMetadata',
+                },
+                transferMetadataV2: null,
+                userReferenceId: 'D7HEB',
+                recurrence: null,
+                __typename: 'FundingIntent',
+              },
+            },
+          ],
+          pageInfo: {
+            hasNextPage: false,
+            endCursor: 'MQ',
+          },
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchFundingIntents([
+        'funding_intent-l1CpBeHrJabDfHWKDucwgX6LXWV',
+      ]);
+
+      expect(result.size).toBe(1);
+      const intent = result.get('funding_intent-l1CpBeHrJabDfHWKDucwgX6LXWV');
+      expect(intent.transactionType).toBe('e_transfer_receive');
+      expect(intent.transferMetadata.memo).toBe('Oven for Unit 202 Trinity');
+      expect(intent.transferMetadata.paymentType).toBe('ACCOUNT_ALIAS_PAYMENT');
+      expect(intent.fundableDetails.amount).toBe('450.0');
+    });
+
+    it('should handle funding intent with outgoing e-transfer metadata', async () => {
+      const mockResponse = {
+        searchFundingIntents: {
+          edges: [
+            {
+              node: {
+                id: 'funding_intent-outgoing123',
+                state: 'completed',
+                transactionType: 'e_transfer_send',
+                transferMetadata: {
+                  message: 'Payment for services',
+                  securityAnswer: null,
+                  __typename: 'FundingIntentETransferTransactionMetadata',
+                },
+                __typename: 'FundingIntent',
+              },
+            },
+          ],
+          pageInfo: {
+            hasNextPage: false,
+            endCursor: null,
+          },
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchFundingIntents([
+        'funding_intent-outgoing123',
+      ]);
+
+      expect(result.size).toBe(1);
+      const intent = result.get('funding_intent-outgoing123');
+      expect(intent.transactionType).toBe('e_transfer_send');
+      // Outgoing e-transfers have 'message' instead of 'memo'
+      expect(intent.transferMetadata.message).toBe('Payment for services');
+    });
+  });
 });

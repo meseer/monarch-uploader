@@ -825,6 +825,195 @@ describe('CSV Conversion Utilities', () => {
       expect(lines[2]).toContain('Pending');
       expect(lines[2]).toContain('tx-pending');
     });
+
+    describe('Interac memo handling', () => {
+      test('should include Interac memo in notes for settled transactions when storeTransactionDetailsInNotes is false', () => {
+        const transactions = [
+          {
+            id: 'funding_intent-abc123',
+            date: '2024-01-15',
+            merchant: 'e-Transfer from John Doe',
+            originalMerchant: 'Interac e-Transfer from John Doe (john@example.com)',
+            amount: 500.00,
+            subType: 'E_TRANSFER',
+            status: 'settled',
+            resolvedMonarchCategory: 'Transfer',
+            notes: 'Rent payment for January', // Interac memo from funding intent
+          },
+        ];
+
+        const result = convertWealthsimpleTransactionsToMonarchCSV(
+          transactions,
+          'Test Account',
+          { storeTransactionDetailsInNotes: false },
+        );
+
+        // Only the Interac memo should appear in notes
+        expect(result).toContain('Rent payment for January');
+        expect(result).not.toContain('E_TRANSFER');
+        expect(result).not.toContain('funding_intent-abc123');
+      });
+
+      test('should include Interac memo AND transaction details in notes when storeTransactionDetailsInNotes is true', () => {
+        const transactions = [
+          {
+            id: 'funding_intent-def456',
+            date: '2024-01-15',
+            merchant: 'e-Transfer to Jane Smith',
+            originalMerchant: 'Interac e-Transfer to Jane Smith (jane@example.com)',
+            amount: -200.00,
+            subType: 'E_TRANSFER',
+            status: 'settled',
+            resolvedMonarchCategory: 'Transfer',
+            notes: 'Payment for groceries',
+          },
+        ];
+
+        const result = convertWealthsimpleTransactionsToMonarchCSV(
+          transactions,
+          'Test Account',
+          { storeTransactionDetailsInNotes: true },
+        );
+
+        // Both transaction details and Interac memo should appear
+        expect(result).toContain('E_TRANSFER');
+        expect(result).toContain('ws-tx:funding_intent-def456');
+        expect(result).toContain('Payment for groceries');
+        expect(result).toContain('|'); // Separator between system notes and memo
+      });
+
+      test('should include Interac memo in notes for pending transactions', () => {
+        const transactions = [
+          {
+            id: 'funding_intent-pending123',
+            date: '2024-01-15',
+            merchant: 'e-Transfer to Someone',
+            originalMerchant: 'Interac e-Transfer to Someone',
+            amount: -100.00,
+            subType: 'E_TRANSFER',
+            isPending: true,
+            resolvedMonarchCategory: 'Transfer',
+            notes: 'Pending transfer memo',
+          },
+        ];
+
+        const result = convertWealthsimpleTransactionsToMonarchCSV(
+          transactions,
+          'Test Account',
+          { storeTransactionDetailsInNotes: false },
+        );
+
+        // Pending transactions always include transaction ID, plus memo
+        expect(result).toContain('E_TRANSFER');
+        expect(result).toContain('ws-tx:funding_intent-pending123');
+        expect(result).toContain('Pending transfer memo');
+        expect(result).toContain('Pending'); // Tag
+      });
+
+      test('should handle transactions with empty notes', () => {
+        const transactions = [
+          {
+            id: 'funding_intent-nomemo',
+            date: '2024-01-15',
+            merchant: 'e-Transfer from Unknown',
+            originalMerchant: 'Interac e-Transfer from Unknown',
+            amount: 50.00,
+            subType: 'E_TRANSFER',
+            status: 'settled',
+            resolvedMonarchCategory: 'Transfer',
+            notes: '', // Empty memo
+          },
+        ];
+
+        const result = convertWealthsimpleTransactionsToMonarchCSV(
+          transactions,
+          'Test Account',
+          { storeTransactionDetailsInNotes: false },
+        );
+
+        // Notes should be empty when no memo and details are disabled
+        const lines = result.split('\n');
+        expect(lines).toHaveLength(2);
+        // The Notes field should be empty (empty string between commas)
+        expect(lines[1]).toContain(',,'); // Empty notes field
+      });
+
+      test('should handle transactions without notes property', () => {
+        const transactions = [
+          {
+            id: 'funding_intent-nonotesprop',
+            date: '2024-01-15',
+            merchant: 'e-Transfer from Unknown',
+            originalMerchant: 'Interac e-Transfer from Unknown',
+            amount: 50.00,
+            subType: 'E_TRANSFER',
+            status: 'settled',
+            resolvedMonarchCategory: 'Transfer',
+            // No notes property at all
+          },
+        ];
+
+        const result = convertWealthsimpleTransactionsToMonarchCSV(
+          transactions,
+          'Test Account',
+          { storeTransactionDetailsInNotes: false },
+        );
+
+        // Should not crash and notes should be empty
+        const lines = result.split('\n');
+        expect(lines).toHaveLength(2);
+      });
+
+      test('should escape special characters in Interac memo', () => {
+        const transactions = [
+          {
+            id: 'funding_intent-special',
+            date: '2024-01-15',
+            merchant: 'e-Transfer from Test',
+            originalMerchant: 'Interac e-Transfer from Test',
+            amount: 100.00,
+            subType: 'E_TRANSFER',
+            status: 'settled',
+            resolvedMonarchCategory: 'Transfer',
+            notes: 'Memo with "quotes" and, commas',
+          },
+        ];
+
+        const result = convertWealthsimpleTransactionsToMonarchCSV(
+          transactions,
+          'Test Account',
+          { storeTransactionDetailsInNotes: false },
+        );
+
+        // CSV escaping should handle the special characters
+        expect(result).toContain('"Memo with ""quotes"" and, commas"');
+      });
+
+      test('should properly separate system notes and memo with pipe character', () => {
+        const transactions = [
+          {
+            id: 'funding_intent-separator',
+            date: '2024-01-15',
+            merchant: 'e-Transfer from Test',
+            originalMerchant: 'Interac e-Transfer from Test',
+            amount: 100.00,
+            subType: 'E_TRANSFER',
+            status: 'settled',
+            resolvedMonarchCategory: 'Transfer',
+            notes: 'Test memo',
+          },
+        ];
+
+        const result = convertWealthsimpleTransactionsToMonarchCSV(
+          transactions,
+          'Test Account',
+          { storeTransactionDetailsInNotes: true },
+        );
+
+        // The format should be "E_TRANSFER / ws-tx:funding_intent-separator | Test memo"
+        expect(result).toContain('E_TRANSFER / ws-tx:funding_intent-separator | Test memo');
+      });
+    });
   });
 
   describe('escapeCSVField (internal function)', () => {

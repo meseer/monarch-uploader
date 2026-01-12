@@ -1087,6 +1087,263 @@ fragment Money on Money {
  * @property {number} creditLimit - Credit limit amount
  * @property {Array} currentCards - Array of current cards
  */
+/**
+ * Fetch funding intent details for multiple transactions
+ * Used to get additional transaction metadata like Interac transfer memos
+ *
+ * @param {Array<string>} ids - Array of funding intent IDs (e.g., ["funding_intent-xxx", "funding_intent-yyy"])
+ * @returns {Promise<Map<string, Object>>} Map of funding intent ID to details
+ */
+export async function fetchFundingIntents(ids) {
+  try {
+    if (!ids || ids.length === 0) {
+      debugLog('No funding intent IDs provided');
+      return new Map();
+    }
+
+    // Filter to only include funding_intent- prefixed IDs
+    const validIds = ids.filter((id) => id && id.startsWith('funding_intent-'));
+
+    if (validIds.length === 0) {
+      debugLog('No valid funding_intent- IDs found');
+      return new Map();
+    }
+
+    debugLog(`Fetching funding intents for ${validIds.length} ID(s)...`);
+
+    const query = `query FetchFundingIntent($ids: [ID!], $identityId: ID, $state: [FundingIntentStateEnum!], $fundableType: [FundableTypeEnum!], $fundingMethodType: [FundingMethodTypeEnum!], $destination: [FundingPointInput!], $source: [FundingPointInput!], $first: Int, $cursor: String, $sortBy: FundingIntentSortByEnum, $sortOrder: SortOrder, $transactionType: [FundingIntentTransactionTypeEnum!], $createdInTheLast: ISO8601Duration) {
+  searchFundingIntents: search_funding_intents(
+    canonical_ids: $ids
+    identity_id: $identityId
+    state: $state
+    destination: $destination
+    source: $source
+    fundable_type: $fundableType
+    funding_method_type: $fundingMethodType
+    sort_by: $sortBy
+    sort_order: $sortOrder
+    first: $first
+    after: $cursor
+    transaction_type: $transactionType
+    created_in_the_last: $createdInTheLast
+  ) {
+    edges {
+      node {
+        ...FundingIntent
+        __typename
+      }
+      __typename
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+      __typename
+    }
+    __typename
+  }
+}
+
+fragment FundingIntent on FundingIntent {
+  id
+  state
+  idempotencyKey: idempotency_key
+  createdAt: created_at
+  updatedAt: updated_at
+  externalReferenceId: external_reference_id
+  fundableType: fundable_type
+  transactionType: transaction_type
+  fundableDetails: fundable_details {
+    ...FundingIntentFundableWithdrawal
+    ...FundingIntentFundableDeposit
+    __typename
+  }
+  source {
+    ...FundingPoint
+    __typename
+  }
+  destination {
+    ...FundingPoint
+    __typename
+  }
+  postDated: post_dated
+  transactionMetadata: transaction_metadata {
+    ...FundingIntentETransferP2PTransactionMetadata
+    ...FundingIntentBankDraftSendTransactionMetadata
+    ...FundingIntentWireSendTransactionMetadata
+    __typename
+  }
+  transferMetadata: transfer_metadata {
+    ...FundingIntentETransferTransactionMetadata
+    ...FundingIntentETransferReceiveMetadata
+    ...FundingIntentETransferRequestTransactionMetadata
+    ...WSBankAccountTransferMetadata
+    __typename
+  }
+  transferMetadataV2 {
+    ...BankDraftSendTransactionMetadata
+    ...ChequeDepositTransactionMetadata
+    ...WireSendTransactionMetadata
+    __typename
+  }
+  userReferenceId: user_reference_id
+  recurrence {
+    ...FundingIntentRecurrence
+    __typename
+  }
+  __typename
+}
+
+fragment BankDraftSendTransactionMetadata on BankDraftSendTransactionMetadata {
+  amountExcludingFee
+  fee
+  totalAmount
+  mailingAddress
+  __typename
+}
+
+fragment FundingIntentFundableDeposit on FundingIntentDeposit {
+  createdAt: created_at
+  amount
+  currency
+  completedAt: completed_at
+  provisionalCredit: provisional_credit {
+    quantity
+    __typename
+  }
+  __typename
+}
+
+fragment FundingIntentFundableWithdrawal on FundingIntentWithdrawal {
+  createdAt: created_at
+  amount
+  currency
+  completedAt: completed_at
+  __typename
+}
+
+fragment FundingPoint on FundingPoint {
+  id
+  type
+  __typename
+}
+
+fragment FundingIntentETransferP2PTransactionMetadata on FundingIntentETransferP2PTransactionMetadata {
+  message
+  __typename
+}
+
+fragment FundingIntentBankDraftSendTransactionMetadata on FundingIntentBankDraftSendTransactionMetadata {
+  amountExcludingFee: amount_excluding_fee
+  fee
+  totalAmount: total_amount
+  mailingAddress: mailing_address
+  __typename
+}
+
+fragment FundingIntentWireSendTransactionMetadata on FundingIntentWireSendTransactionMetadata {
+  amountExcludingFee: amount_excluding_fee
+  fee
+  totalAmount: total_amount
+  __typename
+}
+
+fragment FundingIntentETransferTransactionMetadata on FundingIntentETransferTransactionMetadata {
+  message
+  securityAnswer: security_answer
+  __typename
+}
+
+fragment FundingIntentETransferReceiveMetadata on FundingIntentETransferReceiveMetadata {
+  memo
+  paymentType: payment_type
+  recipient_email
+  __typename
+}
+
+fragment FundingIntentETransferRequestTransactionMetadata on FundingIntentETransferRequestTransactionMetadata {
+  message
+  __typename
+}
+
+fragment WSBankAccountTransferMetadata on WsBankAccountTransferMetadata {
+  originatorName: originator_name
+  transactionCode: transaction_code
+  __typename
+}
+
+fragment ChequeDepositTransactionMetadata on ChequeDepositTransactionMetadata {
+  chequeAmount
+  chequeDate
+  chequeFrontImageUrl
+  chequeBackImageUrl
+  __typename
+}
+
+fragment WireSendTransactionMetadata on WireSendTransactionMetadata {
+  amountExcludingFee
+  fee
+  totalAmount
+  __typename
+}
+
+fragment FundingIntentRecurrence on FundingIntentRecurrence {
+  id
+  schedule
+  __typename
+}`;
+
+    const variables = {
+      ids: validIds,
+      first: 100, // Should be enough for most batches
+    };
+
+    const response = await makeGraphQLQuery('FetchFundingIntent', query, variables);
+
+    if (!response || !response.searchFundingIntents) {
+      debugLog('No searchFundingIntents in response');
+      return new Map();
+    }
+
+    const { edges, pageInfo } = response.searchFundingIntents;
+
+    // Build map of ID to funding intent details
+    const fundingIntentMap = new Map();
+
+    if (edges && Array.isArray(edges)) {
+      edges.forEach((edge) => {
+        if (edge.node && edge.node.id) {
+          fundingIntentMap.set(edge.node.id, edge.node);
+        }
+      });
+    }
+
+    debugLog(`Fetched ${fundingIntentMap.size} funding intent(s)`);
+
+    // Handle pagination if needed (unlikely for typical batch sizes)
+    if (pageInfo?.hasNextPage) {
+      debugLog('Warning: More funding intents available but pagination not implemented');
+    }
+
+    return fundingIntentMap;
+  } catch (error) {
+    debugLog('Error fetching funding intents:', error);
+    // Return empty map on error - don't fail the entire sync
+    return new Map();
+  }
+}
+
+/**
+ * Fetch credit card account summary from Wealthsimple
+ * Returns credit limit, current balance, and card details
+ * @param {string} accountId - Credit card account ID (e.g., 'ca-credit-card-FYPcSZJeLA')
+ * @returns {Promise<Object>} Credit card account summary
+ * @property {string} id - Account ID
+ * @property {Object} balance - Balance information
+ * @property {number} balance.current - Current balance amount
+ * @property {string} creditRegistrationStatus - Credit registration status
+ * @property {number} creditLimit - Credit limit amount
+ * @property {Array} currentCards - Array of current cards
+ */
 export async function fetchCreditCardAccountSummary(accountId) {
   try {
     if (!accountId) {
@@ -1151,4 +1408,5 @@ export default {
   fetchTransactions,
   fetchBalanceHistory,
   fetchCreditCardAccountSummary,
+  fetchFundingIntents,
 };

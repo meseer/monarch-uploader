@@ -6,6 +6,7 @@ import {
   CASH_TRANSACTION_RULES,
   applyTransactionRule,
   hasRuleForTransaction,
+  extractInteracMemo,
 } from '../../../src/services/wealthsimple/transactionRules';
 
 describe('Wealthsimple Transaction Rules Engine', () => {
@@ -256,6 +257,231 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       const ids = CASH_TRANSACTION_RULES.map((r) => r.id);
       const uniqueIds = [...new Set(ids)];
       expect(ids.length).toBe(uniqueIds.length);
+    });
+  });
+
+  describe('extractInteracMemo', () => {
+    it('should return empty string for null funding intent', () => {
+      expect(extractInteracMemo(null)).toBe('');
+    });
+
+    it('should return empty string for undefined funding intent', () => {
+      expect(extractInteracMemo(undefined)).toBe('');
+    });
+
+    it('should return empty string when no transferMetadata', () => {
+      const fundingIntent = {
+        id: 'funding_intent-123',
+        state: 'completed',
+        transferMetadata: null,
+      };
+      expect(extractInteracMemo(fundingIntent)).toBe('');
+    });
+
+    it('should extract memo from incoming e-transfer (e_transfer_receive)', () => {
+      const fundingIntent = {
+        id: 'funding_intent-abc123',
+        state: 'completed',
+        transactionType: 'e_transfer_receive',
+        transferMetadata: {
+          memo: 'Payment for groceries',
+          paymentType: 'ACCOUNT_ALIAS_PAYMENT',
+          recipient_email: 'test@example.com',
+          __typename: 'FundingIntentETransferReceiveMetadata',
+        },
+      };
+      expect(extractInteracMemo(fundingIntent)).toBe('Payment for groceries');
+    });
+
+    it('should extract message from outgoing e-transfer (e_transfer_send)', () => {
+      const fundingIntent = {
+        id: 'funding_intent-def456',
+        state: 'completed',
+        transactionType: 'e_transfer_send',
+        transferMetadata: {
+          message: 'Rent payment',
+          securityAnswer: null,
+          __typename: 'FundingIntentETransferTransactionMetadata',
+        },
+      };
+      expect(extractInteracMemo(fundingIntent)).toBe('Rent payment');
+    });
+
+    it('should return empty string when transferMetadata has no memo or message', () => {
+      const fundingIntent = {
+        id: 'funding_intent-xyz',
+        state: 'completed',
+        transferMetadata: {
+          paymentType: 'SOME_TYPE',
+        },
+      };
+      expect(extractInteracMemo(fundingIntent)).toBe('');
+    });
+
+    it('should prefer memo over message if both exist', () => {
+      const fundingIntent = {
+        id: 'funding_intent-both',
+        state: 'completed',
+        transferMetadata: {
+          memo: 'First memo',
+          message: 'Second message',
+        },
+      };
+      // memo takes precedence
+      expect(extractInteracMemo(fundingIntent)).toBe('First memo');
+    });
+  });
+
+  describe('E_TRANSFER rule with funding intent memo', () => {
+    it('should include memo in notes when fundingIntentMap is provided', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-abc123',
+        type: 'DEPOSIT',
+        subType: 'E_TRANSFER',
+        eTransferName: 'John Doe',
+        eTransferEmail: 'john@example.com',
+      };
+
+      const fundingIntentMap = new Map();
+      fundingIntentMap.set('funding_intent-abc123', {
+        id: 'funding_intent-abc123',
+        state: 'completed',
+        transactionType: 'e_transfer_receive',
+        transferMetadata: {
+          memo: 'Oven for Unit 202 Trinity',
+          paymentType: 'ACCOUNT_ALIAS_PAYMENT',
+        },
+      });
+
+      const result = applyTransactionRule(transaction, fundingIntentMap);
+
+      expect(result).not.toBeNull();
+      expect(result.notes).toBe('Oven for Unit 202 Trinity');
+    });
+
+    it('should include message in notes for outgoing e-transfers', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-def456',
+        type: 'WITHDRAWAL',
+        subType: 'E_TRANSFER',
+        eTransferName: 'Jane Smith',
+        eTransferEmail: 'jane@example.com',
+      };
+
+      const fundingIntentMap = new Map();
+      fundingIntentMap.set('funding_intent-def456', {
+        id: 'funding_intent-def456',
+        state: 'completed',
+        transactionType: 'e_transfer_send',
+        transferMetadata: {
+          message: 'Rent payment for January',
+          securityAnswer: null,
+        },
+      });
+
+      const result = applyTransactionRule(transaction, fundingIntentMap);
+
+      expect(result).not.toBeNull();
+      expect(result.notes).toBe('Rent payment for January');
+    });
+
+    it('should return empty notes when fundingIntentMap is null', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-abc123',
+        type: 'DEPOSIT',
+        subType: 'E_TRANSFER',
+        eTransferName: 'John Doe',
+        eTransferEmail: 'john@example.com',
+      };
+
+      const result = applyTransactionRule(transaction, null);
+
+      expect(result).not.toBeNull();
+      expect(result.notes).toBe('');
+    });
+
+    it('should return empty notes when transaction ID not in fundingIntentMap', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-notfound',
+        type: 'DEPOSIT',
+        subType: 'E_TRANSFER',
+        eTransferName: 'John Doe',
+        eTransferEmail: 'john@example.com',
+      };
+
+      const fundingIntentMap = new Map();
+      fundingIntentMap.set('funding_intent-different', {
+        id: 'funding_intent-different',
+        transferMetadata: { memo: 'Some memo' },
+      });
+
+      const result = applyTransactionRule(transaction, fundingIntentMap);
+
+      expect(result).not.toBeNull();
+      expect(result.notes).toBe('');
+    });
+
+    it('should return empty notes when funding intent has no memo/message', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-nomemo',
+        type: 'DEPOSIT',
+        subType: 'E_TRANSFER',
+        eTransferName: 'John Doe',
+        eTransferEmail: 'john@example.com',
+      };
+
+      const fundingIntentMap = new Map();
+      fundingIntentMap.set('funding_intent-nomemo', {
+        id: 'funding_intent-nomemo',
+        state: 'completed',
+        transferMetadata: {
+          paymentType: 'ACCOUNT_ALIAS_PAYMENT',
+          // No memo or message
+        },
+      });
+
+      const result = applyTransactionRule(transaction, fundingIntentMap);
+
+      expect(result).not.toBeNull();
+      expect(result.notes).toBe('');
+    });
+
+    it('should return empty notes when externalCanonicalId is missing', () => {
+      const transaction = {
+        externalCanonicalId: null,
+        type: 'DEPOSIT',
+        subType: 'E_TRANSFER',
+        eTransferName: 'John Doe',
+        eTransferEmail: 'john@example.com',
+      };
+
+      const fundingIntentMap = new Map();
+      fundingIntentMap.set('funding_intent-abc123', {
+        id: 'funding_intent-abc123',
+        transferMetadata: { memo: 'Some memo' },
+      });
+
+      const result = applyTransactionRule(transaction, fundingIntentMap);
+
+      expect(result).not.toBeNull();
+      expect(result.notes).toBe('');
+    });
+
+    it('should handle empty fundingIntentMap', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-abc123',
+        type: 'DEPOSIT',
+        subType: 'E_TRANSFER',
+        eTransferName: 'John Doe',
+        eTransferEmail: 'john@example.com',
+      };
+
+      const fundingIntentMap = new Map();
+
+      const result = applyTransactionRule(transaction, fundingIntentMap);
+
+      expect(result).not.toBeNull();
+      expect(result.notes).toBe('');
     });
   });
 });

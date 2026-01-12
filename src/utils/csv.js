@@ -189,16 +189,27 @@ export function convertWealthsimpleTransactionsToMonarchCSV(transactions, accoun
 
     // Build notes field based on settings
     // For pending transactions, always include transaction ID for de-duplication/reconciliation
+    // Also include any notes from the transaction (e.g., Interac memo from funding intents)
     let notes;
+    const transactionMemo = transaction.notes || '';
+
     if (isPending) {
       // Always include transaction ID for pending transactions (for de-duplication)
       notes = `${transaction.subType || ''} / ${formattedTxId}`.trim();
+      // Append Interac memo if present
+      if (transactionMemo) {
+        notes = notes ? `${notes} | ${transactionMemo}` : transactionMemo;
+      }
     } else if (storeTransactionDetailsInNotes) {
       // Include subType and transaction ID in notes for traceability (when setting enabled)
       notes = `${transaction.subType || ''} / ${formattedTxId}`.trim();
+      // Append Interac memo if present
+      if (transactionMemo) {
+        notes = notes ? `${notes} | ${transactionMemo}` : transactionMemo;
+      }
     } else {
-      // Leave notes empty when disabled
-      notes = '';
+      // Only include Interac memo when storeTransactionDetailsInNotes is disabled
+      notes = transactionMemo;
     }
 
     return {

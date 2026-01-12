@@ -325,11 +325,12 @@ function filterCashSyncableTransactions(transactions, includePending = true) {
 /**
  * Process a CASH account transaction using the rules engine
  * @param {Object} transaction - Raw transaction from Wealthsimple API
+ * @param {Map<string, Object>} fundingIntentMap - Optional map of funding intent ID to details
  * @returns {Object|null} Processed transaction object, or null if no rule matches
  */
-function processCashTransaction(transaction) {
+function processCashTransaction(transaction, fundingIntentMap = null) {
   // Apply the matching rule from the rules engine
-  const ruleResult = applyTransactionRule(transaction);
+  const ruleResult = applyTransactionRule(transaction, fundingIntentMap);
 
   if (!ruleResult) {
     // No rule matched - skip this transaction
@@ -367,8 +368,28 @@ function processCashTransaction(transaction) {
 }
 
 /**
+ * Collect funding intent IDs from transactions that need enrichment
+ * Returns only externalCanonicalIds that start with "funding_intent-"
+ *
+ * @param {Array} transactions - Raw transactions from Wealthsimple API
+ * @returns {Array<string>} Array of funding intent IDs
+ */
+function collectFundingIntentIds(transactions) {
+  const fundingIntentIds = [];
+
+  for (const tx of transactions) {
+    if (tx.externalCanonicalId && tx.externalCanonicalId.startsWith('funding_intent-')) {
+      fundingIntentIds.push(tx.externalCanonicalId);
+    }
+  }
+
+  return fundingIntentIds;
+}
+
+/**
  * Fetch and process transactions for a CASH account
  * Uses the transaction rules engine to categorize and format transactions
+ * Fetches funding intent data to enrich e-transfer transactions with memos
  *
  * @param {Object} consolidatedAccount - Consolidated account object
  * @param {string} fromDate - Start date (YYYY-MM-DD)
@@ -400,12 +421,22 @@ export async function fetchAndProcessCashTransactions(consolidatedAccount, fromD
       return [];
     }
 
+    // Collect funding intent IDs for batch fetch (e-transfers)
+    const fundingIntentIds = collectFundingIntentIds(syncableTransactions);
+    let fundingIntentMap = new Map();
+
+    if (fundingIntentIds.length > 0) {
+      debugLog(`Fetching ${fundingIntentIds.length} funding intent(s) for e-transfer memos...`);
+      fundingIntentMap = await wealthsimpleApi.fetchFundingIntents(fundingIntentIds);
+      debugLog(`Fetched ${fundingIntentMap.size} funding intent(s)`);
+    }
+
     // Process each transaction through the rules engine
     const processedTransactions = [];
     let skippedCount = 0;
 
     for (const transaction of syncableTransactions) {
-      const processed = processCashTransaction(transaction);
+      const processed = processCashTransaction(transaction, fundingIntentMap);
       if (processed) {
         processedTransactions.push(processed);
       } else {

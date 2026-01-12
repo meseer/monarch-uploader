@@ -29,24 +29,52 @@ function getETransferDisplayName(transaction) {
 }
 
 /**
+ * Extract Interac memo from funding intent data
+ * For incoming transfers (e_transfer_receive): memo is in transferMetadata.memo
+ * For outgoing transfers (e_transfer_send): memo is in transferMetadata.message
+ *
+ * @param {Object|null} fundingIntent - Funding intent data from FetchFundingIntent API
+ * @returns {string} Memo text or empty string if not found
+ */
+export function extractInteracMemo(fundingIntent) {
+  if (!fundingIntent || !fundingIntent.transferMetadata) {
+    return '';
+  }
+
+  const metadata = fundingIntent.transferMetadata;
+
+  // Incoming e-transfers use 'memo' field
+  if (metadata.memo) {
+    return metadata.memo;
+  }
+
+  // Outgoing e-transfers use 'message' field
+  if (metadata.message) {
+    return metadata.message;
+  }
+
+  return '';
+}
+
+/**
  * Transaction rules for CASH accounts
  * Each rule has:
  * - id: Unique identifier for the rule
  * - match: Function (transaction) => boolean - returns true if rule applies
- * - process: Function (transaction) => Object - returns processed fields
+ * - process: Function (transaction, fundingIntentMap) => Object - returns processed fields
  *
  * Processed fields include:
  * - category: Monarch category name
  * - merchant: Merchant name for display
  * - originalStatement: Original statement text
- * - notes: Optional notes (default empty)
+ * - notes: Optional notes (default empty, may include Interac memo)
  */
 export const CASH_TRANSACTION_RULES = [
   {
     id: 'e-transfer',
     description: 'Interac e-Transfer transactions (incoming and outgoing)',
     match: (tx) => tx.subType === 'E_TRANSFER',
-    process: (tx) => {
+    process: (tx, fundingIntentMap) => {
       const displayName = getETransferDisplayName(tx);
       const email = tx.eTransferEmail || '';
 
@@ -67,11 +95,23 @@ export const CASH_TRANSACTION_RULES = [
           : `Interac e-Transfer from ${displayName}`;
       }
 
+      // Extract Interac memo from funding intent data if available
+      let notes = '';
+      if (fundingIntentMap && tx.externalCanonicalId) {
+        const fundingIntent = fundingIntentMap.get(tx.externalCanonicalId);
+        if (fundingIntent) {
+          notes = extractInteracMemo(fundingIntent);
+          if (notes) {
+            debugLog(`Found Interac memo for ${tx.externalCanonicalId}: "${notes}"`);
+          }
+        }
+      }
+
       return {
         category: 'Transfer',
         merchant,
         originalStatement,
-        notes: '', // Can be customized by user settings
+        notes,
       };
     },
   },
@@ -87,13 +127,14 @@ export const CASH_TRANSACTION_RULES = [
 /**
  * Find and apply the matching rule for a transaction
  * @param {Object} transaction - Raw transaction from Wealthsimple API
+ * @param {Map<string, Object>} fundingIntentMap - Optional map of funding intent ID to details
  * @returns {Object|null} Processed rule result or null if no rule matches
  */
-export function applyTransactionRule(transaction) {
+export function applyTransactionRule(transaction, fundingIntentMap = null) {
   for (const rule of CASH_TRANSACTION_RULES) {
     if (rule.match(transaction)) {
       debugLog(`Transaction ${transaction.externalCanonicalId} matched rule: ${rule.id}`);
-      const result = rule.process(transaction);
+      const result = rule.process(transaction, fundingIntentMap);
       return {
         ...result,
         ruleId: rule.id,
