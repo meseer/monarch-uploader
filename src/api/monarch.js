@@ -2286,6 +2286,86 @@ fragment PayloadErrorFields on PayloadError {
 }
 
 /**
+ * @typedef {Object} SetTransactionTagsResult
+ * @property {string} id - Transaction ID
+ * @property {Array<{id: string}>} tags - Array of tag objects with their IDs
+ */
+
+/**
+ * Set tags on a transaction (replaces all existing tags)
+ * Use this to add, update, or remove tags from a transaction.
+ * To remove all tags, pass an empty array.
+ * @param {string} transactionId - Transaction ID to update
+ * @param {string[]} tagIds - Array of tag IDs (empty array to remove all tags)
+ * @returns {Promise<SetTransactionTagsResult>} Updated transaction object with tags
+ * @throws {Error} If transactionId is missing or API call fails
+ * @example
+ * // Remove all tags from a transaction
+ * const result = await setTransactionTags('232589874618203361', []);
+ * console.log(result.tags); // []
+ *
+ * @example
+ * // Set specific tags on a transaction
+ * const result = await setTransactionTags('232589874618203361', ['tag-id-1', 'tag-id-2']);
+ * console.log(result.tags); // [{ id: 'tag-id-1' }, { id: 'tag-id-2' }]
+ */
+export async function setTransactionTags(transactionId, tagIds = []) {
+  if (!transactionId) {
+    throw new Error('Transaction ID is required');
+  }
+
+  if (!Array.isArray(tagIds)) {
+    throw new Error('tagIds must be an array');
+  }
+
+  debugLog('Setting transaction tags:', { transactionId, tagIds });
+
+  const query = `mutation Web_SetTransactionTags($input: SetTransactionTagsInput!) {
+  setTransactionTags(input: $input) {
+    errors {
+      ...PayloadErrorFields
+      __typename
+    }
+    transaction {
+      id
+      tags {
+        id
+        __typename
+      }
+      __typename
+    }
+    __typename
+  }
+}
+
+fragment PayloadErrorFields on PayloadError {
+  fieldErrors {
+    field
+    messages
+    __typename
+  }
+  message
+  code
+  __typename
+}`;
+
+  const result = await callMonarchGraphQL('Web_SetTransactionTags', query, {
+    input: {
+      transactionId,
+      tagIds,
+    },
+  });
+
+  if (result.setTransactionTags.errors) {
+    const errorMsg = result.setTransactionTags.errors.message || 'Failed to set transaction tags';
+    throw new Error(errorMsg);
+  }
+
+  debugLog(`Successfully set tags for transaction: ${transactionId}`);
+  return result.setTransactionTags.transaction;
+}
+
+/**
  * Get the credit limit for a credit card account
  * @param {string} accountId - Monarch account ID
  * @returns {Promise<number|null>} Credit limit value, or null if not set
@@ -2406,6 +2486,7 @@ export default {
   getFilteredAccounts,
   updateAccount,
   updateTransaction,
+  setTransactionTags,
   getCreditLimit,
   setCreditLimit,
 };

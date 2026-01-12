@@ -27,6 +27,7 @@ import {
   getFilteredAccounts,
   updateAccount,
   updateTransaction,
+  setTransactionTags,
   getCreditLimit,
   setCreditLimit,
 } from '../../src/api/monarch';
@@ -2833,6 +2834,263 @@ describe('Monarch API', () => {
       expect(result.notes).toBe('Updated note');
       expect(result.account.displayName).toBe('Wealthsimple Credit Card (6903)');
       expect(result.merchant.name).toBe('Impark');
+    });
+  });
+
+  describe('setTransactionTags', () => {
+    const mockResponse = {
+      id: '232589874618203361',
+      tags: [],
+      __typename: 'Transaction',
+    };
+
+    test('removes all tags successfully (empty array)', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.operationName).toBe('Web_SetTransactionTags');
+        expect(data.variables.input.transactionId).toBe('232589874618203361');
+        expect(data.variables.input.tagIds).toEqual([]);
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              setTransactionTags: {
+                transaction: mockResponse,
+                errors: null,
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      const result = await setTransactionTags('232589874618203361', []);
+
+      expect(result.id).toBe('232589874618203361');
+      expect(result.tags).toEqual([]);
+      expect(debugLog).toHaveBeenCalledWith('Setting transaction tags:', {
+        transactionId: '232589874618203361',
+        tagIds: [],
+      });
+      expect(debugLog).toHaveBeenCalledWith('Successfully set tags for transaction: 232589874618203361');
+    });
+
+    test('sets multiple tags successfully', async () => {
+      const responseWithTags = {
+        id: '232589874618203361',
+        tags: [
+          { id: 'tag-id-1', __typename: 'TransactionTag' },
+          { id: 'tag-id-2', __typename: 'TransactionTag' },
+        ],
+        __typename: 'Transaction',
+      };
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.variables.input.tagIds).toEqual(['tag-id-1', 'tag-id-2']);
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              setTransactionTags: {
+                transaction: responseWithTags,
+                errors: null,
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      const result = await setTransactionTags('232589874618203361', ['tag-id-1', 'tag-id-2']);
+
+      expect(result.id).toBe('232589874618203361');
+      expect(result.tags).toHaveLength(2);
+      expect(result.tags[0].id).toBe('tag-id-1');
+      expect(result.tags[1].id).toBe('tag-id-2');
+    });
+
+    test('sets single tag successfully', async () => {
+      const responseWithOneTag = {
+        id: '232589874618203361',
+        tags: [{ id: 'pending-tag-id', __typename: 'TransactionTag' }],
+        __typename: 'Transaction',
+      };
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.variables.input.tagIds).toEqual(['pending-tag-id']);
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              setTransactionTags: {
+                transaction: responseWithOneTag,
+                errors: null,
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      const result = await setTransactionTags('232589874618203361', ['pending-tag-id']);
+
+      expect(result.tags).toHaveLength(1);
+      expect(result.tags[0].id).toBe('pending-tag-id');
+    });
+
+    test('uses empty array as default when tagIds not provided', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.variables.input.tagIds).toEqual([]);
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              setTransactionTags: {
+                transaction: mockResponse,
+                errors: null,
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      const result = await setTransactionTags('232589874618203361');
+
+      expect(result.tags).toEqual([]);
+    });
+
+    test('throws error when transaction ID is missing', async () => {
+      await expect(setTransactionTags(null, []))
+        .rejects
+        .toThrow('Transaction ID is required');
+    });
+
+    test('throws error when transaction ID is empty string', async () => {
+      await expect(setTransactionTags('', []))
+        .rejects
+        .toThrow('Transaction ID is required');
+    });
+
+    test('throws error when transaction ID is undefined', async () => {
+      await expect(setTransactionTags(undefined, []))
+        .rejects
+        .toThrow('Transaction ID is required');
+    });
+
+    test('throws error when tagIds is not an array', async () => {
+      await expect(setTransactionTags('232589874618203361', 'not-an-array'))
+        .rejects
+        .toThrow('tagIds must be an array');
+
+      await expect(setTransactionTags('232589874618203361', { id: 'tag' }))
+        .rejects
+        .toThrow('tagIds must be an array');
+
+      await expect(setTransactionTags('232589874618203361', 123))
+        .rejects
+        .toThrow('tagIds must be an array');
+    });
+
+    test('throws error when API returns errors', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              setTransactionTags: {
+                transaction: null,
+                errors: {
+                  message: 'Invalid transaction ID',
+                  code: 'INVALID_TRANSACTION',
+                },
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      await expect(setTransactionTags('invalid-id', []))
+        .rejects
+        .toThrow('Invalid transaction ID');
+    });
+
+    test('throws default error message when API errors have no message', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              setTransactionTags: {
+                transaction: null,
+                errors: {
+                  code: 'UNKNOWN_ERROR',
+                },
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      await expect(setTransactionTags('232589874618203361', []))
+        .rejects
+        .toThrow('Failed to set transaction tags');
+    });
+
+    test('handles authentication errors', async () => {
+      authService.checkMonarchAuth.mockReturnValue({
+        authenticated: false,
+        token: null,
+      });
+
+      await expect(setTransactionTags('232589874618203361', []))
+        .rejects
+        .toThrow('Monarch token not found.');
+    });
+
+    test('handles 401 authentication error', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 401,
+        }), 0);
+      });
+
+      await expect(setTransactionTags('232589874618203361', []))
+        .rejects
+        .toThrow('Monarch Auth Error (401): Token was invalid or expired.');
+
+      expect(authService.saveMonarchToken).toHaveBeenCalledWith(null);
+      expect(stateManager.setMonarchAuth).toHaveBeenCalledWith(null);
+    });
+
+    test('handles network errors', async () => {
+      const mockError = new Error('Network error');
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onerror(mockError), 0);
+      });
+
+      await expect(setTransactionTags('232589874618203361', []))
+        .rejects
+        .toThrow('Network error');
+    });
+
+    test('handles GraphQL errors', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            errors: [{ message: 'GraphQL error' }],
+          }),
+        }), 0);
+      });
+
+      await expect(setTransactionTags('232589874618203361', []))
+        .rejects
+        .toThrow();
     });
   });
 
