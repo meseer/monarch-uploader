@@ -28,6 +28,7 @@ import {
   updateAccount,
   updateTransaction,
   setTransactionTags,
+  deleteTransaction,
   getCreditLimit,
   setCreditLimit,
 } from '../../src/api/monarch';
@@ -3089,6 +3090,150 @@ describe('Monarch API', () => {
       });
 
       await expect(setTransactionTags('232589874618203361', []))
+        .rejects
+        .toThrow();
+    });
+  });
+
+  describe('deleteTransaction', () => {
+    test('deletes transaction successfully', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.operationName).toBe('Common_DeleteTransactionMutation');
+        expect(data.variables.input.transactionId).toBe('232663379465502547');
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              deleteTransaction: {
+                deleted: true,
+                errors: null,
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      const result = await deleteTransaction('232663379465502547');
+
+      expect(result).toBe(true);
+      expect(debugLog).toHaveBeenCalledWith('Deleting transaction: 232663379465502547');
+      expect(debugLog).toHaveBeenCalledWith('Successfully deleted transaction: 232663379465502547');
+    });
+
+    test('throws error when transaction ID is missing', async () => {
+      await expect(deleteTransaction(null))
+        .rejects
+        .toThrow('Transaction ID is required');
+    });
+
+    test('throws error when transaction ID is empty string', async () => {
+      await expect(deleteTransaction(''))
+        .rejects
+        .toThrow('Transaction ID is required');
+    });
+
+    test('throws error when transaction ID is undefined', async () => {
+      await expect(deleteTransaction(undefined))
+        .rejects
+        .toThrow('Transaction ID is required');
+    });
+
+    test('throws error when API returns errors', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              deleteTransaction: {
+                deleted: false,
+                errors: {
+                  message: 'Transaction not found',
+                  code: 'NOT_FOUND',
+                },
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      await expect(deleteTransaction('nonexistent'))
+        .rejects
+        .toThrow('Transaction not found');
+    });
+
+    test('throws default error message when API errors have no message', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              deleteTransaction: {
+                deleted: false,
+                errors: {
+                  code: 'UNKNOWN_ERROR',
+                },
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      await expect(deleteTransaction('232663379465502547'))
+        .rejects
+        .toThrow('Failed to delete transaction');
+    });
+
+    test('handles authentication errors', async () => {
+      authService.checkMonarchAuth.mockReturnValue({
+        authenticated: false,
+        token: null,
+      });
+
+      await expect(deleteTransaction('232663379465502547'))
+        .rejects
+        .toThrow('Monarch token not found.');
+    });
+
+    test('handles 401 authentication error', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 401,
+        }), 0);
+      });
+
+      await expect(deleteTransaction('232663379465502547'))
+        .rejects
+        .toThrow('Monarch Auth Error (401): Token was invalid or expired.');
+
+      expect(authService.saveMonarchToken).toHaveBeenCalledWith(null);
+      expect(stateManager.setMonarchAuth).toHaveBeenCalledWith(null);
+    });
+
+    test('handles network errors', async () => {
+      const mockError = new Error('Network error');
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onerror(mockError), 0);
+      });
+
+      await expect(deleteTransaction('232663379465502547'))
+        .rejects
+        .toThrow('Network error');
+    });
+
+    test('handles GraphQL errors', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            errors: [{ message: 'GraphQL error' }],
+          }),
+        }), 0);
+      });
+
+      await expect(deleteTransaction('232663379465502547'))
         .rejects
         .toThrow();
     });

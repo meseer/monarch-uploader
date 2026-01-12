@@ -2366,6 +2366,58 @@ fragment PayloadErrorFields on PayloadError {
 }
 
 /**
+ * Delete a transaction
+ * @param {string} transactionId - Transaction ID to delete
+ * @returns {Promise<boolean>} True if deleted successfully
+ * @throws {Error} If transactionId is missing or deletion fails
+ * @example
+ * // Delete a transaction
+ * const deleted = await deleteTransaction('232663379465502547');
+ * console.log(deleted); // true
+ */
+export async function deleteTransaction(transactionId) {
+  if (!transactionId) {
+    throw new Error('Transaction ID is required');
+  }
+
+  debugLog(`Deleting transaction: ${transactionId}`);
+
+  const result = await callMonarchGraphQL(
+    'Common_DeleteTransactionMutation',
+    `mutation Common_DeleteTransactionMutation($input: DeleteTransactionMutationInput!) {
+      deleteTransaction(input: $input) {
+        deleted
+        errors {
+          ...PayloadErrorFields
+          __typename
+        }
+        __typename
+      }
+    }
+    
+    fragment PayloadErrorFields on PayloadError {
+      fieldErrors {
+        field
+        messages
+        __typename
+      }
+      message
+      code
+      __typename
+    }`,
+    { input: { transactionId } },
+  );
+
+  if (result.deleteTransaction.errors) {
+    const errorMsg = result.deleteTransaction.errors.message || 'Failed to delete transaction';
+    throw new Error(errorMsg);
+  }
+
+  debugLog(`Successfully deleted transaction: ${transactionId}`);
+  return result.deleteTransaction.deleted;
+}
+
+/**
  * Get the credit limit for a credit card account
  * @param {string} accountId - Monarch account ID
  * @returns {Promise<number|null>} Credit limit value, or null if not set
@@ -2487,6 +2539,7 @@ export default {
   updateAccount,
   updateTransaction,
   setTransactionTags,
+  deleteTransaction,
   getCreditLimit,
   setCreditLimit,
 };
