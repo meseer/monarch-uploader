@@ -2234,11 +2234,10 @@ fragment TransactionDrawerFields on Transaction {
     logoUrl
     hasActiveRecurringStreams
     recurringTransactionStream {
+      id
       frequency
-      isActive
       __typename
     }
-    transactionsCount
     __typename
   }
   tags {
@@ -2257,9 +2256,7 @@ fragment TransactionDrawerFields on Transaction {
     __typename
   }
   ownershipOverriddenAt
-  hiddenByAccount
-  reviewStatus
-  dataProviderDescription
+  ...TransactionOverviewFields
   __typename
 }
 

@@ -575,7 +575,7 @@ export async function reconcilePendingTransactions(monarchAccountId, wealthsimpl
         }
 
         if (status === 'settled') {
-          // Transaction has settled - update amount, clean notes, remove Pending tag
+          // Transaction has settled - update amount (if changed), clean notes, remove Pending tag
           debugLog(`Transaction ${wsTransactionId} has settled, updating Monarch transaction`);
 
           // Calculate the settled amount (negative for expenses)
@@ -585,20 +585,32 @@ export async function reconcilePendingTransactions(monarchAccountId, wealthsimpl
           // Clean the notes - remove system info but keep user notes
           const cleanedNotes = cleanSystemNotesFromNotes(notes);
 
+          // Check if amount has changed
+          const amountChanged = monarchTx.amount !== settledAmount;
+
           debugLog(`Updating transaction ${monarchTxId}:`, {
             oldAmount: monarchTx.amount,
             newAmount: settledAmount,
+            amountChanged,
             oldNotes: notes,
             newNotes: cleanedNotes,
           });
 
-          // Update transaction amount and notes
+          // Update notes (clean system notes) - separate call to avoid 400 error
           // Include ownerUserId from the original transaction as Monarch requires it
           await monarchApi.updateTransaction(monarchTxId, {
-            amount: settledAmount,
             notes: cleanedNotes,
             ownerUserId: monarchTx.ownedByUser?.id || null,
           });
+
+          // Update amount only if it changed
+          if (amountChanged) {
+            debugLog(`Updating amount for transaction ${monarchTxId}: ${monarchTx.amount} -> ${settledAmount}`);
+            await monarchApi.updateTransaction(monarchTxId, {
+              amount: settledAmount,
+              ownerUserId: monarchTx.ownedByUser?.id || null,
+            });
+          }
 
           // Remove Pending tag
           debugLog(`Removing Pending tag from transaction ${monarchTxId}`);

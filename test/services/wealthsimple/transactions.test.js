@@ -635,12 +635,19 @@ describe('Wealthsimple Transaction Service', () => {
       expect(result.cancelled).toBe(0);
       expect(result.failed).toBe(0);
 
-      // Should update transaction with settled amount, cleaned notes, and ownerUserId
-      expect(monarchApi.updateTransaction).toHaveBeenCalledWith('monarch-tx-1', {
-        amount: -52.00,
+      // Should update notes first (separate call to avoid 400 error)
+      expect(monarchApi.updateTransaction).toHaveBeenNthCalledWith(1, 'monarch-tx-1', {
         notes: '',
         ownerUserId: 'user-123',
       });
+
+      // Should update amount separately since it changed (-50 -> -52)
+      expect(monarchApi.updateTransaction).toHaveBeenNthCalledWith(2, 'monarch-tx-1', {
+        amount: -52.00,
+        ownerUserId: 'user-123',
+      });
+
+      expect(monarchApi.updateTransaction).toHaveBeenCalledTimes(2);
 
       // Should remove Pending tag
       expect(monarchApi.setTransactionTags).toHaveBeenCalledWith('monarch-tx-1', []);
@@ -681,11 +688,59 @@ describe('Wealthsimple Transaction Service', () => {
 
       // Should preserve user notes (system notes and separators are cleaned)
       // ownerUserId should be null when ownedByUser is null
-      expect(monarchApi.updateTransaction).toHaveBeenCalledWith('monarch-tx-1', {
-        amount: -50.00,
+      // Notes update first
+      expect(monarchApi.updateTransaction).toHaveBeenNthCalledWith(1, 'monarch-tx-1', {
         notes: 'My custom note',
         ownerUserId: null,
       });
+
+      // Amount hasn't changed (-50 -> -50), so no second update call
+      expect(monarchApi.updateTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not update amount when it has not changed', async () => {
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [
+          {
+            id: 'monarch-tx-1',
+            amount: -50.00,
+            date: '2025-01-10',
+            notes: 'PURCHASE / credit-transaction-unchanged-amount',
+            ownedByUser: { id: 'user-123' },
+          },
+        ],
+      });
+      monarchApi.updateTransaction.mockResolvedValue({});
+      monarchApi.setTransactionTags.mockResolvedValue({});
+
+      const wealthsimpleTransactions = [
+        {
+          externalCanonicalId: 'credit-transaction-unchanged-amount',
+          status: 'settled',
+          amount: 50.00, // Same as Monarch amount (will be -50.00 after sign)
+          amountSign: 'negative',
+        },
+      ];
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        wealthsimpleTransactions,
+        30,
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.settled).toBe(1);
+
+      // Should only update notes (one call), not amount since it hasn't changed
+      expect(monarchApi.updateTransaction).toHaveBeenCalledTimes(1);
+      expect(monarchApi.updateTransaction).toHaveBeenCalledWith('monarch-tx-1', {
+        notes: '',
+        ownerUserId: 'user-123',
+      });
+
+      // Should still remove Pending tag
+      expect(monarchApi.setTransactionTags).toHaveBeenCalledWith('monarch-tx-1', []);
     });
 
     it('should delete transaction when not found in Wealthsimple (cancelled)', async () => {
@@ -853,8 +908,10 @@ describe('Wealthsimple Transaction Service', () => {
       );
 
       expect(result.settled).toBe(1);
+
+      // Should only update notes (amount unchanged: -50 -> -50)
+      expect(monarchApi.updateTransaction).toHaveBeenCalledTimes(1);
       expect(monarchApi.updateTransaction).toHaveBeenCalledWith('monarch-tx-1', {
-        amount: -50.00,
         notes: '',
         ownerUserId: 'user-456',
       });
