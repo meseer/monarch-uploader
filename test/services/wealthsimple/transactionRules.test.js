@@ -233,6 +233,18 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       expect(hasRuleForTransaction('WITHDRAWAL', 'E_TRANSFER')).toBe(true);
     });
 
+    it('should return true for SPEND/PREPAID type/subType', () => {
+      expect(hasRuleForTransaction('SPEND', 'PREPAID')).toBe(true);
+    });
+
+    it('should return false for SPEND with wrong subType', () => {
+      expect(hasRuleForTransaction('SPEND', 'CARD')).toBe(false);
+    });
+
+    it('should return false for PREPAID with wrong type', () => {
+      expect(hasRuleForTransaction('DEPOSIT', 'PREPAID')).toBe(false);
+    });
+
     it('should return false for unsupported subTypes', () => {
       expect(hasRuleForTransaction('DEPOSIT', 'INTERNAL_TRANSFER')).toBe(false);
       expect(hasRuleForTransaction('INTEREST', 'MARGIN_INTEREST')).toBe(false);
@@ -240,6 +252,163 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
     it('should return false for undefined subType', () => {
       expect(hasRuleForTransaction('DEPOSIT', undefined)).toBe(false);
+    });
+  });
+
+  describe('SPEND/PREPAID rule', () => {
+    it('should match transactions with type SPEND and subType PREPAID', () => {
+      const transaction = {
+        externalCanonicalId: 'spend-123',
+        type: 'SPEND',
+        subType: 'PREPAID',
+        spendMerchant: 'Test Merchant',
+        status: 'settled',
+      };
+
+      const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'spend-prepaid');
+      expect(rule.match(transaction)).toBe(true);
+    });
+
+    it('should not match transactions with different type', () => {
+      const transaction = {
+        externalCanonicalId: 'tx-123',
+        type: 'DEPOSIT',
+        subType: 'PREPAID',
+        spendMerchant: 'Test Merchant',
+      };
+
+      const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'spend-prepaid');
+      expect(rule.match(transaction)).toBe(false);
+    });
+
+    it('should not match transactions with different subType', () => {
+      const transaction = {
+        externalCanonicalId: 'tx-123',
+        type: 'SPEND',
+        subType: 'CARD',
+        spendMerchant: 'Test Merchant',
+      };
+
+      const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'spend-prepaid');
+      expect(rule.match(transaction)).toBe(false);
+    });
+
+    describe('transaction processing', () => {
+      it('should process SPEND/PREPAID transaction with merchant name', () => {
+        const transaction = {
+          externalCanonicalId: 'spend-456',
+          type: 'SPEND',
+          subType: 'PREPAID',
+          spendMerchant: 'STARBUCKS #1234',
+          status: 'settled',
+          amount: 5.99,
+          amountSign: 'negative',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.ruleId).toBe('spend-prepaid');
+        expect(result.category).toBeNull(); // Needs category mapping
+        expect(result.originalStatement).toBe('STARBUCKS #1234');
+        expect(result.merchant).toBe('Starbucks'); // Cleaned (store number stripped)
+        expect(result.needsCategoryMapping).toBe(true);
+        expect(result.categoryKey).toBe('Starbucks');
+      });
+
+      it('should handle missing spendMerchant with fallback to Unknown Merchant', () => {
+        const transaction = {
+          externalCanonicalId: 'spend-789',
+          type: 'SPEND',
+          subType: 'PREPAID',
+          spendMerchant: null,
+          status: 'settled',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.originalStatement).toBe('Unknown Merchant');
+        expect(result.merchant).toBe('Unknown Merchant');
+      });
+
+      it('should handle empty spendMerchant with fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'spend-000',
+          type: 'SPEND',
+          subType: 'PREPAID',
+          spendMerchant: '',
+          status: 'settled',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.originalStatement).toBe('Unknown Merchant');
+      });
+
+      it('should strip store numbers from merchant name', () => {
+        const transaction = {
+          externalCanonicalId: 'spend-store-num',
+          type: 'SPEND',
+          subType: 'PREPAID',
+          spendMerchant: 'LONDON DRUGS 02',
+          status: 'settled',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.originalStatement).toBe('LONDON DRUGS 02');
+        expect(result.merchant).toBe('London Drugs');
+      });
+
+      it('should clean up merchant prefixes', () => {
+        const transaction = {
+          externalCanonicalId: 'spend-prefix',
+          type: 'SPEND',
+          subType: 'PREPAID',
+          spendMerchant: 'SQ *COFFEE SHOP',
+          status: 'settled',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.originalStatement).toBe('SQ *COFFEE SHOP');
+        expect(result.merchant).toBe('Coffee Shop');
+      });
+
+      it('should have empty notes and technicalDetails', () => {
+        const transaction = {
+          externalCanonicalId: 'spend-notes',
+          type: 'SPEND',
+          subType: 'PREPAID',
+          spendMerchant: 'Test Store',
+          status: 'settled',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should set categoryKey to cleaned merchant name', () => {
+        const transaction = {
+          externalCanonicalId: 'spend-catkey',
+          type: 'SPEND',
+          subType: 'PREPAID',
+          spendMerchant: 'NESTERS MARKET 4556',
+          status: 'settled',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.categoryKey).toBe('Nesters Market');
+      });
     });
   });
 

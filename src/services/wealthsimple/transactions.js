@@ -345,19 +345,46 @@ export async function fetchAndProcessCreditCardTransactions(consolidatedAccount,
 }
 
 /**
- * Filter CASH account transactions based on unifiedStatus
- * - COMPLETED: Sync as normal transaction
+ * Check if a transaction is a SPEND/PREPAID type (uses status field like credit cards)
+ * @param {Object} transaction - Raw transaction from API
+ * @returns {boolean} True if SPEND/PREPAID transaction
+ */
+function isSpendPrepaidTransaction(transaction) {
+  return transaction.type === 'SPEND' && transaction.subType === 'PREPAID';
+}
+
+/**
+ * Filter CASH account transactions based on status
+ * Different transaction types use different status fields:
+ *
+ * Regular CASH transactions (e-transfers, etc.):
+ * - Use unifiedStatus field
+ * - COMPLETED: Sync as normal
  * - IN_PROGRESS / PENDING: Sync with "Pending" tag
- * - Other statuses: Exclude (will be deleted on reconciliation if exists)
+ * - Other: Exclude
+ *
+ * SPEND/PREPAID transactions (debit card purchases):
+ * - Use status field (like credit cards)
+ * - 'settled': Sync as normal
+ * - 'authorized': Sync with "Pending" tag
+ * - Other: Exclude (rejected/cancelled)
  *
  * @param {Array} transactions - Raw transactions from API
- * @param {boolean} includePending - Whether to include pending (IN_PROGRESS/PENDING) transactions
+ * @param {boolean} includePending - Whether to include pending transactions
  * @returns {Array} Filtered transactions ready for processing
  */
 function filterCashSyncableTransactions(transactions, includePending = true) {
   return transactions.filter((transaction) => {
-    const status = transaction.unifiedStatus;
+    // SPEND/PREPAID uses 'status' field (like credit cards)
+    if (isSpendPrepaidTransaction(transaction)) {
+      const status = transaction.status;
+      if (status === 'settled') return true;
+      if (includePending && status === 'authorized') return true;
+      return false;
+    }
 
+    // Regular CASH transactions use 'unifiedStatus' field
+    const status = transaction.unifiedStatus;
     if (status === 'COMPLETED') return true;
     if (includePending && (status === 'IN_PROGRESS' || status === 'PENDING')) return true;
     return false;
@@ -387,8 +414,15 @@ function processCashTransaction(transaction, fundingIntentMap = null) {
   const isNegative = transaction.amountSign === 'negative';
   const finalAmount = isNegative ? -Math.abs(transaction.amount) : Math.abs(transaction.amount);
 
-  // Determine pending status based on unifiedStatus
-  const isPending = transaction.unifiedStatus === 'IN_PROGRESS' || transaction.unifiedStatus === 'PENDING';
+  // Determine pending status - SPEND/PREPAID uses 'status', others use 'unifiedStatus'
+  let isPending;
+  if (isSpendPrepaidTransaction(transaction)) {
+    // SPEND/PREPAID uses credit card-style status field
+    isPending = transaction.status === 'authorized';
+  } else {
+    // Regular CASH transactions use unifiedStatus
+    isPending = transaction.unifiedStatus === 'IN_PROGRESS' || transaction.unifiedStatus === 'PENDING';
+  }
 
   return {
     id: transaction.externalCanonicalId,
@@ -398,9 +432,10 @@ function processCashTransaction(transaction, fundingIntentMap = null) {
     amount: finalAmount,
     type: transaction.type,
     subType: transaction.subType,
-    unifiedStatus: transaction.unifiedStatus,
+    status: transaction.status, // For SPEND/PREPAID reconciliation
+    unifiedStatus: transaction.unifiedStatus, // For regular CASH reconciliation
     isPending,
-    // Category comes from the rule (auto-assigned)
+    // Category comes from the rule (auto-assigned), or null if needs mapping
     resolvedMonarchCategory: ruleResult.category,
     // Rule metadata for debugging
     ruleId: ruleResult.ruleId,
@@ -408,6 +443,9 @@ function processCashTransaction(transaction, fundingIntentMap = null) {
     notes: ruleResult.notes || '',
     // Technical details from rule (e.g., auto-deposit status, reference number)
     technicalDetails: ruleResult.technicalDetails || '',
+    // Category mapping flags for SPEND/PREPAID transactions
+    needsCategoryMapping: ruleResult.needsCategoryMapping || false,
+    categoryKey: ruleResult.categoryKey || ruleResult.merchant,
   };
 }
 
@@ -549,6 +587,16 @@ export async function fetchAndProcessCashTransactions(consolidatedAccount, fromD
     }
 
     debugLog(`Processed ${processedTransactions.length} CASH transactions (${uploadedSkipCount} already uploaded, ${noRuleSkipCount} no rule, ${skippedCount} processing skipped)`);
+
+    // Step 7: Check if any transactions need category resolution (e.g., SPEND/PREPAID)
+    const transactionsNeedingCategoryMapping = processedTransactions.filter((tx) => tx.needsCategoryMapping);
+
+    if (transactionsNeedingCategoryMapping.length > 0) {
+      debugLog(`${transactionsNeedingCategoryMapping.length} transactions need category mapping (SPEND/PREPAID)`);
+      // Run category resolution for transactions that need it
+      const resolvedTransactions = await resolveCategoriesForTransactions(processedTransactions);
+      return resolvedTransactions;
+    }
 
     return processedTransactions;
   } catch (error) {
@@ -732,8 +780,9 @@ function cleanSystemNotesFromNotes(notes) {
 }
 
 /**
- * Get the transaction status for reconciliation based on account type
- * Credit cards use 'status' field, CASH accounts use 'unifiedStatus' field
+ * Get the transaction status for reconciliation based on account type and transaction type
+ * Credit cards use 'status' field, CASH accounts use 'unifiedStatus' field,
+ * EXCEPT for SPEND/PREPAID transactions in CASH accounts which use 'status' field.
  *
  * @param {Object} transaction - Raw Wealthsimple transaction
  * @param {string} accountType - Account type (CREDIT_CARD, CASH, CASH_USD, etc.)
@@ -743,7 +792,17 @@ function getTransactionStatusForReconciliation(transaction, accountType) {
   const isCashAccount = accountType === 'CASH' || accountType === 'CASH_USD';
 
   if (isCashAccount) {
-    // CASH accounts use unifiedStatus field
+    // SPEND/PREPAID transactions use 'status' field (like credit cards)
+    if (isSpendPrepaidTransaction(transaction)) {
+      const status = transaction.status;
+      return {
+        isPending: status === 'authorized',
+        isSettled: status === 'settled',
+        rawStatus: status,
+      };
+    }
+
+    // Regular CASH transactions use unifiedStatus field
     const status = transaction.unifiedStatus;
     return {
       isPending: status === 'IN_PROGRESS' || status === 'PENDING',

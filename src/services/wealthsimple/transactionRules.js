@@ -11,6 +11,7 @@
  */
 
 import { debugLog } from '../../core/utils';
+import { applyMerchantMapping } from '../../mappers/merchant';
 
 /**
  * Get display name for e-transfer participant
@@ -185,6 +186,41 @@ export const CASH_TRANSACTION_RULES = [
         originalStatement,
         notes,
         technicalDetails,
+      };
+    },
+  },
+  {
+    id: 'spend-prepaid',
+    description: 'Prepaid card spending transactions (debit-style purchases in CASH account)',
+    match: (tx) => tx.type === 'SPEND' && tx.subType === 'PREPAID',
+    /**
+     * Process SPEND/PREPAID transactions
+     * These are debit-style purchases that use the 'status' field (like credit cards)
+     * instead of 'unifiedStatus' (like other CASH transactions).
+     *
+     * Status mapping:
+     * - 'settled': Final transaction (sync as normal)
+     * - 'authorized': Pending transaction (sync with Pending tag)
+     * - Other statuses: Rejected (exclude from sync)
+     *
+     * @param {Object} tx - Raw transaction
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx) => {
+      const originalMerchant = tx.spendMerchant || 'Unknown Merchant';
+      const cleanedMerchant = applyMerchantMapping(originalMerchant, { stripStoreNumbers: true });
+
+      return {
+        // Category will be resolved via user category mapping (like credit cards)
+        category: null, // null indicates needs category mapping
+        merchant: cleanedMerchant,
+        originalStatement: originalMerchant,
+        notes: '',
+        technicalDetails: '',
+        // Flag to indicate this transaction needs category resolution
+        needsCategoryMapping: true,
+        // Store the category key for mapping (merchant name)
+        categoryKey: cleanedMerchant,
       };
     },
   },
