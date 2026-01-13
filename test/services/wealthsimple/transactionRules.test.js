@@ -476,8 +476,10 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.originalStatement).toBe('Employer Inc');
         expect(result.needsCategoryMapping).toBe(false);
       });
+    });
 
-      it('should auto-categorize insurance as Healthcare', () => {
+    describe('AFT types requiring manual categorization', () => {
+      it('should require manual categorization for insurance with type:originator key', () => {
         const transaction = {
           externalCanonicalId: 'aft-insurance-123',
           type: 'DEPOSIT',
@@ -491,13 +493,17 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.ruleId).toBe('deposit-aft');
-        expect(result.category).toBe('Healthcare');
+        expect(result.category).toBeNull();
+        expect(result.needsCategoryMapping).toBe(true);
+        expect(result.categoryKey).toBe('insurance:Blue Cross');
         expect(result.merchant).toBe('Blue Cross');
         expect(result.originalStatement).toBe('Blue Cross');
-        expect(result.needsCategoryMapping).toBe(false);
+        expect(result.aftDetails).toBeDefined();
+        expect(result.aftDetails.aftTransactionType).toBe('insurance');
+        expect(result.aftDetails.aftOriginatorName).toBe('Blue Cross');
       });
 
-      it('should auto-categorize misc_payments as Reimbursement', () => {
+      it('should require manual categorization for misc_payments with type:originator key', () => {
         const transaction = {
           externalCanonicalId: 'aft-misc-123',
           type: 'DEPOSIT',
@@ -511,15 +517,19 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.ruleId).toBe('deposit-aft');
-        expect(result.category).toBe('Reimbursement');
+        expect(result.category).toBeNull();
+        expect(result.needsCategoryMapping).toBe(true);
+        expect(result.categoryKey).toBe('misc_payments:Some Company');
         expect(result.merchant).toBe('Some Company');
         expect(result.originalStatement).toBe('Some Company');
-        expect(result.needsCategoryMapping).toBe(false);
+        expect(result.aftDetails).toBeDefined();
+        expect(result.aftDetails.aftTransactionType).toBe('misc_payments');
+        expect(result.aftDetails.aftOriginatorName).toBe('Some Company');
       });
     });
 
     describe('unknown AFT types - needs category mapping', () => {
-      it('should flag unknown aftTransactionType for category mapping', () => {
+      it('should flag unknown aftTransactionType for category mapping with type:originator key', () => {
         const transaction = {
           externalCanonicalId: 'aft-unknown-123',
           type: 'DEPOSIT',
@@ -535,7 +545,8 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.ruleId).toBe('deposit-aft');
         expect(result.category).toBeNull();
         expect(result.needsCategoryMapping).toBe(true);
-        expect(result.categoryKey).toBe('government_benefit');
+        // New format: "aftTransactionType:aftOriginatorName"
+        expect(result.categoryKey).toBe('government_benefit:Government Agency');
         expect(result.merchant).toBe('Government Agency');
         expect(result.originalStatement).toBe('Government Agency');
       });
@@ -557,9 +568,11 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.aftDetails.aftOriginatorName).toBe('CRA');
         expect(result.aftDetails.aftTransactionType).toBe('tax_refund');
         expect(result.aftDetails.aftTransactionCategory).toBe('tax');
+        // Also verify categoryKey format
+        expect(result.categoryKey).toBe('tax_refund:CRA');
       });
 
-      it('should use aftTransactionType as categoryKey for similarity matching', () => {
+      it('should use type:originator as categoryKey for similarity matching and saving', () => {
         const transaction = {
           externalCanonicalId: 'aft-unknown-789',
           type: 'DEPOSIT',
@@ -572,7 +585,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = applyTransactionRule(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.categoryKey).toBe('pension_income');
+        expect(result.categoryKey).toBe('pension_income:Pension Fund');
       });
     });
 
@@ -719,7 +732,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
     });
 
     describe('transaction processing - always needs category mapping', () => {
-      it('should always require category mapping (unlike DEPOSIT/AFT)', () => {
+      it('should always require category mapping (unlike DEPOSIT/AFT which auto-maps payroll)', () => {
         const transaction = {
           externalCanonicalId: 'aft-withdrawal-456',
           type: 'WITHDRAWAL',
@@ -737,9 +750,11 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.needsCategoryMapping).toBe(true);
         expect(result.merchant).toBe('CRA');
         expect(result.originalStatement).toBe('CRA');
+        // New format: "aftTransactionType:aftOriginatorName"
+        expect(result.categoryKey).toBe('tax_payment:CRA');
       });
 
-      it('should use aftTransactionType as categoryKey for similarity matching', () => {
+      it('should use type:originator as categoryKey (same format as DEPOSIT/AFT)', () => {
         const transaction = {
           externalCanonicalId: 'aft-withdrawal-789',
           type: 'WITHDRAWAL',
@@ -752,7 +767,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = applyTransactionRule(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.categoryKey).toBe('provincial_tax');
+        expect(result.categoryKey).toBe('provincial_tax:Revenue Quebec');
       });
 
       it('should include aftDetails for category selector display', () => {
@@ -772,6 +787,8 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.aftDetails.aftOriginatorName).toBe('Service Canada');
         expect(result.aftDetails.aftTransactionType).toBe('ei_payment');
         expect(result.aftDetails.aftTransactionCategory).toBe('government');
+        // Also verify categoryKey format
+        expect(result.categoryKey).toBe('ei_payment:Service Canada');
       });
 
       it('should set merchant and originalStatement to aftOriginatorName', () => {

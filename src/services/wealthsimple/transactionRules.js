@@ -70,13 +70,32 @@ export function getAccountNameByType(accountType) {
 
 /**
  * AFT transaction type to Monarch category mapping
- * These are known AFT types that map directly to specific categories
+ * Only payroll_deposit is statically mapped - other types require manual categorization
+ * based on the specific originator
  */
 const AFT_TYPE_CATEGORY_MAP = {
   payroll_deposit: 'Paychecks',
-  insurance: 'Healthcare',
-  misc_payments: 'Reimbursement',
 };
+
+/**
+ * Generate the category key for AFT transactions
+ * Format: "aftTransactionType:aftOriginatorName"
+ * This allows different originators with the same AFT type to have different categories
+ * When aftTransactionType is missing, falls back to just the originator name
+ * @param {string} aftTransactionType - The AFT transaction type
+ * @param {string} aftOriginatorName - The AFT originator name
+ * @returns {string} Category key for mapping
+ */
+function getAftCategoryKey(aftTransactionType, aftOriginatorName) {
+  const originator = aftOriginatorName || 'Unknown AFT';
+
+  // If no aftTransactionType, fall back to just the originator name
+  if (!aftTransactionType) {
+    return originator;
+  }
+
+  return `${aftTransactionType}:${originator}`;
+}
 
 /**
  * Get category for AFT transaction based on aftTransactionType
@@ -327,8 +346,9 @@ export const CASH_TRANSACTION_RULES = [
      * - aftOriginatorName: Name of the organization that initiated the transfer
      *
      * Category mapping:
-     * - Known types (payroll_deposit, insurance, misc_payments): Auto-categorized
-     * - Unknown types: User maps via category selector, saved for future transactions
+     * - payroll_deposit: Auto-categorized to "Paychecks"
+     * - Other types (insurance, misc_payments, etc.): Manual categorization based on
+     *   "aftTransactionType:aftOriginatorName" key - saved for future transactions
      *
      * @param {Object} tx - Raw transaction
      * @returns {Object} Processed transaction fields
@@ -338,7 +358,7 @@ export const CASH_TRANSACTION_RULES = [
       const aftTransactionType = tx.aftTransactionType || '';
       const aftTransactionCategory = tx.aftTransactionCategory || '';
 
-      // Try to get automatic category mapping
+      // Try to get automatic category mapping (only payroll_deposit is auto-mapped)
       const autoCategory = getAftCategory(aftTransactionType);
 
       if (autoCategory) {
@@ -354,9 +374,10 @@ export const CASH_TRANSACTION_RULES = [
         };
       }
 
-      // Unknown AFT type - needs category mapping
-      // Use aftTransactionType as the category key for mapping/saving
-      debugLog(`AFT transaction needs mapping: ${aftTransactionType}`);
+      // Unknown AFT type (including insurance, misc_payments) - needs category mapping
+      // Use "aftTransactionType:aftOriginatorName" as the category key for mapping/saving
+      const categoryKey = getAftCategoryKey(aftTransactionType, originatorName);
+      debugLog(`AFT transaction needs mapping: ${categoryKey}`);
       return {
         category: null,
         merchant: originatorName,
@@ -364,8 +385,8 @@ export const CASH_TRANSACTION_RULES = [
         notes: '',
         technicalDetails: '',
         needsCategoryMapping: true,
-        // Use aftTransactionType as category key for similarity matching and saving
-        categoryKey: aftTransactionType || originatorName,
+        // Use "aftTransactionType:aftOriginatorName" as category key for saving
+        categoryKey,
         // Store AFT details for category selector display
         aftDetails: {
           aftTransactionCategory,
@@ -386,8 +407,9 @@ export const CASH_TRANSACTION_RULES = [
      * - aftTransactionType: Specific type (e.g., "tax_payment", "misc_payments")
      * - aftOriginatorName: Name of the organization receiving the transfer
      *
-     * Unlike DEPOSIT/AFT, WITHDRAWAL/AFT transactions always require user mapping
-     * as the categories are more varied and context-dependent.
+     * All WITHDRAWAL/AFT transactions require user mapping. The category key uses
+     * "aftTransactionType:aftOriginatorName" format (same as DEPOSIT/AFT) so that
+     * mappings can be shared between deposits and withdrawals from the same originator.
      *
      * @param {Object} tx - Raw transaction
      * @returns {Object} Processed transaction fields
@@ -398,7 +420,9 @@ export const CASH_TRANSACTION_RULES = [
       const aftTransactionCategory = tx.aftTransactionCategory || '';
 
       // All WITHDRAWAL/AFT transactions need category mapping
-      debugLog(`WITHDRAWAL/AFT transaction needs mapping: ${aftTransactionType || originatorName}`);
+      // Use "aftTransactionType:aftOriginatorName" as the category key for mapping/saving
+      const categoryKey = getAftCategoryKey(aftTransactionType, originatorName);
+      debugLog(`WITHDRAWAL/AFT transaction needs mapping: ${categoryKey}`);
 
       return {
         category: null,
@@ -407,8 +431,8 @@ export const CASH_TRANSACTION_RULES = [
         notes: '',
         technicalDetails: '',
         needsCategoryMapping: true,
-        // Use aftTransactionType as category key for similarity matching and saving
-        categoryKey: aftTransactionType || originatorName,
+        // Use "aftTransactionType:aftOriginatorName" as category key for saving
+        categoryKey,
         // Store AFT details for category selector display
         aftDetails: {
           aftTransactionCategory,
