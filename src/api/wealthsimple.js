@@ -1746,29 +1746,41 @@ fragment AccountOwner on AccountOwner {
   email
   ownershipType
   activeInvitation {
-    id
+    ...AccountOwnerInvitation
     __typename
   }
   sentInvitations {
-    id
+    ...AccountOwnerInvitation
     __typename
   }
+  __typename
+}
+
+fragment AccountOwnerInvitation on AccountOwnerInvitation {
+  id
+  createdAt
+  inviteeName
+  inviteeEmail
+  inviterName
+  inviterEmail
+  updatedAt
+  sentAt
+  status
   __typename
 }
 
 fragment AccountEntityRelationship on AccountEntityRelationship {
-  entity {
-    id
-    __typename
-  }
-  relationship
+  accountCanonicalId
+  entityCanonicalId
+  entityOwnershipType
+  entityType
   __typename
 }
 
 fragment AccountUpgradeProcess on AccountUpgradeProcess {
-  id
-  processType
-  processState
+  canonicalId
+  status
+  targetAccountType
   __typename
 }
 
