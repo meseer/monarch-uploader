@@ -319,6 +319,32 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
       </div>`;
     }
 
+    // Add AFT details if available (for DEPOSIT/AFT transactions)
+    if (transactionDetails.aftDetails) {
+      const aft = transactionDetails.aftDetails;
+
+      if (aft.aftOriginatorName) {
+        transactionHtml += `<div style="margin-bottom: 4px;">
+          <span style="color: #666;">Originator:</span>
+          <span style="font-weight: 500; color: #333;">${aft.aftOriginatorName}</span>
+        </div>`;
+      }
+
+      if (aft.aftTransactionType) {
+        transactionHtml += `<div style="margin-bottom: 4px;">
+          <span style="color: #666;">AFT Type:</span>
+          <span style="font-weight: 500; color: #333;">${aft.aftTransactionType}</span>
+        </div>`;
+      }
+
+      if (aft.aftTransactionCategory) {
+        transactionHtml += `<div style="margin-bottom: 4px;">
+          <span style="color: #666;">AFT Category:</span>
+          <span style="font-weight: 500; color: #333;">${aft.aftTransactionCategory}</span>
+        </div>`;
+      }
+    }
+
     transactionInfo.innerHTML = transactionHtml;
     modal.appendChild(transactionInfo);
   }

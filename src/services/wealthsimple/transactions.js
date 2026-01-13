@@ -205,6 +205,11 @@ async function resolveCategoriesForTransactions(transactions) {
         transactionDetails.date = exampleTx.date;
         transactionDetails.institution = 'wealthsimple'; // Add institution identifier
 
+        // Pass AFT details if available (for DEPOSIT/AFT transactions)
+        if (exampleTx.aftDetails) {
+          transactionDetails.aftDetails = exampleTx.aftDetails;
+        }
+
         debugLog('Transaction details for category selector:', transactionDetails);
       }
 
@@ -443,9 +448,11 @@ function processCashTransaction(transaction, fundingIntentMap = null) {
     notes: ruleResult.notes || '',
     // Technical details from rule (e.g., auto-deposit status, reference number)
     technicalDetails: ruleResult.technicalDetails || '',
-    // Category mapping flags for SPEND/PREPAID transactions
+    // Category mapping flags for SPEND/PREPAID and AFT transactions
     needsCategoryMapping: ruleResult.needsCategoryMapping || false,
     categoryKey: ruleResult.categoryKey || ruleResult.merchant,
+    // AFT details for category selector display (if available)
+    aftDetails: ruleResult.aftDetails || null,
   };
 }
 

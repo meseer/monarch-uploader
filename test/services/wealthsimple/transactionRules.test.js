@@ -412,6 +412,268 @@ describe('Wealthsimple Transaction Rules Engine', () => {
     });
   });
 
+  describe('DEPOSIT/AFT rule', () => {
+    it('should match transactions with type DEPOSIT and subType AFT', () => {
+      const transaction = {
+        externalCanonicalId: 'aft-123',
+        type: 'DEPOSIT',
+        subType: 'AFT',
+        aftOriginatorName: 'ACME Corp',
+        aftTransactionType: 'payroll_deposit',
+        aftTransactionCategory: 'payroll',
+        unifiedStatus: 'COMPLETED',
+      };
+
+      const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'deposit-aft');
+      expect(rule.match(transaction)).toBe(true);
+    });
+
+    it('should not match transactions with different type', () => {
+      const transaction = {
+        externalCanonicalId: 'aft-123',
+        type: 'WITHDRAWAL',
+        subType: 'AFT',
+        aftOriginatorName: 'ACME Corp',
+      };
+
+      const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'deposit-aft');
+      expect(rule.match(transaction)).toBe(false);
+    });
+
+    it('should not match transactions with different subType', () => {
+      const transaction = {
+        externalCanonicalId: 'tx-123',
+        type: 'DEPOSIT',
+        subType: 'E_TRANSFER',
+        aftOriginatorName: 'ACME Corp',
+      };
+
+      const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'deposit-aft');
+      expect(rule.match(transaction)).toBe(false);
+    });
+
+    describe('known AFT types - auto-categorization', () => {
+      it('should auto-categorize payroll_deposit as Paychecks', () => {
+        const transaction = {
+          externalCanonicalId: 'aft-payroll-123',
+          type: 'DEPOSIT',
+          subType: 'AFT',
+          aftOriginatorName: 'Employer Inc',
+          aftTransactionType: 'payroll_deposit',
+          aftTransactionCategory: 'payroll',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.ruleId).toBe('deposit-aft');
+        expect(result.category).toBe('Paychecks');
+        expect(result.merchant).toBe('Employer Inc');
+        expect(result.originalStatement).toBe('Employer Inc');
+        expect(result.needsCategoryMapping).toBe(false);
+      });
+
+      it('should auto-categorize insurance as Healthcare', () => {
+        const transaction = {
+          externalCanonicalId: 'aft-insurance-123',
+          type: 'DEPOSIT',
+          subType: 'AFT',
+          aftOriginatorName: 'Blue Cross',
+          aftTransactionType: 'insurance',
+          aftTransactionCategory: 'insurance',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.ruleId).toBe('deposit-aft');
+        expect(result.category).toBe('Healthcare');
+        expect(result.merchant).toBe('Blue Cross');
+        expect(result.originalStatement).toBe('Blue Cross');
+        expect(result.needsCategoryMapping).toBe(false);
+      });
+
+      it('should auto-categorize misc_payments as Reimbursement', () => {
+        const transaction = {
+          externalCanonicalId: 'aft-misc-123',
+          type: 'DEPOSIT',
+          subType: 'AFT',
+          aftOriginatorName: 'Some Company',
+          aftTransactionType: 'misc_payments',
+          aftTransactionCategory: 'misc',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.ruleId).toBe('deposit-aft');
+        expect(result.category).toBe('Reimbursement');
+        expect(result.merchant).toBe('Some Company');
+        expect(result.originalStatement).toBe('Some Company');
+        expect(result.needsCategoryMapping).toBe(false);
+      });
+    });
+
+    describe('unknown AFT types - needs category mapping', () => {
+      it('should flag unknown aftTransactionType for category mapping', () => {
+        const transaction = {
+          externalCanonicalId: 'aft-unknown-123',
+          type: 'DEPOSIT',
+          subType: 'AFT',
+          aftOriginatorName: 'Government Agency',
+          aftTransactionType: 'government_benefit',
+          aftTransactionCategory: 'government',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.ruleId).toBe('deposit-aft');
+        expect(result.category).toBeNull();
+        expect(result.needsCategoryMapping).toBe(true);
+        expect(result.categoryKey).toBe('government_benefit');
+        expect(result.merchant).toBe('Government Agency');
+        expect(result.originalStatement).toBe('Government Agency');
+      });
+
+      it('should include aftDetails for category selector display', () => {
+        const transaction = {
+          externalCanonicalId: 'aft-unknown-456',
+          type: 'DEPOSIT',
+          subType: 'AFT',
+          aftOriginatorName: 'CRA',
+          aftTransactionType: 'tax_refund',
+          aftTransactionCategory: 'tax',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.aftDetails).toBeDefined();
+        expect(result.aftDetails.aftOriginatorName).toBe('CRA');
+        expect(result.aftDetails.aftTransactionType).toBe('tax_refund');
+        expect(result.aftDetails.aftTransactionCategory).toBe('tax');
+      });
+
+      it('should use aftTransactionType as categoryKey for similarity matching', () => {
+        const transaction = {
+          externalCanonicalId: 'aft-unknown-789',
+          type: 'DEPOSIT',
+          subType: 'AFT',
+          aftOriginatorName: 'Pension Fund',
+          aftTransactionType: 'pension_income',
+          aftTransactionCategory: 'pension',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.categoryKey).toBe('pension_income');
+      });
+    });
+
+    describe('edge cases', () => {
+      it('should handle missing aftOriginatorName with fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'aft-no-originator',
+          type: 'DEPOSIT',
+          subType: 'AFT',
+          aftOriginatorName: null,
+          aftTransactionType: 'payroll_deposit',
+          aftTransactionCategory: 'payroll',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Unknown AFT');
+        expect(result.originalStatement).toBe('Unknown AFT');
+      });
+
+      it('should handle empty aftOriginatorName with fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'aft-empty-originator',
+          type: 'DEPOSIT',
+          subType: 'AFT',
+          aftOriginatorName: '',
+          aftTransactionType: 'payroll_deposit',
+          aftTransactionCategory: 'payroll',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Unknown AFT');
+        expect(result.originalStatement).toBe('Unknown AFT');
+      });
+
+      it('should handle missing aftTransactionType - needs mapping', () => {
+        const transaction = {
+          externalCanonicalId: 'aft-no-type',
+          type: 'DEPOSIT',
+          subType: 'AFT',
+          aftOriginatorName: 'Some Corp',
+          aftTransactionType: null,
+          aftTransactionCategory: 'misc',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBeNull();
+        expect(result.needsCategoryMapping).toBe(true);
+        // Should fall back to originatorName for categoryKey
+        expect(result.categoryKey).toBe('Some Corp');
+      });
+
+      it('should handle empty aftTransactionType - needs mapping', () => {
+        const transaction = {
+          externalCanonicalId: 'aft-empty-type',
+          type: 'DEPOSIT',
+          subType: 'AFT',
+          aftOriginatorName: 'Another Corp',
+          aftTransactionType: '',
+          aftTransactionCategory: '',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBeNull();
+        expect(result.needsCategoryMapping).toBe(true);
+        // Empty string is falsy, should fall back to originatorName
+        expect(result.categoryKey).toBe('Another Corp');
+      });
+
+      it('should have empty notes and technicalDetails', () => {
+        const transaction = {
+          externalCanonicalId: 'aft-notes-check',
+          type: 'DEPOSIT',
+          subType: 'AFT',
+          aftOriginatorName: 'Test Corp',
+          aftTransactionType: 'payroll_deposit',
+          aftTransactionCategory: 'payroll',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+    });
+  });
+
+  describe('hasRuleForTransaction with AFT', () => {
+    it('should return true for DEPOSIT/AFT type/subType', () => {
+      expect(hasRuleForTransaction('DEPOSIT', 'AFT')).toBe(true);
+    });
+
+    it('should return false for WITHDRAWAL/AFT type/subType', () => {
+      expect(hasRuleForTransaction('WITHDRAWAL', 'AFT')).toBe(false);
+    });
+  });
+
   describe('rule structure', () => {
     it('should have all required properties for each rule', () => {
       CASH_TRANSACTION_RULES.forEach((rule) => {

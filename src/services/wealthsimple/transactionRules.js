@@ -14,6 +14,28 @@ import { debugLog } from '../../core/utils';
 import { applyMerchantMapping } from '../../mappers/merchant';
 
 /**
+ * AFT transaction type to Monarch category mapping
+ * These are known AFT types that map directly to specific categories
+ */
+const AFT_TYPE_CATEGORY_MAP = {
+  payroll_deposit: 'Paychecks',
+  insurance: 'Healthcare',
+  misc_payments: 'Reimbursement',
+};
+
+/**
+ * Get category for AFT transaction based on aftTransactionType
+ * @param {string} aftTransactionType - The AFT transaction type from Wealthsimple
+ * @returns {string|null} Monarch category name or null if needs mapping
+ */
+function getAftCategory(aftTransactionType) {
+  if (!aftTransactionType) {
+    return null;
+  }
+  return AFT_TYPE_CATEGORY_MAP[aftTransactionType] || null;
+}
+
+/**
  * Get display name for e-transfer participant
  * Falls back to email, then "Unknown" if both are missing
  * @param {Object} transaction - Raw transaction object
@@ -221,6 +243,66 @@ export const CASH_TRANSACTION_RULES = [
         needsCategoryMapping: true,
         // Store the category key for mapping (merchant name)
         categoryKey: cleanedMerchant,
+      };
+    },
+  },
+  {
+    id: 'deposit-aft',
+    description: 'AFT (Automated Funds Transfer) deposit transactions - payroll, insurance, etc.',
+    match: (tx) => tx.type === 'DEPOSIT' && tx.subType === 'AFT',
+    /**
+     * Process DEPOSIT/AFT transactions
+     * AFT transactions have additional metadata:
+     * - aftTransactionCategory: General category (e.g., "payroll", "insurance")
+     * - aftTransactionType: Specific type (e.g., "payroll_deposit", "insurance", "misc_payments")
+     * - aftOriginatorName: Name of the organization that initiated the transfer
+     *
+     * Category mapping:
+     * - Known types (payroll_deposit, insurance, misc_payments): Auto-categorized
+     * - Unknown types: User maps via category selector, saved for future transactions
+     *
+     * @param {Object} tx - Raw transaction
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx) => {
+      const originatorName = tx.aftOriginatorName || 'Unknown AFT';
+      const aftTransactionType = tx.aftTransactionType || '';
+      const aftTransactionCategory = tx.aftTransactionCategory || '';
+
+      // Try to get automatic category mapping
+      const autoCategory = getAftCategory(aftTransactionType);
+
+      if (autoCategory) {
+        // Known AFT type - auto-categorize
+        debugLog(`AFT transaction auto-categorized: ${aftTransactionType} -> ${autoCategory}`);
+        return {
+          category: autoCategory,
+          merchant: originatorName,
+          originalStatement: originatorName,
+          notes: '',
+          technicalDetails: '',
+          needsCategoryMapping: false,
+        };
+      }
+
+      // Unknown AFT type - needs category mapping
+      // Use aftTransactionType as the category key for mapping/saving
+      debugLog(`AFT transaction needs mapping: ${aftTransactionType}`);
+      return {
+        category: null,
+        merchant: originatorName,
+        originalStatement: originatorName,
+        notes: '',
+        technicalDetails: '',
+        needsCategoryMapping: true,
+        // Use aftTransactionType as category key for similarity matching and saving
+        categoryKey: aftTransactionType || originatorName,
+        // Store AFT details for category selector display
+        aftDetails: {
+          aftTransactionCategory,
+          aftTransactionType,
+          aftOriginatorName: originatorName,
+        },
       };
     },
   },
