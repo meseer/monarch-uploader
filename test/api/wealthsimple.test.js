@@ -2176,4 +2176,302 @@ describe('Wealthsimple API Client', () => {
       expect(intent.transferMetadata.message).toBe('Payment for services');
     });
   });
+
+  describe('fetchInternalTransfer', () => {
+    beforeEach(() => {
+      const futureDate = new Date(Date.now() + 3600000).toISOString();
+      GM_getValue.mockImplementation((key) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
+        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
+        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
+        return null;
+      });
+    });
+
+    it('should return null for null input', async () => {
+      const result = await wealthsimpleApi.fetchInternalTransfer(null);
+      expect(result).toBeNull();
+      expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
+    });
+
+    it('should return null for empty string input', async () => {
+      const result = await wealthsimpleApi.fetchInternalTransfer('');
+      expect(result).toBeNull();
+      expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
+    });
+
+    it('should fetch internal transfer details successfully', async () => {
+      const mockResponse = {
+        internalTransfer: {
+          id: 'funding_intent-RHgNxU9iOg99IbPmQwSErvXLL0n',
+          amount: '19.68',
+          currency: 'CAD',
+          fxRate: null,
+          fxAdjustedAmount: null,
+          reportedFxAdjustedAmount: null,
+          fxFeeRate: null,
+          isCancellable: false,
+          status: 'completed',
+          transferType: 'partial_in_cash',
+          instantEligibility: {
+            status: 'eligible',
+            amount: '19.68',
+            __typename: 'InternalTransferInstantEligibility',
+          },
+          tax_detail: null,
+          annotation: 'additional payment landed in wrong account',
+          reason: null,
+          __typename: 'InternalTransfer',
+          source_account: {
+            id: 'ca-cash-msb-4IX85yCxIw',
+            unifiedAccountType: 'CASH',
+            __typename: 'Account',
+          },
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchInternalTransfer('funding_intent-RHgNxU9iOg99IbPmQwSErvXLL0n');
+
+      expect(result).not.toBeNull();
+      expect(result.id).toBe('funding_intent-RHgNxU9iOg99IbPmQwSErvXLL0n');
+      expect(result.annotation).toBe('additional payment landed in wrong account');
+      expect(result.status).toBe('completed');
+      expect(result.transferType).toBe('partial_in_cash');
+    });
+
+    it('should NOT inject identity ID into request', async () => {
+      const mockResponse = {
+        internalTransfer: {
+          id: 'funding_intent-test123',
+          annotation: 'test annotation',
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ data, onload }) => {
+        const parsedData = JSON.parse(data);
+        expect(parsedData.operationName).toBe('FetchInternalTransfer');
+        // FetchInternalTransfer should NOT have identityId injected
+        expect(parsedData.variables.identityId).toBeUndefined();
+        expect(parsedData.variables.id).toBe('funding_intent-test123');
+
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      await wealthsimpleApi.fetchInternalTransfer('funding_intent-test123');
+    });
+
+    it('should return null when no internalTransfer in response', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: {} }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchInternalTransfer('funding_intent-abc123');
+      expect(result).toBeNull();
+    });
+
+    it('should return null on API error without failing', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({ status: 500 });
+      });
+
+      // Should not throw, just return null
+      const result = await wealthsimpleApi.fetchInternalTransfer('funding_intent-abc123');
+      expect(result).toBeNull();
+    });
+
+    it('should return null on network error without failing', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onerror }) => {
+        onerror(new Error('Network failure'));
+      });
+
+      // Should not throw, just return null
+      const result = await wealthsimpleApi.fetchInternalTransfer('funding_intent-abc123');
+      expect(result).toBeNull();
+    });
+
+    it('should handle internal transfer without annotation', async () => {
+      const mockResponse = {
+        internalTransfer: {
+          id: 'funding_intent-no-annotation',
+          amount: '100.00',
+          currency: 'CAD',
+          status: 'completed',
+          annotation: null,
+          reason: null,
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchInternalTransfer('funding_intent-no-annotation');
+
+      expect(result).not.toBeNull();
+      expect(result.annotation).toBeNull();
+    });
+  });
+
+  describe('fetchInternalTransfers', () => {
+    beforeEach(() => {
+      const futureDate = new Date(Date.now() + 3600000).toISOString();
+      GM_getValue.mockImplementation((key) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
+        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
+        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
+        return null;
+      });
+    });
+
+    it('should return empty map for empty array', async () => {
+      const result = await wealthsimpleApi.fetchInternalTransfers([]);
+      expect(result).toBeInstanceOf(Map);
+      expect(result.size).toBe(0);
+    });
+
+    it('should return empty map for null input', async () => {
+      const result = await wealthsimpleApi.fetchInternalTransfers(null);
+      expect(result).toBeInstanceOf(Map);
+      expect(result.size).toBe(0);
+    });
+
+    it('should filter out non-funding_intent- IDs', async () => {
+      const result = await wealthsimpleApi.fetchInternalTransfers([
+        'credit-transaction-123',
+        'some-other-id',
+      ]);
+      expect(result).toBeInstanceOf(Map);
+      expect(result.size).toBe(0);
+      // Should not make any API call since no valid IDs
+      expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
+    });
+
+    it('should fetch internal transfers for valid IDs', async () => {
+      const mockResponse1 = {
+        internalTransfer: {
+          id: 'funding_intent-abc123',
+          annotation: 'First annotation',
+          status: 'completed',
+        },
+      };
+
+      const mockResponse2 = {
+        internalTransfer: {
+          id: 'funding_intent-def456',
+          annotation: 'Second annotation',
+          status: 'completed',
+        },
+      };
+
+      let callCount = 0;
+      GM_xmlhttpRequest.mockImplementation(({ data, onload }) => {
+        const parsedData = JSON.parse(data);
+        callCount++;
+
+        if (parsedData.variables.id === 'funding_intent-abc123') {
+          onload({
+            status: 200,
+            responseText: JSON.stringify({ data: mockResponse1 }),
+          });
+        } else if (parsedData.variables.id === 'funding_intent-def456') {
+          onload({
+            status: 200,
+            responseText: JSON.stringify({ data: mockResponse2 }),
+          });
+        }
+      });
+
+      const result = await wealthsimpleApi.fetchInternalTransfers([
+        'funding_intent-abc123',
+        'funding_intent-def456',
+      ]);
+
+      expect(callCount).toBe(2);
+      expect(result).toBeInstanceOf(Map);
+      expect(result.size).toBe(2);
+      expect(result.get('funding_intent-abc123').annotation).toBe('First annotation');
+      expect(result.get('funding_intent-def456').annotation).toBe('Second annotation');
+    });
+
+    it('should filter valid IDs from mixed input', async () => {
+      const mockResponse = {
+        internalTransfer: {
+          id: 'funding_intent-valid123',
+          annotation: 'Valid transfer',
+          status: 'completed',
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ data, onload }) => {
+        const parsedData = JSON.parse(data);
+        expect(parsedData.variables.id).toBe('funding_intent-valid123');
+
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchInternalTransfers([
+        'credit-transaction-123',
+        'funding_intent-valid123',
+        'other-id',
+      ]);
+
+      expect(result.size).toBe(1);
+      expect(result.has('funding_intent-valid123')).toBe(true);
+    });
+
+    it('should handle partial failures gracefully', async () => {
+      const mockResponse1 = {
+        internalTransfer: {
+          id: 'funding_intent-success',
+          annotation: 'Success',
+          status: 'completed',
+        },
+      };
+
+      let callCount = 0;
+      GM_xmlhttpRequest.mockImplementation(({ data, onload }) => {
+        const parsedData = JSON.parse(data);
+        callCount++;
+
+        if (parsedData.variables.id === 'funding_intent-success') {
+          onload({
+            status: 200,
+            responseText: JSON.stringify({ data: mockResponse1 }),
+          });
+        } else {
+          // Fail for the second ID
+          onload({ status: 500 });
+        }
+      });
+
+      const result = await wealthsimpleApi.fetchInternalTransfers([
+        'funding_intent-success',
+        'funding_intent-fail',
+      ]);
+
+      expect(callCount).toBe(2);
+      expect(result.size).toBe(1);
+      expect(result.has('funding_intent-success')).toBe(true);
+      expect(result.has('funding_intent-fail')).toBe(false);
+    });
+  });
 });

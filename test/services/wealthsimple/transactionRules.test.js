@@ -10,6 +10,7 @@ import {
   extractOutgoingETransferDetails,
   formatOutgoingETransferDetails,
   getAccountNameById,
+  extractInternalTransferAnnotation,
 } from '../../../src/services/wealthsimple/transactionRules';
 import { STORAGE } from '../../../src/core/config';
 
@@ -1595,6 +1596,218 @@ describe('Wealthsimple Transaction Rules Engine', () => {
     it('should return false for wrong type with SOURCE/DESTINATION subType', () => {
       expect(hasRuleForTransaction('DEPOSIT', 'SOURCE')).toBe(false);
       expect(hasRuleForTransaction('WITHDRAWAL', 'DESTINATION')).toBe(false);
+    });
+  });
+
+  describe('extractInternalTransferAnnotation', () => {
+    it('should return empty string for null internal transfer', () => {
+      expect(extractInternalTransferAnnotation(null)).toBe('');
+    });
+
+    it('should return empty string for undefined internal transfer', () => {
+      expect(extractInternalTransferAnnotation(undefined)).toBe('');
+    });
+
+    it('should extract annotation when present', () => {
+      const internalTransfer = {
+        id: 'funding_intent-abc123',
+        annotation: 'additional payment landed in wrong account',
+        status: 'completed',
+      };
+      expect(extractInternalTransferAnnotation(internalTransfer)).toBe('additional payment landed in wrong account');
+    });
+
+    it('should return empty string when annotation is null', () => {
+      const internalTransfer = {
+        id: 'funding_intent-abc123',
+        annotation: null,
+        status: 'completed',
+      };
+      expect(extractInternalTransferAnnotation(internalTransfer)).toBe('');
+    });
+
+    it('should return empty string when annotation is undefined', () => {
+      const internalTransfer = {
+        id: 'funding_intent-abc123',
+        status: 'completed',
+      };
+      expect(extractInternalTransferAnnotation(internalTransfer)).toBe('');
+    });
+
+    it('should return empty string when annotation is empty string', () => {
+      const internalTransfer = {
+        id: 'funding_intent-abc123',
+        annotation: '',
+        status: 'completed',
+      };
+      expect(extractInternalTransferAnnotation(internalTransfer)).toBe('');
+    });
+  });
+
+  describe('INTERNAL_TRANSFER rule with annotation', () => {
+    // Helper to set up mock accounts in GM storage
+    const setupMockAccounts = (accounts) => {
+      const consolidatedAccounts = accounts.map((acc) => ({
+        wealthsimpleAccount: {
+          id: acc.id,
+          nickname: acc.nickname,
+        },
+      }));
+      global.GM_getValue = jest.fn((key, defaultValue) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
+          return JSON.stringify(consolidatedAccounts);
+        }
+        return defaultValue;
+      });
+    };
+
+    beforeEach(() => {
+      setupMockAccounts([
+        { id: 'account-cash-123', nickname: 'Wealthsimple Cash (1234)' },
+        { id: 'account-tfsa-456', nickname: 'Wealthsimple TFSA (5678)' },
+      ]);
+    });
+
+    it('should include annotation in notes when internalTransferMap is provided', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-abc123',
+        type: 'INTERNAL_TRANSFER',
+        subType: 'DESTINATION',
+        accountId: 'account-tfsa-456',
+        opposingAccountId: 'account-cash-123',
+      };
+
+      const internalTransferMap = new Map();
+      internalTransferMap.set('funding_intent-abc123', {
+        id: 'funding_intent-abc123',
+        annotation: 'additional payment landed in wrong account',
+        status: 'completed',
+        transferType: 'partial_in_cash',
+      });
+
+      const result = applyTransactionRule(transaction, internalTransferMap);
+
+      expect(result).not.toBeNull();
+      expect(result.notes).toBe('additional payment landed in wrong account');
+      expect(result.technicalDetails).toBe('');
+    });
+
+    it('should include annotation for SOURCE transfers too', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-def456',
+        type: 'INTERNAL_TRANSFER',
+        subType: 'SOURCE',
+        accountId: 'account-cash-123',
+        opposingAccountId: 'account-tfsa-456',
+      };
+
+      const internalTransferMap = new Map();
+      internalTransferMap.set('funding_intent-def456', {
+        id: 'funding_intent-def456',
+        annotation: 'moving funds to TFSA',
+        status: 'completed',
+      });
+
+      const result = applyTransactionRule(transaction, internalTransferMap);
+
+      expect(result).not.toBeNull();
+      expect(result.notes).toBe('moving funds to TFSA');
+    });
+
+    it('should return empty notes when internalTransferMap is null', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-abc123',
+        type: 'INTERNAL_TRANSFER',
+        subType: 'DESTINATION',
+        accountId: 'account-tfsa-456',
+        opposingAccountId: 'account-cash-123',
+      };
+
+      const result = applyTransactionRule(transaction, null);
+
+      expect(result).not.toBeNull();
+      expect(result.notes).toBe('');
+    });
+
+    it('should return empty notes when transaction ID not in internalTransferMap', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-notfound',
+        type: 'INTERNAL_TRANSFER',
+        subType: 'DESTINATION',
+        accountId: 'account-tfsa-456',
+        opposingAccountId: 'account-cash-123',
+      };
+
+      const internalTransferMap = new Map();
+      internalTransferMap.set('funding_intent-different', {
+        id: 'funding_intent-different',
+        annotation: 'Some annotation',
+      });
+
+      const result = applyTransactionRule(transaction, internalTransferMap);
+
+      expect(result).not.toBeNull();
+      expect(result.notes).toBe('');
+    });
+
+    it('should return empty notes when internal transfer has no annotation', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-no-annotation',
+        type: 'INTERNAL_TRANSFER',
+        subType: 'DESTINATION',
+        accountId: 'account-tfsa-456',
+        opposingAccountId: 'account-cash-123',
+      };
+
+      const internalTransferMap = new Map();
+      internalTransferMap.set('funding_intent-no-annotation', {
+        id: 'funding_intent-no-annotation',
+        annotation: null,
+        status: 'completed',
+      });
+
+      const result = applyTransactionRule(transaction, internalTransferMap);
+
+      expect(result).not.toBeNull();
+      expect(result.notes).toBe('');
+    });
+
+    it('should return empty notes when externalCanonicalId is missing', () => {
+      const transaction = {
+        externalCanonicalId: null,
+        type: 'INTERNAL_TRANSFER',
+        subType: 'DESTINATION',
+        accountId: 'account-tfsa-456',
+        opposingAccountId: 'account-cash-123',
+      };
+
+      const internalTransferMap = new Map();
+      internalTransferMap.set('funding_intent-abc123', {
+        id: 'funding_intent-abc123',
+        annotation: 'Some annotation',
+      });
+
+      const result = applyTransactionRule(transaction, internalTransferMap);
+
+      expect(result).not.toBeNull();
+      expect(result.notes).toBe('');
+    });
+
+    it('should handle empty internalTransferMap', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-abc123',
+        type: 'INTERNAL_TRANSFER',
+        subType: 'DESTINATION',
+        accountId: 'account-tfsa-456',
+        opposingAccountId: 'account-cash-123',
+      };
+
+      const internalTransferMap = new Map();
+
+      const result = applyTransactionRule(transaction, internalTransferMap);
+
+      expect(result).not.toBeNull();
+      expect(result.notes).toBe('');
     });
   });
 });

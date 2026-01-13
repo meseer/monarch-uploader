@@ -480,22 +480,50 @@ function processCashTransaction(transaction, fundingIntentMap = null) {
 }
 
 /**
- * Collect funding intent IDs from transactions that need enrichment
- * Returns only externalCanonicalIds that start with "funding_intent-"
+ * Collect e-transfer IDs from transactions that need funding intent enrichment
+ * Returns only externalCanonicalIds from E_TRANSFER transactions
  *
  * @param {Array} transactions - Raw transactions from Wealthsimple API
- * @returns {Array<string>} Array of funding intent IDs
+ * @returns {Array<string>} Array of e-transfer funding intent IDs
  */
-function collectFundingIntentIds(transactions) {
-  const fundingIntentIds = [];
+function collectETransferIds(transactions) {
+  const eTransferIds = [];
 
   for (const tx of transactions) {
-    if (tx.externalCanonicalId && tx.externalCanonicalId.startsWith('funding_intent-')) {
-      fundingIntentIds.push(tx.externalCanonicalId);
+    if (
+      tx.subType === 'E_TRANSFER' &&
+      tx.externalCanonicalId &&
+      tx.externalCanonicalId.startsWith('funding_intent-')
+    ) {
+      eTransferIds.push(tx.externalCanonicalId);
     }
   }
 
-  return fundingIntentIds;
+  return eTransferIds;
+}
+
+/**
+ * Collect internal transfer IDs from transactions that need enrichment
+ * Returns only externalCanonicalIds from INTERNAL_TRANSFER transactions
+ *
+ * @param {Array} transactions - Raw transactions from Wealthsimple API
+ * @returns {Array<string>} Array of internal transfer IDs
+ */
+function collectInternalTransferIds(transactions) {
+  const internalTransferIds = [];
+
+  for (const tx of transactions) {
+    if (
+      tx.type === 'INTERNAL_TRANSFER' &&
+      (tx.subType === 'SOURCE' || tx.subType === 'DESTINATION') &&
+      tx.externalCanonicalId &&
+      tx.externalCanonicalId.startsWith('funding_intent-')
+    ) {
+      internalTransferIds.push(tx.externalCanonicalId);
+    }
+  }
+
+  return internalTransferIds;
 }
 
 /**
@@ -593,21 +621,47 @@ export async function fetchAndProcessCashTransactions(consolidatedAccount, fromD
       return [];
     }
 
-    // Step 5: Collect funding intent IDs only for transactions that have rules
-    const fundingIntentIds = collectFundingIntentIds(transactionsWithRules);
-    let fundingIntentMap = new Map();
+    // Step 5: Collect IDs for enrichment data
+    // - E-transfers need funding intent data for memos
+    // - Internal transfers need internal transfer data for annotations
+    const eTransferIds = collectETransferIds(transactionsWithRules);
+    const internalTransferIds = collectInternalTransferIds(transactionsWithRules);
 
-    if (fundingIntentIds.length > 0) {
-      debugLog(`Fetching ${fundingIntentIds.length} funding intent(s) for e-transfer memos...`);
-      fundingIntentMap = await wealthsimpleApi.fetchFundingIntents(fundingIntentIds);
+    // Create a combined enrichment map for the rules engine
+    // The rules engine expects a single map that can contain both funding intents and internal transfers
+    const enrichmentMap = new Map();
+
+    // Fetch funding intent data for e-transfers
+    if (eTransferIds.length > 0) {
+      debugLog(`Fetching ${eTransferIds.length} funding intent(s) for e-transfer memos...`);
+      const fundingIntentMap = await wealthsimpleApi.fetchFundingIntents(eTransferIds);
       debugLog(`Fetched ${fundingIntentMap.size} funding intent(s)`);
+
+      // Add to combined map
+      for (const [id, data] of fundingIntentMap) {
+        enrichmentMap.set(id, data);
+      }
     }
+
+    // Fetch internal transfer data for annotations
+    if (internalTransferIds.length > 0) {
+      debugLog(`Fetching ${internalTransferIds.length} internal transfer(s) for annotations...`);
+      const internalTransferMap = await wealthsimpleApi.fetchInternalTransfers(internalTransferIds);
+      debugLog(`Fetched ${internalTransferMap.size} internal transfer(s)`);
+
+      // Add to combined map
+      for (const [id, data] of internalTransferMap) {
+        enrichmentMap.set(id, data);
+      }
+    }
+
+    debugLog(`Combined enrichment map has ${enrichmentMap.size} entries`);
 
     // Step 6: Process transactions through the rules engine
     const processedTransactions = [];
 
     for (const transaction of transactionsWithRules) {
-      const processed = processCashTransaction(transaction, fundingIntentMap);
+      const processed = processCashTransaction(transaction, enrichmentMap);
       if (processed) {
         processedTransactions.push(processed);
       }

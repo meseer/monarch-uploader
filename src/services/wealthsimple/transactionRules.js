@@ -165,6 +165,20 @@ export function formatOutgoingETransferDetails(details) {
 }
 
 /**
+ * Extract annotation (user note) from internal transfer data
+ *
+ * @param {Object|null} internalTransfer - Internal transfer data from FetchInternalTransfer API
+ * @returns {string} Annotation text or empty string if not found
+ */
+export function extractInternalTransferAnnotation(internalTransfer) {
+  if (!internalTransfer) {
+    return '';
+  }
+
+  return internalTransfer.annotation || '';
+}
+
+/**
  * Transaction rules for CASH accounts
  * Each rule has:
  * - id: Unique identifier for the rule
@@ -345,11 +359,13 @@ export const CASH_TRANSACTION_RULES = [
      * - SOURCE: Money leaving the current account
      *
      * Uses opposingAccountId to look up the name of the other account involved.
+     * Uses internalTransferMap to fetch annotation (user note) for the transfer.
      *
      * @param {Object} tx - Raw transaction
+     * @param {Map<string, Object>} internalTransferMap - Optional map of internal transfer ID to details
      * @returns {Object} Processed transaction fields
      */
-    process: (tx) => {
+    process: (tx, internalTransferMap) => {
       // Look up the opposing account name from the cached accounts list
       const opposingName = getAccountNameById(tx.opposingAccountId);
       // Look up the current account name as well
@@ -368,11 +384,24 @@ export const CASH_TRANSACTION_RULES = [
         originalStatement = `Transfer Out: ${accountName} → ${opposingName}`;
       }
 
+      // Extract annotation from internal transfer data if available
+      let notes = '';
+      if (internalTransferMap && tx.externalCanonicalId) {
+        const internalTransfer = internalTransferMap.get(tx.externalCanonicalId);
+        if (internalTransfer) {
+          const annotation = extractInternalTransferAnnotation(internalTransfer);
+          if (annotation) {
+            debugLog(`Found internal transfer annotation for ${tx.externalCanonicalId}: "${annotation}"`);
+            notes = annotation;
+          }
+        }
+      }
+
       return {
         category: 'Transfer',
         merchant,
         originalStatement,
-        notes: '',
+        notes,
         technicalDetails: '',
       };
     },

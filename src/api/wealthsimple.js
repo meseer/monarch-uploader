@@ -220,8 +220,8 @@ export async function makeGraphQLQuery(operationName, query, variables = {}) {
   }
 
   // Inject identity ID into variables if not present
-  // Note: FetchFundingIntent doesn't accept identityId and returns 403 if it's passed
-  const skipIdentityInjection = ['FetchFundingIntent'];
+  // Note: FetchFundingIntent and FetchInternalTransfer don't accept identityId and return 403 if it's passed
+  const skipIdentityInjection = ['FetchFundingIntent', 'FetchInternalTransfer'];
   if (!variables.identityId && authStatus.identityId && !skipIdentityInjection.includes(operationName)) {
     variables.identityId = authStatus.identityId;
   }
@@ -1468,6 +1468,132 @@ fragment CreditCardAccountSummary on CreditCardAccount {
   }
 }
 
+/**
+ * Fetch internal transfer details for a single transfer
+ * Used to get the annotation (user note) for internal transfers between Wealthsimple accounts
+ *
+ * @param {string} id - Internal transfer ID (e.g., "funding_intent-RHgNxU9iOg99IbPmQwSErvXLL0n")
+ * @returns {Promise<Object|null>} Internal transfer details or null if not found
+ */
+export async function fetchInternalTransfer(id) {
+  try {
+    if (!id) {
+      debugLog('No internal transfer ID provided');
+      return null;
+    }
+
+    debugLog(`Fetching internal transfer details for ${id}...`);
+
+    const query = `query FetchInternalTransfer($id: ID!) {
+  internalTransfer: internal_transfer(id: $id) {
+    id
+    ...InternalTransfer
+    __typename
+  }
+}
+
+fragment InternalTransfer on InternalTransfer {
+  amount
+  currency
+  fxRate: fx_rate
+  fxAdjustedAmount: fx_adjusted_amount
+  reportedFxAdjustedAmount: reported_fx_adjusted_amount {
+    amount
+    currency
+    __typename
+  }
+  fxFeeRate: conversion_fee_rate
+  isCancellable: is_cancellable
+  status
+  transferType: transfer_type
+  instantEligibility: instant_eligibility {
+    status
+    amount
+    __typename
+  }
+  source_account {
+    id
+    unifiedAccountType
+    __typename
+  }
+  tax_detail {
+    id
+    federal_tax_amount
+    provincial_tax_amount
+    gross_amount
+    net_amount
+    document_url
+    __typename
+  }
+  annotation
+  reason
+  __typename
+}`;
+
+    const response = await makeGraphQLQuery('FetchInternalTransfer', query, { id });
+
+    if (!response || !response.internalTransfer) {
+      debugLog(`No internal transfer data found for ${id}`);
+      return null;
+    }
+
+    debugLog(`Fetched internal transfer ${id}:`, {
+      status: response.internalTransfer.status,
+      transferType: response.internalTransfer.transferType,
+      hasAnnotation: Boolean(response.internalTransfer.annotation),
+    });
+
+    return response.internalTransfer;
+  } catch (error) {
+    debugLog(`Error fetching internal transfer ${id}:`, error);
+    // Return null on error - don't fail the entire sync
+    return null;
+  }
+}
+
+/**
+ * Fetch internal transfer details for multiple transfers
+ * Used to get annotations (user notes) for internal transfers between Wealthsimple accounts
+ *
+ * @param {Array<string>} ids - Array of internal transfer IDs (e.g., ["funding_intent-xxx", "funding_intent-yyy"])
+ * @returns {Promise<Map<string, Object>>} Map of internal transfer ID to details
+ */
+export async function fetchInternalTransfers(ids) {
+  try {
+    if (!ids || ids.length === 0) {
+      debugLog('No internal transfer IDs provided');
+      return new Map();
+    }
+
+    // Filter to only include funding_intent- prefixed IDs (internal transfers use this prefix)
+    const validIds = ids.filter((id) => id && id.startsWith('funding_intent-'));
+
+    if (validIds.length === 0) {
+      debugLog('No valid funding_intent- IDs found for internal transfers');
+      return new Map();
+    }
+
+    debugLog(`Fetching internal transfer details for ${validIds.length} ID(s)...`);
+
+    const internalTransferMap = new Map();
+
+    // Fetch each internal transfer individually (API only supports single ID)
+    for (const id of validIds) {
+      const transfer = await fetchInternalTransfer(id);
+      if (transfer) {
+        internalTransferMap.set(id, transfer);
+      }
+    }
+
+    debugLog(`Fetched ${internalTransferMap.size} internal transfer(s)`);
+    return internalTransferMap;
+  } catch (error) {
+    debugLog('Error fetching internal transfers:', error);
+    // Return empty map on error - don't fail the entire sync
+    return new Map();
+  }
+}
+
 export default {
   checkAuth,
   setupTokenMonitoring,
@@ -1481,4 +1607,6 @@ export default {
   fetchBalanceHistory,
   fetchCreditCardAccountSummary,
   fetchFundingIntents,
+  fetchInternalTransfer,
+  fetchInternalTransfers,
 };
