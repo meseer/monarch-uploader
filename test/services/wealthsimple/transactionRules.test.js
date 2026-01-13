@@ -206,8 +206,8 @@ describe('Wealthsimple Transaction Rules Engine', () => {
     it('should return null for transactions with no matching rule', () => {
       const transaction = {
         externalCanonicalId: 'tx-999',
-        type: 'INTEREST',
-        subType: 'MARGIN_INTEREST', // No rule for this
+        type: 'FEE',
+        subType: 'SERVICE_FEE', // No rule for this yet
       };
 
       const result = applyTransactionRule(transaction);
@@ -250,7 +250,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
     it('should return false for unsupported subTypes', () => {
       expect(hasRuleForTransaction('DEPOSIT', 'INTERNAL_TRANSFER')).toBe(false);
-      expect(hasRuleForTransaction('INTEREST', 'MARGIN_INTEREST')).toBe(false);
+      expect(hasRuleForTransaction('FEE', 'SERVICE_FEE')).toBe(false);
     });
 
     it('should return false for undefined subType', () => {
@@ -1838,6 +1838,225 @@ describe('Wealthsimple Transaction Rules Engine', () => {
     it('should return false for BILL_PAY with wrong type', () => {
       expect(hasRuleForTransaction('SPEND', 'BILL_PAY')).toBe(false);
       expect(hasRuleForTransaction('INTERNAL_TRANSFER', 'BILL_PAY')).toBe(false);
+    });
+  });
+
+  describe('INTEREST rule', () => {
+    // Helper to set up mock accounts in GM storage
+    const setupMockAccounts = (accounts) => {
+      const consolidatedAccounts = accounts.map((acc) => ({
+        wealthsimpleAccount: {
+          id: acc.id,
+          nickname: acc.nickname,
+        },
+      }));
+      global.GM_getValue = jest.fn((key, defaultValue) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
+          return JSON.stringify(consolidatedAccounts);
+        }
+        return defaultValue;
+      });
+    };
+
+    beforeEach(() => {
+      // Set up mock accounts for each test
+      setupMockAccounts([
+        { id: 'account-cash-123', nickname: 'Wealthsimple Cash (1234)' },
+        { id: 'account-cash-usd-456', nickname: 'Wealthsimple Cash USD (5678)' },
+      ]);
+    });
+
+    describe('rule matching', () => {
+      it('should match transactions with type INTEREST (ignoring subType)', () => {
+        const transaction = {
+          externalCanonicalId: 'interest-123',
+          type: 'INTEREST',
+          subType: 'SAVINGS_INTEREST',
+          accountId: 'account-cash-123',
+          amount: 5.42,
+          amountSign: 'positive',
+        };
+
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'interest');
+        expect(rule.match(transaction)).toBe(true);
+      });
+
+      it('should match INTEREST with any subType', () => {
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'interest');
+
+        expect(rule.match({ type: 'INTEREST', subType: 'SAVINGS_INTEREST' })).toBe(true);
+        expect(rule.match({ type: 'INTEREST', subType: 'PROMO_INTEREST' })).toBe(true);
+        expect(rule.match({ type: 'INTEREST', subType: null })).toBe(true);
+        expect(rule.match({ type: 'INTEREST', subType: undefined })).toBe(true);
+      });
+
+      it('should not match transactions with different type', () => {
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'interest');
+
+        expect(rule.match({ type: 'DEPOSIT', subType: 'INTEREST' })).toBe(false);
+        expect(rule.match({ type: 'WITHDRAWAL', subType: 'INTEREST' })).toBe(false);
+        expect(rule.match({ type: 'SPEND', subType: 'INTEREST' })).toBe(false);
+      });
+    });
+
+    describe('transaction processing', () => {
+      it('should process INTEREST transaction with account name', () => {
+        const transaction = {
+          externalCanonicalId: 'interest-456',
+          type: 'INTEREST',
+          subType: 'SAVINGS_INTEREST',
+          accountId: 'account-cash-123',
+          amount: 12.50,
+          amountSign: 'positive',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.ruleId).toBe('interest');
+        expect(result.category).toBe('Interest');
+        expect(result.merchant).toBe('Interest: Wealthsimple Cash (1234)');
+        expect(result.originalStatement).toBe('Interest: Wealthsimple Cash (1234)');
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should handle different account IDs', () => {
+        const transaction = {
+          externalCanonicalId: 'interest-789',
+          type: 'INTEREST',
+          subType: 'PROMO_INTEREST',
+          accountId: 'account-cash-usd-456',
+          amount: 3.75,
+          amountSign: 'positive',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Interest');
+        expect(result.merchant).toBe('Interest: Wealthsimple Cash USD (5678)');
+        expect(result.originalStatement).toBe('Interest: Wealthsimple Cash USD (5678)');
+      });
+
+      it('should handle missing accountId with Unknown Account fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'interest-no-account',
+          type: 'INTEREST',
+          subType: 'SAVINGS_INTEREST',
+          accountId: null,
+          amount: 1.00,
+          amountSign: 'positive',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Interest');
+        expect(result.merchant).toBe('Interest: Unknown Account');
+        expect(result.originalStatement).toBe('Interest: Unknown Account');
+      });
+
+      it('should handle unknown accountId with Unknown Account fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'interest-unknown-account',
+          type: 'INTEREST',
+          subType: 'SAVINGS_INTEREST',
+          accountId: 'account-unknown-999',
+          amount: 2.00,
+          amountSign: 'positive',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Interest');
+        expect(result.merchant).toBe('Interest: Unknown Account');
+        expect(result.originalStatement).toBe('Interest: Unknown Account');
+      });
+
+      it('should not require category mapping', () => {
+        const transaction = {
+          externalCanonicalId: 'interest-no-mapping',
+          type: 'INTEREST',
+          subType: 'SAVINGS_INTEREST',
+          accountId: 'account-cash-123',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        // INTEREST rule does not set needsCategoryMapping
+        expect(result.needsCategoryMapping).toBeUndefined();
+      });
+
+      it('should have empty notes and technicalDetails', () => {
+        const transaction = {
+          externalCanonicalId: 'interest-notes-check',
+          type: 'INTEREST',
+          subType: 'SAVINGS_INTEREST',
+          accountId: 'account-cash-123',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+    });
+
+    describe('edge cases', () => {
+      it('should handle empty accounts list in storage', () => {
+        setupMockAccounts([]);
+
+        const transaction = {
+          externalCanonicalId: 'interest-empty-list',
+          type: 'INTEREST',
+          subType: 'SAVINGS_INTEREST',
+          accountId: 'account-cash-123',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Interest');
+        expect(result.merchant).toBe('Interest: Unknown Account');
+        expect(result.originalStatement).toBe('Interest: Unknown Account');
+      });
+
+      it('should ignore fundingIntentMap (not used for INTEREST)', () => {
+        const transaction = {
+          externalCanonicalId: 'interest-with-map',
+          type: 'INTEREST',
+          subType: 'SAVINGS_INTEREST',
+          accountId: 'account-cash-123',
+        };
+
+        const fundingIntentMap = new Map();
+        fundingIntentMap.set('interest-with-map', { memo: 'Some memo' });
+
+        // INTEREST rule doesn't use fundingIntentMap, so result should be the same
+        const result = applyTransactionRule(transaction, fundingIntentMap);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Interest');
+        expect(result.notes).toBe(''); // memo should NOT be extracted
+      });
+    });
+  });
+
+  describe('hasRuleForTransaction with INTEREST', () => {
+    it('should return true for INTEREST type (with any subType)', () => {
+      expect(hasRuleForTransaction('INTEREST', 'SAVINGS_INTEREST')).toBe(true);
+      expect(hasRuleForTransaction('INTEREST', 'PROMO_INTEREST')).toBe(true);
+      expect(hasRuleForTransaction('INTEREST', null)).toBe(true);
+      expect(hasRuleForTransaction('INTEREST', undefined)).toBe(true);
+    });
+
+    it('should return false for non-INTEREST types with INTEREST-like subType', () => {
+      expect(hasRuleForTransaction('DEPOSIT', 'INTEREST')).toBe(false);
+      expect(hasRuleForTransaction('WITHDRAWAL', 'SAVINGS_INTEREST')).toBe(false);
     });
   });
 

@@ -445,9 +445,34 @@ export const CASH_TRANSACTION_RULES = [
       };
     },
   },
+  {
+    id: 'interest',
+    description: 'Interest transactions (earned on cash accounts)',
+    match: (tx) => tx.type === 'INTEREST',
+    /**
+     * Process INTEREST transactions
+     * These are interest payments earned on CASH accounts.
+     * The subType is ignored as all INTEREST transactions are treated the same.
+     *
+     * @param {Object} tx - Raw transaction
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx) => {
+      // Look up the account name from the cached accounts list
+      const accountName = getAccountNameById(tx.accountId);
+      const displayText = `Interest: ${accountName}`;
+
+      return {
+        category: 'Interest',
+        merchant: displayText,
+        originalStatement: displayText,
+        notes: '',
+        technicalDetails: '',
+      };
+    },
+  },
   // TODO: Add more rules here as needed (17+ rules planned)
   // Examples of future rules:
-  // - INTEREST
   // - DIVIDEND
   // - FEE
   // - etc.

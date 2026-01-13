@@ -107,9 +107,12 @@ function getAutoMappingForSubType(subType) {
  * Uses dynamic category mapping - after each user selection, re-checks remaining categories
  * to avoid duplicate prompts
  * @param {Array} transactions - Array of processed transactions
+ * @param {Object} options - Options for category resolution
+ * @param {Function} options.onProgress - Callback for progress updates (optional)
  * @returns {Promise<Array>} Transactions with resolved Monarch categories
  */
-async function resolveCategoriesForTransactions(transactions) {
+async function resolveCategoriesForTransactions(transactions, options = {}) {
+  const { onProgress } = options;
   if (!transactions || transactions.length === 0) {
     return transactions;
   }
@@ -168,8 +171,14 @@ async function resolveCategoriesForTransactions(transactions) {
     const totalCategories = categoriesToResolve.length;
     toast.show(`Resolving ${totalCategories} categories that need manual selection...`, 'debug');
 
+    // Report initial progress
+    if (onProgress) {
+      onProgress(`Resolving categories (0/${totalCategories})`);
+    }
+
     // Process categories until all are resolved
     // Always process the first element and remove it when done
+    let resolvedCount = 0;
     while (categoriesToResolve.length > 0) {
       const categoryToResolve = categoriesToResolve[0];
 
@@ -181,6 +190,10 @@ async function resolveCategoriesForTransactions(transactions) {
         // Category is now automatically mapped, skip it
         debugLog(`Category "${categoryToResolve.bankCategory}" now has automatic mapping: ${recheckResult}`);
         categoriesToResolve.shift(); // Remove first element
+        resolvedCount += 1;
+        if (onProgress) {
+          onProgress(`Resolving categories (${resolvedCount}/${totalCategories})`);
+        }
         continue;
       }
 
@@ -230,6 +243,10 @@ async function resolveCategoriesForTransactions(transactions) {
 
       // Remove this category from the list (dynamic re-checking will happen on next iteration)
       categoriesToResolve.shift(); // Remove first element
+      resolvedCount += 1;
+      if (onProgress) {
+        onProgress(`Resolving categories (${resolvedCount}/${totalCategories})`);
+      }
     }
   }
 

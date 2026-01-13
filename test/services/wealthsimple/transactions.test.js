@@ -1279,8 +1279,8 @@ describe('Wealthsimple Transaction Service', () => {
       const mockRawTransactions = [
         {
           externalCanonicalId: 'tx-unsupported',
-          type: 'INTEREST',
-          subType: 'MARGIN_INTEREST', // No rule for this
+          type: 'FEE',
+          subType: 'SERVICE_FEE', // No rule for this
           unifiedStatus: 'COMPLETED',
           amount: 5.00,
           amountSign: 'negative',
@@ -1303,7 +1303,7 @@ describe('Wealthsimple Transaction Service', () => {
       // Mock manual categorization for the unsupported transaction
       showManualTransactionCategorization.mockImplementation((transaction, callback) => {
         callback({
-          merchant: 'Margin Interest',
+          merchant: 'Service Fee',
           category: { id: 'cat-fees', name: 'Financial Fees' },
         });
       });
@@ -1318,7 +1318,7 @@ describe('Wealthsimple Transaction Service', () => {
       expect(result).toHaveLength(2);
       expect(result[0].id).toBe('tx-etransfer');
       expect(result[1].id).toBe('tx-unsupported');
-      expect(result[1].merchant).toBe('Margin Interest');
+      expect(result[1].merchant).toBe('Service Fee');
       expect(result[1].resolvedMonarchCategory).toBe('Financial Fees');
       expect(result[1].ruleId).toBe('manual');
     });
