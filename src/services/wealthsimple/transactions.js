@@ -562,6 +562,29 @@ function collectInternalTransferIds(transactions) {
 }
 
 /**
+ * Collect EFT transfer IDs from transactions that need funds transfer enrichment
+ * Returns only externalCanonicalIds from EFT transactions (DEPOSIT/EFT and WITHDRAWAL/EFT)
+ *
+ * @param {Array} transactions - Raw transactions from Wealthsimple API
+ * @returns {Array<string>} Array of EFT transfer IDs
+ */
+function collectEftTransferIds(transactions) {
+  const eftTransferIds = [];
+
+  for (const tx of transactions) {
+    if (
+      tx.subType === 'EFT' &&
+      tx.externalCanonicalId &&
+      tx.externalCanonicalId.startsWith('funding_intent-')
+    ) {
+      eftTransferIds.push(tx.externalCanonicalId);
+    }
+  }
+
+  return eftTransferIds;
+}
+
+/**
  * Fetch and process transactions for a CASH account
  * Uses the transaction rules engine to categorize and format transactions
  * Fetches funding intent data to enrich e-transfer transactions with memos
@@ -659,14 +682,16 @@ export async function fetchAndProcessCashTransactions(consolidatedAccount, fromD
     // Step 5: Collect IDs for enrichment data
     // - E-transfers need funding intent data for memos
     // - Internal transfers need internal transfer data for annotations
+    // - EFT transfers need funds transfer data for bank account details
     const eTransferIds = collectETransferIds(transactionsWithRules);
     const internalTransferIds = collectInternalTransferIds(transactionsWithRules);
+    const eftTransferIds = collectEftTransferIds(transactionsWithRules);
 
     // Create a combined enrichment map for the rules engine
-    // The rules engine expects a single map that can contain both funding intents and internal transfers
+    // The rules engine expects a single map that can contain funding intents, internal transfers, and funds transfers
     const enrichmentMap = new Map();
 
-    // Fetch funding intent data for e-transfers
+    // Fetch funding intent data for e-transfers (batch API - single call)
     if (eTransferIds.length > 0) {
       debugLog(`Fetching ${eTransferIds.length} funding intent(s) for e-transfer memos...`);
       const fundingIntentMap = await wealthsimpleApi.fetchFundingIntents(eTransferIds);
@@ -678,16 +703,32 @@ export async function fetchAndProcessCashTransactions(consolidatedAccount, fromD
       }
     }
 
-    // Fetch internal transfer data for annotations
+    // Fetch internal transfer data for annotations (individual calls with progress)
     if (internalTransferIds.length > 0) {
       debugLog(`Fetching ${internalTransferIds.length} internal transfer(s) for annotations...`);
-      const internalTransferMap = await wealthsimpleApi.fetchInternalTransfers(internalTransferIds);
-      debugLog(`Fetched ${internalTransferMap.size} internal transfer(s)`);
-
-      // Add to combined map
-      for (const [id, data] of internalTransferMap) {
-        enrichmentMap.set(id, data);
+      for (let i = 0; i < internalTransferIds.length; i++) {
+        const id = internalTransferIds[i];
+        debugLog(`Fetching internal transfer details (${i + 1}/${internalTransferIds.length}): ${id}`);
+        const internalTransfer = await wealthsimpleApi.fetchInternalTransfer(id);
+        if (internalTransfer) {
+          enrichmentMap.set(id, internalTransfer);
+        }
       }
+      debugLog(`Fetched ${internalTransferIds.length} internal transfer(s)`);
+    }
+
+    // Fetch EFT funds transfer data for bank account details (individual calls with progress)
+    if (eftTransferIds.length > 0) {
+      debugLog(`Fetching ${eftTransferIds.length} EFT transfer(s) for bank account details...`);
+      for (let i = 0; i < eftTransferIds.length; i++) {
+        const id = eftTransferIds[i];
+        debugLog(`Fetching EFT transfer details (${i + 1}/${eftTransferIds.length}): ${id}`);
+        const fundsTransfer = await wealthsimpleApi.fetchFundsTransfer(id);
+        if (fundsTransfer) {
+          enrichmentMap.set(id, fundsTransfer);
+        }
+      }
+      debugLog(`Fetched ${eftTransferIds.length} EFT transfer(s)`);
     }
 
     debugLog(`Combined enrichment map has ${enrichmentMap.size} entries`);

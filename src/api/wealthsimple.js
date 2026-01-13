@@ -1552,49 +1552,6 @@ fragment InternalTransfer on InternalTransfer {
 }
 
 /**
- * Fetch internal transfer details for multiple transfers
- * Used to get annotations (user notes) for internal transfers between Wealthsimple accounts
- *
- * @param {Array<string>} ids - Array of internal transfer IDs (e.g., ["funding_intent-xxx", "funding_intent-yyy"])
- * @returns {Promise<Map<string, Object>>} Map of internal transfer ID to details
- */
-export async function fetchInternalTransfers(ids) {
-  try {
-    if (!ids || ids.length === 0) {
-      debugLog('No internal transfer IDs provided');
-      return new Map();
-    }
-
-    // Filter to only include funding_intent- prefixed IDs (internal transfers use this prefix)
-    const validIds = ids.filter((id) => id && id.startsWith('funding_intent-'));
-
-    if (validIds.length === 0) {
-      debugLog('No valid funding_intent- IDs found for internal transfers');
-      return new Map();
-    }
-
-    debugLog(`Fetching internal transfer details for ${validIds.length} ID(s)...`);
-
-    const internalTransferMap = new Map();
-
-    // Fetch each internal transfer individually (API only supports single ID)
-    for (const id of validIds) {
-      const transfer = await fetchInternalTransfer(id);
-      if (transfer) {
-        internalTransferMap.set(id, transfer);
-      }
-    }
-
-    debugLog(`Fetched ${internalTransferMap.size} internal transfer(s)`);
-    return internalTransferMap;
-  } catch (error) {
-    debugLog('Error fetching internal transfers:', error);
-    // Return empty map on error - don't fail the entire sync
-    return new Map();
-  }
-}
-
-/**
  * Fetch funds transfer details for a single transfer
  * Used to get transaction details for EFT transactions, including:
  * - annotation: User note on the transfer
@@ -1864,6 +1821,5 @@ export default {
   fetchCreditCardAccountSummary,
   fetchFundingIntents,
   fetchInternalTransfer,
-  fetchInternalTransfers,
   fetchFundsTransfer,
 };

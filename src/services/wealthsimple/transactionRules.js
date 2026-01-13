@@ -225,6 +225,45 @@ export function extractInternalTransferAnnotation(internalTransfer) {
 }
 
 /**
+ * Extract annotation (user note) from funds transfer data
+ *
+ * @param {Object|null} fundsTransfer - Funds transfer data from FetchFundsTransfer API
+ * @returns {string} Annotation text or empty string if not found
+ */
+export function extractFundsTransferAnnotation(fundsTransfer) {
+  if (!fundsTransfer) {
+    return '';
+  }
+
+  return fundsTransfer.annotation || '';
+}
+
+/**
+ * Get display name for external bank account
+ * Falls back to accountNumber, then "Unknown Account" if both nickname and accountNumber are missing
+ *
+ * @param {Object|null} bankAccount - Bank account object from FetchFundsTransfer API
+ * @returns {string} Display name (nickname, accountNumber, or "Unknown Account")
+ */
+export function getExternalBankAccountDisplayName(bankAccount) {
+  if (!bankAccount) {
+    return 'Unknown Account';
+  }
+
+  // First try nickname
+  if (bankAccount.nickname) {
+    return bankAccount.nickname;
+  }
+
+  // Fall back to account number
+  if (bankAccount.accountNumber) {
+    return bankAccount.accountNumber;
+  }
+
+  return 'Unknown Account';
+}
+
+/**
  * Transaction rules for CASH accounts
  * Each rule has:
  * - id: Unique identifier for the rule
@@ -661,6 +700,78 @@ export const CASH_TRANSACTION_RULES = [
       notes: '',
       technicalDetails: '',
     }),
+  },
+  {
+    id: 'eft-transfer',
+    description: 'EFT transfers between Wealthsimple and external bank accounts',
+    match: (tx) => tx.subType === 'EFT',
+    /**
+     * Process EFT (Electronic Funds Transfer) transactions
+     * These are transfers between Wealthsimple CASH accounts and external bank accounts.
+     * Transaction details (bank account info) are fetched via FetchFundsTransfer API.
+     *
+     * For DEPOSIT: External bank is source, Wealthsimple account is destination
+     * For WITHDRAWAL: Wealthsimple account is source, external bank is destination
+     *
+     * Pending status handling:
+     * - status="processing" (unifiedStatus: "IN_PROGRESS") maps to Pending
+     * - status="completed" (unifiedStatus: "COMPLETED") maps to completed
+     * - Other statuses map to rejected/cancelled
+     *
+     * @param {Object} tx - Raw transaction
+     * @param {Map<string, Object>} fundsTransferMap - Optional map of funds transfer ID to details
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx, fundsTransferMap) => {
+      // Look up the Wealthsimple account name
+      const accountName = getAccountNameById(tx.accountId);
+
+      // Get funds transfer details from enrichmentMap
+      const fundsTransfer = fundsTransferMap?.get(tx.externalCanonicalId);
+
+      // Determine external bank account (source for DEPOSIT, destination for WITHDRAWAL)
+      let bankAccount;
+      if (tx.type === 'DEPOSIT') {
+        bankAccount = fundsTransfer?.source?.bankAccount;
+      } else {
+        // WITHDRAWAL
+        bankAccount = fundsTransfer?.destination?.bankAccount;
+      }
+
+      // Build bank account display
+      const institutionName = bankAccount?.institutionName || 'Unknown Bank';
+      const accountDisplay = getExternalBankAccountDisplayName(bankAccount);
+      const accountNumber = bankAccount?.accountNumber || '';
+
+      // Original statement format: institutionName:accountDisplay (accountNumber)
+      const originalStatement = accountNumber
+        ? `${institutionName}:${accountDisplay} (${accountNumber})`
+        : `${institutionName}:${accountDisplay}`;
+
+      // Generate merchant based on transaction type
+      let merchant;
+      if (tx.type === 'DEPOSIT') {
+        // Money coming in from external bank
+        merchant = `Transfer in: ${accountName} ← ${institutionName}/${accountDisplay}`;
+      } else {
+        // WITHDRAWAL - Money going out to external bank
+        merchant = `Transfer out: ${accountName} → ${institutionName}/${accountDisplay}`;
+      }
+
+      // Extract annotation (user note) from funds transfer data
+      const notes = extractFundsTransferAnnotation(fundsTransfer);
+      if (notes) {
+        debugLog(`Found EFT annotation for ${tx.externalCanonicalId}: "${notes}"`);
+      }
+
+      return {
+        category: 'Transfer',
+        merchant,
+        originalStatement,
+        notes,
+        technicalDetails: '',
+      };
+    },
   },
   // TODO: Add more rules here as needed
   // Examples of future rules:
