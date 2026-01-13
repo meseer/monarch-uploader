@@ -12,7 +12,7 @@ import {
 import wealthsimpleApi from '../../../src/api/wealthsimple';
 import monarchApi from '../../../src/api/monarch';
 import { applyWealthsimpleCategoryMapping } from '../../../src/mappers/category';
-import { showManualTransactionCategorization } from '../../../src/ui/components/categorySelector';
+import { showManualTransactionCategorization, showMonarchCategorySelector } from '../../../src/ui/components/categorySelector';
 
 // Mock dependencies
 jest.mock('../../../src/api/wealthsimple');
@@ -450,6 +450,139 @@ describe('Wealthsimple Transaction Service', () => {
           '2025-01-31',
         ),
       ).rejects.toThrow('API Error');
+    });
+
+    it('should use one-time category selection (rememberMapping=false) for current batch', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-1',
+          occurredAt: '2025-01-15T10:30:00.000000+00:00',
+          type: 'CREDIT_CARD',
+          subType: 'PURCHASE',
+          status: 'settled',
+          spendMerchant: 'New Unique Merchant',
+          amount: 50.00,
+          amountSign: 'negative',
+        },
+        {
+          externalCanonicalId: 'tx-2',
+          occurredAt: '2025-01-16T10:30:00.000000+00:00',
+          type: 'CREDIT_CARD',
+          subType: 'PURCHASE',
+          status: 'settled',
+          spendMerchant: 'New Unique Merchant', // Same merchant
+          amount: 75.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({
+        categories: [
+          { id: '1', name: 'Shopping', group: { id: 'g1', name: 'Expenses' } },
+          { id: '2', name: 'Food', group: { id: 'g2', name: 'Expenses' } },
+        ],
+        categoryGroups: [],
+      });
+
+      // First call returns needsManualSelection, subsequent calls should use session mapping
+      applyWealthsimpleCategoryMapping
+        .mockReturnValueOnce({
+          needsManualSelection: true,
+          bankCategory: 'New Unique Merchant',
+          suggestedCategory: 'Shopping',
+          similarityScore: 0.5,
+        })
+        // Re-check during processing (should still return needsManualSelection since not saved)
+        .mockReturnValueOnce({
+          needsManualSelection: true,
+          bankCategory: 'New Unique Merchant',
+          suggestedCategory: 'Shopping',
+          similarityScore: 0.5,
+        })
+        // Final resolution should also indicate no saved mapping (since remember=false)
+        .mockReturnValue({
+          needsManualSelection: true,
+          bankCategory: 'New Unique Merchant',
+          suggestedCategory: 'Shopping',
+          similarityScore: 0.5,
+        });
+
+      // Mock the category selector to return selection with rememberMapping=false
+      showMonarchCategorySelector.mockImplementation((bankCategory, callback) => {
+        callback({
+          id: '2',
+          name: 'Food',
+          rememberMapping: false, // User unchecked "remember" checkbox
+        });
+      });
+
+      const result = await fetchAndProcessCreditCardTransactions(
+        mockConsolidatedAccount,
+        '2025-01-01',
+        '2025-01-31',
+      );
+
+      // Both transactions should have the selected category (not "Uncategorized")
+      expect(result).toHaveLength(2);
+      expect(result[0].resolvedMonarchCategory).toBe('Food');
+      expect(result[1].resolvedMonarchCategory).toBe('Food');
+
+      // Should only show selector once (for unique merchant)
+      expect(showMonarchCategorySelector).toHaveBeenCalledTimes(1);
+    });
+
+    it('should save category selection when rememberMapping=true', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-1',
+          occurredAt: '2025-01-15T10:30:00.000000+00:00',
+          type: 'CREDIT_CARD',
+          subType: 'PURCHASE',
+          status: 'settled',
+          spendMerchant: 'Another Merchant',
+          amount: 50.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({
+        categories: [
+          { id: '1', name: 'Shopping', group: { id: 'g1', name: 'Expenses' } },
+        ],
+        categoryGroups: [],
+      });
+
+      // Return needsManualSelection first, then the saved mapping after save
+      applyWealthsimpleCategoryMapping
+        .mockReturnValueOnce({
+          needsManualSelection: true,
+          bankCategory: 'Another Merchant',
+          suggestedCategory: 'Shopping',
+          similarityScore: 0.5,
+        })
+        // After saving, the mapping should be found
+        .mockReturnValue('Shopping');
+
+      // Mock the category selector to return selection with rememberMapping=true (or undefined/default)
+      showMonarchCategorySelector.mockImplementation((bankCategory, callback) => {
+        callback({
+          id: '1',
+          name: 'Shopping',
+          // rememberMapping: true is the default when not false
+        });
+      });
+
+      const result = await fetchAndProcessCreditCardTransactions(
+        mockConsolidatedAccount,
+        '2025-01-01',
+        '2025-01-31',
+      );
+
+      // Transaction should have the selected category
+      expect(result).toHaveLength(1);
+      expect(result[0].resolvedMonarchCategory).toBe('Shopping');
     });
   });
 

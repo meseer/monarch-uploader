@@ -119,6 +119,10 @@ async function resolveCategoriesForTransactions(transactions, options = {}) {
 
   debugLog('Starting category resolution for Wealthsimple transactions');
 
+  // Session mappings for one-time selections (not saved to persistent storage)
+  // This ensures that selections with "remember=false" are still used for the current batch
+  const sessionMappings = new Map();
+
   // Fetch categories from Monarch for similarity scoring
   let availableCategories = [];
   try {
@@ -235,7 +239,10 @@ async function resolveCategoriesForTransactions(transactions, options = {}) {
         throw new Error(`Category selection cancelled for "${categoryToResolve.bankCategory}". Upload aborted.`);
       }
 
-      // Save the selection using Wealthsimple-specific function only if user chose to remember
+      // Always store in session mappings for use in the current batch
+      sessionMappings.set(categoryToResolve.bankCategory.toUpperCase(), selectedCategory.name);
+
+      // Save to persistent storage only if user chose to remember
       if (selectedCategory.rememberMapping !== false) {
         saveUserWealthsimpleCategorySelection(categoryToResolve.bankCategory, selectedCategory.name);
         debugLog(`User selected category mapping (saved): ${categoryToResolve.bankCategory} -> ${selectedCategory.name}`);
@@ -261,10 +268,20 @@ async function resolveCategoriesForTransactions(transactions, options = {}) {
       return transaction;
     }
 
-    // Resolve based on merchant using Wealthsimple-specific function
+    // Resolve based on merchant
     const categoryKey = transaction.categoryKey;
-    const mappingResult = applyWealthsimpleCategoryMapping(categoryKey, availableCategories);
+    const upperCategoryKey = categoryKey ? categoryKey.toUpperCase() : '';
 
+    // First check session mappings (includes one-time selections)
+    if (sessionMappings.has(upperCategoryKey)) {
+      return {
+        ...transaction,
+        resolvedMonarchCategory: sessionMappings.get(upperCategoryKey),
+      };
+    }
+
+    // Fall back to persistent storage via Wealthsimple-specific function
+    const mappingResult = applyWealthsimpleCategoryMapping(categoryKey, availableCategories);
     const resolvedCategory = typeof mappingResult === 'string' ? mappingResult : 'Uncategorized';
 
     return {
