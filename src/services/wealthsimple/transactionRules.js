@@ -42,6 +42,33 @@ export function getAccountNameById(accountId) {
 }
 
 /**
+ * Get account name from the cached Wealthsimple accounts list by account type
+ * Used for looking up account names when only the type is known (e.g., credit card payments)
+ * @param {string} accountType - Wealthsimple account type (e.g., 'CREDIT_CARD')
+ * @returns {string|null} Account nickname or null if not found
+ */
+export function getAccountNameByType(accountType) {
+  if (!accountType) {
+    return null;
+  }
+
+  try {
+    const accountsJson = GM_getValue(STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST, '[]');
+    const accounts = JSON.parse(accountsJson);
+
+    const account = accounts.find((acc) => acc.wealthsimpleAccount?.type === accountType);
+    if (account && account.wealthsimpleAccount?.nickname) {
+      return account.wealthsimpleAccount.nickname;
+    }
+
+    return null;
+  } catch (error) {
+    debugLog('Error looking up account by type:', error);
+    return null;
+  }
+}
+
+/**
  * AFT transaction type to Monarch category mapping
  * These are known AFT types that map directly to specific categories
  */
@@ -509,6 +536,35 @@ export const CASH_TRANSACTION_RULES = [
         category: 'Interest',
         merchant: displayText,
         originalStatement: displayText,
+        notes: '',
+        technicalDetails: '',
+      };
+    },
+  },
+  {
+    id: 'credit-card-payment',
+    description: 'Credit card payment transactions',
+    match: (tx) => tx.type === 'CREDIT_CARD_PAYMENT',
+    /**
+     * Process CREDIT_CARD_PAYMENT transactions
+     * These are payments made to the Wealthsimple credit card.
+     * The subType is ignored as all credit card payments are treated the same.
+     *
+     * Merchant and originalStatement are set to the credit card account name,
+     * looked up by type 'CREDIT_CARD' in the accounts list.
+     * Falls back to 'Wealthsimple Credit Card' if no credit card account is found.
+     *
+     * @param {Object} tx - Raw transaction
+     * @returns {Object} Processed transaction fields
+     */
+    process: () => {
+      // Look up the credit card account name by type
+      const creditCardName = getAccountNameByType('CREDIT_CARD') || 'Wealthsimple Credit Card';
+
+      return {
+        category: 'Credit Card Payment',
+        merchant: creditCardName,
+        originalStatement: creditCardName,
         notes: '',
         technicalDetails: '',
       };

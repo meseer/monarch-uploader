@@ -10,6 +10,7 @@ import {
   extractOutgoingETransferDetails,
   formatOutgoingETransferDetails,
   getAccountNameById,
+  getAccountNameByType,
   extractInternalTransferAnnotation,
 } from '../../../src/services/wealthsimple/transactionRules';
 import { STORAGE } from '../../../src/core/config';
@@ -2497,6 +2498,384 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
       expect(result).not.toBeNull();
       expect(result.notes).toBe('');
+    });
+  });
+
+  describe('getAccountNameByType', () => {
+    const setupMockAccountsWithTypes = (accounts) => {
+      const consolidatedAccounts = accounts.map((acc) => ({
+        wealthsimpleAccount: {
+          id: acc.id,
+          nickname: acc.nickname,
+          type: acc.type,
+        },
+      }));
+      global.GM_getValue = jest.fn((key, defaultValue) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
+          return JSON.stringify(consolidatedAccounts);
+        }
+        return defaultValue;
+      });
+    };
+
+    it('should return account nickname when type is found', () => {
+      setupMockAccountsWithTypes([
+        { id: 'cc-123', nickname: 'Wealthsimple Credit Card (1234)', type: 'CREDIT_CARD' },
+        { id: 'cash-456', nickname: 'Wealthsimple Cash', type: 'CASH' },
+      ]);
+
+      const result = getAccountNameByType('CREDIT_CARD');
+      expect(result).toBe('Wealthsimple Credit Card (1234)');
+    });
+
+    it('should return null when accountType is null', () => {
+      setupMockAccountsWithTypes([
+        { id: 'cc-123', nickname: 'Credit Card', type: 'CREDIT_CARD' },
+      ]);
+
+      const result = getAccountNameByType(null);
+      expect(result).toBeNull();
+    });
+
+    it('should return null when accountType is undefined', () => {
+      setupMockAccountsWithTypes([
+        { id: 'cc-123', nickname: 'Credit Card', type: 'CREDIT_CARD' },
+      ]);
+
+      const result = getAccountNameByType(undefined);
+      expect(result).toBeNull();
+    });
+
+    it('should return null when accountType is not found', () => {
+      setupMockAccountsWithTypes([
+        { id: 'cash-123', nickname: 'Cash Account', type: 'CASH' },
+      ]);
+
+      const result = getAccountNameByType('CREDIT_CARD');
+      expect(result).toBeNull();
+    });
+
+    it('should return null when account has no nickname', () => {
+      const consolidatedAccounts = [
+        {
+          wealthsimpleAccount: {
+            id: 'cc-123',
+            nickname: null,
+            type: 'CREDIT_CARD',
+          },
+        },
+      ];
+      global.GM_getValue = jest.fn((key, defaultValue) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
+          return JSON.stringify(consolidatedAccounts);
+        }
+        return defaultValue;
+      });
+
+      const result = getAccountNameByType('CREDIT_CARD');
+      expect(result).toBeNull();
+    });
+
+    it('should return null when storage has invalid JSON', () => {
+      global.GM_getValue = jest.fn((key, defaultValue) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
+          return 'invalid-json{';
+        }
+        return defaultValue;
+      });
+
+      const result = getAccountNameByType('CREDIT_CARD');
+      expect(result).toBeNull();
+    });
+
+    it('should return null when storage is empty array', () => {
+      setupMockAccountsWithTypes([]);
+
+      const result = getAccountNameByType('CREDIT_CARD');
+      expect(result).toBeNull();
+    });
+
+    it('should return first matching account when multiple accounts have same type', () => {
+      setupMockAccountsWithTypes([
+        { id: 'cc-123', nickname: 'First Credit Card', type: 'CREDIT_CARD' },
+        { id: 'cc-456', nickname: 'Second Credit Card', type: 'CREDIT_CARD' },
+      ]);
+
+      const result = getAccountNameByType('CREDIT_CARD');
+      expect(result).toBe('First Credit Card');
+    });
+
+    it('should find CASH type account', () => {
+      setupMockAccountsWithTypes([
+        { id: 'cc-123', nickname: 'Credit Card', type: 'CREDIT_CARD' },
+        { id: 'cash-456', nickname: 'My Cash Account', type: 'CASH' },
+      ]);
+
+      const result = getAccountNameByType('CASH');
+      expect(result).toBe('My Cash Account');
+    });
+  });
+
+  describe('CREDIT_CARD_PAYMENT rule', () => {
+    // Helper to set up mock accounts in GM storage
+    const setupMockAccountsWithTypes = (accounts) => {
+      const consolidatedAccounts = accounts.map((acc) => ({
+        wealthsimpleAccount: {
+          id: acc.id,
+          nickname: acc.nickname,
+          type: acc.type,
+        },
+      }));
+      global.GM_getValue = jest.fn((key, defaultValue) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
+          return JSON.stringify(consolidatedAccounts);
+        }
+        return defaultValue;
+      });
+    };
+
+    describe('rule matching', () => {
+      it('should match transactions with type CREDIT_CARD_PAYMENT', () => {
+        const transaction = {
+          externalCanonicalId: 'cc-payment-123',
+          type: 'CREDIT_CARD_PAYMENT',
+          subType: 'SOME_SUBTYPE',
+          amount: 500,
+          amountSign: 'negative',
+        };
+
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'credit-card-payment');
+        expect(rule.match(transaction)).toBe(true);
+      });
+
+      it('should match CREDIT_CARD_PAYMENT with any subType (ignoring subType)', () => {
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'credit-card-payment');
+
+        expect(rule.match({ type: 'CREDIT_CARD_PAYMENT', subType: 'SCHEDULED' })).toBe(true);
+        expect(rule.match({ type: 'CREDIT_CARD_PAYMENT', subType: 'MANUAL' })).toBe(true);
+        expect(rule.match({ type: 'CREDIT_CARD_PAYMENT', subType: null })).toBe(true);
+        expect(rule.match({ type: 'CREDIT_CARD_PAYMENT', subType: undefined })).toBe(true);
+      });
+
+      it('should not match transactions with different type', () => {
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'credit-card-payment');
+
+        expect(rule.match({ type: 'WITHDRAWAL', subType: 'CREDIT_CARD_PAYMENT' })).toBe(false);
+        expect(rule.match({ type: 'DEPOSIT', subType: 'CREDIT_CARD_PAYMENT' })).toBe(false);
+        expect(rule.match({ type: 'SPEND', subType: 'CREDIT_CARD_PAYMENT' })).toBe(false);
+      });
+    });
+
+    describe('transaction processing', () => {
+      it('should process CREDIT_CARD_PAYMENT with credit card account name from storage', () => {
+        setupMockAccountsWithTypes([
+          { id: 'cash-123', nickname: 'Wealthsimple Cash', type: 'CASH' },
+          { id: 'cc-456', nickname: 'Wealthsimple Credit Card (1234)', type: 'CREDIT_CARD' },
+        ]);
+
+        const transaction = {
+          externalCanonicalId: 'cc-payment-456',
+          type: 'CREDIT_CARD_PAYMENT',
+          subType: 'SCHEDULED',
+          amount: 250.00,
+          amountSign: 'negative',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.ruleId).toBe('credit-card-payment');
+        expect(result.category).toBe('Credit Card Payment');
+        expect(result.merchant).toBe('Wealthsimple Credit Card (1234)');
+        expect(result.originalStatement).toBe('Wealthsimple Credit Card (1234)');
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should use fallback name when no credit card account exists', () => {
+        setupMockAccountsWithTypes([
+          { id: 'cash-123', nickname: 'Wealthsimple Cash', type: 'CASH' },
+          { id: 'tfsa-456', nickname: 'Wealthsimple TFSA', type: 'MANAGED_TFSA' },
+        ]);
+
+        const transaction = {
+          externalCanonicalId: 'cc-payment-789',
+          type: 'CREDIT_CARD_PAYMENT',
+          subType: null,
+          amount: 100.00,
+          amountSign: 'negative',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.ruleId).toBe('credit-card-payment');
+        expect(result.category).toBe('Credit Card Payment');
+        expect(result.merchant).toBe('Wealthsimple Credit Card');
+        expect(result.originalStatement).toBe('Wealthsimple Credit Card');
+      });
+
+      it('should use fallback when accounts list is empty', () => {
+        setupMockAccountsWithTypes([]);
+
+        const transaction = {
+          externalCanonicalId: 'cc-payment-empty',
+          type: 'CREDIT_CARD_PAYMENT',
+          subType: 'MANUAL',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Credit Card Payment');
+        expect(result.merchant).toBe('Wealthsimple Credit Card');
+        expect(result.originalStatement).toBe('Wealthsimple Credit Card');
+      });
+
+      it('should use fallback when credit card has no nickname', () => {
+        const consolidatedAccounts = [
+          {
+            wealthsimpleAccount: {
+              id: 'cc-123',
+              nickname: null,
+              type: 'CREDIT_CARD',
+            },
+          },
+        ];
+        global.GM_getValue = jest.fn((key, defaultValue) => {
+          if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
+            return JSON.stringify(consolidatedAccounts);
+          }
+          return defaultValue;
+        });
+
+        const transaction = {
+          externalCanonicalId: 'cc-payment-no-nickname',
+          type: 'CREDIT_CARD_PAYMENT',
+          subType: null,
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Wealthsimple Credit Card');
+        expect(result.originalStatement).toBe('Wealthsimple Credit Card');
+      });
+
+      it('should not require category mapping', () => {
+        setupMockAccountsWithTypes([
+          { id: 'cc-123', nickname: 'Credit Card', type: 'CREDIT_CARD' },
+        ]);
+
+        const transaction = {
+          externalCanonicalId: 'cc-payment-mapping',
+          type: 'CREDIT_CARD_PAYMENT',
+          subType: null,
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        // CREDIT_CARD_PAYMENT rule does not set needsCategoryMapping
+        expect(result.needsCategoryMapping).toBeUndefined();
+      });
+
+      it('should have empty notes and technicalDetails', () => {
+        setupMockAccountsWithTypes([
+          { id: 'cc-123', nickname: 'Credit Card', type: 'CREDIT_CARD' },
+        ]);
+
+        const transaction = {
+          externalCanonicalId: 'cc-payment-notes-check',
+          type: 'CREDIT_CARD_PAYMENT',
+          subType: null,
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+    });
+
+    describe('edge cases', () => {
+      it('should handle invalid JSON in storage', () => {
+        global.GM_getValue = jest.fn((key, defaultValue) => {
+          if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
+            return 'invalid-json{';
+          }
+          return defaultValue;
+        });
+
+        const transaction = {
+          externalCanonicalId: 'cc-payment-invalid-json',
+          type: 'CREDIT_CARD_PAYMENT',
+          subType: null,
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Credit Card Payment');
+        expect(result.merchant).toBe('Wealthsimple Credit Card');
+        expect(result.originalStatement).toBe('Wealthsimple Credit Card');
+      });
+
+      it('should ignore fundingIntentMap (not used for CREDIT_CARD_PAYMENT)', () => {
+        setupMockAccountsWithTypes([
+          { id: 'cc-123', nickname: 'My Credit Card', type: 'CREDIT_CARD' },
+        ]);
+
+        const transaction = {
+          externalCanonicalId: 'cc-payment-with-map',
+          type: 'CREDIT_CARD_PAYMENT',
+          subType: null,
+        };
+
+        const fundingIntentMap = new Map();
+        fundingIntentMap.set('cc-payment-with-map', { memo: 'Some memo' });
+
+        // CREDIT_CARD_PAYMENT rule doesn't use fundingIntentMap
+        const result = applyTransactionRule(transaction, fundingIntentMap);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Credit Card Payment');
+        expect(result.notes).toBe(''); // memo should NOT be extracted
+      });
+
+      it('should use first credit card when multiple exist', () => {
+        setupMockAccountsWithTypes([
+          { id: 'cc-123', nickname: 'Primary Credit Card', type: 'CREDIT_CARD' },
+          { id: 'cc-456', nickname: 'Secondary Credit Card', type: 'CREDIT_CARD' },
+        ]);
+
+        const transaction = {
+          externalCanonicalId: 'cc-payment-multi',
+          type: 'CREDIT_CARD_PAYMENT',
+          subType: null,
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Primary Credit Card');
+        expect(result.originalStatement).toBe('Primary Credit Card');
+      });
+    });
+  });
+
+  describe('hasRuleForTransaction with CREDIT_CARD_PAYMENT', () => {
+    it('should return true for CREDIT_CARD_PAYMENT type (with any subType)', () => {
+      expect(hasRuleForTransaction('CREDIT_CARD_PAYMENT', 'SCHEDULED')).toBe(true);
+      expect(hasRuleForTransaction('CREDIT_CARD_PAYMENT', 'MANUAL')).toBe(true);
+      expect(hasRuleForTransaction('CREDIT_CARD_PAYMENT', null)).toBe(true);
+      expect(hasRuleForTransaction('CREDIT_CARD_PAYMENT', undefined)).toBe(true);
+    });
+
+    it('should return false for non-CREDIT_CARD_PAYMENT types', () => {
+      expect(hasRuleForTransaction('WITHDRAWAL', 'CREDIT_CARD_PAYMENT')).toBe(false);
+      expect(hasRuleForTransaction('DEPOSIT', 'CREDIT_CARD_PAYMENT')).toBe(false);
     });
   });
 });
