@@ -672,8 +672,236 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       expect(hasRuleForTransaction('DEPOSIT', 'AFT')).toBe(true);
     });
 
-    it('should return false for WITHDRAWAL/AFT type/subType', () => {
-      expect(hasRuleForTransaction('WITHDRAWAL', 'AFT')).toBe(false);
+    it('should return true for WITHDRAWAL/AFT type/subType', () => {
+      expect(hasRuleForTransaction('WITHDRAWAL', 'AFT')).toBe(true);
+    });
+  });
+
+  describe('WITHDRAWAL/AFT rule', () => {
+    it('should match transactions with type WITHDRAWAL and subType AFT', () => {
+      const transaction = {
+        externalCanonicalId: 'aft-withdrawal-123',
+        type: 'WITHDRAWAL',
+        subType: 'AFT',
+        aftOriginatorName: 'CRA',
+        aftTransactionType: 'tax_payment',
+        aftTransactionCategory: 'government',
+        unifiedStatus: 'COMPLETED',
+      };
+
+      const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'withdrawal-aft');
+      expect(rule.match(transaction)).toBe(true);
+    });
+
+    it('should not match transactions with different type', () => {
+      const transaction = {
+        externalCanonicalId: 'aft-123',
+        type: 'DEPOSIT',
+        subType: 'AFT',
+        aftOriginatorName: 'CRA',
+      };
+
+      const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'withdrawal-aft');
+      expect(rule.match(transaction)).toBe(false);
+    });
+
+    it('should not match transactions with different subType', () => {
+      const transaction = {
+        externalCanonicalId: 'tx-123',
+        type: 'WITHDRAWAL',
+        subType: 'E_TRANSFER',
+        aftOriginatorName: 'CRA',
+      };
+
+      const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'withdrawal-aft');
+      expect(rule.match(transaction)).toBe(false);
+    });
+
+    describe('transaction processing - always needs category mapping', () => {
+      it('should always require category mapping (unlike DEPOSIT/AFT)', () => {
+        const transaction = {
+          externalCanonicalId: 'aft-withdrawal-456',
+          type: 'WITHDRAWAL',
+          subType: 'AFT',
+          aftOriginatorName: 'CRA',
+          aftTransactionType: 'tax_payment',
+          aftTransactionCategory: 'government',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.ruleId).toBe('withdrawal-aft');
+        expect(result.category).toBeNull();
+        expect(result.needsCategoryMapping).toBe(true);
+        expect(result.merchant).toBe('CRA');
+        expect(result.originalStatement).toBe('CRA');
+      });
+
+      it('should use aftTransactionType as categoryKey for similarity matching', () => {
+        const transaction = {
+          externalCanonicalId: 'aft-withdrawal-789',
+          type: 'WITHDRAWAL',
+          subType: 'AFT',
+          aftOriginatorName: 'Revenue Quebec',
+          aftTransactionType: 'provincial_tax',
+          aftTransactionCategory: 'government',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.categoryKey).toBe('provincial_tax');
+      });
+
+      it('should include aftDetails for category selector display', () => {
+        const transaction = {
+          externalCanonicalId: 'aft-withdrawal-details',
+          type: 'WITHDRAWAL',
+          subType: 'AFT',
+          aftOriginatorName: 'Service Canada',
+          aftTransactionType: 'ei_payment',
+          aftTransactionCategory: 'government',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.aftDetails).toBeDefined();
+        expect(result.aftDetails.aftOriginatorName).toBe('Service Canada');
+        expect(result.aftDetails.aftTransactionType).toBe('ei_payment');
+        expect(result.aftDetails.aftTransactionCategory).toBe('government');
+      });
+
+      it('should set merchant and originalStatement to aftOriginatorName', () => {
+        const transaction = {
+          externalCanonicalId: 'aft-withdrawal-merchant',
+          type: 'WITHDRAWAL',
+          subType: 'AFT',
+          aftOriginatorName: 'Bell Canada',
+          aftTransactionType: 'utility_payment',
+          aftTransactionCategory: 'utilities',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Bell Canada');
+        expect(result.originalStatement).toBe('Bell Canada');
+      });
+    });
+
+    describe('edge cases', () => {
+      it('should handle missing aftOriginatorName with fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'aft-withdrawal-no-originator',
+          type: 'WITHDRAWAL',
+          subType: 'AFT',
+          aftOriginatorName: null,
+          aftTransactionType: 'misc_payment',
+          aftTransactionCategory: 'misc',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Unknown AFT');
+        expect(result.originalStatement).toBe('Unknown AFT');
+        expect(result.aftDetails.aftOriginatorName).toBe('Unknown AFT');
+      });
+
+      it('should handle empty aftOriginatorName with fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'aft-withdrawal-empty-originator',
+          type: 'WITHDRAWAL',
+          subType: 'AFT',
+          aftOriginatorName: '',
+          aftTransactionType: 'misc_payment',
+          aftTransactionCategory: 'misc',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Unknown AFT');
+        expect(result.originalStatement).toBe('Unknown AFT');
+      });
+
+      it('should handle missing aftTransactionType - fall back to originatorName for categoryKey', () => {
+        const transaction = {
+          externalCanonicalId: 'aft-withdrawal-no-type',
+          type: 'WITHDRAWAL',
+          subType: 'AFT',
+          aftOriginatorName: 'Some Corp',
+          aftTransactionType: null,
+          aftTransactionCategory: 'misc',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBeNull();
+        expect(result.needsCategoryMapping).toBe(true);
+        // Should fall back to originatorName for categoryKey
+        expect(result.categoryKey).toBe('Some Corp');
+      });
+
+      it('should handle empty aftTransactionType - fall back to originatorName for categoryKey', () => {
+        const transaction = {
+          externalCanonicalId: 'aft-withdrawal-empty-type',
+          type: 'WITHDRAWAL',
+          subType: 'AFT',
+          aftOriginatorName: 'Another Corp',
+          aftTransactionType: '',
+          aftTransactionCategory: '',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBeNull();
+        expect(result.needsCategoryMapping).toBe(true);
+        // Empty string is falsy, should fall back to originatorName
+        expect(result.categoryKey).toBe('Another Corp');
+      });
+
+      it('should handle all fields missing with appropriate fallbacks', () => {
+        const transaction = {
+          externalCanonicalId: 'aft-withdrawal-all-missing',
+          type: 'WITHDRAWAL',
+          subType: 'AFT',
+          aftOriginatorName: null,
+          aftTransactionType: null,
+          aftTransactionCategory: null,
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Unknown AFT');
+        expect(result.originalStatement).toBe('Unknown AFT');
+        expect(result.categoryKey).toBe('Unknown AFT');
+        expect(result.aftDetails.aftOriginatorName).toBe('Unknown AFT');
+        expect(result.aftDetails.aftTransactionType).toBe('');
+        expect(result.aftDetails.aftTransactionCategory).toBe('');
+      });
+
+      it('should have empty notes and technicalDetails', () => {
+        const transaction = {
+          externalCanonicalId: 'aft-withdrawal-notes-check',
+          type: 'WITHDRAWAL',
+          subType: 'AFT',
+          aftOriginatorName: 'Test Corp',
+          aftTransactionType: 'test_payment',
+          aftTransactionCategory: 'test',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
     });
   });
 

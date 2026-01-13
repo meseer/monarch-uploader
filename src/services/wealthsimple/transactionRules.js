@@ -349,6 +349,49 @@ export const CASH_TRANSACTION_RULES = [
     },
   },
   {
+    id: 'withdrawal-aft',
+    description: 'AFT (Automated Funds Transfer) withdrawal transactions - payments, transfers out, etc.',
+    match: (tx) => tx.type === 'WITHDRAWAL' && tx.subType === 'AFT',
+    /**
+     * Process WITHDRAWAL/AFT transactions
+     * AFT withdrawal transactions have additional metadata:
+     * - aftTransactionCategory: General category (e.g., "government", "misc")
+     * - aftTransactionType: Specific type (e.g., "tax_payment", "misc_payments")
+     * - aftOriginatorName: Name of the organization receiving the transfer
+     *
+     * Unlike DEPOSIT/AFT, WITHDRAWAL/AFT transactions always require user mapping
+     * as the categories are more varied and context-dependent.
+     *
+     * @param {Object} tx - Raw transaction
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx) => {
+      const originatorName = tx.aftOriginatorName || 'Unknown AFT';
+      const aftTransactionType = tx.aftTransactionType || '';
+      const aftTransactionCategory = tx.aftTransactionCategory || '';
+
+      // All WITHDRAWAL/AFT transactions need category mapping
+      debugLog(`WITHDRAWAL/AFT transaction needs mapping: ${aftTransactionType || originatorName}`);
+
+      return {
+        category: null,
+        merchant: originatorName,
+        originalStatement: originatorName,
+        notes: '',
+        technicalDetails: '',
+        needsCategoryMapping: true,
+        // Use aftTransactionType as category key for similarity matching and saving
+        categoryKey: aftTransactionType || originatorName,
+        // Store AFT details for category selector display
+        aftDetails: {
+          aftTransactionCategory,
+          aftTransactionType,
+          aftOriginatorName: originatorName,
+        },
+      };
+    },
+  },
+  {
     id: 'internal-transfer',
     description: 'Internal transfers between Wealthsimple accounts (SOURCE and DESTINATION)',
     match: (tx) => tx.type === 'INTERNAL_TRANSFER' && (tx.subType === 'SOURCE' || tx.subType === 'DESTINATION'),
