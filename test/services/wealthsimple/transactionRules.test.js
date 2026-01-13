@@ -2878,4 +2878,342 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       expect(hasRuleForTransaction('DEPOSIT', 'CREDIT_CARD_PAYMENT')).toBe(false);
     });
   });
+
+  describe('PROMOTION/INCENTIVE_BONUS rule', () => {
+    describe('rule matching', () => {
+      it('should match transactions with type PROMOTION and subType INCENTIVE_BONUS', () => {
+        const transaction = {
+          externalCanonicalId: 'promo-123',
+          type: 'PROMOTION',
+          subType: 'INCENTIVE_BONUS',
+          amount: 149.77,
+          amountSign: 'positive',
+        };
+
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'promotion-incentive-bonus');
+        expect(rule.match(transaction)).toBe(true);
+      });
+
+      it('should not match transactions with different type', () => {
+        const transaction = {
+          externalCanonicalId: 'promo-123',
+          type: 'DEPOSIT',
+          subType: 'INCENTIVE_BONUS',
+        };
+
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'promotion-incentive-bonus');
+        expect(rule.match(transaction)).toBe(false);
+      });
+
+      it('should not match transactions with different subType', () => {
+        const transaction = {
+          externalCanonicalId: 'promo-123',
+          type: 'PROMOTION',
+          subType: 'REFERRAL',
+        };
+
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'promotion-incentive-bonus');
+        expect(rule.match(transaction)).toBe(false);
+      });
+    });
+
+    describe('transaction processing', () => {
+      it('should process PROMOTION/INCENTIVE_BONUS transaction correctly', () => {
+        const transaction = {
+          externalCanonicalId: '9898300',
+          type: 'PROMOTION',
+          subType: 'INCENTIVE_BONUS',
+          amount: 149.77,
+          amountSign: 'positive',
+          unifiedStatus: 'COMPLETED',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.ruleId).toBe('promotion-incentive-bonus');
+        expect(result.category).toBeNull(); // Needs category mapping
+        expect(result.merchant).toBe('Wealthsimple Incentive Bonus');
+        expect(result.originalStatement).toBe('Wealthsimple Incentive Bonus');
+        expect(result.needsCategoryMapping).toBe(true);
+        expect(result.categoryKey).toBe('PROMOTION_INCENTIVE_BONUS');
+      });
+
+      it('should include promotionDetails for category selector display', () => {
+        const transaction = {
+          externalCanonicalId: '9898300',
+          type: 'PROMOTION',
+          subType: 'INCENTIVE_BONUS',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.promotionDetails).toBeDefined();
+        expect(result.promotionDetails.type).toBe('PROMOTION');
+        expect(result.promotionDetails.subType).toBe('INCENTIVE_BONUS');
+      });
+
+      it('should have empty notes and technicalDetails', () => {
+        const transaction = {
+          externalCanonicalId: 'promo-notes',
+          type: 'PROMOTION',
+          subType: 'INCENTIVE_BONUS',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+    });
+  });
+
+  describe('hasRuleForTransaction with PROMOTION/INCENTIVE_BONUS', () => {
+    it('should return true for PROMOTION/INCENTIVE_BONUS type/subType', () => {
+      expect(hasRuleForTransaction('PROMOTION', 'INCENTIVE_BONUS')).toBe(true);
+    });
+
+    it('should return false for PROMOTION with different subType', () => {
+      expect(hasRuleForTransaction('PROMOTION', 'REFERRAL')).toBe(false);
+      expect(hasRuleForTransaction('PROMOTION', null)).toBe(false);
+    });
+
+    it('should return false for INCENTIVE_BONUS with wrong type', () => {
+      expect(hasRuleForTransaction('DEPOSIT', 'INCENTIVE_BONUS')).toBe(false);
+      expect(hasRuleForTransaction('REIMBURSEMENT', 'INCENTIVE_BONUS')).toBe(false);
+    });
+  });
+
+  describe('REIMBURSEMENT/CASHBACK rule', () => {
+    describe('rule matching', () => {
+      it('should match transactions with type REIMBURSEMENT and subType CASHBACK', () => {
+        const transaction = {
+          externalCanonicalId: 'cashback-123',
+          type: 'REIMBURSEMENT',
+          subType: 'CASHBACK',
+          amount: 6.36,
+          amountSign: 'positive',
+          rewardProgram: 'CREDIT_CARD_VISA_INFINITE_REWARDS',
+        };
+
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'reimbursement-cashback');
+        expect(rule.match(transaction)).toBe(true);
+      });
+
+      it('should not match transactions with different type', () => {
+        const transaction = {
+          externalCanonicalId: 'cashback-123',
+          type: 'DEPOSIT',
+          subType: 'CASHBACK',
+        };
+
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'reimbursement-cashback');
+        expect(rule.match(transaction)).toBe(false);
+      });
+
+      it('should not match transactions with different subType', () => {
+        const transaction = {
+          externalCanonicalId: 'cashback-123',
+          type: 'REIMBURSEMENT',
+          subType: 'ATM',
+        };
+
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'reimbursement-cashback');
+        expect(rule.match(transaction)).toBe(false);
+      });
+    });
+
+    describe('transaction processing', () => {
+      it('should process REIMBURSEMENT/CASHBACK transaction with rewardProgram', () => {
+        const transaction = {
+          externalCanonicalId: 'card-reward-payout-9kV7HnqpRpOxIcmn2HVA',
+          type: 'REIMBURSEMENT',
+          subType: 'CASHBACK',
+          amount: 6.36,
+          amountSign: 'positive',
+          rewardProgram: 'CREDIT_CARD_VISA_INFINITE_REWARDS',
+          status: 'completed',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.ruleId).toBe('reimbursement-cashback');
+        expect(result.category).toBe('Cashback');
+        expect(result.merchant).toBe('Wealthsimple Cashback');
+        expect(result.originalStatement).toBe('CREDIT_CARD_VISA_INFINITE_REWARDS');
+        expect(result.needsCategoryMapping).toBeUndefined();
+      });
+
+      it('should use fallback original statement when rewardProgram is null', () => {
+        const transaction = {
+          externalCanonicalId: 'cashback-no-program',
+          type: 'REIMBURSEMENT',
+          subType: 'CASHBACK',
+          amount: 10.00,
+          amountSign: 'positive',
+          rewardProgram: null,
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Cashback');
+        expect(result.merchant).toBe('Wealthsimple Cashback');
+        expect(result.originalStatement).toBe('Wealthsimple Cashback');
+      });
+
+      it('should use fallback original statement when rewardProgram is undefined', () => {
+        const transaction = {
+          externalCanonicalId: 'cashback-undefined-program',
+          type: 'REIMBURSEMENT',
+          subType: 'CASHBACK',
+          amount: 5.00,
+          amountSign: 'positive',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.originalStatement).toBe('Wealthsimple Cashback');
+      });
+
+      it('should have empty notes and technicalDetails', () => {
+        const transaction = {
+          externalCanonicalId: 'cashback-notes',
+          type: 'REIMBURSEMENT',
+          subType: 'CASHBACK',
+          rewardProgram: 'SOME_PROGRAM',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+    });
+  });
+
+  describe('hasRuleForTransaction with REIMBURSEMENT/CASHBACK', () => {
+    it('should return true for REIMBURSEMENT/CASHBACK type/subType', () => {
+      expect(hasRuleForTransaction('REIMBURSEMENT', 'CASHBACK')).toBe(true);
+    });
+
+    it('should return false for REIMBURSEMENT with different subType', () => {
+      expect(hasRuleForTransaction('REIMBURSEMENT', 'OTHER')).toBe(false);
+    });
+
+    it('should return false for CASHBACK with wrong type', () => {
+      expect(hasRuleForTransaction('DEPOSIT', 'CASHBACK')).toBe(false);
+      expect(hasRuleForTransaction('PROMOTION', 'CASHBACK')).toBe(false);
+    });
+  });
+
+  describe('REIMBURSEMENT/ATM rule', () => {
+    describe('rule matching', () => {
+      it('should match transactions with type REIMBURSEMENT and subType ATM', () => {
+        const transaction = {
+          externalCanonicalId: 'atm-reimbursement-123',
+          type: 'REIMBURSEMENT',
+          subType: 'ATM',
+          amount: 3.00,
+          amountSign: 'positive',
+          status: null, // ATM reimbursements have null status
+        };
+
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'reimbursement-atm');
+        expect(rule.match(transaction)).toBe(true);
+      });
+
+      it('should not match transactions with different type', () => {
+        const transaction = {
+          externalCanonicalId: 'atm-123',
+          type: 'WITHDRAWAL',
+          subType: 'ATM',
+        };
+
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'reimbursement-atm');
+        expect(rule.match(transaction)).toBe(false);
+      });
+
+      it('should not match transactions with different subType', () => {
+        const transaction = {
+          externalCanonicalId: 'reimbursement-123',
+          type: 'REIMBURSEMENT',
+          subType: 'CASHBACK',
+        };
+
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'reimbursement-atm');
+        expect(rule.match(transaction)).toBe(false);
+      });
+    });
+
+    describe('transaction processing', () => {
+      it('should process REIMBURSEMENT/ATM transaction correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'atm-fee-reimbursement-456',
+          type: 'REIMBURSEMENT',
+          subType: 'ATM',
+          amount: 3.00,
+          amountSign: 'positive',
+          status: null,
+          unifiedStatus: 'COMPLETED',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.ruleId).toBe('reimbursement-atm');
+        expect(result.category).toBe('Cash & ATM');
+        expect(result.merchant).toBe('ATM Fee Reimbursement');
+        expect(result.originalStatement).toBe('ATM Fee Reimbursement');
+        expect(result.needsCategoryMapping).toBeUndefined();
+      });
+
+      it('should process even when status is null', () => {
+        const transaction = {
+          externalCanonicalId: 'atm-null-status',
+          type: 'REIMBURSEMENT',
+          subType: 'ATM',
+          amount: 5.00,
+          amountSign: 'positive',
+          status: null,
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Cash & ATM');
+        expect(result.merchant).toBe('ATM Fee Reimbursement');
+      });
+
+      it('should have empty notes and technicalDetails', () => {
+        const transaction = {
+          externalCanonicalId: 'atm-notes',
+          type: 'REIMBURSEMENT',
+          subType: 'ATM',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+    });
+  });
+
+  describe('hasRuleForTransaction with REIMBURSEMENT/ATM', () => {
+    it('should return true for REIMBURSEMENT/ATM type/subType', () => {
+      expect(hasRuleForTransaction('REIMBURSEMENT', 'ATM')).toBe(true);
+    });
+
+    it('should return false for ATM with wrong type', () => {
+      expect(hasRuleForTransaction('WITHDRAWAL', 'ATM')).toBe(false);
+      expect(hasRuleForTransaction('SPEND', 'ATM')).toBe(false);
+    });
+  });
 });

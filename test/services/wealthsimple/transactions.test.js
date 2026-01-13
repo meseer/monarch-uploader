@@ -1573,6 +1573,90 @@ describe('Wealthsimple Transaction Service', () => {
       expect(result[0].isPending).toBe(true);
       expect(result[0].unifiedStatus).toBe('IN_PROGRESS');
     });
+
+    it('should always include ATM fee reimbursement transactions regardless of null status', async () => {
+      // ATM reimbursements have status: null but should always be included
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-atm-reimbursement',
+          occurredAt: '2026-01-15T10:00:00.000000+00:00',
+          type: 'REIMBURSEMENT',
+          subType: 'ATM',
+          status: null, // ATM reimbursements have null status
+          unifiedStatus: null, // May also be null
+          amount: 3.00,
+          amountSign: 'positive',
+        },
+        {
+          externalCanonicalId: 'tx-etransfer',
+          occurredAt: '2026-01-16T10:00:00.000000+00:00',
+          type: 'DEPOSIT',
+          subType: 'E_TRANSFER',
+          unifiedStatus: 'COMPLETED',
+          eTransferName: 'John',
+          amount: 100.00,
+          amountSign: 'positive',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+      const result = await fetchAndProcessCashTransactions(
+        mockCashAccount,
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      // Should include both: ATM reimbursement (null status bypass) and e-transfer (COMPLETED)
+      expect(result).toHaveLength(2);
+
+      // ATM reimbursement should be processed correctly
+      const atmTx = result.find((tx) => tx.id === 'tx-atm-reimbursement');
+      expect(atmTx).toBeDefined();
+      expect(atmTx.resolvedMonarchCategory).toBe('Cash & ATM');
+      expect(atmTx.merchant).toBe('ATM Fee Reimbursement');
+      expect(atmTx.originalMerchant).toBe('ATM Fee Reimbursement');
+      expect(atmTx.amount).toBe(3.00);
+      expect(atmTx.ruleId).toBe('reimbursement-atm');
+    });
+
+    it('should include ATM fee reimbursement even when includePendingTransactions is false', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-atm-reimbursement',
+          occurredAt: '2026-01-15T10:00:00.000000+00:00',
+          type: 'REIMBURSEMENT',
+          subType: 'ATM',
+          status: null,
+          unifiedStatus: null,
+          amount: 5.00,
+          amountSign: 'positive',
+        },
+        {
+          externalCanonicalId: 'tx-pending-etransfer',
+          occurredAt: '2026-01-16T10:00:00.000000+00:00',
+          type: 'DEPOSIT',
+          subType: 'E_TRANSFER',
+          unifiedStatus: 'IN_PROGRESS', // Pending - should be excluded
+          eTransferName: 'Pending Person',
+          amount: 50.00,
+          amountSign: 'positive',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+      const result = await fetchAndProcessCashTransactions(
+        { ...mockCashAccount, includePendingTransactions: false },
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      // Should only include ATM reimbursement (pending e-transfer excluded)
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('tx-atm-reimbursement');
+      expect(result[0].resolvedMonarchCategory).toBe('Cash & ATM');
+    });
   });
 
   describe('formatReconciliationMessage', () => {

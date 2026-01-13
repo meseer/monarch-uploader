@@ -376,6 +376,16 @@ function isSpendPrepaidTransaction(transaction) {
 }
 
 /**
+ * Check if a transaction is an ATM fee reimbursement
+ * These transactions may have null status fields but should always be synced
+ * @param {Object} transaction - Raw transaction from API
+ * @returns {boolean} True if ATM fee reimbursement
+ */
+function isAtmReimbursementTransaction(transaction) {
+  return transaction.type === 'REIMBURSEMENT' && transaction.subType === 'ATM';
+}
+
+/**
  * Filter CASH account transactions based on status
  * Different transaction types use different status fields:
  *
@@ -391,12 +401,20 @@ function isSpendPrepaidTransaction(transaction) {
  * - 'authorized': Sync with "Pending" tag
  * - Other: Exclude (rejected/cancelled)
  *
+ * ATM fee reimbursements (REIMBURSEMENT/ATM):
+ * - Always sync regardless of status (status may be null)
+ *
  * @param {Array} transactions - Raw transactions from API
  * @param {boolean} includePending - Whether to include pending transactions
  * @returns {Array} Filtered transactions ready for processing
  */
 function filterCashSyncableTransactions(transactions, includePending = true) {
   return transactions.filter((transaction) => {
+    // ATM reimbursements always sync (status may be null)
+    if (isAtmReimbursementTransaction(transaction)) {
+      return true;
+    }
+
     // SPEND/PREPAID uses 'status' field (like credit cards)
     if (isSpendPrepaidTransaction(transaction)) {
       const status = transaction.status;

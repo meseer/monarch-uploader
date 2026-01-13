@@ -570,7 +570,75 @@ export const CASH_TRANSACTION_RULES = [
       };
     },
   },
-  // TODO: Add more rules here as needed (17+ rules planned)
+  {
+    id: 'promotion-incentive-bonus',
+    description: 'Promotional incentive bonus transactions (e.g., sign-up bonuses)',
+    match: (tx) => tx.type === 'PROMOTION' && tx.subType === 'INCENTIVE_BONUS',
+    /**
+     * Process PROMOTION/INCENTIVE_BONUS transactions
+     * These are promotional bonuses (e.g., sign-up bonuses, referral bonuses).
+     * Category is determined by user via category mapper.
+     *
+     * @param {Object} tx - Raw transaction
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx) => ({
+      category: null, // User selects via category mapper
+      merchant: 'Wealthsimple Incentive Bonus',
+      originalStatement: 'Wealthsimple Incentive Bonus',
+      notes: '',
+      technicalDetails: '',
+      needsCategoryMapping: true,
+      categoryKey: 'PROMOTION_INCENTIVE_BONUS',
+      // Store promotion details for category selector display
+      promotionDetails: {
+        type: tx.type,
+        subType: tx.subType,
+      },
+    }),
+  },
+  {
+    id: 'reimbursement-cashback',
+    description: 'Cashback reward reimbursement transactions',
+    match: (tx) => tx.type === 'REIMBURSEMENT' && tx.subType === 'CASHBACK',
+    /**
+     * Process REIMBURSEMENT/CASHBACK transactions
+     * These are cashback rewards deposited from credit card spending.
+     * Category is auto-set to "Cashback".
+     *
+     * @param {Object} tx - Raw transaction
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx) => ({
+      category: 'Cashback',
+      merchant: 'Wealthsimple Cashback',
+      originalStatement: tx.rewardProgram || 'Wealthsimple Cashback',
+      notes: '',
+      technicalDetails: '',
+    }),
+  },
+  {
+    id: 'reimbursement-atm',
+    description: 'ATM fee reimbursement transactions',
+    match: (tx) => tx.type === 'REIMBURSEMENT' && tx.subType === 'ATM',
+    /**
+     * Process REIMBURSEMENT/ATM transactions
+     * These are ATM fee reimbursements from Wealthsimple.
+     * Note: status for these transactions is null, handled specially in filtering.
+     * Category is auto-set to "Cash & ATM".
+     *
+     * @param {Object} _tx - Raw transaction (unused but required by interface)
+     * @returns {Object} Processed transaction fields
+     */
+    process: (_tx) => ({
+      category: 'Cash & ATM',
+      merchant: 'ATM Fee Reimbursement',
+      originalStatement: 'ATM Fee Reimbursement',
+      notes: '',
+      technicalDetails: '',
+    }),
+  },
+  // TODO: Add more rules here as needed
   // Examples of future rules:
   // - DIVIDEND
   // - FEE
