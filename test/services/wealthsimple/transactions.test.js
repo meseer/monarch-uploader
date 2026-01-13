@@ -12,6 +12,7 @@ import {
 import wealthsimpleApi from '../../../src/api/wealthsimple';
 import monarchApi from '../../../src/api/monarch';
 import { applyWealthsimpleCategoryMapping } from '../../../src/mappers/category';
+import { showManualTransactionCategorization } from '../../../src/ui/components/categorySelector';
 
 // Mock dependencies
 jest.mock('../../../src/api/wealthsimple');
@@ -19,6 +20,10 @@ jest.mock('../../../src/api/monarch');
 jest.mock('../../../src/mappers/category');
 jest.mock('../../../src/ui/toast', () => ({
   show: jest.fn(),
+}));
+jest.mock('../../../src/ui/components/categorySelector', () => ({
+  showMonarchCategorySelector: jest.fn(),
+  showManualTransactionCategorization: jest.fn(),
 }));
 
 describe('Wealthsimple Transaction Service', () => {
@@ -1270,7 +1275,7 @@ describe('Wealthsimple Transaction Service', () => {
       expect(result[0].id).toBe('tx-completed');
     });
 
-    it('should skip transactions with no matching rule', async () => {
+    it('should process transactions without matching rules via manual categorization', async () => {
       const mockRawTransactions = [
         {
           externalCanonicalId: 'tx-unsupported',
@@ -1295,15 +1300,27 @@ describe('Wealthsimple Transaction Service', () => {
 
       wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
 
+      // Mock manual categorization for the unsupported transaction
+      showManualTransactionCategorization.mockImplementation((transaction, callback) => {
+        callback({
+          merchant: 'Margin Interest',
+          category: { id: 'cat-fees', name: 'Financial Fees' },
+        });
+      });
+
       const result = await fetchAndProcessCashTransactions(
         mockCashAccount,
         '2026-01-01',
         '2026-01-31',
       );
 
-      // Should only include the e-transfer (has a rule)
-      expect(result).toHaveLength(1);
+      // Should include both: e-transfer (has a rule) and manually categorized transaction
+      expect(result).toHaveLength(2);
       expect(result[0].id).toBe('tx-etransfer');
+      expect(result[1].id).toBe('tx-unsupported');
+      expect(result[1].merchant).toBe('Margin Interest');
+      expect(result[1].resolvedMonarchCategory).toBe('Financial Fees');
+      expect(result[1].ruleId).toBe('manual');
     });
 
     it('should return empty array when no transactions found', async () => {
@@ -1380,6 +1397,181 @@ describe('Wealthsimple Transaction Service', () => {
       );
 
       expect(result[0].merchant).toBe('e-Transfer from Unknown');
+    });
+
+    it('should show manual categorization dialog for transactions without matching rules', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-unknown-type',
+          occurredAt: '2026-01-15T10:00:00.000000+00:00',
+          type: 'UNKNOWN_TYPE',
+          subType: 'UNKNOWN_SUBTYPE',
+          unifiedStatus: 'COMPLETED',
+          amount: 123.45,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+      // Mock manual categorization - user provides merchant and category
+      showManualTransactionCategorization.mockImplementation((transaction, callback) => {
+        callback({
+          merchant: 'My Custom Merchant',
+          category: { id: 'cat-1', name: 'Custom Category' },
+        });
+      });
+
+      const result = await fetchAndProcessCashTransactions(
+        mockCashAccount,
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      // Should have called manual categorization
+      expect(showManualTransactionCategorization).toHaveBeenCalledWith(
+        expect.objectContaining({
+          externalCanonicalId: 'tx-unknown-type',
+          type: 'UNKNOWN_TYPE',
+          subType: 'UNKNOWN_SUBTYPE',
+        }),
+        expect.any(Function),
+      );
+
+      // Should include the manually categorized transaction
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        id: 'tx-unknown-type',
+        merchant: 'My Custom Merchant',
+        originalMerchant: 'My Custom Merchant',
+        amount: -123.45,
+        resolvedMonarchCategory: 'Custom Category',
+        ruleId: 'manual',
+        needsCategoryMapping: false,
+      });
+    });
+
+    it('should throw error when user cancels manual categorization', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-unknown-type',
+          occurredAt: '2026-01-15T10:00:00.000000+00:00',
+          type: 'UNKNOWN_TYPE',
+          subType: 'UNKNOWN_SUBTYPE',
+          unifiedStatus: 'COMPLETED',
+          amount: 50.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+      // Mock manual categorization - user cancels
+      showManualTransactionCategorization.mockImplementation((transaction, callback) => {
+        callback(null);
+      });
+
+      await expect(
+        fetchAndProcessCashTransactions(
+          mockCashAccount,
+          '2026-01-01',
+          '2026-01-31',
+        ),
+      ).rejects.toThrow('Manual categorization cancelled');
+    });
+
+    it('should process both rule-matched and manual transactions together', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-etransfer',
+          occurredAt: '2026-01-15T10:00:00.000000+00:00',
+          type: 'DEPOSIT',
+          subType: 'E_TRANSFER',
+          unifiedStatus: 'COMPLETED',
+          eTransferName: 'John',
+          eTransferEmail: 'john@example.com',
+          amount: 100.00,
+          amountSign: 'positive',
+        },
+        {
+          externalCanonicalId: 'tx-unknown',
+          occurredAt: '2026-01-16T10:00:00.000000+00:00',
+          type: 'DIVIDEND',
+          subType: 'STOCK_DIVIDEND',
+          unifiedStatus: 'COMPLETED',
+          amount: 25.00,
+          amountSign: 'positive',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+      // Mock manual categorization for the unknown transaction
+      showManualTransactionCategorization.mockImplementation((transaction, callback) => {
+        callback({
+          merchant: 'Stock Dividend',
+          category: { id: 'cat-income', name: 'Investment Income' },
+        });
+      });
+
+      const result = await fetchAndProcessCashTransactions(
+        mockCashAccount,
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      // Should have 2 transactions total
+      expect(result).toHaveLength(2);
+
+      // First should be the e-transfer (processed via rules)
+      expect(result[0]).toMatchObject({
+        id: 'tx-etransfer',
+        merchant: 'e-Transfer from John',
+        resolvedMonarchCategory: 'Transfer',
+        ruleId: 'e-transfer',
+      });
+
+      // Second should be the manually categorized transaction
+      expect(result[1]).toMatchObject({
+        id: 'tx-unknown',
+        merchant: 'Stock Dividend',
+        resolvedMonarchCategory: 'Investment Income',
+        ruleId: 'manual',
+      });
+    });
+
+    it('should mark manually categorized transactions with correct pending status', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-pending-manual',
+          occurredAt: '2026-01-15T10:00:00.000000+00:00',
+          type: 'UNKNOWN_TYPE',
+          subType: 'UNKNOWN_SUBTYPE',
+          unifiedStatus: 'IN_PROGRESS', // Pending status
+          amount: 50.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+      // Mock manual categorization
+      showManualTransactionCategorization.mockImplementation((transaction, callback) => {
+        callback({
+          merchant: 'Manual Merchant',
+          category: { id: 'cat-1', name: 'Some Category' },
+        });
+      });
+
+      const result = await fetchAndProcessCashTransactions(
+        { ...mockCashAccount, includePendingTransactions: true },
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].isPending).toBe(true);
+      expect(result[0].unifiedStatus).toBe('IN_PROGRESS');
     });
   });
 

@@ -359,13 +359,13 @@ export const CASH_TRANSACTION_RULES = [
       let originalStatement;
 
       if (tx.subType === 'DESTINATION') {
-        // Money coming INTO this account - format: "Transfer In (Source → Destination)"
-        merchant = `Transfer In (${opposingName} → ${accountName})`;
-        originalStatement = `Transfer In (${opposingName} → ${accountName})`;
+        // Money coming INTO this account - format: "Transfer In: ${accountName} ← ${opposingName}"
+        merchant = `Transfer In: ${accountName} ← ${opposingName}`;
+        originalStatement = `Transfer In: ${accountName} ← ${opposingName}`;
       } else {
-        // SOURCE - Money leaving this account - format: "Transfer Out (Source ← Destination)"
-        merchant = `Transfer Out (${accountName} → ${opposingName})`;
-        originalStatement = `Transfer Out (${accountName} → ${opposingName})`;
+        // SOURCE - Money leaving this account - format: "Transfer Out: ${accountName} → ${opposingName}"
+        merchant = `Transfer Out: ${accountName} → ${opposingName}`;
+        originalStatement = `Transfer Out: ${accountName} → ${opposingName}`;
       }
 
       return {

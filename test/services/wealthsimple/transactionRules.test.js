@@ -1329,8 +1329,8 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result).not.toBeNull();
         expect(result.ruleId).toBe('internal-transfer');
         expect(result.category).toBe('Transfer');
-        expect(result.merchant).toBe('Transfer In (Wealthsimple Cash (1234) → Wealthsimple TFSA (5678))');
-        expect(result.originalStatement).toBe('Transfer In (Wealthsimple Cash (1234) → Wealthsimple TFSA (5678))');
+        expect(result.merchant).toBe('Transfer In: Wealthsimple TFSA (5678) ← Wealthsimple Cash (1234)');
+        expect(result.originalStatement).toBe('Transfer In: Wealthsimple TFSA (5678) ← Wealthsimple Cash (1234)');
         expect(result.notes).toBe('');
         expect(result.technicalDetails).toBe('');
       });
@@ -1347,9 +1347,9 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = applyTransactionRule(transaction);
 
         expect(result).not.toBeNull();
-        // Format: Transfer In (Source → Destination)
+        // Format: Transfer In: Destination ← Source
         // Source is opposing (Cash), Destination is current (RRSP)
-        expect(result.merchant).toBe('Transfer In (Wealthsimple Cash (1234) → Wealthsimple RRSP (9012))');
+        expect(result.merchant).toBe('Transfer In: Wealthsimple RRSP (9012) ← Wealthsimple Cash (1234)');
       });
     });
 
@@ -1370,9 +1370,9 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result).not.toBeNull();
         expect(result.ruleId).toBe('internal-transfer');
         expect(result.category).toBe('Transfer');
-        // Format: Transfer Out (Current → Opposing)
-        expect(result.merchant).toBe('Transfer Out (Wealthsimple Cash (1234) → Wealthsimple TFSA (5678))');
-        expect(result.originalStatement).toBe('Transfer Out (Wealthsimple Cash (1234) → Wealthsimple TFSA (5678))');
+        // Format: Transfer Out: Current → Opposing
+        expect(result.merchant).toBe('Transfer Out: Wealthsimple Cash (1234) → Wealthsimple TFSA (5678)');
+        expect(result.originalStatement).toBe('Transfer Out: Wealthsimple Cash (1234) → Wealthsimple TFSA (5678)');
         expect(result.notes).toBe('');
         expect(result.technicalDetails).toBe('');
       });
@@ -1389,9 +1389,9 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = applyTransactionRule(transaction);
 
         expect(result).not.toBeNull();
-        // Format: Transfer Out (Current → Opposing)
+        // Format: Transfer Out: Current → Opposing
         // Current is RRSP, Opposing is TFSA
-        expect(result.merchant).toBe('Transfer Out (Wealthsimple RRSP (9012) → Wealthsimple TFSA (5678))');
+        expect(result.merchant).toBe('Transfer Out: Wealthsimple RRSP (9012) → Wealthsimple TFSA (5678)');
       });
     });
 
@@ -1408,7 +1408,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = applyTransactionRule(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.merchant).toBe('Transfer In (Unknown Account → Wealthsimple Cash (1234))');
+        expect(result.merchant).toBe('Transfer In: Wealthsimple Cash (1234) ← Unknown Account');
       });
 
       it('should handle unknown opposingAccountId', () => {
@@ -1423,7 +1423,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = applyTransactionRule(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.merchant).toBe('Transfer Out (Wealthsimple Cash (1234) → Unknown Account)');
+        expect(result.merchant).toBe('Transfer Out: Wealthsimple Cash (1234) → Unknown Account');
       });
 
       it('should handle missing accountId', () => {
@@ -1438,7 +1438,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = applyTransactionRule(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.merchant).toBe('Transfer In (Wealthsimple TFSA (5678) → Unknown Account)');
+        expect(result.merchant).toBe('Transfer In: Unknown Account ← Wealthsimple TFSA (5678)');
       });
 
       it('should handle both accounts unknown', () => {
@@ -1453,7 +1453,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = applyTransactionRule(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.merchant).toBe('Transfer Out (Unknown Account → Unknown Account)');
+        expect(result.merchant).toBe('Transfer Out: Unknown Account → Unknown Account');
       });
     });
 
@@ -1473,7 +1473,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.category).toBe('Transfer');
-        expect(result.merchant).toBe('Transfer In (Unknown Account → Unknown Account)');
+        expect(result.merchant).toBe('Transfer In: Unknown Account ← Unknown Account');
       });
 
       it('should not have needsCategoryMapping flag', () => {

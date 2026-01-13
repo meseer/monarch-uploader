@@ -7,7 +7,7 @@ import { debugLog, formatDate } from '../../core/utils';
 import wealthsimpleApi from '../../api/wealthsimple';
 import { applyMerchantMapping } from '../../mappers/merchant';
 import { applyWealthsimpleCategoryMapping, saveUserWealthsimpleCategorySelection, calculateAllCategorySimilarities } from '../../mappers/category';
-import { showMonarchCategorySelector } from '../../ui/components/categorySelector';
+import { showMonarchCategorySelector, showManualTransactionCategorization } from '../../ui/components/categorySelector';
 import monarchApi from '../../api/monarch';
 import toast from '../../ui/toast';
 import { applyTransactionRule, CASH_TRANSACTION_RULES } from './transactionRules';
@@ -400,24 +400,47 @@ function filterCashSyncableTransactions(transactions, includePending = true) {
  * Process a CASH account transaction using the rules engine
  * @param {Object} transaction - Raw transaction from Wealthsimple API
  * @param {Map<string, Object>} fundingIntentMap - Optional map of funding intent ID to details
- * @returns {Object|null} Processed transaction object, or null if no rule matches
+ * @returns {Object} Processed transaction object (may include needsManualCategorization flag)
  */
 function processCashTransaction(transaction, fundingIntentMap = null) {
   // Apply the matching rule from the rules engine
   const ruleResult = applyTransactionRule(transaction, fundingIntentMap);
 
-  if (!ruleResult) {
-    // No rule matched - skip this transaction
-    debugLog(`Skipping CASH transaction ${transaction.externalCanonicalId} - no matching rule`, {
-      type: transaction.type,
-      subType: transaction.subType,
-    });
-    return null;
-  }
-
   // Determine amount sign (based on amountSign field, NOT inverted like credit cards)
   const isNegative = transaction.amountSign === 'negative';
   const finalAmount = isNegative ? -Math.abs(transaction.amount) : Math.abs(transaction.amount);
+
+  if (!ruleResult) {
+    // No rule matched - return transaction needing manual categorization
+    debugLog(`CASH transaction ${transaction.externalCanonicalId} needs manual categorization - no matching rule`, {
+      type: transaction.type,
+      subType: transaction.subType,
+    });
+
+    // Determine pending status - SPEND/PREPAID uses 'status', others use 'unifiedStatus'
+    const isPending = transaction.unifiedStatus === 'IN_PROGRESS' || transaction.unifiedStatus === 'PENDING';
+
+    return {
+      id: transaction.externalCanonicalId,
+      date: convertToLocalDate(transaction.occurredAt),
+      merchant: null, // Will be set by user
+      originalMerchant: null,
+      amount: finalAmount,
+      type: transaction.type,
+      subType: transaction.subType,
+      status: transaction.status,
+      unifiedStatus: transaction.unifiedStatus,
+      isPending,
+      resolvedMonarchCategory: null, // Will be set by user
+      ruleId: null,
+      notes: '',
+      technicalDetails: '',
+      // Flag for manual categorization
+      needsManualCategorization: true,
+      // Store the raw transaction for display to user
+      rawTransaction: transaction,
+    };
+  }
 
   // Determine pending status - SPEND/PREPAID uses 'status', others use 'unifiedStatus'
   let isPending;
@@ -550,23 +573,27 @@ export async function fetchAndProcessCashTransactions(consolidatedAccount, fromD
       return [];
     }
 
-    // Step 4: Filter by rules engine match BEFORE fetching funding intents
-    // This avoids fetching funding intents for transactions that won't be processed
-    const transactionsWithRules = notYetUploadedTransactions.filter((tx) =>
-      CASH_TRANSACTION_RULES.some((rule) => rule.match(tx)),
-    );
+    // Step 4: Separate transactions with/without rules
+    // Transactions with rules get funding intent enrichment, those without need manual categorization
+    const transactionsWithRules = [];
+    const transactionsWithoutRules = [];
 
-    const noRuleSkipCount = notYetUploadedTransactions.length - transactionsWithRules.length;
-    if (noRuleSkipCount > 0) {
-      debugLog(`Skipped ${noRuleSkipCount} transactions with no matching rule (before funding intent fetch)`);
-    }
+    notYetUploadedTransactions.forEach((tx) => {
+      if (CASH_TRANSACTION_RULES.some((rule) => rule.match(tx))) {
+        transactionsWithRules.push(tx);
+      } else {
+        transactionsWithoutRules.push(tx);
+      }
+    });
 
-    if (transactionsWithRules.length === 0) {
-      debugLog('No transactions with matching rules to process');
+    debugLog(`Transactions: ${transactionsWithRules.length} with rules, ${transactionsWithoutRules.length} need manual categorization`);
+
+    if (transactionsWithRules.length === 0 && transactionsWithoutRules.length === 0) {
+      debugLog('No transactions to process');
       return [];
     }
 
-    // Step 5: Collect funding intent IDs only for transactions that will be processed
+    // Step 5: Collect funding intent IDs only for transactions that have rules
     const fundingIntentIds = collectFundingIntentIds(transactionsWithRules);
     let fundingIntentMap = new Map();
 
@@ -576,26 +603,82 @@ export async function fetchAndProcessCashTransactions(consolidatedAccount, fromD
       debugLog(`Fetched ${fundingIntentMap.size} funding intent(s)`);
     }
 
-    // Step 6: Process each transaction through the rules engine
+    // Step 6: Process transactions through the rules engine
     const processedTransactions = [];
-    let skippedCount = 0;
 
     for (const transaction of transactionsWithRules) {
       const processed = processCashTransaction(transaction, fundingIntentMap);
       if (processed) {
         processedTransactions.push(processed);
-      } else {
-        skippedCount += 1;
       }
     }
 
-    if (skippedCount > 0) {
-      debugLog(`Skipped ${skippedCount} transactions during processing`);
+    debugLog(`Processed ${processedTransactions.length} transactions with rules`);
+
+    // Step 7: Handle transactions without rules - show manual categorization UI
+    if (transactionsWithoutRules.length > 0) {
+      debugLog(`Processing ${transactionsWithoutRules.length} transactions that need manual categorization`);
+      toast.show(`${transactionsWithoutRules.length} transaction(s) need manual categorization...`, 'info');
+
+      for (let i = 0; i < transactionsWithoutRules.length; i++) {
+        const rawTransaction = transactionsWithoutRules[i];
+        const progressNum = i + 1;
+
+        debugLog(`Showing manual categorization for transaction ${progressNum}/${transactionsWithoutRules.length}`, {
+          id: rawTransaction.externalCanonicalId,
+          type: rawTransaction.type,
+          subType: rawTransaction.subType,
+        });
+
+        toast.show(`Manual categorization ${progressNum}/${transactionsWithoutRules.length}`, 'debug');
+
+        // Show the manual categorization dialog
+        const manualResult = await new Promise((resolve) => {
+          showManualTransactionCategorization(rawTransaction, resolve);
+        });
+
+        if (!manualResult) {
+          // User cancelled - abort the upload
+          throw new Error(`Manual categorization cancelled for transaction ${rawTransaction.externalCanonicalId}. Upload aborted.`);
+        }
+
+        // Determine amount sign
+        const isNegative = rawTransaction.amountSign === 'negative';
+        const finalAmount = isNegative ? -Math.abs(rawTransaction.amount) : Math.abs(rawTransaction.amount);
+
+        // Determine pending status
+        const isPending = rawTransaction.unifiedStatus === 'IN_PROGRESS' || rawTransaction.unifiedStatus === 'PENDING';
+
+        // Create processed transaction with user-provided data
+        const manuallyProcessed = {
+          id: rawTransaction.externalCanonicalId,
+          date: convertToLocalDate(rawTransaction.occurredAt),
+          merchant: manualResult.merchant,
+          originalMerchant: manualResult.merchant, // User-provided merchant
+          amount: finalAmount,
+          type: rawTransaction.type,
+          subType: rawTransaction.subType,
+          status: rawTransaction.status,
+          unifiedStatus: rawTransaction.unifiedStatus,
+          isPending,
+          resolvedMonarchCategory: manualResult.category.name,
+          ruleId: 'manual', // Indicate it was manually categorized
+          notes: '',
+          technicalDetails: '',
+          needsCategoryMapping: false,
+          categoryKey: manualResult.merchant,
+        };
+
+        processedTransactions.push(manuallyProcessed);
+        debugLog(`Manually categorized transaction: ${manualResult.merchant} -> ${manualResult.category.name}`);
+      }
+
+      toast.show(`Completed manual categorization for ${transactionsWithoutRules.length} transaction(s)`, 'info');
     }
 
-    debugLog(`Processed ${processedTransactions.length} CASH transactions (${uploadedSkipCount} already uploaded, ${noRuleSkipCount} no rule, ${skippedCount} processing skipped)`);
+    debugLog(`Processed ${processedTransactions.length} total CASH transactions (${uploadedSkipCount} already uploaded)`);
 
-    // Step 7: Check if any transactions need category resolution (e.g., SPEND/PREPAID)
+    // Step 8: Check if any transactions need category resolution (e.g., SPEND/PREPAID)
     const transactionsNeedingCategoryMapping = processedTransactions.filter((tx) => tx.needsCategoryMapping);
 
     if (transactionsNeedingCategoryMapping.length > 0) {
