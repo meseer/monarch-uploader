@@ -607,13 +607,14 @@ function collectEftTransferIds(transactions) {
  * @param {Object} options - Processing options
  * @param {Array} options.rawTransactions - Pre-fetched raw transactions (optional, will fetch if not provided)
  * @param {Set<string>} options.uploadedTransactionIds - Set of already-uploaded transaction IDs to skip
+ * @param {Function} options.onProgress - Callback for progress updates (optional)
  * @returns {Promise<Array>} Processed transactions ready for upload
  */
 export async function fetchAndProcessCashTransactions(consolidatedAccount, fromDate, toDate, options = {}) {
   try {
     const accountId = consolidatedAccount.wealthsimpleAccount.id;
     const accountName = consolidatedAccount.wealthsimpleAccount.nickname;
-    const { rawTransactions: providedTransactions, uploadedTransactionIds = new Set() } = options;
+    const { rawTransactions: providedTransactions, uploadedTransactionIds = new Set(), onProgress } = options;
 
     // Get pending transactions setting (default true)
     const includePendingTransactions = consolidatedAccount.includePendingTransactions !== false;
@@ -712,7 +713,14 @@ export async function fetchAndProcessCashTransactions(consolidatedAccount, fromD
       debugLog(`Fetching ${internalTransferIds.length} internal transfer(s) for annotations...`);
       for (let i = 0; i < internalTransferIds.length; i++) {
         const id = internalTransferIds[i];
-        debugLog(`Fetching internal transfer details (${i + 1}/${internalTransferIds.length}): ${id}`);
+        const progressNum = i + 1;
+        debugLog(`Fetching internal transfer details (${progressNum}/${internalTransferIds.length}): ${id}`);
+
+        // Update progress callback for UI
+        if (onProgress) {
+          onProgress(`Internal transfers (${progressNum}/${internalTransferIds.length})`);
+        }
+
         const internalTransfer = await wealthsimpleApi.fetchInternalTransfer(id);
         if (internalTransfer) {
           enrichmentMap.set(id, internalTransfer);
@@ -726,7 +734,14 @@ export async function fetchAndProcessCashTransactions(consolidatedAccount, fromD
       debugLog(`Fetching ${eftTransferIds.length} EFT transfer(s) for bank account details...`);
       for (let i = 0; i < eftTransferIds.length; i++) {
         const id = eftTransferIds[i];
-        debugLog(`Fetching EFT transfer details (${i + 1}/${eftTransferIds.length}): ${id}`);
+        const progressNum = i + 1;
+        debugLog(`Fetching EFT transfer details (${progressNum}/${eftTransferIds.length}): ${id}`);
+
+        // Update progress callback for UI
+        if (onProgress) {
+          onProgress(`EFT transfers (${progressNum}/${eftTransferIds.length})`);
+        }
+
         const fundsTransfer = await wealthsimpleApi.fetchFundsTransfer(id);
         if (fundsTransfer) {
           enrichmentMap.set(id, fundsTransfer);

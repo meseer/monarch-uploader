@@ -444,16 +444,12 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
 
     debugLog(`Account has ${uploadedTransactionIds.size} previously uploaded transaction IDs`);
 
-    // Report progress: resolving categories
-    if (onProgress) {
-      onProgress('Resolving categories...');
-    }
-
     // Fetch and process transactions with early duplicate filtering
-    // Pass raw transactions if provided, and uploadedTransactionIds for early filtering
+    // Pass raw transactions if provided, uploadedTransactionIds for early filtering, and onProgress for UI updates
     const processedTransactions = await fetchAndProcessTransactions(accountData, fromDate, toDate, {
       rawTransactions,
       uploadedTransactionIds,
+      onProgress,
     });
 
     if (!processedTransactions || processedTransactions.length === 0) {
