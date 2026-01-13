@@ -251,6 +251,9 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
   // Initialize search query variable
   let searchQuery = '';
 
+  // Initialize rememberMapping - will be updated by checkbox
+  let rememberMapping = true; // Default to checked
+
   // Declare searchElements in outer scope (will be initialized later)
   let searchElements;
 
@@ -341,6 +344,32 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
         transactionHtml += `<div style="margin-bottom: 4px;">
           <span style="color: #666;">AFT Category:</span>
           <span style="font-weight: 500; color: #333;">${aft.aftTransactionCategory}</span>
+        </div>`;
+      }
+    }
+
+    // Add P2P details if available (for P2P_PAYMENT transactions)
+    if (transactionDetails.p2pDetails) {
+      const p2p = transactionDetails.p2pDetails;
+
+      if (p2p.type) {
+        transactionHtml += `<div style="margin-bottom: 4px;">
+          <span style="color: #666;">Type:</span>
+          <span style="font-weight: 500; color: #333;">${p2p.type}</span>
+        </div>`;
+      }
+
+      if (p2p.subType) {
+        transactionHtml += `<div style="margin-bottom: 4px;">
+          <span style="color: #666;">SubType:</span>
+          <span style="font-weight: 500; color: #333;">${p2p.subType}</span>
+        </div>`;
+      }
+
+      if (p2p.p2pHandle) {
+        transactionHtml += `<div style="margin-bottom: 4px;">
+          <span style="color: #666;">Handle:</span>
+          <span style="font-weight: 500; color: #333;">${p2p.p2pHandle}</span>
         </div>`;
       }
     }
@@ -596,10 +625,11 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
         // Display filtered categories
         filteredCategories.forEach((category) => {
           const item = createCategoryItem(category, () => {
-            debugLog('Selected category from search:', { name: category.name, id: category.id });
+            debugLog('Selected category from search:', { name: category.name, id: category.id, rememberMapping });
             cleanupKeyboard();
             overlay.remove();
-            callback(category);
+            // Include rememberMapping flag in the callback result
+            callback({ ...category, rememberMapping });
           });
           contentContainer.appendChild(item);
           items.push(item);
@@ -619,7 +649,15 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
           debugLog('Navigating to category selector for group:', group.name);
           cleanupKeyboard();
           overlay.remove();
-          showCategorySelector(group, bankCategory, callback, categoryGroups, transactionDetails);
+          // Wrap callback to include rememberMapping from parent modal
+          const wrappedCallback = (category) => {
+            if (category) {
+              callback({ ...category, rememberMapping });
+            } else {
+              callback(null);
+            }
+          };
+          showCategorySelector(group, bankCategory, wrappedCallback, categoryGroups, transactionDetails);
         });
         contentContainer.appendChild(item);
         items.push(item);
@@ -661,6 +699,47 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
 
   // Initial display
   updateDisplay();
+
+  // Add "Remember this mapping" checkbox section (only for transactions that need category mapping)
+  const rememberSection = document.createElement('div');
+  rememberSection.id = 'category-selector-remember-section';
+  rememberSection.style.cssText = `
+    margin-top: 15px;
+    padding: 12px;
+    background: #f0f7ff;
+    border: 1px solid #b8daff;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  `;
+
+  const rememberCheckbox = document.createElement('input');
+  rememberCheckbox.type = 'checkbox';
+  rememberCheckbox.id = 'category-selector-remember-checkbox';
+  rememberCheckbox.checked = true; // Default to checked
+  rememberCheckbox.style.cssText = `
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+  `;
+  rememberCheckbox.addEventListener('change', () => {
+    rememberMapping = rememberCheckbox.checked;
+  });
+
+  const rememberLabel = document.createElement('label');
+  rememberLabel.id = 'category-selector-remember-label';
+  rememberLabel.htmlFor = 'category-selector-remember-checkbox';
+  rememberLabel.style.cssText = `
+    cursor: pointer;
+    font-size: 0.9em;
+    color: #333;
+  `;
+  rememberLabel.textContent = 'Remember this category mapping for future transactions';
+
+  rememberSection.appendChild(rememberCheckbox);
+  rememberSection.appendChild(rememberLabel);
+  modal.appendChild(rememberSection);
 
   // Add a cancel button
   const cancelBtn = document.createElement('button');

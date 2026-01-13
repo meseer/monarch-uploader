@@ -702,6 +702,63 @@ export const CASH_TRANSACTION_RULES = [
     }),
   },
   {
+    id: 'p2p-payment',
+    description: 'P2P payments (person-to-person transfers via handle)',
+    match: (tx) => tx.type === 'P2P_PAYMENT' && (tx.subType === 'SEND' || tx.subType === 'RECEIVE'),
+    /**
+     * Process P2P_PAYMENT transactions
+     * These are person-to-person transfers using Wealthsimple handles.
+     *
+     * For SEND: Money going out to another user
+     * For RECEIVE: Money coming in from another user
+     *
+     * Uses p2pHandle to identify the other party.
+     * Uses p2pMessage for notes.
+     *
+     * Category is determined by user via category mapper based on categoryKey format:
+     * "${type}:${subType}:${p2pHandle}" (e.g., "P2P_PAYMENT:SEND:@username")
+     *
+     * @param {Object} tx - Raw transaction
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx) => {
+      const p2pHandle = tx.p2pHandle || 'Unknown';
+      const p2pMessage = tx.p2pMessage || '';
+
+      // Generate merchant based on transaction direction
+      let merchant;
+      let originalStatement;
+
+      if (tx.subType === 'SEND') {
+        merchant = `Transfer to ${p2pHandle}`;
+        originalStatement = `Transfer to ${p2pHandle}`;
+      } else {
+        // RECEIVE
+        merchant = `Transfer from ${p2pHandle}`;
+        originalStatement = `Transfer from ${p2pHandle}`;
+      }
+
+      // Build categoryKey: "type:subType:p2pHandle"
+      const categoryKey = `${tx.type}:${tx.subType}:${p2pHandle}`;
+
+      return {
+        category: null, // User selects via category mapper
+        merchant,
+        originalStatement,
+        notes: p2pMessage,
+        technicalDetails: '',
+        needsCategoryMapping: true,
+        categoryKey,
+        // Store P2P details for category selector display
+        p2pDetails: {
+          type: tx.type,
+          subType: tx.subType,
+          p2pHandle,
+        },
+      };
+    },
+  },
+  {
     id: 'eft-transfer',
     description: 'EFT transfers between Wealthsimple and external bank accounts',
     match: (tx) => tx.subType === 'EFT',

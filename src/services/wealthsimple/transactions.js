@@ -235,9 +235,13 @@ async function resolveCategoriesForTransactions(transactions, options = {}) {
         throw new Error(`Category selection cancelled for "${categoryToResolve.bankCategory}". Upload aborted.`);
       }
 
-      // Save the selection using Wealthsimple-specific function
-      saveUserWealthsimpleCategorySelection(categoryToResolve.bankCategory, selectedCategory.name);
-      debugLog(`User selected category mapping: ${categoryToResolve.bankCategory} -> ${selectedCategory.name}`);
+      // Save the selection using Wealthsimple-specific function only if user chose to remember
+      if (selectedCategory.rememberMapping !== false) {
+        saveUserWealthsimpleCategorySelection(categoryToResolve.bankCategory, selectedCategory.name);
+        debugLog(`User selected category mapping (saved): ${categoryToResolve.bankCategory} -> ${selectedCategory.name}`);
+      } else {
+        debugLog(`User selected category mapping (one-time): ${categoryToResolve.bankCategory} -> ${selectedCategory.name}`);
+      }
 
       toast.show(`Mapped "${categoryToResolve.bankCategory}" to "${selectedCategory.name}"`, 'debug');
 

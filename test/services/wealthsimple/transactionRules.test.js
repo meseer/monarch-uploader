@@ -3129,6 +3129,266 @@ describe('Wealthsimple Transaction Rules Engine', () => {
     });
   });
 
+  describe('P2P_PAYMENT rule', () => {
+    describe('rule matching', () => {
+      it('should match transactions with type P2P_PAYMENT and subType SEND', () => {
+        const transaction = {
+          externalCanonicalId: 'p2p-123',
+          type: 'P2P_PAYMENT',
+          subType: 'SEND',
+          p2pHandle: '@johndoe',
+          p2pMessage: 'Thanks for lunch!',
+        };
+
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'p2p-payment');
+        expect(rule.match(transaction)).toBe(true);
+      });
+
+      it('should match transactions with type P2P_PAYMENT and subType RECEIVE', () => {
+        const transaction = {
+          externalCanonicalId: 'p2p-456',
+          type: 'P2P_PAYMENT',
+          subType: 'RECEIVE',
+          p2pHandle: '@janedoe',
+          p2pMessage: 'For dinner',
+        };
+
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'p2p-payment');
+        expect(rule.match(transaction)).toBe(true);
+      });
+
+      it('should not match transactions with different type', () => {
+        const transaction = {
+          externalCanonicalId: 'tx-123',
+          type: 'DEPOSIT',
+          subType: 'SEND',
+          p2pHandle: '@johndoe',
+        };
+
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'p2p-payment');
+        expect(rule.match(transaction)).toBe(false);
+      });
+
+      it('should not match transactions with different subType', () => {
+        const transaction = {
+          externalCanonicalId: 'tx-123',
+          type: 'P2P_PAYMENT',
+          subType: 'OTHER',
+          p2pHandle: '@johndoe',
+        };
+
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'p2p-payment');
+        expect(rule.match(transaction)).toBe(false);
+      });
+    });
+
+    describe('SEND transactions (outgoing)', () => {
+      it('should process P2P_PAYMENT/SEND transaction correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'p2p-send-123',
+          type: 'P2P_PAYMENT',
+          subType: 'SEND',
+          p2pHandle: '@johndoe',
+          p2pMessage: 'Thanks for lunch!',
+          amount: 25.00,
+          amountSign: 'negative',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.ruleId).toBe('p2p-payment');
+        expect(result.category).toBeNull();
+        expect(result.merchant).toBe('Transfer to @johndoe');
+        expect(result.originalStatement).toBe('Transfer to @johndoe');
+        expect(result.notes).toBe('Thanks for lunch!');
+        expect(result.technicalDetails).toBe('');
+        expect(result.needsCategoryMapping).toBe(true);
+        expect(result.categoryKey).toBe('P2P_PAYMENT:SEND:@johndoe');
+      });
+
+      it('should include p2pDetails for category selector display', () => {
+        const transaction = {
+          externalCanonicalId: 'p2p-send-details',
+          type: 'P2P_PAYMENT',
+          subType: 'SEND',
+          p2pHandle: '@alice',
+          p2pMessage: 'Coffee money',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.p2pDetails).toBeDefined();
+        expect(result.p2pDetails.type).toBe('P2P_PAYMENT');
+        expect(result.p2pDetails.subType).toBe('SEND');
+        expect(result.p2pDetails.p2pHandle).toBe('@alice');
+      });
+    });
+
+    describe('RECEIVE transactions (incoming)', () => {
+      it('should process P2P_PAYMENT/RECEIVE transaction correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'p2p-receive-123',
+          type: 'P2P_PAYMENT',
+          subType: 'RECEIVE',
+          p2pHandle: '@janedoe',
+          p2pMessage: 'For dinner',
+          amount: 30.00,
+          amountSign: 'positive',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.ruleId).toBe('p2p-payment');
+        expect(result.category).toBeNull();
+        expect(result.merchant).toBe('Transfer from @janedoe');
+        expect(result.originalStatement).toBe('Transfer from @janedoe');
+        expect(result.notes).toBe('For dinner');
+        expect(result.technicalDetails).toBe('');
+        expect(result.needsCategoryMapping).toBe(true);
+        expect(result.categoryKey).toBe('P2P_PAYMENT:RECEIVE:@janedoe');
+      });
+
+      it('should include p2pDetails for category selector display', () => {
+        const transaction = {
+          externalCanonicalId: 'p2p-receive-details',
+          type: 'P2P_PAYMENT',
+          subType: 'RECEIVE',
+          p2pHandle: '@bob',
+          p2pMessage: 'Paying you back',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.p2pDetails).toBeDefined();
+        expect(result.p2pDetails.type).toBe('P2P_PAYMENT');
+        expect(result.p2pDetails.subType).toBe('RECEIVE');
+        expect(result.p2pDetails.p2pHandle).toBe('@bob');
+      });
+    });
+
+    describe('edge cases', () => {
+      it('should handle missing p2pHandle with Unknown fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'p2p-no-handle',
+          type: 'P2P_PAYMENT',
+          subType: 'SEND',
+          p2pHandle: null,
+          p2pMessage: 'Test message',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Transfer to Unknown');
+        expect(result.originalStatement).toBe('Transfer to Unknown');
+        expect(result.categoryKey).toBe('P2P_PAYMENT:SEND:Unknown');
+        expect(result.p2pDetails.p2pHandle).toBe('Unknown');
+      });
+
+      it('should handle empty p2pHandle with Unknown fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'p2p-empty-handle',
+          type: 'P2P_PAYMENT',
+          subType: 'RECEIVE',
+          p2pHandle: '',
+          p2pMessage: 'Test',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Transfer from Unknown');
+        expect(result.originalStatement).toBe('Transfer from Unknown');
+        expect(result.categoryKey).toBe('P2P_PAYMENT:RECEIVE:Unknown');
+      });
+
+      it('should handle missing p2pMessage with empty string', () => {
+        const transaction = {
+          externalCanonicalId: 'p2p-no-message',
+          type: 'P2P_PAYMENT',
+          subType: 'SEND',
+          p2pHandle: '@johndoe',
+          p2pMessage: null,
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('');
+      });
+
+      it('should handle empty p2pMessage with empty string', () => {
+        const transaction = {
+          externalCanonicalId: 'p2p-empty-message',
+          type: 'P2P_PAYMENT',
+          subType: 'SEND',
+          p2pHandle: '@johndoe',
+          p2pMessage: '',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('');
+      });
+
+      it('should handle undefined p2pMessage', () => {
+        const transaction = {
+          externalCanonicalId: 'p2p-undefined-message',
+          type: 'P2P_PAYMENT',
+          subType: 'RECEIVE',
+          p2pHandle: '@janedoe',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('');
+      });
+
+      it('should handle both p2pHandle and p2pMessage missing', () => {
+        const transaction = {
+          externalCanonicalId: 'p2p-all-missing',
+          type: 'P2P_PAYMENT',
+          subType: 'SEND',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Transfer to Unknown');
+        expect(result.originalStatement).toBe('Transfer to Unknown');
+        expect(result.categoryKey).toBe('P2P_PAYMENT:SEND:Unknown');
+        expect(result.notes).toBe('');
+        expect(result.p2pDetails.p2pHandle).toBe('Unknown');
+      });
+    });
+  });
+
+  describe('hasRuleForTransaction with P2P_PAYMENT', () => {
+    it('should return true for P2P_PAYMENT/SEND type/subType', () => {
+      expect(hasRuleForTransaction('P2P_PAYMENT', 'SEND')).toBe(true);
+    });
+
+    it('should return true for P2P_PAYMENT/RECEIVE type/subType', () => {
+      expect(hasRuleForTransaction('P2P_PAYMENT', 'RECEIVE')).toBe(true);
+    });
+
+    it('should return false for P2P_PAYMENT with different subType', () => {
+      expect(hasRuleForTransaction('P2P_PAYMENT', 'OTHER')).toBe(false);
+      expect(hasRuleForTransaction('P2P_PAYMENT', null)).toBe(false);
+    });
+
+    it('should return false for SEND/RECEIVE with wrong type', () => {
+      expect(hasRuleForTransaction('DEPOSIT', 'SEND')).toBe(false);
+      expect(hasRuleForTransaction('WITHDRAWAL', 'RECEIVE')).toBe(false);
+    });
+  });
+
   describe('REIMBURSEMENT/ATM rule', () => {
     describe('rule matching', () => {
       it('should match transactions with type REIMBURSEMENT and subType ATM', () => {
