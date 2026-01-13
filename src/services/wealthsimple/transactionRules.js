@@ -674,13 +674,13 @@ export const CASH_TRANSACTION_RULES = [
     /**
      * Process REIMBURSEMENT/CASHBACK transactions
      * These are cashback rewards deposited from credit card spending.
-     * Category is auto-set to "Cashback".
+     * Category is auto-set to "Cash Back".
      *
      * @param {Object} tx - Raw transaction
      * @returns {Object} Processed transaction fields
      */
     process: (tx) => ({
-      category: 'Cashback',
+      category: 'Cash Back',
       merchant: 'Wealthsimple Cashback',
       originalStatement: tx.rewardProgram || 'Wealthsimple Cashback',
       notes: '',
@@ -824,10 +824,10 @@ export const CASH_TRANSACTION_RULES = [
 
       if (tx.type === 'DEPOSIT') {
         // Money coming in from external bank
-        merchant = `${frequencyPrefix}Transfer in: ${accountName} ← ${institutionName}/${accountDisplay}`;
+        merchant = `${frequencyPrefix}Transfer In: ${accountName} ← ${institutionName}/${accountDisplay}`;
       } else {
         // WITHDRAWAL - Money going out to external bank
-        merchant = `${frequencyPrefix}Transfer out: ${accountName} → ${institutionName}/${accountDisplay}`;
+        merchant = `${frequencyPrefix}Transfer Out: ${accountName} → ${institutionName}/${accountDisplay}`;
       }
 
       // Extract annotation (user note) from funds transfer data

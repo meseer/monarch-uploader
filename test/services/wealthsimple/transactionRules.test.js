@@ -3058,7 +3058,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.ruleId).toBe('reimbursement-cashback');
-        expect(result.category).toBe('Cashback');
+        expect(result.category).toBe('Cash Back');
         expect(result.merchant).toBe('Wealthsimple Cashback');
         expect(result.originalStatement).toBe('CREDIT_CARD_VISA_INFINITE_REWARDS');
         expect(result.needsCategoryMapping).toBeUndefined();
@@ -3077,7 +3077,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = applyTransactionRule(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.category).toBe('Cashback');
+        expect(result.category).toBe('Cash Back');
         expect(result.merchant).toBe('Wealthsimple Cashback');
         expect(result.originalStatement).toBe('Wealthsimple Cashback');
       });
@@ -3581,7 +3581,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.ruleId).toBe('eft-transfer');
-        expect(result.merchant).toBe('Monthly Transfer in: Wealthsimple Cash ← TD Bank/Chequing');
+        expect(result.merchant).toBe('Monthly Transfer In: Wealthsimple Cash ← TD Bank/Chequing');
         expect(result.category).toBe('Transfer');
       });
 
@@ -3609,7 +3609,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.ruleId).toBe('eft-transfer');
-        expect(result.merchant).toBe('Weekly Transfer out: Wealthsimple Cash → RBC/Savings');
+        expect(result.merchant).toBe('Weekly Transfer Out: Wealthsimple Cash → RBC/Savings');
       });
 
       it('should capitalize frequency properly (e.g., BIWEEKLY -> Biweekly)', () => {
@@ -3635,7 +3635,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = applyTransactionRule(transaction, fundsTransferMap);
 
         expect(result).not.toBeNull();
-        expect(result.merchant).toBe('Biweekly Transfer in: Wealthsimple Cash ← Scotiabank/Main Account');
+        expect(result.merchant).toBe('Biweekly Transfer In: Wealthsimple Cash ← Scotiabank/Main Account');
       });
 
       it('should NOT add prefix when frequency is null', () => {
@@ -3661,7 +3661,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = applyTransactionRule(transaction, fundsTransferMap);
 
         expect(result).not.toBeNull();
-        expect(result.merchant).toBe('Transfer in: Wealthsimple Cash ← BMO/Personal');
+        expect(result.merchant).toBe('Transfer In: Wealthsimple Cash ← BMO/Personal');
       });
 
       it('should NOT add prefix when frequency is undefined', () => {
@@ -3687,7 +3687,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = applyTransactionRule(transaction, fundsTransferMap);
 
         expect(result).not.toBeNull();
-        expect(result.merchant).toBe('Transfer out: Wealthsimple Cash → CIBC/Savings');
+        expect(result.merchant).toBe('Transfer Out: Wealthsimple Cash → CIBC/Savings');
       });
 
       it('should NOT add frequency prefix for regular EFT (non-recurring)', () => {
@@ -3714,7 +3714,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         // Regular EFT should NOT have frequency prefix
-        expect(result.merchant).toBe('Transfer in: Wealthsimple Cash ← TD Bank/Chequing');
+        expect(result.merchant).toBe('Transfer In: Wealthsimple Cash ← TD Bank/Chequing');
       });
     });
   });
