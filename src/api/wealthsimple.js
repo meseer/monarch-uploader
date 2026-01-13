@@ -220,8 +220,8 @@ export async function makeGraphQLQuery(operationName, query, variables = {}) {
   }
 
   // Inject identity ID into variables if not present
-  // Note: FetchFundingIntent and FetchInternalTransfer don't accept identityId and return 403 if it's passed
-  const skipIdentityInjection = ['FetchFundingIntent', 'FetchInternalTransfer'];
+  // Note: FetchFundingIntent, FetchInternalTransfer, and FetchFundsTransfer don't accept identityId and return 403 if it's passed
+  const skipIdentityInjection = ['FetchFundingIntent', 'FetchInternalTransfer', 'FetchFundsTransfer'];
   if (!variables.identityId && authStatus.identityId && !skipIdentityInjection.includes(operationName)) {
     variables.identityId = authStatus.identityId;
   }
@@ -1594,6 +1594,262 @@ export async function fetchInternalTransfers(ids) {
   }
 }
 
+/**
+ * Fetch funds transfer details for a single transfer
+ * Used to get transaction details for EFT transactions, including:
+ * - annotation: User note on the transfer
+ * - source/destination bank account details (institutionName, nickname, accountNumber, currency)
+ *
+ * @param {string} id - Funds transfer ID (e.g., "funding_intent-OJbdrSdcFlCIPm3hagqmOM0sNhV")
+ * @returns {Promise<Object|null>} Funds transfer details or null if not found
+ */
+export async function fetchFundsTransfer(id) {
+  try {
+    if (!id) {
+      debugLog('No funds transfer ID provided');
+      return null;
+    }
+
+    debugLog(`Fetching funds transfer details for ${id}...`);
+
+    const query = `query FetchFundsTransfer($id: ID!) {
+  fundsTransfer: funds_transfer(id: $id, include_cancelled: true) {
+    ...FundsTransfer
+    __typename
+  }
+}
+
+fragment FundsTransfer on FundsTransfer {
+  id
+  status
+  cancellable
+  annotation
+  rejectReason: reject_reason
+  schedule {
+    id
+    is_skippable
+    recurrence {
+      events(first: 3)
+      __typename
+    }
+    __typename
+  }
+  source {
+    ...BankAccountOwner
+    ...Account
+    __typename
+  }
+  destination {
+    ...BankAccountOwner
+    __typename
+  }
+  ... on Withdrawal {
+    reason
+    tax_detail {
+      id
+      federal_tax_amount
+      provincial_tax_amount
+      gross_amount
+      net_amount
+      document_url
+      __typename
+    }
+    __typename
+  }
+  __typename
+}
+
+fragment BankAccountOwner on BankAccountOwner {
+  bankAccount: bank_account {
+    ...BankAccount
+    __typename
+  }
+  __typename
+}
+
+fragment BankAccount on BankAccount {
+  id
+  accountName: account_name
+  corporate
+  createdAt: created_at
+  currency
+  institutionName: institution_name
+  jurisdiction
+  nickname
+  type
+  updatedAt: updated_at
+  verificationDocuments: verification_documents {
+    ...BankVerificationDocument
+    __typename
+  }
+  verifications {
+    ...BankAccountVerification
+    __typename
+  }
+  ...CaBankAccount
+  ...UsBankAccount
+  __typename
+}
+
+fragment CaBankAccount on CaBankAccount {
+  accountName: account_name
+  accountNumber: account_number
+  __typename
+}
+
+fragment UsBankAccount on UsBankAccount {
+  accountName: account_name
+  accountNumber: account_number
+  __typename
+}
+
+fragment BankVerificationDocument on VerificationDocument {
+  id
+  acceptable
+  updatedAt: updated_at
+  createdAt: created_at
+  documentId: document_id
+  documentType: document_type
+  rejectReason: reject_reason
+  reviewedAt: reviewed_at
+  reviewedBy: reviewed_by
+  __typename
+}
+
+fragment BankAccountVerification on BankAccountVerification {
+  custodianProcessedAt: custodian_processed_at
+  custodianStatus: custodian_status
+  document {
+    ...BankVerificationDocument
+    __typename
+  }
+  __typename
+}
+
+fragment Account on Account {
+  ...AccountCore
+  custodianAccounts {
+    ...CustodianAccount
+    __typename
+  }
+  __typename
+}
+
+fragment AccountCore on Account {
+  id
+  archivedAt
+  branch
+  closedAt
+  createdAt
+  cacheExpiredAt
+  currency
+  requiredIdentityVerification
+  unifiedAccountType
+  supportedCurrencies
+  compatibleCurrencies
+  nickname
+  status
+  applicationFamilyId
+  accountOwnerConfiguration
+  accountFeatures {
+    ...AccountFeature
+    __typename
+  }
+  accountOwners {
+    ...AccountOwner
+    __typename
+  }
+  accountEntityRelationships {
+    ...AccountEntityRelationship
+    __typename
+  }
+  accountUpgradeProcesses {
+    ...AccountUpgradeProcess
+    __typename
+  }
+  type
+  __typename
+}
+
+fragment AccountFeature on AccountFeature {
+  name
+  enabled
+  functional
+  firstEnabledOn
+  __typename
+}
+
+fragment AccountOwner on AccountOwner {
+  accountId
+  identityId
+  accountNickname
+  clientCanonicalId
+  accountOpeningAgreementsSigned
+  name
+  email
+  ownershipType
+  activeInvitation {
+    id
+    __typename
+  }
+  sentInvitations {
+    id
+    __typename
+  }
+  __typename
+}
+
+fragment AccountEntityRelationship on AccountEntityRelationship {
+  entity {
+    id
+    __typename
+  }
+  relationship
+  __typename
+}
+
+fragment AccountUpgradeProcess on AccountUpgradeProcess {
+  id
+  processType
+  processState
+  __typename
+}
+
+fragment CustodianAccount on CustodianAccount {
+  id
+  branch
+  custodian
+  status
+  updatedAt
+  __typename
+}`;
+
+    const response = await makeGraphQLQuery('FetchFundsTransfer', query, { id });
+
+    // Log full response at debug level for troubleshooting
+    debugLog(`Full FetchFundsTransfer response for ${id}:`, response);
+
+    if (!response || !response.fundsTransfer) {
+      debugLog(`No funds transfer data found for ${id}`);
+      return null;
+    }
+
+    const fundsTransfer = response.fundsTransfer;
+    debugLog(`Fetched funds transfer ${id}:`, {
+      status: fundsTransfer.status,
+      hasAnnotation: Boolean(fundsTransfer.annotation),
+      hasSourceBankAccount: Boolean(fundsTransfer.source?.bankAccount),
+      hasDestinationBankAccount: Boolean(fundsTransfer.destination?.bankAccount),
+    });
+
+    return fundsTransfer;
+  } catch (error) {
+    debugLog(`Error fetching funds transfer ${id}:`, error);
+    // Return null on error - don't fail the entire sync
+    return null;
+  }
+}
+
 export default {
   checkAuth,
   setupTokenMonitoring,
@@ -1609,4 +1865,5 @@ export default {
   fetchFundingIntents,
   fetchInternalTransfer,
   fetchInternalTransfers,
+  fetchFundsTransfer,
 };

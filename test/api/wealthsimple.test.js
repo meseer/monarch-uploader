@@ -2474,4 +2474,321 @@ describe('Wealthsimple API Client', () => {
       expect(result.has('funding_intent-fail')).toBe(false);
     });
   });
+
+  describe('fetchFundsTransfer', () => {
+    beforeEach(() => {
+      const futureDate = new Date(Date.now() + 3600000).toISOString();
+      GM_getValue.mockImplementation((key) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
+        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
+        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
+        return null;
+      });
+    });
+
+    it('should return null for null input', async () => {
+      const result = await wealthsimpleApi.fetchFundsTransfer(null);
+      expect(result).toBeNull();
+      expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
+    });
+
+    it('should return null for empty string input', async () => {
+      const result = await wealthsimpleApi.fetchFundsTransfer('');
+      expect(result).toBeNull();
+      expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
+    });
+
+    it('should fetch funds transfer details successfully', async () => {
+      const mockResponse = {
+        fundsTransfer: {
+          id: 'funding_intent-OJbdrSdcFlCIPm3hagqmOM0sNhV',
+          status: 'accepted',
+          cancellable: false,
+          annotation: null,
+          rejectReason: null,
+          schedule: null,
+          destination: {
+            bankAccount: {
+              id: 'bank_account-2csO3N2RLuYwBZ6JIs8MHWH6bM',
+              accountName: 'Tax Stash',
+              corporate: false,
+              createdAt: '2024-09-12T05:03:03.753780Z',
+              currency: 'CAD',
+              institutionName: 'EQ Bank',
+              jurisdiction: 'CA',
+              nickname: 'Tax Stash',
+              type: 'savings',
+              updatedAt: '2024-09-12T05:03:03.753780Z',
+              accountNumber: '****6297',
+              __typename: 'CaBankAccount',
+            },
+            __typename: 'BankAccountOwner',
+          },
+          reason: null,
+          tax_detail: null,
+          __typename: 'Withdrawal',
+          source: {
+            id: 'ca-cash-msb-iusfagkx',
+            nickname: '💳 Cash',
+            currency: 'CAD',
+            status: 'open',
+            type: 'ca_cash_msb',
+            __typename: 'Account',
+          },
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchFundsTransfer('funding_intent-OJbdrSdcFlCIPm3hagqmOM0sNhV');
+
+      expect(result).not.toBeNull();
+      expect(result.id).toBe('funding_intent-OJbdrSdcFlCIPm3hagqmOM0sNhV');
+      expect(result.status).toBe('accepted');
+      expect(result.destination.bankAccount.institutionName).toBe('EQ Bank');
+      expect(result.destination.bankAccount.nickname).toBe('Tax Stash');
+      expect(result.destination.bankAccount.accountNumber).toBe('****6297');
+      expect(result.destination.bankAccount.currency).toBe('CAD');
+      expect(result.source.nickname).toBe('💳 Cash');
+    });
+
+    it('should NOT inject identity ID into request', async () => {
+      const mockResponse = {
+        fundsTransfer: {
+          id: 'funding_intent-test123',
+          status: 'accepted',
+          annotation: 'test annotation',
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ data, onload }) => {
+        const parsedData = JSON.parse(data);
+        expect(parsedData.operationName).toBe('FetchFundsTransfer');
+        // FetchFundsTransfer should NOT have identityId injected
+        expect(parsedData.variables.identityId).toBeUndefined();
+        expect(parsedData.variables.id).toBe('funding_intent-test123');
+
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      await wealthsimpleApi.fetchFundsTransfer('funding_intent-test123');
+    });
+
+    it('should return null when no fundsTransfer in response', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: {} }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchFundsTransfer('funding_intent-abc123');
+      expect(result).toBeNull();
+    });
+
+    it('should return null on API error without failing', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({ status: 500 });
+      });
+
+      // Should not throw, just return null
+      const result = await wealthsimpleApi.fetchFundsTransfer('funding_intent-abc123');
+      expect(result).toBeNull();
+    });
+
+    it('should return null on network error without failing', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onerror }) => {
+        onerror(new Error('Network failure'));
+      });
+
+      // Should not throw, just return null
+      const result = await wealthsimpleApi.fetchFundsTransfer('funding_intent-abc123');
+      expect(result).toBeNull();
+    });
+
+    it('should handle funds transfer with annotation', async () => {
+      const mockResponse = {
+        fundsTransfer: {
+          id: 'funding_intent-with-annotation',
+          status: 'accepted',
+          cancellable: false,
+          annotation: 'Monthly savings transfer',
+          rejectReason: null,
+          destination: {
+            bankAccount: {
+              id: 'bank_account-xyz',
+              institutionName: 'TD Bank',
+              nickname: 'Savings',
+              accountNumber: '****1234',
+              currency: 'CAD',
+            },
+          },
+          source: {
+            id: 'ca-cash-account',
+            nickname: 'Cash',
+          },
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchFundsTransfer('funding_intent-with-annotation');
+
+      expect(result).not.toBeNull();
+      expect(result.annotation).toBe('Monthly savings transfer');
+    });
+
+    it('should handle funds transfer without destination bank account', async () => {
+      const mockResponse = {
+        fundsTransfer: {
+          id: 'funding_intent-no-dest-bank',
+          status: 'accepted',
+          annotation: null,
+          destination: {
+            bankAccount: null,
+            __typename: 'BankAccountOwner',
+          },
+          source: {
+            id: 'ca-cash-account',
+            nickname: 'Cash',
+          },
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchFundsTransfer('funding_intent-no-dest-bank');
+
+      expect(result).not.toBeNull();
+      expect(result.destination.bankAccount).toBeNull();
+    });
+
+    it('should handle deposit type funds transfer (source has bank account)', async () => {
+      const mockResponse = {
+        fundsTransfer: {
+          id: 'funding_intent-deposit',
+          status: 'accepted',
+          cancellable: false,
+          annotation: null,
+          rejectReason: null,
+          source: {
+            bankAccount: {
+              id: 'bank_account-source',
+              institutionName: 'RBC',
+              nickname: 'Chequing',
+              accountNumber: '****5678',
+              currency: 'CAD',
+            },
+          },
+          destination: {
+            id: 'ca-cash-dest',
+            nickname: 'Wealthsimple Cash',
+          },
+          __typename: 'Deposit',
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchFundsTransfer('funding_intent-deposit');
+
+      expect(result).not.toBeNull();
+      expect(result.source.bankAccount.institutionName).toBe('RBC');
+      expect(result.source.bankAccount.accountNumber).toBe('****5678');
+    });
+
+    it('should return full object with all fields for future use', async () => {
+      const mockResponse = {
+        fundsTransfer: {
+          id: 'funding_intent-full',
+          status: 'accepted',
+          cancellable: false,
+          annotation: 'Test annotation',
+          rejectReason: null,
+          schedule: {
+            id: 'schedule-123',
+            is_skippable: true,
+            recurrence: {
+              events: ['2026-01-15', '2026-02-15', '2026-03-15'],
+            },
+          },
+          destination: {
+            bankAccount: {
+              id: 'bank_account-full',
+              accountName: 'Full Account',
+              corporate: false,
+              createdAt: '2024-01-01T00:00:00.000000Z',
+              currency: 'CAD',
+              institutionName: 'Test Bank',
+              jurisdiction: 'CA',
+              nickname: 'Full Nickname',
+              type: 'chequing',
+              updatedAt: '2024-06-01T00:00:00.000000Z',
+              verificationDocuments: [],
+              verifications: [],
+              accountNumber: '****9999',
+              __typename: 'CaBankAccount',
+            },
+            __typename: 'BankAccountOwner',
+          },
+          reason: 'planned_expense',
+          tax_detail: null,
+          __typename: 'Withdrawal',
+          source: {
+            id: 'ca-cash-full',
+            archivedAt: null,
+            branch: 'WS',
+            closedAt: null,
+            createdAt: '2021-07-12T21:35:38.853909Z',
+            currency: 'CAD',
+            nickname: 'Full Cash',
+            status: 'open',
+            type: 'ca_cash_msb',
+            __typename: 'Account',
+          },
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchFundsTransfer('funding_intent-full');
+
+      expect(result).not.toBeNull();
+      // Verify the full object is returned for future use
+      expect(result.schedule).not.toBeNull();
+      expect(result.schedule.id).toBe('schedule-123');
+      expect(result.schedule.recurrence.events).toHaveLength(3);
+      expect(result.destination.bankAccount.verificationDocuments).toEqual([]);
+      expect(result.reason).toBe('planned_expense');
+      expect(result.source.branch).toBe('WS');
+    });
+  });
 });
