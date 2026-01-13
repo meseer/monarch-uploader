@@ -704,13 +704,13 @@ export const CASH_TRANSACTION_RULES = [
   {
     id: 'p2p-payment',
     description: 'P2P payments (person-to-person transfers via handle)',
-    match: (tx) => tx.type === 'P2P_PAYMENT' && (tx.subType === 'SEND' || tx.subType === 'RECEIVE'),
+    match: (tx) => tx.type === 'P2P_PAYMENT' && (tx.subType === 'SEND' || tx.subType === 'SEND_RECEIVED'),
     /**
      * Process P2P_PAYMENT transactions
      * These are person-to-person transfers using Wealthsimple handles.
      *
      * For SEND: Money going out to another user
-     * For RECEIVE: Money coming in from another user
+     * For SEND_RECEIVED: Money coming in from another user
      *
      * Uses p2pHandle to identify the other party.
      * Uses p2pMessage for notes.
@@ -733,7 +733,7 @@ export const CASH_TRANSACTION_RULES = [
         merchant = `Transfer to ${p2pHandle}`;
         originalStatement = `Transfer to ${p2pHandle}`;
       } else {
-        // RECEIVE
+        // SEND_RECEIVED
         merchant = `Transfer from ${p2pHandle}`;
         originalStatement = `Transfer from ${p2pHandle}`;
       }
@@ -760,8 +760,8 @@ export const CASH_TRANSACTION_RULES = [
   },
   {
     id: 'eft-transfer',
-    description: 'EFT transfers between Wealthsimple and external bank accounts',
-    match: (tx) => tx.subType === 'EFT',
+    description: 'EFT transfers between Wealthsimple and external bank accounts (including recurring)',
+    match: (tx) => tx.subType === 'EFT' || tx.subType === 'EFT_RECURRING',
     /**
      * Process EFT (Electronic Funds Transfer) transactions
      * These are transfers between Wealthsimple CASH accounts and external bank accounts.
@@ -806,13 +806,21 @@ export const CASH_TRANSACTION_RULES = [
         : `${institutionName}:${accountDisplay}`;
 
       // Generate merchant based on transaction type
+      // For EFT_RECURRING, add frequency prefix if available (e.g., "Monthly transfer in: ...")
       let merchant;
+      let frequencyPrefix = '';
+      if (tx.subType === 'EFT_RECURRING' && tx.frequency) {
+        // Capitalize frequency (API returns all-caps like "MONTHLY")
+        const capitalizedFrequency = tx.frequency.charAt(0).toUpperCase() + tx.frequency.slice(1).toLowerCase();
+        frequencyPrefix = `${capitalizedFrequency} `;
+      }
+
       if (tx.type === 'DEPOSIT') {
         // Money coming in from external bank
-        merchant = `Transfer in: ${accountName} ← ${institutionName}/${accountDisplay}`;
+        merchant = `${frequencyPrefix}Transfer in: ${accountName} ← ${institutionName}/${accountDisplay}`;
       } else {
         // WITHDRAWAL - Money going out to external bank
-        merchant = `Transfer out: ${accountName} → ${institutionName}/${accountDisplay}`;
+        merchant = `${frequencyPrefix}Transfer out: ${accountName} → ${institutionName}/${accountDisplay}`;
       }
 
       // Extract annotation (user note) from funds transfer data

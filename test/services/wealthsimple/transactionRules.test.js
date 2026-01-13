@@ -3144,11 +3144,11 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(rule.match(transaction)).toBe(true);
       });
 
-      it('should match transactions with type P2P_PAYMENT and subType RECEIVE', () => {
+      it('should match transactions with type P2P_PAYMENT and subType SEND_RECEIVED', () => {
         const transaction = {
           externalCanonicalId: 'p2p-456',
           type: 'P2P_PAYMENT',
-          subType: 'RECEIVE',
+          subType: 'SEND_RECEIVED',
           p2pHandle: '@janedoe',
           p2pMessage: 'For dinner',
         };
@@ -3226,12 +3226,12 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       });
     });
 
-    describe('RECEIVE transactions (incoming)', () => {
-      it('should process P2P_PAYMENT/RECEIVE transaction correctly', () => {
+    describe('SEND_RECEIVED transactions (incoming)', () => {
+      it('should process P2P_PAYMENT/SEND_RECEIVED transaction correctly', () => {
         const transaction = {
           externalCanonicalId: 'p2p-receive-123',
           type: 'P2P_PAYMENT',
-          subType: 'RECEIVE',
+          subType: 'SEND_RECEIVED',
           p2pHandle: '@janedoe',
           p2pMessage: 'For dinner',
           amount: 30.00,
@@ -3248,14 +3248,14 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.notes).toBe('For dinner');
         expect(result.technicalDetails).toBe('');
         expect(result.needsCategoryMapping).toBe(true);
-        expect(result.categoryKey).toBe('P2P_PAYMENT:RECEIVE:@janedoe');
+        expect(result.categoryKey).toBe('P2P_PAYMENT:SEND_RECEIVED:@janedoe');
       });
 
       it('should include p2pDetails for category selector display', () => {
         const transaction = {
           externalCanonicalId: 'p2p-receive-details',
           type: 'P2P_PAYMENT',
-          subType: 'RECEIVE',
+          subType: 'SEND_RECEIVED',
           p2pHandle: '@bob',
           p2pMessage: 'Paying you back',
         };
@@ -3265,7 +3265,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result).not.toBeNull();
         expect(result.p2pDetails).toBeDefined();
         expect(result.p2pDetails.type).toBe('P2P_PAYMENT');
-        expect(result.p2pDetails.subType).toBe('RECEIVE');
+        expect(result.p2pDetails.subType).toBe('SEND_RECEIVED');
         expect(result.p2pDetails.p2pHandle).toBe('@bob');
       });
     });
@@ -3293,7 +3293,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const transaction = {
           externalCanonicalId: 'p2p-empty-handle',
           type: 'P2P_PAYMENT',
-          subType: 'RECEIVE',
+          subType: 'SEND_RECEIVED',
           p2pHandle: '',
           p2pMessage: 'Test',
         };
@@ -3303,7 +3303,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result).not.toBeNull();
         expect(result.merchant).toBe('Transfer from Unknown');
         expect(result.originalStatement).toBe('Transfer from Unknown');
-        expect(result.categoryKey).toBe('P2P_PAYMENT:RECEIVE:Unknown');
+        expect(result.categoryKey).toBe('P2P_PAYMENT:SEND_RECEIVED:Unknown');
       });
 
       it('should handle missing p2pMessage with empty string', () => {
@@ -3340,7 +3340,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const transaction = {
           externalCanonicalId: 'p2p-undefined-message',
           type: 'P2P_PAYMENT',
-          subType: 'RECEIVE',
+          subType: 'SEND_RECEIVED',
           p2pHandle: '@janedoe',
         };
 
@@ -3374,18 +3374,19 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       expect(hasRuleForTransaction('P2P_PAYMENT', 'SEND')).toBe(true);
     });
 
-    it('should return true for P2P_PAYMENT/RECEIVE type/subType', () => {
-      expect(hasRuleForTransaction('P2P_PAYMENT', 'RECEIVE')).toBe(true);
+    it('should return true for P2P_PAYMENT/SEND_RECEIVED type/subType', () => {
+      expect(hasRuleForTransaction('P2P_PAYMENT', 'SEND_RECEIVED')).toBe(true);
     });
 
     it('should return false for P2P_PAYMENT with different subType', () => {
       expect(hasRuleForTransaction('P2P_PAYMENT', 'OTHER')).toBe(false);
       expect(hasRuleForTransaction('P2P_PAYMENT', null)).toBe(false);
+      expect(hasRuleForTransaction('P2P_PAYMENT', 'RECEIVE')).toBe(false);
     });
 
-    it('should return false for SEND/RECEIVE with wrong type', () => {
+    it('should return false for SEND/SEND_RECEIVED with wrong type', () => {
       expect(hasRuleForTransaction('DEPOSIT', 'SEND')).toBe(false);
-      expect(hasRuleForTransaction('WITHDRAWAL', 'RECEIVE')).toBe(false);
+      expect(hasRuleForTransaction('WITHDRAWAL', 'SEND_RECEIVED')).toBe(false);
     });
   });
 
@@ -3491,6 +3492,242 @@ describe('Wealthsimple Transaction Rules Engine', () => {
     it('should return false for ATM with wrong type', () => {
       expect(hasRuleForTransaction('WITHDRAWAL', 'ATM')).toBe(false);
       expect(hasRuleForTransaction('SPEND', 'ATM')).toBe(false);
+    });
+  });
+
+  describe('EFT_RECURRING rule', () => {
+    // Helper to set up mock accounts in GM storage
+    const setupMockAccounts = (accounts) => {
+      const consolidatedAccounts = accounts.map((acc) => ({
+        wealthsimpleAccount: {
+          id: acc.id,
+          nickname: acc.nickname,
+        },
+      }));
+      global.GM_getValue = jest.fn((key, defaultValue) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
+          return JSON.stringify(consolidatedAccounts);
+        }
+        return defaultValue;
+      });
+    };
+
+    beforeEach(() => {
+      setupMockAccounts([
+        { id: 'account-cash-123', nickname: 'Wealthsimple Cash' },
+      ]);
+    });
+
+    describe('rule matching', () => {
+      it('should match transactions with subType EFT_RECURRING', () => {
+        const transaction = {
+          externalCanonicalId: 'eft-recurring-123',
+          type: 'DEPOSIT',
+          subType: 'EFT_RECURRING',
+          accountId: 'account-cash-123',
+          frequency: 'MONTHLY',
+        };
+
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'eft-transfer');
+        expect(rule.match(transaction)).toBe(true);
+      });
+
+      it('should still match transactions with subType EFT', () => {
+        const transaction = {
+          externalCanonicalId: 'eft-123',
+          type: 'DEPOSIT',
+          subType: 'EFT',
+          accountId: 'account-cash-123',
+        };
+
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'eft-transfer');
+        expect(rule.match(transaction)).toBe(true);
+      });
+
+      it('should not match transactions with different subType', () => {
+        const transaction = {
+          externalCanonicalId: 'tx-123',
+          type: 'DEPOSIT',
+          subType: 'E_TRANSFER',
+        };
+
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'eft-transfer');
+        expect(rule.match(transaction)).toBe(false);
+      });
+    });
+
+    describe('frequency prefix for EFT_RECURRING', () => {
+      it('should add Monthly frequency prefix for DEPOSIT/EFT_RECURRING', () => {
+        const transaction = {
+          externalCanonicalId: 'eft-recurring-deposit',
+          type: 'DEPOSIT',
+          subType: 'EFT_RECURRING',
+          accountId: 'account-cash-123',
+          frequency: 'MONTHLY',
+        };
+
+        const fundsTransferMap = new Map();
+        fundsTransferMap.set('eft-recurring-deposit', {
+          source: {
+            bankAccount: {
+              institutionName: 'TD Bank',
+              nickname: 'Chequing',
+              accountNumber: '12345',
+            },
+          },
+        });
+
+        const result = applyTransactionRule(transaction, fundsTransferMap);
+
+        expect(result).not.toBeNull();
+        expect(result.ruleId).toBe('eft-transfer');
+        expect(result.merchant).toBe('Monthly Transfer in: Wealthsimple Cash ← TD Bank/Chequing');
+        expect(result.category).toBe('Transfer');
+      });
+
+      it('should add Weekly frequency prefix for WITHDRAWAL/EFT_RECURRING', () => {
+        const transaction = {
+          externalCanonicalId: 'eft-recurring-withdrawal',
+          type: 'WITHDRAWAL',
+          subType: 'EFT_RECURRING',
+          accountId: 'account-cash-123',
+          frequency: 'WEEKLY',
+        };
+
+        const fundsTransferMap = new Map();
+        fundsTransferMap.set('eft-recurring-withdrawal', {
+          destination: {
+            bankAccount: {
+              institutionName: 'RBC',
+              nickname: 'Savings',
+              accountNumber: '67890',
+            },
+          },
+        });
+
+        const result = applyTransactionRule(transaction, fundsTransferMap);
+
+        expect(result).not.toBeNull();
+        expect(result.ruleId).toBe('eft-transfer');
+        expect(result.merchant).toBe('Weekly Transfer out: Wealthsimple Cash → RBC/Savings');
+      });
+
+      it('should capitalize frequency properly (e.g., BIWEEKLY -> Biweekly)', () => {
+        const transaction = {
+          externalCanonicalId: 'eft-recurring-biweekly',
+          type: 'DEPOSIT',
+          subType: 'EFT_RECURRING',
+          accountId: 'account-cash-123',
+          frequency: 'BIWEEKLY',
+        };
+
+        const fundsTransferMap = new Map();
+        fundsTransferMap.set('eft-recurring-biweekly', {
+          source: {
+            bankAccount: {
+              institutionName: 'Scotiabank',
+              nickname: 'Main Account',
+              accountNumber: '11111',
+            },
+          },
+        });
+
+        const result = applyTransactionRule(transaction, fundsTransferMap);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Biweekly Transfer in: Wealthsimple Cash ← Scotiabank/Main Account');
+      });
+
+      it('should NOT add prefix when frequency is null', () => {
+        const transaction = {
+          externalCanonicalId: 'eft-recurring-no-freq',
+          type: 'DEPOSIT',
+          subType: 'EFT_RECURRING',
+          accountId: 'account-cash-123',
+          frequency: null,
+        };
+
+        const fundsTransferMap = new Map();
+        fundsTransferMap.set('eft-recurring-no-freq', {
+          source: {
+            bankAccount: {
+              institutionName: 'BMO',
+              nickname: 'Personal',
+              accountNumber: '22222',
+            },
+          },
+        });
+
+        const result = applyTransactionRule(transaction, fundsTransferMap);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Transfer in: Wealthsimple Cash ← BMO/Personal');
+      });
+
+      it('should NOT add prefix when frequency is undefined', () => {
+        const transaction = {
+          externalCanonicalId: 'eft-recurring-undef-freq',
+          type: 'WITHDRAWAL',
+          subType: 'EFT_RECURRING',
+          accountId: 'account-cash-123',
+          // frequency not set
+        };
+
+        const fundsTransferMap = new Map();
+        fundsTransferMap.set('eft-recurring-undef-freq', {
+          destination: {
+            bankAccount: {
+              institutionName: 'CIBC',
+              nickname: 'Savings',
+              accountNumber: '33333',
+            },
+          },
+        });
+
+        const result = applyTransactionRule(transaction, fundsTransferMap);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Transfer out: Wealthsimple Cash → CIBC/Savings');
+      });
+
+      it('should NOT add frequency prefix for regular EFT (non-recurring)', () => {
+        const transaction = {
+          externalCanonicalId: 'eft-regular',
+          type: 'DEPOSIT',
+          subType: 'EFT',
+          accountId: 'account-cash-123',
+          frequency: 'MONTHLY', // Even if frequency is present, should not add prefix for EFT
+        };
+
+        const fundsTransferMap = new Map();
+        fundsTransferMap.set('eft-regular', {
+          source: {
+            bankAccount: {
+              institutionName: 'TD Bank',
+              nickname: 'Chequing',
+              accountNumber: '44444',
+            },
+          },
+        });
+
+        const result = applyTransactionRule(transaction, fundsTransferMap);
+
+        expect(result).not.toBeNull();
+        // Regular EFT should NOT have frequency prefix
+        expect(result.merchant).toBe('Transfer in: Wealthsimple Cash ← TD Bank/Chequing');
+      });
+    });
+  });
+
+  describe('hasRuleForTransaction with EFT_RECURRING', () => {
+    it('should return true for EFT_RECURRING subType', () => {
+      expect(hasRuleForTransaction('DEPOSIT', 'EFT_RECURRING')).toBe(true);
+      expect(hasRuleForTransaction('WITHDRAWAL', 'EFT_RECURRING')).toBe(true);
+    });
+
+    it('should still return true for EFT subType', () => {
+      expect(hasRuleForTransaction('DEPOSIT', 'EFT')).toBe(true);
+      expect(hasRuleForTransaction('WITHDRAWAL', 'EFT')).toBe(true);
     });
   });
 });
