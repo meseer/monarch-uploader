@@ -1599,6 +1599,248 @@ describe('Wealthsimple Transaction Rules Engine', () => {
     });
   });
 
+  describe('WITHDRAWAL/BILL_PAY rule', () => {
+    it('should match transactions with type WITHDRAWAL and subType BILL_PAY', () => {
+      const transaction = {
+        externalCanonicalId: 'bill-123',
+        type: 'WITHDRAWAL',
+        subType: 'BILL_PAY',
+        billPayCompanyName: 'BC Hydro',
+        billPayPayeeNickname: 'Home Electricity',
+        redactedExternalAccountNumber: '****1234',
+      };
+
+      const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'withdrawal-bill-pay');
+      expect(rule.match(transaction)).toBe(true);
+    });
+
+    it('should not match transactions with different type', () => {
+      const transaction = {
+        externalCanonicalId: 'bill-123',
+        type: 'DEPOSIT',
+        subType: 'BILL_PAY',
+        billPayCompanyName: 'BC Hydro',
+      };
+
+      const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'withdrawal-bill-pay');
+      expect(rule.match(transaction)).toBe(false);
+    });
+
+    it('should not match transactions with different subType', () => {
+      const transaction = {
+        externalCanonicalId: 'tx-123',
+        type: 'WITHDRAWAL',
+        subType: 'E_TRANSFER',
+        billPayCompanyName: 'BC Hydro',
+      };
+
+      const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'withdrawal-bill-pay');
+      expect(rule.match(transaction)).toBe(false);
+    });
+
+    describe('transaction processing', () => {
+      it('should process bill pay transaction with all fields present', () => {
+        const transaction = {
+          externalCanonicalId: 'bill-456',
+          type: 'WITHDRAWAL',
+          subType: 'BILL_PAY',
+          billPayCompanyName: 'BC Hydro',
+          billPayPayeeNickname: 'Home Electricity',
+          redactedExternalAccountNumber: '****5678',
+          amount: 150.00,
+          amountSign: 'negative',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.ruleId).toBe('withdrawal-bill-pay');
+        expect(result.category).toBeNull(); // Needs category mapping
+        expect(result.merchant).toBe('Home Electricity');
+        expect(result.originalStatement).toBe('BC Hydro (****5678)');
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+        expect(result.needsCategoryMapping).toBe(true);
+        expect(result.categoryKey).toBe('Home Electricity');
+      });
+
+      it('should include billPayDetails for category selector display', () => {
+        const transaction = {
+          externalCanonicalId: 'bill-789',
+          type: 'WITHDRAWAL',
+          subType: 'BILL_PAY',
+          billPayCompanyName: 'Rogers Wireless',
+          billPayPayeeNickname: 'Cell Phone',
+          redactedExternalAccountNumber: '****9012',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.billPayDetails).toBeDefined();
+        expect(result.billPayDetails.billPayCompanyName).toBe('Rogers Wireless');
+        expect(result.billPayDetails.billPayPayeeNickname).toBe('Cell Phone');
+        expect(result.billPayDetails.redactedExternalAccountNumber).toBe('****9012');
+      });
+
+      it('should use billPayPayeeNickname as categoryKey', () => {
+        const transaction = {
+          externalCanonicalId: 'bill-catkey',
+          type: 'WITHDRAWAL',
+          subType: 'BILL_PAY',
+          billPayCompanyName: 'Telus',
+          billPayPayeeNickname: 'Internet',
+          redactedExternalAccountNumber: '****3456',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.categoryKey).toBe('Internet');
+      });
+    });
+
+    describe('edge cases', () => {
+      it('should handle missing billPayCompanyName with fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'bill-no-company',
+          type: 'WITHDRAWAL',
+          subType: 'BILL_PAY',
+          billPayCompanyName: null,
+          billPayPayeeNickname: 'Utilities',
+          redactedExternalAccountNumber: '****1111',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.originalStatement).toBe('Unknown Company (****1111)');
+        expect(result.billPayDetails.billPayCompanyName).toBe('Unknown Company');
+      });
+
+      it('should handle missing billPayPayeeNickname with fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'bill-no-nickname',
+          type: 'WITHDRAWAL',
+          subType: 'BILL_PAY',
+          billPayCompanyName: 'Shaw Cable',
+          billPayPayeeNickname: null,
+          redactedExternalAccountNumber: '****2222',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Unknown Payee');
+        expect(result.categoryKey).toBe('Unknown Payee');
+        expect(result.billPayDetails.billPayPayeeNickname).toBe('Unknown Payee');
+      });
+
+      it('should handle missing redactedExternalAccountNumber', () => {
+        const transaction = {
+          externalCanonicalId: 'bill-no-account',
+          type: 'WITHDRAWAL',
+          subType: 'BILL_PAY',
+          billPayCompanyName: 'Enbridge Gas',
+          billPayPayeeNickname: 'Gas Bill',
+          redactedExternalAccountNumber: null,
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.originalStatement).toBe('Enbridge Gas ()');
+        expect(result.billPayDetails.redactedExternalAccountNumber).toBe('');
+      });
+
+      it('should handle all fields missing with fallbacks', () => {
+        const transaction = {
+          externalCanonicalId: 'bill-all-missing',
+          type: 'WITHDRAWAL',
+          subType: 'BILL_PAY',
+          billPayCompanyName: null,
+          billPayPayeeNickname: null,
+          redactedExternalAccountNumber: null,
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Unknown Payee');
+        expect(result.originalStatement).toBe('Unknown Company ()');
+        expect(result.categoryKey).toBe('Unknown Payee');
+        expect(result.billPayDetails.billPayCompanyName).toBe('Unknown Company');
+        expect(result.billPayDetails.billPayPayeeNickname).toBe('Unknown Payee');
+        expect(result.billPayDetails.redactedExternalAccountNumber).toBe('');
+      });
+
+      it('should handle empty string billPayCompanyName with fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'bill-empty-company',
+          type: 'WITHDRAWAL',
+          subType: 'BILL_PAY',
+          billPayCompanyName: '',
+          billPayPayeeNickname: 'My Bill',
+          redactedExternalAccountNumber: '****3333',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.originalStatement).toBe('Unknown Company (****3333)');
+      });
+
+      it('should handle empty string billPayPayeeNickname with fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'bill-empty-nickname',
+          type: 'WITHDRAWAL',
+          subType: 'BILL_PAY',
+          billPayCompanyName: 'City Water',
+          billPayPayeeNickname: '',
+          redactedExternalAccountNumber: '****4444',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Unknown Payee');
+        expect(result.categoryKey).toBe('Unknown Payee');
+      });
+
+      it('should have empty notes and technicalDetails', () => {
+        const transaction = {
+          externalCanonicalId: 'bill-notes-check',
+          type: 'WITHDRAWAL',
+          subType: 'BILL_PAY',
+          billPayCompanyName: 'Insurance Co',
+          billPayPayeeNickname: 'Home Insurance',
+          redactedExternalAccountNumber: '****5555',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+    });
+  });
+
+  describe('hasRuleForTransaction with BILL_PAY', () => {
+    it('should return true for WITHDRAWAL/BILL_PAY type/subType', () => {
+      expect(hasRuleForTransaction('WITHDRAWAL', 'BILL_PAY')).toBe(true);
+    });
+
+    it('should return false for DEPOSIT/BILL_PAY type/subType', () => {
+      expect(hasRuleForTransaction('DEPOSIT', 'BILL_PAY')).toBe(false);
+    });
+
+    it('should return false for BILL_PAY with wrong type', () => {
+      expect(hasRuleForTransaction('SPEND', 'BILL_PAY')).toBe(false);
+      expect(hasRuleForTransaction('INTERNAL_TRANSFER', 'BILL_PAY')).toBe(false);
+    });
+  });
+
   describe('extractInternalTransferAnnotation', () => {
     it('should return empty string for null internal transfer', () => {
       expect(extractInternalTransferAnnotation(null)).toBe('');

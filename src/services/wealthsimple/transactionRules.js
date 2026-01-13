@@ -406,6 +406,45 @@ export const CASH_TRANSACTION_RULES = [
       };
     },
   },
+  {
+    id: 'withdrawal-bill-pay',
+    description: 'Bill payment transactions',
+    match: (tx) => tx.type === 'WITHDRAWAL' && tx.subType === 'BILL_PAY',
+    /**
+     * Process WITHDRAWAL/BILL_PAY transactions
+     * These are bill payments that have additional metadata:
+     * - billPayCompanyName: The company receiving the payment (e.g., "BC Hydro")
+     * - billPayPayeeNickname: User's nickname for the payee (e.g., "Home Electricity")
+     * - redactedExternalAccountNumber: Partially redacted account number (e.g., "****1234")
+     *
+     * Category is determined by user via category mapper based on billPayPayeeNickname.
+     * The category selector displays all three fields to help user identify the payment.
+     *
+     * @param {Object} tx - Raw transaction
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx) => {
+      const billPayCompanyName = tx.billPayCompanyName || 'Unknown Company';
+      const billPayPayeeNickname = tx.billPayPayeeNickname || 'Unknown Payee';
+      const redactedExternalAccountNumber = tx.redactedExternalAccountNumber || '';
+
+      return {
+        category: null, // User selects via category mapper
+        merchant: billPayPayeeNickname,
+        originalStatement: `${billPayCompanyName} (${redactedExternalAccountNumber})`,
+        notes: '',
+        technicalDetails: '',
+        needsCategoryMapping: true,
+        categoryKey: billPayPayeeNickname,
+        // Store bill pay details for category selector display
+        billPayDetails: {
+          billPayCompanyName,
+          billPayPayeeNickname,
+          redactedExternalAccountNumber,
+        },
+      };
+    },
+  },
   // TODO: Add more rules here as needed (17+ rules planned)
   // Examples of future rules:
   // - INTEREST
