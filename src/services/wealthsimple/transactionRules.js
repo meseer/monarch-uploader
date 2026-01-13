@@ -79,22 +79,20 @@ const AFT_TYPE_CATEGORY_MAP = {
 
 /**
  * Generate the category key for AFT transactions
- * Format: "aftTransactionType:aftOriginatorName"
+ * Format: "type:subType:aftTransactionType:aftOriginatorName"
  * This allows different originators with the same AFT type to have different categories
- * When aftTransactionType is missing, falls back to just the originator name
- * @param {string} aftTransactionType - The AFT transaction type
+ * When aftTransactionType is missing, uses empty string in that position
+ * @param {string} type - Transaction type (e.g., DEPOSIT, WITHDRAWAL)
+ * @param {string} subType - Transaction subType (e.g., AFT)
+ * @param {string} aftTransactionType - The AFT transaction type (e.g., payroll_deposit, insurance)
  * @param {string} aftOriginatorName - The AFT originator name
  * @returns {string} Category key for mapping
  */
-function getAftCategoryKey(aftTransactionType, aftOriginatorName) {
+function getAftCategoryKey(type, subType, aftTransactionType, aftOriginatorName) {
   const originator = aftOriginatorName || 'Unknown AFT';
+  const aftType = aftTransactionType || '';
 
-  // If no aftTransactionType, fall back to just the originator name
-  if (!aftTransactionType) {
-    return originator;
-  }
-
-  return `${aftTransactionType}:${originator}`;
+  return `${type}:${subType}:${aftType}:${originator}`;
 }
 
 /**
@@ -414,8 +412,8 @@ export const CASH_TRANSACTION_RULES = [
       }
 
       // Unknown AFT type (including insurance, misc_payments) - needs category mapping
-      // Use "aftTransactionType:aftOriginatorName" as the category key for mapping/saving
-      const categoryKey = getAftCategoryKey(aftTransactionType, originatorName);
+      // Use "type:subType:aftTransactionType:aftOriginatorName" as the category key for mapping/saving
+      const categoryKey = getAftCategoryKey(tx.type, tx.subType, aftTransactionType, originatorName);
       debugLog(`AFT transaction needs mapping: ${categoryKey}`);
       return {
         category: null,
@@ -424,7 +422,7 @@ export const CASH_TRANSACTION_RULES = [
         notes: '',
         technicalDetails: '',
         needsCategoryMapping: true,
-        // Use "aftTransactionType:aftOriginatorName" as category key for saving
+        // Use "type:subType:aftTransactionType:aftOriginatorName" as category key for saving
         categoryKey,
         // Store AFT details for category selector display
         aftDetails: {
@@ -459,8 +457,8 @@ export const CASH_TRANSACTION_RULES = [
       const aftTransactionCategory = tx.aftTransactionCategory || '';
 
       // All WITHDRAWAL/AFT transactions need category mapping
-      // Use "aftTransactionType:aftOriginatorName" as the category key for mapping/saving
-      const categoryKey = getAftCategoryKey(aftTransactionType, originatorName);
+      // Use "type:subType:aftTransactionType:aftOriginatorName" as the category key for mapping/saving
+      const categoryKey = getAftCategoryKey(tx.type, tx.subType, aftTransactionType, originatorName);
       debugLog(`WITHDRAWAL/AFT transaction needs mapping: ${categoryKey}`);
 
       return {
@@ -470,7 +468,7 @@ export const CASH_TRANSACTION_RULES = [
         notes: '',
         technicalDetails: '',
         needsCategoryMapping: true,
-        // Use "aftTransactionType:aftOriginatorName" as category key for saving
+        // Use "type:subType:aftTransactionType:aftOriginatorName" as category key for saving
         categoryKey,
         // Store AFT details for category selector display
         aftDetails: {
@@ -561,6 +559,9 @@ export const CASH_TRANSACTION_RULES = [
       const billPayPayeeNickname = tx.billPayPayeeNickname || 'Unknown Payee';
       const redactedExternalAccountNumber = tx.redactedExternalAccountNumber || '';
 
+      // Build categoryKey: "type:subType:merchantName"
+      const categoryKey = `${tx.type}:${tx.subType}:${billPayPayeeNickname}`;
+
       return {
         category: null, // User selects via category mapper
         merchant: billPayPayeeNickname,
@@ -568,7 +569,7 @@ export const CASH_TRANSACTION_RULES = [
         notes: '',
         technicalDetails: '',
         needsCategoryMapping: true,
-        categoryKey: billPayPayeeNickname,
+        categoryKey,
         // Store bill pay details for category selector display
         billPayDetails: {
           billPayCompanyName,
@@ -645,20 +646,26 @@ export const CASH_TRANSACTION_RULES = [
      * @param {Object} tx - Raw transaction
      * @returns {Object} Processed transaction fields
      */
-    process: (tx) => ({
-      category: null, // User selects via category mapper
-      merchant: 'Wealthsimple Incentive Bonus',
-      originalStatement: 'Wealthsimple Incentive Bonus',
-      notes: '',
-      technicalDetails: '',
-      needsCategoryMapping: true,
-      categoryKey: 'PROMOTION_INCENTIVE_BONUS',
-      // Store promotion details for category selector display
-      promotionDetails: {
-        type: tx.type,
-        subType: tx.subType,
-      },
-    }),
+    process: (tx) => {
+      const merchant = 'Wealthsimple Incentive Bonus';
+      // Build categoryKey: "type:subType:merchantName"
+      const categoryKey = `${tx.type}:${tx.subType}:${merchant}`;
+
+      return {
+        category: null, // User selects via category mapper
+        merchant,
+        originalStatement: merchant,
+        notes: '',
+        technicalDetails: '',
+        needsCategoryMapping: true,
+        categoryKey,
+        // Store promotion details for category selector display
+        promotionDetails: {
+          type: tx.type,
+          subType: tx.subType,
+        },
+      };
+    },
   },
   {
     id: 'reimbursement-cashback',
