@@ -11,7 +11,35 @@
  */
 
 import { debugLog } from '../../core/utils';
+import { STORAGE } from '../../core/config';
 import { applyMerchantMapping } from '../../mappers/merchant';
+
+/**
+ * Get account name from the cached Wealthsimple accounts list by account ID
+ * Used for looking up opposing account names in internal transfers
+ * @param {string} accountId - Wealthsimple account ID
+ * @returns {string} Account nickname or 'Unknown Account' if not found
+ */
+export function getAccountNameById(accountId) {
+  if (!accountId) {
+    return 'Unknown Account';
+  }
+
+  try {
+    const accountsJson = GM_getValue(STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST, '[]');
+    const accounts = JSON.parse(accountsJson);
+
+    const account = accounts.find((acc) => acc.wealthsimpleAccount?.id === accountId);
+    if (account && account.wealthsimpleAccount?.nickname) {
+      return account.wealthsimpleAccount.nickname;
+    }
+
+    return 'Unknown Account';
+  } catch (error) {
+    debugLog('Error looking up account by ID:', error);
+    return 'Unknown Account';
+  }
+}
 
 /**
  * AFT transaction type to Monarch category mapping
@@ -306,9 +334,51 @@ export const CASH_TRANSACTION_RULES = [
       };
     },
   },
+  {
+    id: 'internal-transfer',
+    description: 'Internal transfers between Wealthsimple accounts (SOURCE and DESTINATION)',
+    match: (tx) => tx.type === 'INTERNAL_TRANSFER' && (tx.subType === 'SOURCE' || tx.subType === 'DESTINATION'),
+    /**
+     * Process INTERNAL_TRANSFER transactions
+     * These are transfers between Wealthsimple accounts, showing both sides:
+     * - DESTINATION: Money coming into the current account
+     * - SOURCE: Money leaving the current account
+     *
+     * Uses opposingAccountId to look up the name of the other account involved.
+     *
+     * @param {Object} tx - Raw transaction
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx) => {
+      // Look up the opposing account name from the cached accounts list
+      const opposingName = getAccountNameById(tx.opposingAccountId);
+      // Look up the current account name as well
+      const accountName = getAccountNameById(tx.accountId);
+
+      let merchant;
+      let originalStatement;
+
+      if (tx.subType === 'DESTINATION') {
+        // Money coming INTO this account - format: "Transfer In (Source → Destination)"
+        merchant = `Transfer In (${opposingName} → ${accountName})`;
+        originalStatement = `Transfer In (${opposingName} → ${accountName})`;
+      } else {
+        // SOURCE - Money leaving this account - format: "Transfer Out (Source ← Destination)"
+        merchant = `Transfer Out (${accountName} → ${opposingName})`;
+        originalStatement = `Transfer Out (${accountName} → ${opposingName})`;
+      }
+
+      return {
+        category: 'Transfer',
+        merchant,
+        originalStatement,
+        notes: '',
+        technicalDetails: '',
+      };
+    },
+  },
   // TODO: Add more rules here as needed (17+ rules planned)
   // Examples of future rules:
-  // - INTERNAL_TRANSFER
   // - INTEREST
   // - DIVIDEND
   // - FEE

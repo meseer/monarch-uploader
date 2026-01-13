@@ -400,6 +400,7 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
  * @param {string} toDate - End date (YYYY-MM-DD)
  * @param {Object} options - Upload options
  * @param {Array} options.rawTransactions - Pre-fetched raw transactions (optional)
+ * @param {Function} options.onProgress - Callback for progress updates (optional)
  * @returns {Promise<Object>} Result object with success status and counts
  *   - success: boolean - Whether the upload succeeded
  *   - synced: number - Number of transactions synced (uploaded)
@@ -408,7 +409,7 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
  */
 export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, monarchAccountId, fromDate, toDate, options = {}) {
   try {
-    const { rawTransactions } = options;
+    const { rawTransactions, onProgress } = options;
 
     debugLog('Starting Wealthsimple transaction upload', {
       wealthsimpleAccountId,
@@ -443,6 +444,11 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
 
     debugLog(`Account has ${uploadedTransactionIds.size} previously uploaded transaction IDs`);
 
+    // Report progress: resolving categories
+    if (onProgress) {
+      onProgress('Resolving categories...');
+    }
+
     // Fetch and process transactions with early duplicate filtering
     // Pass raw transactions if provided, and uploadedTransactionIds for early filtering
     const processedTransactions = await fetchAndProcessTransactions(accountData, fromDate, toDate, {
@@ -474,6 +480,11 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
     }
 
     debugLog(`Uploading ${newTransactions.length} new transactions`);
+
+    // Report progress: uploading to Monarch
+    if (onProgress) {
+      onProgress(`Uploading ${newTransactions.length}...`);
+    }
 
     // Convert to Monarch CSV format with account-specific options
     const csvOptions = {

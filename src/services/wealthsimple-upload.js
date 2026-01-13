@@ -645,17 +645,26 @@ async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAccount, 
     let rawWealthsimpleTransactions = null; // Store for pending reconciliation
 
     if (transactionSupportedTypes.includes(accountType)) {
-      progressDialog.updateStepStatus(account.id, 'transactions', 'processing', 'Syncing transactions');
+      progressDialog.updateStepStatus(account.id, 'transactions', 'processing', 'Fetching from WS...');
 
       // Fetch raw transactions from Wealthsimple API ONCE
       // These are passed to both transaction sync (for early filtering) and pending reconciliation
       try {
         rawWealthsimpleTransactions = await wealthsimpleApi.fetchTransactions(account.id, actualFromDate);
-        debugLog(`Fetched ${rawWealthsimpleTransactions?.length || 0} raw transactions for account ${account.id}`);
+        const fetchedCount = rawWealthsimpleTransactions?.length || 0;
+        debugLog(`Fetched ${fetchedCount} raw transactions for account ${account.id}`);
+
+        // Update progress with fetched count
+        progressDialog.updateStepStatus(account.id, 'transactions', 'processing', `Fetched ${fetchedCount}`);
       } catch (fetchError) {
         debugLog('Error fetching raw transactions:', fetchError);
         rawWealthsimpleTransactions = [];
       }
+
+      // Create progress callback for transaction upload stages
+      const onTransactionProgress = (stage) => {
+        progressDialog.updateStepStatus(account.id, 'transactions', 'processing', stage);
+      };
 
       // Pass raw transactions to avoid duplicate fetch
       const transactionsResult = await uploadWealthsimpleTransactions(
@@ -663,7 +672,7 @@ async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAccount, 
         monarchAccount.id,
         actualFromDate,
         toDate,
-        { rawTransactions: rawWealthsimpleTransactions },
+        { rawTransactions: rawWealthsimpleTransactions, onProgress: onTransactionProgress },
       );
 
       if (transactionsResult && transactionsResult.success) {

@@ -9,7 +9,9 @@ import {
   extractInteracMemo,
   extractOutgoingETransferDetails,
   formatOutgoingETransferDetails,
+  getAccountNameById,
 } from '../../../src/services/wealthsimple/transactionRules';
+import { STORAGE } from '../../../src/core/config';
 
 describe('Wealthsimple Transaction Rules Engine', () => {
   describe('E_TRANSFER rule', () => {
@@ -1229,6 +1231,370 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       expect(result).not.toBeNull();
       expect(result.notes).toBe('');
       expect(result.technicalDetails).toBe('');
+    });
+  });
+
+  describe('INTERNAL_TRANSFER rule', () => {
+    // Helper to set up mock accounts in GM storage
+    const setupMockAccounts = (accounts) => {
+      const consolidatedAccounts = accounts.map((acc) => ({
+        wealthsimpleAccount: {
+          id: acc.id,
+          nickname: acc.nickname,
+        },
+      }));
+      global.GM_getValue = jest.fn((key, defaultValue) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
+          return JSON.stringify(consolidatedAccounts);
+        }
+        return defaultValue;
+      });
+    };
+
+    beforeEach(() => {
+      // Set up mock accounts for each test
+      setupMockAccounts([
+        { id: 'account-cash-123', nickname: 'Wealthsimple Cash (1234)' },
+        { id: 'account-tfsa-456', nickname: 'Wealthsimple TFSA (5678)' },
+        { id: 'account-rrsp-789', nickname: 'Wealthsimple RRSP (9012)' },
+      ]);
+    });
+
+    describe('rule matching', () => {
+      it('should match transactions with type INTERNAL_TRANSFER and subType SOURCE', () => {
+        const transaction = {
+          externalCanonicalId: 'transfer-123',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'SOURCE',
+          accountId: 'account-cash-123',
+          opposingAccountId: 'account-tfsa-456',
+        };
+
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'internal-transfer');
+        expect(rule.match(transaction)).toBe(true);
+      });
+
+      it('should match transactions with type INTERNAL_TRANSFER and subType DESTINATION', () => {
+        const transaction = {
+          externalCanonicalId: 'transfer-456',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'DESTINATION',
+          accountId: 'account-tfsa-456',
+          opposingAccountId: 'account-cash-123',
+        };
+
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'internal-transfer');
+        expect(rule.match(transaction)).toBe(true);
+      });
+
+      it('should not match INTERNAL_TRANSFER with different subType', () => {
+        const transaction = {
+          externalCanonicalId: 'transfer-789',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'OTHER',
+          accountId: 'account-cash-123',
+          opposingAccountId: 'account-tfsa-456',
+        };
+
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'internal-transfer');
+        expect(rule.match(transaction)).toBe(false);
+      });
+
+      it('should not match different type with SOURCE subType', () => {
+        const transaction = {
+          externalCanonicalId: 'tx-123',
+          type: 'DEPOSIT',
+          subType: 'SOURCE',
+        };
+
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'internal-transfer');
+        expect(rule.match(transaction)).toBe(false);
+      });
+    });
+
+    describe('DESTINATION transactions (money coming in)', () => {
+      it('should process DESTINATION transfer with correct format', () => {
+        const transaction = {
+          externalCanonicalId: 'transfer-dest-123',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'DESTINATION',
+          accountId: 'account-tfsa-456',
+          opposingAccountId: 'account-cash-123',
+          amount: 500,
+          amountSign: 'positive',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.ruleId).toBe('internal-transfer');
+        expect(result.category).toBe('Transfer');
+        expect(result.merchant).toBe('Transfer In (Wealthsimple Cash (1234) → Wealthsimple TFSA (5678))');
+        expect(result.originalStatement).toBe('Transfer In (Wealthsimple Cash (1234) → Wealthsimple TFSA (5678))');
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should show opposing account as source in DESTINATION transfer', () => {
+        const transaction = {
+          externalCanonicalId: 'transfer-dest-456',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'DESTINATION',
+          accountId: 'account-rrsp-789',
+          opposingAccountId: 'account-cash-123',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        // Format: Transfer In (Source → Destination)
+        // Source is opposing (Cash), Destination is current (RRSP)
+        expect(result.merchant).toBe('Transfer In (Wealthsimple Cash (1234) → Wealthsimple RRSP (9012))');
+      });
+    });
+
+    describe('SOURCE transactions (money going out)', () => {
+      it('should process SOURCE transfer with correct format', () => {
+        const transaction = {
+          externalCanonicalId: 'transfer-src-123',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'SOURCE',
+          accountId: 'account-cash-123',
+          opposingAccountId: 'account-tfsa-456',
+          amount: 500,
+          amountSign: 'negative',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.ruleId).toBe('internal-transfer');
+        expect(result.category).toBe('Transfer');
+        // Format: Transfer Out (Current → Opposing)
+        expect(result.merchant).toBe('Transfer Out (Wealthsimple Cash (1234) → Wealthsimple TFSA (5678))');
+        expect(result.originalStatement).toBe('Transfer Out (Wealthsimple Cash (1234) → Wealthsimple TFSA (5678))');
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should show current account as source in SOURCE transfer', () => {
+        const transaction = {
+          externalCanonicalId: 'transfer-src-456',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'SOURCE',
+          accountId: 'account-rrsp-789',
+          opposingAccountId: 'account-tfsa-456',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        // Format: Transfer Out (Current → Opposing)
+        // Current is RRSP, Opposing is TFSA
+        expect(result.merchant).toBe('Transfer Out (Wealthsimple RRSP (9012) → Wealthsimple TFSA (5678))');
+      });
+    });
+
+    describe('unknown account handling', () => {
+      it('should handle missing opposingAccountId', () => {
+        const transaction = {
+          externalCanonicalId: 'transfer-no-opposing',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'DESTINATION',
+          accountId: 'account-cash-123',
+          opposingAccountId: null,
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Transfer In (Unknown Account → Wealthsimple Cash (1234))');
+      });
+
+      it('should handle unknown opposingAccountId', () => {
+        const transaction = {
+          externalCanonicalId: 'transfer-unknown-opposing',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'SOURCE',
+          accountId: 'account-cash-123',
+          opposingAccountId: 'account-unknown-999',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Transfer Out (Wealthsimple Cash (1234) → Unknown Account)');
+      });
+
+      it('should handle missing accountId', () => {
+        const transaction = {
+          externalCanonicalId: 'transfer-no-current',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'DESTINATION',
+          accountId: null,
+          opposingAccountId: 'account-tfsa-456',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Transfer In (Wealthsimple TFSA (5678) → Unknown Account)');
+      });
+
+      it('should handle both accounts unknown', () => {
+        const transaction = {
+          externalCanonicalId: 'transfer-both-unknown',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'SOURCE',
+          accountId: 'unknown-1',
+          opposingAccountId: 'unknown-2',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Transfer Out (Unknown Account → Unknown Account)');
+      });
+    });
+
+    describe('edge cases', () => {
+      it('should handle empty accounts list in storage', () => {
+        setupMockAccounts([]);
+
+        const transaction = {
+          externalCanonicalId: 'transfer-empty-list',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'DESTINATION',
+          accountId: 'account-cash-123',
+          opposingAccountId: 'account-tfsa-456',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Transfer');
+        expect(result.merchant).toBe('Transfer In (Unknown Account → Unknown Account)');
+      });
+
+      it('should not have needsCategoryMapping flag', () => {
+        const transaction = {
+          externalCanonicalId: 'transfer-no-mapping',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'DESTINATION',
+          accountId: 'account-cash-123',
+          opposingAccountId: 'account-tfsa-456',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.needsCategoryMapping).toBeUndefined();
+      });
+    });
+  });
+
+  describe('getAccountNameById', () => {
+    const setupMockAccounts = (accounts) => {
+      const consolidatedAccounts = accounts.map((acc) => ({
+        wealthsimpleAccount: {
+          id: acc.id,
+          nickname: acc.nickname,
+        },
+      }));
+      global.GM_getValue = jest.fn((key, defaultValue) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
+          return JSON.stringify(consolidatedAccounts);
+        }
+        return defaultValue;
+      });
+    };
+
+    it('should return account nickname when found', () => {
+      setupMockAccounts([
+        { id: 'test-account-1', nickname: 'My Cash Account' },
+      ]);
+
+      const result = getAccountNameById('test-account-1');
+      expect(result).toBe('My Cash Account');
+    });
+
+    it('should return "Unknown Account" when accountId is null', () => {
+      setupMockAccounts([{ id: 'some-account', nickname: 'Some Account' }]);
+
+      const result = getAccountNameById(null);
+      expect(result).toBe('Unknown Account');
+    });
+
+    it('should return "Unknown Account" when accountId is undefined', () => {
+      setupMockAccounts([{ id: 'some-account', nickname: 'Some Account' }]);
+
+      const result = getAccountNameById(undefined);
+      expect(result).toBe('Unknown Account');
+    });
+
+    it('should return "Unknown Account" when accountId is not found', () => {
+      setupMockAccounts([{ id: 'existing-account', nickname: 'Existing Account' }]);
+
+      const result = getAccountNameById('non-existent-account');
+      expect(result).toBe('Unknown Account');
+    });
+
+    it('should return "Unknown Account" when account has no nickname', () => {
+      const consolidatedAccounts = [
+        {
+          wealthsimpleAccount: {
+            id: 'no-nickname-account',
+            nickname: null,
+          },
+        },
+      ];
+      global.GM_getValue = jest.fn((key, defaultValue) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
+          return JSON.stringify(consolidatedAccounts);
+        }
+        return defaultValue;
+      });
+
+      const result = getAccountNameById('no-nickname-account');
+      expect(result).toBe('Unknown Account');
+    });
+
+    it('should return "Unknown Account" when storage has invalid JSON', () => {
+      global.GM_getValue = jest.fn((key, defaultValue) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
+          return 'invalid-json{';
+        }
+        return defaultValue;
+      });
+
+      const result = getAccountNameById('any-account');
+      expect(result).toBe('Unknown Account');
+    });
+
+    it('should return "Unknown Account" when storage is empty array', () => {
+      setupMockAccounts([]);
+
+      const result = getAccountNameById('any-account');
+      expect(result).toBe('Unknown Account');
+    });
+  });
+
+  describe('hasRuleForTransaction with INTERNAL_TRANSFER', () => {
+    it('should return true for INTERNAL_TRANSFER/SOURCE', () => {
+      expect(hasRuleForTransaction('INTERNAL_TRANSFER', 'SOURCE')).toBe(true);
+    });
+
+    it('should return true for INTERNAL_TRANSFER/DESTINATION', () => {
+      expect(hasRuleForTransaction('INTERNAL_TRANSFER', 'DESTINATION')).toBe(true);
+    });
+
+    it('should return false for INTERNAL_TRANSFER with wrong subType', () => {
+      expect(hasRuleForTransaction('INTERNAL_TRANSFER', 'OTHER')).toBe(false);
+    });
+
+    it('should return false for wrong type with SOURCE/DESTINATION subType', () => {
+      expect(hasRuleForTransaction('DEPOSIT', 'SOURCE')).toBe(false);
+      expect(hasRuleForTransaction('WITHDRAWAL', 'DESTINATION')).toBe(false);
     });
   });
 });
