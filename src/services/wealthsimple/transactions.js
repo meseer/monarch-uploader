@@ -74,11 +74,12 @@ function processCreditCardTransaction(transaction, options = {}) {
  * Each account's transactions will already be of the correct type.
  * @param {Array} transactions - Raw transactions from API
  * @param {boolean} includePending - Whether to include pending (authorized) transactions
- * @returns {Array} Filtered transactions (settled, and optionally authorized)
+ * @returns {Array} Filtered transactions (settled/completed, and optionally authorized)
  */
 function filterSyncableTransactions(transactions, includePending = true) {
   return transactions.filter((transaction) => {
-    if (transaction.status === 'settled') return true;
+    // Accept both 'settled' (credit cards) and 'completed' (LOC, some CASH) as terminal success states
+    if (transaction.status === 'settled' || transaction.status === 'completed') return true;
     if (includePending && transaction.status === 'authorized') return true;
     return false;
   });
@@ -920,12 +921,48 @@ export async function fetchAndProcessLoanTransactions(consolidatedAccount, fromD
 }
 
 /**
- * Fetch and process transactions for a Portfolio Line of Credit account
- * Currently shows manual categorization dialog for ALL transactions since
- * the transaction format (borrow/repay) is not yet fully understood.
+ * Apply Line of Credit transaction rules
+ * Rules for classifying LOC transactions:
+ * - INTERNAL_TRANSFER/SOURCE (borrow): "Borrow from {accountName}" → Transfer
+ * - INTERNAL_TRANSFER/DESTINATION (repay): "Repayment to {accountName}" → Loan Repayment
  *
- * This function is similar to CASH account processing but requires manual
- * categorization for every transaction until rules are established.
+ * @param {Object} transaction - Raw transaction from Wealthsimple API
+ * @param {string} accountName - Name of the LOC account
+ * @returns {Object|null} Processed transaction object, or null if no rule matches
+ */
+function applyLineOfCreditRule(transaction, accountName) {
+  const { type, subType } = transaction;
+
+  // INTERNAL_TRANSFER/SOURCE = borrowing from the LOC
+  if (type === 'INTERNAL_TRANSFER' && subType === 'SOURCE') {
+    return {
+      merchant: `Borrow from ${accountName}`,
+      originalStatement: `Borrow from ${accountName}`,
+      category: 'Transfer',
+      ruleId: 'loc-borrow',
+    };
+  }
+
+  // INTERNAL_TRANSFER/DESTINATION = repayment to the LOC
+  if (type === 'INTERNAL_TRANSFER' && subType === 'DESTINATION') {
+    return {
+      merchant: `Repayment to ${accountName}`,
+      originalStatement: `Repayment to ${accountName}`,
+      category: 'Loan Repayment',
+      ruleId: 'loc-repay',
+    };
+  }
+
+  // No rule matched
+  return null;
+}
+
+/**
+ * Fetch and process transactions for a Portfolio Line of Credit account
+ * Uses automatic classification rules for known transaction types:
+ * - Borrow (INTERNAL_TRANSFER/SOURCE) → "Transfer" category
+ * - Repayment (INTERNAL_TRANSFER/DESTINATION) → "Loan Repayment" category
+ * Falls back to manual categorization for unrecognized transaction types.
  *
  * @param {Object} consolidatedAccount - Consolidated account object
  * @param {string} fromDate - Start date (YYYY-MM-DD)
@@ -958,8 +995,22 @@ export async function fetchAndProcessLineOfCreditTransactions(consolidatedAccoun
       debugLog(`Fetched ${rawTransactions.length} total transactions from API`);
     }
 
-    // Step 2: Filter for syncable transactions (uses same status logic as credit cards)
-    // Line of Credit likely uses status: authorized/settled like credit cards
+    // Debug log: Show raw transaction details
+    debugLog('Line of Credit raw transactions (before filtering):');
+    rawTransactions.forEach((tx, index) => {
+      debugLog(`  Transaction ${index + 1}:`, {
+        externalCanonicalId: tx.externalCanonicalId,
+        type: tx.type,
+        subType: tx.subType,
+        status: tx.status,
+        unifiedStatus: tx.unifiedStatus,
+        amount: tx.amount,
+        amountSign: tx.amountSign,
+        occurredAt: tx.occurredAt,
+      });
+    });
+
+    // Step 2: Filter for syncable transactions (settled/completed + optionally authorized)
     const syncableTransactions = filterSyncableTransactions(rawTransactions, includePendingTransactions);
     debugLog(`Filtered to ${syncableTransactions.length} syncable transactions (includePending: ${includePendingTransactions})`);
 
@@ -967,13 +1018,13 @@ export async function fetchAndProcessLineOfCreditTransactions(consolidatedAccoun
       return [];
     }
 
-    // Step 3: Filter out already-uploaded settled transactions
+    // Step 3: Filter out already-uploaded completed transactions
     const notYetUploadedTransactions = syncableTransactions.filter((tx) => {
-      const isSettled = tx.status === 'settled';
+      const isCompleted = tx.status === 'settled' || tx.status === 'completed';
       const isAlreadyUploaded = uploadedTransactionIds.has(tx.externalCanonicalId);
 
-      // Skip only settled transactions that are already uploaded
-      if (isSettled && isAlreadyUploaded) {
+      // Skip only completed transactions that are already uploaded
+      if (isCompleted && isAlreadyUploaded) {
         return false;
       }
       return true;
@@ -981,7 +1032,7 @@ export async function fetchAndProcessLineOfCreditTransactions(consolidatedAccoun
 
     const uploadedSkipCount = syncableTransactions.length - notYetUploadedTransactions.length;
     if (uploadedSkipCount > 0) {
-      debugLog(`Skipped ${uploadedSkipCount} already-uploaded settled transactions`);
+      debugLog(`Skipped ${uploadedSkipCount} already-uploaded completed transactions`);
     }
 
     if (notYetUploadedTransactions.length === 0) {
@@ -989,65 +1040,113 @@ export async function fetchAndProcessLineOfCreditTransactions(consolidatedAccoun
       return [];
     }
 
-    // Step 4: ALL transactions need manual categorization since rules are not yet established
-    debugLog(`Processing ${notYetUploadedTransactions.length} transactions that need manual categorization`);
-    toast.show(`${notYetUploadedTransactions.length} Line of Credit transaction(s) need manual categorization...`, 'info');
+    // Step 4: Separate transactions with rules from those needing manual categorization
+    const transactionsWithRules = [];
+    const transactionsWithoutRules = [];
+
+    notYetUploadedTransactions.forEach((tx) => {
+      const ruleResult = applyLineOfCreditRule(tx, accountName);
+      if (ruleResult) {
+        transactionsWithRules.push({ raw: tx, rule: ruleResult });
+      } else {
+        transactionsWithoutRules.push(tx);
+      }
+    });
+
+    debugLog(`Transactions: ${transactionsWithRules.length} with rules, ${transactionsWithoutRules.length} need manual categorization`);
 
     const processedTransactions = [];
 
-    for (let i = 0; i < notYetUploadedTransactions.length; i++) {
-      const rawTransaction = notYetUploadedTransactions[i];
-      const progressNum = i + 1;
-
-      debugLog(`Showing manual categorization for transaction ${progressNum}/${notYetUploadedTransactions.length}`, {
-        id: rawTransaction.externalCanonicalId,
-        type: rawTransaction.type,
-        subType: rawTransaction.subType,
-      });
-
-      toast.show(`Manual categorization ${progressNum}/${notYetUploadedTransactions.length}`, 'debug');
-
-      // Show the manual categorization dialog
-      const manualResult = await new Promise((resolve) => {
-        showManualTransactionCategorization(rawTransaction, resolve);
-      });
-
-      if (!manualResult) {
-        // User cancelled - abort the upload
-        throw new Error(`Manual categorization cancelled for transaction ${rawTransaction.externalCanonicalId}. Upload aborted.`);
-      }
-
+    // Step 5: Process transactions with matching rules
+    for (const { raw: rawTransaction, rule: ruleResult } of transactionsWithRules) {
       // Determine amount sign
       const isNegative = rawTransaction.amountSign === 'negative';
       const finalAmount = isNegative ? -Math.abs(rawTransaction.amount) : Math.abs(rawTransaction.amount);
 
-      // Determine pending status (uses credit card status field)
+      // Determine pending status
       const isPending = rawTransaction.status === 'authorized';
 
-      // Create processed transaction with user-provided data
-      const manuallyProcessed = {
+      const processed = {
         id: rawTransaction.externalCanonicalId,
         date: convertToLocalDate(rawTransaction.occurredAt),
-        merchant: manualResult.merchant,
-        originalMerchant: manualResult.merchant, // User-provided merchant
+        merchant: ruleResult.merchant,
+        originalMerchant: ruleResult.originalStatement,
         amount: finalAmount,
         type: rawTransaction.type,
         subType: rawTransaction.subType,
         status: rawTransaction.status,
         isPending,
-        resolvedMonarchCategory: manualResult.category.name,
-        ruleId: 'manual', // Indicate it was manually categorized
+        resolvedMonarchCategory: ruleResult.category,
+        ruleId: ruleResult.ruleId,
         notes: '',
         technicalDetails: '',
         needsCategoryMapping: false,
-        categoryKey: manualResult.merchant,
+        categoryKey: ruleResult.merchant,
       };
 
-      processedTransactions.push(manuallyProcessed);
-      debugLog(`Manually categorized transaction: ${manualResult.merchant} -> ${manualResult.category.name}`);
+      processedTransactions.push(processed);
+      debugLog(`Auto-categorized LOC transaction: ${ruleResult.merchant} -> ${ruleResult.category}`);
     }
 
-    toast.show(`Completed manual categorization for ${notYetUploadedTransactions.length} transaction(s)`, 'info');
+    // Step 6: Handle transactions without rules - show manual categorization UI
+    if (transactionsWithoutRules.length > 0) {
+      debugLog(`Processing ${transactionsWithoutRules.length} transactions that need manual categorization`);
+      toast.show(`${transactionsWithoutRules.length} Line of Credit transaction(s) need manual categorization...`, 'info');
+
+      for (let i = 0; i < transactionsWithoutRules.length; i++) {
+        const rawTransaction = transactionsWithoutRules[i];
+        const progressNum = i + 1;
+
+        debugLog(`Showing manual categorization for transaction ${progressNum}/${transactionsWithoutRules.length}`, {
+          id: rawTransaction.externalCanonicalId,
+          type: rawTransaction.type,
+          subType: rawTransaction.subType,
+        });
+
+        toast.show(`Manual categorization ${progressNum}/${transactionsWithoutRules.length}`, 'debug');
+
+        // Show the manual categorization dialog
+        const manualResult = await new Promise((resolve) => {
+          showManualTransactionCategorization(rawTransaction, resolve);
+        });
+
+        if (!manualResult) {
+          // User cancelled - abort the upload
+          throw new Error(`Manual categorization cancelled for transaction ${rawTransaction.externalCanonicalId}. Upload aborted.`);
+        }
+
+        // Determine amount sign
+        const isNegative = rawTransaction.amountSign === 'negative';
+        const finalAmount = isNegative ? -Math.abs(rawTransaction.amount) : Math.abs(rawTransaction.amount);
+
+        // Determine pending status
+        const isPending = rawTransaction.status === 'authorized';
+
+        // Create processed transaction with user-provided data
+        const manuallyProcessed = {
+          id: rawTransaction.externalCanonicalId,
+          date: convertToLocalDate(rawTransaction.occurredAt),
+          merchant: manualResult.merchant,
+          originalMerchant: manualResult.merchant,
+          amount: finalAmount,
+          type: rawTransaction.type,
+          subType: rawTransaction.subType,
+          status: rawTransaction.status,
+          isPending,
+          resolvedMonarchCategory: manualResult.category.name,
+          ruleId: 'manual',
+          notes: '',
+          technicalDetails: '',
+          needsCategoryMapping: false,
+          categoryKey: manualResult.merchant,
+        };
+
+        processedTransactions.push(manuallyProcessed);
+        debugLog(`Manually categorized transaction: ${manualResult.merchant} -> ${manualResult.category.name}`);
+      }
+
+      toast.show(`Completed manual categorization for ${transactionsWithoutRules.length} transaction(s)`, 'info');
+    }
 
     debugLog(`Processed ${processedTransactions.length} total Line of Credit transactions (${uploadedSkipCount} already uploaded)`);
     return processedTransactions;
