@@ -458,22 +458,23 @@ async function uploadSingleAccount(canadalifAccount, startDate, endDate, progres
       throw new CanadaLifeUploadError('Failed to upload to Monarch', accountId);
     }
 
-    // Store last upload date for auto uploads only
-    // Store the actual end date that was uploaded to ensure proper continuity
-    if (isAutoUpload) {
-      saveLastUploadDate(accountId, endDate, 'canadalife');
-    }
-
-    // Mark upload step as complete
+    // Mark upload step as complete and extract balance change BEFORE saving last upload date
+    // This ensures balance change calculation uses the previous upload date, not the one we're about to save
     if (progressDialog) {
       const uploadMessage = daysCount > 1 ? `${daysCount} days uploaded` : 'Uploaded';
       progressDialog.updateStepStatus(accountId, 'upload', 'success', uploadMessage);
 
-      // Extract and display balance change information
+      // Extract and display balance change information (must happen before saveLastUploadDate)
       const balanceChange = extractCanadaLifeBalanceChange(accountId, historicalData);
       if (balanceChange) {
         progressDialog.updateBalanceChange(accountId, balanceChange);
       }
+    }
+
+    // Store last upload date for auto uploads only AFTER balance change extraction
+    // Store the actual end date that was uploaded to ensure proper continuity
+    if (isAutoUpload) {
+      saveLastUploadDate(accountId, endDate, 'canadalife');
     }
 
     debugLog(`Successfully uploaded ${accountName} balance history to Monarch`);

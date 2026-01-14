@@ -44,7 +44,8 @@ module.exports = (env, argv) => {
         new TerserPlugin({
           terserOptions: {
             format: {
-              comments: /==UserScript==|@name|@namespace|@version|@description|@author|@match|@downloadURL|@updateURL|@grant|@connect|@run-at|==/,
+              // Strip all comments - UserScript metadata is added via BannerPlugin
+              comments: false,
             },
           },
           extractComments: false,
