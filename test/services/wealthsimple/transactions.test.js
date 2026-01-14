@@ -5,6 +5,7 @@
 import {
   fetchAndProcessCreditCardTransactions,
   fetchAndProcessCashTransactions,
+  fetchAndProcessLineOfCreditTransactions,
   fetchAndProcessTransactions,
   reconcilePendingTransactions,
   formatReconciliationMessage,
@@ -1872,6 +1873,372 @@ describe('Wealthsimple Transaction Service', () => {
       expect(result).toHaveLength(1);
       expect(result[0].id).toBe('tx-atm-reimbursement');
       expect(result[0].resolvedMonarchCategory).toBe('Cash & ATM');
+    });
+  });
+
+  describe('fetchAndProcessLineOfCreditTransactions', () => {
+    const mockLocAccount = {
+      wealthsimpleAccount: {
+        id: 'loc-account-id',
+        nickname: 'Portfolio Line of Credit',
+        type: 'PORTFOLIO_LINE_OF_CREDIT',
+      },
+    };
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('should process all transactions via manual categorization', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'loc-tx-1',
+          occurredAt: '2026-01-15T10:30:00.000000+00:00',
+          type: 'BORROW',
+          subType: 'MARGIN',
+          status: 'settled',
+          amount: 5000.00,
+          amountSign: 'positive',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({
+        categories: [
+          { id: '1', name: 'Financial Fees', group: { id: 'g1', name: 'Expenses' } },
+        ],
+        categoryGroups: [{ id: 'g1', name: 'Expenses' }],
+      });
+
+      // Mock manual categorization - user provides merchant and category
+      showManualTransactionCategorization.mockImplementation((transaction, callback) => {
+        callback({
+          merchant: 'Margin Loan',
+          category: { id: '1', name: 'Financial Fees' },
+        });
+      });
+
+      const result = await fetchAndProcessLineOfCreditTransactions(
+        mockLocAccount,
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      expect(wealthsimpleApi.fetchTransactions).toHaveBeenCalledWith(
+        'loc-account-id',
+        '2026-01-01',
+      );
+
+      // Should have called manual categorization for each transaction
+      expect(showManualTransactionCategorization).toHaveBeenCalledTimes(1);
+      expect(showManualTransactionCategorization).toHaveBeenCalledWith(
+        expect.objectContaining({
+          externalCanonicalId: 'loc-tx-1',
+          type: 'BORROW',
+        }),
+        expect.any(Function),
+      );
+
+      // Should return the manually categorized transaction
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        id: 'loc-tx-1',
+        date: '2026-01-15',
+        merchant: 'Margin Loan',
+        originalMerchant: 'Margin Loan',
+        amount: 5000.00,
+        resolvedMonarchCategory: 'Financial Fees',
+        ruleId: 'manual',
+        isPending: false,
+      });
+    });
+
+    it('should filter by status - settled and authorized only', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'loc-settled',
+          occurredAt: '2026-01-15T10:30:00.000000+00:00',
+          type: 'BORROW',
+          subType: 'MARGIN',
+          status: 'settled',
+          amount: 5000.00,
+          amountSign: 'positive',
+        },
+        {
+          externalCanonicalId: 'loc-authorized',
+          occurredAt: '2026-01-16T10:30:00.000000+00:00',
+          type: 'REPAY',
+          subType: 'MARGIN',
+          status: 'authorized',
+          amount: 1000.00,
+          amountSign: 'negative',
+        },
+        {
+          externalCanonicalId: 'loc-pending',
+          occurredAt: '2026-01-17T10:30:00.000000+00:00',
+          type: 'BORROW',
+          subType: 'MARGIN',
+          status: 'pending', // Should be excluded
+          amount: 2000.00,
+          amountSign: 'positive',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({
+        categories: [],
+        categoryGroups: [],
+      });
+
+      showManualTransactionCategorization.mockImplementation((transaction, callback) => {
+        callback({
+          merchant: 'LOC Transaction',
+          category: { id: '1', name: 'Transfer' },
+        });
+      });
+
+      const result = await fetchAndProcessLineOfCreditTransactions(
+        { ...mockLocAccount, includePendingTransactions: true },
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      // Should include settled and authorized, exclude pending status
+      expect(result).toHaveLength(2);
+      expect(result[0].id).toBe('loc-settled');
+      expect(result[0].isPending).toBe(false);
+      expect(result[1].id).toBe('loc-authorized');
+      expect(result[1].isPending).toBe(true);
+    });
+
+    it('should exclude authorized transactions when includePendingTransactions is false', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'loc-settled',
+          occurredAt: '2026-01-15T10:30:00.000000+00:00',
+          type: 'BORROW',
+          subType: 'MARGIN',
+          status: 'settled',
+          amount: 5000.00,
+          amountSign: 'positive',
+        },
+        {
+          externalCanonicalId: 'loc-authorized',
+          occurredAt: '2026-01-16T10:30:00.000000+00:00',
+          type: 'REPAY',
+          subType: 'MARGIN',
+          status: 'authorized',
+          amount: 1000.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({
+        categories: [],
+        categoryGroups: [],
+      });
+
+      showManualTransactionCategorization.mockImplementation((transaction, callback) => {
+        callback({
+          merchant: 'LOC Transaction',
+          category: { id: '1', name: 'Transfer' },
+        });
+      });
+
+      const result = await fetchAndProcessLineOfCreditTransactions(
+        { ...mockLocAccount, includePendingTransactions: false },
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      // Should only include settled
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('loc-settled');
+    });
+
+    it('should handle negative amounts correctly', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'loc-repay',
+          occurredAt: '2026-01-15T10:30:00.000000+00:00',
+          type: 'REPAY',
+          subType: 'MARGIN',
+          status: 'settled',
+          amount: 1000.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({
+        categories: [],
+        categoryGroups: [],
+      });
+
+      showManualTransactionCategorization.mockImplementation((transaction, callback) => {
+        callback({
+          merchant: 'LOC Repayment',
+          category: { id: '1', name: 'Transfer' },
+        });
+      });
+
+      const result = await fetchAndProcessLineOfCreditTransactions(
+        mockLocAccount,
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].amount).toBe(-1000.00); // Negative for repayment
+    });
+
+    it('should throw error when user cancels manual categorization', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'loc-tx-1',
+          occurredAt: '2026-01-15T10:30:00.000000+00:00',
+          type: 'BORROW',
+          subType: 'MARGIN',
+          status: 'settled',
+          amount: 5000.00,
+          amountSign: 'positive',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({
+        categories: [],
+        categoryGroups: [],
+      });
+
+      // User cancels
+      showManualTransactionCategorization.mockImplementation((transaction, callback) => {
+        callback(null);
+      });
+
+      await expect(
+        fetchAndProcessLineOfCreditTransactions(
+          mockLocAccount,
+          '2026-01-01',
+          '2026-01-31',
+        ),
+      ).rejects.toThrow('Manual categorization cancelled');
+    });
+
+    it('should return empty array when no transactions found', async () => {
+      wealthsimpleApi.fetchTransactions.mockResolvedValue([]);
+
+      const result = await fetchAndProcessLineOfCreditTransactions(
+        mockLocAccount,
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      expect(result).toEqual([]);
+      expect(showManualTransactionCategorization).not.toHaveBeenCalled();
+    });
+
+    it('should skip already-uploaded settled transactions', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'loc-already-uploaded',
+          occurredAt: '2026-01-15T10:30:00.000000+00:00',
+          type: 'BORROW',
+          subType: 'MARGIN',
+          status: 'settled',
+          amount: 5000.00,
+          amountSign: 'positive',
+        },
+        {
+          externalCanonicalId: 'loc-new',
+          occurredAt: '2026-01-16T10:30:00.000000+00:00',
+          type: 'REPAY',
+          subType: 'MARGIN',
+          status: 'settled',
+          amount: 1000.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({
+        categories: [],
+        categoryGroups: [],
+      });
+
+      showManualTransactionCategorization.mockImplementation((transaction, callback) => {
+        callback({
+          merchant: 'LOC Transaction',
+          category: { id: '1', name: 'Transfer' },
+        });
+      });
+
+      // Pass already-uploaded IDs
+      const uploadedIds = new Set(['loc-already-uploaded']);
+
+      const result = await fetchAndProcessLineOfCreditTransactions(
+        mockLocAccount,
+        '2026-01-01',
+        '2026-01-31',
+        { uploadedTransactionIds: uploadedIds },
+      );
+
+      // Should only process the new transaction
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('loc-new');
+      expect(showManualTransactionCategorization).toHaveBeenCalledTimes(1);
+    });
+
+    it('should handle API errors gracefully', async () => {
+      wealthsimpleApi.fetchTransactions.mockRejectedValue(new Error('API Error'));
+
+      await expect(
+        fetchAndProcessLineOfCreditTransactions(
+          mockLocAccount,
+          '2026-01-01',
+          '2026-01-31',
+        ),
+      ).rejects.toThrow('API Error');
+    });
+
+    it('should use provided raw transactions if passed in options', async () => {
+      const providedTransactions = [
+        {
+          externalCanonicalId: 'loc-provided',
+          occurredAt: '2026-01-15T10:30:00.000000+00:00',
+          type: 'BORROW',
+          subType: 'MARGIN',
+          status: 'settled',
+          amount: 3000.00,
+          amountSign: 'positive',
+        },
+      ];
+
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({
+        categories: [],
+        categoryGroups: [],
+      });
+
+      showManualTransactionCategorization.mockImplementation((transaction, callback) => {
+        callback({
+          merchant: 'Provided Transaction',
+          category: { id: '1', name: 'Transfer' },
+        });
+      });
+
+      const result = await fetchAndProcessLineOfCreditTransactions(
+        mockLocAccount,
+        '2026-01-01',
+        '2026-01-31',
+        { rawTransactions: providedTransactions },
+      );
+
+      // Should NOT call API since transactions were provided
+      expect(wealthsimpleApi.fetchTransactions).not.toHaveBeenCalled();
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('loc-provided');
     });
   });
 

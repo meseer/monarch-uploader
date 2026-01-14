@@ -920,6 +920,144 @@ export async function fetchAndProcessLoanTransactions(consolidatedAccount, fromD
 }
 
 /**
+ * Fetch and process transactions for a Portfolio Line of Credit account
+ * Currently shows manual categorization dialog for ALL transactions since
+ * the transaction format (borrow/repay) is not yet fully understood.
+ *
+ * This function is similar to CASH account processing but requires manual
+ * categorization for every transaction until rules are established.
+ *
+ * @param {Object} consolidatedAccount - Consolidated account object
+ * @param {string} fromDate - Start date (YYYY-MM-DD)
+ * @param {string} toDate - End date (YYYY-MM-DD)
+ * @param {Object} options - Processing options
+ * @param {Array} options.rawTransactions - Pre-fetched raw transactions (optional, will fetch if not provided)
+ * @param {Set<string>} options.uploadedTransactionIds - Set of already-uploaded transaction IDs to skip
+ * @returns {Promise<Array>} Processed transactions ready for upload
+ */
+export async function fetchAndProcessLineOfCreditTransactions(consolidatedAccount, fromDate, toDate, options = {}) {
+  try {
+    const accountId = consolidatedAccount.wealthsimpleAccount.id;
+    const accountName = consolidatedAccount.wealthsimpleAccount.nickname;
+    const { rawTransactions: providedTransactions, uploadedTransactionIds = new Set() } = options;
+
+    // Get pending transactions setting (default true)
+    const includePendingTransactions = consolidatedAccount.includePendingTransactions !== false;
+
+    debugLog(`Processing Line of Credit transactions for ${accountName} from ${fromDate} to ${toDate}`);
+    debugLog(`Include pending transactions: ${includePendingTransactions ? 'enabled' : 'disabled'}`);
+    debugLog(`Already uploaded transactions to skip: ${uploadedTransactionIds.size}`);
+
+    // Step 1: Use provided transactions or fetch from API
+    let rawTransactions;
+    if (providedTransactions && Array.isArray(providedTransactions)) {
+      rawTransactions = providedTransactions;
+      debugLog(`Using ${rawTransactions.length} pre-fetched transactions`);
+    } else {
+      rawTransactions = await wealthsimpleApi.fetchTransactions(accountId, fromDate);
+      debugLog(`Fetched ${rawTransactions.length} total transactions from API`);
+    }
+
+    // Step 2: Filter for syncable transactions (uses same status logic as credit cards)
+    // Line of Credit likely uses status: authorized/settled like credit cards
+    const syncableTransactions = filterSyncableTransactions(rawTransactions, includePendingTransactions);
+    debugLog(`Filtered to ${syncableTransactions.length} syncable transactions (includePending: ${includePendingTransactions})`);
+
+    if (syncableTransactions.length === 0) {
+      return [];
+    }
+
+    // Step 3: Filter out already-uploaded settled transactions
+    const notYetUploadedTransactions = syncableTransactions.filter((tx) => {
+      const isSettled = tx.status === 'settled';
+      const isAlreadyUploaded = uploadedTransactionIds.has(tx.externalCanonicalId);
+
+      // Skip only settled transactions that are already uploaded
+      if (isSettled && isAlreadyUploaded) {
+        return false;
+      }
+      return true;
+    });
+
+    const uploadedSkipCount = syncableTransactions.length - notYetUploadedTransactions.length;
+    if (uploadedSkipCount > 0) {
+      debugLog(`Skipped ${uploadedSkipCount} already-uploaded settled transactions`);
+    }
+
+    if (notYetUploadedTransactions.length === 0) {
+      debugLog('No new transactions to process after filtering already-uploaded');
+      return [];
+    }
+
+    // Step 4: ALL transactions need manual categorization since rules are not yet established
+    debugLog(`Processing ${notYetUploadedTransactions.length} transactions that need manual categorization`);
+    toast.show(`${notYetUploadedTransactions.length} Line of Credit transaction(s) need manual categorization...`, 'info');
+
+    const processedTransactions = [];
+
+    for (let i = 0; i < notYetUploadedTransactions.length; i++) {
+      const rawTransaction = notYetUploadedTransactions[i];
+      const progressNum = i + 1;
+
+      debugLog(`Showing manual categorization for transaction ${progressNum}/${notYetUploadedTransactions.length}`, {
+        id: rawTransaction.externalCanonicalId,
+        type: rawTransaction.type,
+        subType: rawTransaction.subType,
+      });
+
+      toast.show(`Manual categorization ${progressNum}/${notYetUploadedTransactions.length}`, 'debug');
+
+      // Show the manual categorization dialog
+      const manualResult = await new Promise((resolve) => {
+        showManualTransactionCategorization(rawTransaction, resolve);
+      });
+
+      if (!manualResult) {
+        // User cancelled - abort the upload
+        throw new Error(`Manual categorization cancelled for transaction ${rawTransaction.externalCanonicalId}. Upload aborted.`);
+      }
+
+      // Determine amount sign
+      const isNegative = rawTransaction.amountSign === 'negative';
+      const finalAmount = isNegative ? -Math.abs(rawTransaction.amount) : Math.abs(rawTransaction.amount);
+
+      // Determine pending status (uses credit card status field)
+      const isPending = rawTransaction.status === 'authorized';
+
+      // Create processed transaction with user-provided data
+      const manuallyProcessed = {
+        id: rawTransaction.externalCanonicalId,
+        date: convertToLocalDate(rawTransaction.occurredAt),
+        merchant: manualResult.merchant,
+        originalMerchant: manualResult.merchant, // User-provided merchant
+        amount: finalAmount,
+        type: rawTransaction.type,
+        subType: rawTransaction.subType,
+        status: rawTransaction.status,
+        isPending,
+        resolvedMonarchCategory: manualResult.category.name,
+        ruleId: 'manual', // Indicate it was manually categorized
+        notes: '',
+        technicalDetails: '',
+        needsCategoryMapping: false,
+        categoryKey: manualResult.merchant,
+      };
+
+      processedTransactions.push(manuallyProcessed);
+      debugLog(`Manually categorized transaction: ${manualResult.merchant} -> ${manualResult.category.name}`);
+    }
+
+    toast.show(`Completed manual categorization for ${notYetUploadedTransactions.length} transaction(s)`, 'info');
+
+    debugLog(`Processed ${processedTransactions.length} total Line of Credit transactions (${uploadedSkipCount} already uploaded)`);
+    return processedTransactions;
+  } catch (error) {
+    debugLog('Error fetching and processing Line of Credit transactions:', error);
+    throw error;
+  }
+}
+
+/**
  * Placeholder for investment account transaction processing
  * @param {Object} consolidatedAccount - Consolidated account object
  * @param {string} fromDate - Start date (YYYY-MM-DD)
@@ -960,10 +1098,15 @@ export async function fetchAndProcessTransactions(consolidatedAccount, fromDate,
     return fetchAndProcessCashTransactions(consolidatedAccount, fromDate, toDate, options);
   }
 
-  // Route credit card-like accounts (CREDIT_CARD, PORTFOLIO_LINE_OF_CREDIT) to credit card processor
-  // These accounts use the same transaction structure (status: authorized/settled, spendMerchant)
-  if (accountType === 'CREDIT_CARD' || accountType === 'PORTFOLIO_LINE_OF_CREDIT') {
+  // Route credit card accounts to credit card processor
+  if (accountType === 'CREDIT_CARD') {
     return fetchAndProcessCreditCardTransactions(consolidatedAccount, fromDate, toDate, options);
+  }
+
+  // Route Portfolio Line of Credit to dedicated processor
+  // Uses manual categorization for all transactions until rules are established
+  if (accountType === 'PORTFOLIO_LINE_OF_CREDIT') {
+    return fetchAndProcessLineOfCreditTransactions(consolidatedAccount, fromDate, toDate, options);
   }
 
   // Default to investment account processing for all other types
@@ -1348,6 +1491,7 @@ export default {
   fetchAndProcessTransactions,
   fetchAndProcessCreditCardTransactions,
   fetchAndProcessCashTransactions,
+  fetchAndProcessLineOfCreditTransactions,
   fetchAndProcessLoanTransactions,
   fetchAndProcessInvestmentTransactions,
   reconcilePendingTransactions,

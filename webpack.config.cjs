@@ -44,8 +44,13 @@ module.exports = (env, argv) => {
         new TerserPlugin({
           terserOptions: {
             format: {
-              // Strip all comments - UserScript metadata is added via BannerPlugin
-              comments: false,
+              // Preserve UserScript metadata comments, strip everything else
+              comments: (astNode, comment) => {
+                const text = comment.value;
+                return /@(name|namespace|version|description|author|match|downloadURL|updateURL|grant|connect|run-at)\s|==\/?UserScript==/.test(
+                  text,
+                );
+              },
             },
           },
           extractComments: false,
@@ -56,7 +61,7 @@ module.exports = (env, argv) => {
       // Add banner with userscript metadata
       new webpack.BannerPlugin({
         banner: createBanner(),
-        raw: false,
+        raw: true,
         entryOnly: true,
       }),
     ],
