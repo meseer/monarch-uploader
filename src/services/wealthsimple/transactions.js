@@ -106,6 +106,11 @@ function getAutoMappingForSubType(subType) {
  * Resolve categories for transactions, handling both automatic and manual selection
  * Uses dynamic category mapping - after each user selection, re-checks remaining categories
  * to avoid duplicate prompts
+ *
+ * Assignment types:
+ * - 'rule': Save to persistent storage AND apply to all matching merchants in batch
+ * - 'once': Apply ONLY to the specific transaction (not to other matching merchants)
+ *
  * @param {Array} transactions - Array of processed transactions
  * @param {Object} options - Options for category resolution
  * @param {Function} options.onProgress - Callback for progress updates (optional)
@@ -119,9 +124,13 @@ async function resolveCategoriesForTransactions(transactions, options = {}) {
 
   debugLog('Starting category resolution for Wealthsimple transactions');
 
-  // Session mappings for one-time selections (not saved to persistent storage)
-  // This ensures that selections with "remember=false" are still used for the current batch
+  // Session mappings for 'rule' assignments (apply to all matching merchants in batch)
+  // These are saved to persistent storage AND used for all matching merchants
   const sessionMappings = new Map();
+
+  // One-time assignments for 'once' assignments (apply only to specific transaction)
+  // Key: transaction ID, Value: category name
+  const oneTimeAssignments = new Map();
 
   // Fetch categories from Monarch for similarity scoring
   let availableCategories = [];
@@ -143,8 +152,10 @@ async function resolveCategoriesForTransactions(transactions, options = {}) {
   });
 
   // Get list of categories that need resolution (not auto-categorized)
+  // Build a map of categoryKey -> transactions that need this category
   const categoriesToResolve = [];
-  const uniqueCategories = new Map();
+  const uniqueCategories = new Map(); // categoryKey -> first transaction with that key
+  const transactionsByCategoryKey = new Map(); // categoryKey -> array of transaction IDs
 
   transactions.forEach((transaction) => {
     // Skip if already auto-categorized
@@ -153,6 +164,14 @@ async function resolveCategoriesForTransactions(transactions, options = {}) {
     }
 
     const categoryKey = transaction.categoryKey;
+    const upperCategoryKey = categoryKey ? categoryKey.toUpperCase() : '';
+
+    // Track all transactions that need this category
+    if (!transactionsByCategoryKey.has(upperCategoryKey)) {
+      transactionsByCategoryKey.set(upperCategoryKey, []);
+    }
+    transactionsByCategoryKey.get(upperCategoryKey).push(transaction.id);
+
     if (!uniqueCategories.has(categoryKey)) {
       uniqueCategories.set(categoryKey, transaction);
 
@@ -239,18 +258,28 @@ async function resolveCategoriesForTransactions(transactions, options = {}) {
         throw new Error(`Category selection cancelled for "${categoryToResolve.bankCategory}". Upload aborted.`);
       }
 
-      // Always store in session mappings for use in the current batch
-      sessionMappings.set(categoryToResolve.bankCategory.toUpperCase(), selectedCategory.name);
+      const upperBankCategory = categoryToResolve.bankCategory.toUpperCase();
 
-      // Save to persistent storage only if user chose to remember
-      if (selectedCategory.rememberMapping !== false) {
+      // Handle based on assignmentType (new two-button UI)
+      // For backward compatibility, also check rememberMapping
+      const assignmentType = selectedCategory.assignmentType || (selectedCategory.rememberMapping !== false ? 'rule' : 'once');
+
+      if (assignmentType === 'rule') {
+        // Save as Rule: persist to storage AND apply to all matching merchants in batch
         saveUserWealthsimpleCategorySelection(categoryToResolve.bankCategory, selectedCategory.name);
-        debugLog(`User selected category mapping (saved): ${categoryToResolve.bankCategory} -> ${selectedCategory.name}`);
+        sessionMappings.set(upperBankCategory, selectedCategory.name);
+        debugLog(`User selected category mapping (saved as rule): ${categoryToResolve.bankCategory} -> ${selectedCategory.name}`);
+        toast.show(`Saved rule: "${categoryToResolve.bankCategory}" → "${selectedCategory.name}"`, 'debug');
       } else {
-        debugLog(`User selected category mapping (one-time): ${categoryToResolve.bankCategory} -> ${selectedCategory.name}`);
+        // Assign Once: apply ONLY to this specific transaction (not to other matching merchants)
+        // Store by transaction ID, not by category key
+        const transactionId = categoryToResolve.exampleTransaction?.id;
+        if (transactionId) {
+          oneTimeAssignments.set(transactionId, selectedCategory.name);
+          debugLog(`User selected category mapping (one-time for ${transactionId}): ${categoryToResolve.bankCategory} -> ${selectedCategory.name}`);
+        }
+        toast.show(`Assigned once: "${categoryToResolve.bankCategory}" → "${selectedCategory.name}"`, 'debug');
       }
-
-      toast.show(`Mapped "${categoryToResolve.bankCategory}" to "${selectedCategory.name}"`, 'debug');
 
       // Remove this category from the list (dynamic re-checking will happen on next iteration)
       categoriesToResolve.shift(); // Remove first element
@@ -268,11 +297,20 @@ async function resolveCategoriesForTransactions(transactions, options = {}) {
       return transaction;
     }
 
+    // First check one-time assignments by transaction ID
+    // This takes priority to ensure "Assign Once" truly applies only to this transaction
+    if (oneTimeAssignments.has(transaction.id)) {
+      return {
+        ...transaction,
+        resolvedMonarchCategory: oneTimeAssignments.get(transaction.id),
+      };
+    }
+
     // Resolve based on merchant
     const categoryKey = transaction.categoryKey;
     const upperCategoryKey = categoryKey ? categoryKey.toUpperCase() : '';
 
-    // First check session mappings (includes one-time selections)
+    // Check session mappings (from "Save as Rule" selections in this batch)
     if (sessionMappings.has(upperCategoryKey)) {
       return {
         ...transaction,

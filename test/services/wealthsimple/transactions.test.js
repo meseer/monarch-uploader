@@ -452,7 +452,9 @@ describe('Wealthsimple Transaction Service', () => {
       ).rejects.toThrow('API Error');
     });
 
-    it('should use one-time category selection (rememberMapping=false) for current batch', async () => {
+    it('should use one-time category selection (assignmentType=once) for only the specific transaction', async () => {
+      // With "Assign Once", the category should ONLY apply to the specific transaction
+      // Other transactions with the same merchant should NOT automatically get the category
       const mockRawTransactions = [
         {
           externalCanonicalId: 'tx-1',
@@ -485,7 +487,8 @@ describe('Wealthsimple Transaction Service', () => {
         categoryGroups: [],
       });
 
-      // First call returns needsManualSelection, subsequent calls should use session mapping
+      // First call returns needsManualSelection, subsequent calls should still return needsManualSelection
+      // because "Assign Once" doesn't save to persistent storage
       applyWealthsimpleCategoryMapping
         .mockReturnValueOnce({
           needsManualSelection: true,
@@ -493,14 +496,14 @@ describe('Wealthsimple Transaction Service', () => {
           suggestedCategory: 'Shopping',
           similarityScore: 0.5,
         })
-        // Re-check during processing (should still return needsManualSelection since not saved)
+        // Re-check during processing (still needsManualSelection since not saved)
         .mockReturnValueOnce({
           needsManualSelection: true,
           bankCategory: 'New Unique Merchant',
           suggestedCategory: 'Shopping',
           similarityScore: 0.5,
         })
-        // Final resolution should also indicate no saved mapping (since remember=false)
+        // Final resolution also indicates no saved mapping (assignmentType=once doesn't save)
         .mockReturnValue({
           needsManualSelection: true,
           bankCategory: 'New Unique Merchant',
@@ -508,12 +511,12 @@ describe('Wealthsimple Transaction Service', () => {
           similarityScore: 0.5,
         });
 
-      // Mock the category selector to return selection with rememberMapping=false
+      // Mock the category selector to return selection with assignmentType='once'
       showMonarchCategorySelector.mockImplementation((bankCategory, callback) => {
         callback({
           id: '2',
           name: 'Food',
-          rememberMapping: false, // User unchecked "remember" checkbox
+          assignmentType: 'once', // User clicked "Assign Once" button
         });
       });
 
@@ -523,7 +526,87 @@ describe('Wealthsimple Transaction Service', () => {
         '2025-01-31',
       );
 
-      // Both transactions should have the selected category (not "Uncategorized")
+      // With "Assign Once":
+      // - First transaction (tx-1) gets "Food" (the one user selected for)
+      // - Second transaction (tx-2) gets "Uncategorized" (NOT automatically assigned)
+      // This is the intended behavior - "Assign Once" means ONLY that transaction
+      expect(result).toHaveLength(2);
+      expect(result[0].resolvedMonarchCategory).toBe('Food');
+      expect(result[1].resolvedMonarchCategory).toBe('Uncategorized');
+
+      // Should only show selector once (for unique merchant - deduplication still happens)
+      expect(showMonarchCategorySelector).toHaveBeenCalledTimes(1);
+    });
+
+    it('should apply category to all matching merchants when assignmentType=rule', async () => {
+      // With "Save as Rule", the category should apply to ALL transactions with the same merchant
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-1',
+          occurredAt: '2025-01-15T10:30:00.000000+00:00',
+          type: 'CREDIT_CARD',
+          subType: 'PURCHASE',
+          status: 'settled',
+          spendMerchant: 'New Unique Merchant',
+          amount: 50.00,
+          amountSign: 'negative',
+        },
+        {
+          externalCanonicalId: 'tx-2',
+          occurredAt: '2025-01-16T10:30:00.000000+00:00',
+          type: 'CREDIT_CARD',
+          subType: 'PURCHASE',
+          status: 'settled',
+          spendMerchant: 'New Unique Merchant', // Same merchant
+          amount: 75.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({
+        categories: [
+          { id: '1', name: 'Shopping', group: { id: 'g1', name: 'Expenses' } },
+          { id: '2', name: 'Food', group: { id: 'g2', name: 'Expenses' } },
+        ],
+        categoryGroups: [],
+      });
+
+      // First call returns needsManualSelection
+      applyWealthsimpleCategoryMapping
+        .mockReturnValueOnce({
+          needsManualSelection: true,
+          bankCategory: 'New Unique Merchant',
+          suggestedCategory: 'Shopping',
+          similarityScore: 0.5,
+        })
+        // Re-check - still needsManualSelection before user picks
+        .mockReturnValueOnce({
+          needsManualSelection: true,
+          bankCategory: 'New Unique Merchant',
+          suggestedCategory: 'Shopping',
+          similarityScore: 0.5,
+        })
+        // Final resolution - with 'rule' type, mapping is saved so this returns saved value
+        .mockReturnValue('Food');
+
+      // Mock the category selector to return selection with assignmentType='rule'
+      showMonarchCategorySelector.mockImplementation((bankCategory, callback) => {
+        callback({
+          id: '2',
+          name: 'Food',
+          assignmentType: 'rule', // User clicked "Save as Rule" button
+        });
+      });
+
+      const result = await fetchAndProcessCreditCardTransactions(
+        mockConsolidatedAccount,
+        '2025-01-01',
+        '2025-01-31',
+      );
+
+      // With "Save as Rule":
+      // - Both transactions get "Food" (applied to all matching merchants)
       expect(result).toHaveLength(2);
       expect(result[0].resolvedMonarchCategory).toBe('Food');
       expect(result[1].resolvedMonarchCategory).toBe('Food');

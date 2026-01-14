@@ -251,8 +251,8 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
   // Initialize search query variable
   let searchQuery = '';
 
-  // Initialize rememberMapping - will be updated by checkbox
-  let rememberMapping = true; // Default to checked
+  // Track selected category (for two-button UI)
+  let selectedCategory = null;
 
   // Declare searchElements in outer scope (will be initialized later)
   let searchElements;
@@ -501,8 +501,8 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
     return item;
   };
 
-  // Helper function to create a category item (for search results)
-  const createCategoryItem = (category, onClick) => {
+  // Helper function to create a category item (for search results) - selects but doesn't submit
+  const createCategoryItem = (category, onSelect, isSelected = false) => {
     const item = document.createElement('div');
     item.style.cssText = `
         display: flex;
@@ -511,9 +511,10 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
         border-radius: 8px;
         cursor: pointer;
         margin-bottom: 10px;
-        border: 1px solid #eee;
+        border: 2px solid ${isSelected ? '#007bff' : '#eee'};
         transition: all 0.2s;
         position: relative;
+        background-color: ${isSelected ? '#e7f1ff' : 'white'};
       `;
 
     // Create icon container
@@ -571,18 +572,190 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
 
     item.appendChild(textContainer);
 
-    // Hover effects
+    // Add selection checkmark if selected
+    if (isSelected) {
+      const checkmark = document.createElement('div');
+      checkmark.style.cssText = `
+        margin-left: 10px;
+        color: #007bff;
+        font-size: 1.2em;
+        font-weight: bold;
+      `;
+      checkmark.textContent = '✓';
+      item.appendChild(checkmark);
+    }
+
+    // Hover effects (only if not selected)
     item.onmouseover = () => {
-      item.style.backgroundColor = '#f5f5f5';
-      item.style.borderColor = '#ddd';
+      if (!isSelected) {
+        item.style.backgroundColor = '#f5f5f5';
+        item.style.borderColor = '#ddd';
+      }
     };
     item.onmouseout = () => {
-      item.style.backgroundColor = '';
-      item.style.borderColor = '#eee';
+      if (!isSelected) {
+        item.style.backgroundColor = 'white';
+        item.style.borderColor = '#eee';
+      }
     };
 
-    item.onclick = onClick;
+    item.onclick = onSelect;
     return item;
+  };
+
+  // Create selection display section FIRST (before updateSelectionUI function)
+  const selectionSection = document.createElement('div');
+  selectionSection.id = 'category-selector-selection-section';
+  selectionSection.style.cssText = `
+    margin-top: 15px;
+    padding: 12px;
+    background: #f8f9fa;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+  `;
+
+  const selectionLabel = document.createElement('div');
+  selectionLabel.style.cssText = 'font-size: 0.85em; color: #666; margin-bottom: 5px;';
+  selectionLabel.textContent = 'Selected Category:';
+  selectionSection.appendChild(selectionLabel);
+
+  const selectionDisplay = document.createElement('div');
+  selectionDisplay.id = 'category-selector-selection-display';
+  selectionDisplay.style.cssText = `
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: #f8f9fa;
+  `;
+
+  const selectionText = document.createElement('span');
+  selectionText.id = 'category-selector-selection-text';
+  selectionText.style.cssText = 'color: #888;';
+  selectionText.textContent = 'No category selected';
+  selectionDisplay.appendChild(selectionText);
+  selectionSection.appendChild(selectionDisplay);
+
+  // Create action buttons section
+  const buttonSection = document.createElement('div');
+  buttonSection.id = 'category-selector-button-section';
+  buttonSection.style.cssText = `
+    margin-top: 15px;
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+  `;
+
+  // Cancel button
+  const cancelBtn = document.createElement('button');
+  cancelBtn.id = 'category-selector-cancel-btn';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.style.cssText = `
+    padding: 10px 16px;
+    background-color: #f5f5f5;
+    color: #333;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+  `;
+  cancelBtn.onclick = () => {
+    cleanupKeyboard();
+    overlay.remove();
+    callback(null);
+  };
+
+  // Save as Rule button
+  const saveRuleBtn = document.createElement('button');
+  saveRuleBtn.id = 'category-selector-save-rule-btn';
+  saveRuleBtn.textContent = 'Save as Rule';
+  saveRuleBtn.disabled = true;
+  saveRuleBtn.style.cssText = `
+    padding: 10px 16px;
+    background-color: #cccccc;
+    color: #666;
+    border: none;
+    border-radius: 4px;
+    cursor: not-allowed;
+    font-size: 14px;
+  `;
+  saveRuleBtn.onclick = () => {
+    if (selectedCategory) {
+      debugLog('Save as Rule clicked:', { name: selectedCategory.name, id: selectedCategory.id });
+      cleanupKeyboard();
+      overlay.remove();
+      // assignmentType: 'rule' means save to persistent storage and apply to all matching
+      callback({ ...selectedCategory, assignmentType: 'rule' });
+    }
+  };
+
+  // Assign Once button
+  const assignOnceBtn = document.createElement('button');
+  assignOnceBtn.id = 'category-selector-assign-once-btn';
+  assignOnceBtn.textContent = 'Assign Once';
+  assignOnceBtn.disabled = true;
+  assignOnceBtn.style.cssText = `
+    padding: 10px 16px;
+    background-color: #cccccc;
+    color: #666;
+    border: none;
+    border-radius: 4px;
+    cursor: not-allowed;
+    font-size: 14px;
+  `;
+  assignOnceBtn.onclick = () => {
+    if (selectedCategory) {
+      debugLog('Assign Once clicked:', { name: selectedCategory.name, id: selectedCategory.id });
+      cleanupKeyboard();
+      overlay.remove();
+      // assignmentType: 'once' means only apply to this specific transaction
+      callback({ ...selectedCategory, assignmentType: 'once' });
+    }
+  };
+
+  buttonSection.appendChild(cancelBtn);
+  buttonSection.appendChild(saveRuleBtn);
+  buttonSection.appendChild(assignOnceBtn);
+
+  // Helper function to update selection display and button states
+  const updateSelectionUI = () => {
+    // Update selection display
+    if (selectedCategory) {
+      selectionText.textContent = selectedCategory.name;
+      selectionText.style.color = '#333';
+      selectionText.style.fontWeight = 'bold';
+      selectionDisplay.style.borderColor = '#28a745';
+      selectionDisplay.style.backgroundColor = '#f0fff0';
+    } else {
+      selectionText.textContent = 'No category selected';
+      selectionText.style.color = '#888';
+      selectionText.style.fontWeight = 'normal';
+      selectionDisplay.style.borderColor = '#ddd';
+      selectionDisplay.style.backgroundColor = '#f8f9fa';
+    }
+
+    // Update button states
+    const hasSelection = selectedCategory !== null;
+
+    saveRuleBtn.disabled = !hasSelection;
+    assignOnceBtn.disabled = !hasSelection;
+
+    if (hasSelection) {
+      saveRuleBtn.style.backgroundColor = '#007bff';
+      saveRuleBtn.style.color = 'white';
+      saveRuleBtn.style.cursor = 'pointer';
+
+      assignOnceBtn.style.backgroundColor = '#28a745';
+      assignOnceBtn.style.color = 'white';
+      assignOnceBtn.style.cursor = 'pointer';
+    } else {
+      saveRuleBtn.style.backgroundColor = '#cccccc';
+      saveRuleBtn.style.color = '#666';
+      saveRuleBtn.style.cursor = 'not-allowed';
+
+      assignOnceBtn.style.backgroundColor = '#cccccc';
+      assignOnceBtn.style.color = '#666';
+      assignOnceBtn.style.cursor = 'not-allowed';
+    }
   };
 
   // Define updateDisplay function first before using it in search input
@@ -621,16 +794,25 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
         noResults.textContent = 'No categories found matching your search.';
         noResults.style.cssText = 'color: #666; padding: 20px 0; text-align: center;';
         contentContainer.appendChild(noResults);
+        // Clear selection when no results
+        selectedCategory = null;
+        updateSelectionUI();
       } else {
+        // Auto-select if exactly one result
+        if (filteredCategories.length === 1) {
+          selectedCategory = filteredCategories[0];
+          updateSelectionUI();
+        }
+
         // Display filtered categories
         filteredCategories.forEach((category) => {
+          const isSelected = selectedCategory && selectedCategory.id === category.id;
           const item = createCategoryItem(category, () => {
-            debugLog('Selected category from search:', { name: category.name, id: category.id, rememberMapping });
-            cleanupKeyboard();
-            overlay.remove();
-            // Include rememberMapping flag in the callback result
-            callback({ ...category, rememberMapping });
-          });
+            debugLog('Selected category from search:', { name: category.name, id: category.id });
+            selectedCategory = category;
+            updateSelectionUI();
+            updateDisplay(); // Re-render to show selection state
+          }, isSelected);
           contentContainer.appendChild(item);
           items.push(item);
         });
@@ -649,15 +831,8 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
           debugLog('Navigating to category selector for group:', group.name);
           cleanupKeyboard();
           overlay.remove();
-          // Wrap callback to include rememberMapping from parent modal
-          const wrappedCallback = (category) => {
-            if (category) {
-              callback({ ...category, rememberMapping });
-            } else {
-              callback(null);
-            }
-          };
-          showCategorySelector(group, bankCategory, wrappedCallback, categoryGroups, transactionDetails);
+          // Pass selectedCategory state to child modal
+          showCategorySelector(group, bankCategory, callback, categoryGroups, transactionDetails);
         });
         contentContainer.appendChild(item);
         items.push(item);
@@ -700,65 +875,9 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
   // Initial display
   updateDisplay();
 
-  // Add "Remember this mapping" checkbox section (only for transactions that need category mapping)
-  const rememberSection = document.createElement('div');
-  rememberSection.id = 'category-selector-remember-section';
-  rememberSection.style.cssText = `
-    margin-top: 15px;
-    padding: 12px;
-    background: #f0f7ff;
-    border: 1px solid #b8daff;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  `;
-
-  const rememberCheckbox = document.createElement('input');
-  rememberCheckbox.type = 'checkbox';
-  rememberCheckbox.id = 'category-selector-remember-checkbox';
-  rememberCheckbox.checked = true; // Default to checked
-  rememberCheckbox.style.cssText = `
-    width: 18px;
-    height: 18px;
-    cursor: pointer;
-  `;
-  rememberCheckbox.addEventListener('change', () => {
-    rememberMapping = rememberCheckbox.checked;
-  });
-
-  const rememberLabel = document.createElement('label');
-  rememberLabel.id = 'category-selector-remember-label';
-  rememberLabel.htmlFor = 'category-selector-remember-checkbox';
-  rememberLabel.style.cssText = `
-    cursor: pointer;
-    font-size: 0.9em;
-    color: #333;
-  `;
-  rememberLabel.textContent = 'Remember this category mapping for future transactions';
-
-  rememberSection.appendChild(rememberCheckbox);
-  rememberSection.appendChild(rememberLabel);
-  modal.appendChild(rememberSection);
-
-  // Add a cancel button
-  const cancelBtn = document.createElement('button');
-  cancelBtn.textContent = 'Cancel';
-  cancelBtn.style.cssText = `
-    padding: 8px 16px;
-    background-color: #f5f5f5;
-    color: #333;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    margin-top: 10px;
-  `;
-  cancelBtn.onclick = () => {
-    cleanupKeyboard();
-    overlay.remove();
-    callback(null);
-  };
-  modal.appendChild(cancelBtn);
+  // Add selection section and button section to modal
+  modal.appendChild(selectionSection);
+  modal.appendChild(buttonSection);
 
   // Add keyboard handlers for the modal (Escape to close)
   addModalKeyboardHandlers(overlay, () => {
