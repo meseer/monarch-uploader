@@ -171,7 +171,15 @@ export function checkAuth() {
 }
 
 /**
+ * Token monitoring state
+ */
+let tokenCheckIntervalId = null;
+let tokenFound = false;
+
+/**
  * Setup token monitoring to capture Wealthsimple authentication from cookie
+ * Uses fast polling (1 second) initially until token is found,
+ * then switches to slower maintenance polling (30 seconds)
  */
 export function setupTokenMonitoring() {
   debugLog('Setting up Wealthsimple token monitoring...');
@@ -187,18 +195,45 @@ export function setupTokenMonitoring() {
     return false;
   };
 
-  // Check immediately
-  captureTokenFromCookie();
+  // Function to handle token check and manage polling intervals
+  const checkToken = () => {
+    const found = captureTokenFromCookie();
+    if (found && !tokenFound) {
+      tokenFound = true;
+      debugLog('Token found, switching to slow polling interval (30s)');
 
-  // Monitor cookie changes (check periodically as cookie change events aren't reliable)
-  setInterval(() => {
-    captureTokenFromCookie();
-  }, 30000); // Check every 30 seconds
+      // Clear fast polling interval
+      if (tokenCheckIntervalId) {
+        clearInterval(tokenCheckIntervalId);
+      }
+
+      // Switch to slower maintenance interval
+      tokenCheckIntervalId = setInterval(() => {
+        captureTokenFromCookie();
+      }, 30000); // 30 seconds for maintenance checks
+    }
+  };
+
+  // Check immediately
+  const initialFound = captureTokenFromCookie();
+
+  if (initialFound) {
+    // Token found immediately, use slow polling
+    tokenFound = true;
+    debugLog('Token found immediately, using slow polling interval (30s)');
+    tokenCheckIntervalId = setInterval(() => {
+      captureTokenFromCookie();
+    }, 30000);
+  } else {
+    // Token not found, use fast polling until found
+    debugLog('Token not found initially, using fast polling interval (1s)');
+    tokenCheckIntervalId = setInterval(checkToken, 1000);
+  }
 
   // Also check on page visibility change (when user returns to tab)
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
-      captureTokenFromCookie();
+      checkToken();
     }
   });
 

@@ -97,11 +97,17 @@ function createWealthsimpleButton(text, onClick, options = {}) {
  * Creates the main upload button for Wealthsimple
  * @returns {HTMLElement} Upload button container
  */
+/**
+ * Fixed height for upload button container to prevent UI jumps
+ * when switching between auth message and button
+ */
+const UPLOAD_BUTTON_CONTAINER_HEIGHT = '42px';
+
 export function createWealthsimpleUploadButton() {
   const container = document.createElement('div');
   container.id = 'wealthsimple-upload-button-container';
   container.className = 'wealthsimple-upload-button-container';
-  container.style.cssText = 'margin: 8px 0;';
+  container.style.cssText = `margin: 8px 0; min-height: ${UPLOAD_BUTTON_CONTAINER_HEIGHT};`;
 
   // Check authentication status
   const authStatus = wealthsimpleApi.checkAuth();
@@ -112,7 +118,7 @@ export function createWealthsimpleUploadButton() {
     message.id = 'wealthsimple-auth-message';
     message.textContent = 'Please log in to Wealthsimple to enable sync functionality';
     message.style.cssText = `
-      padding: 8px 12px;
+      padding: 10px 12px;
       background-color: #fff3cd;
       color: #856404;
       border: 1px solid #ffeaa7;
@@ -120,6 +126,8 @@ export function createWealthsimpleUploadButton() {
       font-size: 13px;
       margin: 5px 0;
       font-family: "Wealthsimple Sans", sans-serif;
+      min-height: 20px;
+      box-sizing: border-box;
     `;
     container.appendChild(message);
     return container;

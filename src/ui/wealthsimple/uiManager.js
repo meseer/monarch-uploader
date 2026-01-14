@@ -363,6 +363,31 @@ export async function initWealthsimpleUI() {
 }
 
 /**
+ * Update the upload button based on current auth status
+ * Re-creates the button to reflect the new auth state
+ * @param {HTMLElement} container - The main UI container
+ */
+function updateUploadButton(container) {
+  if (!container) return;
+
+  try {
+    // Find and remove existing upload button container
+    const existingButtonContainer = container.querySelector('#wealthsimple-upload-button-container');
+    if (existingButtonContainer) {
+      existingButtonContainer.remove();
+    }
+
+    // Create new upload button with current auth status
+    const newUploadButton = createWealthsimpleUploadButton();
+    container.appendChild(newUploadButton);
+
+    debugLog('Upload button updated based on auth status change');
+  } catch (error) {
+    debugLog('Error updating upload button:', error);
+  }
+}
+
+/**
  * Set up status monitoring for connection indicators
  * @param {HTMLElement} connectionStatus - Connection status container
  */
@@ -375,9 +400,15 @@ function setupStatusMonitoring(connectionStatus) {
   // Store interval ID for cleanup if needed
   connectionStatus.statusInterval = statusInterval;
 
-  // Listen for state changes
+  // Listen for state changes - update both connection status and upload button
   stateManager.addListener('auth', () => {
     updateConnectionStatus(connectionStatus);
+
+    // Also update upload button when Wealthsimple auth changes
+    const container = document.getElementById('wealthsimple-balance-uploader-container');
+    if (container) {
+      updateUploadButton(container);
+    }
   });
 }
 
