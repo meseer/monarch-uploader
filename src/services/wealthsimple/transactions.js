@@ -633,7 +633,7 @@ function collectEftTransferIds(transactions) {
 
   for (const tx of transactions) {
     if (
-      tx.subType === 'EFT' &&
+      (tx.subType === 'EFT' || tx.subType === 'EFT_RECURRING') &&
       tx.externalCanonicalId &&
       tx.externalCanonicalId.startsWith('funding_intent-')
     ) {
