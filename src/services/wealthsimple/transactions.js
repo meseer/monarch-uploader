@@ -10,7 +10,7 @@ import { applyWealthsimpleCategoryMapping, saveUserWealthsimpleCategorySelection
 import { showMonarchCategorySelector, showManualTransactionCategorization } from '../../ui/components/categorySelector';
 import monarchApi from '../../api/monarch';
 import toast from '../../ui/toast';
-import { applyTransactionRule, CASH_TRANSACTION_RULES } from './transactionRules';
+import { applyTransactionRule, CASH_TRANSACTION_RULES, formatOriginalStatement } from './transactionRules';
 
 /**
  * Convert ISO timestamp to local date in YYYY-MM-DD format
@@ -58,7 +58,7 @@ function processCreditCardTransaction(transaction, options = {}) {
     id: transaction.externalCanonicalId,
     date: convertToLocalDate(transaction.occurredAt),
     merchant: cleanedMerchant,
-    originalMerchant: merchantName,
+    originalMerchant: formatOriginalStatement(transaction.type, transaction.subType, merchantName),
     amount: finalAmount,
     type: transaction.type,
     subType: transaction.subType,
@@ -859,7 +859,7 @@ export async function fetchAndProcessCashTransactions(consolidatedAccount, fromD
           id: rawTransaction.externalCanonicalId,
           date: convertToLocalDate(rawTransaction.occurredAt),
           merchant: manualResult.merchant,
-          originalMerchant: manualResult.merchant, // User-provided merchant
+          originalMerchant: formatOriginalStatement(rawTransaction.type, rawTransaction.subType, manualResult.merchant),
           amount: finalAmount,
           type: rawTransaction.type,
           subType: rawTransaction.subType,
@@ -935,9 +935,10 @@ function applyLineOfCreditRule(transaction, accountName) {
 
   // INTERNAL_TRANSFER/SOURCE = borrowing from the LOC
   if (type === 'INTERNAL_TRANSFER' && subType === 'SOURCE') {
+    const statementText = `Borrow from ${accountName}`;
     return {
-      merchant: `Borrow from ${accountName}`,
-      originalStatement: `Borrow from ${accountName}`,
+      merchant: statementText,
+      originalStatement: formatOriginalStatement(type, subType, statementText),
       category: 'Transfer',
       ruleId: 'loc-borrow',
     };
@@ -945,9 +946,10 @@ function applyLineOfCreditRule(transaction, accountName) {
 
   // INTERNAL_TRANSFER/DESTINATION = repayment to the LOC
   if (type === 'INTERNAL_TRANSFER' && subType === 'DESTINATION') {
+    const statementText = `Repayment to ${accountName}`;
     return {
-      merchant: `Repayment to ${accountName}`,
-      originalStatement: `Repayment to ${accountName}`,
+      merchant: statementText,
+      originalStatement: formatOriginalStatement(type, subType, statementText),
       category: 'Loan Repayment',
       ruleId: 'loc-repay',
     };
@@ -1127,7 +1129,7 @@ export async function fetchAndProcessLineOfCreditTransactions(consolidatedAccoun
           id: rawTransaction.externalCanonicalId,
           date: convertToLocalDate(rawTransaction.occurredAt),
           merchant: manualResult.merchant,
-          originalMerchant: manualResult.merchant,
+          originalMerchant: formatOriginalStatement(rawTransaction.type, rawTransaction.subType, manualResult.merchant),
           amount: finalAmount,
           type: rawTransaction.type,
           subType: rawTransaction.subType,

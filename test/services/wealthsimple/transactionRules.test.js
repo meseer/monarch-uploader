@@ -58,7 +58,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.ruleId).toBe('e-transfer');
         expect(result.category).toBe('Transfer');
         expect(result.merchant).toBe('e-Transfer from John Doe');
-        expect(result.originalStatement).toBe('Interac e-Transfer from John Doe (john@example.com)');
+        expect(result.originalStatement).toBe('DEPOSIT:E_TRANSFER:Interac e-Transfer from John Doe (john@example.com)');
       });
 
       it('should fall back to email when name is missing', () => {
@@ -73,7 +73,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = applyTransactionRule(transaction);
 
         expect(result.merchant).toBe('e-Transfer from john@example.com');
-        expect(result.originalStatement).toBe('Interac e-Transfer from john@example.com (john@example.com)');
+        expect(result.originalStatement).toBe('DEPOSIT:E_TRANSFER:Interac e-Transfer from john@example.com (john@example.com)');
       });
 
       it('should fall back to Unknown when both name and email are missing', () => {
@@ -88,7 +88,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = applyTransactionRule(transaction);
 
         expect(result.merchant).toBe('e-Transfer from Unknown');
-        expect(result.originalStatement).toBe('Interac e-Transfer from Unknown');
+        expect(result.originalStatement).toBe('DEPOSIT:E_TRANSFER:Interac e-Transfer from Unknown');
       });
 
       it('should handle empty string name by falling back to email', () => {
@@ -116,7 +116,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         const result = applyTransactionRule(transaction);
 
-        expect(result.originalStatement).toBe('Interac e-Transfer from John Doe');
+        expect(result.originalStatement).toBe('DEPOSIT:E_TRANSFER:Interac e-Transfer from John Doe');
       });
     });
 
@@ -136,7 +136,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.ruleId).toBe('e-transfer');
         expect(result.category).toBe('Transfer');
         expect(result.merchant).toBe('e-Transfer to Jane Smith');
-        expect(result.originalStatement).toBe('Interac e-Transfer to Jane Smith (jane@example.com)');
+        expect(result.originalStatement).toBe('WITHDRAWAL:E_TRANSFER:Interac e-Transfer to Jane Smith (jane@example.com)');
       });
 
       it('should fall back to email when name is missing', () => {
@@ -151,7 +151,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = applyTransactionRule(transaction);
 
         expect(result.merchant).toBe('e-Transfer to jane@example.com');
-        expect(result.originalStatement).toBe('Interac e-Transfer to jane@example.com (jane@example.com)');
+        expect(result.originalStatement).toBe('WITHDRAWAL:E_TRANSFER:Interac e-Transfer to jane@example.com (jane@example.com)');
       });
 
       it('should fall back to Unknown when both name and email are missing', () => {
@@ -166,7 +166,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = applyTransactionRule(transaction);
 
         expect(result.merchant).toBe('e-Transfer to Unknown');
-        expect(result.originalStatement).toBe('Interac e-Transfer to Unknown');
+        expect(result.originalStatement).toBe('WITHDRAWAL:E_TRANSFER:Interac e-Transfer to Unknown');
       });
 
       it('should omit email from original statement when email is empty', () => {
@@ -180,7 +180,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         const result = applyTransactionRule(transaction);
 
-        expect(result.originalStatement).toBe('Interac e-Transfer to Jane Smith');
+        expect(result.originalStatement).toBe('WITHDRAWAL:E_TRANSFER:Interac e-Transfer to Jane Smith');
       });
     });
 
@@ -198,7 +198,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         // Non-WITHDRAWAL types should be treated as incoming
         expect(result.merchant).toBe('e-Transfer from Bob');
-        expect(result.originalStatement).toBe('Interac e-Transfer from Bob (bob@example.com)');
+        expect(result.originalStatement).toBe('SOME_OTHER_TYPE:E_TRANSFER:Interac e-Transfer from Bob (bob@example.com)');
       });
     });
   });
@@ -314,7 +314,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result).not.toBeNull();
         expect(result.ruleId).toBe('spend-prepaid');
         expect(result.category).toBeNull(); // Needs category mapping
-        expect(result.originalStatement).toBe('STARBUCKS #1234');
+        expect(result.originalStatement).toBe('SPEND:PREPAID:STARBUCKS #1234');
         expect(result.merchant).toBe('Starbucks'); // Cleaned (store number stripped)
         expect(result.needsCategoryMapping).toBe(true);
         expect(result.categoryKey).toBe('Starbucks');
@@ -332,7 +332,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = applyTransactionRule(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.originalStatement).toBe('Unknown Merchant');
+        expect(result.originalStatement).toBe('SPEND:PREPAID:Unknown Merchant');
         expect(result.merchant).toBe('Unknown Merchant');
       });
 
@@ -348,7 +348,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = applyTransactionRule(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.originalStatement).toBe('Unknown Merchant');
+        expect(result.originalStatement).toBe('SPEND:PREPAID:Unknown Merchant');
       });
 
       it('should strip store numbers from merchant name', () => {
@@ -363,7 +363,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = applyTransactionRule(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.originalStatement).toBe('LONDON DRUGS 02');
+        expect(result.originalStatement).toBe('SPEND:PREPAID:LONDON DRUGS 02');
         expect(result.merchant).toBe('London Drugs');
       });
 
@@ -379,7 +379,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = applyTransactionRule(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.originalStatement).toBe('SQ *COFFEE SHOP');
+        expect(result.originalStatement).toBe('SPEND:PREPAID:SQ *COFFEE SHOP');
         expect(result.merchant).toBe('Coffee Shop');
       });
 
@@ -473,7 +473,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.ruleId).toBe('deposit-aft');
         expect(result.category).toBe('Paychecks');
         expect(result.merchant).toBe('Employer Inc');
-        expect(result.originalStatement).toBe('Employer Inc');
+        expect(result.originalStatement).toBe('DEPOSIT:AFT:Employer Inc');
         expect(result.needsCategoryMapping).toBe(false);
       });
     });
@@ -497,7 +497,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.needsCategoryMapping).toBe(true);
         expect(result.categoryKey).toBe('DEPOSIT:AFT:insurance:Blue Cross');
         expect(result.merchant).toBe('Blue Cross');
-        expect(result.originalStatement).toBe('Blue Cross');
+        expect(result.originalStatement).toBe('DEPOSIT:AFT:Blue Cross');
         expect(result.aftDetails).toBeDefined();
         expect(result.aftDetails.aftTransactionType).toBe('insurance');
         expect(result.aftDetails.aftOriginatorName).toBe('Blue Cross');
@@ -521,7 +521,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.needsCategoryMapping).toBe(true);
         expect(result.categoryKey).toBe('DEPOSIT:AFT:misc_payments:Some Company');
         expect(result.merchant).toBe('Some Company');
-        expect(result.originalStatement).toBe('Some Company');
+        expect(result.originalStatement).toBe('DEPOSIT:AFT:Some Company');
         expect(result.aftDetails).toBeDefined();
         expect(result.aftDetails.aftTransactionType).toBe('misc_payments');
         expect(result.aftDetails.aftOriginatorName).toBe('Some Company');
@@ -548,7 +548,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         // New format: "type:subType:aftTransactionType:aftOriginatorName"
         expect(result.categoryKey).toBe('DEPOSIT:AFT:government_benefit:Government Agency');
         expect(result.merchant).toBe('Government Agency');
-        expect(result.originalStatement).toBe('Government Agency');
+        expect(result.originalStatement).toBe('DEPOSIT:AFT:Government Agency');
       });
 
       it('should include aftDetails for category selector display', () => {
@@ -604,7 +604,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.merchant).toBe('Unknown AFT');
-        expect(result.originalStatement).toBe('Unknown AFT');
+        expect(result.originalStatement).toBe('DEPOSIT:AFT:Unknown AFT');
       });
 
       it('should handle empty aftOriginatorName with fallback', () => {
@@ -621,7 +621,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.merchant).toBe('Unknown AFT');
-        expect(result.originalStatement).toBe('Unknown AFT');
+        expect(result.originalStatement).toBe('DEPOSIT:AFT:Unknown AFT');
       });
 
       it('should handle missing aftTransactionType - needs mapping', () => {
@@ -749,7 +749,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.category).toBeNull();
         expect(result.needsCategoryMapping).toBe(true);
         expect(result.merchant).toBe('CRA');
-        expect(result.originalStatement).toBe('CRA');
+        expect(result.originalStatement).toBe('WITHDRAWAL:AFT:CRA');
         // New format: "type:subType:aftTransactionType:aftOriginatorName"
         expect(result.categoryKey).toBe('WITHDRAWAL:AFT:tax_payment:CRA');
       });
@@ -805,7 +805,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.merchant).toBe('Bell Canada');
-        expect(result.originalStatement).toBe('Bell Canada');
+        expect(result.originalStatement).toBe('WITHDRAWAL:AFT:Bell Canada');
       });
     });
 
@@ -824,7 +824,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.merchant).toBe('Unknown AFT');
-        expect(result.originalStatement).toBe('Unknown AFT');
+        expect(result.originalStatement).toBe('WITHDRAWAL:AFT:Unknown AFT');
         expect(result.aftDetails.aftOriginatorName).toBe('Unknown AFT');
       });
 
@@ -842,7 +842,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.merchant).toBe('Unknown AFT');
-        expect(result.originalStatement).toBe('Unknown AFT');
+        expect(result.originalStatement).toBe('WITHDRAWAL:AFT:Unknown AFT');
       });
 
       it('should handle missing aftTransactionType - fall back to originatorName for categoryKey', () => {
@@ -897,7 +897,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.merchant).toBe('Unknown AFT');
-        expect(result.originalStatement).toBe('Unknown AFT');
+        expect(result.originalStatement).toBe('WITHDRAWAL:AFT:Unknown AFT');
         expect(result.categoryKey).toBe('WITHDRAWAL:AFT::Unknown AFT');
         expect(result.aftDetails.aftOriginatorName).toBe('Unknown AFT');
         expect(result.aftDetails.aftTransactionType).toBe('');
@@ -1577,7 +1577,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.ruleId).toBe('internal-transfer');
         expect(result.category).toBe('Transfer');
         expect(result.merchant).toBe('Transfer In: Wealthsimple TFSA (5678) ← Wealthsimple Cash (1234)');
-        expect(result.originalStatement).toBe('Transfer In: Wealthsimple TFSA (5678) ← Wealthsimple Cash (1234)');
+        expect(result.originalStatement).toBe('INTERNAL_TRANSFER:DESTINATION:Transfer In: Wealthsimple TFSA (5678) ← Wealthsimple Cash (1234)');
         expect(result.notes).toBe('');
         expect(result.technicalDetails).toBe('');
       });
@@ -1619,7 +1619,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.category).toBe('Transfer');
         // Format: Transfer Out: Current → Opposing
         expect(result.merchant).toBe('Transfer Out: Wealthsimple Cash (1234) → Wealthsimple TFSA (5678)');
-        expect(result.originalStatement).toBe('Transfer Out: Wealthsimple Cash (1234) → Wealthsimple TFSA (5678)');
+        expect(result.originalStatement).toBe('INTERNAL_TRANSFER:SOURCE:Transfer Out: Wealthsimple Cash (1234) → Wealthsimple TFSA (5678)');
         expect(result.notes).toBe('');
         expect(result.technicalDetails).toBe('');
       });
@@ -1903,7 +1903,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.ruleId).toBe('withdrawal-bill-pay');
         expect(result.category).toBeNull(); // Needs category mapping
         expect(result.merchant).toBe('Home Electricity');
-        expect(result.originalStatement).toBe('BC Hydro (****5678)');
+        expect(result.originalStatement).toBe('WITHDRAWAL:BILL_PAY:BC Hydro (****5678)');
         expect(result.notes).toBe('');
         expect(result.technicalDetails).toBe('');
         expect(result.needsCategoryMapping).toBe(true);
@@ -1960,7 +1960,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = applyTransactionRule(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.originalStatement).toBe('Unknown Company (****1111)');
+        expect(result.originalStatement).toBe('WITHDRAWAL:BILL_PAY:Unknown Company (****1111)');
         expect(result.billPayDetails.billPayCompanyName).toBe('Unknown Company');
       });
 
@@ -1995,7 +1995,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = applyTransactionRule(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.originalStatement).toBe('Enbridge Gas ()');
+        expect(result.originalStatement).toBe('WITHDRAWAL:BILL_PAY:Enbridge Gas ()');
         expect(result.billPayDetails.redactedExternalAccountNumber).toBe('');
       });
 
@@ -2013,7 +2013,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.merchant).toBe('Unknown Payee');
-        expect(result.originalStatement).toBe('Unknown Company ()');
+        expect(result.originalStatement).toBe('WITHDRAWAL:BILL_PAY:Unknown Company ()');
         expect(result.categoryKey).toBe('WITHDRAWAL:BILL_PAY:Unknown Payee');
         expect(result.billPayDetails.billPayCompanyName).toBe('Unknown Company');
         expect(result.billPayDetails.billPayPayeeNickname).toBe('Unknown Payee');
@@ -2033,7 +2033,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = applyTransactionRule(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.originalStatement).toBe('Unknown Company (****3333)');
+        expect(result.originalStatement).toBe('WITHDRAWAL:BILL_PAY:Unknown Company (****3333)');
       });
 
       it('should handle empty string billPayPayeeNickname with fallback', () => {
@@ -2162,7 +2162,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.ruleId).toBe('interest');
         expect(result.category).toBe('Interest');
         expect(result.merchant).toBe('Interest: Wealthsimple Cash (1234)');
-        expect(result.originalStatement).toBe('Interest: Wealthsimple Cash (1234)');
+        expect(result.originalStatement).toMatch(/^INTEREST:[^:]*:Interest: Wealthsimple Cash \(1234\)$/);
         expect(result.notes).toBe('');
         expect(result.technicalDetails).toBe('');
       });
@@ -2182,7 +2182,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result).not.toBeNull();
         expect(result.category).toBe('Interest');
         expect(result.merchant).toBe('Interest: Wealthsimple Cash USD (5678)');
-        expect(result.originalStatement).toBe('Interest: Wealthsimple Cash USD (5678)');
+        expect(result.originalStatement).toMatch(/^INTEREST:[^:]*:Interest: Wealthsimple Cash USD \(5678\)$/);
       });
 
       it('should handle missing accountId with Unknown Account fallback', () => {
@@ -2200,7 +2200,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result).not.toBeNull();
         expect(result.category).toBe('Interest');
         expect(result.merchant).toBe('Interest: Unknown Account');
-        expect(result.originalStatement).toBe('Interest: Unknown Account');
+        expect(result.originalStatement).toMatch(/^INTEREST:[^:]*:Interest: Unknown Account$/);
       });
 
       it('should handle unknown accountId with Unknown Account fallback', () => {
@@ -2218,7 +2218,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result).not.toBeNull();
         expect(result.category).toBe('Interest');
         expect(result.merchant).toBe('Interest: Unknown Account');
-        expect(result.originalStatement).toBe('Interest: Unknown Account');
+        expect(result.originalStatement).toMatch(/^INTEREST:[^:]*:Interest: Unknown Account$/);
       });
 
       it('should not require category mapping', () => {
@@ -2268,7 +2268,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result).not.toBeNull();
         expect(result.category).toBe('Interest');
         expect(result.merchant).toBe('Interest: Unknown Account');
-        expect(result.originalStatement).toBe('Interest: Unknown Account');
+        expect(result.originalStatement).toMatch(/^INTEREST:[^:]*:Interest: Unknown Account$/);
       });
 
       it('should ignore fundingIntentMap (not used for INTEREST)', () => {
@@ -2704,7 +2704,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.ruleId).toBe('credit-card-payment');
         expect(result.category).toBe('Credit Card Payment');
         expect(result.merchant).toBe('Wealthsimple Credit Card (1234)');
-        expect(result.originalStatement).toBe('Wealthsimple Credit Card (1234)');
+        expect(result.originalStatement).toMatch(/^CREDIT_CARD_PAYMENT:[^:]*:Wealthsimple Credit Card \(1234\)$/);
         expect(result.notes).toBe('');
         expect(result.technicalDetails).toBe('');
       });
@@ -2729,7 +2729,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.ruleId).toBe('credit-card-payment');
         expect(result.category).toBe('Credit Card Payment');
         expect(result.merchant).toBe('Wealthsimple Credit Card');
-        expect(result.originalStatement).toBe('Wealthsimple Credit Card');
+        expect(result.originalStatement).toMatch(/^CREDIT_CARD_PAYMENT:[^:]*:Wealthsimple Credit Card$/);
       });
 
       it('should use fallback when accounts list is empty', () => {
@@ -2746,7 +2746,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result).not.toBeNull();
         expect(result.category).toBe('Credit Card Payment');
         expect(result.merchant).toBe('Wealthsimple Credit Card');
-        expect(result.originalStatement).toBe('Wealthsimple Credit Card');
+        expect(result.originalStatement).toMatch(/^CREDIT_CARD_PAYMENT:[^:]*:Wealthsimple Credit Card$/);
       });
 
       it('should use fallback when credit card has no nickname', () => {
@@ -2776,7 +2776,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.merchant).toBe('Wealthsimple Credit Card');
-        expect(result.originalStatement).toBe('Wealthsimple Credit Card');
+        expect(result.originalStatement).toMatch(/^CREDIT_CARD_PAYMENT:[^:]*:Wealthsimple Credit Card$/);
       });
 
       it('should not require category mapping', () => {
@@ -2836,7 +2836,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result).not.toBeNull();
         expect(result.category).toBe('Credit Card Payment');
         expect(result.merchant).toBe('Wealthsimple Credit Card');
-        expect(result.originalStatement).toBe('Wealthsimple Credit Card');
+        expect(result.originalStatement).toMatch(/^CREDIT_CARD_PAYMENT:[^:]*:Wealthsimple Credit Card$/);
       });
 
       it('should ignore fundingIntentMap (not used for CREDIT_CARD_PAYMENT)', () => {
@@ -2877,7 +2877,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.merchant).toBe('Primary Credit Card');
-        expect(result.originalStatement).toBe('Primary Credit Card');
+        expect(result.originalStatement).toMatch(/^CREDIT_CARD_PAYMENT:[^:]*:Primary Credit Card$/);
       });
     });
   });
@@ -2951,7 +2951,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.ruleId).toBe('promotion-incentive-bonus');
         expect(result.category).toBeNull(); // Needs category mapping
         expect(result.merchant).toBe('Wealthsimple Incentive Bonus');
-        expect(result.originalStatement).toBe('Wealthsimple Incentive Bonus');
+        expect(result.originalStatement).toBe('PROMOTION:INCENTIVE_BONUS:Wealthsimple Incentive Bonus');
         expect(result.needsCategoryMapping).toBe(true);
         expect(result.categoryKey).toBe('PROMOTION:INCENTIVE_BONUS:Wealthsimple Incentive Bonus');
       });
@@ -3060,7 +3060,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.ruleId).toBe('reimbursement-cashback');
         expect(result.category).toBe('Cash Back');
         expect(result.merchant).toBe('Wealthsimple Cashback');
-        expect(result.originalStatement).toBe('CREDIT_CARD_VISA_INFINITE_REWARDS');
+        expect(result.originalStatement).toBe('REIMBURSEMENT:CASHBACK:CREDIT_CARD_VISA_INFINITE_REWARDS');
         expect(result.needsCategoryMapping).toBeUndefined();
       });
 
@@ -3079,7 +3079,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result).not.toBeNull();
         expect(result.category).toBe('Cash Back');
         expect(result.merchant).toBe('Wealthsimple Cashback');
-        expect(result.originalStatement).toBe('Wealthsimple Cashback');
+        expect(result.originalStatement).toBe('REIMBURSEMENT:CASHBACK:Wealthsimple Cashback');
       });
 
       it('should use fallback original statement when rewardProgram is undefined', () => {
@@ -3094,7 +3094,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = applyTransactionRule(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.originalStatement).toBe('Wealthsimple Cashback');
+        expect(result.originalStatement).toBe('REIMBURSEMENT:CASHBACK:Wealthsimple Cashback');
       });
 
       it('should have empty notes and technicalDetails', () => {
@@ -3200,7 +3200,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.ruleId).toBe('p2p-payment');
         expect(result.category).toBeNull();
         expect(result.merchant).toBe('Transfer to @johndoe');
-        expect(result.originalStatement).toBe('Transfer to @johndoe');
+        expect(result.originalStatement).toBe('P2P_PAYMENT:SEND:Transfer to @johndoe');
         expect(result.notes).toBe('Thanks for lunch!');
         expect(result.technicalDetails).toBe('');
         expect(result.needsCategoryMapping).toBe(true);
@@ -3244,7 +3244,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.ruleId).toBe('p2p-payment');
         expect(result.category).toBeNull();
         expect(result.merchant).toBe('Transfer from @janedoe');
-        expect(result.originalStatement).toBe('Transfer from @janedoe');
+        expect(result.originalStatement).toBe('P2P_PAYMENT:SEND_RECEIVED:Transfer from @janedoe');
         expect(result.notes).toBe('For dinner');
         expect(result.technicalDetails).toBe('');
         expect(result.needsCategoryMapping).toBe(true);
@@ -3284,7 +3284,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.merchant).toBe('Transfer to Unknown');
-        expect(result.originalStatement).toBe('Transfer to Unknown');
+        expect(result.originalStatement).toBe('P2P_PAYMENT:SEND:Transfer to Unknown');
         expect(result.categoryKey).toBe('P2P_PAYMENT:SEND:Unknown');
         expect(result.p2pDetails.p2pHandle).toBe('Unknown');
       });
@@ -3302,7 +3302,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.merchant).toBe('Transfer from Unknown');
-        expect(result.originalStatement).toBe('Transfer from Unknown');
+        expect(result.originalStatement).toBe('P2P_PAYMENT:SEND_RECEIVED:Transfer from Unknown');
         expect(result.categoryKey).toBe('P2P_PAYMENT:SEND_RECEIVED:Unknown');
       });
 
@@ -3361,7 +3361,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.merchant).toBe('Transfer to Unknown');
-        expect(result.originalStatement).toBe('Transfer to Unknown');
+        expect(result.originalStatement).toBe('P2P_PAYMENT:SEND:Transfer to Unknown');
         expect(result.categoryKey).toBe('P2P_PAYMENT:SEND:Unknown');
         expect(result.notes).toBe('');
         expect(result.p2pDetails.p2pHandle).toBe('Unknown');
@@ -3447,7 +3447,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.ruleId).toBe('reimbursement-atm');
         expect(result.category).toBe('Cash & ATM');
         expect(result.merchant).toBe('ATM Fee Reimbursement');
-        expect(result.originalStatement).toBe('ATM Fee Reimbursement');
+        expect(result.originalStatement).toBe('REIMBURSEMENT:ATM:ATM Fee Reimbursement');
         expect(result.needsCategoryMapping).toBeUndefined();
       });
 

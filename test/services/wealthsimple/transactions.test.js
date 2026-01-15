@@ -144,7 +144,7 @@ describe('Wealthsimple Transaction Service', () => {
 
       // Merchant should be cleaned up (TST- prefix removed, title cased, store number stripped)
       expect(result[0].merchant).toBe('Starbucks');
-      expect(result[0].originalMerchant).toBe('TST-STARBUCKS #123');
+      expect(result[0].originalMerchant).toMatch(/^CREDIT_CARD:[^:]*:TST-STARBUCKS #123$/);
     });
 
     it('should auto-categorize CASH_WITHDRAWAL transactions', async () => {
@@ -204,7 +204,7 @@ describe('Wealthsimple Transaction Service', () => {
       expect(result[0].resolvedMonarchCategory).toBe('Financial Fees');
       // Should override merchant to 'Cash Advance Interest'
       expect(result[0].merchant).toBe('Cash Advance Interest');
-      expect(result[0].originalMerchant).toBe('Cash Advance Interest');
+      expect(result[0].originalMerchant).toMatch(/^CREDIT_CARD:[^:]*:Cash Advance Interest$/);
     });
 
     it('should handle REFUND transactions correctly', async () => {
@@ -1322,7 +1322,7 @@ describe('Wealthsimple Transaction Service', () => {
         id: 'tx-etransfer-1',
         date: '2026-01-15',
         merchant: 'e-Transfer from John Doe',
-        originalMerchant: 'Interac e-Transfer from John Doe (john@example.com)',
+        originalMerchant: 'DEPOSIT:E_TRANSFER:Interac e-Transfer from John Doe (john@example.com)',
         amount: 100.00, // positive (deposit)
         resolvedMonarchCategory: 'Transfer',
         isPending: false,
@@ -1357,7 +1357,7 @@ describe('Wealthsimple Transaction Service', () => {
       expect(result[0]).toMatchObject({
         id: 'tx-etransfer-2',
         merchant: 'e-Transfer to Jane Smith',
-        originalMerchant: 'Interac e-Transfer to Jane Smith (jane@example.com)',
+        originalMerchant: 'WITHDRAWAL:E_TRANSFER:Interac e-Transfer to Jane Smith (jane@example.com)',
         amount: -50.00, // negative (withdrawal)
         resolvedMonarchCategory: 'Transfer',
       });
@@ -1660,7 +1660,7 @@ describe('Wealthsimple Transaction Service', () => {
       expect(result[0]).toMatchObject({
         id: 'tx-unknown-type',
         merchant: 'My Custom Merchant',
-        originalMerchant: 'My Custom Merchant',
+        originalMerchant: 'UNKNOWN_TYPE:UNKNOWN_SUBTYPE:My Custom Merchant',
         amount: -123.45,
         resolvedMonarchCategory: 'Custom Category',
         ruleId: 'manual',
@@ -1832,7 +1832,7 @@ describe('Wealthsimple Transaction Service', () => {
       expect(atmTx).toBeDefined();
       expect(atmTx.resolvedMonarchCategory).toBe('Cash & ATM');
       expect(atmTx.merchant).toBe('ATM Fee Reimbursement');
-      expect(atmTx.originalMerchant).toBe('ATM Fee Reimbursement');
+      expect(atmTx.originalMerchant).toBe('REIMBURSEMENT:ATM:ATM Fee Reimbursement');
       expect(atmTx.amount).toBe(3.00);
       expect(atmTx.ruleId).toBe('reimbursement-atm');
     });
@@ -1918,7 +1918,7 @@ describe('Wealthsimple Transaction Service', () => {
         id: 'loc-borrow-1',
         date: '2026-01-15',
         merchant: 'Borrow from Portfolio Line of Credit',
-        originalMerchant: 'Borrow from Portfolio Line of Credit',
+        originalMerchant: 'INTERNAL_TRANSFER:SOURCE:Borrow from Portfolio Line of Credit',
         amount: -5000.00,
         resolvedMonarchCategory: 'Transfer',
         ruleId: 'loc-borrow',
@@ -1954,7 +1954,7 @@ describe('Wealthsimple Transaction Service', () => {
       expect(result[0]).toMatchObject({
         id: 'loc-repay-1',
         merchant: 'Repayment to Portfolio Line of Credit',
-        originalMerchant: 'Repayment to Portfolio Line of Credit',
+        originalMerchant: 'INTERNAL_TRANSFER:DESTINATION:Repayment to Portfolio Line of Credit',
         amount: 1000.00,
         resolvedMonarchCategory: 'Loan Repayment',
         ruleId: 'loc-repay',

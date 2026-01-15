@@ -15,6 +15,20 @@ import { STORAGE } from '../../core/config';
 import { applyMerchantMapping } from '../../mappers/merchant';
 
 /**
+ * Format original statement with type:subType: prefix
+ * Converts null values to empty strings
+ * @param {string|null} type - Transaction type
+ * @param {string|null} subType - Transaction subType
+ * @param {string} statement - Original statement text
+ * @returns {string} Formatted statement with "type:subType:" prefix
+ */
+export function formatOriginalStatement(type, subType, statement) {
+  const typeStr = type || '';
+  const subTypeStr = subType || '';
+  return `${typeStr}:${subTypeStr}:${statement}`;
+}
+
+/**
  * Get account name from the cached Wealthsimple accounts list by account ID
  * Used for looking up opposing account names in internal transfers
  * @param {string} accountId - Wealthsimple account ID
@@ -286,17 +300,17 @@ export const CASH_TRANSACTION_RULES = [
 
       // Generate merchant and original statement based on transaction type
       let merchant;
-      let originalStatement;
+      let statementText;
 
       if (tx.type === 'WITHDRAWAL') {
         merchant = `e-Transfer to ${displayName}`;
-        originalStatement = email
+        statementText = email
           ? `Interac e-Transfer to ${displayName} (${email})`
           : `Interac e-Transfer to ${displayName}`;
       } else {
         // DEPOSIT or other types - treat as incoming
         merchant = `e-Transfer from ${displayName}`;
-        originalStatement = email
+        statementText = email
           ? `Interac e-Transfer from ${displayName} (${email})`
           : `Interac e-Transfer from ${displayName}`;
       }
@@ -330,7 +344,7 @@ export const CASH_TRANSACTION_RULES = [
       return {
         category: 'Transfer',
         merchant,
-        originalStatement,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, statementText),
         notes,
         technicalDetails,
       };
@@ -361,7 +375,7 @@ export const CASH_TRANSACTION_RULES = [
         // Category will be resolved via user category mapping (like credit cards)
         category: null, // null indicates needs category mapping
         merchant: cleanedMerchant,
-        originalStatement: originalMerchant,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, originalMerchant),
         notes: '',
         technicalDetails: '',
         // Flag to indicate this transaction needs category resolution
@@ -404,7 +418,7 @@ export const CASH_TRANSACTION_RULES = [
         return {
           category: autoCategory,
           merchant: originatorName,
-          originalStatement: originatorName,
+          originalStatement: formatOriginalStatement(tx.type, tx.subType, originatorName),
           notes: '',
           technicalDetails: '',
           needsCategoryMapping: false,
@@ -418,7 +432,7 @@ export const CASH_TRANSACTION_RULES = [
       return {
         category: null,
         merchant: originatorName,
-        originalStatement: originatorName,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, originatorName),
         notes: '',
         technicalDetails: '',
         needsCategoryMapping: true,
@@ -464,7 +478,7 @@ export const CASH_TRANSACTION_RULES = [
       return {
         category: null,
         merchant: originatorName,
-        originalStatement: originatorName,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, originatorName),
         notes: '',
         technicalDetails: '',
         needsCategoryMapping: true,
@@ -503,16 +517,16 @@ export const CASH_TRANSACTION_RULES = [
       const accountName = getAccountNameById(tx.accountId);
 
       let merchant;
-      let originalStatement;
+      let statementText;
 
       if (tx.subType === 'DESTINATION') {
         // Money coming INTO this account - format: "Transfer In: ${accountName} ← ${opposingName}"
         merchant = `Transfer In: ${accountName} ← ${opposingName}`;
-        originalStatement = `Transfer In: ${accountName} ← ${opposingName}`;
+        statementText = `Transfer In: ${accountName} ← ${opposingName}`;
       } else {
         // SOURCE - Money leaving this account - format: "Transfer Out: ${accountName} → ${opposingName}"
         merchant = `Transfer Out: ${accountName} → ${opposingName}`;
-        originalStatement = `Transfer Out: ${accountName} → ${opposingName}`;
+        statementText = `Transfer Out: ${accountName} → ${opposingName}`;
       }
 
       // Extract annotation from internal transfer data if available
@@ -531,7 +545,7 @@ export const CASH_TRANSACTION_RULES = [
       return {
         category: 'Transfer',
         merchant,
-        originalStatement,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, statementText),
         notes,
         technicalDetails: '',
       };
@@ -562,10 +576,12 @@ export const CASH_TRANSACTION_RULES = [
       // Build categoryKey: "type:subType:merchantName"
       const categoryKey = `${tx.type}:${tx.subType}:${billPayPayeeNickname}`;
 
+      const statementText = `${billPayCompanyName} (${redactedExternalAccountNumber})`;
+
       return {
         category: null, // User selects via category mapper
         merchant: billPayPayeeNickname,
-        originalStatement: `${billPayCompanyName} (${redactedExternalAccountNumber})`,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, statementText),
         notes: '',
         technicalDetails: '',
         needsCategoryMapping: true,
@@ -599,7 +615,7 @@ export const CASH_TRANSACTION_RULES = [
       return {
         category: 'Interest',
         merchant: displayText,
-        originalStatement: displayText,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, displayText),
         notes: '',
         technicalDetails: '',
       };
@@ -621,14 +637,14 @@ export const CASH_TRANSACTION_RULES = [
      * @param {Object} tx - Raw transaction
      * @returns {Object} Processed transaction fields
      */
-    process: () => {
+    process: (tx) => {
       // Look up the credit card account name by type
       const creditCardName = getAccountNameByType('CREDIT_CARD') || 'Wealthsimple Credit Card';
 
       return {
         category: 'Credit Card Payment',
         merchant: creditCardName,
-        originalStatement: creditCardName,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, creditCardName),
         notes: '',
         technicalDetails: '',
       };
@@ -654,7 +670,7 @@ export const CASH_TRANSACTION_RULES = [
       return {
         category: null, // User selects via category mapper
         merchant,
-        originalStatement: merchant,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, merchant),
         notes: '',
         technicalDetails: '',
         needsCategoryMapping: true,
@@ -682,7 +698,7 @@ export const CASH_TRANSACTION_RULES = [
     process: (tx) => ({
       category: 'Cash Back',
       merchant: 'Wealthsimple Cashback',
-      originalStatement: tx.rewardProgram || 'Wealthsimple Cashback',
+      originalStatement: formatOriginalStatement(tx.type, tx.subType, tx.rewardProgram || 'Wealthsimple Cashback'),
       notes: '',
       technicalDetails: '',
     }),
@@ -700,10 +716,10 @@ export const CASH_TRANSACTION_RULES = [
      * @param {Object} _tx - Raw transaction (unused but required by interface)
      * @returns {Object} Processed transaction fields
      */
-    process: (_tx) => ({
+    process: (tx) => ({
       category: 'Cash & ATM',
       merchant: 'ATM Fee Reimbursement',
-      originalStatement: 'ATM Fee Reimbursement',
+      originalStatement: formatOriginalStatement(tx.type, tx.subType, 'ATM Fee Reimbursement'),
       notes: '',
       technicalDetails: '',
     }),
@@ -734,15 +750,15 @@ export const CASH_TRANSACTION_RULES = [
 
       // Generate merchant based on transaction direction
       let merchant;
-      let originalStatement;
+      let statementText;
 
       if (tx.subType === 'SEND') {
         merchant = `Transfer to ${p2pHandle}`;
-        originalStatement = `Transfer to ${p2pHandle}`;
+        statementText = `Transfer to ${p2pHandle}`;
       } else {
         // SEND_RECEIVED
         merchant = `Transfer from ${p2pHandle}`;
-        originalStatement = `Transfer from ${p2pHandle}`;
+        statementText = `Transfer from ${p2pHandle}`;
       }
 
       // Build categoryKey: "type:subType:p2pHandle"
@@ -751,7 +767,7 @@ export const CASH_TRANSACTION_RULES = [
       return {
         category: null, // User selects via category mapper
         merchant,
-        originalStatement,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, statementText),
         notes: p2pMessage,
         technicalDetails: '',
         needsCategoryMapping: true,
@@ -808,7 +824,7 @@ export const CASH_TRANSACTION_RULES = [
       const accountNumber = bankAccount?.accountNumber || '';
 
       // Original statement format: institutionName:accountDisplay (accountNumber)
-      const originalStatement = accountNumber
+      const statementText = accountNumber
         ? `${institutionName}:${accountDisplay} (${accountNumber})`
         : `${institutionName}:${accountDisplay}`;
 
@@ -839,7 +855,7 @@ export const CASH_TRANSACTION_RULES = [
       return {
         category: 'Transfer',
         merchant,
-        originalStatement,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, statementText),
         notes,
         technicalDetails: '',
       };
