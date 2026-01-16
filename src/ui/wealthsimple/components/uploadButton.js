@@ -10,6 +10,7 @@ import toast from '../../toast';
 import { uploadAllWealthsimpleAccountsToMonarch, uploadWealthsimpleAccountToMonarch } from '../../../services/wealthsimple-upload';
 import { ensureMonarchAuthentication } from '../../components/monarchLoginLink';
 import { syncAccountListWithAPI } from '../../../services/wealthsimple/account';
+import { getDefaultDateRange } from '../../../services/wealthsimple/balance';
 
 /**
  * Determine button label based on current page
@@ -172,8 +173,9 @@ export function createWealthsimpleUploadButton() {
 
         const currentBalance = balanceResult.balances.get(accountId);
 
-        const toDate = new Date().toISOString().split('T')[0];
-        const fromDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        // Use the same date range logic as the home page upload
+        const { fromDate, toDate } = getDefaultDateRange(consolidatedAccount);
+        debugLog(`Account page upload using date range: ${fromDate} to ${toDate}`);
 
         await uploadWealthsimpleAccountToMonarch(consolidatedAccount, fromDate, toDate, currentBalance);
       } else {
