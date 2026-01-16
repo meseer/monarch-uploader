@@ -7,10 +7,15 @@ import { debugLog } from '../../../core/utils';
 import { COLORS } from '../../../core/config';
 import wealthsimpleApi from '../../../api/wealthsimple';
 import toast from '../../toast';
-import { uploadAllWealthsimpleAccountsToMonarch, uploadWealthsimpleAccountToMonarch } from '../../../services/wealthsimple-upload';
+import {
+  uploadAllWealthsimpleAccountsToMonarch,
+  uploadWealthsimpleAccountToMonarchWithSteps,
+  buildSyncStepsForAccount,
+} from '../../../services/wealthsimple-upload';
 import { ensureMonarchAuthentication } from '../../components/monarchLoginLink';
 import { syncAccountListWithAPI } from '../../../services/wealthsimple/account';
 import { getDefaultDateRange } from '../../../services/wealthsimple/balance';
+import { showProgressDialog } from '../../components/progressDialog';
 
 /**
  * Determine button label based on current page
@@ -95,6 +100,109 @@ function createWealthsimpleButton(text, onClick, options = {}) {
 }
 
 /**
+ * Upload a single Wealthsimple account with progress dialog
+ * Shows the same detailed progress as the bulk upload from the home page
+ * @param {string} accountId - The Wealthsimple account ID to sync
+ * @returns {Promise<void>}
+ */
+async function uploadSingleAccountWithProgress(accountId) {
+  let progressDialog = null;
+  let isCancelled = false;
+
+  try {
+    // Sync account list with API to get consolidated account data
+    const consolidatedAccounts = await syncAccountListWithAPI();
+    const consolidatedAccount = consolidatedAccounts.find(
+      (acc) => acc.wealthsimpleAccount.id === accountId,
+    );
+
+    if (!consolidatedAccount) {
+      throw new Error('Account not found');
+    }
+
+    const account = consolidatedAccount.wealthsimpleAccount;
+
+    // Prepare account for progress dialog
+    const accountsForDialog = [{
+      key: account.id,
+      nickname: account.nickname,
+      name: account.nickname || account.id,
+    }];
+
+    // Create progress dialog for single account
+    progressDialog = showProgressDialog(accountsForDialog, `Syncing ${account.nickname || 'Account'} to Monarch`);
+
+    // Set up cancel callback
+    progressDialog.onCancel(() => {
+      debugLog('Upload cancellation requested');
+      isCancelled = true;
+      toast.show('Upload cancelled by user', 'warning');
+    });
+
+    // Fetch balance for this specific account
+    const balanceResult = await wealthsimpleApi.fetchAccountBalances([account]);
+    if (!balanceResult.success) {
+      throw new Error('Failed to fetch account balance');
+    }
+
+    const currentBalance = balanceResult.balances.get(accountId);
+
+    // Check if balance is unavailable
+    if (currentBalance === null || currentBalance === undefined) {
+      debugLog(`Account ${accountId} (${account.nickname}) - balance unavailable`);
+      progressDialog.updateProgress(accountId, 'error', 'Balance unavailable');
+      progressDialog.hideCancel();
+      return;
+    }
+
+    // Initialize steps for this account
+    const steps = buildSyncStepsForAccount(consolidatedAccount);
+    progressDialog.initSteps(accountId, steps);
+
+    // Check for cancellation before upload
+    if (isCancelled) {
+      progressDialog.hideCancel();
+      return;
+    }
+
+    // Use the same date range logic as the home page upload
+    const { fromDate, toDate } = getDefaultDateRange(consolidatedAccount);
+    debugLog(`Account page upload using date range: ${fromDate} to ${toDate}`);
+
+    // Process the account with step-by-step progress tracking
+    const result = await uploadWealthsimpleAccountToMonarchWithSteps(
+      consolidatedAccount,
+      fromDate,
+      toDate,
+      currentBalance,
+      progressDialog,
+    );
+
+    // Show summary
+    if (result && result.cancelled) {
+      progressDialog.showSummary({ success: 0, failed: 0, skipped: 1 });
+    } else if (result && result.skipped) {
+      progressDialog.showSummary({ success: 0, failed: 0, skipped: 1 });
+    } else if (result && result.success) {
+      progressDialog.showSummary({ success: 1, failed: 0, skipped: 0 });
+      toast.show(`Successfully synced ${account.nickname || 'account'}`, 'info');
+    } else {
+      progressDialog.showSummary({ success: 0, failed: 1, skipped: 0 });
+    }
+
+    progressDialog.hideCancel();
+  } catch (error) {
+    debugLog('Error in single account sync:', error);
+    toast.show(`Sync failed: ${error.message}`, 'error');
+
+    // Clean up progress dialog on error
+    if (progressDialog) {
+      progressDialog.hideCancel();
+    }
+  }
+}
+
+/**
  * Creates the main upload button for Wealthsimple
  * @returns {HTMLElement} Upload button container
  */
@@ -148,47 +256,27 @@ export function createWealthsimpleUploadButton() {
     }
 
     try {
-      // Disable button while uploading
-      uploadButton.disabled = true;
-      uploadButton.textContent = isAccountDetailPage ? 'Syncing...' : 'Syncing all...';
-
       debugLog(`Starting Wealthsimple sync... (Account detail page: ${isAccountDetailPage})`);
 
       if (isAccountDetailPage) {
-        // Sync single account - get consolidated account list
-        const consolidatedAccounts = await syncAccountListWithAPI();
-        const consolidatedAccount = consolidatedAccounts.find(
-          (acc) => acc.wealthsimpleAccount.id === accountId,
-        );
-
-        if (!consolidatedAccount) {
-          throw new Error('Account not found');
-        }
-
-        // Fetch balance for this specific account
-        const balanceResult = await wealthsimpleApi.fetchAccountBalances([consolidatedAccount.wealthsimpleAccount]);
-        if (!balanceResult.success) {
-          throw new Error('Failed to fetch account balance');
-        }
-
-        const currentBalance = balanceResult.balances.get(accountId);
-
-        // Use the same date range logic as the home page upload
-        const { fromDate, toDate } = getDefaultDateRange(consolidatedAccount);
-        debugLog(`Account page upload using date range: ${fromDate} to ${toDate}`);
-
-        await uploadWealthsimpleAccountToMonarch(consolidatedAccount, fromDate, toDate, currentBalance);
+        // Sync single account with progress dialog
+        // Don't change button state - the progress dialog provides visual feedback
+        await uploadSingleAccountWithProgress(accountId);
       } else {
-        // Sync all accounts
-        await uploadAllWealthsimpleAccountsToMonarch();
+        // Sync all accounts - show button state change since dialog takes a moment to appear
+        uploadButton.disabled = true;
+        uploadButton.textContent = 'Syncing all...';
+        try {
+          await uploadAllWealthsimpleAccountsToMonarch();
+        } finally {
+          // Re-enable button after bulk sync
+          uploadButton.disabled = false;
+          uploadButton.textContent = buttonLabel;
+        }
       }
     } catch (error) {
       debugLog('Error in Wealthsimple sync:', error);
       toast.show(`Sync failed: ${error.message}`, 'error');
-    } finally {
-      // Re-enable button
-      uploadButton.disabled = false;
-      uploadButton.textContent = buttonLabel;
     }
   }, { id: 'wealthsimple-upload-button' });
 

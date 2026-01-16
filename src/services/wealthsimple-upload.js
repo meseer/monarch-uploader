@@ -346,7 +346,7 @@ export async function uploadWealthsimpleAccountToMonarch(consolidatedAccount, fr
  * @param {Object} consolidatedAccount - Consolidated account object
  * @returns {Array} Array of step definitions [{key, name}]
  */
-function buildSyncStepsForAccount(consolidatedAccount) {
+export function buildSyncStepsForAccount(consolidatedAccount) {
   const steps = [];
   const accountType = consolidatedAccount.wealthsimpleAccount?.type || '';
 
@@ -560,7 +560,7 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
  * @param {Object} progressDialog - Progress dialog instance
  * @returns {Promise<Object>} Result object with success status
  */
-async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAccount, fromDate, toDate, currentBalance, progressDialog) {
+export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAccount, fromDate, toDate, currentBalance, progressDialog) {
   const account = consolidatedAccount.wealthsimpleAccount;
   const accountType = account?.type || '';
 
