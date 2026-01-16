@@ -165,7 +165,7 @@ export function createWealthsimpleUploadButton() {
         }
 
         // Fetch balance for this specific account
-        const balanceResult = await wealthsimpleApi.fetchAccountBalances([accountId]);
+        const balanceResult = await wealthsimpleApi.fetchAccountBalances([consolidatedAccount.wealthsimpleAccount]);
         if (!balanceResult.success) {
           throw new Error('Failed to fetch account balance');
         }
