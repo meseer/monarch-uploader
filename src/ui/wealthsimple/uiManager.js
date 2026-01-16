@@ -271,10 +271,11 @@ function startPersistentMonitoring() {
 
     // If target exists but our UI doesn't, or our UI is detached
     if (targetContainer && (!ourUI || ourUI.parentNode !== targetContainer)) {
-      if (!isUIInitialized) {
-        debugLog('Observer detected .bfsRGT without UI, scheduling injection...');
-        scheduleUIReinjection();
-      }
+      // Always reinject when UI is missing - the isUIInitialized flag may be stale
+      // if the page replaced .bfsRGT (e.g., during SPA navigation from home to account page)
+      debugLog('Observer detected .bfsRGT without UI, scheduling injection...');
+      isUIInitialized = false;
+      scheduleUIReinjection();
     } else if (!targetContainer && isUIInitialized) {
       // Target container disappeared (navigation), reset flag
       debugLog('Observer detected .bfsRGT removed, marking for re-initialization');
