@@ -759,7 +759,7 @@ describe('Wealthsimple Transaction Service', () => {
       expect(wealthsimpleApi.fetchTransactions).toHaveBeenCalled();
     });
 
-    it('should return empty array for unsupported account types (TFSA)', async () => {
+    it('should route investment accounts (TFSA) to investment transaction processor', async () => {
       const tfsaAccount = {
         wealthsimpleAccount: {
           id: 'test-id',
@@ -768,6 +768,8 @@ describe('Wealthsimple Transaction Service', () => {
         },
       };
 
+      wealthsimpleApi.fetchTransactions.mockResolvedValue([]);
+
       const result = await fetchAndProcessTransactions(
         tfsaAccount,
         '2025-01-01',
@@ -775,7 +777,8 @@ describe('Wealthsimple Transaction Service', () => {
       );
 
       expect(result).toEqual([]);
-      expect(wealthsimpleApi.fetchTransactions).not.toHaveBeenCalled();
+      // Investment accounts now support transaction sync
+      expect(wealthsimpleApi.fetchTransactions).toHaveBeenCalledWith('test-id', '2025-01-01');
     });
   });
 

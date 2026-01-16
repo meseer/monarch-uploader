@@ -352,8 +352,26 @@ export function buildSyncStepsForAccount(consolidatedAccount) {
   const accountType = consolidatedAccount.wealthsimpleAccount?.type || '';
 
   // Account types that support transaction sync
-  // Note: Using WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES from config
-  const transactionSupportedTypes = ['CREDIT_CARD', 'PORTFOLIO_LINE_OF_CREDIT', 'CASH', 'CASH_USD'];
+  // Includes credit cards, CASH accounts, line of credit, and investment accounts
+  const transactionSupportedTypes = [
+    'CREDIT_CARD',
+    'PORTFOLIO_LINE_OF_CREDIT',
+    'CASH',
+    'CASH_USD',
+    // Investment accounts - Managed
+    'MANAGED_RESP_FAMILY',
+    'MANAGED_RESP',
+    'MANAGED_NON_REGISTERED',
+    'MANAGED_TFSA',
+    'MANAGED_RRSP',
+    // Investment accounts - Self-directed
+    'SELF_DIRECTED_RESP_FAMILY',
+    'SELF_DIRECTED_RESP',
+    'SELF_DIRECTED_NON_REGISTERED',
+    'SELF_DIRECTED_TFSA',
+    'SELF_DIRECTED_RRSP',
+    'SELF_DIRECTED_CRYPTO',
+  ];
   if (transactionSupportedTypes.includes(accountType)) {
     steps.push({ key: 'transactions', name: 'Transaction sync' });
   }
@@ -572,7 +590,25 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
     const mappingResult = await resolveWealthsimpleAccountMapping(consolidatedAccount, currentBalance);
 
     // Account types that support transaction sync (same as buildSyncStepsForAccount)
-    const transactionSupportedTypes = ['CREDIT_CARD', 'PORTFOLIO_LINE_OF_CREDIT', 'CASH', 'CASH_USD'];
+    const transactionSupportedTypes = [
+      'CREDIT_CARD',
+      'PORTFOLIO_LINE_OF_CREDIT',
+      'CASH',
+      'CASH_USD',
+      // Investment accounts - Managed
+      'MANAGED_RESP_FAMILY',
+      'MANAGED_RESP',
+      'MANAGED_NON_REGISTERED',
+      'MANAGED_TFSA',
+      'MANAGED_RRSP',
+      // Investment accounts - Self-directed
+      'SELF_DIRECTED_RESP_FAMILY',
+      'SELF_DIRECTED_RESP',
+      'SELF_DIRECTED_NON_REGISTERED',
+      'SELF_DIRECTED_TFSA',
+      'SELF_DIRECTED_RRSP',
+      'SELF_DIRECTED_CRYPTO',
+    ];
 
     // Handle skip signal
     if (mappingResult && mappingResult.skipped) {

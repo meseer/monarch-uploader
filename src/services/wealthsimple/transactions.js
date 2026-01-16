@@ -1162,23 +1162,158 @@ export async function fetchAndProcessLineOfCreditTransactions(consolidatedAccoun
 }
 
 /**
- * Placeholder for investment account transaction processing
+ * Fetch and process transactions for an investment account
+ * Uses manual categorization for all transactions (no auto-categorization rules yet).
+ *
  * @param {Object} consolidatedAccount - Consolidated account object
  * @param {string} fromDate - Start date (YYYY-MM-DD)
  * @param {string} toDate - End date (YYYY-MM-DD)
- * @returns {Promise<Array>} Processed transactions
+ * @param {Object} options - Processing options
+ * @param {Array} options.rawTransactions - Pre-fetched raw transactions (optional, will fetch if not provided)
+ * @param {Set<string>} options.uploadedTransactionIds - Set of already-uploaded transaction IDs to skip
+ * @returns {Promise<Array>} Processed transactions ready for upload
  */
-export async function fetchAndProcessInvestmentTransactions(consolidatedAccount, fromDate, toDate) {
-  debugLog('Investment account transaction processing not yet implemented', {
-    accountId: consolidatedAccount.wealthsimpleAccount.id,
-    fromDate,
-    toDate,
-  });
+export async function fetchAndProcessInvestmentTransactions(consolidatedAccount, fromDate, toDate, options = {}) {
+  try {
+    const accountId = consolidatedAccount.wealthsimpleAccount.id;
+    const accountName = consolidatedAccount.wealthsimpleAccount.nickname;
+    const { rawTransactions: providedTransactions, uploadedTransactionIds = new Set() } = options;
 
-  // TODO: Implement investment account transaction logic
-  // Will need different filtering and categorization rules
+    // Get pending transactions setting (default true)
+    const includePendingTransactions = consolidatedAccount.includePendingTransactions !== false;
 
-  return [];
+    debugLog(`Processing investment transactions for ${accountName} from ${fromDate} to ${toDate}`);
+    debugLog(`Include pending transactions: ${includePendingTransactions ? 'enabled' : 'disabled'}`);
+    debugLog(`Already uploaded transactions to skip: ${uploadedTransactionIds.size}`);
+
+    // Step 1: Use provided transactions or fetch from API
+    let rawTransactions;
+    if (providedTransactions && Array.isArray(providedTransactions)) {
+      rawTransactions = providedTransactions;
+      debugLog(`Using ${rawTransactions.length} pre-fetched transactions`);
+    } else {
+      rawTransactions = await wealthsimpleApi.fetchTransactions(accountId, fromDate);
+      debugLog(`Fetched ${rawTransactions.length} total transactions from API`);
+    }
+
+    // Debug log: Show raw transaction details
+    debugLog('Investment account raw transactions (before filtering):');
+    rawTransactions.forEach((tx, index) => {
+      debugLog(`  Transaction ${index + 1}:`, {
+        externalCanonicalId: tx.externalCanonicalId,
+        type: tx.type,
+        subType: tx.subType,
+        status: tx.status,
+        unifiedStatus: tx.unifiedStatus,
+        amount: tx.amount,
+        amountSign: tx.amountSign,
+        occurredAt: tx.occurredAt,
+        assetSymbol: tx.assetSymbol,
+      });
+    });
+
+    // Step 2: Filter for syncable transactions (settled/completed + optionally authorized)
+    const syncableTransactions = filterSyncableTransactions(rawTransactions, includePendingTransactions);
+    debugLog(`Filtered to ${syncableTransactions.length} syncable transactions (includePending: ${includePendingTransactions})`);
+
+    if (syncableTransactions.length === 0) {
+      return [];
+    }
+
+    // Step 3: Filter out already-uploaded completed transactions
+    const notYetUploadedTransactions = syncableTransactions.filter((tx) => {
+      const txId = getTransactionId(tx);
+      const isCompleted = tx.status === 'settled' || tx.status === 'completed';
+      const isAlreadyUploaded = uploadedTransactionIds.has(txId);
+
+      // Skip only completed transactions that are already uploaded
+      if (isCompleted && isAlreadyUploaded) {
+        return false;
+      }
+      return true;
+    });
+
+    const uploadedSkipCount = syncableTransactions.length - notYetUploadedTransactions.length;
+    if (uploadedSkipCount > 0) {
+      debugLog(`Skipped ${uploadedSkipCount} already-uploaded completed transactions`);
+    }
+
+    if (notYetUploadedTransactions.length === 0) {
+      debugLog('No new transactions to process after filtering already-uploaded');
+      return [];
+    }
+
+    // Step 4: All investment transactions require manual categorization
+    debugLog(`Processing ${notYetUploadedTransactions.length} transactions that need manual categorization`);
+    toast.show(`${notYetUploadedTransactions.length} investment transaction(s) need manual categorization...`, 'info');
+
+    const processedTransactions = [];
+
+    for (let i = 0; i < notYetUploadedTransactions.length; i++) {
+      const rawTransaction = notYetUploadedTransactions[i];
+      const progressNum = i + 1;
+
+      debugLog(`Showing manual categorization for transaction ${progressNum}/${notYetUploadedTransactions.length}`, {
+        id: rawTransaction.externalCanonicalId,
+        type: rawTransaction.type,
+        subType: rawTransaction.subType,
+      });
+
+      toast.show(`Manual categorization ${progressNum}/${notYetUploadedTransactions.length}`, 'debug');
+
+      // Show the manual categorization dialog
+      const manualResult = await new Promise((resolve) => {
+        showManualTransactionCategorization(rawTransaction, resolve);
+      });
+
+      if (!manualResult) {
+        // User cancelled - abort the upload
+        throw new Error(`Manual categorization cancelled for transaction ${rawTransaction.externalCanonicalId}. Upload aborted.`);
+      }
+
+      // Determine amount sign
+      const isNegative = rawTransaction.amountSign === 'negative';
+      const finalAmount = isNegative ? -Math.abs(rawTransaction.amount) : Math.abs(rawTransaction.amount);
+
+      // Determine pending status
+      const isPending = rawTransaction.status === 'authorized';
+
+      // Get transaction ID (handles null externalCanonicalId)
+      const transactionId = getTransactionId(rawTransaction);
+
+      // Create processed transaction with user-provided data
+      const manuallyProcessed = {
+        id: transactionId,
+        date: convertToLocalDate(rawTransaction.occurredAt),
+        merchant: manualResult.merchant,
+        originalMerchant: formatOriginalStatement(rawTransaction.type, rawTransaction.subType, manualResult.merchant),
+        amount: finalAmount,
+        type: rawTransaction.type,
+        subType: rawTransaction.subType,
+        status: rawTransaction.status,
+        isPending,
+        resolvedMonarchCategory: manualResult.category.name,
+        ruleId: 'manual',
+        notes: '',
+        technicalDetails: '',
+        needsCategoryMapping: false,
+        categoryKey: manualResult.merchant,
+        // Include asset symbol for investment context
+        assetSymbol: rawTransaction.assetSymbol || null,
+      };
+
+      processedTransactions.push(manuallyProcessed);
+      debugLog(`Manually categorized transaction: ${manualResult.merchant} -> ${manualResult.category.name}`);
+    }
+
+    toast.show(`Completed manual categorization for ${notYetUploadedTransactions.length} transaction(s)`, 'info');
+
+    debugLog(`Processed ${processedTransactions.length} total investment transactions (${uploadedSkipCount} already uploaded)`);
+    return processedTransactions;
+  } catch (error) {
+    debugLog('Error fetching and processing investment transactions:', error);
+    throw error;
+  }
 }
 
 /**
@@ -1214,7 +1349,7 @@ export async function fetchAndProcessTransactions(consolidatedAccount, fromDate,
   }
 
   // Default to investment account processing for all other types
-  return fetchAndProcessInvestmentTransactions(consolidatedAccount, fromDate, toDate);
+  return fetchAndProcessInvestmentTransactions(consolidatedAccount, fromDate, toDate, options);
 }
 
 /**
