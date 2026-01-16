@@ -771,33 +771,39 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
 
     // Step 5: Position sync (for investment accounts only)
     if (isInvestmentAccount(accountType)) {
-      progressDialog.updateStepStatus(account.id, 'positions', 'processing', 'Syncing positions...');
+      // Skip position sync for manual Monarch accounts - holdings API not supported
+      if (monarchAccount.isManual) {
+        progressDialog.updateStepStatus(account.id, 'positions', 'skipped', 'Manual accounts don\'t support holdings');
+        debugLog(`Skipping position sync for ${account.id} - Monarch account is manual`);
+      } else {
+        progressDialog.updateStepStatus(account.id, 'positions', 'processing', 'Syncing positions...');
 
-      try {
-        const positionsResult = await processAccountPositions(
-          account.id,
-          account.nickname || account.id,
-          monarchAccount.id,
-          progressDialog,
-        );
+        try {
+          const positionsResult = await processAccountPositions(
+            account.id,
+            account.nickname || account.id,
+            monarchAccount.id,
+            progressDialog,
+          );
 
-        if (positionsResult.success) {
-          // Build status message
-          let statusMsg = `${positionsResult.positionsProcessed} synced`;
-          if (positionsResult.mappingsAutoRepaired > 0) {
-            statusMsg += `, ${positionsResult.mappingsAutoRepaired} repaired`;
+          if (positionsResult.success) {
+            // Build status message
+            let statusMsg = `${positionsResult.positionsProcessed} synced`;
+            if (positionsResult.mappingsAutoRepaired > 0) {
+              statusMsg += `, ${positionsResult.mappingsAutoRepaired} repaired`;
+            }
+            if (positionsResult.holdingsRemoved > 0) {
+              statusMsg += `, ${positionsResult.holdingsRemoved} deleted`;
+            }
+            progressDialog.updateStepStatus(account.id, 'positions', 'success', statusMsg);
+          } else {
+            const errorMsg = positionsResult.error || 'Sync failed';
+            progressDialog.updateStepStatus(account.id, 'positions', 'error', errorMsg);
           }
-          if (positionsResult.holdingsRemoved > 0) {
-            statusMsg += `, ${positionsResult.holdingsRemoved} deleted`;
-          }
-          progressDialog.updateStepStatus(account.id, 'positions', 'success', statusMsg);
-        } else {
-          const errorMsg = positionsResult.error || 'Sync failed';
-          progressDialog.updateStepStatus(account.id, 'positions', 'error', errorMsg);
+        } catch (positionsError) {
+          debugLog('Error during position sync:', positionsError);
+          progressDialog.updateStepStatus(account.id, 'positions', 'error', positionsError.message);
         }
-      } catch (positionsError) {
-        debugLog('Error during position sync:', positionsError);
-        progressDialog.updateStepStatus(account.id, 'positions', 'error', positionsError.message);
       }
     }
 
