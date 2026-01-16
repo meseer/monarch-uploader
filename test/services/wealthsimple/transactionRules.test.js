@@ -12,6 +12,7 @@ import {
   getAccountNameById,
   getAccountNameByType,
   extractInternalTransferAnnotation,
+  formatAftOriginalStatement,
 } from '../../../src/services/wealthsimple/transactionRules';
 import { STORAGE } from '../../../src/core/config';
 
@@ -473,7 +474,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.ruleId).toBe('deposit-aft');
         expect(result.category).toBe('Paychecks');
         expect(result.merchant).toBe('Employer Inc');
-        expect(result.originalStatement).toBe('DEPOSIT:AFT:Employer Inc');
+        expect(result.originalStatement).toBe('DEPOSIT:AFT:payroll:payroll_deposit:Employer Inc');
         expect(result.needsCategoryMapping).toBe(false);
       });
     });
@@ -497,7 +498,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.needsCategoryMapping).toBe(true);
         expect(result.categoryKey).toBe('DEPOSIT:AFT:insurance:Blue Cross');
         expect(result.merchant).toBe('Blue Cross');
-        expect(result.originalStatement).toBe('DEPOSIT:AFT:Blue Cross');
+        expect(result.originalStatement).toBe('DEPOSIT:AFT:insurance:insurance:Blue Cross');
         expect(result.aftDetails).toBeDefined();
         expect(result.aftDetails.aftTransactionType).toBe('insurance');
         expect(result.aftDetails.aftOriginatorName).toBe('Blue Cross');
@@ -521,7 +522,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.needsCategoryMapping).toBe(true);
         expect(result.categoryKey).toBe('DEPOSIT:AFT:misc_payments:Some Company');
         expect(result.merchant).toBe('Some Company');
-        expect(result.originalStatement).toBe('DEPOSIT:AFT:Some Company');
+        expect(result.originalStatement).toBe('DEPOSIT:AFT:misc:misc_payments:Some Company');
         expect(result.aftDetails).toBeDefined();
         expect(result.aftDetails.aftTransactionType).toBe('misc_payments');
         expect(result.aftDetails.aftOriginatorName).toBe('Some Company');
@@ -548,7 +549,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         // New format: "type:subType:aftTransactionType:aftOriginatorName"
         expect(result.categoryKey).toBe('DEPOSIT:AFT:government_benefit:Government Agency');
         expect(result.merchant).toBe('Government Agency');
-        expect(result.originalStatement).toBe('DEPOSIT:AFT:Government Agency');
+        expect(result.originalStatement).toBe('DEPOSIT:AFT:government:government_benefit:Government Agency');
       });
 
       it('should include aftDetails for category selector display', () => {
@@ -604,7 +605,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.merchant).toBe('Unknown AFT');
-        expect(result.originalStatement).toBe('DEPOSIT:AFT:Unknown AFT');
+        expect(result.originalStatement).toBe('DEPOSIT:AFT:payroll:payroll_deposit:Unknown AFT');
       });
 
       it('should handle empty aftOriginatorName with fallback', () => {
@@ -621,7 +622,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.merchant).toBe('Unknown AFT');
-        expect(result.originalStatement).toBe('DEPOSIT:AFT:Unknown AFT');
+        expect(result.originalStatement).toBe('DEPOSIT:AFT:payroll:payroll_deposit:Unknown AFT');
       });
 
       it('should handle missing aftTransactionType - needs mapping', () => {
@@ -749,7 +750,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.category).toBeNull();
         expect(result.needsCategoryMapping).toBe(true);
         expect(result.merchant).toBe('CRA');
-        expect(result.originalStatement).toBe('WITHDRAWAL:AFT:CRA');
+        expect(result.originalStatement).toBe('WITHDRAWAL:AFT:government:tax_payment:CRA');
         // New format: "type:subType:aftTransactionType:aftOriginatorName"
         expect(result.categoryKey).toBe('WITHDRAWAL:AFT:tax_payment:CRA');
       });
@@ -805,7 +806,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.merchant).toBe('Bell Canada');
-        expect(result.originalStatement).toBe('WITHDRAWAL:AFT:Bell Canada');
+        expect(result.originalStatement).toBe('WITHDRAWAL:AFT:utilities:utility_payment:Bell Canada');
       });
     });
 
@@ -824,7 +825,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.merchant).toBe('Unknown AFT');
-        expect(result.originalStatement).toBe('WITHDRAWAL:AFT:Unknown AFT');
+        expect(result.originalStatement).toBe('WITHDRAWAL:AFT:misc:misc_payment:Unknown AFT');
         expect(result.aftDetails.aftOriginatorName).toBe('Unknown AFT');
       });
 
@@ -842,7 +843,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.merchant).toBe('Unknown AFT');
-        expect(result.originalStatement).toBe('WITHDRAWAL:AFT:Unknown AFT');
+        expect(result.originalStatement).toBe('WITHDRAWAL:AFT:misc:misc_payment:Unknown AFT');
       });
 
       it('should handle missing aftTransactionType - fall back to originatorName for categoryKey', () => {
@@ -897,7 +898,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.merchant).toBe('Unknown AFT');
-        expect(result.originalStatement).toBe('WITHDRAWAL:AFT:Unknown AFT');
+        expect(result.originalStatement).toBe('WITHDRAWAL:AFT:::Unknown AFT');
         expect(result.categoryKey).toBe('WITHDRAWAL:AFT::Unknown AFT');
         expect(result.aftDetails.aftOriginatorName).toBe('Unknown AFT');
         expect(result.aftDetails.aftTransactionType).toBe('');
@@ -3728,6 +3729,53 @@ describe('Wealthsimple Transaction Rules Engine', () => {
     it('should still return true for EFT subType', () => {
       expect(hasRuleForTransaction('DEPOSIT', 'EFT')).toBe(true);
       expect(hasRuleForTransaction('WITHDRAWAL', 'EFT')).toBe(true);
+    });
+  });
+
+  describe('formatAftOriginalStatement', () => {
+    it('should format all fields correctly (category before type)', () => {
+      const result = formatAftOriginalStatement('DEPOSIT', 'AFT', 'payroll', 'payroll_deposit', 'Employer Inc');
+      expect(result).toBe('DEPOSIT:AFT:payroll:payroll_deposit:Employer Inc');
+    });
+
+    it('should convert null type to empty string', () => {
+      const result = formatAftOriginalStatement(null, 'AFT', 'insurance', 'insurance', 'Blue Cross');
+      expect(result).toBe(':AFT:insurance:insurance:Blue Cross');
+    });
+
+    it('should convert null subType to empty string', () => {
+      const result = formatAftOriginalStatement('DEPOSIT', null, 'insurance', 'insurance', 'Blue Cross');
+      expect(result).toBe('DEPOSIT::insurance:insurance:Blue Cross');
+    });
+
+    it('should convert null aftTransactionCategory to empty string', () => {
+      const result = formatAftOriginalStatement('DEPOSIT', 'AFT', null, 'misc_payments', 'Some Corp');
+      expect(result).toBe('DEPOSIT:AFT::misc_payments:Some Corp');
+    });
+
+    it('should convert null aftTransactionType to empty string', () => {
+      const result = formatAftOriginalStatement('DEPOSIT', 'AFT', 'payroll', null, 'Employer Inc');
+      expect(result).toBe('DEPOSIT:AFT:payroll::Employer Inc');
+    });
+
+    it('should handle all nulls except statement', () => {
+      const result = formatAftOriginalStatement(null, null, null, null, 'Unknown AFT');
+      expect(result).toBe('::::Unknown AFT');
+    });
+
+    it('should handle undefined values as empty strings', () => {
+      const result = formatAftOriginalStatement(undefined, undefined, undefined, undefined, 'Some Statement');
+      expect(result).toBe('::::Some Statement');
+    });
+
+    it('should handle WITHDRAWAL/AFT format (category before type)', () => {
+      const result = formatAftOriginalStatement('WITHDRAWAL', 'AFT', 'government', 'tax_payment', 'CRA');
+      expect(result).toBe('WITHDRAWAL:AFT:government:tax_payment:CRA');
+    });
+
+    it('should handle empty strings in aftTransactionCategory and aftTransactionType', () => {
+      const result = formatAftOriginalStatement('DEPOSIT', 'AFT', '', '', 'Another Corp');
+      expect(result).toBe('DEPOSIT:AFT:::Another Corp');
     });
   });
 });

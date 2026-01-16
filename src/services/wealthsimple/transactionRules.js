@@ -29,6 +29,25 @@ export function formatOriginalStatement(type, subType, statement) {
 }
 
 /**
+ * Format original statement for AFT transactions with enhanced metadata
+ * Format: type:subType:aftTransactionCategory:aftTransactionType:statementText
+ * Converts null values to empty strings
+ * @param {string|null} type - Transaction type (e.g., DEPOSIT, WITHDRAWAL)
+ * @param {string|null} subType - Transaction subType (e.g., AFT)
+ * @param {string|null} aftTransactionCategory - AFT transaction category (e.g., payroll, insurance)
+ * @param {string|null} aftTransactionType - AFT transaction type (e.g., payroll_deposit, insurance)
+ * @param {string} statement - Original statement text (typically the originator name)
+ * @returns {string} Formatted statement with all AFT metadata
+ */
+export function formatAftOriginalStatement(type, subType, aftTransactionCategory, aftTransactionType, statement) {
+  const typeStr = type || '';
+  const subTypeStr = subType || '';
+  const aftCategoryStr = aftTransactionCategory || '';
+  const aftTypeStr = aftTransactionType || '';
+  return `${typeStr}:${subTypeStr}:${aftCategoryStr}:${aftTypeStr}:${statement}`;
+}
+
+/**
  * Get account name from the cached Wealthsimple accounts list by account ID
  * Used for looking up opposing account names in internal transfers
  * @param {string} accountId - Wealthsimple account ID
@@ -418,7 +437,7 @@ export const CASH_TRANSACTION_RULES = [
         return {
           category: autoCategory,
           merchant: originatorName,
-          originalStatement: formatOriginalStatement(tx.type, tx.subType, originatorName),
+          originalStatement: formatAftOriginalStatement(tx.type, tx.subType, aftTransactionCategory, aftTransactionType, originatorName),
           notes: '',
           technicalDetails: '',
           needsCategoryMapping: false,
@@ -432,7 +451,7 @@ export const CASH_TRANSACTION_RULES = [
       return {
         category: null,
         merchant: originatorName,
-        originalStatement: formatOriginalStatement(tx.type, tx.subType, originatorName),
+        originalStatement: formatAftOriginalStatement(tx.type, tx.subType, aftTransactionCategory, aftTransactionType, originatorName),
         notes: '',
         technicalDetails: '',
         needsCategoryMapping: true,
@@ -478,7 +497,7 @@ export const CASH_TRANSACTION_RULES = [
       return {
         category: null,
         merchant: originatorName,
-        originalStatement: formatOriginalStatement(tx.type, tx.subType, originatorName),
+        originalStatement: formatAftOriginalStatement(tx.type, tx.subType, aftTransactionCategory, aftTransactionType, originatorName),
         notes: '',
         technicalDetails: '',
         needsCategoryMapping: true,
