@@ -25,6 +25,7 @@ import {
   getBalanceAtDate,
   reconstructBalanceFromTransactions,
 } from './wealthsimple/balance';
+import { isInvestmentAccount, processAccountPositions } from './wealthsimple/positions';
 import { fetchAndProcessTransactions, reconcilePendingTransactions, formatReconciliationMessage } from './wealthsimple/transactions';
 import { showDatePickerWithOptionsPromise } from '../ui/components/datePicker';
 import { showProgressDialog } from '../ui/components/progressDialog';
@@ -369,13 +370,13 @@ export function buildSyncStepsForAccount(consolidatedAccount) {
     steps.push({ key: 'creditLimit', name: 'Credit limit sync' });
   }
 
-  // Balance upload is always a step (last, to capture any adjustments from reconciliation)
+  // Balance upload is always a step
   steps.push({ key: 'balance', name: 'Balance upload' });
 
-  // TODO: Add position sync step when implemented for investment accounts
-  // if (isInvestmentAccount(accountType)) {
-  //   steps.push({ key: 'positions', name: 'Position sync' });
-  // }
+  // Position sync for investment accounts (after balance, as it's additive)
+  if (isInvestmentAccount(accountType)) {
+    steps.push({ key: 'positions', name: 'Position sync' });
+  }
 
   return steps;
 }
@@ -766,6 +767,38 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
     } else {
       progressDialog.updateStepStatus(account.id, 'balance', 'error', 'Upload failed');
       return { success: false };
+    }
+
+    // Step 5: Position sync (for investment accounts only)
+    if (isInvestmentAccount(accountType)) {
+      progressDialog.updateStepStatus(account.id, 'positions', 'processing', 'Syncing positions...');
+
+      try {
+        const positionsResult = await processAccountPositions(
+          account.id,
+          account.nickname || account.id,
+          monarchAccount.id,
+          progressDialog,
+        );
+
+        if (positionsResult.success) {
+          // Build status message
+          let statusMsg = `${positionsResult.positionsProcessed} synced`;
+          if (positionsResult.mappingsAutoRepaired > 0) {
+            statusMsg += `, ${positionsResult.mappingsAutoRepaired} repaired`;
+          }
+          if (positionsResult.holdingsRemoved > 0) {
+            statusMsg += `, ${positionsResult.holdingsRemoved} deleted`;
+          }
+          progressDialog.updateStepStatus(account.id, 'positions', 'success', statusMsg);
+        } else {
+          const errorMsg = positionsResult.error || 'Sync failed';
+          progressDialog.updateStepStatus(account.id, 'positions', 'error', errorMsg);
+        }
+      } catch (positionsError) {
+        debugLog('Error during position sync:', positionsError);
+        progressDialog.updateStepStatus(account.id, 'positions', 'error', positionsError.message);
+      }
     }
 
     // Update lastSyncDate after successful sync

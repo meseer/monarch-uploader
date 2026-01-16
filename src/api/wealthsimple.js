@@ -1113,17 +1113,383 @@ fragment Money on Money {
 }
 
 /**
- * Fetch credit card account summary from Wealthsimple
- * Returns credit limit, current balance, and card details
- * @param {string} accountId - Credit card account ID (e.g., 'ca-credit-card-FYPcSZJeLA')
- * @returns {Promise<Object>} Credit card account summary
- * @property {string} id - Account ID
- * @property {Object} balance - Balance information
- * @property {number} balance.current - Current balance amount
- * @property {string} creditRegistrationStatus - Credit registration status
- * @property {number} creditLimit - Credit limit amount
- * @property {Array} currentCards - Array of current cards
+ * Fetch investment positions for a specific account
+ * Uses the FetchIdentityPositions GraphQL query
+ * @param {string} accountId - Wealthsimple account ID
+ * @returns {Promise<Array>} Array of position objects with full security details
  */
+export async function fetchIdentityPositions(accountId) {
+  try {
+    if (!accountId) {
+      throw new Error('Account ID is required');
+    }
+
+    debugLog(`Fetching investment positions for account ${accountId}...`);
+
+    // IMPORTANT: This query must be used EXACTLY as provided by Wealthsimple API
+    // Do NOT modify the query structure or fragments
+    const query = `query FetchIdentityPositions($identityId: ID!, $currency: Currency!, $first: Int, $cursor: String, $accountIds: [ID!], $aggregated: Boolean, $currencyOverride: CurrencyOverride, $sort: PositionSort, $sortDirection: PositionSortDirection, $filter: PositionFilter, $since: PointInTime, $includeSecurity: Boolean = false, $includeAccountData: Boolean = false, $includeOneDayReturnsBaseline: Boolean = false) {
+  identity(id: $identityId) {
+    id
+    financials(filter: {accounts: $accountIds}) {
+      current(currency: $currency) {
+        id
+        positions(
+          first: $first
+          after: $cursor
+          aggregated: $aggregated
+          filter: $filter
+          sort: $sort
+          sortDirection: $sortDirection
+        ) {
+          edges {
+            node {
+              ...PositionV2
+              __typename
+            }
+            __typename
+          }
+          pageInfo {
+            hasNextPage
+            endCursor
+            __typename
+          }
+          totalCount
+          status
+          hasOptionsPosition
+          hasCryptoPositionsOnly
+          securityTypes
+          securityCurrencies
+          __typename
+        }
+        __typename
+      }
+      __typename
+    }
+    __typename
+  }
+}
+
+fragment SecuritySummary on Security {
+  ...SecuritySummaryDetails
+  stock {
+    ...StockSummary
+    __typename
+  }
+  quoteV2(currency: null) {
+    ...SecurityQuoteV2
+    __typename
+  }
+  optionDetails {
+    ...OptionSummary
+    __typename
+  }
+  __typename
+}
+
+fragment SecuritySummaryDetails on Security {
+  id
+  buyable
+  currency
+  inactiveDate
+  status
+  wsTradeEligible
+  equityTradingSessionType
+  securityType
+  active
+  securityGroups {
+    id
+    name
+    __typename
+  }
+  features
+  logoUrl
+  __typename
+}
+
+fragment StockSummary on Stock {
+  name
+  symbol
+  primaryMic
+  primaryExchange
+  __typename
+}
+
+fragment StreamedSecurityQuoteV2 on UnifiedQuote {
+  __typename
+  securityId
+  ask
+  bid
+  currency
+  price
+  sessionPrice
+  quotedAsOf
+  ... on EquityQuote {
+    marketStatus
+    askSize
+    bidSize
+    close
+    high
+    last
+    lastSize
+    low
+    open
+    mid
+    volume: vol
+    referenceClose
+    __typename
+  }
+  ... on OptionQuote {
+    marketStatus
+    askSize
+    bidSize
+    close
+    high
+    last
+    lastSize
+    low
+    open
+    mid
+    volume: vol
+    breakEven
+    inTheMoney
+    liquidityStatus
+    openInterest
+    underlyingSpot
+    __typename
+  }
+}
+
+fragment SecurityQuoteV2 on UnifiedQuote {
+  ...StreamedSecurityQuoteV2
+  previousBaseline
+  __typename
+}
+
+fragment OptionSummary on Option {
+  underlyingSecurity {
+    ...UnderlyingSecuritySummary
+    __typename
+  }
+  maturity
+  osiSymbol
+  expiryDate
+  multiplier
+  optionType
+  strikePrice
+  __typename
+}
+
+fragment UnderlyingSecuritySummary on Security {
+  id
+  stock {
+    name
+    primaryExchange
+    primaryMic
+    symbol
+    __typename
+  }
+  __typename
+}
+
+fragment PositionLeg on PositionLeg {
+  security {
+    id
+    ...SecuritySummary @include(if: $includeSecurity)
+    __typename
+  }
+  quantity
+  positionDirection
+  bookValue {
+    amount
+    currency
+    __typename
+  }
+  totalValue(currencyOverride: $currencyOverride) {
+    amount
+    currency
+    __typename
+  }
+  averagePrice {
+    amount
+    currency
+    __typename
+  }
+  percentageOfAccount
+  unrealizedReturns(since: $since) {
+    amount
+    currency
+    __typename
+  }
+  marketAveragePrice: averagePrice(currencyOverride: $currencyOverride) {
+    amount
+    currency
+    __typename
+  }
+  marketBookValue: bookValue(currencyOverride: $currencyOverride) {
+    amount
+    currency
+    __typename
+  }
+  marketUnrealizedReturns: unrealizedReturns(currencyOverride: $currencyOverride) {
+    amount
+    currency
+    __typename
+  }
+  oneDayReturnsBaselineV2(currencyOverride: $currencyOverride) @include(if: $includeOneDayReturnsBaseline) {
+    baseline {
+      currency
+      amount
+      __typename
+    }
+    useDailyPriceChange
+    __typename
+  }
+  __typename
+}
+
+fragment PositionV2 on PositionV2 {
+  id
+  quantity
+  accounts @include(if: $includeAccountData) {
+    id
+    __typename
+  }
+  percentageOfAccount
+  positionDirection
+  bookValue {
+    amount
+    currency
+    __typename
+  }
+  averagePrice {
+    amount
+    currency
+    __typename
+  }
+  marketAveragePrice: averagePrice(currencyOverride: $currencyOverride) {
+    amount
+    currency
+    __typename
+  }
+  marketBookValue: bookValue(currencyOverride: $currencyOverride) {
+    amount
+    currency
+    __typename
+  }
+  totalValue(currencyOverride: $currencyOverride) {
+    amount
+    currency
+    __typename
+  }
+  unrealizedReturns(since: $since) {
+    amount
+    currency
+    __typename
+  }
+  marketUnrealizedReturns: unrealizedReturns(currencyOverride: $currencyOverride) {
+    amount
+    currency
+    __typename
+  }
+  security {
+    id
+    ...SecuritySummary @include(if: $includeSecurity)
+    __typename
+  }
+  oneDayReturnsBaselineV2(currencyOverride: $currencyOverride) @include(if: $includeOneDayReturnsBaseline) {
+    baseline {
+      currency
+      amount
+      __typename
+    }
+    useDailyPriceChange
+    __typename
+  }
+  strategyType
+  legs {
+    ...PositionLeg
+    __typename
+  }
+  __typename
+}`;
+
+    const authStatus = checkAuth();
+    if (!authStatus.authenticated) {
+      throw new Error('Not authenticated with Wealthsimple');
+    }
+
+    const variables = {
+      includeSecurity: true,
+      includeAccountData: true,
+      includeOneDayReturnsBaseline: false,
+      accountIds: [accountId],
+      identityId: authStatus.identityId,
+      currency: 'CAD',
+      currencyOverride: 'MARKET',
+      aggregated: true,
+      first: 50,
+    };
+
+    const allPositions = [];
+    let cursor = null;
+    let hasNextPage = true;
+    let pageCount = 0;
+
+    while (hasNextPage) {
+      pageCount += 1;
+      debugLog(`Fetching positions page ${pageCount}...`);
+
+      if (cursor) {
+        variables.cursor = cursor;
+      }
+
+      const response = await makeGraphQLQuery('FetchIdentityPositions', query, variables);
+
+      if (!response || !response.identity || !response.identity.financials) {
+        debugLog('No financials data in response');
+        break;
+      }
+
+      const currentFinancials = response.identity.financials.current;
+      if (!currentFinancials || !currentFinancials.positions) {
+        debugLog('No positions data in response');
+        break;
+      }
+
+      const { edges, pageInfo, totalCount, hasOptionsPosition, securityTypes } = currentFinancials.positions;
+
+      debugLog(`Page ${pageCount}: ${edges?.length || 0} positions, total: ${totalCount}, hasOptions: ${hasOptionsPosition}, types: ${securityTypes?.join(', ')}`);
+
+      if (!edges || edges.length === 0) {
+        debugLog('No more positions found');
+        break;
+      }
+
+      // Extract positions from edges
+      for (const edge of edges) {
+        if (edge.node) {
+          allPositions.push(edge.node);
+        }
+      }
+
+      // Update pagination state
+      hasNextPage = pageInfo?.hasNextPage || false;
+      cursor = pageInfo?.endCursor || null;
+
+      if (!hasNextPage) {
+        debugLog('No more pages available');
+      }
+    }
+
+    debugLog(`Fetched ${allPositions.length} positions across ${pageCount} page(s) for account ${accountId}`);
+    return allPositions;
+  } catch (error) {
+    debugLog(`Error fetching positions for account ${accountId}:`, error);
+    throw error;
+  }
+}
+
 /**
  * Fetch funding intent details for multiple transactions
  * Used to get additional transaction metadata like Interac transfer memos
@@ -1865,6 +2231,7 @@ export default {
   fetchAccountBalances,
   fetchTransactions,
   fetchBalanceHistory,
+  fetchIdentityPositions,
   fetchCreditCardAccountSummary,
   fetchFundingIntents,
   fetchInternalTransfer,
