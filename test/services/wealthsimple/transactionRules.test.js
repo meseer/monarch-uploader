@@ -13,6 +13,7 @@ import {
   getAccountNameByType,
   extractInternalTransferAnnotation,
   formatAftOriginalStatement,
+  getTransactionId,
 } from '../../../src/services/wealthsimple/transactionRules';
 import { STORAGE } from '../../../src/core/config';
 
@@ -3729,6 +3730,202 @@ describe('Wealthsimple Transaction Rules Engine', () => {
     it('should still return true for EFT subType', () => {
       expect(hasRuleForTransaction('DEPOSIT', 'EFT')).toBe(true);
       expect(hasRuleForTransaction('WITHDRAWAL', 'EFT')).toBe(true);
+    });
+  });
+
+  describe('getTransactionId', () => {
+    it('should return externalCanonicalId when present', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-abc123',
+        canonicalId: 'JAN-26:1234567:8901234:567',
+        accountId: 'test-account',
+        occurredAt: '2026-01-15T10:30:00.000000+00:00',
+        type: 'DEPOSIT',
+        subType: 'E_TRANSFER',
+        amount: '100.00',
+        currency: 'CAD',
+      };
+
+      expect(getTransactionId(transaction)).toBe('funding_intent-abc123');
+    });
+
+    it('should fall back to canonicalId when externalCanonicalId is null', () => {
+      const transaction = {
+        externalCanonicalId: null,
+        canonicalId: 'JAN-26:1581542712:5288071445:208',
+        accountId: 'ca-cash-msb-WKYNdSTqrA',
+        occurredAt: '2026-01-01T05:00:00.000000+00:00',
+        type: 'INTEREST',
+        subType: null,
+        amount: '3.47',
+        currency: 'CAD',
+      };
+
+      expect(getTransactionId(transaction)).toBe('JAN-26:1581542712:5288071445:208');
+    });
+
+    it('should fall back to canonicalId when externalCanonicalId is undefined', () => {
+      const transaction = {
+        canonicalId: 'JAN-26:1581542712:5288071445:208',
+        accountId: 'ca-cash-msb-WKYNdSTqrA',
+        occurredAt: '2026-01-01T05:00:00.000000+00:00',
+        type: 'INTEREST',
+        subType: null,
+        amount: '3.47',
+        currency: 'CAD',
+      };
+
+      expect(getTransactionId(transaction)).toBe('JAN-26:1581542712:5288071445:208');
+    });
+
+    it('should generate deterministic ID when both externalCanonicalId and canonicalId are null', () => {
+      const transaction = {
+        externalCanonicalId: null,
+        canonicalId: null,
+        accountId: 'ca-cash-msb-WKYNdSTqrA',
+        occurredAt: '2026-01-01T05:00:00.000000+00:00',
+        type: 'INTEREST',
+        subType: 'SAVINGS',
+        amount: '3.47',
+        currency: 'CAD',
+      };
+
+      const result = getTransactionId(transaction);
+      expect(result).toBe('generated:ca-cash-msb-WKYNdSTqrA:2026-01-01T05:00:00.000000+00:00:INTEREST:SAVINGS:3.47:CAD');
+    });
+
+    it('should generate deterministic ID with empty strings for missing fields', () => {
+      const transaction = {
+        externalCanonicalId: null,
+        canonicalId: null,
+        accountId: null,
+        occurredAt: null,
+        type: null,
+        subType: null,
+        amount: null,
+        currency: null,
+      };
+
+      const result = getTransactionId(transaction);
+      expect(result).toBe('generated::::::');
+    });
+
+    it('should handle undefined fields in generated ID', () => {
+      const transaction = {
+        // All fields undefined
+      };
+
+      const result = getTransactionId(transaction);
+      expect(result).toBe('generated::::::');
+    });
+
+    it('should generate same ID for same transaction data (deterministic)', () => {
+      const transaction1 = {
+        externalCanonicalId: null,
+        canonicalId: null,
+        accountId: 'test-account',
+        occurredAt: '2026-01-15T10:30:00.000000+00:00',
+        type: 'DEPOSIT',
+        subType: 'E_TRANSFER',
+        amount: '100.00',
+        currency: 'CAD',
+      };
+
+      const transaction2 = {
+        externalCanonicalId: null,
+        canonicalId: null,
+        accountId: 'test-account',
+        occurredAt: '2026-01-15T10:30:00.000000+00:00',
+        type: 'DEPOSIT',
+        subType: 'E_TRANSFER',
+        amount: '100.00',
+        currency: 'CAD',
+      };
+
+      expect(getTransactionId(transaction1)).toBe(getTransactionId(transaction2));
+    });
+
+    it('should generate different ID for different transaction data', () => {
+      const transaction1 = {
+        externalCanonicalId: null,
+        canonicalId: null,
+        accountId: 'test-account',
+        occurredAt: '2026-01-15T10:30:00.000000+00:00',
+        type: 'INTEREST',
+        subType: null,
+        amount: '3.47',
+        currency: 'CAD',
+      };
+
+      const transaction2 = {
+        externalCanonicalId: null,
+        canonicalId: null,
+        accountId: 'test-account',
+        occurredAt: '2026-01-15T10:30:00.000000+00:00',
+        type: 'INTEREST',
+        subType: null,
+        amount: '5.00', // Different amount
+        currency: 'CAD',
+      };
+
+      expect(getTransactionId(transaction1)).not.toBe(getTransactionId(transaction2));
+    });
+
+    it('should handle amount as number in generated ID', () => {
+      const transaction = {
+        externalCanonicalId: null,
+        canonicalId: null,
+        accountId: 'test-account',
+        occurredAt: '2026-01-15T10:30:00.000000+00:00',
+        type: 'INTEREST',
+        subType: null,
+        amount: 3.47, // number, not string
+        currency: 'CAD',
+      };
+
+      const result = getTransactionId(transaction);
+      expect(result).toBe('generated:test-account:2026-01-15T10:30:00.000000+00:00:INTEREST::3.47:CAD');
+    });
+
+    it('should handle amount of 0 correctly', () => {
+      const transaction = {
+        externalCanonicalId: null,
+        canonicalId: null,
+        accountId: 'test-account',
+        occurredAt: '2026-01-15T10:30:00.000000+00:00',
+        type: 'FEE',
+        subType: 'WAIVED',
+        amount: 0,
+        currency: 'CAD',
+      };
+
+      const result = getTransactionId(transaction);
+      expect(result).toBe('generated:test-account:2026-01-15T10:30:00.000000+00:00:FEE:WAIVED:0:CAD');
+    });
+
+    it('should prefer externalCanonicalId over canonicalId even if both present', () => {
+      const transaction = {
+        externalCanonicalId: 'external-id-123',
+        canonicalId: 'canonical-id-456',
+        accountId: 'test-account',
+        type: 'DEPOSIT',
+      };
+
+      expect(getTransactionId(transaction)).toBe('external-id-123');
+    });
+
+    it('should prefer canonicalId over generated ID', () => {
+      const transaction = {
+        externalCanonicalId: null,
+        canonicalId: 'canonical-id-789',
+        accountId: 'test-account',
+        occurredAt: '2026-01-15T10:30:00.000000+00:00',
+        type: 'INTEREST',
+        amount: '5.00',
+        currency: 'CAD',
+      };
+
+      expect(getTransactionId(transaction)).toBe('canonical-id-789');
     });
   });
 

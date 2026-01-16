@@ -15,6 +15,39 @@ import { STORAGE } from '../../core/config';
 import { applyMerchantMapping } from '../../mappers/merchant';
 
 /**
+ * Get a unique transaction ID for a Wealthsimple transaction
+ * Uses the following priority:
+ * 1. externalCanonicalId (most transactions have this)
+ * 2. canonicalId (e.g., interest transactions)
+ * 3. Generated deterministic ID based on transaction properties
+ *
+ * @param {Object} transaction - Raw transaction from Wealthsimple API
+ * @returns {string} Unique transaction identifier
+ */
+export function getTransactionId(transaction) {
+  // Prefer externalCanonicalId (most transactions)
+  if (transaction.externalCanonicalId) {
+    return transaction.externalCanonicalId;
+  }
+
+  // Fall back to canonicalId (e.g., interest transactions)
+  if (transaction.canonicalId) {
+    return transaction.canonicalId;
+  }
+
+  // Generate deterministic ID if both are null
+  // Format: "{accountId}:{datetime}:{type}:{subType}:{amount}:{currency}"
+  const accountId = transaction.accountId || '';
+  const datetime = transaction.occurredAt || '';
+  const type = transaction.type || '';
+  const subType = transaction.subType || '';
+  const amount = transaction.amount !== null && transaction.amount !== undefined ? String(transaction.amount) : '';
+  const currency = transaction.currency || '';
+
+  return `generated:${accountId}:${datetime}:${type}:${subType}:${amount}:${currency}`;
+}
+
+/**
  * Format original statement with type:subType: prefix
  * Converts null values to empty strings
  * @param {string|null} type - Transaction type
@@ -894,9 +927,11 @@ export const CASH_TRANSACTION_RULES = [
  * @returns {Object|null} Processed rule result or null if no rule matches
  */
 export function applyTransactionRule(transaction, fundingIntentMap = null) {
+  const transactionId = getTransactionId(transaction);
+
   for (const rule of CASH_TRANSACTION_RULES) {
     if (rule.match(transaction)) {
-      debugLog(`Transaction ${transaction.externalCanonicalId} matched rule: ${rule.id}`);
+      debugLog(`Transaction ${transactionId} matched rule: ${rule.id}`);
       const result = rule.process(transaction, fundingIntentMap);
       return {
         ...result,
@@ -905,7 +940,7 @@ export function applyTransactionRule(transaction, fundingIntentMap = null) {
     }
   }
 
-  debugLog(`No rule matched for transaction ${transaction.externalCanonicalId}`, {
+  debugLog(`No rule matched for transaction ${transactionId}`, {
     type: transaction.type,
     subType: transaction.subType,
   });
@@ -935,4 +970,5 @@ export default {
   applyTransactionRule,
   hasRuleForTransaction,
   getETransferDisplayName,
+  getTransactionId,
 };

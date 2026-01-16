@@ -10,7 +10,7 @@ import { applyWealthsimpleCategoryMapping, saveUserWealthsimpleCategorySelection
 import { showMonarchCategorySelector, showManualTransactionCategorization } from '../../ui/components/categorySelector';
 import monarchApi from '../../api/monarch';
 import toast from '../../ui/toast';
-import { applyTransactionRule, CASH_TRANSACTION_RULES, formatOriginalStatement } from './transactionRules';
+import { applyTransactionRule, CASH_TRANSACTION_RULES, formatOriginalStatement, getTransactionId } from './transactionRules';
 
 /**
  * Convert ISO timestamp to local date in YYYY-MM-DD format
@@ -55,7 +55,7 @@ function processCreditCardTransaction(transaction, options = {}) {
   const finalAmount = isNegative ? -Math.abs(transaction.amount) : Math.abs(transaction.amount);
 
   return {
-    id: transaction.externalCanonicalId,
+    id: getTransactionId(transaction),
     date: convertToLocalDate(transaction.occurredAt),
     merchant: cleanedMerchant,
     originalMerchant: formatOriginalStatement(transaction.type, transaction.subType, merchantName),
@@ -505,9 +505,12 @@ function processCashTransaction(transaction, fundingIntentMap = null) {
   const isNegative = transaction.amountSign === 'negative';
   const finalAmount = isNegative ? -Math.abs(transaction.amount) : Math.abs(transaction.amount);
 
+  // Get a unique transaction ID (handles null externalCanonicalId)
+  const transactionId = getTransactionId(transaction);
+
   if (!ruleResult) {
     // No rule matched - return transaction needing manual categorization
-    debugLog(`CASH transaction ${transaction.externalCanonicalId} needs manual categorization - no matching rule`, {
+    debugLog(`CASH transaction ${transactionId} needs manual categorization - no matching rule`, {
       type: transaction.type,
       subType: transaction.subType,
     });
@@ -516,7 +519,7 @@ function processCashTransaction(transaction, fundingIntentMap = null) {
     const isPending = transaction.unifiedStatus === 'IN_PROGRESS' || transaction.unifiedStatus === 'PENDING';
 
     return {
-      id: transaction.externalCanonicalId,
+      id: transactionId,
       date: convertToLocalDate(transaction.occurredAt),
       merchant: null, // Will be set by user
       originalMerchant: null,
@@ -548,7 +551,7 @@ function processCashTransaction(transaction, fundingIntentMap = null) {
   }
 
   return {
-    id: transaction.externalCanonicalId,
+    id: transactionId,
     date: convertToLocalDate(transaction.occurredAt),
     merchant: ruleResult.merchant,
     originalMerchant: ruleResult.originalStatement,
