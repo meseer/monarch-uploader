@@ -13,6 +13,7 @@ import {
   getBalanceAtDate,
   createCurrentBalanceOnly,
   extractDateFromISO,
+  filterInvalidBalanceEntries,
 } from '../../../src/services/wealthsimple/balance';
 import { formatDate } from '../../../src/core/utils';
 
@@ -495,6 +496,144 @@ describe('Wealthsimple Balance Service', () => {
       expect(result[0]).toEqual({ date: '2025-01-01', amount: -100 });
       expect(result[1]).toEqual({ date: '2025-01-02', amount: -100 }); // Same as checkpoint, no transactions
       expect(result[2]).toEqual({ date: '2025-01-03', amount: -100 }); // Current balance
+    });
+  });
+
+  describe('filterInvalidBalanceEntries', () => {
+    test('filters out negative balances for CASH accounts', () => {
+      const balanceHistory = [
+        { date: '2025-01-01', amount: 100 },
+        { date: '2025-01-02', amount: -50 }, // Invalid for CASH
+        { date: '2025-01-03', amount: 200 },
+        { date: '2025-01-04', amount: -100 }, // Invalid for CASH
+        { date: '2025-01-05', amount: 300 },
+      ];
+
+      const result = filterInvalidBalanceEntries(balanceHistory, 'CASH', null, null);
+
+      expect(result).toHaveLength(3);
+      expect(result[0]).toEqual({ date: '2025-01-01', amount: 100 });
+      expect(result[1]).toEqual({ date: '2025-01-03', amount: 200 });
+      expect(result[2]).toEqual({ date: '2025-01-05', amount: 300 });
+    });
+
+    test('filters out negative balances for CASH_USD accounts', () => {
+      const balanceHistory = [
+        { date: '2025-01-01', amount: 500 },
+        { date: '2025-01-02', amount: -1000 }, // Invalid for CASH_USD
+        { date: '2025-01-03', amount: 750 },
+      ];
+
+      const result = filterInvalidBalanceEntries(balanceHistory, 'CASH_USD', null, null);
+
+      expect(result).toHaveLength(2);
+      expect(result[0]).toEqual({ date: '2025-01-01', amount: 500 });
+      expect(result[1]).toEqual({ date: '2025-01-03', amount: 750 });
+    });
+
+    test('does not filter negative balances for non-CASH account types', () => {
+      const balanceHistory = [
+        { date: '2025-01-01', amount: 100 },
+        { date: '2025-01-02', amount: -50 },
+        { date: '2025-01-03', amount: -200 },
+      ];
+
+      // Investment accounts can have negative balance (margin, etc.)
+      const result = filterInvalidBalanceEntries(balanceHistory, 'MANAGED_TFSA', null, null);
+
+      expect(result).toHaveLength(3);
+      expect(result).toEqual(balanceHistory);
+    });
+
+    test('corrects today balance with currentBalance for CASH accounts', () => {
+      const balanceHistory = [
+        { date: '2025-01-01', amount: 100 },
+        { date: '2025-01-02', amount: 200 },
+        { date: '2025-01-03', amount: -500 }, // API returned wrong negative value
+      ];
+      const currentBalance = { amount: 634.51, currency: 'CAD' };
+
+      const result = filterInvalidBalanceEntries(balanceHistory, 'CASH', currentBalance, '2025-01-03');
+
+      // Should filter out the negative balance, then add correct today's balance
+      expect(result).toHaveLength(3);
+      expect(result[0]).toEqual({ date: '2025-01-01', amount: 100 });
+      expect(result[1]).toEqual({ date: '2025-01-02', amount: 200 });
+      expect(result[2]).toEqual({ date: '2025-01-03', amount: 634.51 });
+    });
+
+    test('adds today balance if missing for CASH accounts', () => {
+      const balanceHistory = [
+        { date: '2025-01-01', amount: 100 },
+        { date: '2025-01-02', amount: 200 },
+      ];
+      const currentBalance = { amount: 300, currency: 'CAD' };
+
+      const result = filterInvalidBalanceEntries(balanceHistory, 'CASH', currentBalance, '2025-01-03');
+
+      expect(result).toHaveLength(3);
+      expect(result[2]).toEqual({ date: '2025-01-03', amount: 300 });
+    });
+
+    test('corrects today balance for non-CASH account types', () => {
+      const balanceHistory = [
+        { date: '2025-01-01', amount: 1000 },
+        { date: '2025-01-02', amount: 1100 },
+        { date: '2025-01-03', amount: 999 }, // API returned wrong value
+      ];
+      const currentBalance = { amount: 1200, currency: 'CAD' };
+
+      const result = filterInvalidBalanceEntries(balanceHistory, 'MANAGED_TFSA', currentBalance, '2025-01-03');
+
+      expect(result).toHaveLength(3);
+      expect(result[2]).toEqual({ date: '2025-01-03', amount: 1200 });
+    });
+
+    test('returns empty array for null input', () => {
+      expect(filterInvalidBalanceEntries(null, 'CASH', null, null)).toEqual([]);
+      expect(filterInvalidBalanceEntries(undefined, 'CASH', null, null)).toEqual([]);
+    });
+
+    test('handles zero balance correctly for CASH accounts', () => {
+      const balanceHistory = [
+        { date: '2025-01-01', amount: 100 },
+        { date: '2025-01-02', amount: 0 }, // Zero is valid
+        { date: '2025-01-03', amount: -50 }, // Negative is invalid
+      ];
+
+      const result = filterInvalidBalanceEntries(balanceHistory, 'CASH', null, null);
+
+      expect(result).toHaveLength(2);
+      expect(result[0]).toEqual({ date: '2025-01-01', amount: 100 });
+      expect(result[1]).toEqual({ date: '2025-01-02', amount: 0 });
+    });
+
+    test('returns balance history unchanged if no currentBalance provided for non-CASH types', () => {
+      const balanceHistory = [
+        { date: '2025-01-01', amount: 100 },
+        { date: '2025-01-02', amount: 200 },
+      ];
+
+      const result = filterInvalidBalanceEntries(balanceHistory, 'MANAGED_TFSA', null, null);
+
+      expect(result).toEqual(balanceHistory);
+    });
+
+    test('preserves date order after filtering and adding today balance', () => {
+      const balanceHistory = [
+        { date: '2025-01-03', amount: 300 },
+        { date: '2025-01-01', amount: 100 },
+        { date: '2025-01-02', amount: -50 }, // Invalid, will be filtered
+      ];
+      const currentBalance = { amount: 400, currency: 'CAD' };
+
+      const result = filterInvalidBalanceEntries(balanceHistory, 'CASH', currentBalance, '2025-01-04');
+
+      // Should sort by date after adding today's balance
+      expect(result).toHaveLength(3);
+      expect(result[0].date).toBe('2025-01-01');
+      expect(result[1].date).toBe('2025-01-03');
+      expect(result[2].date).toBe('2025-01-04');
     });
   });
 

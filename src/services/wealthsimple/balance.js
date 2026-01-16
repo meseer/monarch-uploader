@@ -556,14 +556,103 @@ export async function uploadBalanceToMonarch(accountId, monarchAccountId, csvDat
 }
 
 /**
+ * Account types where balance can never be negative
+ * These accounts will have negative balance entries filtered out
+ */
+const NON_NEGATIVE_BALANCE_ACCOUNT_TYPES = new Set(['CASH', 'CASH_USD']);
+
+/**
+ * Filter out invalid balance entries for account types that cannot have negative balances
+ * Also ensures today's balance uses the actual current balance from API
+ * @param {Array} balanceHistory - Array of balance history objects {date, amount}
+ * @param {string} accountType - Account type (e.g., 'CASH', 'CASH_USD')
+ * @param {Object} currentBalance - Current balance object {amount, currency} for today
+ * @param {string} toDate - End date (today) in YYYY-MM-DD format
+ * @returns {Array} Filtered balance history
+ */
+export function filterInvalidBalanceEntries(balanceHistory, accountType, currentBalance, toDate) {
+  if (!balanceHistory || !Array.isArray(balanceHistory)) {
+    return [];
+  }
+
+  // Only filter for account types that cannot have negative balances
+  if (!NON_NEGATIVE_BALANCE_ACCOUNT_TYPES.has(accountType)) {
+    // For other account types, just ensure today's balance is correct
+    if (currentBalance && currentBalance.amount !== undefined && toDate) {
+      return ensureTodayBalance(balanceHistory, currentBalance, toDate);
+    }
+    return balanceHistory;
+  }
+
+  debugLog(`Filtering invalid balance entries for ${accountType} account`);
+
+  // Filter out negative balance entries (invalid for CASH accounts)
+  let filtered = balanceHistory.filter((entry) => {
+    if (entry.amount < 0) {
+      debugLog(`Removing invalid negative balance entry: ${entry.date} = ${entry.amount}`);
+      return false;
+    }
+    return true;
+  });
+
+  // Ensure today's balance uses the current balance from API
+  if (currentBalance && currentBalance.amount !== undefined && toDate) {
+    filtered = ensureTodayBalance(filtered, currentBalance, toDate);
+  }
+
+  debugLog(`Filtered balance history: ${balanceHistory.length} -> ${filtered.length} entries`);
+  return filtered;
+}
+
+/**
+ * Ensure today's balance entry uses the correct current balance from API
+ * @param {Array} balanceHistory - Array of balance history objects
+ * @param {Object} currentBalance - Current balance object {amount, currency}
+ * @param {string} toDate - Today's date in YYYY-MM-DD format
+ * @returns {Array} Balance history with correct today's balance
+ */
+function ensureTodayBalance(balanceHistory, currentBalance, toDate) {
+  if (!balanceHistory || !currentBalance || currentBalance.amount === undefined || !toDate) {
+    return balanceHistory || [];
+  }
+
+  // Find if today's entry exists
+  const todayIndex = balanceHistory.findIndex((entry) => entry.date === toDate);
+
+  if (todayIndex >= 0) {
+    // Update existing entry with correct balance
+    const existingAmount = balanceHistory[todayIndex].amount;
+    if (existingAmount !== currentBalance.amount) {
+      debugLog(`Correcting today's balance: ${existingAmount} -> ${currentBalance.amount}`);
+      balanceHistory[todayIndex] = {
+        ...balanceHistory[todayIndex],
+        amount: currentBalance.amount,
+      };
+    }
+  } else {
+    // Add today's entry
+    debugLog(`Adding today's balance entry: ${toDate} = ${currentBalance.amount}`);
+    balanceHistory.push({
+      date: toDate,
+      amount: currentBalance.amount,
+    });
+    // Sort by date to maintain order
+    balanceHistory.sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  return balanceHistory;
+}
+
+/**
  * Complete process to fetch, process and upload balance history for an account
  * @param {Object} consolidatedAccount - Consolidated account object
  * @param {string} monarchAccountId - Monarch account ID
  * @param {string} fromDate - Start date in YYYY-MM-DD format
  * @param {string} toDate - End date in YYYY-MM-DD format
+ * @param {Object} currentBalance - Current balance from FetchAccountCombinedFinancialsPreload (optional)
  * @returns {Promise<boolean>} Success status
  */
-export async function processAndUploadBalance(consolidatedAccount, monarchAccountId, fromDate, toDate) {
+export async function processAndUploadBalance(consolidatedAccount, monarchAccountId, fromDate, toDate, currentBalance = null) {
   try {
     const account = consolidatedAccount.wealthsimpleAccount;
     const accountId = account.id;
@@ -581,7 +670,7 @@ export async function processAndUploadBalance(consolidatedAccount, monarchAccoun
 
     // Step 1: Fetch balance history
     debugLog(`Fetching balance history for ${wealthsimpleAccountName} (Monarch: ${monarchAccountName})...`);
-    const balanceHistory = await fetchBalanceHistory(
+    let balanceHistory = await fetchBalanceHistory(
       accountId,
       account.currency,
       fromDate,
@@ -591,6 +680,18 @@ export async function processAndUploadBalance(consolidatedAccount, monarchAccoun
     if (!balanceHistory || balanceHistory.length === 0) {
       debugLog('No balance history data available');
       toast.show(`No balance history data available for ${wealthsimpleAccountName}`, 'warning');
+      return false;
+    }
+
+    // Step 1.5: Filter invalid balance entries and ensure today's balance is correct
+    // For CASH/CASH_USD accounts, this removes negative balances (impossible for these account types)
+    // and ensures today's balance uses the accurate current balance from FetchAccountCombinedFinancialsPreload
+    const accountType = account.type || '';
+    balanceHistory = filterInvalidBalanceEntries(balanceHistory, accountType, currentBalance, toDate);
+
+    if (!balanceHistory || balanceHistory.length === 0) {
+      debugLog('No valid balance history data after filtering');
+      toast.show(`No valid balance history data for ${wealthsimpleAccountName}`, 'warning');
       return false;
     }
 

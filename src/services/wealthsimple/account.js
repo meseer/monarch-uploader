@@ -226,6 +226,7 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
         monarchAccountId,
         actualFromDate,
         actualToDate,
+        currentBalance, // Pass current balance for today's balance correction
       );
       return success;
     }
