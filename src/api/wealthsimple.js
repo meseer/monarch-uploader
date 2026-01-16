@@ -427,6 +427,22 @@ export async function fetchAndCacheWealthsimpleAccounts() {
 
         // Store number stripping setting (preserve from cache, default to true for new accounts)
         stripStoreNumbers: existing?.stripStoreNumbers ?? true,
+
+        // Holdings mappings for investment accounts (preserve from cache)
+        holdingsMappings: existing?.holdingsMappings || {},
+
+        // Credit limit sync state for credit card accounts (preserve from cache)
+        lastSyncedCreditLimit: existing?.lastSyncedCreditLimit ?? null,
+
+        // Balance checkpoint for balance reconstruction (preserve from cache)
+        balanceCheckpoint: existing?.balanceCheckpoint || null,
+
+        // Transaction notes setting (preserve from cache, default to false for new accounts)
+        storeTransactionDetailsInNotes: existing?.storeTransactionDetailsInNotes ?? false,
+
+        // Transaction retention settings (preserve from cache)
+        transactionRetentionDays: existing?.transactionRetentionDays ?? null,
+        transactionRetentionCount: existing?.transactionRetentionCount ?? null,
       };
     });
 
