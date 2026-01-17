@@ -2324,6 +2324,74 @@ fragment SoOrdersExtendedOrder on SoOrders_ExtendedOrderResponse {
 }
 
 /**
+ * Fetch short option position expiry details
+ * Used to get details about expired/expiring short option positions, including:
+ * - decision: The decision made (e.g., "EXPIRE", "ASSIGN")
+ * - reason: The reason for the decision
+ * - fxRate: Foreign exchange rate applied
+ * - deliverables: Array of securities and quantities involved
+ * - securityCurrency: Currency of the security
+ *
+ * @param {string} id - Short option position expiry detail ID (e.g., "oe-c8861ccc2c9905f176b8946b5bedfaae4b0b2cde")
+ * @returns {Promise<Object|null>} Short option expiry details or null if not found
+ */
+export async function fetchShortOptionPositionExpiryDetail(id) {
+  try {
+    if (!id) {
+      debugLog('No short option position expiry detail ID provided');
+      return null;
+    }
+
+    debugLog(`Fetching short option position expiry detail for ${id}...`);
+
+    const query = `query FetchShortOptionPositionExpiryDetail($id: ID!) {
+  shortOptionPositionExpiryDetail(id: $id) {
+    id
+    ...ShortOptionPositionExpiryDetail
+    __typename
+  }
+}
+
+fragment ShortOptionPositionExpiryDetail on ShortPositionExpiryDetail {
+  id
+  decision
+  reason
+  fxRate
+  custodianAccountId
+  deliverables {
+    quantity
+    securityId
+    __typename
+  }
+  securityCurrency
+  __typename
+}`;
+
+    const response = await makeGraphQLQuery('FetchShortOptionPositionExpiryDetail', query, { id });
+
+    if (!response || !response.shortOptionPositionExpiryDetail) {
+      debugLog(`No short option position expiry detail data found for ${id}`);
+      return null;
+    }
+
+    const expiryDetail = response.shortOptionPositionExpiryDetail;
+    debugLog(`Fetched short option position expiry detail ${id}:`, {
+      decision: expiryDetail.decision,
+      reason: expiryDetail.reason,
+      fxRate: expiryDetail.fxRate,
+      securityCurrency: expiryDetail.securityCurrency,
+      deliverablesCount: expiryDetail.deliverables?.length || 0,
+    });
+
+    return expiryDetail;
+  } catch (error) {
+    debugLog(`Error fetching short option position expiry detail ${id}:`, error);
+    // Return null on error - don't fail the entire sync
+    return null;
+  }
+}
+
+/**
  * Fetch cash balances for investment accounts using FetchAccountsWithBalance
  * Returns CAD and USD cash balances from the account's custodian financials
  *
@@ -2451,5 +2519,6 @@ export default {
   fetchInternalTransfer,
   fetchFundsTransfer,
   fetchExtendedOrder,
+  fetchShortOptionPositionExpiryDetail,
   fetchAccountsWithBalance,
 };

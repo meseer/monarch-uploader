@@ -2645,6 +2645,241 @@ describe('Wealthsimple API Client', () => {
     });
   });
 
+  describe('fetchShortOptionPositionExpiryDetail', () => {
+    beforeEach(() => {
+      const futureDate = new Date(Date.now() + 3600000).toISOString();
+      GM_getValue.mockImplementation((key) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
+        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
+        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
+        return null;
+      });
+    });
+
+    it('should return null for null input', async () => {
+      const result = await wealthsimpleApi.fetchShortOptionPositionExpiryDetail(null);
+      expect(result).toBeNull();
+      expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
+    });
+
+    it('should return null for empty string input', async () => {
+      const result = await wealthsimpleApi.fetchShortOptionPositionExpiryDetail('');
+      expect(result).toBeNull();
+      expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
+    });
+
+    it('should fetch short option position expiry detail successfully', async () => {
+      const mockResponse = {
+        shortOptionPositionExpiryDetail: {
+          id: 'oe-c8861ccc2c9905f176b8946b5bedfaae4b0b2cde',
+          decision: 'EXPIRE',
+          reason: 'EXPIRE',
+          fxRate: '1.3531',
+          custodianAccountId: 'H10739748CAD',
+          deliverables: [
+            {
+              quantity: '3.3333',
+              securityId: 'sec-s-555ffa9de9ad47d2925dda6a2032c225',
+              __typename: 'Deliverable',
+            },
+          ],
+          securityCurrency: 'USD',
+          __typename: 'ShortPositionExpiryDetail',
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchShortOptionPositionExpiryDetail('oe-c8861ccc2c9905f176b8946b5bedfaae4b0b2cde');
+
+      expect(result).not.toBeNull();
+      expect(result.id).toBe('oe-c8861ccc2c9905f176b8946b5bedfaae4b0b2cde');
+      expect(result.decision).toBe('EXPIRE');
+      expect(result.reason).toBe('EXPIRE');
+      expect(result.fxRate).toBe('1.3531');
+      expect(result.custodianAccountId).toBe('H10739748CAD');
+      expect(result.securityCurrency).toBe('USD');
+      expect(result.deliverables).toHaveLength(1);
+      expect(result.deliverables[0].quantity).toBe('3.3333');
+      expect(result.deliverables[0].securityId).toBe('sec-s-555ffa9de9ad47d2925dda6a2032c225');
+    });
+
+    it('should pass correct ID in GraphQL query', async () => {
+      const mockResponse = {
+        shortOptionPositionExpiryDetail: {
+          id: 'oe-test123',
+          decision: 'ASSIGN',
+          reason: 'ASSIGN',
+          fxRate: '1.0000',
+          custodianAccountId: 'H12345678CAD',
+          deliverables: [],
+          securityCurrency: 'CAD',
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ data, onload }) => {
+        const parsedData = JSON.parse(data);
+        expect(parsedData.operationName).toBe('FetchShortOptionPositionExpiryDetail');
+        expect(parsedData.variables.id).toBe('oe-test123');
+
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      await wealthsimpleApi.fetchShortOptionPositionExpiryDetail('oe-test123');
+    });
+
+    it('should return null when no shortOptionPositionExpiryDetail in response', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: {} }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchShortOptionPositionExpiryDetail('oe-abc123');
+      expect(result).toBeNull();
+    });
+
+    it('should return null on API error without failing', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({ status: 500 });
+      });
+
+      // Should not throw, just return null
+      const result = await wealthsimpleApi.fetchShortOptionPositionExpiryDetail('oe-abc123');
+      expect(result).toBeNull();
+    });
+
+    it('should return null on network error without failing', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onerror }) => {
+        onerror(new Error('Network failure'));
+      });
+
+      // Should not throw, just return null
+      const result = await wealthsimpleApi.fetchShortOptionPositionExpiryDetail('oe-abc123');
+      expect(result).toBeNull();
+    });
+
+    it('should handle expiry detail with empty deliverables array', async () => {
+      const mockResponse = {
+        shortOptionPositionExpiryDetail: {
+          id: 'oe-empty-deliverables',
+          decision: 'EXPIRE',
+          reason: 'OUT_OF_THE_MONEY',
+          fxRate: '1.4000',
+          custodianAccountId: 'H98765432CAD',
+          deliverables: [],
+          securityCurrency: 'USD',
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchShortOptionPositionExpiryDetail('oe-empty-deliverables');
+
+      expect(result).not.toBeNull();
+      expect(result.deliverables).toEqual([]);
+    });
+
+    it('should handle expiry detail with multiple deliverables', async () => {
+      const mockResponse = {
+        shortOptionPositionExpiryDetail: {
+          id: 'oe-multi-deliverables',
+          decision: 'ASSIGN',
+          reason: 'ASSIGN',
+          fxRate: '1.3500',
+          custodianAccountId: 'H11111111CAD',
+          deliverables: [
+            {
+              quantity: '100.0000',
+              securityId: 'sec-s-aaaa',
+              __typename: 'Deliverable',
+            },
+            {
+              quantity: '50.0000',
+              securityId: 'sec-s-bbbb',
+              __typename: 'Deliverable',
+            },
+          ],
+          securityCurrency: 'USD',
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchShortOptionPositionExpiryDetail('oe-multi-deliverables');
+
+      expect(result).not.toBeNull();
+      expect(result.deliverables).toHaveLength(2);
+      expect(result.deliverables[0].quantity).toBe('100.0000');
+      expect(result.deliverables[1].quantity).toBe('50.0000');
+    });
+
+    it('should handle expiry detail with null fxRate (same currency)', async () => {
+      const mockResponse = {
+        shortOptionPositionExpiryDetail: {
+          id: 'oe-cad-currency',
+          decision: 'EXPIRE',
+          reason: 'EXPIRE',
+          fxRate: null,
+          custodianAccountId: 'H22222222CAD',
+          deliverables: [],
+          securityCurrency: 'CAD',
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchShortOptionPositionExpiryDetail('oe-cad-currency');
+
+      expect(result).not.toBeNull();
+      expect(result.fxRate).toBeNull();
+      expect(result.securityCurrency).toBe('CAD');
+    });
+
+    it('should handle GraphQL errors', async () => {
+      const errorResponse = {
+        errors: [
+          { message: 'Short option position expiry detail not found' },
+        ],
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify(errorResponse),
+        });
+      });
+
+      // Should return null on GraphQL error (graceful failure)
+      const result = await wealthsimpleApi.fetchShortOptionPositionExpiryDetail('oe-not-found');
+      expect(result).toBeNull();
+    });
+  });
+
   describe('fetchExtendedOrder', () => {
     beforeEach(() => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
