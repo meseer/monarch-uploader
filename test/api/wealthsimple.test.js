@@ -2644,4 +2644,306 @@ describe('Wealthsimple API Client', () => {
       expect(result.source.branch).toBe('WS');
     });
   });
+
+  describe('fetchExtendedOrder', () => {
+    beforeEach(() => {
+      const futureDate = new Date(Date.now() + 3600000).toISOString();
+      GM_getValue.mockImplementation((key) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
+        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
+        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
+        return null;
+      });
+    });
+
+    it('should return null for null branchId', async () => {
+      const result = await wealthsimpleApi.fetchExtendedOrder(null, 'order-123');
+      expect(result).toBeNull();
+      expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
+    });
+
+    it('should return null for empty branchId', async () => {
+      const result = await wealthsimpleApi.fetchExtendedOrder('', 'order-123');
+      expect(result).toBeNull();
+      expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
+    });
+
+    it('should return null for null externalId', async () => {
+      const result = await wealthsimpleApi.fetchExtendedOrder('TR', null);
+      expect(result).toBeNull();
+      expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
+    });
+
+    it('should return null for empty externalId', async () => {
+      const result = await wealthsimpleApi.fetchExtendedOrder('TR', '');
+      expect(result).toBeNull();
+      expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
+    });
+
+    it('should fetch extended order for stock order successfully', async () => {
+      const mockResponse = {
+        soOrdersExtendedOrder: {
+          averageFilledPrice: '620.9154',
+          filledExchangeRate: '1.000000',
+          filledQuantity: '11.6131',
+          filledCommissionFee: null,
+          filledTotalFee: '0.00',
+          firstFilledAtUtc: '2025-11-04T14:40:29.233Z',
+          lastFilledAtUtc: '2025-11-04T14:40:29.233Z',
+          limitPrice: null,
+          openClose: null,
+          orderType: 'BUY_VALUE',
+          optionMultiplier: null,
+          rejectionCause: null,
+          rejectionCode: null,
+          securityCurrency: 'USD',
+          status: 'posted',
+          stopPrice: null,
+          submittedAtUtc: '2025-11-04T14:40:28.998Z',
+          submittedExchangeRate: '1.000000',
+          submittedNetValue: '7211.02',
+          submittedQuantity: '11.6131',
+          submittedTotalFee: '0.00',
+          timeInForce: 'DAY',
+          accountId: 'H10739748CAD',
+          canonicalAccountId: 'rrsp-qthtmh-s',
+          cancellationCutoff: null,
+          tradingSession: 'REGULAR',
+          expiredAtUtc: '2025-11-04T21:00:00.000Z',
+          __typename: 'SoOrders_ExtendedOrderResponse',
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchExtendedOrder('TR', 'order-3f73016b-5af3-4f03-ba22-9ef5e45fbb3d');
+
+      expect(result).not.toBeNull();
+      expect(result.averageFilledPrice).toBe('620.9154');
+      expect(result.filledQuantity).toBe('11.6131');
+      expect(result.orderType).toBe('BUY_VALUE');
+      expect(result.status).toBe('posted');
+      expect(result.securityCurrency).toBe('USD');
+      expect(result.timeInForce).toBe('DAY');
+      expect(result.tradingSession).toBe('REGULAR');
+      expect(result.optionMultiplier).toBeNull();
+      expect(result.openClose).toBeNull();
+    });
+
+    it('should fetch extended order for options order successfully', async () => {
+      const mockResponse = {
+        soOrdersExtendedOrder: {
+          averageFilledPrice: '0.0600',
+          filledExchangeRate: '1.000000',
+          filledQuantity: '9.0000',
+          filledCommissionFee: '0.00',
+          filledTotalFee: '0.00',
+          firstFilledAtUtc: '2025-11-12T15:36:10.201Z',
+          lastFilledAtUtc: '2025-11-12T15:36:10.201Z',
+          limitPrice: '0.0600',
+          openClose: 'OPEN',
+          orderType: 'SELL_QUANTITY',
+          optionMultiplier: '100.00',
+          rejectionCause: null,
+          rejectionCode: null,
+          securityCurrency: 'USD',
+          status: 'posted',
+          stopPrice: null,
+          submittedAtUtc: '2025-11-12T15:30:30.080Z',
+          submittedExchangeRate: '1.000000',
+          submittedNetValue: '54.00',
+          submittedQuantity: '9.0000',
+          submittedTotalFee: '0.00',
+          timeInForce: 'DAY',
+          accountId: 'H10739748CAD',
+          canonicalAccountId: 'rrsp-qthtmh-s',
+          cancellationCutoff: null,
+          tradingSession: 'REGULAR',
+          expiredAtUtc: '2025-11-12T21:00:00.000Z',
+          __typename: 'SoOrders_ExtendedOrderResponse',
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchExtendedOrder('TR', 'order-options-123');
+
+      expect(result).not.toBeNull();
+      expect(result.averageFilledPrice).toBe('0.0600');
+      expect(result.filledQuantity).toBe('9.0000');
+      expect(result.orderType).toBe('SELL_QUANTITY');
+      expect(result.openClose).toBe('OPEN');
+      expect(result.optionMultiplier).toBe('100.00');
+      expect(result.limitPrice).toBe('0.0600');
+    });
+
+    it('should NOT inject identityId into request', async () => {
+      const mockResponse = {
+        soOrdersExtendedOrder: {
+          status: 'posted',
+          orderType: 'BUY_VALUE',
+          __typename: 'SoOrders_ExtendedOrderResponse',
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ data, onload }) => {
+        const parsedData = JSON.parse(data);
+        expect(parsedData.operationName).toBe('FetchSoOrdersExtendedOrder');
+        // FetchSoOrdersExtendedOrder should NOT have identityId injected
+        expect(parsedData.variables.identityId).toBeUndefined();
+        expect(parsedData.variables.branchId).toBe('TR');
+        expect(parsedData.variables.externalId).toBe('order-test123');
+
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      await wealthsimpleApi.fetchExtendedOrder('TR', 'order-test123');
+    });
+
+    it('should return null when no soOrdersExtendedOrder in response', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: {} }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchExtendedOrder('TR', 'order-not-found');
+      expect(result).toBeNull();
+    });
+
+    it('should return null on API error without failing', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({ status: 500 });
+      });
+
+      // Should not throw, just return null
+      const result = await wealthsimpleApi.fetchExtendedOrder('TR', 'order-error');
+      expect(result).toBeNull();
+    });
+
+    it('should return null on network error without failing', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onerror }) => {
+        onerror(new Error('Network failure'));
+      });
+
+      // Should not throw, just return null
+      const result = await wealthsimpleApi.fetchExtendedOrder('TR', 'order-network-error');
+      expect(result).toBeNull();
+    });
+
+    it('should handle order with rejection details', async () => {
+      const mockResponse = {
+        soOrdersExtendedOrder: {
+          averageFilledPrice: null,
+          filledExchangeRate: null,
+          filledQuantity: '0.0000',
+          filledCommissionFee: null,
+          filledTotalFee: null,
+          firstFilledAtUtc: null,
+          lastFilledAtUtc: null,
+          limitPrice: '100.00',
+          openClose: null,
+          orderType: 'BUY_QUANTITY',
+          optionMultiplier: null,
+          rejectionCause: 'insufficient_funds',
+          rejectionCode: 'INS_FUNDS',
+          securityCurrency: 'USD',
+          status: 'rejected',
+          stopPrice: null,
+          submittedAtUtc: '2025-11-04T14:40:28.998Z',
+          submittedExchangeRate: '1.000000',
+          submittedNetValue: '1000.00',
+          submittedQuantity: '10.0000',
+          submittedTotalFee: '0.00',
+          timeInForce: 'DAY',
+          accountId: 'H10739748CAD',
+          canonicalAccountId: 'rrsp-qthtmh-s',
+          cancellationCutoff: null,
+          tradingSession: 'REGULAR',
+          expiredAtUtc: '2025-11-04T21:00:00.000Z',
+          __typename: 'SoOrders_ExtendedOrderResponse',
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchExtendedOrder('TR', 'order-rejected');
+
+      expect(result).not.toBeNull();
+      expect(result.status).toBe('rejected');
+      expect(result.rejectionCause).toBe('insufficient_funds');
+      expect(result.rejectionCode).toBe('INS_FUNDS');
+      expect(result.filledQuantity).toBe('0.0000');
+    });
+
+    it('should handle pending order', async () => {
+      const mockResponse = {
+        soOrdersExtendedOrder: {
+          averageFilledPrice: null,
+          filledExchangeRate: null,
+          filledQuantity: '0.0000',
+          filledCommissionFee: null,
+          filledTotalFee: null,
+          firstFilledAtUtc: null,
+          lastFilledAtUtc: null,
+          limitPrice: '500.00',
+          openClose: null,
+          orderType: 'BUY_QUANTITY',
+          optionMultiplier: null,
+          rejectionCause: null,
+          rejectionCode: null,
+          securityCurrency: 'USD',
+          status: 'pending',
+          stopPrice: '490.00',
+          submittedAtUtc: '2025-11-04T14:40:28.998Z',
+          submittedExchangeRate: '1.000000',
+          submittedNetValue: '5000.00',
+          submittedQuantity: '10.0000',
+          submittedTotalFee: '0.00',
+          timeInForce: 'GTC',
+          accountId: 'H10739748CAD',
+          canonicalAccountId: 'rrsp-qthtmh-s',
+          cancellationCutoff: '2025-11-04T20:00:00.000Z',
+          tradingSession: 'REGULAR',
+          expiredAtUtc: null,
+          __typename: 'SoOrders_ExtendedOrderResponse',
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchExtendedOrder('TR', 'order-pending');
+
+      expect(result).not.toBeNull();
+      expect(result.status).toBe('pending');
+      expect(result.stopPrice).toBe('490.00');
+      expect(result.timeInForce).toBe('GTC');
+      expect(result.cancellationCutoff).toBe('2025-11-04T20:00:00.000Z');
+      expect(result.expiredAtUtc).toBeNull();
+    });
+  });
 });

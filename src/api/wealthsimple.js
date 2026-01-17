@@ -255,8 +255,8 @@ export async function makeGraphQLQuery(operationName, query, variables = {}) {
   }
 
   // Inject identity ID into variables if not present
-  // Note: FetchFundingIntent, FetchInternalTransfer, and FetchFundsTransfer don't accept identityId and return 403 if it's passed
-  const skipIdentityInjection = ['FetchFundingIntent', 'FetchInternalTransfer', 'FetchFundsTransfer'];
+  // Note: FetchFundingIntent, FetchInternalTransfer, FetchFundsTransfer, and FetchSoOrdersExtendedOrder don't accept identityId and return 403 if it's passed
+  const skipIdentityInjection = ['FetchFundingIntent', 'FetchInternalTransfer', 'FetchFundsTransfer', 'FetchSoOrdersExtendedOrder'];
   if (!variables.identityId && authStatus.identityId && !skipIdentityInjection.includes(operationName)) {
     variables.identityId = authStatus.identityId;
   }
@@ -2237,6 +2237,93 @@ fragment CustodianAccount on CustodianAccount {
 }
 
 /**
+ * Fetch extended order details for a stock/options order
+ * Used to get detailed fill information, fees, exchange rates, and timestamps for orders
+ *
+ * @param {string} branchId - Branch identifier (e.g., "TR" for Trade)
+ * @param {string} externalId - Order ID (e.g., "order-3f73016b-5af3-4f03-ba22-9ef5e45fbb3d")
+ * @returns {Promise<Object|null>} Extended order details or null if not found
+ */
+export async function fetchExtendedOrder(branchId, externalId) {
+  try {
+    if (!branchId) {
+      debugLog('No branch ID provided for extended order fetch');
+      return null;
+    }
+
+    if (!externalId) {
+      debugLog('No external ID provided for extended order fetch');
+      return null;
+    }
+
+    debugLog(`Fetching extended order details for ${externalId} (branch: ${branchId})...`);
+
+    const query = `query FetchSoOrdersExtendedOrder($branchId: String!, $externalId: String!) {
+  soOrdersExtendedOrder(branchId: $branchId, externalId: $externalId) {
+    ...SoOrdersExtendedOrder
+    __typename
+  }
+}
+
+fragment SoOrdersExtendedOrder on SoOrders_ExtendedOrderResponse {
+  averageFilledPrice
+  filledExchangeRate
+  filledQuantity
+  filledCommissionFee
+  filledTotalFee
+  firstFilledAtUtc
+  lastFilledAtUtc
+  limitPrice
+  openClose
+  orderType
+  optionMultiplier
+  rejectionCause
+  rejectionCode
+  securityCurrency
+  status
+  stopPrice
+  submittedAtUtc
+  submittedExchangeRate
+  submittedNetValue
+  submittedQuantity
+  submittedTotalFee
+  timeInForce
+  accountId
+  canonicalAccountId
+  cancellationCutoff
+  tradingSession
+  expiredAtUtc
+  __typename
+}`;
+
+    const response = await makeGraphQLQuery('FetchSoOrdersExtendedOrder', query, {
+      branchId,
+      externalId,
+    });
+
+    if (!response || !response.soOrdersExtendedOrder) {
+      debugLog(`No extended order data found for ${externalId}`);
+      return null;
+    }
+
+    const extendedOrder = response.soOrdersExtendedOrder;
+    debugLog(`Fetched extended order ${externalId}:`, {
+      status: extendedOrder.status,
+      orderType: extendedOrder.orderType,
+      filledQuantity: extendedOrder.filledQuantity,
+      averageFilledPrice: extendedOrder.averageFilledPrice,
+      hasOptionMultiplier: Boolean(extendedOrder.optionMultiplier),
+    });
+
+    return extendedOrder;
+  } catch (error) {
+    debugLog(`Error fetching extended order ${externalId}:`, error);
+    // Return null on error - don't fail the entire sync
+    return null;
+  }
+}
+
+/**
  * Fetch cash balances for investment accounts using FetchAccountsWithBalance
  * Returns CAD and USD cash balances from the account's custodian financials
  *
@@ -2363,5 +2450,6 @@ export default {
   fetchFundingIntents,
   fetchInternalTransfer,
   fetchFundsTransfer,
+  fetchExtendedOrder,
   fetchAccountsWithBalance,
 };
