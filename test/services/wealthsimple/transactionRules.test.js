@@ -5,6 +5,7 @@
 import {
   CASH_TRANSACTION_RULES,
   INVESTMENT_DIVIDEND_TRANSACTION_RULES,
+  INVESTMENT_DEPOSIT_TRANSACTION_RULES,
   applyTransactionRule,
   hasRuleForTransaction,
   extractInteracMemo,
@@ -4313,6 +4314,370 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(nullResult.technicalDetails).toBe('');
         expect(diyResult.technicalDetails).toBe('');
         expect(manufacturedResult.technicalDetails).toBe('');
+      });
+    });
+  });
+
+  describe('INVESTMENT_DEPOSIT_TRANSACTION_RULES', () => {
+    describe('DEPOSIT rule matching', () => {
+      it('should match transactions with type DEPOSIT', () => {
+        const transaction = {
+          externalCanonicalId: 'deposit-123',
+          type: 'DEPOSIT',
+          subType: 'EFT_RECURRING',
+          frequency: 'MONTHLY',
+          amount: 500,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_DEPOSIT_TRANSACTION_RULES.find((r) => r.id === 'deposit');
+        expect(rule.match(transaction)).toBe(true);
+      });
+
+      it('should match DEPOSIT with any subType', () => {
+        const rule = INVESTMENT_DEPOSIT_TRANSACTION_RULES.find((r) => r.id === 'deposit');
+
+        expect(rule.match({ type: 'DEPOSIT', subType: 'EFT_RECURRING' })).toBe(true);
+        expect(rule.match({ type: 'DEPOSIT', subType: 'EFT' })).toBe(true);
+        expect(rule.match({ type: 'DEPOSIT', subType: null })).toBe(true);
+        expect(rule.match({ type: 'DEPOSIT', subType: undefined })).toBe(true);
+      });
+
+      it('should not match transactions with different type', () => {
+        const rule = INVESTMENT_DEPOSIT_TRANSACTION_RULES.find((r) => r.id === 'deposit');
+
+        expect(rule.match({ type: 'WITHDRAWAL', subType: 'EFT_RECURRING' })).toBe(false);
+        expect(rule.match({ type: 'DIVIDEND', subType: null })).toBe(false);
+        expect(rule.match({ type: 'DIY_BUY', subType: null })).toBe(false);
+      });
+    });
+
+    describe('DEPOSIT transaction processing with frequency', () => {
+      it('should process DEPOSIT with MONTHLY frequency correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'deposit-monthly-123',
+          type: 'DEPOSIT',
+          subType: 'EFT_RECURRING',
+          frequency: 'MONTHLY',
+          amount: 500,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_DEPOSIT_TRANSACTION_RULES.find((r) => r.id === 'deposit');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Investment');
+        expect(result.merchant).toBe('Monthly Deposit (CAD)');
+        expect(result.originalStatement).toBe('DEPOSIT:EFT_RECURRING:MONTHLY');
+        expect(result.notes).toBe('Monthly deposit of CAD$500');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should process DEPOSIT with WEEKLY frequency correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'deposit-weekly-123',
+          type: 'DEPOSIT',
+          subType: 'EFT_RECURRING',
+          frequency: 'WEEKLY',
+          amount: 100,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_DEPOSIT_TRANSACTION_RULES.find((r) => r.id === 'deposit');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Investment');
+        expect(result.merchant).toBe('Weekly Deposit (CAD)');
+        expect(result.originalStatement).toBe('DEPOSIT:EFT_RECURRING:WEEKLY');
+        expect(result.notes).toBe('Weekly deposit of CAD$100');
+      });
+
+      it('should process DEPOSIT with BIWEEKLY frequency correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'deposit-biweekly-123',
+          type: 'DEPOSIT',
+          subType: 'EFT_RECURRING',
+          frequency: 'BIWEEKLY',
+          amount: 250,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_DEPOSIT_TRANSACTION_RULES.find((r) => r.id === 'deposit');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Biweekly Deposit (CAD)');
+        expect(result.originalStatement).toBe('DEPOSIT:EFT_RECURRING:BIWEEKLY');
+        expect(result.notes).toBe('Biweekly deposit of CAD$250');
+      });
+
+      it('should handle USD currency', () => {
+        const transaction = {
+          externalCanonicalId: 'deposit-usd-123',
+          type: 'DEPOSIT',
+          subType: 'EFT_RECURRING',
+          frequency: 'MONTHLY',
+          amount: 1000,
+          currency: 'USD',
+        };
+
+        const rule = INVESTMENT_DEPOSIT_TRANSACTION_RULES.find((r) => r.id === 'deposit');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Monthly Deposit (USD)');
+        expect(result.notes).toBe('Monthly deposit of USD$1000');
+      });
+    });
+
+    describe('DEPOSIT transaction processing without frequency', () => {
+      it('should process DEPOSIT without frequency (no leading whitespace)', () => {
+        const transaction = {
+          externalCanonicalId: 'deposit-no-freq-123',
+          type: 'DEPOSIT',
+          subType: 'EFT',
+          frequency: null,
+          amount: 500,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_DEPOSIT_TRANSACTION_RULES.find((r) => r.id === 'deposit');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Investment');
+        expect(result.merchant).toBe('Deposit (CAD)');
+        expect(result.originalStatement).toBe('DEPOSIT:EFT:');
+        expect(result.notes).toBe('Deposit of CAD$500');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should process DEPOSIT with empty string frequency (no leading whitespace)', () => {
+        const transaction = {
+          externalCanonicalId: 'deposit-empty-freq',
+          type: 'DEPOSIT',
+          subType: 'EFT',
+          frequency: '',
+          amount: 300,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_DEPOSIT_TRANSACTION_RULES.find((r) => r.id === 'deposit');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Deposit (CAD)');
+        expect(result.notes).toBe('Deposit of CAD$300');
+        // Note: merchant should NOT start with a space
+        expect(result.merchant.startsWith(' ')).toBe(false);
+        // Note: notes should NOT start with a space
+        expect(result.notes.startsWith(' ')).toBe(false);
+      });
+
+      it('should process DEPOSIT with undefined frequency (no leading whitespace)', () => {
+        const transaction = {
+          externalCanonicalId: 'deposit-undef-freq',
+          type: 'DEPOSIT',
+          subType: 'EFT',
+          amount: 400,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_DEPOSIT_TRANSACTION_RULES.find((r) => r.id === 'deposit');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Deposit (CAD)');
+        expect(result.notes).toBe('Deposit of CAD$400');
+      });
+    });
+
+    describe('DEPOSIT edge cases', () => {
+      it('should handle missing currency with CAD fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'deposit-no-currency',
+          type: 'DEPOSIT',
+          subType: 'EFT_RECURRING',
+          frequency: 'MONTHLY',
+          amount: 500,
+          currency: null,
+        };
+
+        const rule = INVESTMENT_DEPOSIT_TRANSACTION_RULES.find((r) => r.id === 'deposit');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Monthly Deposit (CAD)');
+        expect(result.notes).toBe('Monthly deposit of CAD$500');
+      });
+
+      it('should handle undefined currency with CAD fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'deposit-undef-currency',
+          type: 'DEPOSIT',
+          subType: 'EFT',
+          frequency: 'WEEKLY',
+          amount: 200,
+        };
+
+        const rule = INVESTMENT_DEPOSIT_TRANSACTION_RULES.find((r) => r.id === 'deposit');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Weekly Deposit (CAD)');
+        expect(result.notes).toBe('Weekly deposit of CAD$200');
+      });
+
+      it('should handle missing amount with 0 fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'deposit-no-amount',
+          type: 'DEPOSIT',
+          subType: 'EFT_RECURRING',
+          frequency: 'MONTHLY',
+          amount: null,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_DEPOSIT_TRANSACTION_RULES.find((r) => r.id === 'deposit');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('Monthly deposit of CAD$0');
+      });
+
+      it('should handle undefined amount with 0 fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'deposit-undef-amount',
+          type: 'DEPOSIT',
+          subType: 'EFT',
+          frequency: 'BIWEEKLY',
+          currency: 'USD',
+        };
+
+        const rule = INVESTMENT_DEPOSIT_TRANSACTION_RULES.find((r) => r.id === 'deposit');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('Biweekly deposit of USD$0');
+      });
+
+      it('should handle amount of 0 correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'deposit-zero-amount',
+          type: 'DEPOSIT',
+          subType: 'EFT_RECURRING',
+          frequency: 'MONTHLY',
+          amount: 0,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_DEPOSIT_TRANSACTION_RULES.find((r) => r.id === 'deposit');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('Monthly deposit of CAD$0');
+      });
+
+      it('should handle missing subType with empty string', () => {
+        const transaction = {
+          externalCanonicalId: 'deposit-no-subtype',
+          type: 'DEPOSIT',
+          subType: null,
+          frequency: 'MONTHLY',
+          amount: 500,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_DEPOSIT_TRANSACTION_RULES.find((r) => r.id === 'deposit');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.originalStatement).toBe('DEPOSIT::MONTHLY');
+      });
+
+      it('should handle all fields missing with appropriate fallbacks', () => {
+        const transaction = {
+          externalCanonicalId: 'deposit-all-missing',
+          type: 'DEPOSIT',
+        };
+
+        const rule = INVESTMENT_DEPOSIT_TRANSACTION_RULES.find((r) => r.id === 'deposit');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Investment');
+        expect(result.merchant).toBe('Deposit (CAD)');
+        expect(result.originalStatement).toBe('DEPOSIT::');
+        expect(result.notes).toBe('Deposit of CAD$0');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should handle decimal amounts correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'deposit-decimal',
+          type: 'DEPOSIT',
+          subType: 'EFT_RECURRING',
+          frequency: 'MONTHLY',
+          amount: 123.45,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_DEPOSIT_TRANSACTION_RULES.find((r) => r.id === 'deposit');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('Monthly deposit of CAD$123.45');
+      });
+    });
+
+    describe('DEPOSIT rule structure', () => {
+      it('should have required properties', () => {
+        const rule = INVESTMENT_DEPOSIT_TRANSACTION_RULES.find((r) => r.id === 'deposit');
+
+        expect(rule).toHaveProperty('id');
+        expect(rule).toHaveProperty('description');
+        expect(rule).toHaveProperty('match');
+        expect(rule).toHaveProperty('process');
+        expect(typeof rule.id).toBe('string');
+        expect(typeof rule.description).toBe('string');
+        expect(typeof rule.match).toBe('function');
+        expect(typeof rule.process).toBe('function');
+      });
+
+      it('should not set needsCategoryMapping flag (auto-categorized)', () => {
+        const transaction = {
+          externalCanonicalId: 'deposit-no-mapping',
+          type: 'DEPOSIT',
+          subType: 'EFT_RECURRING',
+          frequency: 'MONTHLY',
+          amount: 500,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_DEPOSIT_TRANSACTION_RULES.find((r) => r.id === 'deposit');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.needsCategoryMapping).toBeUndefined();
+      });
+
+      it('should have empty technicalDetails', () => {
+        const transaction = {
+          externalCanonicalId: 'deposit-tech-details',
+          type: 'DEPOSIT',
+          subType: 'EFT_RECURRING',
+          frequency: 'MONTHLY',
+          amount: 500,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_DEPOSIT_TRANSACTION_RULES.find((r) => r.id === 'deposit');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.technicalDetails).toBe('');
       });
     });
   });

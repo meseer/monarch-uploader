@@ -974,6 +974,52 @@ export const CASH_TRANSACTION_RULES = [
 ];
 
 /**
+ * Investment account deposit transaction rules
+ * These rules handle deposit transactions in investment accounts
+ *
+ * Transaction types supported:
+ * - DEPOSIT: Deposits into investment accounts (one-time or recurring)
+ */
+export const INVESTMENT_DEPOSIT_TRANSACTION_RULES = [
+  {
+    id: 'deposit',
+    description: 'Deposit transactions for investment accounts',
+    match: (tx) => tx.type === 'DEPOSIT',
+    /**
+     * Process DEPOSIT transactions for investment accounts
+     * These are deposits into investment accounts (can be one-time or recurring)
+     *
+     * @param {Object} tx - Raw transaction
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx) => {
+      const frequency = tx.frequency || '';
+      const currency = tx.currency || 'CAD';
+      const amount = tx.amount ?? 0;
+      const subType = tx.subType || '';
+
+      // Build frequency prefix for merchant and notes
+      const frequencyPrefix = frequency ? `${toSentenceCase(frequency)} ` : '';
+
+      // Merchant: "sentenceCase({frequency}) Deposit ($currency)" or "Deposit ($currency)" if no frequency
+      const merchant = `${frequencyPrefix}Deposit (${currency})`;
+
+      // Notes: "sentenceCase({frequency}) deposit of {currency}${amount}" or "Deposit of {currency}${amount}" if no frequency
+      const notesPrefix = frequency ? `${toSentenceCase(frequency)} deposit` : 'Deposit';
+      const notes = `${notesPrefix} of ${currency}$${amount}`;
+
+      return {
+        category: 'Investment',
+        merchant,
+        originalStatement: formatOriginalStatement(tx.type, subType, frequency),
+        notes,
+        technicalDetails: '',
+      };
+    },
+  },
+];
+
+/**
  * Investment account dividend transaction rules
  * These rules handle dividend transactions in investment accounts
  *
@@ -1188,6 +1234,7 @@ export function hasRuleForTransaction(type, subType) {
 
 export default {
   CASH_TRANSACTION_RULES,
+  INVESTMENT_DEPOSIT_TRANSACTION_RULES,
   applyTransactionRule,
   hasRuleForTransaction,
   getETransferDisplayName,
