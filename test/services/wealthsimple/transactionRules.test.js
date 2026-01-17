@@ -8,6 +8,7 @@ import {
   INVESTMENT_DEPOSIT_TRANSACTION_RULES,
   INVESTMENT_INTEREST_TRANSACTION_RULES,
   INVESTMENT_INSTITUTIONAL_TRANSFER_RULES,
+  INVESTMENT_BUY_SELL_TRANSACTION_RULES,
   applyTransactionRule,
   hasRuleForTransaction,
   extractInteracMemo,
@@ -18,6 +19,8 @@ import {
   extractInternalTransferAnnotation,
   formatAftOriginalStatement,
   getTransactionId,
+  formatPrettyDate,
+  formatOptionsOrderNotes,
 } from '../../../src/services/wealthsimple/transactionRules';
 import { STORAGE } from '../../../src/core/config';
 
@@ -5136,6 +5139,369 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
       it('should have exactly 2 rules', () => {
         expect(INVESTMENT_INTEREST_TRANSACTION_RULES.length).toBe(2);
+      });
+    });
+  });
+
+  describe('formatPrettyDate', () => {
+    it('should format date from YYYY-MM-DD to "Mon DD, YYYY" format', () => {
+      expect(formatPrettyDate('2026-01-16')).toBe('Jan 16, 2026');
+    });
+
+    it('should format various months correctly', () => {
+      expect(formatPrettyDate('2026-06-15')).toBe('Jun 15, 2026');
+      expect(formatPrettyDate('2026-12-25')).toBe('Dec 25, 2026');
+      expect(formatPrettyDate('2026-03-01')).toBe('Mar 1, 2026');
+    });
+
+    it('should return empty string for null input', () => {
+      expect(formatPrettyDate(null)).toBe('');
+    });
+
+    it('should return empty string for undefined input', () => {
+      expect(formatPrettyDate(undefined)).toBe('');
+    });
+
+    it('should return empty string for empty string input', () => {
+      expect(formatPrettyDate('')).toBe('');
+    });
+
+    it('should return empty string for invalid date format', () => {
+      expect(formatPrettyDate('invalid')).toBe('');
+      expect(formatPrettyDate('2026/01/16')).toBe('');
+      expect(formatPrettyDate('not-a-date')).toBe('');
+    });
+  });
+
+  describe('formatOptionsOrderNotes', () => {
+    it('should format OPTIONS_BUY LIMIT_ORDER notes correctly', () => {
+      const activity = {
+        currency: 'CAD',
+        assetSymbol: 'AAPL',
+        assetQuantity: 5,
+        strikePrice: 200,
+        contractType: 'CALL',
+        expiryDate: '2026-01-16',
+        amount: 1250,
+        subType: 'LIMIT_ORDER',
+      };
+      const extendedOrder = {
+        optionMultiplier: 100,
+        filledQuantity: 5,
+        averageFilledPrice: 2.45,
+        filledTotalFee: 4.95,
+        timeInForce: 'GTC',
+        limitPrice: 2.50,
+      };
+
+      const result = formatOptionsOrderNotes(activity, extendedOrder, false);
+
+      expect(result).toBe('Limit Buy 5 AAPL 200 CALL contracts (100 share lots at CAD$2.5 per share) with expiry date 2026-01-16 (Gtc order)\nFilled 5 contracts at CAD$2.45, fees: CAD$4.95\nTotal CAD$1250');
+    });
+
+    it('should format OPTIONS_SELL LIMIT_ORDER notes correctly', () => {
+      const activity = {
+        currency: 'CAD',
+        assetSymbol: 'AAPL',
+        assetQuantity: 10,
+        strikePrice: 150,
+        contractType: 'PUT',
+        expiryDate: '2026-02-20',
+        amount: 2500,
+        subType: 'LIMIT_ORDER',
+      };
+      const extendedOrder = {
+        optionMultiplier: 100,
+        filledQuantity: 10,
+        averageFilledPrice: 2.50,
+        filledTotalFee: 9.95,
+        timeInForce: 'DAY',
+        limitPrice: 2.55,
+      };
+
+      const result = formatOptionsOrderNotes(activity, extendedOrder, true);
+
+      expect(result).toBe('Limit Sell 10 AAPL 150 PUT contracts (100 share lots at CAD$2.55 per share) with expiry date 2026-02-20 (Day order)\nFilled 10 contracts at CAD$2.5, fees: CAD$9.95\nTotal CAD$2500');
+    });
+
+    it('should format OPTIONS_BUY MARKET_ORDER notes correctly', () => {
+      const activity = {
+        currency: 'USD',
+        assetSymbol: 'MSFT',
+        assetQuantity: 2,
+        strikePrice: 400,
+        contractType: 'CALL',
+        expiryDate: '2026-03-21',
+        amount: 500,
+        subType: 'MARKET_ORDER',
+      };
+      const extendedOrder = {
+        optionMultiplier: 100,
+        filledQuantity: 2,
+        averageFilledPrice: 2.50,
+        filledTotalFee: 1.95,
+        timeInForce: 'GTC',
+      };
+
+      const result = formatOptionsOrderNotes(activity, extendedOrder, false);
+
+      expect(result).toBe('Market order: Buy 2 MSFT 400 CALL contracts (100 share lots) with expiry date 2026-03-21 (Gtc order)\nFilled 2 contracts at USD$2.5, fees: USD$1.95\nTotal USD$500');
+    });
+
+    it('should format OPTIONS_SELL MARKET_ORDER notes correctly', () => {
+      const activity = {
+        currency: 'USD',
+        assetSymbol: 'TSLA',
+        assetQuantity: 1,
+        strikePrice: 250,
+        contractType: 'PUT',
+        expiryDate: '2026-04-17',
+        amount: 150,
+        subType: 'MARKET_ORDER',
+      };
+      const extendedOrder = {
+        optionMultiplier: 100,
+        filledQuantity: 1,
+        averageFilledPrice: 1.50,
+        filledTotalFee: 0.95,
+        timeInForce: 'DAY',
+      };
+
+      const result = formatOptionsOrderNotes(activity, extendedOrder, true);
+
+      expect(result).toBe('Market order: Sell 1 TSLA 250 PUT contracts (100 share lots) with expiry date 2026-04-17 (Day order)\nFilled 1 contracts at USD$1.5, fees: USD$0.95\nTotal USD$150');
+    });
+
+    it('should return minimal notes when extendedOrder is null', () => {
+      const activity = {
+        currency: 'CAD',
+        assetSymbol: 'AAPL',
+        amount: 500,
+        subType: 'LIMIT_ORDER',
+      };
+
+      const result = formatOptionsOrderNotes(activity, null, false);
+
+      expect(result).toBe('Limit order AAPL\nTotal CAD$500');
+    });
+
+    it('should return empty string for null activity', () => {
+      expect(formatOptionsOrderNotes(null, null, false)).toBe('');
+    });
+
+    it('should handle missing fields with defaults', () => {
+      const activity = {
+        type: 'OPTIONS_BUY',
+        subType: 'LIMIT_ORDER',
+      };
+      const extendedOrder = {
+        optionMultiplier: 100,
+      };
+
+      const result = formatOptionsOrderNotes(activity, extendedOrder, false);
+
+      expect(result).toContain('Limit Buy');
+      expect(result).toContain('N/A');
+      expect(result).toContain('CAD$');
+    });
+  });
+
+  describe('INVESTMENT_BUY_SELL_TRANSACTION_RULES - OPTIONS', () => {
+    describe('OPTIONS_BUY rule matching', () => {
+      it('should match transactions with type OPTIONS_BUY', () => {
+        const transaction = {
+          externalCanonicalId: 'order-123',
+          type: 'OPTIONS_BUY',
+          subType: 'LIMIT_ORDER',
+          assetSymbol: 'AAPL',
+          strikePrice: 200,
+          contractType: 'CALL',
+          expiryDate: '2026-01-16',
+        };
+
+        const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'options-buy');
+        expect(rule.match(transaction)).toBe(true);
+      });
+
+      it('should not match transactions with different type', () => {
+        const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'options-buy');
+
+        expect(rule.match({ type: 'DIY_BUY', subType: 'LIMIT_ORDER' })).toBe(false);
+        expect(rule.match({ type: 'OPTIONS_SELL', subType: 'LIMIT_ORDER' })).toBe(false);
+        expect(rule.match({ type: 'MANAGED_BUY', subType: null })).toBe(false);
+      });
+    });
+
+    describe('OPTIONS_BUY transaction processing', () => {
+      it('should process OPTIONS_BUY with all fields correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'order-buy-123',
+          type: 'OPTIONS_BUY',
+          subType: 'LIMIT_ORDER',
+          assetSymbol: 'AAPL',
+          strikePrice: 200,
+          contractType: 'CALL',
+          expiryDate: '2026-01-16',
+          currency: 'CAD',
+          assetQuantity: 5,
+          amount: 1250,
+        };
+
+        const extendedOrderMap = new Map();
+        extendedOrderMap.set('order-buy-123', {
+          optionMultiplier: 100,
+          filledQuantity: 5,
+          averageFilledPrice: 2.45,
+          filledTotalFee: 4.95,
+          timeInForce: 'GTC',
+          limitPrice: 2.50,
+        });
+
+        const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'options-buy');
+        const result = rule.process(transaction, extendedOrderMap);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Buy');
+        expect(result.merchant).toBe('AAPL Jan 16, 2026 CAD$200 Call');
+        expect(result.originalStatement).toBe('OPTIONS_BUY:LIMIT_ORDER:AAPL:2026-01-16:200:CALL');
+        expect(result.notes).toContain('Limit Buy');
+        expect(result.notes).toContain('5 AAPL');
+      });
+
+      it('should handle missing extended order data', () => {
+        const transaction = {
+          externalCanonicalId: 'order-buy-no-ext',
+          type: 'OPTIONS_BUY',
+          subType: 'MARKET_ORDER',
+          assetSymbol: 'MSFT',
+          strikePrice: 400,
+          contractType: 'PUT',
+          expiryDate: '2026-06-20',
+          currency: 'USD',
+        };
+
+        const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'options-buy');
+        const result = rule.process(transaction, new Map());
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Buy');
+        expect(result.merchant).toBe('MSFT Jun 20, 2026 USD$400 Put');
+        expect(result.originalStatement).toBe('OPTIONS_BUY:MARKET_ORDER:MSFT:2026-06-20:400:PUT');
+      });
+
+      it('should handle missing fields with defaults', () => {
+        const transaction = {
+          externalCanonicalId: 'order-buy-minimal',
+          type: 'OPTIONS_BUY',
+          subType: 'LIMIT_ORDER',
+        };
+
+        const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'options-buy');
+        const result = rule.process(transaction, null);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Buy');
+        expect(result.merchant).toContain('Unknown');
+        expect(result.merchant).toContain('CAD$0');
+      });
+    });
+
+    describe('OPTIONS_SELL rule matching', () => {
+      it('should match transactions with type OPTIONS_SELL', () => {
+        const transaction = {
+          externalCanonicalId: 'order-456',
+          type: 'OPTIONS_SELL',
+          subType: 'LIMIT_ORDER',
+          assetSymbol: 'AAPL',
+          strikePrice: 200,
+          contractType: 'CALL',
+          expiryDate: '2026-01-16',
+        };
+
+        const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'options-sell');
+        expect(rule.match(transaction)).toBe(true);
+      });
+
+      it('should not match transactions with different type', () => {
+        const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'options-sell');
+
+        expect(rule.match({ type: 'DIY_SELL', subType: 'LIMIT_ORDER' })).toBe(false);
+        expect(rule.match({ type: 'OPTIONS_BUY', subType: 'LIMIT_ORDER' })).toBe(false);
+        expect(rule.match({ type: 'MANAGED_SELL', subType: null })).toBe(false);
+      });
+    });
+
+    describe('OPTIONS_SELL transaction processing', () => {
+      it('should process OPTIONS_SELL with all fields correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'order-sell-123',
+          type: 'OPTIONS_SELL',
+          subType: 'LIMIT_ORDER',
+          assetSymbol: 'TSLA',
+          strikePrice: 250,
+          contractType: 'PUT',
+          expiryDate: '2026-03-21',
+          currency: 'USD',
+          assetQuantity: 10,
+          amount: 2500,
+        };
+
+        const extendedOrderMap = new Map();
+        extendedOrderMap.set('order-sell-123', {
+          optionMultiplier: 100,
+          filledQuantity: 10,
+          averageFilledPrice: 2.50,
+          filledTotalFee: 9.95,
+          timeInForce: 'DAY',
+          limitPrice: 2.55,
+        });
+
+        const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'options-sell');
+        const result = rule.process(transaction, extendedOrderMap);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Sell');
+        expect(result.merchant).toBe('TSLA Mar 21, 2026 USD$250 Put');
+        expect(result.originalStatement).toBe('OPTIONS_SELL:LIMIT_ORDER:TSLA:2026-03-21:250:PUT');
+        expect(result.notes).toContain('Limit Sell');
+        expect(result.notes).toContain('10 TSLA');
+      });
+
+      it('should handle missing extended order data', () => {
+        const transaction = {
+          externalCanonicalId: 'order-sell-no-ext',
+          type: 'OPTIONS_SELL',
+          subType: 'MARKET_ORDER',
+          assetSymbol: 'GOOGL',
+          strikePrice: 150,
+          contractType: 'CALL',
+          expiryDate: '2026-12-18',
+          currency: 'USD',
+        };
+
+        const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'options-sell');
+        const result = rule.process(transaction, new Map());
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Sell');
+        expect(result.merchant).toBe('GOOGL Dec 18, 2026 USD$150 Call');
+        expect(result.originalStatement).toBe('OPTIONS_SELL:MARKET_ORDER:GOOGL:2026-12-18:150:CALL');
+      });
+
+      it('should handle missing fields with defaults', () => {
+        const transaction = {
+          externalCanonicalId: 'order-sell-minimal',
+          type: 'OPTIONS_SELL',
+          subType: 'LIMIT_ORDER',
+        };
+
+        const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'options-sell');
+        const result = rule.process(transaction, null);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Sell');
+        expect(result.merchant).toContain('Unknown');
+        expect(result.merchant).toContain('CAD$0');
       });
     });
   });

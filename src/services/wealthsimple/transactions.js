@@ -1181,7 +1181,7 @@ const INVESTMENT_TRANSACTION_RULES = [
  * @returns {boolean} True if buy/sell transaction type
  */
 function isInvestmentBuySellTransaction(transaction) {
-  const buySellTypes = ['MANAGED_BUY', 'DIY_BUY', 'MANAGED_SELL', 'DIY_SELL'];
+  const buySellTypes = ['MANAGED_BUY', 'DIY_BUY', 'MANAGED_SELL', 'DIY_SELL', 'OPTIONS_BUY', 'OPTIONS_SELL'];
   return buySellTypes.includes(transaction.type);
 }
 

@@ -15,6 +15,30 @@ import { STORAGE } from '../../core/config';
 import { applyMerchantMapping } from '../../mappers/merchant';
 
 /**
+ * Format a date string from "2026-01-16" to "Jan 16, 2026"
+ * @param {string} dateString - Date in YYYY-MM-DD format
+ * @returns {string} Formatted date (e.g., "Jan 16, 2026") or empty string if invalid
+ */
+export function formatPrettyDate(dateString) {
+  if (!dateString) return '';
+
+  try {
+    // Parse as local date (avoid timezone issues by appending time)
+    const date = new Date(`${dateString}T00:00:00`);
+
+    if (isNaN(date.getTime())) {
+      debugLog(`Invalid date string for formatPrettyDate: ${dateString}`);
+      return '';
+    }
+
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch (error) {
+    debugLog(`Error formatting date in formatPrettyDate: ${dateString}`, error);
+    return '';
+  }
+}
+
+/**
  * Convert a string to sentence case (capitalize first letter, lowercase rest)
  * Handles UPPER_CASE_STRINGS by replacing underscores with spaces
  * @param {string} str - Input string (e.g., "MARKET_ORDER", "DIY_BUY")
@@ -66,6 +90,61 @@ export function formatInvestmentOrderNotes(activity, extendedOrder) {
   // Format for MARKET_ORDER, RECURRING_ORDER, FRACTIONAL_ORDER:
   // "Market Order Buy 10 VFV\nFilled 10 @ CAD$45.23, fees: CAD$0.00\nTotal CAD$452.30"
   return `${toSentenceCase(subType)} ${orderType} ${submittedQuantity} ${symbol}\nFilled ${filledQuantity} @ ${currency}$${averageFilledPrice}, fees: ${currency}$${filledTotalFee}\nTotal ${currency}$${amount}`;
+}
+
+/**
+ * Format options order notes from activity and extended order data
+ * Handles both OPTIONS_BUY and OPTIONS_SELL transactions with LIMIT_ORDER and other subtypes
+ *
+ * @param {Object} activity - Raw transaction from Wealthsimple API
+ * @param {Object|null} extendedOrder - Extended order details from FetchSoOrdersExtendedOrder
+ * @param {boolean} isSell - True for OPTIONS_SELL, false for OPTIONS_BUY
+ * @returns {string} Formatted notes string
+ */
+export function formatOptionsOrderNotes(activity, extendedOrder, isSell) {
+  if (!activity) return '';
+
+  const currency = activity.currency || 'CAD';
+  const assetSymbol = activity.assetSymbol || 'N/A';
+  const assetQuantity = activity.assetQuantity ?? 0;
+  const strikePrice = activity.strikePrice ?? 0;
+  const contractType = activity.contractType || '';
+  const expiryDate = activity.expiryDate || '';
+  const amount = activity.amount ?? 0;
+  const subType = activity.subType || '';
+
+  // Extended order data for fill details
+  const optionMultiplier = extendedOrder?.optionMultiplier ?? 100;
+  const filledQuantity = extendedOrder?.filledQuantity ?? 0;
+  const averageFilledPrice = extendedOrder?.averageFilledPrice ?? 0;
+  const filledTotalFee = extendedOrder?.filledTotalFee ?? 0;
+  const timeInForce = extendedOrder?.timeInForce || '';
+  const limitPrice = extendedOrder?.limitPrice ?? 0;
+
+  const action = isSell ? 'Sell' : 'Buy';
+  const timeInForceDisplay = timeInForce ? `${toSentenceCase(timeInForce)} order` : 'order';
+
+  // If no extended order data, return minimal notes
+  if (!extendedOrder) {
+    return `${toSentenceCase(subType)} ${assetSymbol}\nTotal ${currency}$${amount}`;
+  }
+
+  // Determine if this is a limit order
+  const isLimitOrder = subType === 'LIMIT_ORDER';
+
+  if (isLimitOrder) {
+    // LIMIT_ORDER format:
+    // "Limit Sell 5 AAPL 200.00 CALL contracts (100 share lots at CAD$2.50 per share) with expiry date 2026-01-16 (Good til cancelled order)
+    // Filled 5 contracts at CAD$2.45, fees: CAD$4.95
+    // Total CAD$1220.05"
+    return `Limit ${action} ${assetQuantity} ${assetSymbol} ${strikePrice} ${contractType} contracts (${optionMultiplier} share lots at ${currency}$${limitPrice} per share) with expiry date ${expiryDate} (${timeInForceDisplay})\nFilled ${filledQuantity} contracts at ${currency}$${averageFilledPrice}, fees: ${currency}$${filledTotalFee}\nTotal ${currency}$${amount}`;
+  }
+
+  // Non-LIMIT_ORDER format (e.g., MARKET_ORDER):
+  // "Market order: Sell 5 AAPL 200.00 CALL contracts (100 share lots) with expiry date 2026-01-16 (Good til cancelled order)
+  // Filled 5 contracts at CAD$2.45, fees: CAD$4.95
+  // Total CAD$1220.05"
+  return `${toSentenceCase(subType)}: ${action} ${assetQuantity} ${assetSymbol} ${strikePrice} ${contractType} contracts (${optionMultiplier} share lots) with expiry date ${expiryDate} (${timeInForceDisplay})\nFilled ${filledQuantity} contracts at ${currency}$${averageFilledPrice}, fees: ${currency}$${filledTotalFee}\nTotal ${currency}$${amount}`;
 }
 
 /**
@@ -1292,6 +1371,96 @@ export const INVESTMENT_BUY_SELL_TRANSACTION_RULES = [
         merchant: symbol,
         originalStatement: formatOriginalStatement(tx.type, tx.subType, symbol),
         notes: formatInvestmentOrderNotes(tx, extendedOrder),
+        technicalDetails: '',
+      };
+    },
+  },
+  {
+    id: 'options-buy',
+    description: 'Options buy transactions',
+    match: (tx) => tx.type === 'OPTIONS_BUY',
+    /**
+     * Process OPTIONS_BUY transactions
+     * These are options contract purchases
+     *
+     * Uses unifiedStatus for pending/completed status (same as DIY_BUY)
+     *
+     * Merchant format: "{assetSymbol} {prettyDate(expiryDate)} {currency}${strikePrice} {sentenceCase(contractType)}"
+     * Example: "AAPL Jan 16, 2026 CAD$200.00 Call"
+     *
+     * Original statement format: "{type}:{subType}:{assetSymbol}:{expiryDate}:{strikePrice}:{contractType}"
+     * Example: "OPTIONS_BUY:LIMIT_ORDER:AAPL:2026-01-16:200.00:CALL"
+     *
+     * @param {Object} tx - Raw transaction
+     * @param {Map<string, Object>} enrichmentMap - Map containing extended order data
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx, enrichmentMap) => {
+      const assetSymbol = tx.assetSymbol || 'Unknown';
+      const expiryDate = tx.expiryDate || '';
+      const strikePrice = tx.strikePrice ?? 0;
+      const contractType = tx.contractType || '';
+      const currency = tx.currency || 'CAD';
+      const extendedOrder = enrichmentMap?.get(tx.externalCanonicalId) || null;
+
+      // Format merchant: "{assetSymbol} {prettyDate} {currency}${strikePrice} {sentenceCase(contractType)}"
+      const prettyExpiryDate = formatPrettyDate(expiryDate);
+      const contractTypeDisplay = toSentenceCase(contractType);
+      const merchant = `${assetSymbol} ${prettyExpiryDate} ${currency}$${strikePrice} ${contractTypeDisplay}`;
+
+      // Format original statement: "{type}:{subType}:{assetSymbol}:{expiryDate}:{strikePrice}:{contractType}"
+      const statementParts = `${assetSymbol}:${expiryDate}:${strikePrice}:${contractType}`;
+
+      return {
+        category: 'Buy',
+        merchant,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, statementParts),
+        notes: formatOptionsOrderNotes(tx, extendedOrder, false),
+        technicalDetails: '',
+      };
+    },
+  },
+  {
+    id: 'options-sell',
+    description: 'Options sell transactions',
+    match: (tx) => tx.type === 'OPTIONS_SELL',
+    /**
+     * Process OPTIONS_SELL transactions
+     * These are options contract sales
+     *
+     * Uses unifiedStatus for pending/completed status (same as DIY_SELL)
+     *
+     * Merchant format: "{assetSymbol} {prettyDate(expiryDate)} {currency}${strikePrice} {sentenceCase(contractType)}"
+     * Example: "AAPL Jan 16, 2026 CAD$200.00 Call"
+     *
+     * Original statement format: "{type}:{subType}:{assetSymbol}:{expiryDate}:{strikePrice}:{contractType}"
+     * Example: "OPTIONS_SELL:LIMIT_ORDER:AAPL:2026-01-16:200.00:CALL"
+     *
+     * @param {Object} tx - Raw transaction
+     * @param {Map<string, Object>} enrichmentMap - Map containing extended order data
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx, enrichmentMap) => {
+      const assetSymbol = tx.assetSymbol || 'Unknown';
+      const expiryDate = tx.expiryDate || '';
+      const strikePrice = tx.strikePrice ?? 0;
+      const contractType = tx.contractType || '';
+      const currency = tx.currency || 'CAD';
+      const extendedOrder = enrichmentMap?.get(tx.externalCanonicalId) || null;
+
+      // Format merchant: "{assetSymbol} {prettyDate} {currency}${strikePrice} {sentenceCase(contractType)}"
+      const prettyExpiryDate = formatPrettyDate(expiryDate);
+      const contractTypeDisplay = toSentenceCase(contractType);
+      const merchant = `${assetSymbol} ${prettyExpiryDate} ${currency}$${strikePrice} ${contractTypeDisplay}`;
+
+      // Format original statement: "{type}:{subType}:{assetSymbol}:{expiryDate}:{strikePrice}:{contractType}"
+      const statementParts = `${assetSymbol}:${expiryDate}:${strikePrice}:${contractType}`;
+
+      return {
+        category: 'Sell',
+        merchant,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, statementParts),
+        notes: formatOptionsOrderNotes(tx, extendedOrder, true),
         technicalDetails: '',
       };
     },
