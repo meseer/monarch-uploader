@@ -1071,6 +1071,66 @@ export const INVESTMENT_DIVIDEND_TRANSACTION_RULES = [
 ];
 
 /**
+ * Investment account interest transaction rules
+ * These rules handle interest transactions in investment accounts
+ *
+ * Transaction types supported:
+ * - INTEREST: Interest payments in investment accounts
+ *   - subType FPL_INTEREST: Fully Paid Lending interest (stock lending earnings)
+ *   - Other subTypes: Generic interest transactions
+ */
+export const INVESTMENT_INTEREST_TRANSACTION_RULES = [
+  {
+    id: 'fpl-interest',
+    description: 'Fully Paid Lending interest (stock lending earnings)',
+    match: (tx) => tx.type === 'INTEREST' && tx.subType === 'FPL_INTEREST',
+    /**
+     * Process INTEREST/FPL_INTEREST transactions
+     * These are earnings from Wealthsimple's Fully Paid Securities Lending program
+     *
+     * @param {Object} tx - Raw transaction
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx) => {
+      const currency = tx.currency || 'CAD';
+
+      return {
+        category: 'Stock Lending',
+        merchant: `Stock Lending Earnings (${currency})`,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, currency),
+        notes: '',
+        technicalDetails: '',
+      };
+    },
+  },
+  {
+    id: 'interest',
+    description: 'Interest transactions for investment accounts (generic)',
+    match: (tx) => tx.type === 'INTEREST',
+    /**
+     * Process generic INTEREST transactions (fallback for non-FPL subTypes)
+     * Handles various interest types like SAVINGS_INTEREST, PROMO_INTEREST, etc.
+     *
+     * @param {Object} tx - Raw transaction
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx) => {
+      const currency = tx.currency || 'CAD';
+      const subType = tx.subType || '';
+      const subTypeDisplay = subType ? toSentenceCase(subType) : 'Interest';
+
+      return {
+        category: 'Interest',
+        merchant: `${subTypeDisplay} (${currency})`,
+        originalStatement: formatOriginalStatement(tx.type, subType, currency),
+        notes: '',
+        technicalDetails: '',
+      };
+    },
+  },
+];
+
+/**
  * Investment account buy/sell transaction rules
  * These rules handle stock purchase and sale transactions in investment accounts
  *
@@ -1235,6 +1295,8 @@ export function hasRuleForTransaction(type, subType) {
 export default {
   CASH_TRANSACTION_RULES,
   INVESTMENT_DEPOSIT_TRANSACTION_RULES,
+  INVESTMENT_DIVIDEND_TRANSACTION_RULES,
+  INVESTMENT_INTEREST_TRANSACTION_RULES,
   applyTransactionRule,
   hasRuleForTransaction,
   getETransferDisplayName,
