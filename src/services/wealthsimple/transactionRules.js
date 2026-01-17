@@ -15,6 +15,60 @@ import { STORAGE } from '../../core/config';
 import { applyMerchantMapping } from '../../mappers/merchant';
 
 /**
+ * Convert a string to sentence case (capitalize first letter, lowercase rest)
+ * Handles UPPER_CASE_STRINGS by replacing underscores with spaces
+ * @param {string} str - Input string (e.g., "MARKET_ORDER", "DIY_BUY")
+ * @returns {string} Sentence case string (e.g., "Market order", "Diy buy")
+ */
+export function toSentenceCase(str) {
+  if (!str) return '';
+  // Replace underscores with spaces and convert to lowercase
+  const normalized = str.replace(/_/g, ' ').toLowerCase();
+  // Capitalize first letter
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+/**
+ * Format investment order notes from activity and extended order data
+ * @param {Object} activity - Raw transaction from Wealthsimple API
+ * @param {Object|null} extendedOrder - Extended order details from FetchSoOrdersExtendedOrder
+ * @returns {string} Formatted notes string
+ */
+export function formatInvestmentOrderNotes(activity, extendedOrder) {
+  if (!activity) return '';
+
+  const currency = activity.currency || 'CAD';
+  const symbol = activity.assetSymbol || 'N/A';
+  const amount = activity.amount ?? 0;
+  const subType = activity.subType || '';
+
+  // If no extended order data, return minimal notes
+  if (!extendedOrder) {
+    return `${toSentenceCase(subType)} ${symbol}\nTotal ${currency}$${amount}`;
+  }
+
+  const orderType = extendedOrder.orderType ? toSentenceCase(extendedOrder.orderType) : 'Order';
+  const submittedQuantity = extendedOrder.submittedQuantity ?? 0;
+  const filledQuantity = extendedOrder.filledQuantity ?? 0;
+  const averageFilledPrice = extendedOrder.averageFilledPrice ?? 0;
+  const filledTotalFee = extendedOrder.filledTotalFee ?? 0;
+
+  // Determine if this is a limit order
+  const isLimitOrder = subType === 'LIMIT_ORDER';
+
+  if (isLimitOrder) {
+    const limitPrice = extendedOrder.limitPrice ?? 0;
+    const timeInForce = extendedOrder.timeInForce || '';
+    // Format: "Limit Order Buy 100 VFV @ 44.50 Limit GTC\nFilled 100 @ CAD$44.25, fees: CAD$0.00\nTotal CAD$4425.00"
+    return `${toSentenceCase(subType)} ${orderType} ${submittedQuantity} ${symbol} @ ${limitPrice} Limit ${timeInForce}\nFilled ${filledQuantity} @ ${currency}$${averageFilledPrice}, fees: ${currency}$${filledTotalFee}\nTotal ${currency}$${amount}`;
+  }
+
+  // Format for MARKET_ORDER, RECURRING_ORDER, FRACTIONAL_ORDER:
+  // "Market Order Buy 10 VFV\nFilled 10 @ CAD$45.23, fees: CAD$0.00\nTotal CAD$452.30"
+  return `${toSentenceCase(subType)} ${orderType} ${submittedQuantity} ${symbol}\nFilled ${filledQuantity} @ ${currency}$${averageFilledPrice}, fees: ${currency}$${filledTotalFee}\nTotal ${currency}$${amount}`;
+}
+
+/**
  * Get a unique transaction ID for a Wealthsimple transaction
  * Uses the following priority:
  * 1. externalCanonicalId (most transactions have this)
@@ -918,6 +972,123 @@ export const CASH_TRANSACTION_RULES = [
   // - DIVIDEND
   // - FEE
   // - etc.
+];
+
+/**
+ * Investment account buy/sell transaction rules
+ * These rules handle stock purchase and sale transactions in investment accounts
+ *
+ * Transaction types supported:
+ * - MANAGED_BUY / MANAGED_SELL: Robo-advisor managed transactions
+ * - DIY_BUY / DIY_SELL: Self-directed trading transactions
+ *
+ * Status field handling:
+ * - These transactions use `unifiedStatus` field (not `status` which is null)
+ * - COMPLETED: Sync as settled
+ * - IN_PROGRESS, PENDING: Sync with Pending tag
+ * - EXPIRED, REJECTED, CANCELLED: Exclude from sync
+ */
+export const INVESTMENT_BUY_SELL_TRANSACTION_RULES = [
+  {
+    id: 'managed-buy',
+    description: 'Managed (robo-advisor) buy transactions',
+    match: (tx) => tx.type === 'MANAGED_BUY',
+    /**
+     * Process MANAGED_BUY transactions
+     * These are automatic purchases made by the robo-advisor
+     *
+     * @param {Object} tx - Raw transaction
+     * @param {Map<string, Object>} enrichmentMap - Map containing extended order data
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx, enrichmentMap) => {
+      const symbol = tx.assetSymbol || 'Unknown';
+      const extendedOrder = enrichmentMap?.get(tx.externalCanonicalId) || null;
+
+      return {
+        category: 'Buy',
+        merchant: symbol,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, symbol),
+        notes: formatInvestmentOrderNotes(tx, extendedOrder),
+        technicalDetails: '',
+      };
+    },
+  },
+  {
+    id: 'diy-buy',
+    description: 'DIY (self-directed) buy transactions',
+    match: (tx) => tx.type === 'DIY_BUY',
+    /**
+     * Process DIY_BUY transactions
+     * These are manual stock purchases made by the user
+     *
+     * @param {Object} tx - Raw transaction
+     * @param {Map<string, Object>} enrichmentMap - Map containing extended order data
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx, enrichmentMap) => {
+      const symbol = tx.assetSymbol || 'Unknown';
+      const extendedOrder = enrichmentMap?.get(tx.externalCanonicalId) || null;
+
+      return {
+        category: 'Buy',
+        merchant: symbol,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, symbol),
+        notes: formatInvestmentOrderNotes(tx, extendedOrder),
+        technicalDetails: '',
+      };
+    },
+  },
+  {
+    id: 'managed-sell',
+    description: 'Managed (robo-advisor) sell transactions',
+    match: (tx) => tx.type === 'MANAGED_SELL',
+    /**
+     * Process MANAGED_SELL transactions
+     * These are automatic sales made by the robo-advisor
+     *
+     * @param {Object} tx - Raw transaction
+     * @param {Map<string, Object>} enrichmentMap - Map containing extended order data
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx, enrichmentMap) => {
+      const symbol = tx.assetSymbol || 'Unknown';
+      const extendedOrder = enrichmentMap?.get(tx.externalCanonicalId) || null;
+
+      return {
+        category: 'Sell',
+        merchant: symbol,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, symbol),
+        notes: formatInvestmentOrderNotes(tx, extendedOrder),
+        technicalDetails: '',
+      };
+    },
+  },
+  {
+    id: 'diy-sell',
+    description: 'DIY (self-directed) sell transactions',
+    match: (tx) => tx.type === 'DIY_SELL',
+    /**
+     * Process DIY_SELL transactions
+     * These are manual stock sales made by the user
+     *
+     * @param {Object} tx - Raw transaction
+     * @param {Map<string, Object>} enrichmentMap - Map containing extended order data
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx, enrichmentMap) => {
+      const symbol = tx.assetSymbol || 'Unknown';
+      const extendedOrder = enrichmentMap?.get(tx.externalCanonicalId) || null;
+
+      return {
+        category: 'Sell',
+        merchant: symbol,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, symbol),
+        notes: formatInvestmentOrderNotes(tx, extendedOrder),
+        technicalDetails: '',
+      };
+    },
+  },
 ];
 
 /**

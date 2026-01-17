@@ -2240,23 +2240,20 @@ fragment CustodianAccount on CustodianAccount {
  * Fetch extended order details for a stock/options order
  * Used to get detailed fill information, fees, exchange rates, and timestamps for orders
  *
- * @param {string} branchId - Branch identifier (e.g., "TR" for Trade)
  * @param {string} externalId - Order ID (e.g., "order-3f73016b-5af3-4f03-ba22-9ef5e45fbb3d")
  * @returns {Promise<Object|null>} Extended order details or null if not found
  */
-export async function fetchExtendedOrder(branchId, externalId) {
+export async function fetchExtendedOrder(externalId) {
   try {
-    if (!branchId) {
-      debugLog('No branch ID provided for extended order fetch');
-      return null;
-    }
-
     if (!externalId) {
       debugLog('No external ID provided for extended order fetch');
       return null;
     }
 
-    debugLog(`Fetching extended order details for ${externalId} (branch: ${branchId})...`);
+    // Branch ID is always "TR" for trade orders
+    const branchId = 'TR';
+
+    debugLog(`Fetching extended order details for ${externalId}...`);
 
     const query = `query FetchSoOrdersExtendedOrder($branchId: String!, $externalId: String!) {
   soOrdersExtendedOrder(branchId: $branchId, externalId: $externalId) {

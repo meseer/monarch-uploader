@@ -10,7 +10,7 @@ import { applyWealthsimpleCategoryMapping, saveUserWealthsimpleCategorySelection
 import { showMonarchCategorySelector, showManualTransactionCategorization } from '../../ui/components/categorySelector';
 import monarchApi from '../../api/monarch';
 import toast from '../../ui/toast';
-import { applyTransactionRule, CASH_TRANSACTION_RULES, formatOriginalStatement, getTransactionId } from './transactionRules';
+import { applyTransactionRule, CASH_TRANSACTION_RULES, INVESTMENT_BUY_SELL_TRANSACTION_RULES, formatOriginalStatement, getTransactionId } from './transactionRules';
 
 /**
  * Convert ISO timestamp to local date in YYYY-MM-DD format
@@ -1163,11 +1163,81 @@ export async function fetchAndProcessLineOfCreditTransactions(consolidatedAccoun
 
 /**
  * Investment account transaction rules
- * Uses the same internal-transfer rule as CASH accounts, plus handles any unknown types via manual categorization
+ * Combines:
+ * 1. Internal transfer rule from CASH accounts
+ * 2. Buy/sell transaction rules specific to investment accounts
+ * Other unknown types are handled via manual categorization
  */
-const INVESTMENT_TRANSACTION_RULES = CASH_TRANSACTION_RULES.filter(
-  (rule) => rule.id === 'internal-transfer',
-);
+const INVESTMENT_TRANSACTION_RULES = [
+  // Internal transfer rule (same as CASH accounts)
+  ...CASH_TRANSACTION_RULES.filter((rule) => rule.id === 'internal-transfer'),
+  // Investment buy/sell rules
+  ...INVESTMENT_BUY_SELL_TRANSACTION_RULES,
+];
+
+/**
+ * Check if a transaction is a buy/sell order that uses unifiedStatus
+ * @param {Object} transaction - Raw transaction from API
+ * @returns {boolean} True if buy/sell transaction type
+ */
+function isInvestmentBuySellTransaction(transaction) {
+  const buySellTypes = ['MANAGED_BUY', 'DIY_BUY', 'MANAGED_SELL', 'DIY_SELL'];
+  return buySellTypes.includes(transaction.type);
+}
+
+/**
+ * Filter investment account transactions based on status
+ * Different transaction types use different status fields:
+ *
+ * Internal transfers (INTERNAL_TRANSFER):
+ * - Use status field: 'settled'/'completed' = sync, 'authorized' = pending
+ *
+ * Buy/sell transactions (MANAGED_BUY, DIY_BUY, MANAGED_SELL, DIY_SELL):
+ * - Use unifiedStatus field
+ * - COMPLETED: Sync as normal
+ * - IN_PROGRESS / PENDING: Sync with "Pending" tag
+ * - EXPIRED / REJECTED / CANCELLED: Exclude
+ *
+ * @param {Array} transactions - Raw transactions from API
+ * @param {boolean} includePending - Whether to include pending transactions
+ * @returns {Array} Filtered transactions ready for processing
+ */
+function filterInvestmentSyncableTransactions(transactions, includePending = true) {
+  return transactions.filter((transaction) => {
+    // Buy/sell transactions use unifiedStatus
+    if (isInvestmentBuySellTransaction(transaction)) {
+      const status = transaction.unifiedStatus;
+      if (status === 'COMPLETED') return true;
+      if (includePending && (status === 'IN_PROGRESS' || status === 'PENDING')) return true;
+      return false;
+    }
+
+    // Internal transfers and other types use status field (like credit cards)
+    const status = transaction.status;
+    if (status === 'settled' || status === 'completed') return true;
+    if (includePending && status === 'authorized') return true;
+    return false;
+  });
+}
+
+/**
+ * Collect order IDs from buy/sell transactions that need extended order data
+ * Returns only externalCanonicalIds from MANAGED_BUY, DIY_BUY, MANAGED_SELL, DIY_SELL transactions
+ *
+ * @param {Array} transactions - Raw transactions from Wealthsimple API
+ * @returns {Array<string>} Array of order IDs for fetchExtendedOrder
+ */
+function collectBuySellOrderIds(transactions) {
+  const orderIds = [];
+
+  for (const tx of transactions) {
+    if (isInvestmentBuySellTransaction(tx) && tx.externalCanonicalId) {
+      orderIds.push(tx.externalCanonicalId);
+    }
+  }
+
+  return orderIds;
+}
 
 /**
  * Collect internal transfer IDs from investment transactions that need enrichment
@@ -1194,7 +1264,7 @@ function collectInvestmentInternalTransferIds(transactions) {
 /**
  * Process an investment account transaction using the rules engine
  * @param {Object} transaction - Raw transaction from Wealthsimple API
- * @param {Map<string, Object>} enrichmentMap - Optional map of enrichment data (internal transfers, etc.)
+ * @param {Map<string, Object>} enrichmentMap - Optional map of enrichment data (internal transfers, extended orders, etc.)
  * @returns {Object} Processed transaction object (may include needsManualCategorization flag)
  */
 function processInvestmentTransaction(transaction, enrichmentMap = null) {
@@ -1208,8 +1278,14 @@ function processInvestmentTransaction(transaction, enrichmentMap = null) {
       const isNegative = transaction.amountSign === 'negative';
       const finalAmount = isNegative ? -Math.abs(transaction.amount) : Math.abs(transaction.amount);
 
-      // Determine pending status
-      const isPending = transaction.status === 'authorized';
+      // Determine pending status based on transaction type
+      // Buy/sell transactions use unifiedStatus, others use status
+      let isPending;
+      if (isInvestmentBuySellTransaction(transaction)) {
+        isPending = transaction.unifiedStatus === 'IN_PROGRESS' || transaction.unifiedStatus === 'PENDING';
+      } else {
+        isPending = transaction.status === 'authorized';
+      }
 
       return {
         id: getTransactionId(transaction),
@@ -1220,6 +1296,7 @@ function processInvestmentTransaction(transaction, enrichmentMap = null) {
         type: transaction.type,
         subType: transaction.subType,
         status: transaction.status,
+        unifiedStatus: transaction.unifiedStatus,
         isPending,
         resolvedMonarchCategory: ruleResult.category,
         ruleId: ruleResult.ruleId || rule.id,
@@ -1290,8 +1367,9 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
       });
     });
 
-    // Step 2: Filter for syncable transactions (settled/completed + optionally authorized)
-    const syncableTransactions = filterSyncableTransactions(rawTransactions, includePendingTransactions);
+    // Step 2: Filter for syncable transactions using investment-specific filter
+    // This handles both status field (for internal transfers) and unifiedStatus (for buy/sell)
+    const syncableTransactions = filterInvestmentSyncableTransactions(rawTransactions, includePendingTransactions);
     debugLog(`Filtered to ${syncableTransactions.length} syncable transactions (includePending: ${includePendingTransactions})`);
 
     if (syncableTransactions.length === 0) {
@@ -1299,10 +1377,19 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
     }
 
     // Step 3: Filter out already-uploaded completed transactions
+    // For buy/sell: COMPLETED status means done
+    // For internal transfers: settled/completed status means done
     const notYetUploadedTransactions = syncableTransactions.filter((tx) => {
       const txId = getTransactionId(tx);
-      const isCompleted = tx.status === 'settled' || tx.status === 'completed';
       const isAlreadyUploaded = uploadedTransactionIds.has(txId);
+
+      // Determine if transaction is completed based on type
+      let isCompleted;
+      if (isInvestmentBuySellTransaction(tx)) {
+        isCompleted = tx.unifiedStatus === 'COMPLETED';
+      } else {
+        isCompleted = tx.status === 'settled' || tx.status === 'completed';
+      }
 
       // Skip only completed transactions that are already uploaded
       if (isCompleted && isAlreadyUploaded) {
@@ -1341,8 +1428,11 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
       return [];
     }
 
-    // Step 5: Collect IDs for enrichment data (internal transfers need annotation fetching)
+    // Step 5: Collect IDs for enrichment data
+    // - Internal transfers need annotation fetching
+    // - Buy/sell orders need extended order data for notes
     const internalTransferIds = collectInvestmentInternalTransferIds(transactionsWithRules);
+    const buySellOrderIds = collectBuySellOrderIds(transactionsWithRules);
 
     // Create enrichment map for the rules engine
     const enrichmentMap = new Map();
@@ -1366,6 +1456,27 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
         }
       }
       debugLog(`Fetched ${internalTransferIds.length} internal transfer(s)`);
+    }
+
+    // Fetch extended order data for buy/sell transactions (individual calls with progress)
+    if (buySellOrderIds.length > 0) {
+      debugLog(`Fetching ${buySellOrderIds.length} extended order(s) for order details...`);
+      for (let i = 0; i < buySellOrderIds.length; i++) {
+        const orderId = buySellOrderIds[i];
+        const progressNum = i + 1;
+        debugLog(`Fetching extended order details (${progressNum}/${buySellOrderIds.length}): ${orderId}`);
+
+        // Update progress callback for UI
+        if (onProgress) {
+          onProgress(`Order details (${progressNum}/${buySellOrderIds.length})`);
+        }
+
+        const extendedOrder = await wealthsimpleApi.fetchExtendedOrder(orderId);
+        if (extendedOrder) {
+          enrichmentMap.set(orderId, extendedOrder);
+        }
+      }
+      debugLog(`Fetched ${buySellOrderIds.length} extended order(s)`);
     }
 
     debugLog(`Enrichment map has ${enrichmentMap.size} entries`);
@@ -1414,8 +1525,13 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
         const isNegative = rawTransaction.amountSign === 'negative';
         const finalAmount = isNegative ? -Math.abs(rawTransaction.amount) : Math.abs(rawTransaction.amount);
 
-        // Determine pending status
-        const isPending = rawTransaction.status === 'authorized';
+        // Determine pending status based on transaction type
+        let isPending;
+        if (isInvestmentBuySellTransaction(rawTransaction)) {
+          isPending = rawTransaction.unifiedStatus === 'IN_PROGRESS' || rawTransaction.unifiedStatus === 'PENDING';
+        } else {
+          isPending = rawTransaction.status === 'authorized';
+        }
 
         // Get transaction ID (handles null externalCanonicalId)
         const transactionId = getTransactionId(rawTransaction);
@@ -1430,6 +1546,7 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
           type: rawTransaction.type,
           subType: rawTransaction.subType,
           status: rawTransaction.status,
+          unifiedStatus: rawTransaction.unifiedStatus,
           isPending,
           resolvedMonarchCategory: manualResult.category.name,
           ruleId: 'manual',

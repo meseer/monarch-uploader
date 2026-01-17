@@ -2891,26 +2891,14 @@ describe('Wealthsimple API Client', () => {
       });
     });
 
-    it('should return null for null branchId', async () => {
-      const result = await wealthsimpleApi.fetchExtendedOrder(null, 'order-123');
-      expect(result).toBeNull();
-      expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
-    });
-
-    it('should return null for empty branchId', async () => {
-      const result = await wealthsimpleApi.fetchExtendedOrder('', 'order-123');
-      expect(result).toBeNull();
-      expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
-    });
-
     it('should return null for null externalId', async () => {
-      const result = await wealthsimpleApi.fetchExtendedOrder('TR', null);
+      const result = await wealthsimpleApi.fetchExtendedOrder(null);
       expect(result).toBeNull();
       expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
     });
 
     it('should return null for empty externalId', async () => {
-      const result = await wealthsimpleApi.fetchExtendedOrder('TR', '');
+      const result = await wealthsimpleApi.fetchExtendedOrder('');
       expect(result).toBeNull();
       expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
     });
@@ -2956,7 +2944,7 @@ describe('Wealthsimple API Client', () => {
         });
       });
 
-      const result = await wealthsimpleApi.fetchExtendedOrder('TR', 'order-3f73016b-5af3-4f03-ba22-9ef5e45fbb3d');
+      const result = await wealthsimpleApi.fetchExtendedOrder('order-3f73016b-5af3-4f03-ba22-9ef5e45fbb3d');
 
       expect(result).not.toBeNull();
       expect(result.averageFilledPrice).toBe('620.9154');
@@ -3011,7 +2999,7 @@ describe('Wealthsimple API Client', () => {
         });
       });
 
-      const result = await wealthsimpleApi.fetchExtendedOrder('TR', 'order-options-123');
+      const result = await wealthsimpleApi.fetchExtendedOrder('order-options-123');
 
       expect(result).not.toBeNull();
       expect(result.averageFilledPrice).toBe('0.0600');
@@ -3045,7 +3033,7 @@ describe('Wealthsimple API Client', () => {
         });
       });
 
-      await wealthsimpleApi.fetchExtendedOrder('TR', 'order-test123');
+      await wealthsimpleApi.fetchExtendedOrder('order-test123');
     });
 
     it('should return null when no soOrdersExtendedOrder in response', async () => {
@@ -3056,7 +3044,7 @@ describe('Wealthsimple API Client', () => {
         });
       });
 
-      const result = await wealthsimpleApi.fetchExtendedOrder('TR', 'order-not-found');
+      const result = await wealthsimpleApi.fetchExtendedOrder('order-not-found');
       expect(result).toBeNull();
     });
 
@@ -3066,7 +3054,7 @@ describe('Wealthsimple API Client', () => {
       });
 
       // Should not throw, just return null
-      const result = await wealthsimpleApi.fetchExtendedOrder('TR', 'order-error');
+      const result = await wealthsimpleApi.fetchExtendedOrder('order-error');
       expect(result).toBeNull();
     });
 
@@ -3076,7 +3064,7 @@ describe('Wealthsimple API Client', () => {
       });
 
       // Should not throw, just return null
-      const result = await wealthsimpleApi.fetchExtendedOrder('TR', 'order-network-error');
+      const result = await wealthsimpleApi.fetchExtendedOrder('order-network-error');
       expect(result).toBeNull();
     });
 
@@ -3121,7 +3109,7 @@ describe('Wealthsimple API Client', () => {
         });
       });
 
-      const result = await wealthsimpleApi.fetchExtendedOrder('TR', 'order-rejected');
+      const result = await wealthsimpleApi.fetchExtendedOrder('order-rejected');
 
       expect(result).not.toBeNull();
       expect(result.status).toBe('rejected');
@@ -3171,7 +3159,7 @@ describe('Wealthsimple API Client', () => {
         });
       });
 
-      const result = await wealthsimpleApi.fetchExtendedOrder('TR', 'order-pending');
+      const result = await wealthsimpleApi.fetchExtendedOrder('order-pending');
 
       expect(result).not.toBeNull();
       expect(result.status).toBe('pending');
