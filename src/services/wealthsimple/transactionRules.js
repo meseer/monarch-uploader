@@ -974,6 +974,57 @@ export const CASH_TRANSACTION_RULES = [
 ];
 
 /**
+ * Investment account institutional transfer transaction rules
+ * These rules handle transfers to/from external financial institutions
+ *
+ * Transaction types supported:
+ * - INSTITUTIONAL_TRANSFER_INTENT: Transfers to/from external institutions (e.g., moving registered accounts)
+ */
+export const INVESTMENT_INSTITUTIONAL_TRANSFER_RULES = [
+  {
+    id: 'institutional-transfer-intent',
+    description: 'Institutional transfer transactions (transfers to/from external institutions)',
+    match: (tx) => tx.type === 'INSTITUTIONAL_TRANSFER_INTENT',
+    /**
+     * Process INSTITUTIONAL_TRANSFER_INTENT transactions
+     * These are transfers between Wealthsimple and external financial institutions
+     * (e.g., transferring a TFSA from another bank to Wealthsimple)
+     *
+     * SubType handling:
+     * - TRANSFER_IN: Transfer coming into Wealthsimple from external institution
+     * - TRANSFER_OUT: Transfer going out from Wealthsimple to external institution
+     * - Other subTypes: Fallback using sentence case formatting
+     *
+     * @param {Object} tx - Raw transaction
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx) => {
+      const institutionName = tx.institutionName || 'Unknown Institution';
+      const subType = tx.subType || '';
+
+      let merchant;
+      if (subType === 'TRANSFER_IN') {
+        merchant = `Transfer In from ${institutionName}`;
+      } else if (subType === 'TRANSFER_OUT') {
+        merchant = `Transfer Out to ${institutionName}`;
+      } else {
+        // Fallback for other subTypes: sentenceCase(subType) + institutionName
+        const subTypeDisplay = subType ? toSentenceCase(subType) : '';
+        merchant = subTypeDisplay ? `${subTypeDisplay} ${institutionName}` : institutionName;
+      }
+
+      return {
+        category: 'Transfer',
+        merchant,
+        originalStatement: formatOriginalStatement(tx.type, subType, institutionName),
+        notes: '',
+        technicalDetails: '',
+      };
+    },
+  },
+];
+
+/**
  * Investment account deposit transaction rules
  * These rules handle deposit transactions in investment accounts
  *

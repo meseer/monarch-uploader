@@ -7,6 +7,7 @@ import {
   INVESTMENT_DIVIDEND_TRANSACTION_RULES,
   INVESTMENT_DEPOSIT_TRANSACTION_RULES,
   INVESTMENT_INTEREST_TRANSACTION_RULES,
+  INVESTMENT_INSTITUTIONAL_TRANSFER_RULES,
   applyTransactionRule,
   hasRuleForTransaction,
   extractInteracMemo,
@@ -5135,6 +5136,357 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
       it('should have exactly 2 rules', () => {
         expect(INVESTMENT_INTEREST_TRANSACTION_RULES.length).toBe(2);
+      });
+    });
+  });
+
+  describe('INVESTMENT_INSTITUTIONAL_TRANSFER_RULES', () => {
+    describe('INSTITUTIONAL_TRANSFER_INTENT rule matching', () => {
+      it('should match transactions with type INSTITUTIONAL_TRANSFER_INTENT', () => {
+        const transaction = {
+          externalCanonicalId: 'institutional-123',
+          type: 'INSTITUTIONAL_TRANSFER_INTENT',
+          subType: 'TRANSFER_IN',
+          institutionName: 'TD Bank',
+          amount: 50000,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_INSTITUTIONAL_TRANSFER_RULES.find((r) => r.id === 'institutional-transfer-intent');
+        expect(rule.match(transaction)).toBe(true);
+      });
+
+      it('should match INSTITUTIONAL_TRANSFER_INTENT with any subType', () => {
+        const rule = INVESTMENT_INSTITUTIONAL_TRANSFER_RULES.find((r) => r.id === 'institutional-transfer-intent');
+
+        expect(rule.match({ type: 'INSTITUTIONAL_TRANSFER_INTENT', subType: 'TRANSFER_IN' })).toBe(true);
+        expect(rule.match({ type: 'INSTITUTIONAL_TRANSFER_INTENT', subType: 'TRANSFER_OUT' })).toBe(true);
+        expect(rule.match({ type: 'INSTITUTIONAL_TRANSFER_INTENT', subType: 'OTHER_TYPE' })).toBe(true);
+        expect(rule.match({ type: 'INSTITUTIONAL_TRANSFER_INTENT', subType: null })).toBe(true);
+        expect(rule.match({ type: 'INSTITUTIONAL_TRANSFER_INTENT', subType: undefined })).toBe(true);
+      });
+
+      it('should not match transactions with different type', () => {
+        const rule = INVESTMENT_INSTITUTIONAL_TRANSFER_RULES.find((r) => r.id === 'institutional-transfer-intent');
+
+        expect(rule.match({ type: 'INTERNAL_TRANSFER', subType: 'SOURCE' })).toBe(false);
+        expect(rule.match({ type: 'DEPOSIT', subType: 'TRANSFER_IN' })).toBe(false);
+        expect(rule.match({ type: 'WITHDRAWAL', subType: 'TRANSFER_OUT' })).toBe(false);
+        expect(rule.match({ type: 'DIVIDEND', subType: null })).toBe(false);
+      });
+    });
+
+    describe('TRANSFER_IN subType processing', () => {
+      it('should process TRANSFER_IN with institution name correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'institutional-in-123',
+          type: 'INSTITUTIONAL_TRANSFER_INTENT',
+          subType: 'TRANSFER_IN',
+          institutionName: 'TD Bank',
+          amount: 50000,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_INSTITUTIONAL_TRANSFER_RULES.find((r) => r.id === 'institutional-transfer-intent');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Transfer');
+        expect(result.merchant).toBe('Transfer In from TD Bank');
+        expect(result.originalStatement).toBe('INSTITUTIONAL_TRANSFER_INTENT:TRANSFER_IN:TD Bank');
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should handle missing institution name with Unknown Institution fallback for TRANSFER_IN', () => {
+        const transaction = {
+          externalCanonicalId: 'institutional-in-no-name',
+          type: 'INSTITUTIONAL_TRANSFER_INTENT',
+          subType: 'TRANSFER_IN',
+          institutionName: null,
+          amount: 25000,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_INSTITUTIONAL_TRANSFER_RULES.find((r) => r.id === 'institutional-transfer-intent');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Transfer');
+        expect(result.merchant).toBe('Transfer In from Unknown Institution');
+        expect(result.originalStatement).toBe('INSTITUTIONAL_TRANSFER_INTENT:TRANSFER_IN:Unknown Institution');
+      });
+
+      it('should handle empty string institution name with Unknown Institution fallback for TRANSFER_IN', () => {
+        const transaction = {
+          externalCanonicalId: 'institutional-in-empty-name',
+          type: 'INSTITUTIONAL_TRANSFER_INTENT',
+          subType: 'TRANSFER_IN',
+          institutionName: '',
+          amount: 10000,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_INSTITUTIONAL_TRANSFER_RULES.find((r) => r.id === 'institutional-transfer-intent');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Transfer');
+        expect(result.merchant).toBe('Transfer In from Unknown Institution');
+        expect(result.originalStatement).toBe('INSTITUTIONAL_TRANSFER_INTENT:TRANSFER_IN:Unknown Institution');
+      });
+    });
+
+    describe('TRANSFER_OUT subType processing', () => {
+      it('should process TRANSFER_OUT with institution name correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'institutional-out-123',
+          type: 'INSTITUTIONAL_TRANSFER_INTENT',
+          subType: 'TRANSFER_OUT',
+          institutionName: 'RBC Royal Bank',
+          amount: 75000,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_INSTITUTIONAL_TRANSFER_RULES.find((r) => r.id === 'institutional-transfer-intent');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Transfer');
+        expect(result.merchant).toBe('Transfer Out to RBC Royal Bank');
+        expect(result.originalStatement).toBe('INSTITUTIONAL_TRANSFER_INTENT:TRANSFER_OUT:RBC Royal Bank');
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should handle missing institution name with Unknown Institution fallback for TRANSFER_OUT', () => {
+        const transaction = {
+          externalCanonicalId: 'institutional-out-no-name',
+          type: 'INSTITUTIONAL_TRANSFER_INTENT',
+          subType: 'TRANSFER_OUT',
+          institutionName: null,
+          amount: 30000,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_INSTITUTIONAL_TRANSFER_RULES.find((r) => r.id === 'institutional-transfer-intent');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Transfer');
+        expect(result.merchant).toBe('Transfer Out to Unknown Institution');
+        expect(result.originalStatement).toBe('INSTITUTIONAL_TRANSFER_INTENT:TRANSFER_OUT:Unknown Institution');
+      });
+
+      it('should handle empty string institution name with Unknown Institution fallback for TRANSFER_OUT', () => {
+        const transaction = {
+          externalCanonicalId: 'institutional-out-empty-name',
+          type: 'INSTITUTIONAL_TRANSFER_INTENT',
+          subType: 'TRANSFER_OUT',
+          institutionName: '',
+          amount: 15000,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_INSTITUTIONAL_TRANSFER_RULES.find((r) => r.id === 'institutional-transfer-intent');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Transfer');
+        expect(result.merchant).toBe('Transfer Out to Unknown Institution');
+        expect(result.originalStatement).toBe('INSTITUTIONAL_TRANSFER_INTENT:TRANSFER_OUT:Unknown Institution');
+      });
+    });
+
+    describe('Other subType processing (fallback)', () => {
+      it('should process other subTypes with sentenceCase formatting', () => {
+        const transaction = {
+          externalCanonicalId: 'institutional-other-123',
+          type: 'INSTITUTIONAL_TRANSFER_INTENT',
+          subType: 'PARTIAL_TRANSFER',
+          institutionName: 'BMO',
+          amount: 20000,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_INSTITUTIONAL_TRANSFER_RULES.find((r) => r.id === 'institutional-transfer-intent');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Transfer');
+        expect(result.merchant).toBe('Partial transfer BMO');
+        expect(result.originalStatement).toBe('INSTITUTIONAL_TRANSFER_INTENT:PARTIAL_TRANSFER:BMO');
+      });
+
+      it('should handle complex subTypes with underscores using sentenceCase', () => {
+        const transaction = {
+          externalCanonicalId: 'institutional-complex-subtype',
+          type: 'INSTITUTIONAL_TRANSFER_INTENT',
+          subType: 'IN_KIND_TRANSFER',
+          institutionName: 'Questrade',
+          amount: 100000,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_INSTITUTIONAL_TRANSFER_RULES.find((r) => r.id === 'institutional-transfer-intent');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Transfer');
+        expect(result.merchant).toBe('In kind transfer Questrade');
+        expect(result.originalStatement).toBe('INSTITUTIONAL_TRANSFER_INTENT:IN_KIND_TRANSFER:Questrade');
+      });
+
+      it('should handle missing institution name for other subTypes', () => {
+        const transaction = {
+          externalCanonicalId: 'institutional-other-no-name',
+          type: 'INSTITUTIONAL_TRANSFER_INTENT',
+          subType: 'PARTIAL_TRANSFER',
+          institutionName: null,
+          amount: 5000,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_INSTITUTIONAL_TRANSFER_RULES.find((r) => r.id === 'institutional-transfer-intent');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Transfer');
+        expect(result.merchant).toBe('Partial transfer Unknown Institution');
+        expect(result.originalStatement).toBe('INSTITUTIONAL_TRANSFER_INTENT:PARTIAL_TRANSFER:Unknown Institution');
+      });
+    });
+
+    describe('Edge cases', () => {
+      it('should handle null subType - just show institution name', () => {
+        const transaction = {
+          externalCanonicalId: 'institutional-null-subtype',
+          type: 'INSTITUTIONAL_TRANSFER_INTENT',
+          subType: null,
+          institutionName: 'CIBC',
+          amount: 12000,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_INSTITUTIONAL_TRANSFER_RULES.find((r) => r.id === 'institutional-transfer-intent');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Transfer');
+        expect(result.merchant).toBe('CIBC');
+        expect(result.originalStatement).toBe('INSTITUTIONAL_TRANSFER_INTENT::CIBC');
+      });
+
+      it('should handle undefined subType - just show institution name', () => {
+        const transaction = {
+          externalCanonicalId: 'institutional-undef-subtype',
+          type: 'INSTITUTIONAL_TRANSFER_INTENT',
+          institutionName: 'Scotiabank',
+          amount: 8000,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_INSTITUTIONAL_TRANSFER_RULES.find((r) => r.id === 'institutional-transfer-intent');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Transfer');
+        expect(result.merchant).toBe('Scotiabank');
+        expect(result.originalStatement).toBe('INSTITUTIONAL_TRANSFER_INTENT::Scotiabank');
+      });
+
+      it('should handle empty string subType - just show institution name', () => {
+        const transaction = {
+          externalCanonicalId: 'institutional-empty-subtype',
+          type: 'INSTITUTIONAL_TRANSFER_INTENT',
+          subType: '',
+          institutionName: 'National Bank',
+          amount: 6000,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_INSTITUTIONAL_TRANSFER_RULES.find((r) => r.id === 'institutional-transfer-intent');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Transfer');
+        expect(result.merchant).toBe('National Bank');
+        expect(result.originalStatement).toBe('INSTITUTIONAL_TRANSFER_INTENT::National Bank');
+      });
+
+      it('should handle both subType and institutionName missing', () => {
+        const transaction = {
+          externalCanonicalId: 'institutional-both-missing',
+          type: 'INSTITUTIONAL_TRANSFER_INTENT',
+          subType: null,
+          institutionName: null,
+          amount: 3000,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_INSTITUTIONAL_TRANSFER_RULES.find((r) => r.id === 'institutional-transfer-intent');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Transfer');
+        expect(result.merchant).toBe('Unknown Institution');
+        expect(result.originalStatement).toBe('INSTITUTIONAL_TRANSFER_INTENT::Unknown Institution');
+      });
+
+      it('should not set needsCategoryMapping flag (auto-categorized)', () => {
+        const transaction = {
+          externalCanonicalId: 'institutional-no-mapping',
+          type: 'INSTITUTIONAL_TRANSFER_INTENT',
+          subType: 'TRANSFER_IN',
+          institutionName: 'TD Bank',
+        };
+
+        const rule = INVESTMENT_INSTITUTIONAL_TRANSFER_RULES.find((r) => r.id === 'institutional-transfer-intent');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.needsCategoryMapping).toBeUndefined();
+      });
+
+      it('should have empty notes and technicalDetails', () => {
+        const transaction = {
+          externalCanonicalId: 'institutional-notes',
+          type: 'INSTITUTIONAL_TRANSFER_INTENT',
+          subType: 'TRANSFER_OUT',
+          institutionName: 'RBC',
+        };
+
+        const rule = INVESTMENT_INSTITUTIONAL_TRANSFER_RULES.find((r) => r.id === 'institutional-transfer-intent');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+    });
+
+    describe('Rule structure', () => {
+      it('should have required properties', () => {
+        const rule = INVESTMENT_INSTITUTIONAL_TRANSFER_RULES.find((r) => r.id === 'institutional-transfer-intent');
+
+        expect(rule).toHaveProperty('id');
+        expect(rule).toHaveProperty('description');
+        expect(rule).toHaveProperty('match');
+        expect(rule).toHaveProperty('process');
+        expect(typeof rule.id).toBe('string');
+        expect(typeof rule.description).toBe('string');
+        expect(typeof rule.match).toBe('function');
+        expect(typeof rule.process).toBe('function');
+      });
+
+      it('should have exactly 1 rule', () => {
+        expect(INVESTMENT_INSTITUTIONAL_TRANSFER_RULES.length).toBe(1);
+      });
+
+      it('should have unique rule ID', () => {
+        const ids = INVESTMENT_INSTITUTIONAL_TRANSFER_RULES.map((r) => r.id);
+        const uniqueIds = [...new Set(ids)];
+        expect(ids.length).toBe(uniqueIds.length);
       });
     });
   });
