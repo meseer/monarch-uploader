@@ -969,9 +969,59 @@ export const CASH_TRANSACTION_RULES = [
   },
   // TODO: Add more rules here as needed
   // Examples of future rules:
-  // - DIVIDEND
   // - FEE
   // - etc.
+];
+
+/**
+ * Investment account dividend transaction rules
+ * These rules handle dividend transactions in investment accounts
+ *
+ * Transaction types supported:
+ * - DIVIDEND: Dividend payments on held securities
+ *   - subType null: For MANAGED_* accounts (robo-advisor)
+ *   - subType DIY_DIVIDEND: For SELF_DIRECTED accounts (regular dividends)
+ *   - subType MANUFACTURED_DIVIDEND: For SELF_DIRECTED accounts (dividends on lended shares)
+ */
+export const INVESTMENT_DIVIDEND_TRANSACTION_RULES = [
+  {
+    id: 'dividend',
+    description: 'Dividend transactions for investment accounts (managed and DIY)',
+    match: (tx) => tx.type === 'DIVIDEND',
+    /**
+     * Process DIVIDEND transactions
+     * These are dividend payments received on held securities
+     *
+     * SubType variations:
+     * - null: For MANAGED_* accounts (robo-advisor managed)
+     * - DIY_DIVIDEND: For SELF_DIRECTED accounts (regular dividends)
+     * - MANUFACTURED_DIVIDEND: For SELF_DIRECTED accounts (dividends on lended shares)
+     *
+     * @param {Object} tx - Raw transaction
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx) => {
+      const symbol = tx.assetSymbol || 'Unknown';
+      const currency = tx.currency || 'CAD';
+      const amount = tx.amount ?? 0;
+
+      // Determine notes based on subType
+      let notes;
+      if (tx.subType === 'MANUFACTURED_DIVIDEND') {
+        notes = `Dividend on lended ${symbol} shares: ${currency}$${amount}`;
+      } else {
+        notes = `Dividend on ${symbol}: ${currency}$${amount}`;
+      }
+
+      return {
+        category: 'Dividends & Capital Gains',
+        merchant: symbol,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, symbol),
+        notes,
+        technicalDetails: '',
+      };
+    },
+  },
 ];
 
 /**

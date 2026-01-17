@@ -4,6 +4,7 @@
 
 import {
   CASH_TRANSACTION_RULES,
+  INVESTMENT_DIVIDEND_TRANSACTION_RULES,
   applyTransactionRule,
   hasRuleForTransaction,
   extractInteracMemo,
@@ -3926,6 +3927,393 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       };
 
       expect(getTransactionId(transaction)).toBe('canonical-id-789');
+    });
+  });
+
+  describe('INVESTMENT_DIVIDEND_TRANSACTION_RULES', () => {
+    describe('DIVIDEND rule matching', () => {
+      it('should match transactions with type DIVIDEND', () => {
+        const transaction = {
+          externalCanonicalId: 'dividend-123',
+          type: 'DIVIDEND',
+          subType: null,
+          assetSymbol: 'VFV',
+          amount: 10.50,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        expect(rule.match(transaction)).toBe(true);
+      });
+
+      it('should match DIVIDEND with any subType (null, DIY_DIVIDEND, MANUFACTURED_DIVIDEND)', () => {
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+
+        expect(rule.match({ type: 'DIVIDEND', subType: null })).toBe(true);
+        expect(rule.match({ type: 'DIVIDEND', subType: 'DIY_DIVIDEND' })).toBe(true);
+        expect(rule.match({ type: 'DIVIDEND', subType: 'MANUFACTURED_DIVIDEND' })).toBe(true);
+        expect(rule.match({ type: 'DIVIDEND', subType: undefined })).toBe(true);
+      });
+
+      it('should not match transactions with different type', () => {
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+
+        expect(rule.match({ type: 'DEPOSIT', subType: 'DIVIDEND' })).toBe(false);
+        expect(rule.match({ type: 'MANAGED_BUY', subType: null })).toBe(false);
+        expect(rule.match({ type: 'DIY_BUY', subType: 'DIY_DIVIDEND' })).toBe(false);
+        expect(rule.match({ type: 'INTEREST', subType: null })).toBe(false);
+      });
+    });
+
+    describe('DIVIDEND transaction processing - null subType (MANAGED accounts)', () => {
+      it('should process DIVIDEND with null subType correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'dividend-managed-123',
+          type: 'DIVIDEND',
+          subType: null,
+          assetSymbol: 'VFV',
+          amount: 15.75,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Dividends & Capital Gains');
+        expect(result.merchant).toBe('VFV');
+        expect(result.originalStatement).toBe('DIVIDEND::VFV');
+        expect(result.notes).toBe('Dividend on VFV: CAD$15.75');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should process DIVIDEND with undefined subType correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'dividend-managed-456',
+          type: 'DIVIDEND',
+          assetSymbol: 'XAW',
+          amount: 8.25,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Dividends & Capital Gains');
+        expect(result.merchant).toBe('XAW');
+        expect(result.originalStatement).toBe('DIVIDEND::XAW');
+        expect(result.notes).toBe('Dividend on XAW: CAD$8.25');
+      });
+    });
+
+    describe('DIVIDEND transaction processing - DIY_DIVIDEND subType (SELF_DIRECTED accounts)', () => {
+      it('should process DIVIDEND with DIY_DIVIDEND subType correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'dividend-diy-123',
+          type: 'DIVIDEND',
+          subType: 'DIY_DIVIDEND',
+          assetSymbol: 'AAPL',
+          amount: 25.00,
+          currency: 'USD',
+        };
+
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Dividends & Capital Gains');
+        expect(result.merchant).toBe('AAPL');
+        expect(result.originalStatement).toBe('DIVIDEND:DIY_DIVIDEND:AAPL');
+        expect(result.notes).toBe('Dividend on AAPL: USD$25');
+        expect(result.technicalDetails).toBe('');
+      });
+    });
+
+    describe('DIVIDEND transaction processing - MANUFACTURED_DIVIDEND subType (lended shares)', () => {
+      it('should process DIVIDEND with MANUFACTURED_DIVIDEND subType with special notes format', () => {
+        const transaction = {
+          externalCanonicalId: 'dividend-manufactured-123',
+          type: 'DIVIDEND',
+          subType: 'MANUFACTURED_DIVIDEND',
+          assetSymbol: 'TSLA',
+          amount: 12.50,
+          currency: 'USD',
+        };
+
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Dividends & Capital Gains');
+        expect(result.merchant).toBe('TSLA');
+        expect(result.originalStatement).toBe('DIVIDEND:MANUFACTURED_DIVIDEND:TSLA');
+        expect(result.notes).toBe('Dividend on lended TSLA shares: USD$12.5');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should use "lended" wording only for MANUFACTURED_DIVIDEND', () => {
+        const manufacturedTx = {
+          type: 'DIVIDEND',
+          subType: 'MANUFACTURED_DIVIDEND',
+          assetSymbol: 'GME',
+          amount: 5.00,
+          currency: 'USD',
+        };
+
+        const diyTx = {
+          type: 'DIVIDEND',
+          subType: 'DIY_DIVIDEND',
+          assetSymbol: 'GME',
+          amount: 5.00,
+          currency: 'USD',
+        };
+
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+
+        const manufacturedResult = rule.process(manufacturedTx);
+        const diyResult = rule.process(diyTx);
+
+        expect(manufacturedResult.notes).toContain('lended');
+        expect(diyResult.notes).not.toContain('lended');
+      });
+    });
+
+    describe('DIVIDEND edge cases', () => {
+      it('should handle missing assetSymbol with Unknown fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'dividend-no-symbol',
+          type: 'DIVIDEND',
+          subType: null,
+          assetSymbol: null,
+          amount: 10.00,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Unknown');
+        expect(result.originalStatement).toBe('DIVIDEND::Unknown');
+        expect(result.notes).toBe('Dividend on Unknown: CAD$10');
+      });
+
+      it('should handle empty string assetSymbol with Unknown fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'dividend-empty-symbol',
+          type: 'DIVIDEND',
+          subType: 'DIY_DIVIDEND',
+          assetSymbol: '',
+          amount: 5.00,
+          currency: 'USD',
+        };
+
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Unknown');
+        expect(result.originalStatement).toBe('DIVIDEND:DIY_DIVIDEND:Unknown');
+        expect(result.notes).toBe('Dividend on Unknown: USD$5');
+      });
+
+      it('should handle missing currency with CAD fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'dividend-no-currency',
+          type: 'DIVIDEND',
+          subType: null,
+          assetSymbol: 'VFV',
+          amount: 20.00,
+          currency: null,
+        };
+
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('Dividend on VFV: CAD$20');
+      });
+
+      it('should handle undefined currency with CAD fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'dividend-undefined-currency',
+          type: 'DIVIDEND',
+          subType: 'DIY_DIVIDEND',
+          assetSymbol: 'XAW',
+          amount: 15.00,
+        };
+
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('Dividend on XAW: CAD$15');
+      });
+
+      it('should handle missing amount with 0 fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'dividend-no-amount',
+          type: 'DIVIDEND',
+          subType: null,
+          assetSymbol: 'VFV',
+          amount: null,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('Dividend on VFV: CAD$0');
+      });
+
+      it('should handle undefined amount with 0 fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'dividend-undefined-amount',
+          type: 'DIVIDEND',
+          subType: 'DIY_DIVIDEND',
+          assetSymbol: 'AAPL',
+          currency: 'USD',
+        };
+
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('Dividend on AAPL: USD$0');
+      });
+
+      it('should handle amount of 0 correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'dividend-zero-amount',
+          type: 'DIVIDEND',
+          subType: null,
+          assetSymbol: 'VFV',
+          amount: 0,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('Dividend on VFV: CAD$0');
+      });
+
+      it('should handle all fields missing with appropriate fallbacks', () => {
+        const transaction = {
+          externalCanonicalId: 'dividend-all-missing',
+          type: 'DIVIDEND',
+          subType: null,
+        };
+
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Dividends & Capital Gains');
+        expect(result.merchant).toBe('Unknown');
+        expect(result.originalStatement).toBe('DIVIDEND::Unknown');
+        expect(result.notes).toBe('Dividend on Unknown: CAD$0');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should handle MANUFACTURED_DIVIDEND with all fields missing', () => {
+        const transaction = {
+          externalCanonicalId: 'dividend-manufactured-missing',
+          type: 'DIVIDEND',
+          subType: 'MANUFACTURED_DIVIDEND',
+        };
+
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Dividends & Capital Gains');
+        expect(result.merchant).toBe('Unknown');
+        expect(result.originalStatement).toBe('DIVIDEND:MANUFACTURED_DIVIDEND:Unknown');
+        expect(result.notes).toBe('Dividend on lended Unknown shares: CAD$0');
+      });
+
+      it('should handle decimal amounts correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'dividend-decimal',
+          type: 'DIVIDEND',
+          subType: 'DIY_DIVIDEND',
+          assetSymbol: 'XEI',
+          amount: 0.42,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('Dividend on XEI: CAD$0.42');
+      });
+
+      it('should handle string amounts by preserving them', () => {
+        const transaction = {
+          externalCanonicalId: 'dividend-string-amount',
+          type: 'DIVIDEND',
+          subType: null,
+          assetSymbol: 'VFV',
+          amount: '10.50',
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        // The amount is preserved as-is since ?? only checks null/undefined
+        expect(result.notes).toBe('Dividend on VFV: CAD$10.50');
+      });
+    });
+
+    describe('DIVIDEND rule structure', () => {
+      it('should have required properties', () => {
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+
+        expect(rule).toHaveProperty('id');
+        expect(rule).toHaveProperty('description');
+        expect(rule).toHaveProperty('match');
+        expect(rule).toHaveProperty('process');
+        expect(typeof rule.id).toBe('string');
+        expect(typeof rule.description).toBe('string');
+        expect(typeof rule.match).toBe('function');
+        expect(typeof rule.process).toBe('function');
+      });
+
+      it('should not set needsCategoryMapping flag (auto-categorized)', () => {
+        const transaction = {
+          externalCanonicalId: 'dividend-no-mapping',
+          type: 'DIVIDEND',
+          subType: 'DIY_DIVIDEND',
+          assetSymbol: 'VFV',
+          amount: 10.00,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.needsCategoryMapping).toBeUndefined();
+      });
+
+      it('should have empty technicalDetails for all subTypes', () => {
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+
+        const nullResult = rule.process({ type: 'DIVIDEND', subType: null, assetSymbol: 'VFV', amount: 10, currency: 'CAD' });
+        const diyResult = rule.process({ type: 'DIVIDEND', subType: 'DIY_DIVIDEND', assetSymbol: 'VFV', amount: 10, currency: 'CAD' });
+        const manufacturedResult = rule.process({ type: 'DIVIDEND', subType: 'MANUFACTURED_DIVIDEND', assetSymbol: 'VFV', amount: 10, currency: 'CAD' });
+
+        expect(nullResult.technicalDetails).toBe('');
+        expect(diyResult.technicalDetails).toBe('');
+        expect(manufacturedResult.technicalDetails).toBe('');
+      });
     });
   });
 
