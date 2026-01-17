@@ -2236,6 +2236,117 @@ fragment CustodianAccount on CustodianAccount {
   }
 }
 
+/**
+ * Fetch cash balances for investment accounts using FetchAccountsWithBalance
+ * Returns CAD and USD cash balances from the account's custodian financials
+ *
+ * @param {Array<string>} accountIds - Array of Wealthsimple account IDs
+ * @returns {Promise<Object>} Object mapping accountId to cash balances { cad, usd }
+ *
+ * @example
+ * const balances = await fetchAccountsWithBalance(['rrsp-qthtmh-s']);
+ * // Returns: { 'rrsp-qthtmh-s': { cad: 0.01, usd: 0.46 } }
+ */
+export async function fetchAccountsWithBalance(accountIds) {
+  try {
+    if (!accountIds || accountIds.length === 0) {
+      debugLog('No account IDs provided for cash balance fetch');
+      return {};
+    }
+
+    debugLog(`Fetching cash balances for ${accountIds.length} account(s)...`);
+
+    // Security IDs for cash positions
+    const CASH_SECURITY_IDS = {
+      CAD: 'sec-c-cad',
+      USD: 'sec-c-usd',
+    };
+
+    // Use the exact query provided by Wealthsimple API
+    const query = `query FetchAccountsWithBalance($ids: [String!]!, $type: BalanceType!) {
+  accounts(ids: $ids) {
+    ...AccountWithBalance
+    __typename
+  }
+}
+
+fragment AccountWithBalance on Account {
+  id
+  custodianAccounts {
+    id
+    financials {
+      ... on CustodianAccountFinancialsSo {
+        balance(type: $type) {
+          ...Balance
+          __typename
+        }
+        __typename
+      }
+      __typename
+    }
+    __typename
+  }
+  __typename
+}
+
+fragment Balance on Balance {
+  quantity
+  securityId
+  __typename
+}`;
+
+    const variables = {
+      ids: accountIds,
+      type: 'TRADING',
+    };
+
+    const response = await makeGraphQLQuery('FetchAccountsWithBalance', query, variables);
+
+    if (!response || !response.accounts) {
+      debugLog('No accounts data in FetchAccountsWithBalance response');
+      return {};
+    }
+
+    // Process response to extract CAD and USD cash balances
+    const result = {};
+
+    for (const account of response.accounts) {
+      const accountId = account.id;
+      let cadBalance = null;
+      let usdBalance = null;
+
+      // Process all custodian accounts (usually just one)
+      if (account.custodianAccounts && Array.isArray(account.custodianAccounts)) {
+        for (const custodianAccount of account.custodianAccounts) {
+          const balances = custodianAccount.financials?.balance;
+
+          if (balances && Array.isArray(balances)) {
+            for (const balance of balances) {
+              if (balance.securityId === CASH_SECURITY_IDS.CAD) {
+                cadBalance = parseFloat(balance.quantity) || 0;
+              } else if (balance.securityId === CASH_SECURITY_IDS.USD) {
+                usdBalance = parseFloat(balance.quantity) || 0;
+              }
+            }
+          }
+        }
+      }
+
+      result[accountId] = {
+        cad: cadBalance,
+        usd: usdBalance,
+      };
+
+      debugLog(`Cash balances for ${accountId}: CAD=${cadBalance}, USD=${usdBalance}`);
+    }
+
+    return result;
+  } catch (error) {
+    debugLog('Error fetching accounts with balance:', error);
+    throw error;
+  }
+}
+
 export default {
   checkAuth,
   setupTokenMonitoring,
@@ -2252,4 +2363,5 @@ export default {
   fetchFundingIntents,
   fetchInternalTransfer,
   fetchFundsTransfer,
+  fetchAccountsWithBalance,
 };

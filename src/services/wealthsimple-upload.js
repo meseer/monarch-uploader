@@ -25,7 +25,7 @@ import {
   getBalanceAtDate,
   reconstructBalanceFromTransactions,
 } from './wealthsimple/balance';
-import { isInvestmentAccount, processAccountPositions } from './wealthsimple/positions';
+import { isInvestmentAccount, processAccountPositions, processCashPositions } from './wealthsimple/positions';
 import { fetchAndProcessTransactions, reconcilePendingTransactions, formatReconciliationMessage } from './wealthsimple/transactions';
 import { showDatePickerWithOptionsPromise } from '../ui/components/datePicker';
 import { showProgressDialog } from '../ui/components/progressDialog';
@@ -394,6 +394,11 @@ export function buildSyncStepsForAccount(consolidatedAccount) {
   // Position sync for investment accounts (after balance, as it's additive)
   if (isInvestmentAccount(accountType)) {
     steps.push({ key: 'positions', name: 'Position sync' });
+  }
+
+  // Cash sync for investment accounts (syncs CAD/USD cash holdings)
+  if (isInvestmentAccount(accountType)) {
+    steps.push({ key: 'cashSync', name: 'Cash sync' });
   }
 
   return steps;
@@ -839,6 +844,46 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
         } catch (positionsError) {
           debugLog('Error during position sync:', positionsError);
           progressDialog.updateStepStatus(account.id, 'positions', 'error', positionsError.message);
+        }
+      }
+    }
+
+    // Step 6: Cash sync (for investment accounts only)
+    // Syncs CAD and USD cash balances to Monarch holdings
+    if (isInvestmentAccount(accountType)) {
+      // Skip cash sync for manual Monarch accounts - holdings API not supported
+      if (monarchAccount.isManual) {
+        progressDialog.updateStepStatus(account.id, 'cashSync', 'skipped', 'Manual accounts don\'t support holdings');
+        debugLog(`Skipping cash sync for ${account.id} - Monarch account is manual`);
+      } else {
+        progressDialog.updateStepStatus(account.id, 'cashSync', 'processing', 'Syncing cash balances...');
+
+        try {
+          const cashResult = await processCashPositions(
+            account.id,
+            account.nickname || account.id,
+            monarchAccount.id,
+            progressDialog,
+          );
+
+          if (cashResult.success) {
+            // Build status message
+            let statusMsg;
+            if (cashResult.cashSynced === 0 && cashResult.cashSkipped === 0) {
+              statusMsg = 'No cash balances';
+            } else if (cashResult.cashSkipped === 0) {
+              statusMsg = `${cashResult.cashSynced} currency synced`;
+            } else {
+              statusMsg = `${cashResult.cashSynced} synced, ${cashResult.cashSkipped} skipped`;
+            }
+            progressDialog.updateStepStatus(account.id, 'cashSync', 'success', statusMsg);
+          } else {
+            const errorMsg = cashResult.error || 'Sync failed';
+            progressDialog.updateStepStatus(account.id, 'cashSync', 'error', errorMsg);
+          }
+        } catch (cashError) {
+          debugLog('Error during cash sync:', cashError);
+          progressDialog.updateStepStatus(account.id, 'cashSync', 'error', cashError.message);
         }
       }
     }

@@ -11,6 +11,24 @@ import toast from '../../ui/toast';
 import { getAccountData, updateAccountInList } from './account';
 
 /**
+ * Hardcoded Monarch security IDs for cash currencies
+ * These are well-known securities in Monarch for representing cash holdings
+ */
+const MONARCH_CASH_SECURITY_IDS = {
+  CAD: '207574838264130301', // Canadian Dollar (CUR:CAD)
+  USD: '77359007714940929', // US Dollar (CUR:USD)
+};
+
+/**
+ * Cash holding storage keys (used in holdingsMappings)
+ * These are virtual security IDs used to store Monarch holding IDs for cash positions
+ */
+const CASH_HOLDING_KEYS = {
+  CAD: 'cash-cad',
+  USD: 'cash-usd',
+};
+
+/**
  * Custom positions error class
  */
 export class PositionsError extends Error {
@@ -581,6 +599,221 @@ export async function processAccountPositions(accountId, accountName, monarchAcc
   return result;
 }
 
+/**
+ * Fetch cash balances for an investment account
+ * Uses the FetchAccountsWithBalance API to get CAD and USD cash positions
+ *
+ * @param {string} accountId - Wealthsimple account ID
+ * @returns {Promise<Object>} Cash balances { cad: number|null, usd: number|null }
+ */
+export async function fetchCashBalances(accountId) {
+  try {
+    debugLog(`Fetching cash balances for account ${accountId}`);
+
+    if (!accountId) {
+      throw new PositionsError('Account ID is required for cash balance fetch', accountId);
+    }
+
+    const balances = await wealthsimpleApi.fetchAccountsWithBalance([accountId]);
+    const accountBalances = balances[accountId];
+
+    if (!accountBalances) {
+      debugLog(`No cash balance data returned for account ${accountId}`);
+      return { cad: null, usd: null };
+    }
+
+    debugLog(`Cash balances for ${accountId}: CAD=${accountBalances.cad}, USD=${accountBalances.usd}`);
+    return accountBalances;
+  } catch (error) {
+    debugLog(`Error fetching cash balances for account ${accountId}:`, error);
+    throw new PositionsError(`Failed to fetch cash balances: ${error.message}`, accountId);
+  }
+}
+
+/**
+ * Resolve or create a cash holding in Monarch
+ * Uses hardcoded Monarch security IDs for CAD/USD currencies
+ *
+ * @param {string} accountId - Wealthsimple account ID
+ * @param {string} monarchAccountId - Monarch account ID
+ * @param {string} currency - Currency code ('CAD' or 'USD')
+ * @param {Object} holdings - Holdings data from Monarch
+ * @returns {Promise<string>} Holding ID
+ */
+async function resolveOrCreateCashHolding(accountId, monarchAccountId, currency, holdings) {
+  const cashHoldingKey = CASH_HOLDING_KEYS[currency];
+  const monarchSecurityId = MONARCH_CASH_SECURITY_IDS[currency];
+  const symbol = `CUR:${currency}`;
+
+  if (!cashHoldingKey || !monarchSecurityId) {
+    throw new PositionsError(`Unsupported currency for cash holding: ${currency}`, accountId);
+  }
+
+  // Check for existing holding ID in consolidated account structure
+  const mappings = loadHoldingsMappings(accountId);
+  if (mappings[cashHoldingKey]?.monarchHoldingId) {
+    debugLog(`Found stored cash holding ID for ${currency}: ${mappings[cashHoldingKey].monarchHoldingId}`);
+    return mappings[cashHoldingKey].monarchHoldingId;
+  }
+
+  // Check if holding exists in Monarch
+  const existingHolding = findExistingHolding(monarchAccountId, monarchSecurityId, holdings);
+
+  if (existingHolding) {
+    debugLog(`Found existing cash holding in Monarch for ${currency}: ${existingHolding.id}`);
+    // Save the mapping
+    saveHoldingMapping(accountId, cashHoldingKey, {
+      monarchSecurityId,
+      monarchHoldingId: existingHolding.id,
+      symbol,
+    });
+    return existingHolding.id;
+  }
+
+  // Create new holding with quantity 0 (will be updated immediately after)
+  debugLog(`Creating new cash holding for ${currency} in Monarch account ${monarchAccountId}`);
+
+  const newHolding = await monarchApi.createManualHolding(
+    monarchAccountId,
+    monarchSecurityId,
+    0, // Initial quantity, will be updated
+  );
+
+  // Save the mapping
+  saveHoldingMapping(accountId, cashHoldingKey, {
+    monarchSecurityId,
+    monarchHoldingId: newHolding.id,
+    symbol,
+  });
+
+  debugLog(`Created and saved cash holding: ${currency} -> ${newHolding.id}`);
+  return newHolding.id;
+}
+
+/**
+ * Sync a cash balance to a Monarch holding
+ * Supports zero and negative balances
+ *
+ * @param {string} holdingId - Holding ID to update
+ * @param {number} quantity - Cash balance (can be negative or zero)
+ * @param {string} currency - Currency code for logging
+ * @returns {Promise<void>}
+ */
+async function syncCashToHolding(holdingId, quantity, currency) {
+  try {
+    debugLog(`Syncing ${currency} cash balance ${quantity} to holding ${holdingId}`);
+
+    const updates = {
+      quantity, // Keep as-is (can be negative or zero)
+      costBasis: 1, // Cash cost basis is always 1
+      securityType: 'cash',
+    };
+
+    await monarchApi.updateHolding(holdingId, updates);
+    debugLog(`Successfully synced ${currency} cash: quantity=${quantity}`);
+  } catch (error) {
+    debugLog(`Error syncing cash to holding ${holdingId}:`, error);
+    throw new PositionsError(`Failed to sync ${currency} cash: ${error.message}`, null);
+  }
+}
+
+/**
+ * Process cash positions for an investment account
+ * Fetches CAD and USD cash balances and syncs them to Monarch holdings
+ *
+ * @param {string} accountId - Wealthsimple account ID
+ * @param {string} accountName - Account name for display
+ * @param {string} monarchAccountId - Mapped Monarch account ID
+ * @param {Object} progressDialog - Optional progress dialog for updates
+ * @returns {Promise<Object>} Result with success status and counts
+ */
+export async function processCashPositions(accountId, accountName, monarchAccountId, progressDialog = null) {
+  const result = {
+    success: false,
+    cashSynced: 0,
+    cashSkipped: 0,
+    error: null,
+  };
+
+  try {
+    debugLog(`Processing cash positions for account ${accountName} (${accountId})`);
+
+    if (progressDialog) {
+      progressDialog.updateStepStatus(accountId, 'cashSync', 'processing', 'Fetching cash balances...');
+    }
+
+    // Fetch cash balances from Wealthsimple
+    const cashBalances = await fetchCashBalances(accountId);
+
+    // Get Monarch holdings for the account
+    const holdings = await monarchApi.getHoldings([monarchAccountId]);
+
+    // Process CAD cash
+    if (cashBalances.cad !== null) {
+      try {
+        if (progressDialog) {
+          progressDialog.updateStepStatus(accountId, 'cashSync', 'processing', 'Syncing CAD cash...');
+        }
+
+        const cadHoldingId = await resolveOrCreateCashHolding(accountId, monarchAccountId, 'CAD', holdings);
+        await syncCashToHolding(cadHoldingId, cashBalances.cad, 'CAD');
+        result.cashSynced += 1;
+        debugLog(`Synced CAD cash: ${cashBalances.cad}`);
+      } catch (error) {
+        debugLog('Failed to sync CAD cash:', error);
+        result.cashSkipped += 1;
+      }
+    } else {
+      debugLog('No CAD cash balance available');
+    }
+
+    // Process USD cash
+    if (cashBalances.usd !== null) {
+      try {
+        if (progressDialog) {
+          progressDialog.updateStepStatus(accountId, 'cashSync', 'processing', 'Syncing USD cash...');
+        }
+
+        const usdHoldingId = await resolveOrCreateCashHolding(accountId, monarchAccountId, 'USD', holdings);
+        await syncCashToHolding(usdHoldingId, cashBalances.usd, 'USD');
+        result.cashSynced += 1;
+        debugLog(`Synced USD cash: ${cashBalances.usd}`);
+      } catch (error) {
+        debugLog('Failed to sync USD cash:', error);
+        result.cashSkipped += 1;
+      }
+    } else {
+      debugLog('No USD cash balance available');
+    }
+
+    result.success = true;
+
+    // Build status message
+    let statusMsg;
+    if (result.cashSynced === 0 && result.cashSkipped === 0) {
+      statusMsg = 'No cash balances';
+    } else if (result.cashSkipped === 0) {
+      statusMsg = `${result.cashSynced} currency synced`;
+    } else {
+      statusMsg = `${result.cashSynced} synced, ${result.cashSkipped} skipped`;
+    }
+
+    if (progressDialog) {
+      progressDialog.updateStepStatus(accountId, 'cashSync', 'success', statusMsg);
+    }
+
+    debugLog(`Completed cash sync for ${accountName}: ${result.cashSynced} synced, ${result.cashSkipped} skipped`);
+  } catch (error) {
+    debugLog(`Error processing cash positions for ${accountId}:`, error);
+    result.error = error.message;
+    if (progressDialog) {
+      progressDialog.updateStepStatus(accountId, 'cashSync', 'error', `Error: ${error.message}`);
+    }
+  }
+
+  return result;
+}
+
 export default {
   isInvestmentAccount,
   fetchPositions,
@@ -590,5 +823,8 @@ export default {
   detectAndRemoveDeletedHoldings,
   processAccountPositions,
   getSecuritySymbolForLookup,
+  fetchCashBalances,
+  processCashPositions,
   PositionsError,
+  MONARCH_CASH_SECURITY_IDS,
 };
