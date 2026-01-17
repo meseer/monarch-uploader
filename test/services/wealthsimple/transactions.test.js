@@ -6,6 +6,7 @@ import {
   fetchAndProcessCreditCardTransactions,
   fetchAndProcessCashTransactions,
   fetchAndProcessLineOfCreditTransactions,
+  fetchAndProcessInvestmentTransactions,
   fetchAndProcessTransactions,
   reconcilePendingTransactions,
   formatReconciliationMessage,
@@ -2326,6 +2327,490 @@ describe('Wealthsimple Transaction Service', () => {
 
       // Manual categorization called only for interest
       expect(showManualTransactionCategorization).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('fetchAndProcessInvestmentTransactions', () => {
+    const mockInvestmentAccount = {
+      wealthsimpleAccount: {
+        id: 'investment-account-id',
+        nickname: 'My TFSA',
+        type: 'MANAGED_TFSA',
+      },
+    };
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      // Mock GM_getValue for account name lookup in internal transfer rule
+      global.GM_getValue = jest.fn().mockReturnValue(JSON.stringify([
+        {
+          wealthsimpleAccount: {
+            id: 'investment-account-id',
+            nickname: 'My TFSA',
+            type: 'MANAGED_TFSA',
+          },
+        },
+        {
+          wealthsimpleAccount: {
+            id: 'cash-account-id',
+            nickname: 'Cash Account',
+            type: 'CASH',
+          },
+        },
+      ]));
+    });
+
+    it('should auto-categorize INTERNAL_TRANSFER/SOURCE as transfer out', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'funding_intent-transfer-out-1',
+          occurredAt: '2026-01-15T10:30:00.000000+00:00',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'SOURCE',
+          status: 'completed',
+          accountId: 'investment-account-id',
+          opposingAccountId: 'cash-account-id',
+          amount: 500.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      wealthsimpleApi.fetchInternalTransfer.mockResolvedValue({ annotation: '' });
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        mockInvestmentAccount,
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      // Should NOT call manual categorization (rule matched)
+      expect(showManualTransactionCategorization).not.toHaveBeenCalled();
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        id: 'funding_intent-transfer-out-1',
+        date: '2026-01-15',
+        merchant: 'Transfer Out: My TFSA → Cash Account',
+        originalMerchant: 'INTERNAL_TRANSFER:SOURCE:Transfer Out: My TFSA → Cash Account',
+        amount: -500.00,
+        resolvedMonarchCategory: 'Transfer',
+        ruleId: 'internal-transfer',
+        isPending: false,
+      });
+    });
+
+    it('should auto-categorize INTERNAL_TRANSFER/DESTINATION as transfer in', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'funding_intent-transfer-in-1',
+          occurredAt: '2026-01-16T10:30:00.000000+00:00',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'DESTINATION',
+          status: 'completed',
+          accountId: 'investment-account-id',
+          opposingAccountId: 'cash-account-id',
+          amount: 1000.00,
+          amountSign: 'positive',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      wealthsimpleApi.fetchInternalTransfer.mockResolvedValue({ annotation: '' });
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        mockInvestmentAccount,
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      // Should NOT call manual categorization (rule matched)
+      expect(showManualTransactionCategorization).not.toHaveBeenCalled();
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        id: 'funding_intent-transfer-in-1',
+        merchant: 'Transfer In: My TFSA ← Cash Account',
+        originalMerchant: 'INTERNAL_TRANSFER:DESTINATION:Transfer In: My TFSA ← Cash Account',
+        amount: 1000.00,
+        resolvedMonarchCategory: 'Transfer',
+        ruleId: 'internal-transfer',
+      });
+    });
+
+    it('should include annotation from internal transfer data in notes', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'funding_intent-transfer-with-note',
+          occurredAt: '2026-01-15T10:30:00.000000+00:00',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'DESTINATION',
+          status: 'completed',
+          accountId: 'investment-account-id',
+          opposingAccountId: 'cash-account-id',
+          amount: 500.00,
+          amountSign: 'positive',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      wealthsimpleApi.fetchInternalTransfer.mockResolvedValue({
+        annotation: 'Monthly contribution',
+      });
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        mockInvestmentAccount,
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].notes).toBe('Monthly contribution');
+    });
+
+    it('should process unknown transaction types via manual categorization', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-dividend-1',
+          occurredAt: '2026-01-15T10:30:00.000000+00:00',
+          type: 'DIVIDEND',
+          subType: 'STOCK_DIVIDEND',
+          status: 'completed',
+          amount: 25.00,
+          amountSign: 'positive',
+          assetSymbol: 'VFV',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+      // Mock manual categorization
+      showManualTransactionCategorization.mockImplementation((transaction, callback) => {
+        callback({
+          merchant: 'VFV Dividend',
+          category: { id: '1', name: 'Investment Income' },
+        });
+      });
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        mockInvestmentAccount,
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      // Should have called manual categorization
+      expect(showManualTransactionCategorization).toHaveBeenCalledTimes(1);
+      expect(showManualTransactionCategorization).toHaveBeenCalledWith(
+        expect.objectContaining({
+          externalCanonicalId: 'tx-dividend-1',
+          type: 'DIVIDEND',
+        }),
+        expect.any(Function),
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        id: 'tx-dividend-1',
+        merchant: 'VFV Dividend',
+        resolvedMonarchCategory: 'Investment Income',
+        ruleId: 'manual',
+        assetSymbol: 'VFV',
+      });
+    });
+
+    it('should process mix of rule-matched and manual categorization transactions', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'funding_intent-transfer-in',
+          occurredAt: '2026-01-15T10:30:00.000000+00:00',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'DESTINATION',
+          status: 'completed',
+          accountId: 'investment-account-id',
+          opposingAccountId: 'cash-account-id',
+          amount: 1000.00,
+          amountSign: 'positive',
+        },
+        {
+          externalCanonicalId: 'tx-dividend',
+          occurredAt: '2026-01-16T10:30:00.000000+00:00',
+          type: 'DIVIDEND',
+          subType: 'STOCK_DIVIDEND',
+          status: 'completed',
+          amount: 25.00,
+          amountSign: 'positive',
+          assetSymbol: 'XAW',
+        },
+        {
+          externalCanonicalId: 'funding_intent-transfer-out',
+          occurredAt: '2026-01-17T10:30:00.000000+00:00',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'SOURCE',
+          status: 'completed',
+          accountId: 'investment-account-id',
+          opposingAccountId: 'cash-account-id',
+          amount: 500.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      wealthsimpleApi.fetchInternalTransfer.mockResolvedValue({ annotation: '' });
+
+      // Mock manual categorization for the dividend
+      showManualTransactionCategorization.mockImplementation((transaction, callback) => {
+        callback({
+          merchant: 'XAW Dividend',
+          category: { id: '1', name: 'Investment Income' },
+        });
+      });
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        mockInvestmentAccount,
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      expect(result).toHaveLength(3);
+
+      // Transfer in - auto-categorized
+      expect(result[0]).toMatchObject({
+        id: 'funding_intent-transfer-in',
+        merchant: 'Transfer In: My TFSA ← Cash Account',
+        resolvedMonarchCategory: 'Transfer',
+        ruleId: 'internal-transfer',
+      });
+
+      // Transfer out - auto-categorized
+      expect(result[1]).toMatchObject({
+        id: 'funding_intent-transfer-out',
+        merchant: 'Transfer Out: My TFSA → Cash Account',
+        resolvedMonarchCategory: 'Transfer',
+        ruleId: 'internal-transfer',
+      });
+
+      // Dividend - manually categorized
+      expect(result[2]).toMatchObject({
+        id: 'tx-dividend',
+        merchant: 'XAW Dividend',
+        resolvedMonarchCategory: 'Investment Income',
+        ruleId: 'manual',
+      });
+
+      // Manual categorization called only for dividend
+      expect(showManualTransactionCategorization).toHaveBeenCalledTimes(1);
+    });
+
+    it('should throw error when user cancels manual categorization', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-unknown',
+          occurredAt: '2026-01-15T10:30:00.000000+00:00',
+          type: 'FEE',
+          subType: 'ADMIN_FEE',
+          status: 'completed',
+          amount: 10.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+      // User cancels
+      showManualTransactionCategorization.mockImplementation((transaction, callback) => {
+        callback(null);
+      });
+
+      await expect(
+        fetchAndProcessInvestmentTransactions(
+          mockInvestmentAccount,
+          '2026-01-01',
+          '2026-01-31',
+        ),
+      ).rejects.toThrow('Manual categorization cancelled');
+    });
+
+    it('should return empty array when no transactions found', async () => {
+      wealthsimpleApi.fetchTransactions.mockResolvedValue([]);
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        mockInvestmentAccount,
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      expect(result).toEqual([]);
+      expect(showManualTransactionCategorization).not.toHaveBeenCalled();
+    });
+
+    it('should skip already-uploaded completed transactions', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'funding_intent-already-uploaded',
+          occurredAt: '2026-01-15T10:30:00.000000+00:00',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'DESTINATION',
+          status: 'completed',
+          accountId: 'investment-account-id',
+          opposingAccountId: 'cash-account-id',
+          amount: 500.00,
+          amountSign: 'positive',
+        },
+        {
+          externalCanonicalId: 'funding_intent-new',
+          occurredAt: '2026-01-16T10:30:00.000000+00:00',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'SOURCE',
+          status: 'completed',
+          accountId: 'investment-account-id',
+          opposingAccountId: 'cash-account-id',
+          amount: 200.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      wealthsimpleApi.fetchInternalTransfer.mockResolvedValue({ annotation: '' });
+
+      // Pass already-uploaded IDs
+      const uploadedIds = new Set(['funding_intent-already-uploaded']);
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        mockInvestmentAccount,
+        '2026-01-01',
+        '2026-01-31',
+        { uploadedTransactionIds: uploadedIds },
+      );
+
+      // Should only process the new transaction
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('funding_intent-new');
+    });
+
+    it('should handle API errors gracefully', async () => {
+      wealthsimpleApi.fetchTransactions.mockRejectedValue(new Error('API Error'));
+
+      await expect(
+        fetchAndProcessInvestmentTransactions(
+          mockInvestmentAccount,
+          '2026-01-01',
+          '2026-01-31',
+        ),
+      ).rejects.toThrow('API Error');
+    });
+
+    it('should use provided raw transactions if passed in options', async () => {
+      const providedTransactions = [
+        {
+          externalCanonicalId: 'funding_intent-provided',
+          occurredAt: '2026-01-15T10:30:00.000000+00:00',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'DESTINATION',
+          status: 'completed',
+          accountId: 'investment-account-id',
+          opposingAccountId: 'cash-account-id',
+          amount: 750.00,
+          amountSign: 'positive',
+        },
+      ];
+
+      wealthsimpleApi.fetchInternalTransfer.mockResolvedValue({ annotation: '' });
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        mockInvestmentAccount,
+        '2026-01-01',
+        '2026-01-31',
+        { rawTransactions: providedTransactions },
+      );
+
+      // Should NOT call API since transactions were provided
+      expect(wealthsimpleApi.fetchTransactions).not.toHaveBeenCalled();
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('funding_intent-provided');
+      expect(result[0].merchant).toBe('Transfer In: My TFSA ← Cash Account');
+      expect(result[0].resolvedMonarchCategory).toBe('Transfer');
+    });
+
+    it('should filter by status - settled, completed, and authorized only', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'funding_intent-completed',
+          occurredAt: '2026-01-15T10:30:00.000000+00:00',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'DESTINATION',
+          status: 'completed',
+          accountId: 'investment-account-id',
+          opposingAccountId: 'cash-account-id',
+          amount: 500.00,
+          amountSign: 'positive',
+        },
+        {
+          externalCanonicalId: 'funding_intent-settled',
+          occurredAt: '2026-01-16T10:30:00.000000+00:00',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'SOURCE',
+          status: 'settled',
+          accountId: 'investment-account-id',
+          opposingAccountId: 'cash-account-id',
+          amount: 200.00,
+          amountSign: 'negative',
+        },
+        {
+          externalCanonicalId: 'funding_intent-pending',
+          occurredAt: '2026-01-17T10:30:00.000000+00:00',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'DESTINATION',
+          status: 'pending', // Should be excluded
+          accountId: 'investment-account-id',
+          opposingAccountId: 'cash-account-id',
+          amount: 100.00,
+          amountSign: 'positive',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      wealthsimpleApi.fetchInternalTransfer.mockResolvedValue({ annotation: '' });
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        { ...mockInvestmentAccount, includePendingTransactions: true },
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      // Should include completed and settled; exclude pending
+      expect(result).toHaveLength(2);
+      expect(result[0].id).toBe('funding_intent-completed');
+      expect(result[1].id).toBe('funding_intent-settled');
+    });
+
+    it('should include authorized transactions as pending when includePendingTransactions is true', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'funding_intent-authorized',
+          occurredAt: '2026-01-15T10:30:00.000000+00:00',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'DESTINATION',
+          status: 'authorized',
+          accountId: 'investment-account-id',
+          opposingAccountId: 'cash-account-id',
+          amount: 500.00,
+          amountSign: 'positive',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      wealthsimpleApi.fetchInternalTransfer.mockResolvedValue({ annotation: '' });
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        { ...mockInvestmentAccount, includePendingTransactions: true },
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('funding_intent-authorized');
+      expect(result[0].isPending).toBe(true);
     });
   });
 

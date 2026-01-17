@@ -1162,8 +1162,85 @@ export async function fetchAndProcessLineOfCreditTransactions(consolidatedAccoun
 }
 
 /**
+ * Investment account transaction rules
+ * Uses the same internal-transfer rule as CASH accounts, plus handles any unknown types via manual categorization
+ */
+const INVESTMENT_TRANSACTION_RULES = CASH_TRANSACTION_RULES.filter(
+  (rule) => rule.id === 'internal-transfer',
+);
+
+/**
+ * Collect internal transfer IDs from investment transactions that need enrichment
+ * @param {Array} transactions - Raw transactions from Wealthsimple API
+ * @returns {Array<string>} Array of internal transfer IDs
+ */
+function collectInvestmentInternalTransferIds(transactions) {
+  const internalTransferIds = [];
+
+  for (const tx of transactions) {
+    if (
+      tx.type === 'INTERNAL_TRANSFER' &&
+      (tx.subType === 'SOURCE' || tx.subType === 'DESTINATION') &&
+      tx.externalCanonicalId &&
+      tx.externalCanonicalId.startsWith('funding_intent-')
+    ) {
+      internalTransferIds.push(tx.externalCanonicalId);
+    }
+  }
+
+  return internalTransferIds;
+}
+
+/**
+ * Process an investment account transaction using the rules engine
+ * @param {Object} transaction - Raw transaction from Wealthsimple API
+ * @param {Map<string, Object>} enrichmentMap - Optional map of enrichment data (internal transfers, etc.)
+ * @returns {Object} Processed transaction object (may include needsManualCategorization flag)
+ */
+function processInvestmentTransaction(transaction, enrichmentMap = null) {
+  // Try to apply a matching rule from the investment rules
+  for (const rule of INVESTMENT_TRANSACTION_RULES) {
+    if (rule.match(transaction)) {
+      debugLog(`Investment transaction ${getTransactionId(transaction)} matched rule: ${rule.id}`);
+      const ruleResult = rule.process(transaction, enrichmentMap);
+
+      // Determine amount sign
+      const isNegative = transaction.amountSign === 'negative';
+      const finalAmount = isNegative ? -Math.abs(transaction.amount) : Math.abs(transaction.amount);
+
+      // Determine pending status
+      const isPending = transaction.status === 'authorized';
+
+      return {
+        id: getTransactionId(transaction),
+        date: convertToLocalDate(transaction.occurredAt),
+        merchant: ruleResult.merchant,
+        originalMerchant: ruleResult.originalStatement,
+        amount: finalAmount,
+        type: transaction.type,
+        subType: transaction.subType,
+        status: transaction.status,
+        isPending,
+        resolvedMonarchCategory: ruleResult.category,
+        ruleId: ruleResult.ruleId || rule.id,
+        notes: ruleResult.notes || '',
+        technicalDetails: ruleResult.technicalDetails || '',
+        needsCategoryMapping: ruleResult.needsCategoryMapping || false,
+        categoryKey: ruleResult.categoryKey || ruleResult.merchant,
+        // Include asset symbol for investment context
+        assetSymbol: transaction.assetSymbol || null,
+      };
+    }
+  }
+
+  // No rule matched - return null to indicate manual categorization needed
+  return null;
+}
+
+/**
  * Fetch and process transactions for an investment account
- * Uses manual categorization for all transactions (no auto-categorization rules yet).
+ * Uses rules engine for INTERNAL_TRANSFER transactions (auto-categorized as "Transfer"),
+ * and manual categorization for all other unknown transaction types.
  *
  * @param {Object} consolidatedAccount - Consolidated account object
  * @param {string} fromDate - Start date (YYYY-MM-DD)
@@ -1171,13 +1248,14 @@ export async function fetchAndProcessLineOfCreditTransactions(consolidatedAccoun
  * @param {Object} options - Processing options
  * @param {Array} options.rawTransactions - Pre-fetched raw transactions (optional, will fetch if not provided)
  * @param {Set<string>} options.uploadedTransactionIds - Set of already-uploaded transaction IDs to skip
+ * @param {Function} options.onProgress - Callback for progress updates (optional)
  * @returns {Promise<Array>} Processed transactions ready for upload
  */
 export async function fetchAndProcessInvestmentTransactions(consolidatedAccount, fromDate, toDate, options = {}) {
   try {
     const accountId = consolidatedAccount.wealthsimpleAccount.id;
     const accountName = consolidatedAccount.wealthsimpleAccount.nickname;
-    const { rawTransactions: providedTransactions, uploadedTransactionIds = new Set() } = options;
+    const { rawTransactions: providedTransactions, uploadedTransactionIds = new Set(), onProgress } = options;
 
     // Get pending transactions setting (default true)
     const includePendingTransactions = consolidatedAccount.includePendingTransactions !== false;
@@ -1243,70 +1321,132 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
       return [];
     }
 
-    // Step 4: All investment transactions require manual categorization
-    debugLog(`Processing ${notYetUploadedTransactions.length} transactions that need manual categorization`);
-    toast.show(`${notYetUploadedTransactions.length} investment transaction(s) need manual categorization...`, 'info');
+    // Step 4: Separate transactions with/without rules
+    // Transactions with rules get auto-categorized, those without need manual categorization
+    const transactionsWithRules = [];
+    const transactionsWithoutRules = [];
 
-    const processedTransactions = [];
-
-    for (let i = 0; i < notYetUploadedTransactions.length; i++) {
-      const rawTransaction = notYetUploadedTransactions[i];
-      const progressNum = i + 1;
-
-      debugLog(`Showing manual categorization for transaction ${progressNum}/${notYetUploadedTransactions.length}`, {
-        id: rawTransaction.externalCanonicalId,
-        type: rawTransaction.type,
-        subType: rawTransaction.subType,
-      });
-
-      toast.show(`Manual categorization ${progressNum}/${notYetUploadedTransactions.length}`, 'debug');
-
-      // Show the manual categorization dialog
-      const manualResult = await new Promise((resolve) => {
-        showManualTransactionCategorization(rawTransaction, resolve);
-      });
-
-      if (!manualResult) {
-        // User cancelled - abort the upload
-        throw new Error(`Manual categorization cancelled for transaction ${rawTransaction.externalCanonicalId}. Upload aborted.`);
+    notYetUploadedTransactions.forEach((tx) => {
+      if (INVESTMENT_TRANSACTION_RULES.some((rule) => rule.match(tx))) {
+        transactionsWithRules.push(tx);
+      } else {
+        transactionsWithoutRules.push(tx);
       }
+    });
 
-      // Determine amount sign
-      const isNegative = rawTransaction.amountSign === 'negative';
-      const finalAmount = isNegative ? -Math.abs(rawTransaction.amount) : Math.abs(rawTransaction.amount);
+    debugLog(`Investment transactions: ${transactionsWithRules.length} with rules, ${transactionsWithoutRules.length} need manual categorization`);
 
-      // Determine pending status
-      const isPending = rawTransaction.status === 'authorized';
-
-      // Get transaction ID (handles null externalCanonicalId)
-      const transactionId = getTransactionId(rawTransaction);
-
-      // Create processed transaction with user-provided data
-      const manuallyProcessed = {
-        id: transactionId,
-        date: convertToLocalDate(rawTransaction.occurredAt),
-        merchant: manualResult.merchant,
-        originalMerchant: formatOriginalStatement(rawTransaction.type, rawTransaction.subType, manualResult.merchant),
-        amount: finalAmount,
-        type: rawTransaction.type,
-        subType: rawTransaction.subType,
-        status: rawTransaction.status,
-        isPending,
-        resolvedMonarchCategory: manualResult.category.name,
-        ruleId: 'manual',
-        notes: '',
-        technicalDetails: '',
-        needsCategoryMapping: false,
-        categoryKey: manualResult.merchant,
-        // Include asset symbol for investment context
-        assetSymbol: rawTransaction.assetSymbol || null,
-      };
-
-      processedTransactions.push(manuallyProcessed);
-      debugLog(`Manually categorized transaction: ${manualResult.merchant} -> ${manualResult.category.name}`);
+    if (transactionsWithRules.length === 0 && transactionsWithoutRules.length === 0) {
+      debugLog('No transactions to process');
+      return [];
     }
 
-    toast.show(`Completed manual categorization for ${notYetUploadedTransactions.length} transaction(s)`, 'info');
+    // Step 5: Collect IDs for enrichment data (internal transfers need annotation fetching)
+    const internalTransferIds = collectInvestmentInternalTransferIds(transactionsWithRules);
+
+    // Create enrichment map for the rules engine
+    const enrichmentMap = new Map();
+
+    // Fetch internal transfer data for annotations (individual calls with progress)
+    if (internalTransferIds.length > 0) {
+      debugLog(`Fetching ${internalTransferIds.length} internal transfer(s) for annotations...`);
+      for (let i = 0; i < internalTransferIds.length; i++) {
+        const id = internalTransferIds[i];
+        const progressNum = i + 1;
+        debugLog(`Fetching internal transfer details (${progressNum}/${internalTransferIds.length}): ${id}`);
+
+        // Update progress callback for UI
+        if (onProgress) {
+          onProgress(`Internal transfers (${progressNum}/${internalTransferIds.length})`);
+        }
+
+        const internalTransfer = await wealthsimpleApi.fetchInternalTransfer(id);
+        if (internalTransfer) {
+          enrichmentMap.set(id, internalTransfer);
+        }
+      }
+      debugLog(`Fetched ${internalTransferIds.length} internal transfer(s)`);
+    }
+
+    debugLog(`Enrichment map has ${enrichmentMap.size} entries`);
+
+    // Step 6: Process transactions with rules through the rules engine
+    const processedTransactions = [];
+
+    for (const transaction of transactionsWithRules) {
+      const processed = processInvestmentTransaction(transaction, enrichmentMap);
+      if (processed) {
+        processedTransactions.push(processed);
+        debugLog(`Auto-categorized investment transaction: ${processed.merchant} -> ${processed.resolvedMonarchCategory}`);
+      }
+    }
+
+    debugLog(`Processed ${processedTransactions.length} transactions with rules`);
+
+    // Step 7: Handle transactions without rules - show manual categorization UI
+    if (transactionsWithoutRules.length > 0) {
+      debugLog(`Processing ${transactionsWithoutRules.length} transactions that need manual categorization`);
+      toast.show(`${transactionsWithoutRules.length} investment transaction(s) need manual categorization...`, 'info');
+
+      for (let i = 0; i < transactionsWithoutRules.length; i++) {
+        const rawTransaction = transactionsWithoutRules[i];
+        const progressNum = i + 1;
+
+        debugLog(`Showing manual categorization for transaction ${progressNum}/${transactionsWithoutRules.length}`, {
+          id: rawTransaction.externalCanonicalId,
+          type: rawTransaction.type,
+          subType: rawTransaction.subType,
+        });
+
+        toast.show(`Manual categorization ${progressNum}/${transactionsWithoutRules.length}`, 'debug');
+
+        // Show the manual categorization dialog
+        const manualResult = await new Promise((resolve) => {
+          showManualTransactionCategorization(rawTransaction, resolve);
+        });
+
+        if (!manualResult) {
+          // User cancelled - abort the upload
+          throw new Error(`Manual categorization cancelled for transaction ${rawTransaction.externalCanonicalId}. Upload aborted.`);
+        }
+
+        // Determine amount sign
+        const isNegative = rawTransaction.amountSign === 'negative';
+        const finalAmount = isNegative ? -Math.abs(rawTransaction.amount) : Math.abs(rawTransaction.amount);
+
+        // Determine pending status
+        const isPending = rawTransaction.status === 'authorized';
+
+        // Get transaction ID (handles null externalCanonicalId)
+        const transactionId = getTransactionId(rawTransaction);
+
+        // Create processed transaction with user-provided data
+        const manuallyProcessed = {
+          id: transactionId,
+          date: convertToLocalDate(rawTransaction.occurredAt),
+          merchant: manualResult.merchant,
+          originalMerchant: formatOriginalStatement(rawTransaction.type, rawTransaction.subType, manualResult.merchant),
+          amount: finalAmount,
+          type: rawTransaction.type,
+          subType: rawTransaction.subType,
+          status: rawTransaction.status,
+          isPending,
+          resolvedMonarchCategory: manualResult.category.name,
+          ruleId: 'manual',
+          notes: '',
+          technicalDetails: '',
+          needsCategoryMapping: false,
+          categoryKey: manualResult.merchant,
+          // Include asset symbol for investment context
+          assetSymbol: rawTransaction.assetSymbol || null,
+        };
+
+        processedTransactions.push(manuallyProcessed);
+        debugLog(`Manually categorized transaction: ${manualResult.merchant} -> ${manualResult.category.name}`);
+      }
+
+      toast.show(`Completed manual categorization for ${transactionsWithoutRules.length} transaction(s)`, 'info');
+    }
 
     debugLog(`Processed ${processedTransactions.length} total investment transactions (${uploadedSkipCount} already uploaded)`);
     return processedTransactions;
