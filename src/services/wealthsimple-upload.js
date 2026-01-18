@@ -812,10 +812,11 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
 
     // Step 5: Position sync (for investment accounts only)
     if (isInvestmentAccount(accountType)) {
-      // Skip position sync for manual Monarch accounts - holdings API not supported
-      if (monarchAccount.isManual) {
-        progressDialog.updateStepStatus(account.id, 'positions', 'skipped', 'Manual accounts don\'t support holdings');
-        debugLog(`Skipping position sync for ${account.id} - Monarch account is manual`);
+      // Skip position sync for manual Monarch accounts that don't use holdings tracking
+      // Manual investment accounts with manualInvestmentsTrackingMethod: 'holdings' DO support holdings sync
+      if (monarchAccount.isManual && monarchAccount.manualInvestmentsTrackingMethod !== 'holdings') {
+        progressDialog.updateStepStatus(account.id, 'positions', 'skipped', 'Manual accounts without holdings tracking');
+        debugLog(`Skipping position sync for ${account.id} - Monarch account is manual without holdings tracking`);
       } else {
         progressDialog.updateStepStatus(account.id, 'positions', 'processing', 'Syncing positions...');
 
@@ -851,10 +852,11 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
     // Step 6: Cash sync (for investment accounts only)
     // Syncs CAD and USD cash balances to Monarch holdings
     if (isInvestmentAccount(accountType)) {
-      // Skip cash sync for manual Monarch accounts - holdings API not supported
-      if (monarchAccount.isManual) {
-        progressDialog.updateStepStatus(account.id, 'cashSync', 'skipped', 'Manual accounts don\'t support holdings');
-        debugLog(`Skipping cash sync for ${account.id} - Monarch account is manual`);
+      // Skip cash sync for manual Monarch accounts that don't use holdings tracking
+      // Manual investment accounts with manualInvestmentsTrackingMethod: 'holdings' DO support holdings sync
+      if (monarchAccount.isManual && monarchAccount.manualInvestmentsTrackingMethod !== 'holdings') {
+        progressDialog.updateStepStatus(account.id, 'cashSync', 'skipped', 'Manual accounts without holdings tracking');
+        debugLog(`Skipping cash sync for ${account.id} - Monarch account is manual without holdings tracking`);
       } else {
         progressDialog.updateStepStatus(account.id, 'cashSync', 'processing', 'Syncing cash balances...');
 

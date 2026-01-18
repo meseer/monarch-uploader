@@ -236,7 +236,7 @@ function showInstitutionSelectorWithCreate(institutions, callback, accountType, 
     const createHoldingsButton = document.createElement('button');
     createHoldingsButton.id = 'create-new-account-holdings-button';
     createHoldingsButton.type = 'button';
-    createHoldingsButton.textContent = '+ Create New Account (Track Holdings)';
+    createHoldingsButton.textContent = '+ Create Manual Investment Account (Track Holdings)';
     createHoldingsButton.style.cssText = `
       width: 100%;
       padding: 15px;
