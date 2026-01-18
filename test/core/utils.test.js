@@ -29,6 +29,7 @@ import {
   clearTransactionUploadHistory,
   clearCategoryMappings,
   clearLastUploadedDate,
+  formatAmount,
 } from '../../src/core/utils';
 
 // Mock the toast module since the utils depend on it
@@ -591,6 +592,57 @@ describe('Utility Functions', () => {
 
   // Note: clearAccountMapping test removed due to complex mock interactions
   // The function is covered indirectly through integration tests and manual testing
+
+  describe('formatAmount', () => {
+    it('should remove trailing zeros from decimal numbers', () => {
+      expect(formatAmount(1.0000)).toBe('1');
+      expect(formatAmount(0.0500)).toBe('0.05');
+      expect(formatAmount(45.2300)).toBe('45.23');
+      expect(formatAmount(100.1000)).toBe('100.1');
+    });
+
+    it('should preserve meaningful decimal places', () => {
+      expect(formatAmount(45.23)).toBe('45.23');
+      expect(formatAmount(0.05)).toBe('0.05');
+      expect(formatAmount(1.5)).toBe('1.5');
+      expect(formatAmount(123.456)).toBe('123.456');
+    });
+
+    it('should handle integers without adding decimal places', () => {
+      expect(formatAmount(100)).toBe('100');
+      expect(formatAmount(0)).toBe('0');
+      expect(formatAmount(1)).toBe('1');
+      expect(formatAmount(999999)).toBe('999999');
+    });
+
+    it('should handle string inputs', () => {
+      expect(formatAmount('1.0000')).toBe('1');
+      expect(formatAmount('0.0500')).toBe('0.05');
+      expect(formatAmount('45.23')).toBe('45.23');
+      expect(formatAmount('100')).toBe('100');
+    });
+
+    it('should handle null and undefined', () => {
+      expect(formatAmount(null)).toBe('0');
+      expect(formatAmount(undefined)).toBe('0');
+    });
+
+    it('should handle NaN values', () => {
+      expect(formatAmount(NaN)).toBe('0');
+      expect(formatAmount('invalid')).toBe('0');
+    });
+
+    it('should handle very small decimals', () => {
+      expect(formatAmount(0.00001)).toBe('0.00001');
+      expect(formatAmount(0.000010000)).toBe('0.00001');
+    });
+
+    it('should handle negative numbers', () => {
+      expect(formatAmount(-1.0000)).toBe('-1');
+      expect(formatAmount(-0.0500)).toBe('-0.05');
+      expect(formatAmount(-45.23)).toBe('-45.23');
+    });
+  });
 
   describe('clearLastUploadedDate', () => {
     beforeEach(() => {

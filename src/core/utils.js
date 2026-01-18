@@ -677,6 +677,25 @@ export async function clearLastUploadedDate(location = window.location) {
 }
 
 /**
+ * Format a numeric amount by removing trailing zeros
+ * @param {number|string} amount - Amount to format
+ * @returns {string} Formatted amount without trailing zeros (e.g., "1" not "1.0000", "0.05" not "0.0500")
+ */
+export function formatAmount(amount) {
+  if (amount === null || amount === undefined) return '0';
+
+  // Convert to number if string
+  const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+
+  // Handle NaN
+  if (isNaN(num)) return '0';
+
+  // Convert to string, which automatically removes trailing zeros for integers
+  // For decimals, we need to ensure trailing zeros are removed
+  return String(parseFloat(num.toFixed(10)));
+}
+
+/**
  * Format currency amount with proper thousands separators
  * @param {number} amount - Amount to format
  * @returns {string} Formatted amount (e.g., "96,780.95")

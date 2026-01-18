@@ -4259,7 +4259,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.notes).toBe('Dividend on XEI: CAD$0.42');
       });
 
-      it('should handle string amounts by preserving them', () => {
+      it('should handle string amounts by formatting them (removing trailing zeros)', () => {
         const transaction = {
           externalCanonicalId: 'dividend-string-amount',
           type: 'DIVIDEND',
@@ -4273,8 +4273,8 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = rule.process(transaction);
 
         expect(result).not.toBeNull();
-        // The amount is preserved as-is since ?? only checks null/undefined
-        expect(result.notes).toBe('Dividend on VFV: CAD$10.50');
+        // formatAmount removes trailing zeros, so 10.50 becomes 10.5
+        expect(result.notes).toBe('Dividend on VFV: CAD$10.5');
       });
     });
 

@@ -10,7 +10,7 @@
  * Rules are evaluated in order - first matching rule wins.
  */
 
-import { debugLog } from '../../core/utils';
+import { debugLog, formatAmount } from '../../core/utils';
 import { STORAGE } from '../../core/config';
 import { applyMerchantMapping } from '../../mappers/merchant';
 
@@ -63,7 +63,7 @@ export function formatInvestmentOrderNotes(activity, extendedOrder) {
 
   const currency = activity.currency || 'CAD';
   const symbol = activity.assetSymbol || 'N/A';
-  const amount = activity.amount ?? 0;
+  const amount = formatAmount(activity.amount ?? 0);
   const subType = activity.subType || '';
 
   // If no extended order data, return minimal notes
@@ -72,16 +72,16 @@ export function formatInvestmentOrderNotes(activity, extendedOrder) {
   }
 
   const orderType = extendedOrder.orderType ? toSentenceCase(extendedOrder.orderType) : 'Order';
-  const submittedQuantity = extendedOrder.submittedQuantity ?? 0;
-  const filledQuantity = extendedOrder.filledQuantity ?? 0;
-  const averageFilledPrice = extendedOrder.averageFilledPrice ?? 0;
-  const filledTotalFee = extendedOrder.filledTotalFee ?? 0;
+  const submittedQuantity = formatAmount(extendedOrder.submittedQuantity ?? 0);
+  const filledQuantity = formatAmount(extendedOrder.filledQuantity ?? 0);
+  const averageFilledPrice = formatAmount(extendedOrder.averageFilledPrice ?? 0);
+  const filledTotalFee = formatAmount(extendedOrder.filledTotalFee ?? 0);
 
   // Determine if this is a limit order
   const isLimitOrder = subType === 'LIMIT_ORDER';
 
   if (isLimitOrder) {
-    const limitPrice = extendedOrder.limitPrice ?? 0;
+    const limitPrice = formatAmount(extendedOrder.limitPrice ?? 0);
     const timeInForce = extendedOrder.timeInForce || '';
     // Format: "Limit Order Buy 100 VFV @ 44.50 Limit GTC\nFilled 100 @ CAD$44.25, fees: CAD$0.00\nTotal CAD$4425.00"
     return `${toSentenceCase(subType)} ${orderType} ${submittedQuantity} ${symbol} @ ${limitPrice} Limit ${timeInForce}\nFilled ${filledQuantity} @ ${currency}$${averageFilledPrice}, fees: ${currency}$${filledTotalFee}\nTotal ${currency}$${amount}`;
@@ -106,20 +106,20 @@ export function formatOptionsOrderNotes(activity, extendedOrder, isSell) {
 
   const currency = activity.currency || 'CAD';
   const assetSymbol = activity.assetSymbol || 'N/A';
-  const assetQuantity = activity.assetQuantity ?? 0;
-  const strikePrice = activity.strikePrice ?? 0;
+  const assetQuantity = formatAmount(activity.assetQuantity ?? 0);
+  const strikePrice = formatAmount(activity.strikePrice ?? 0);
   const contractType = activity.contractType || '';
   const expiryDate = activity.expiryDate || '';
-  const amount = activity.amount ?? 0;
+  const amount = formatAmount(activity.amount ?? 0);
   const subType = activity.subType || '';
 
   // Extended order data for fill details
-  const optionMultiplier = extendedOrder?.optionMultiplier ?? 100;
-  const filledQuantity = extendedOrder?.filledQuantity ?? 0;
-  const averageFilledPrice = extendedOrder?.averageFilledPrice ?? 0;
-  const filledTotalFee = extendedOrder?.filledTotalFee ?? 0;
+  const optionMultiplier = formatAmount(extendedOrder?.optionMultiplier ?? 100);
+  const filledQuantity = formatAmount(extendedOrder?.filledQuantity ?? 0);
+  const averageFilledPrice = formatAmount(extendedOrder?.averageFilledPrice ?? 0);
+  const filledTotalFee = formatAmount(extendedOrder?.filledTotalFee ?? 0);
   const timeInForce = extendedOrder?.timeInForce || '';
-  const limitPrice = extendedOrder?.limitPrice ?? 0;
+  const limitPrice = formatAmount(extendedOrder?.limitPrice ?? 0);
 
   const action = isSell ? 'Sell' : 'Buy';
   const timeInForceDisplay = timeInForce ? `${toSentenceCase(timeInForce)} order` : 'order';
@@ -1125,7 +1125,7 @@ export const INVESTMENT_DEPOSIT_TRANSACTION_RULES = [
     process: (tx) => {
       const frequency = tx.frequency || '';
       const currency = tx.currency || 'CAD';
-      const amount = tx.amount ?? 0;
+      const amount = formatAmount(tx.amount ?? 0);
       const subType = tx.subType || '';
 
       // Build frequency prefix for merchant and notes
@@ -1179,7 +1179,7 @@ export const INVESTMENT_DIVIDEND_TRANSACTION_RULES = [
     process: (tx) => {
       const symbol = tx.assetSymbol || 'Unknown';
       const currency = tx.currency || 'CAD';
-      const amount = tx.amount ?? 0;
+      const amount = formatAmount(tx.amount ?? 0);
 
       // Determine notes based on subType
       let notes;
