@@ -14,6 +14,7 @@ import {
   applyTransactionRule,
   CASH_TRANSACTION_RULES,
   INVESTMENT_BUY_SELL_TRANSACTION_RULES,
+  INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES,
   INVESTMENT_DEPOSIT_TRANSACTION_RULES,
   INVESTMENT_DIVIDEND_TRANSACTION_RULES,
   INVESTMENT_INTEREST_TRANSACTION_RULES,
@@ -1199,6 +1200,8 @@ const INVESTMENT_TRANSACTION_RULES = [
   ...INVESTMENT_INTEREST_TRANSACTION_RULES,
   // Refund rules (fee refunds, transfer fee refunds, etc.)
   ...INVESTMENT_REFUND_TRANSACTION_RULES,
+  // Corporate action rules (stock splits, consolidations, mergers, etc.)
+  ...INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES,
   // Investment buy/sell rules
   ...INVESTMENT_BUY_SELL_TRANSACTION_RULES,
 ];
@@ -1269,6 +1272,25 @@ function filterInvestmentSyncableTransactions(transactions, includePending = tru
     if (includePending && status === 'authorized') return true;
     return false;
   });
+}
+
+/**
+ * Collect corporate action canonical IDs from transactions that need child activities
+ * Returns only canonicalIds from CORPORATE_ACTION transactions
+ *
+ * @param {Array} transactions - Raw transactions from Wealthsimple API
+ * @returns {Array<string>} Array of canonical IDs for fetchCorporateActionChildActivities
+ */
+function collectCorporateActionIds(transactions) {
+  const corporateActionIds = [];
+
+  for (const tx of transactions) {
+    if (tx.type === 'CORPORATE_ACTION' && tx.canonicalId) {
+      corporateActionIds.push(tx.canonicalId);
+    }
+  }
+
+  return corporateActionIds;
 }
 
 /**
@@ -1483,9 +1505,11 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
     // - Internal transfers need annotation fetching
     // - EFT transfers need funds transfer data for bank account details
     // - Buy/sell orders need extended order data for notes
+    // - Corporate actions need child activities for notes
     const internalTransferIds = collectInvestmentInternalTransferIds(transactionsWithRules);
     const eftTransferIds = collectEftTransferIds(transactionsWithRules);
     const buySellOrderIds = collectBuySellOrderIds(transactionsWithRules);
+    const corporateActionIds = collectCorporateActionIds(transactionsWithRules);
 
     // Create enrichment map for the rules engine
     const enrichmentMap = new Map();
@@ -1551,6 +1575,27 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
         }
       }
       debugLog(`Fetched ${buySellOrderIds.length} extended order(s)`);
+    }
+
+    // Fetch corporate action child activities (individual calls with progress)
+    if (corporateActionIds.length > 0) {
+      debugLog(`Fetching ${corporateActionIds.length} corporate action child activities...`);
+      for (let i = 0; i < corporateActionIds.length; i++) {
+        const canonicalId = corporateActionIds[i];
+        const progressNum = i + 1;
+        debugLog(`Fetching corporate action details (${progressNum}/${corporateActionIds.length}): ${canonicalId}`);
+
+        // Update progress callback for UI
+        if (onProgress) {
+          onProgress(`Corporate actions (${progressNum}/${corporateActionIds.length})`);
+        }
+
+        const childActivities = await wealthsimpleApi.fetchCorporateActionChildActivities(canonicalId);
+        if (childActivities && childActivities.length > 0) {
+          enrichmentMap.set(canonicalId, childActivities);
+        }
+      }
+      debugLog(`Fetched ${corporateActionIds.length} corporate action(s)`);
     }
 
     debugLog(`Enrichment map has ${enrichmentMap.size} entries`);

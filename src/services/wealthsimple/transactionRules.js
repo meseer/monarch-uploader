@@ -1324,6 +1324,109 @@ export const INVESTMENT_INTEREST_TRANSACTION_RULES = [
 ];
 
 /**
+ * Format corporate action note based on child activities
+ * @param {string|null} subType - Corporate action subType (e.g., "CONSOLIDATION", "STOCK_SPLIT")
+ * @param {Array} childActivities - Array of child activity objects from FetchCorporateActionChildActivities
+ * @returns {string} Formatted notes string
+ */
+export function formatCorporateActionNotes(subType, childActivities) {
+  if (!childActivities || childActivities.length === 0) {
+    return '';
+  }
+
+  // Find SUBMIT (source) and RECEIVE (destination) activities
+  const submitActivity = childActivities.find((a) => a.entitlementType === 'SUBMIT');
+  const receiveActivity = childActivities.find((a) => a.entitlementType === 'RECEIVE');
+
+  const noteLines = [];
+
+  // Build the main description if we have both activities
+  if (submitActivity && receiveActivity) {
+    const submitQuantity = parseFloat(submitActivity.quantity) || 0;
+    const receiveQuantity = parseFloat(receiveActivity.quantity) || 0;
+    const actionType = subType ? subType.toLowerCase().replace(/_/g, ' ') : 'corporate action';
+
+    if (receiveQuantity > submitQuantity && submitQuantity > 0) {
+      // Stock split scenario: receiving more shares than submitted
+      const ratio = (receiveQuantity / submitQuantity).toFixed(6).replace(/\.?0+$/, '');
+      noteLines.push(
+        `${submitActivity.assetName} (${submitActivity.assetSymbol}) performed a ${actionType}. Every share of ${submitActivity.assetSymbol} you held was replaced by ${ratio} shares of ${receiveActivity.assetName} (${receiveActivity.assetSymbol}).`,
+      );
+    } else if (submitQuantity > receiveQuantity && receiveQuantity > 0) {
+      // Consolidation scenario: submitting more shares than receiving
+      const ratio = (submitQuantity / receiveQuantity).toFixed(6).replace(/\.?0+$/, '');
+      noteLines.push(
+        `${submitActivity.assetName} (${submitActivity.assetSymbol}) performed a ${actionType}. Every ${ratio} shares of ${submitActivity.assetSymbol} you held were replaced by 1 share of ${receiveActivity.assetName} (${receiveActivity.assetSymbol}).`,
+      );
+    }
+  }
+
+  // Add detail lines for each child activity
+  for (const activity of childActivities) {
+    const quantity = parseFloat(activity.quantity) || 0;
+    noteLines.push(` - ${activity.entitlementType} ${quantity} ${activity.assetSymbol} (${activity.assetName})`);
+  }
+
+  return noteLines.join('\n');
+}
+
+/**
+ * Investment account corporate action transaction rules
+ * These rules handle corporate action transactions like stock splits, consolidations, mergers, etc.
+ *
+ * Transaction types supported:
+ * - CORPORATE_ACTION: Stock splits, consolidations, mergers, and other corporate actions
+ */
+export const INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES = [
+  {
+    id: 'corporate-action',
+    description: 'Corporate action transactions (stock splits, consolidations, mergers)',
+    match: (tx) => tx.type === 'CORPORATE_ACTION',
+    /**
+     * Process CORPORATE_ACTION transactions
+     * These are events like stock splits, consolidations, mergers, etc.
+     *
+     * Requires enrichment data from FetchCorporateActionChildActivities API
+     * to get details about shares submitted and received.
+     *
+     * Merchant format:
+     * - If subType is null: "Corporate Action: {assetSymbol}"
+     * - Otherwise: "Corporate Action: {assetSymbol} {sentenceCase(subType)}"
+     *
+     * Original statement format: "{type}:{subType}:{assetSymbol}"
+     *
+     * @param {Object} tx - Raw transaction
+     * @param {Map<string, Object>} enrichmentMap - Map containing corporate action child activities
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx, enrichmentMap) => {
+      const assetSymbol = tx.assetSymbol || 'Unknown';
+      const subType = tx.subType || '';
+
+      // Build merchant: "Corporate Action: {symbol}" or "Corporate Action: {symbol} {subType}"
+      let merchant = `Corporate Action: ${assetSymbol}`;
+      if (subType) {
+        merchant = `${merchant} ${toSentenceCase(subType)}`;
+      }
+
+      // Get child activities from enrichment map (keyed by canonicalId for corporate actions)
+      const childActivities = enrichmentMap?.get(tx.canonicalId) || [];
+
+      // Build notes from child activities
+      const notes = formatCorporateActionNotes(subType, childActivities);
+
+      return {
+        category: 'Investment',
+        merchant,
+        originalStatement: formatOriginalStatement(tx.type, subType, assetSymbol),
+        notes,
+        technicalDetails: '',
+      };
+    },
+  },
+];
+
+/**
  * Investment account buy/sell transaction rules
  * These rules handle stock purchase and sale transactions in investment accounts
  *

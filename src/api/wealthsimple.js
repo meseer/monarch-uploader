@@ -2321,6 +2321,74 @@ fragment SoOrdersExtendedOrder on SoOrders_ExtendedOrderResponse {
 }
 
 /**
+ * Fetch corporate action child activities for a corporate action transaction
+ * Used to get details about stock splits, consolidations, mergers, and other corporate actions
+ *
+ * @param {string} activityCanonicalId - Corporate action activity canonical ID (e.g., "US7311052010:2025-12-09:H10739748CAD")
+ * @returns {Promise<Array>} Array of child activity nodes with entitlementType, quantity, assetSymbol, assetName, etc.
+ */
+export async function fetchCorporateActionChildActivities(activityCanonicalId) {
+  try {
+    if (!activityCanonicalId) {
+      debugLog('No activity canonical ID provided for corporate action fetch');
+      return [];
+    }
+
+    debugLog(`Fetching corporate action child activities for ${activityCanonicalId}...`);
+
+    const query = `query FetchCorporateActionChildActivities($activityCanonicalId: String!) {
+  corporateActionChildActivities(
+    condition: {activityCanonicalId: $activityCanonicalId}
+  ) {
+    nodes {
+      ...CorporateActionChildActivity
+      __typename
+    }
+    __typename
+  }
+}
+
+fragment CorporateActionChildActivity on CorporateActionChildActivity {
+  canonicalId
+  activityCanonicalId
+  assetName
+  assetSymbol
+  assetType
+  entitlementType
+  quantity
+  currency
+  price
+  recordDate
+  __typename
+}`;
+
+    const response = await makeGraphQLQuery('FetchCorporateActionChildActivities', query, {
+      activityCanonicalId,
+    });
+
+    if (!response || !response.corporateActionChildActivities) {
+      debugLog(`No corporate action child activities data found for ${activityCanonicalId}`);
+      return [];
+    }
+
+    const childActivities = response.corporateActionChildActivities.nodes || [];
+    debugLog(`Fetched ${childActivities.length} corporate action child activities for ${activityCanonicalId}:`, {
+      activities: childActivities.map((a) => ({
+        entitlementType: a.entitlementType,
+        quantity: a.quantity,
+        assetSymbol: a.assetSymbol,
+      })),
+    });
+
+    return childActivities;
+  } catch (error) {
+    debugLog(`Error fetching corporate action child activities for ${activityCanonicalId}:`, error);
+    // Return empty array on error - don't fail the entire sync
+    return [];
+  }
+}
+
+/**
  * Fetch short option position expiry details
  * Used to get details about expired/expiring short option positions, including:
  * - decision: The decision made (e.g., "EXPIRE", "ASSIGN")
@@ -2516,6 +2584,7 @@ export default {
   fetchInternalTransfer,
   fetchFundsTransfer,
   fetchExtendedOrder,
+  fetchCorporateActionChildActivities,
   fetchShortOptionPositionExpiryDetail,
   fetchAccountsWithBalance,
 };

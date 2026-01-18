@@ -10,6 +10,7 @@ import {
   INVESTMENT_INSTITUTIONAL_TRANSFER_RULES,
   INVESTMENT_REFUND_TRANSACTION_RULES,
   INVESTMENT_BUY_SELL_TRANSACTION_RULES,
+  INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES,
   applyTransactionRule,
   hasRuleForTransaction,
   extractInteracMemo,
@@ -23,6 +24,7 @@ import {
   formatPrettyDate,
   formatOptionsOrderNotes,
   formatTransferNotes,
+  formatCorporateActionNotes,
 } from '../../../src/services/wealthsimple/transactionRules';
 import { STORAGE } from '../../../src/core/config';
 
@@ -6242,6 +6244,519 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
       it('should have unique rule ID', () => {
         const ids = INVESTMENT_INSTITUTIONAL_TRANSFER_RULES.map((r) => r.id);
+        const uniqueIds = [...new Set(ids)];
+        expect(ids.length).toBe(uniqueIds.length);
+      });
+    });
+  });
+
+  describe('formatCorporateActionNotes', () => {
+    it('should return empty string for null childActivities', () => {
+      expect(formatCorporateActionNotes('CONSOLIDATION', null)).toBe('');
+    });
+
+    it('should return empty string for empty childActivities array', () => {
+      expect(formatCorporateActionNotes('CONSOLIDATION', [])).toBe('');
+    });
+
+    it('should format consolidation notes correctly (submit > receive)', () => {
+      const childActivities = [
+        {
+          entitlementType: 'SUBMIT',
+          quantity: '2100.000000',
+          assetSymbol: 'PSNY',
+          assetName: 'Polestar Automotive Holding UK Limited',
+        },
+        {
+          entitlementType: 'RECEIVE',
+          quantity: '70.000000',
+          assetSymbol: 'PSNY',
+          assetName: 'Polestar Automotive Holding UK PLC',
+        },
+      ];
+
+      const result = formatCorporateActionNotes('CONSOLIDATION', childActivities);
+
+      expect(result).toContain('Polestar Automotive Holding UK Limited (PSNY) performed a consolidation');
+      expect(result).toContain('Every 30 shares of PSNY you held were replaced by 1 share of Polestar Automotive Holding UK PLC (PSNY)');
+      expect(result).toContain(' - SUBMIT 2100 PSNY (Polestar Automotive Holding UK Limited)');
+      expect(result).toContain(' - RECEIVE 70 PSNY (Polestar Automotive Holding UK PLC)');
+    });
+
+    it('should format stock split notes correctly (receive > submit)', () => {
+      const childActivities = [
+        {
+          entitlementType: 'SUBMIT',
+          quantity: '100.000000',
+          assetSymbol: 'TEST',
+          assetName: 'Test Stock Original',
+        },
+        {
+          entitlementType: 'RECEIVE',
+          quantity: '400.000000',
+          assetSymbol: 'TEST',
+          assetName: 'Test Stock New',
+        },
+      ];
+
+      const result = formatCorporateActionNotes('STOCK_SPLIT', childActivities);
+
+      expect(result).toContain('Test Stock Original (TEST) performed a stock split');
+      expect(result).toContain('Every share of TEST you held was replaced by 4 shares of Test Stock New (TEST)');
+      expect(result).toContain(' - SUBMIT 100 TEST (Test Stock Original)');
+      expect(result).toContain(' - RECEIVE 400 TEST (Test Stock New)');
+    });
+
+    it('should handle subType with underscores correctly', () => {
+      const childActivities = [
+        {
+          entitlementType: 'SUBMIT',
+          quantity: '1000.000000',
+          assetSymbol: 'ABC',
+          assetName: 'ABC Corp Original',
+        },
+        {
+          entitlementType: 'RECEIVE',
+          quantity: '100.000000',
+          assetSymbol: 'ABC',
+          assetName: 'ABC Corp New',
+        },
+      ];
+
+      const result = formatCorporateActionNotes('REVERSE_STOCK_SPLIT', childActivities);
+
+      expect(result).toContain('performed a reverse stock split');
+    });
+
+    it('should handle null subType with "corporate action" fallback', () => {
+      const childActivities = [
+        {
+          entitlementType: 'SUBMIT',
+          quantity: '500.000000',
+          assetSymbol: 'XYZ',
+          assetName: 'XYZ Company',
+        },
+        {
+          entitlementType: 'RECEIVE',
+          quantity: '50.000000',
+          assetSymbol: 'XYZ',
+          assetName: 'XYZ Company New',
+        },
+      ];
+
+      const result = formatCorporateActionNotes(null, childActivities);
+
+      expect(result).toContain('performed a corporate action');
+    });
+
+    it('should handle undefined subType with "corporate action" fallback', () => {
+      const childActivities = [
+        {
+          entitlementType: 'SUBMIT',
+          quantity: '200.000000',
+          assetSymbol: 'DEF',
+          assetName: 'DEF Inc',
+        },
+        {
+          entitlementType: 'RECEIVE',
+          quantity: '20.000000',
+          assetSymbol: 'DEF',
+          assetName: 'DEF Inc New',
+        },
+      ];
+
+      const result = formatCorporateActionNotes(undefined, childActivities);
+
+      expect(result).toContain('performed a corporate action');
+    });
+
+    it('should only show detail lines when no SUBMIT or RECEIVE activities', () => {
+      const childActivities = [
+        {
+          entitlementType: 'OTHER',
+          quantity: '100.000000',
+          assetSymbol: 'GHI',
+          assetName: 'GHI Corp',
+        },
+      ];
+
+      const result = formatCorporateActionNotes('MERGER', childActivities);
+
+      // Should only have detail line, no main description
+      expect(result).toBe(' - OTHER 100 GHI (GHI Corp)');
+      expect(result).not.toContain('performed a');
+    });
+
+    it('should handle quantity as string correctly', () => {
+      const childActivities = [
+        {
+          entitlementType: 'SUBMIT',
+          quantity: '1500.500000',
+          assetSymbol: 'JKL',
+          assetName: 'JKL Stock',
+        },
+        {
+          entitlementType: 'RECEIVE',
+          quantity: '150.050000',
+          assetSymbol: 'JKL',
+          assetName: 'JKL Stock New',
+        },
+      ];
+
+      const result = formatCorporateActionNotes('CONSOLIDATION', childActivities);
+
+      expect(result).toContain(' - SUBMIT 1500.5 JKL (JKL Stock)');
+      expect(result).toContain(' - RECEIVE 150.05 JKL (JKL Stock New)');
+    });
+
+    it('should handle missing quantity with 0 fallback', () => {
+      const childActivities = [
+        {
+          entitlementType: 'SUBMIT',
+          quantity: null,
+          assetSymbol: 'MNO',
+          assetName: 'MNO Corp',
+        },
+        {
+          entitlementType: 'RECEIVE',
+          quantity: '100.000000',
+          assetSymbol: 'MNO',
+          assetName: 'MNO Corp New',
+        },
+      ];
+
+      const result = formatCorporateActionNotes('CONSOLIDATION', childActivities);
+
+      expect(result).toContain(' - SUBMIT 0 MNO (MNO Corp)');
+    });
+
+    it('should trim trailing zeros from ratio', () => {
+      const childActivities = [
+        {
+          entitlementType: 'SUBMIT',
+          quantity: '100.000000',
+          assetSymbol: 'PQR',
+          assetName: 'PQR Stock',
+        },
+        {
+          entitlementType: 'RECEIVE',
+          quantity: '200.000000',
+          assetSymbol: 'PQR',
+          assetName: 'PQR Stock New',
+        },
+      ];
+
+      const result = formatCorporateActionNotes('STOCK_SPLIT', childActivities);
+
+      // Ratio should be 2, not 2.000000
+      expect(result).toContain('replaced by 2 shares');
+    });
+  });
+
+  describe('INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES', () => {
+    describe('CORPORATE_ACTION rule matching', () => {
+      it('should match transactions with type CORPORATE_ACTION', () => {
+        const transaction = {
+          canonicalId: 'US7311052010:2025-12-09:H10739748CAD',
+          type: 'CORPORATE_ACTION',
+          subType: 'CONSOLIDATION',
+          assetSymbol: 'PSNY',
+          amount: null,
+        };
+
+        const rule = INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES.find((r) => r.id === 'corporate-action');
+        expect(rule.match(transaction)).toBe(true);
+      });
+
+      it('should match CORPORATE_ACTION with any subType', () => {
+        const rule = INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES.find((r) => r.id === 'corporate-action');
+
+        expect(rule.match({ type: 'CORPORATE_ACTION', subType: 'CONSOLIDATION' })).toBe(true);
+        expect(rule.match({ type: 'CORPORATE_ACTION', subType: 'STOCK_SPLIT' })).toBe(true);
+        expect(rule.match({ type: 'CORPORATE_ACTION', subType: 'MERGER' })).toBe(true);
+        expect(rule.match({ type: 'CORPORATE_ACTION', subType: null })).toBe(true);
+        expect(rule.match({ type: 'CORPORATE_ACTION', subType: undefined })).toBe(true);
+      });
+
+      it('should not match transactions with different type', () => {
+        const rule = INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES.find((r) => r.id === 'corporate-action');
+
+        expect(rule.match({ type: 'DIVIDEND', subType: 'CONSOLIDATION' })).toBe(false);
+        expect(rule.match({ type: 'DIY_BUY', subType: 'STOCK_SPLIT' })).toBe(false);
+        expect(rule.match({ type: 'REFUND', subType: null })).toBe(false);
+      });
+    });
+
+    describe('CORPORATE_ACTION transaction processing with subType', () => {
+      it('should process CORPORATE_ACTION with subType CONSOLIDATION correctly', () => {
+        const transaction = {
+          canonicalId: 'US7311052010:2025-12-09:H10739748CAD',
+          type: 'CORPORATE_ACTION',
+          subType: 'CONSOLIDATION',
+          assetSymbol: 'PSNY',
+          amount: null,
+        };
+
+        const childActivities = [
+          {
+            entitlementType: 'SUBMIT',
+            quantity: '2100.000000',
+            assetSymbol: 'PSNY',
+            assetName: 'Polestar Automotive Holding UK Limited',
+          },
+          {
+            entitlementType: 'RECEIVE',
+            quantity: '70.000000',
+            assetSymbol: 'PSNY',
+            assetName: 'Polestar Automotive Holding UK PLC',
+          },
+        ];
+
+        const enrichmentMap = new Map();
+        enrichmentMap.set('US7311052010:2025-12-09:H10739748CAD', childActivities);
+
+        const rule = INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES.find((r) => r.id === 'corporate-action');
+        const result = rule.process(transaction, enrichmentMap);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Investment');
+        expect(result.merchant).toBe('Corporate Action: PSNY Consolidation');
+        expect(result.originalStatement).toBe('CORPORATE_ACTION:CONSOLIDATION:PSNY');
+        expect(result.notes).toContain('Polestar Automotive Holding UK Limited (PSNY) performed a consolidation');
+        expect(result.notes).toContain(' - SUBMIT 2100 PSNY');
+        expect(result.notes).toContain(' - RECEIVE 70 PSNY');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should process CORPORATE_ACTION with subType STOCK_SPLIT correctly', () => {
+        const transaction = {
+          canonicalId: 'test-split-123',
+          type: 'CORPORATE_ACTION',
+          subType: 'STOCK_SPLIT',
+          assetSymbol: 'NVDA',
+          amount: 0,
+        };
+
+        const childActivities = [
+          {
+            entitlementType: 'SUBMIT',
+            quantity: '10.000000',
+            assetSymbol: 'NVDA',
+            assetName: 'NVIDIA Corporation',
+          },
+          {
+            entitlementType: 'RECEIVE',
+            quantity: '100.000000',
+            assetSymbol: 'NVDA',
+            assetName: 'NVIDIA Corporation',
+          },
+        ];
+
+        const enrichmentMap = new Map();
+        enrichmentMap.set('test-split-123', childActivities);
+
+        const rule = INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES.find((r) => r.id === 'corporate-action');
+        const result = rule.process(transaction, enrichmentMap);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Investment');
+        expect(result.merchant).toBe('Corporate Action: NVDA Stock split');
+        expect(result.originalStatement).toBe('CORPORATE_ACTION:STOCK_SPLIT:NVDA');
+        expect(result.notes).toContain('Every share of NVDA you held was replaced by 10 shares');
+      });
+    });
+
+    describe('CORPORATE_ACTION transaction processing without subType', () => {
+      it('should process CORPORATE_ACTION with null subType correctly', () => {
+        const transaction = {
+          canonicalId: 'test-null-subtype',
+          type: 'CORPORATE_ACTION',
+          subType: null,
+          assetSymbol: 'ABC',
+          amount: 0,
+        };
+
+        const rule = INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES.find((r) => r.id === 'corporate-action');
+        const result = rule.process(transaction, null);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Investment');
+        expect(result.merchant).toBe('Corporate Action: ABC');
+        expect(result.originalStatement).toBe('CORPORATE_ACTION::ABC');
+        expect(result.notes).toBe('');
+      });
+
+      it('should process CORPORATE_ACTION with undefined subType correctly', () => {
+        const transaction = {
+          canonicalId: 'test-undef-subtype',
+          type: 'CORPORATE_ACTION',
+          assetSymbol: 'XYZ',
+          amount: 0,
+        };
+
+        const rule = INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES.find((r) => r.id === 'corporate-action');
+        const result = rule.process(transaction, new Map());
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Corporate Action: XYZ');
+        expect(result.originalStatement).toBe('CORPORATE_ACTION::XYZ');
+      });
+
+      it('should process CORPORATE_ACTION with empty string subType correctly', () => {
+        const transaction = {
+          canonicalId: 'test-empty-subtype',
+          type: 'CORPORATE_ACTION',
+          subType: '',
+          assetSymbol: 'DEF',
+          amount: 0,
+        };
+
+        const rule = INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES.find((r) => r.id === 'corporate-action');
+        const result = rule.process(transaction, null);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Corporate Action: DEF');
+        expect(result.originalStatement).toBe('CORPORATE_ACTION::DEF');
+      });
+    });
+
+    describe('CORPORATE_ACTION edge cases', () => {
+      it('should handle missing assetSymbol with Unknown fallback', () => {
+        const transaction = {
+          canonicalId: 'test-no-symbol',
+          type: 'CORPORATE_ACTION',
+          subType: 'MERGER',
+          assetSymbol: null,
+          amount: 0,
+        };
+
+        const rule = INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES.find((r) => r.id === 'corporate-action');
+        const result = rule.process(transaction, null);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Corporate Action: Unknown Merger');
+        expect(result.originalStatement).toBe('CORPORATE_ACTION:MERGER:Unknown');
+      });
+
+      it('should handle undefined assetSymbol with Unknown fallback', () => {
+        const transaction = {
+          canonicalId: 'test-undef-symbol',
+          type: 'CORPORATE_ACTION',
+          subType: 'CONSOLIDATION',
+          amount: 0,
+        };
+
+        const rule = INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES.find((r) => r.id === 'corporate-action');
+        const result = rule.process(transaction, new Map());
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Corporate Action: Unknown Consolidation');
+        expect(result.originalStatement).toBe('CORPORATE_ACTION:CONSOLIDATION:Unknown');
+      });
+
+      it('should handle empty string assetSymbol with Unknown fallback', () => {
+        const transaction = {
+          canonicalId: 'test-empty-symbol',
+          type: 'CORPORATE_ACTION',
+          subType: 'STOCK_SPLIT',
+          assetSymbol: '',
+          amount: 0,
+        };
+
+        const rule = INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES.find((r) => r.id === 'corporate-action');
+        const result = rule.process(transaction, null);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Corporate Action: Unknown Stock split');
+        expect(result.originalStatement).toBe('CORPORATE_ACTION:STOCK_SPLIT:Unknown');
+      });
+
+      it('should handle missing enrichment map', () => {
+        const transaction = {
+          canonicalId: 'test-no-enrichment',
+          type: 'CORPORATE_ACTION',
+          subType: 'CONSOLIDATION',
+          assetSymbol: 'GHI',
+          amount: 0,
+        };
+
+        const rule = INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES.find((r) => r.id === 'corporate-action');
+        const result = rule.process(transaction, null);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('');
+      });
+
+      it('should handle canonicalId not in enrichment map', () => {
+        const transaction = {
+          canonicalId: 'test-not-found',
+          type: 'CORPORATE_ACTION',
+          subType: 'MERGER',
+          assetSymbol: 'JKL',
+          amount: 0,
+        };
+
+        const enrichmentMap = new Map();
+        enrichmentMap.set('different-id', [{ entitlementType: 'SUBMIT', quantity: '100' }]);
+
+        const rule = INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES.find((r) => r.id === 'corporate-action');
+        const result = rule.process(transaction, enrichmentMap);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('');
+      });
+
+      it('should not set needsCategoryMapping flag (auto-categorized)', () => {
+        const transaction = {
+          canonicalId: 'test-no-mapping',
+          type: 'CORPORATE_ACTION',
+          subType: 'CONSOLIDATION',
+          assetSymbol: 'MNO',
+        };
+
+        const rule = INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES.find((r) => r.id === 'corporate-action');
+        const result = rule.process(transaction, null);
+
+        expect(result).not.toBeNull();
+        expect(result.needsCategoryMapping).toBeUndefined();
+      });
+
+      it('should have empty technicalDetails', () => {
+        const transaction = {
+          canonicalId: 'test-tech-details',
+          type: 'CORPORATE_ACTION',
+          subType: 'STOCK_SPLIT',
+          assetSymbol: 'PQR',
+        };
+
+        const rule = INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES.find((r) => r.id === 'corporate-action');
+        const result = rule.process(transaction, null);
+
+        expect(result).not.toBeNull();
+        expect(result.technicalDetails).toBe('');
+      });
+    });
+
+    describe('Rule structure', () => {
+      it('should have required properties', () => {
+        const rule = INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES.find((r) => r.id === 'corporate-action');
+
+        expect(rule).toHaveProperty('id');
+        expect(rule).toHaveProperty('description');
+        expect(rule).toHaveProperty('match');
+        expect(rule).toHaveProperty('process');
+        expect(typeof rule.id).toBe('string');
+        expect(typeof rule.description).toBe('string');
+        expect(typeof rule.match).toBe('function');
+        expect(typeof rule.process).toBe('function');
+      });
+
+      it('should have exactly 1 rule', () => {
+        expect(INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES.length).toBe(1);
+      });
+
+      it('should have unique rule ID', () => {
+        const ids = INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES.map((r) => r.id);
         const uniqueIds = [...new Set(ids)];
         expect(ids.length).toBe(uniqueIds.length);
       });
