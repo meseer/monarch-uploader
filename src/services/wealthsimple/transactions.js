@@ -1675,11 +1675,13 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
         if (expiryDetail) {
           // Fetch security names for deliverables
           const securityCache = new Map();
+          // Static security IDs that don't need to be fetched (cash currencies)
+          const STATIC_SECURITY_IDS = new Set(['sec-s-cad', 'sec-s-usd']);
           if (expiryDetail.deliverables && Array.isArray(expiryDetail.deliverables)) {
             for (const deliverable of expiryDetail.deliverables) {
               const secId = deliverable.securityId;
-              // Skip static mappings (sec-s-cad, sec-s-usd)
-              if (secId && !secId.startsWith('sec-s-')) {
+              // Skip only static cash security mappings (sec-s-cad, sec-s-usd)
+              if (secId && !STATIC_SECURITY_IDS.has(secId)) {
                 const security = await wealthsimpleApi.fetchSecurity(secId);
                 if (security) {
                   securityCache.set(secId, security);
