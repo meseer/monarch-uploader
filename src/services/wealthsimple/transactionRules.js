@@ -1324,6 +1324,14 @@ export const INVESTMENT_INTEREST_TRANSACTION_RULES = [
 ];
 
 /**
+ * Mapping of entitlement types to user-friendly labels
+ */
+const ENTITLEMENT_TYPE_LABELS = {
+  SUBMIT: 'Remove',
+  RECEIVE: 'Receive',
+};
+
+/**
  * Format corporate action note based on child activities
  * @param {string|null} subType - Corporate action subType (e.g., "CONSOLIDATION", "STOCK_SPLIT")
  * @param {Array} childActivities - Array of child activity objects from FetchCorporateActionChildActivities
@@ -1361,10 +1369,11 @@ export function formatCorporateActionNotes(subType, childActivities) {
     }
   }
 
-  // Add detail lines for each child activity
+  // Add detail lines for each child activity with user-friendly labels
   for (const activity of childActivities) {
     const quantity = parseFloat(activity.quantity) || 0;
-    noteLines.push(` - ${activity.entitlementType} ${quantity} ${activity.assetSymbol} (${activity.assetName})`);
+    const entitlementLabel = ENTITLEMENT_TYPE_LABELS[activity.entitlementType] || activity.entitlementType;
+    noteLines.push(` - ${entitlementLabel} ${quantity} ${activity.assetSymbol} (${activity.assetName})`);
   }
 
   return noteLines.join('\n');

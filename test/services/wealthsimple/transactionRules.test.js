@@ -6280,8 +6280,8 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
       expect(result).toContain('Polestar Automotive Holding UK Limited (PSNY) performed a consolidation');
       expect(result).toContain('Every 30 shares of PSNY you held were replaced by 1 share of Polestar Automotive Holding UK PLC (PSNY)');
-      expect(result).toContain(' - SUBMIT 2100 PSNY (Polestar Automotive Holding UK Limited)');
-      expect(result).toContain(' - RECEIVE 70 PSNY (Polestar Automotive Holding UK PLC)');
+      expect(result).toContain(' - Remove 2100 PSNY (Polestar Automotive Holding UK Limited)');
+      expect(result).toContain(' - Receive 70 PSNY (Polestar Automotive Holding UK PLC)');
     });
 
     it('should format stock split notes correctly (receive > submit)', () => {
@@ -6304,8 +6304,8 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
       expect(result).toContain('Test Stock Original (TEST) performed a stock split');
       expect(result).toContain('Every share of TEST you held was replaced by 4 shares of Test Stock New (TEST)');
-      expect(result).toContain(' - SUBMIT 100 TEST (Test Stock Original)');
-      expect(result).toContain(' - RECEIVE 400 TEST (Test Stock New)');
+      expect(result).toContain(' - Remove 100 TEST (Test Stock Original)');
+      expect(result).toContain(' - Receive 400 TEST (Test Stock New)');
     });
 
     it('should handle subType with underscores correctly', () => {
@@ -6383,7 +6383,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
       const result = formatCorporateActionNotes('MERGER', childActivities);
 
-      // Should only have detail line, no main description
+      // Should only have detail line, no main description (unknown type passes through)
       expect(result).toBe(' - OTHER 100 GHI (GHI Corp)');
       expect(result).not.toContain('performed a');
     });
@@ -6406,8 +6406,8 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
       const result = formatCorporateActionNotes('CONSOLIDATION', childActivities);
 
-      expect(result).toContain(' - SUBMIT 1500.5 JKL (JKL Stock)');
-      expect(result).toContain(' - RECEIVE 150.05 JKL (JKL Stock New)');
+      expect(result).toContain(' - Remove 1500.5 JKL (JKL Stock)');
+      expect(result).toContain(' - Receive 150.05 JKL (JKL Stock New)');
     });
 
     it('should handle missing quantity with 0 fallback', () => {
@@ -6428,7 +6428,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
       const result = formatCorporateActionNotes('CONSOLIDATION', childActivities);
 
-      expect(result).toContain(' - SUBMIT 0 MNO (MNO Corp)');
+      expect(result).toContain(' - Remove 0 MNO (MNO Corp)');
     });
 
     it('should trim trailing zeros from ratio', () => {
@@ -6524,8 +6524,8 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result.merchant).toBe('Corporate Action: PSNY Consolidation');
         expect(result.originalStatement).toBe('CORPORATE_ACTION:CONSOLIDATION:PSNY');
         expect(result.notes).toContain('Polestar Automotive Holding UK Limited (PSNY) performed a consolidation');
-        expect(result.notes).toContain(' - SUBMIT 2100 PSNY');
-        expect(result.notes).toContain(' - RECEIVE 70 PSNY');
+        expect(result.notes).toContain(' - Remove 2100 PSNY');
+        expect(result.notes).toContain(' - Receive 70 PSNY');
         expect(result.technicalDetails).toBe('');
       });
 
