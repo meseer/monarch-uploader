@@ -8,6 +8,7 @@ import {
   INVESTMENT_DEPOSIT_TRANSACTION_RULES,
   INVESTMENT_INTEREST_TRANSACTION_RULES,
   INVESTMENT_INSTITUTIONAL_TRANSFER_RULES,
+  INVESTMENT_REFUND_TRANSACTION_RULES,
   INVESTMENT_BUY_SELL_TRANSACTION_RULES,
   applyTransactionRule,
   hasRuleForTransaction,
@@ -5627,6 +5628,272 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
       const result = formatTransferNotes(transaction);
       expect(result).toBe('Transfer of CAD$0');
+    });
+  });
+
+  describe('INVESTMENT_REFUND_TRANSACTION_RULES', () => {
+    describe('REFUND rule matching', () => {
+      it('should match transactions with type REFUND', () => {
+        const transaction = {
+          externalCanonicalId: 'refund-123',
+          type: 'REFUND',
+          subType: 'TRANSFER_FEE_REFUND',
+          assetSymbol: 'VFV',
+          amount: 10.0,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_REFUND_TRANSACTION_RULES.find((r) => r.id === 'refund');
+        expect(rule.match(transaction)).toBe(true);
+      });
+
+      it('should match REFUND with any subType', () => {
+        const rule = INVESTMENT_REFUND_TRANSACTION_RULES.find((r) => r.id === 'refund');
+
+        expect(rule.match({ type: 'REFUND', subType: 'TRANSFER_FEE_REFUND' })).toBe(true);
+        expect(rule.match({ type: 'REFUND', subType: 'FEE_REFUND' })).toBe(true);
+        expect(rule.match({ type: 'REFUND', subType: null })).toBe(true);
+        expect(rule.match({ type: 'REFUND', subType: undefined })).toBe(true);
+      });
+
+      it('should not match transactions with different type', () => {
+        const rule = INVESTMENT_REFUND_TRANSACTION_RULES.find((r) => r.id === 'refund');
+
+        expect(rule.match({ type: 'DEPOSIT', subType: 'REFUND' })).toBe(false);
+        expect(rule.match({ type: 'DIVIDEND', subType: 'TRANSFER_FEE_REFUND' })).toBe(false);
+        expect(rule.match({ type: 'INTEREST', subType: null })).toBe(false);
+      });
+    });
+
+    describe('REFUND transaction processing with subType', () => {
+      it('should process REFUND with subType TRANSFER_FEE_REFUND correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'refund-transfer-fee',
+          type: 'REFUND',
+          subType: 'TRANSFER_FEE_REFUND',
+          assetSymbol: 'VFV',
+          amount: 15.0,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_REFUND_TRANSACTION_RULES.find((r) => r.id === 'refund');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Investment');
+        expect(result.merchant).toBe('Transfer fee refund');
+        expect(result.originalStatement).toBe('REFUND:TRANSFER_FEE_REFUND:VFV');
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should process REFUND with subType FEE_REFUND correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'refund-fee',
+          type: 'REFUND',
+          subType: 'FEE_REFUND',
+          assetSymbol: 'XAW',
+          amount: 5.0,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_REFUND_TRANSACTION_RULES.find((r) => r.id === 'refund');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Investment');
+        expect(result.merchant).toBe('Fee refund');
+        expect(result.originalStatement).toBe('REFUND:FEE_REFUND:XAW');
+      });
+
+      it('should process REFUND with subType ACCOUNT_FEE_REFUND correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'refund-account-fee',
+          type: 'REFUND',
+          subType: 'ACCOUNT_FEE_REFUND',
+          assetSymbol: '',
+          amount: 25.0,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_REFUND_TRANSACTION_RULES.find((r) => r.id === 'refund');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Investment');
+        expect(result.merchant).toBe('Account fee refund');
+        expect(result.originalStatement).toBe('REFUND:ACCOUNT_FEE_REFUND:');
+      });
+    });
+
+    describe('REFUND transaction processing without subType', () => {
+      it('should process REFUND with null subType using "Refund" as merchant', () => {
+        const transaction = {
+          externalCanonicalId: 'refund-null-subtype',
+          type: 'REFUND',
+          subType: null,
+          assetSymbol: 'AAPL',
+          amount: 10.0,
+          currency: 'USD',
+        };
+
+        const rule = INVESTMENT_REFUND_TRANSACTION_RULES.find((r) => r.id === 'refund');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Investment');
+        expect(result.merchant).toBe('Refund');
+        expect(result.originalStatement).toBe('REFUND::AAPL');
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should process REFUND with undefined subType using "Refund" as merchant', () => {
+        const transaction = {
+          externalCanonicalId: 'refund-undef-subtype',
+          type: 'REFUND',
+          assetSymbol: 'MSFT',
+          amount: 8.0,
+          currency: 'USD',
+        };
+
+        const rule = INVESTMENT_REFUND_TRANSACTION_RULES.find((r) => r.id === 'refund');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Investment');
+        expect(result.merchant).toBe('Refund');
+        expect(result.originalStatement).toBe('REFUND::MSFT');
+      });
+
+      it('should process REFUND with empty string subType using "Refund" as merchant', () => {
+        const transaction = {
+          externalCanonicalId: 'refund-empty-subtype',
+          type: 'REFUND',
+          subType: '',
+          assetSymbol: 'VFV',
+          amount: 12.0,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_REFUND_TRANSACTION_RULES.find((r) => r.id === 'refund');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Investment');
+        expect(result.merchant).toBe('Refund');
+        expect(result.originalStatement).toBe('REFUND::VFV');
+      });
+    });
+
+    describe('REFUND edge cases', () => {
+      it('should handle missing assetSymbol with empty string', () => {
+        const transaction = {
+          externalCanonicalId: 'refund-no-symbol',
+          type: 'REFUND',
+          subType: 'TRANSFER_FEE_REFUND',
+          assetSymbol: null,
+          amount: 5.0,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_REFUND_TRANSACTION_RULES.find((r) => r.id === 'refund');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Investment');
+        expect(result.merchant).toBe('Transfer fee refund');
+        expect(result.originalStatement).toBe('REFUND:TRANSFER_FEE_REFUND:');
+      });
+
+      it('should handle undefined assetSymbol with empty string', () => {
+        const transaction = {
+          externalCanonicalId: 'refund-undef-symbol',
+          type: 'REFUND',
+          subType: 'FEE_REFUND',
+          amount: 3.0,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_REFUND_TRANSACTION_RULES.find((r) => r.id === 'refund');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.originalStatement).toBe('REFUND:FEE_REFUND:');
+      });
+
+      it('should handle all fields missing with appropriate fallbacks', () => {
+        const transaction = {
+          externalCanonicalId: 'refund-all-missing',
+          type: 'REFUND',
+        };
+
+        const rule = INVESTMENT_REFUND_TRANSACTION_RULES.find((r) => r.id === 'refund');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Investment');
+        expect(result.merchant).toBe('Refund');
+        expect(result.originalStatement).toBe('REFUND::');
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should not set needsCategoryMapping flag (auto-categorized)', () => {
+        const transaction = {
+          externalCanonicalId: 'refund-no-mapping',
+          type: 'REFUND',
+          subType: 'TRANSFER_FEE_REFUND',
+          assetSymbol: 'VFV',
+        };
+
+        const rule = INVESTMENT_REFUND_TRANSACTION_RULES.find((r) => r.id === 'refund');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.needsCategoryMapping).toBeUndefined();
+      });
+
+      it('should have empty notes and technicalDetails', () => {
+        const transaction = {
+          externalCanonicalId: 'refund-notes',
+          type: 'REFUND',
+          subType: 'TRANSFER_FEE_REFUND',
+          assetSymbol: 'VFV',
+        };
+
+        const rule = INVESTMENT_REFUND_TRANSACTION_RULES.find((r) => r.id === 'refund');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+    });
+
+    describe('Rule structure', () => {
+      it('should have required properties', () => {
+        const rule = INVESTMENT_REFUND_TRANSACTION_RULES.find((r) => r.id === 'refund');
+
+        expect(rule).toHaveProperty('id');
+        expect(rule).toHaveProperty('description');
+        expect(rule).toHaveProperty('match');
+        expect(rule).toHaveProperty('process');
+        expect(typeof rule.id).toBe('string');
+        expect(typeof rule.description).toBe('string');
+        expect(typeof rule.match).toBe('function');
+        expect(typeof rule.process).toBe('function');
+      });
+
+      it('should have exactly 1 rule', () => {
+        expect(INVESTMENT_REFUND_TRANSACTION_RULES.length).toBe(1);
+      });
+
+      it('should have unique rule ID', () => {
+        const ids = INVESTMENT_REFUND_TRANSACTION_RULES.map((r) => r.id);
+        const uniqueIds = [...new Set(ids)];
+        expect(ids.length).toBe(uniqueIds.length);
+      });
     });
   });
 

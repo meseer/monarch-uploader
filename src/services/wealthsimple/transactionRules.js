@@ -1075,6 +1075,47 @@ export const CASH_TRANSACTION_RULES = [
 ];
 
 /**
+ * Investment account refund transaction rules
+ * These rules handle refund transactions in investment accounts
+ *
+ * Transaction types supported:
+ * - REFUND: Refunds such as fee refunds, transfer fee refunds, etc.
+ */
+export const INVESTMENT_REFUND_TRANSACTION_RULES = [
+  {
+    id: 'refund',
+    description: 'Refund transactions for investment accounts (fee refunds, transfer fee refunds, etc.)',
+    match: (tx) => tx.type === 'REFUND',
+    /**
+     * Process REFUND transactions
+     * These are refunds such as transfer fee refunds, account fee refunds, etc.
+     *
+     * Merchant logic:
+     * - If subType is null/undefined: "Refund"
+     * - Otherwise: sentenceCase(subType) (e.g., "TRANSFER_FEE_REFUND" -> "Transfer fee refund")
+     *
+     * @param {Object} tx - Raw transaction
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx) => {
+      const subType = tx.subType || '';
+      const assetSymbol = tx.assetSymbol || '';
+
+      // Merchant: "Refund" if no subType, otherwise sentenceCase(subType)
+      const merchant = subType ? toSentenceCase(subType) : 'Refund';
+
+      return {
+        category: 'Investment',
+        merchant,
+        originalStatement: formatOriginalStatement(tx.type, subType, assetSymbol),
+        notes: '',
+        technicalDetails: '',
+      };
+    },
+  },
+];
+
+/**
  * Investment account institutional transfer transaction rules
  * These rules handle transfers to/from external financial institutions
  *

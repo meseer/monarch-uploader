@@ -18,6 +18,7 @@ import {
   INVESTMENT_DIVIDEND_TRANSACTION_RULES,
   INVESTMENT_INTEREST_TRANSACTION_RULES,
   INVESTMENT_INSTITUTIONAL_TRANSFER_RULES,
+  INVESTMENT_REFUND_TRANSACTION_RULES,
   formatOriginalStatement,
   getTransactionId,
 } from './transactionRules';
@@ -1196,6 +1197,8 @@ const INVESTMENT_TRANSACTION_RULES = [
   ...INVESTMENT_DIVIDEND_TRANSACTION_RULES,
   // Interest rules (including FPL_INTEREST for stock lending)
   ...INVESTMENT_INTEREST_TRANSACTION_RULES,
+  // Refund rules (fee refunds, transfer fee refunds, etc.)
+  ...INVESTMENT_REFUND_TRANSACTION_RULES,
   // Investment buy/sell rules
   ...INVESTMENT_BUY_SELL_TRANSACTION_RULES,
 ];
