@@ -15,6 +15,25 @@ import { STORAGE } from '../../core/config';
 import { applyMerchantMapping } from '../../mappers/merchant';
 
 /**
+ * Format transfer notes with currency and amount
+ * @param {Object} transaction - Raw transaction from Wealthsimple API
+ * @param {string} existingNote - Any existing annotation/note to append
+ * @returns {string} Formatted notes string
+ */
+export function formatTransferNotes(transaction, existingNote = '') {
+  const currency = transaction.currency || 'CAD';
+  const amount = formatAmount(transaction.amount ?? 0);
+
+  let notes = `Transfer of ${currency}$${amount}`;
+
+  if (existingNote) {
+    notes = `${notes}\n${existingNote}`;
+  }
+
+  return notes;
+}
+
+/**
  * Format a date string from "2026-01-16" to "Jan 16, 2026"
  * @param {string} dateString - Date in YYYY-MM-DD format
  * @returns {string} Formatted date (e.g., "Jan 16, 2026") or empty string if invalid
@@ -715,17 +734,20 @@ export const CASH_TRANSACTION_RULES = [
       }
 
       // Extract annotation from internal transfer data if available
-      let notes = '';
+      let annotation = '';
       if (internalTransferMap && tx.externalCanonicalId) {
         const internalTransfer = internalTransferMap.get(tx.externalCanonicalId);
         if (internalTransfer) {
-          const annotation = extractInternalTransferAnnotation(internalTransfer);
-          if (annotation) {
-            debugLog(`Found internal transfer annotation for ${tx.externalCanonicalId}: "${annotation}"`);
-            notes = annotation;
+          const extractedAnnotation = extractInternalTransferAnnotation(internalTransfer);
+          if (extractedAnnotation) {
+            debugLog(`Found internal transfer annotation for ${tx.externalCanonicalId}: "${extractedAnnotation}"`);
+            annotation = extractedAnnotation;
           }
         }
       }
+
+      // Format notes with currency/amount and optional annotation
+      const notes = formatTransferNotes(tx, annotation);
 
       return {
         category: 'Transfer',

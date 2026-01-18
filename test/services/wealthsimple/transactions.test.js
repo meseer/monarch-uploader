@@ -2465,7 +2465,7 @@ describe('Wealthsimple Transaction Service', () => {
       );
 
       expect(result).toHaveLength(1);
-      expect(result[0].notes).toBe('Monthly contribution');
+      expect(result[0].notes).toBe('Transfer of CAD$500\nMonthly contribution');
     });
 
     it('should process unknown transaction types via manual categorization', async () => {
