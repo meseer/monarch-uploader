@@ -1224,6 +1224,7 @@ function isInvestmentBuySellTransaction(transaction) {
  * - Dividends (DIVIDEND)
  * - Interest (INTEREST)
  * - Institutional transfers (INSTITUTIONAL_TRANSFER_INTENT)
+ * - Any transaction with null status field (e.g., REFUND)
  *
  * @param {Object} transaction - Raw transaction from API
  * @returns {boolean} True if transaction uses unifiedStatus
@@ -1233,7 +1234,8 @@ function usesUnifiedStatus(transaction) {
     'MANAGED_BUY', 'DIY_BUY', 'MANAGED_SELL', 'DIY_SELL', 'OPTIONS_BUY', 'OPTIONS_SELL', 'OPTIONS_SHORT_EXPIRY',
     'DEPOSIT', 'DIVIDEND', 'INTEREST', 'INSTITUTIONAL_TRANSFER_INTENT',
   ];
-  return unifiedStatusTypes.includes(transaction.type);
+  // Known types that use unifiedStatus, OR any transaction with null status field
+  return unifiedStatusTypes.includes(transaction.type) || transaction.status === null;
 }
 
 /**
@@ -1257,21 +1259,59 @@ function usesUnifiedStatus(transaction) {
  * @returns {Array} Filtered transactions ready for processing
  */
 function filterInvestmentSyncableTransactions(transactions, includePending = true) {
-  return transactions.filter((transaction) => {
+  const includedTransactions = [];
+  const excludedTransactions = [];
+
+  for (const transaction of transactions) {
+    let included = false;
+
     // Transactions that use unifiedStatus field
     if (usesUnifiedStatus(transaction)) {
       const status = transaction.unifiedStatus;
-      if (status === 'COMPLETED') return true;
-      if (includePending && (status === 'IN_PROGRESS' || status === 'PENDING')) return true;
-      return false;
+      if (status === 'COMPLETED') {
+        included = true;
+      } else if (includePending && (status === 'IN_PROGRESS' || status === 'PENDING')) {
+        included = true;
+      }
+    } else {
+      // Internal transfers and other types use status field (like credit cards)
+      const status = transaction.status;
+      if (status === 'settled' || status === 'completed') {
+        included = true;
+      } else if (includePending && status === 'authorized') {
+        included = true;
+      }
     }
 
-    // Internal transfers and other types use status field (like credit cards)
-    const status = transaction.status;
-    if (status === 'settled' || status === 'completed') return true;
-    if (includePending && status === 'authorized') return true;
-    return false;
-  });
+    if (included) {
+      includedTransactions.push(transaction);
+    } else {
+      excludedTransactions.push(transaction);
+    }
+  }
+
+  // Log excluded transactions for debugging
+  if (excludedTransactions.length > 0) {
+    debugLog(`Filtered out ${excludedTransactions.length} investment transaction(s) (will NOT sync):`);
+    excludedTransactions.forEach((tx, index) => {
+      debugLog(`  Excluded ${index + 1}:`, {
+        externalCanonicalId: tx.externalCanonicalId,
+        type: tx.type,
+        subType: tx.subType,
+        status: tx.status,
+        unifiedStatus: tx.unifiedStatus,
+        amount: tx.amount,
+        amountSign: tx.amountSign,
+        occurredAt: tx.occurredAt,
+        assetSymbol: tx.assetSymbol,
+        reason: usesUnifiedStatus(tx)
+          ? `unifiedStatus="${tx.unifiedStatus}" not in [COMPLETED${includePending ? ', IN_PROGRESS, PENDING' : ''}]`
+          : `status="${tx.status}" not in [settled, completed${includePending ? ', authorized' : ''}]`,
+      });
+    });
+  }
+
+  return includedTransactions;
 }
 
 /**
