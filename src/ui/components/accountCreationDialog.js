@@ -316,17 +316,24 @@ export async function showAccountCreationDialog(options = {}) {
           cleanupKeyboard();
           overlay.remove();
           // Add newlyCreated flag so callers can set institution-specific logos
-          resolve({ ...createdAccount, newlyCreated: true });
+          // For holdings mode, include manualInvestmentsTrackingMethod for position sync support
+          resolve({
+            ...createdAccount,
+            newlyCreated: true,
+            ...(isHoldingsMode && { manualInvestmentsTrackingMethod: 'holdings' }),
+          });
         } else {
           // Fallback: return minimal account object
           cleanupKeyboard();
           overlay.remove();
+          // For holdings mode, include manualInvestmentsTrackingMethod for position sync support
           resolve({
             id: accountId,
             displayName: accountName,
             type: { name: accountType },
             subtype: { name: accountSubtype },
             newlyCreated: true,
+            ...(isHoldingsMode && { manualInvestmentsTrackingMethod: 'holdings' }),
           });
         }
       } catch (error) {
