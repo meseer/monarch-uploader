@@ -10,7 +10,17 @@ import { applyWealthsimpleCategoryMapping, saveUserWealthsimpleCategorySelection
 import { showMonarchCategorySelector, showManualTransactionCategorization } from '../../ui/components/categorySelector';
 import monarchApi from '../../api/monarch';
 import toast from '../../ui/toast';
-import { applyTransactionRule, CASH_TRANSACTION_RULES, INVESTMENT_BUY_SELL_TRANSACTION_RULES, formatOriginalStatement, getTransactionId } from './transactionRules';
+import {
+  applyTransactionRule,
+  CASH_TRANSACTION_RULES,
+  INVESTMENT_BUY_SELL_TRANSACTION_RULES,
+  INVESTMENT_DEPOSIT_TRANSACTION_RULES,
+  INVESTMENT_DIVIDEND_TRANSACTION_RULES,
+  INVESTMENT_INTEREST_TRANSACTION_RULES,
+  INVESTMENT_INSTITUTIONAL_TRANSFER_RULES,
+  formatOriginalStatement,
+  getTransactionId,
+} from './transactionRules';
 
 /**
  * Convert ISO timestamp to local date in YYYY-MM-DD format
@@ -1164,13 +1174,28 @@ export async function fetchAndProcessLineOfCreditTransactions(consolidatedAccoun
 /**
  * Investment account transaction rules
  * Combines:
- * 1. Internal transfer rule from CASH accounts
- * 2. Buy/sell transaction rules specific to investment accounts
+ * 1. EFT transfer rule from CASH accounts (most specific - matches subType EFT before generic DEPOSIT)
+ * 2. Internal transfer rule from CASH accounts
+ * 3. Institutional transfer rules
+ * 4. Deposit rules (generic DEPOSIT for non-EFT)
+ * 5. Dividend rules
+ * 6. Interest rules (including FPL_INTEREST)
+ * 7. Buy/sell transaction rules specific to investment accounts
  * Other unknown types are handled via manual categorization
  */
 const INVESTMENT_TRANSACTION_RULES = [
+  // EFT transfer rule FIRST (more specific - matches subType EFT before generic DEPOSIT)
+  ...CASH_TRANSACTION_RULES.filter((rule) => rule.id === 'eft-transfer'),
   // Internal transfer rule (same as CASH accounts)
   ...CASH_TRANSACTION_RULES.filter((rule) => rule.id === 'internal-transfer'),
+  // Institutional transfer rules (transfers to/from external institutions)
+  ...INVESTMENT_INSTITUTIONAL_TRANSFER_RULES,
+  // Generic deposit rules (catches non-EFT deposits like recurring contributions)
+  ...INVESTMENT_DEPOSIT_TRANSACTION_RULES,
+  // Dividend rules
+  ...INVESTMENT_DIVIDEND_TRANSACTION_RULES,
+  // Interest rules (including FPL_INTEREST for stock lending)
+  ...INVESTMENT_INTEREST_TRANSACTION_RULES,
   // Investment buy/sell rules
   ...INVESTMENT_BUY_SELL_TRANSACTION_RULES,
 ];
@@ -1186,17 +1211,40 @@ function isInvestmentBuySellTransaction(transaction) {
 }
 
 /**
+ * Check if a transaction type uses unifiedStatus for status tracking
+ * Investment accounts have many transaction types that use unifiedStatus:
+ * - Buy/sell orders (MANAGED_BUY, DIY_BUY, etc.)
+ * - Deposits (DEPOSIT with subType EFT, EFT_RECURRING, or null)
+ * - Dividends (DIVIDEND)
+ * - Interest (INTEREST)
+ * - Institutional transfers (INSTITUTIONAL_TRANSFER_INTENT)
+ *
+ * @param {Object} transaction - Raw transaction from API
+ * @returns {boolean} True if transaction uses unifiedStatus
+ */
+function usesUnifiedStatus(transaction) {
+  const unifiedStatusTypes = [
+    'MANAGED_BUY', 'DIY_BUY', 'MANAGED_SELL', 'DIY_SELL', 'OPTIONS_BUY', 'OPTIONS_SELL',
+    'DEPOSIT', 'DIVIDEND', 'INTEREST', 'INSTITUTIONAL_TRANSFER_INTENT',
+  ];
+  return unifiedStatusTypes.includes(transaction.type);
+}
+
+/**
  * Filter investment account transactions based on status
  * Different transaction types use different status fields:
  *
- * Internal transfers (INTERNAL_TRANSFER):
- * - Use status field: 'settled'/'completed' = sync, 'authorized' = pending
+ * Transactions using unifiedStatus:
+ * - Buy/sell orders (MANAGED_BUY, DIY_BUY, MANAGED_SELL, DIY_SELL, OPTIONS_BUY, OPTIONS_SELL)
+ * - Deposits (type=DEPOSIT)
+ * - Dividends (type=DIVIDEND)
+ * - Interest (type=INTEREST)
+ * - Institutional transfers (type=INSTITUTIONAL_TRANSFER_INTENT)
+ * Status values: COMPLETED = sync, IN_PROGRESS/PENDING = pending, EXPIRED/REJECTED/CANCELLED = exclude
  *
- * Buy/sell transactions (MANAGED_BUY, DIY_BUY, MANAGED_SELL, DIY_SELL):
- * - Use unifiedStatus field
- * - COMPLETED: Sync as normal
- * - IN_PROGRESS / PENDING: Sync with "Pending" tag
- * - EXPIRED / REJECTED / CANCELLED: Exclude
+ * Transactions using status field:
+ * - Internal transfers (INTERNAL_TRANSFER)
+ * Status values: 'settled'/'completed' = sync, 'authorized' = pending
  *
  * @param {Array} transactions - Raw transactions from API
  * @param {boolean} includePending - Whether to include pending transactions
@@ -1204,8 +1252,8 @@ function isInvestmentBuySellTransaction(transaction) {
  */
 function filterInvestmentSyncableTransactions(transactions, includePending = true) {
   return transactions.filter((transaction) => {
-    // Buy/sell transactions use unifiedStatus
-    if (isInvestmentBuySellTransaction(transaction)) {
+    // Transactions that use unifiedStatus field
+    if (usesUnifiedStatus(transaction)) {
       const status = transaction.unifiedStatus;
       if (status === 'COMPLETED') return true;
       if (includePending && (status === 'IN_PROGRESS' || status === 'PENDING')) return true;
@@ -1430,8 +1478,10 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
 
     // Step 5: Collect IDs for enrichment data
     // - Internal transfers need annotation fetching
+    // - EFT transfers need funds transfer data for bank account details
     // - Buy/sell orders need extended order data for notes
     const internalTransferIds = collectInvestmentInternalTransferIds(transactionsWithRules);
+    const eftTransferIds = collectEftTransferIds(transactionsWithRules);
     const buySellOrderIds = collectBuySellOrderIds(transactionsWithRules);
 
     // Create enrichment map for the rules engine
@@ -1456,6 +1506,27 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
         }
       }
       debugLog(`Fetched ${internalTransferIds.length} internal transfer(s)`);
+    }
+
+    // Fetch EFT funds transfer data for bank account details (individual calls with progress)
+    if (eftTransferIds.length > 0) {
+      debugLog(`Fetching ${eftTransferIds.length} EFT transfer(s) for bank account details...`);
+      for (let i = 0; i < eftTransferIds.length; i++) {
+        const id = eftTransferIds[i];
+        const progressNum = i + 1;
+        debugLog(`Fetching EFT transfer details (${progressNum}/${eftTransferIds.length}): ${id}`);
+
+        // Update progress callback for UI
+        if (onProgress) {
+          onProgress(`EFT transfers (${progressNum}/${eftTransferIds.length})`);
+        }
+
+        const fundsTransfer = await wealthsimpleApi.fetchFundsTransfer(id);
+        if (fundsTransfer) {
+          enrichmentMap.set(id, fundsTransfer);
+        }
+      }
+      debugLog(`Fetched ${eftTransferIds.length} EFT transfer(s)`);
     }
 
     // Fetch extended order data for buy/sell transactions (individual calls with progress)

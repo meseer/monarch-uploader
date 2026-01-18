@@ -2471,14 +2471,13 @@ describe('Wealthsimple Transaction Service', () => {
     it('should process unknown transaction types via manual categorization', async () => {
       const mockRawTransactions = [
         {
-          externalCanonicalId: 'tx-dividend-1',
+          externalCanonicalId: 'tx-unknown-fee-1',
           occurredAt: '2026-01-15T10:30:00.000000+00:00',
-          type: 'DIVIDEND',
-          subType: 'STOCK_DIVIDEND',
+          type: 'FEE',
+          subType: 'SERVICE_FEE', // Unknown type - no rule exists for this
           status: 'completed',
           amount: 25.00,
-          amountSign: 'positive',
-          assetSymbol: 'VFV',
+          amountSign: 'negative',
         },
       ];
 
@@ -2487,8 +2486,8 @@ describe('Wealthsimple Transaction Service', () => {
       // Mock manual categorization
       showManualTransactionCategorization.mockImplementation((transaction, callback) => {
         callback({
-          merchant: 'VFV Dividend',
-          category: { id: '1', name: 'Investment Income' },
+          merchant: 'Service Fee',
+          category: { id: '1', name: 'Financial Fees' },
         });
       });
 
@@ -2502,19 +2501,18 @@ describe('Wealthsimple Transaction Service', () => {
       expect(showManualTransactionCategorization).toHaveBeenCalledTimes(1);
       expect(showManualTransactionCategorization).toHaveBeenCalledWith(
         expect.objectContaining({
-          externalCanonicalId: 'tx-dividend-1',
-          type: 'DIVIDEND',
+          externalCanonicalId: 'tx-unknown-fee-1',
+          type: 'FEE',
         }),
         expect.any(Function),
       );
 
       expect(result).toHaveLength(1);
       expect(result[0]).toMatchObject({
-        id: 'tx-dividend-1',
-        merchant: 'VFV Dividend',
-        resolvedMonarchCategory: 'Investment Income',
+        id: 'tx-unknown-fee-1',
+        merchant: 'Service Fee',
+        resolvedMonarchCategory: 'Financial Fees',
         ruleId: 'manual',
-        assetSymbol: 'VFV',
       });
     });
 
@@ -2532,14 +2530,13 @@ describe('Wealthsimple Transaction Service', () => {
           amountSign: 'positive',
         },
         {
-          externalCanonicalId: 'tx-dividend',
+          externalCanonicalId: 'tx-unknown-fee',
           occurredAt: '2026-01-16T10:30:00.000000+00:00',
-          type: 'DIVIDEND',
-          subType: 'STOCK_DIVIDEND',
+          type: 'FEE',
+          subType: 'SERVICE_FEE', // Unknown type - no rule exists for FEE transactions
           status: 'completed',
           amount: 25.00,
-          amountSign: 'positive',
-          assetSymbol: 'XAW',
+          amountSign: 'negative',
         },
         {
           externalCanonicalId: 'funding_intent-transfer-out',
@@ -2557,11 +2554,11 @@ describe('Wealthsimple Transaction Service', () => {
       wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
       wealthsimpleApi.fetchInternalTransfer.mockResolvedValue({ annotation: '' });
 
-      // Mock manual categorization for the dividend
+      // Mock manual categorization for the unknown fee transaction
       showManualTransactionCategorization.mockImplementation((transaction, callback) => {
         callback({
-          merchant: 'XAW Dividend',
-          category: { id: '1', name: 'Investment Income' },
+          merchant: 'Service Fee',
+          category: { id: '1', name: 'Financial Fees' },
         });
       });
 
@@ -2589,15 +2586,15 @@ describe('Wealthsimple Transaction Service', () => {
         ruleId: 'internal-transfer',
       });
 
-      // Dividend - manually categorized
+      // Fee - manually categorized
       expect(result[2]).toMatchObject({
-        id: 'tx-dividend',
-        merchant: 'XAW Dividend',
-        resolvedMonarchCategory: 'Investment Income',
+        id: 'tx-unknown-fee',
+        merchant: 'Service Fee',
+        resolvedMonarchCategory: 'Financial Fees',
         ruleId: 'manual',
       });
 
-      // Manual categorization called only for dividend
+      // Manual categorization called only for the unknown fee
       expect(showManualTransactionCategorization).toHaveBeenCalledTimes(1);
     });
 
