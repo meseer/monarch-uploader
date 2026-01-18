@@ -16,6 +16,7 @@ import { addModalKeyboardHandlers } from '../keyboardNavigation';
  * @param {string} options.defaultSubtype - Default account subtype (e.g., 'tfsa')
  * @param {number} options.defaultBalance - Default initial balance
  * @param {boolean} options.defaultIncludeInNetWorth - Default net worth inclusion
+ * @param {string} options.trackingMethod - Tracking method: 'balance' or 'holdings' (default: 'balance')
  * @returns {Promise<Object|null>} Created account or null if cancelled
  */
 export async function showAccountCreationDialog(options = {}) {
@@ -25,7 +26,10 @@ export async function showAccountCreationDialog(options = {}) {
     defaultSubtype = null,
     defaultBalance = 0,
     defaultIncludeInNetWorth = true,
+    trackingMethod = 'balance',
   } = options;
+
+  const isHoldingsMode = trackingMethod === 'holdings';
 
   debugLog('Opening account creation dialog with defaults:', {
     defaultName,
@@ -75,7 +79,9 @@ export async function showAccountCreationDialog(options = {}) {
     const header = document.createElement('h2');
     header.id = 'account-creation-header';
     header.style.cssText = 'margin-top: 0; margin-bottom: 20px; font-size: 1.2em;';
-    header.textContent = 'Create New Monarch Account';
+    header.textContent = isHoldingsMode
+      ? 'Create New Investment Account (Track Holdings)'
+      : 'Create New Monarch Account';
     modal.appendChild(header);
 
     // Create form
@@ -112,28 +118,35 @@ export async function showAccountCreationDialog(options = {}) {
     );
     form.appendChild(subtypeGroup.container);
 
-    // Initial Balance field (round to 2 decimal places)
-    const roundedBalance = typeof defaultBalance === 'number'
-      ? Math.round(defaultBalance * 100) / 100
-      : defaultBalance;
-    const balanceGroup = createFormGroup(
-      'account-balance',
-      'Initial Balance:',
-      'number',
-      roundedBalance,
-      '0.00',
-      true,
-    );
-    balanceGroup.input.step = '0.01';
-    form.appendChild(balanceGroup.container);
+    // Initial Balance field (round to 2 decimal places) - hidden in holdings mode
+    let balanceGroup = null;
+    if (!isHoldingsMode) {
+      const roundedBalance = typeof defaultBalance === 'number'
+        ? Math.round(defaultBalance * 100) / 100
+        : defaultBalance;
+      balanceGroup = createFormGroup(
+        'account-balance',
+        'Initial Balance:',
+        'number',
+        roundedBalance,
+        '0.00',
+        true,
+      );
+      balanceGroup.input.step = '0.01';
+      form.appendChild(balanceGroup.container);
+    }
 
-    // Include in Net Worth checkbox
-    const netWorthGroup = createCheckboxGroup(
-      'account-net-worth',
-      'Include in net worth',
-      defaultIncludeInNetWorth,
-    );
-    form.appendChild(netWorthGroup.container);
+    // Include in Net Worth checkbox - hidden in holdings mode (always true for holdings accounts)
+    // Include in Net Worth checkbox - hidden in holdings mode (always true for holdings accounts)
+    let netWorthGroup = null;
+    if (!isHoldingsMode) {
+      netWorthGroup = createCheckboxGroup(
+        'account-net-worth',
+        'Include in net worth',
+        defaultIncludeInNetWorth,
+      );
+      form.appendChild(netWorthGroup.container);
+    }
 
     // Error message container
     const errorContainer = document.createElement('div');
@@ -232,8 +245,8 @@ export async function showAccountCreationDialog(options = {}) {
       const accountName = nameGroup.input.value.trim();
       const accountType = typeGroup.select.value;
       const accountSubtype = subtypeGroup.select.value;
-      const initialBalance = parseFloat(balanceGroup.input.value) || 0;
-      const includeInNetWorth = netWorthGroup.checkbox.checked;
+      const initialBalance = balanceGroup ? (parseFloat(balanceGroup.input.value) || 0) : 0;
+      const includeInNetWorth = netWorthGroup ? netWorthGroup.checkbox.checked : true;
 
       if (!accountName) {
         showError(errorContainer, 'Account name is required');
@@ -257,25 +270,43 @@ export async function showAccountCreationDialog(options = {}) {
       createButton.textContent = 'Creating...';
 
       try {
-        debugLog('Creating manual account with:', {
-          type: accountType,
-          subtype: accountSubtype,
-          name: accountName,
-          displayBalance: initialBalance,
-          includeInNetWorth,
-        });
+        let accountId;
 
-        // Create the account via Monarch API
-        const accountId = await monarchApi.createManualAccount({
-          type: accountType,
-          subtype: accountSubtype,
-          name: accountName,
-          displayBalance: initialBalance,
-          includeInNetWorth,
-        });
+        if (isHoldingsMode) {
+          debugLog('Creating manual investments account with:', {
+            name: accountName,
+            subtype: accountSubtype,
+          });
 
-        debugLog(`Successfully created account with ID: ${accountId}`);
-        toast.show(`Created account "${accountName}"`, 'info');
+          // Create investments account with holdings tracking via Monarch API
+          accountId = await monarchApi.createManualInvestmentsAccount({
+            name: accountName,
+            subtype: accountSubtype,
+          });
+
+          debugLog(`Successfully created investments account with ID: ${accountId}`);
+          toast.show(`Created investment account "${accountName}" (Track Holdings)`, 'info');
+        } else {
+          debugLog('Creating manual account with:', {
+            type: accountType,
+            subtype: accountSubtype,
+            name: accountName,
+            displayBalance: initialBalance,
+            includeInNetWorth,
+          });
+
+          // Create the account via Monarch API
+          accountId = await monarchApi.createManualAccount({
+            type: accountType,
+            subtype: accountSubtype,
+            name: accountName,
+            displayBalance: initialBalance,
+            includeInNetWorth,
+          });
+
+          debugLog(`Successfully created account with ID: ${accountId}`);
+          toast.show(`Created account "${accountName}"`, 'info');
+        }
 
         // Fetch the full account details to return
         const accounts = await monarchApi.listAccounts(accountType);

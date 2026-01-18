@@ -1414,6 +1414,19 @@ export async function getAccountTypeOptions() {
  */
 
 /**
+ * @typedef {Object} InitialHolding
+ * @property {string} securityId - Security ID from Monarch
+ * @property {number} quantity - Quantity of shares/units
+ */
+
+/**
+ * @typedef {Object} CreateManualInvestmentsAccountInput
+ * @property {string} name - Display name for the account
+ * @property {string} subtype - Account subtype (e.g., 'rrsp', 'tfsa', 'brokerage')
+ * @property {Array<InitialHolding>} [initialHoldings] - Optional initial holdings array
+ */
+
+/**
  * @typedef {Object} PayloadError
  * @property {Array} fieldErrors - Field-specific errors
  * @property {string} message - Error message
@@ -1513,6 +1526,95 @@ export async function createManualAccount(accountData) {
 
   debugLog(`Successfully created manual account: ${name} (ID: ${result.createManualAccount.account.id})`);
   return result.createManualAccount.account.id;
+}
+
+/**
+ * Create a new manual investments account with holdings tracking
+ * This creates an investment account that tracks individual holdings instead of just balance.
+ * @param {CreateManualInvestmentsAccountInput} accountData - Account configuration
+ * @returns {Promise<string>} The ID of the created account
+ * @throws {Error} If account creation fails or validation errors occur
+ * @example
+ * // Create an RRSP account with holdings tracking
+ * const accountId = await createManualInvestmentsAccount({
+ *   name: 'RRSP M1',
+ *   subtype: 'rrsp'
+ * });
+ *
+ * @example
+ * // Create a TFSA account with initial holdings
+ * const accountId = await createManualInvestmentsAccount({
+ *   name: 'My TFSA',
+ *   subtype: 'tfsa',
+ *   initialHoldings: [{ securityId: '207550709334431626', quantity: 1 }]
+ * });
+ */
+export async function createManualInvestmentsAccount(accountData) {
+  const { name, subtype, initialHoldings } = accountData;
+
+  // Validate required fields
+  if (!name || !subtype) {
+    throw new Error('Missing required fields: name and subtype are required');
+  }
+
+  debugLog('Creating manual investments account:', accountData);
+
+  // If no initial holdings provided, search for CAD cash security to use as placeholder
+  let holdingsToUse = initialHoldings;
+  if (!holdingsToUse || holdingsToUse.length === 0) {
+    debugLog('No initial holdings provided, searching for CAD cash security...');
+    const cadSecurities = await searchSecurities('CUR:CAD', { limit: 1 });
+    if (!cadSecurities || cadSecurities.length === 0) {
+      throw new Error('Could not find CAD cash security (CUR:CAD) for initial holding');
+    }
+    const cadSecurity = cadSecurities[0];
+    debugLog(`Found CAD security: ${cadSecurity.name} (ID: ${cadSecurity.id})`);
+    holdingsToUse = [{ securityId: cadSecurity.id, quantity: 1 }];
+  }
+
+  const result = await callMonarchGraphQL(
+    'Common_CreateManualInvestmentsAccount',
+    `mutation Common_CreateManualInvestmentsAccount($input: CreateManualInvestmentsAccountInput!) {
+      createManualInvestmentsAccount(input: $input) {
+        account {
+          id
+          __typename
+        }
+        errors {
+          ...PayloadErrorFields
+          __typename
+        }
+        __typename
+      }
+    }
+    
+    fragment PayloadErrorFields on PayloadError {
+      fieldErrors {
+        field
+        messages
+        __typename
+      }
+      message
+      code
+      __typename
+    }`,
+    {
+      input: {
+        name,
+        subtype,
+        manualInvestmentsTrackingMethod: 'holdings',
+        initialHoldings: holdingsToUse,
+      },
+    },
+  );
+
+  if (result.createManualInvestmentsAccount.errors) {
+    const errorMsg = result.createManualInvestmentsAccount.errors.message || 'Failed to create manual investments account';
+    throw new Error(errorMsg);
+  }
+
+  debugLog(`Successfully created manual investments account: ${name} (ID: ${result.createManualInvestmentsAccount.account.id})`);
+  return result.createManualInvestmentsAccount.account.id;
 }
 
 /**
@@ -2531,6 +2633,7 @@ export default {
   getToken,
   getAccountTypeOptions,
   createManualAccount,
+  createManualInvestmentsAccount,
   setAccountLogo,
   getFilteredAccounts,
   updateAccount,

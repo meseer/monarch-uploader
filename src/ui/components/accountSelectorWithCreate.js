@@ -194,38 +194,110 @@ function showInstitutionSelectorWithCreate(institutions, callback, accountType, 
 
   modal.appendChild(accountBanner);
 
-  // Add "Create New Account" button
-  const createAccountButton = document.createElement('button');
-  createAccountButton.id = 'create-new-account-button';
-  createAccountButton.type = 'button';
-  createAccountButton.textContent = '+ Create New Account';
-  createAccountButton.style.cssText = `
-    width: 100%;
-    padding: 15px;
-    background-color: #1976d2;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 1em;
-    font-weight: bold;
-    margin-bottom: 20px;
-    transition: background-color 0.2s;
-  `;
-  createAccountButton.onmouseover = () => {
-    createAccountButton.style.backgroundColor = '#1565c0';
-  };
-  createAccountButton.onmouseout = () => {
-    createAccountButton.style.backgroundColor = '#1976d2';
-  };
-  createAccountButton.onclick = async () => {
-    cleanupKeyboard();
-    overlay.remove();
+  // Add "Create New Account" button(s)
+  // For investment accounts (brokerage), show two options: Track Balance and Track Holdings
+  const isInvestmentAccount = accountType === 'brokerage';
 
-    const createdAccount = await showAccountCreationDialog(createDefaults);
-    callback(createdAccount);
-  };
-  modal.appendChild(createAccountButton);
+  if (isInvestmentAccount) {
+    // Create button for balance tracking
+    const createBalanceButton = document.createElement('button');
+    createBalanceButton.id = 'create-new-account-balance-button';
+    createBalanceButton.type = 'button';
+    createBalanceButton.textContent = '+ Create New Account (Track Balance)';
+    createBalanceButton.style.cssText = `
+      width: 100%;
+      padding: 15px;
+      background-color: #1976d2;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1em;
+      font-weight: bold;
+      margin-bottom: 10px;
+      transition: background-color 0.2s;
+    `;
+    createBalanceButton.onmouseover = () => {
+      createBalanceButton.style.backgroundColor = '#1565c0';
+    };
+    createBalanceButton.onmouseout = () => {
+      createBalanceButton.style.backgroundColor = '#1976d2';
+    };
+    createBalanceButton.onclick = async () => {
+      cleanupKeyboard();
+      overlay.remove();
+
+      const createdAccount = await showAccountCreationDialog({ ...createDefaults, trackingMethod: 'balance' });
+      callback(createdAccount);
+    };
+    modal.appendChild(createBalanceButton);
+
+    // Create button for holdings tracking
+    const createHoldingsButton = document.createElement('button');
+    createHoldingsButton.id = 'create-new-account-holdings-button';
+    createHoldingsButton.type = 'button';
+    createHoldingsButton.textContent = '+ Create New Account (Track Holdings)';
+    createHoldingsButton.style.cssText = `
+      width: 100%;
+      padding: 15px;
+      background-color: #2e7d32;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1em;
+      font-weight: bold;
+      margin-bottom: 20px;
+      transition: background-color 0.2s;
+    `;
+    createHoldingsButton.onmouseover = () => {
+      createHoldingsButton.style.backgroundColor = '#1b5e20';
+    };
+    createHoldingsButton.onmouseout = () => {
+      createHoldingsButton.style.backgroundColor = '#2e7d32';
+    };
+    createHoldingsButton.onclick = async () => {
+      cleanupKeyboard();
+      overlay.remove();
+
+      const createdAccount = await showAccountCreationDialog({ ...createDefaults, trackingMethod: 'holdings' });
+      callback(createdAccount);
+    };
+    modal.appendChild(createHoldingsButton);
+  } else {
+    // For non-investment accounts, show single create button
+    const createAccountButton = document.createElement('button');
+    createAccountButton.id = 'create-new-account-button';
+    createAccountButton.type = 'button';
+    createAccountButton.textContent = '+ Create New Account';
+    createAccountButton.style.cssText = `
+      width: 100%;
+      padding: 15px;
+      background-color: #1976d2;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1em;
+      font-weight: bold;
+      margin-bottom: 20px;
+      transition: background-color 0.2s;
+    `;
+    createAccountButton.onmouseover = () => {
+      createAccountButton.style.backgroundColor = '#1565c0';
+    };
+    createAccountButton.onmouseout = () => {
+      createAccountButton.style.backgroundColor = '#1976d2';
+    };
+    createAccountButton.onclick = async () => {
+      cleanupKeyboard();
+      overlay.remove();
+
+      const createdAccount = await showAccountCreationDialog(createDefaults);
+      callback(createdAccount);
+    };
+    modal.appendChild(createAccountButton);
+  }
 
   // Skip Account button
   const skipAccountButton = document.createElement('button');

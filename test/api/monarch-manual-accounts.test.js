@@ -2,7 +2,7 @@
  * Tests for Monarch manual account API methods
  */
 
-import { getAccountTypeOptions, createManualAccount } from '../../src/api/monarch';
+import { getAccountTypeOptions, createManualAccount, createManualInvestmentsAccount } from '../../src/api/monarch';
 
 // Mock dependencies
 const mockGM_xmlhttpRequest = jest.fn();
@@ -441,6 +441,246 @@ describe('Monarch Manual Account APIs', () => {
       const result = await createManualAccount(accountData);
 
       expect(result).toBe('444444444');
+    });
+  });
+
+  describe('createManualInvestmentsAccount', () => {
+    test('creates RRSP account with holdings tracking successfully', async () => {
+      // Mock searchSecurities for CUR:CAD lookup
+      const cadSecurityResponse = {
+        securities: [
+          {
+            id: '207550709334431626',
+            name: 'Canadian Dollar',
+            ticker: 'CUR:CAD',
+            type: 'currency',
+          },
+        ],
+      };
+
+      const accountResponse = {
+        createManualInvestmentsAccount: {
+          account: {
+            id: '555555555',
+            __typename: 'Account',
+          },
+          errors: null,
+          __typename: 'CreateManualInvestmentsAccount',
+        },
+      };
+
+      let callCount = 0;
+      mockGM_xmlhttpRequest.mockImplementation((config) => {
+        callCount++;
+        if (callCount === 1) {
+          // First call: searchSecurities
+          config.onload({
+            status: 200,
+            responseText: JSON.stringify({ data: cadSecurityResponse }),
+          });
+        } else {
+          // Second call: createManualInvestmentsAccount
+          config.onload({
+            status: 200,
+            responseText: JSON.stringify({ data: accountResponse }),
+          });
+        }
+      });
+
+      const accountData = {
+        name: 'RRSP M1',
+        subtype: 'rrsp',
+      };
+
+      const result = await createManualInvestmentsAccount(accountData);
+
+      expect(result).toBe('555555555');
+      expect(callCount).toBe(2); // searchSecurities + createManualInvestmentsAccount
+    });
+
+    test('creates TFSA account with custom initial holdings', async () => {
+      const accountResponse = {
+        createManualInvestmentsAccount: {
+          account: {
+            id: '666666666',
+            __typename: 'Account',
+          },
+          errors: null,
+          __typename: 'CreateManualInvestmentsAccount',
+        },
+      };
+
+      mockGM_xmlhttpRequest.mockImplementation((config) => {
+        config.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: accountResponse }),
+        });
+      });
+
+      const accountData = {
+        name: 'My TFSA',
+        subtype: 'tfsa',
+        initialHoldings: [{ securityId: '123456789', quantity: 10 }],
+      };
+
+      const result = await createManualInvestmentsAccount(accountData);
+
+      expect(result).toBe('666666666');
+    });
+
+    test('throws error when name is missing', async () => {
+      const accountData = {
+        subtype: 'rrsp',
+      };
+
+      await expect(createManualInvestmentsAccount(accountData)).rejects.toThrow(
+        'Missing required fields: name and subtype are required',
+      );
+    });
+
+    test('throws error when subtype is missing', async () => {
+      const accountData = {
+        name: 'Test RRSP',
+      };
+
+      await expect(createManualInvestmentsAccount(accountData)).rejects.toThrow(
+        'Missing required fields: name and subtype are required',
+      );
+    });
+
+    test('handles API errors from Monarch', async () => {
+      // Mock searchSecurities for CUR:CAD lookup
+      const cadSecurityResponse = {
+        securities: [
+          {
+            id: '207550709334431626',
+            name: 'Canadian Dollar',
+            ticker: 'CUR:CAD',
+            type: 'currency',
+          },
+        ],
+      };
+
+      const errorResponse = {
+        createManualInvestmentsAccount: {
+          account: null,
+          errors: {
+            message: 'Invalid subtype',
+            code: 'INVALID_SUBTYPE',
+            fieldErrors: [],
+            __typename: 'PayloadError',
+          },
+          __typename: 'CreateManualInvestmentsAccount',
+        },
+      };
+
+      let callCount = 0;
+      mockGM_xmlhttpRequest.mockImplementation((config) => {
+        callCount++;
+        if (callCount === 1) {
+          config.onload({
+            status: 200,
+            responseText: JSON.stringify({ data: cadSecurityResponse }),
+          });
+        } else {
+          config.onload({
+            status: 200,
+            responseText: JSON.stringify({ data: errorResponse }),
+          });
+        }
+      });
+
+      const accountData = {
+        name: 'Test Account',
+        subtype: 'invalid',
+      };
+
+      await expect(createManualInvestmentsAccount(accountData)).rejects.toThrow('Invalid subtype');
+    });
+
+    test('throws error when CAD security not found', async () => {
+      const emptyCadResponse = {
+        securities: [],
+      };
+
+      mockGM_xmlhttpRequest.mockImplementation((config) => {
+        config.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: emptyCadResponse }),
+        });
+      });
+
+      const accountData = {
+        name: 'Test RRSP',
+        subtype: 'rrsp',
+      };
+
+      await expect(createManualInvestmentsAccount(accountData)).rejects.toThrow(
+        'Could not find CAD cash security (CUR:CAD) for initial holding',
+      );
+    });
+
+    test('creates brokerage account with holdings tracking', async () => {
+      // Mock searchSecurities for CUR:CAD lookup
+      const cadSecurityResponse = {
+        securities: [
+          {
+            id: '207550709334431626',
+            name: 'Canadian Dollar',
+            ticker: 'CUR:CAD',
+            type: 'currency',
+          },
+        ],
+      };
+
+      const accountResponse = {
+        createManualInvestmentsAccount: {
+          account: {
+            id: '777777777',
+            __typename: 'Account',
+          },
+          errors: null,
+          __typename: 'CreateManualInvestmentsAccount',
+        },
+      };
+
+      let callCount = 0;
+      mockGM_xmlhttpRequest.mockImplementation((config) => {
+        callCount++;
+        if (callCount === 1) {
+          config.onload({
+            status: 200,
+            responseText: JSON.stringify({ data: cadSecurityResponse }),
+          });
+        } else {
+          config.onload({
+            status: 200,
+            responseText: JSON.stringify({ data: accountResponse }),
+          });
+        }
+      });
+
+      const accountData = {
+        name: 'Investment Account',
+        subtype: 'brokerage',
+      };
+
+      const result = await createManualInvestmentsAccount(accountData);
+
+      expect(result).toBe('777777777');
+    });
+
+    test('handles network errors', async () => {
+      mockGM_xmlhttpRequest.mockImplementation((config) => {
+        config.onerror(new Error('Network error'));
+      });
+
+      const accountData = {
+        name: 'Test Account',
+        subtype: 'rrsp',
+      };
+
+      await expect(createManualInvestmentsAccount(accountData)).rejects.toThrow();
     });
   });
 });

@@ -1105,7 +1105,7 @@ export const INVESTMENT_REFUND_TRANSACTION_RULES = [
       const merchant = subType ? toSentenceCase(subType) : 'Refund';
 
       return {
-        category: 'Investment',
+        category: 'Financial Fees',
         merchant,
         originalStatement: formatOriginalStatement(tx.type, subType, assetSymbol),
         notes: '',

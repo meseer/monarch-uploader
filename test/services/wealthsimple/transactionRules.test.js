@@ -5683,7 +5683,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = rule.process(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.category).toBe('Investment');
+        expect(result.category).toBe('Financial Fees');
         expect(result.merchant).toBe('Transfer fee refund');
         expect(result.originalStatement).toBe('REFUND:TRANSFER_FEE_REFUND:VFV');
         expect(result.notes).toBe('');
@@ -5704,7 +5704,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = rule.process(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.category).toBe('Investment');
+        expect(result.category).toBe('Financial Fees');
         expect(result.merchant).toBe('Fee refund');
         expect(result.originalStatement).toBe('REFUND:FEE_REFUND:XAW');
       });
@@ -5723,7 +5723,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = rule.process(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.category).toBe('Investment');
+        expect(result.category).toBe('Financial Fees');
         expect(result.merchant).toBe('Account fee refund');
         expect(result.originalStatement).toBe('REFUND:ACCOUNT_FEE_REFUND:');
       });
@@ -5744,7 +5744,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = rule.process(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.category).toBe('Investment');
+        expect(result.category).toBe('Financial Fees');
         expect(result.merchant).toBe('Refund');
         expect(result.originalStatement).toBe('REFUND::AAPL');
         expect(result.notes).toBe('');
@@ -5764,7 +5764,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = rule.process(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.category).toBe('Investment');
+        expect(result.category).toBe('Financial Fees');
         expect(result.merchant).toBe('Refund');
         expect(result.originalStatement).toBe('REFUND::MSFT');
       });
@@ -5783,7 +5783,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = rule.process(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.category).toBe('Investment');
+        expect(result.category).toBe('Financial Fees');
         expect(result.merchant).toBe('Refund');
         expect(result.originalStatement).toBe('REFUND::VFV');
       });
@@ -5804,7 +5804,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = rule.process(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.category).toBe('Investment');
+        expect(result.category).toBe('Financial Fees');
         expect(result.merchant).toBe('Transfer fee refund');
         expect(result.originalStatement).toBe('REFUND:TRANSFER_FEE_REFUND:');
       });
@@ -5835,7 +5835,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = rule.process(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.category).toBe('Investment');
+        expect(result.category).toBe('Financial Fees');
         expect(result.merchant).toBe('Refund');
         expect(result.originalStatement).toBe('REFUND::');
         expect(result.notes).toBe('');
