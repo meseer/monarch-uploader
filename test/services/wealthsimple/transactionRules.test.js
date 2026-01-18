@@ -25,6 +25,7 @@ import {
   formatOptionsOrderNotes,
   formatTransferNotes,
   formatCorporateActionNotes,
+  formatShortOptionExpiryNotes,
 } from '../../../src/services/wealthsimple/transactionRules';
 import { STORAGE } from '../../../src/core/config';
 
@@ -6760,6 +6761,161 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const uniqueIds = [...new Set(ids)];
         expect(ids.length).toBe(uniqueIds.length);
       });
+    });
+  });
+
+  describe('formatShortOptionExpiryNotes', () => {
+    it('should return empty string for null expiryDetail', () => {
+      expect(formatShortOptionExpiryNotes(null)).toBe('');
+    });
+
+    it('should return empty string for undefined expiryDetail', () => {
+      expect(formatShortOptionExpiryNotes(undefined)).toBe('');
+    });
+
+    it('should format notes with decision and reason', () => {
+      const expiryDetail = {
+        decision: 'EXPIRE',
+        reason: 'OUT_OF_THE_MONEY',
+        deliverables: [],
+      };
+
+      const result = formatShortOptionExpiryNotes(expiryDetail);
+
+      expect(result).toBe('Decision: EXPIRE, reason: OUT_OF_THE_MONEY. Released collateral:');
+    });
+
+    it('should format deliverables with static security names (CAD/USD)', () => {
+      const expiryDetail = {
+        decision: 'EXPIRE',
+        reason: 'OUT_OF_THE_MONEY',
+        deliverables: [
+          { quantity: 100, securityId: 'sec-s-cad' },
+          { quantity: 50, securityId: 'sec-s-usd' },
+        ],
+      };
+
+      const result = formatShortOptionExpiryNotes(expiryDetail, new Map());
+
+      expect(result).toContain('Decision: EXPIRE, reason: OUT_OF_THE_MONEY. Released collateral:');
+      expect(result).toContain('\n100 CAD');
+      expect(result).toContain('\n50 USD');
+    });
+
+    it('should look up security names from cache', () => {
+      const expiryDetail = {
+        decision: 'ASSIGN',
+        reason: 'IN_THE_MONEY',
+        deliverables: [
+          { quantity: 200, securityId: 'sec-o-abc123' },
+        ],
+      };
+
+      const securityCache = new Map();
+      securityCache.set('sec-o-abc123', { stock: { symbol: 'AAPL' } });
+
+      const result = formatShortOptionExpiryNotes(expiryDetail, securityCache);
+
+      expect(result).toContain('Decision: ASSIGN, reason: IN_THE_MONEY. Released collateral:');
+      expect(result).toContain('\n200 AAPL');
+    });
+
+    it('should fall back to securityId when not in cache', () => {
+      const expiryDetail = {
+        decision: 'EXPIRE',
+        reason: 'UNKNOWN',
+        deliverables: [
+          { quantity: 50, securityId: 'sec-o-notfound' },
+        ],
+      };
+
+      const result = formatShortOptionExpiryNotes(expiryDetail, new Map());
+
+      expect(result).toContain('\n50 sec-o-notfound');
+    });
+
+    it('should handle missing decision and reason with Unknown fallback', () => {
+      const expiryDetail = {
+        decision: null,
+        reason: null,
+        deliverables: [],
+      };
+
+      const result = formatShortOptionExpiryNotes(expiryDetail);
+
+      expect(result).toBe('Decision: Unknown, reason: Unknown. Released collateral:');
+    });
+
+    it('should handle missing deliverables', () => {
+      const expiryDetail = {
+        decision: 'EXPIRE',
+        reason: 'OUT_OF_THE_MONEY',
+        deliverables: null,
+      };
+
+      const result = formatShortOptionExpiryNotes(expiryDetail);
+
+      expect(result).toBe('Decision: EXPIRE, reason: OUT_OF_THE_MONEY. Released collateral:');
+    });
+  });
+
+  describe('OPTIONS_SHORT_EXPIRY rule', () => {
+    it('should match transactions with type OPTIONS_SHORT_EXPIRY', () => {
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'options-short-expiry');
+      expect(rule.match({ type: 'OPTIONS_SHORT_EXPIRY' })).toBe(true);
+    });
+
+    it('should not match other transaction types', () => {
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'options-short-expiry');
+      expect(rule.match({ type: 'OPTIONS_SELL' })).toBe(false);
+      expect(rule.match({ type: 'OPTIONS_BUY' })).toBe(false);
+    });
+
+    it('should process OPTIONS_SHORT_EXPIRY with all fields', () => {
+      const transaction = {
+        externalCanonicalId: 'oe-abc123',
+        type: 'OPTIONS_SHORT_EXPIRY',
+        subType: null,
+        assetSymbol: 'PSNY',
+        expiryDate: '2026-01-16',
+        strikePrice: 1,
+        contractType: 'CALL',
+        currency: 'USD',
+        amount: null,
+      };
+
+      const enrichmentMap = new Map();
+      enrichmentMap.set('oe-abc123', {
+        expiryDetail: { decision: 'EXPIRE', reason: 'OUT_OF_THE_MONEY', deliverables: [] },
+        securityCache: new Map(),
+      });
+
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'options-short-expiry');
+      const result = rule.process(transaction, enrichmentMap);
+
+      expect(result.category).toBe('Options Expired');
+      expect(result.merchant).toBe('PSNY Jan 16, 2026 USD$1 Call');
+      expect(result.originalStatement).toBe('OPTIONS_SHORT_EXPIRY::PSNY:2026-01-16:1:CALL');
+      expect(result.notes).toContain('Decision: EXPIRE');
+    });
+
+    it('should handle null amount (expired worthless)', () => {
+      const transaction = {
+        externalCanonicalId: 'oe-worthless',
+        type: 'OPTIONS_SHORT_EXPIRY',
+        assetSymbol: 'TEST',
+        expiryDate: '2026-02-20',
+        strikePrice: 50,
+        contractType: 'PUT',
+        currency: 'CAD',
+        amount: null,
+      };
+
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'options-short-expiry');
+      const result = rule.process(transaction, null);
+
+      expect(result.category).toBe('Options Expired');
+      expect(result.merchant).toBe('TEST Feb 20, 2026 CAD$50 Put');
     });
   });
 });

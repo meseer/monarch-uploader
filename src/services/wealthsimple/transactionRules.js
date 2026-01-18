@@ -1427,6 +1427,54 @@ export const INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES = [
 ];
 
 /**
+ * Static security ID to name mapping for cash securities
+ * Used when resolving deliverable security names in short option expiry
+ */
+const STATIC_SECURITY_NAMES = {
+  'sec-s-cad': 'CAD',
+  'sec-s-usd': 'USD',
+};
+
+/**
+ * Format notes for short option position expiry transactions
+ * Includes decision, reason, and released collateral details
+ *
+ * @param {Object} expiryDetail - Short option position expiry detail from FetchShortOptionPositionExpiryDetail API
+ * @param {Map<string, Object>} securityCache - Cache of fetched security details (securityId -> security object)
+ * @returns {string} Formatted notes string
+ */
+export function formatShortOptionExpiryNotes(expiryDetail, securityCache = new Map()) {
+  if (!expiryDetail) {
+    return '';
+  }
+
+  const decision = expiryDetail.decision || 'Unknown';
+  const reason = expiryDetail.reason || 'Unknown';
+
+  let notes = `Decision: ${decision}, reason: ${reason}. Released collateral:`;
+
+  // Add each deliverable on its own line
+  const deliverables = expiryDetail.deliverables || [];
+  for (const deliverable of deliverables) {
+    const quantity = deliverable.quantity || 0;
+    const securityId = deliverable.securityId || '';
+
+    // Look up security name from static map or cache
+    let securityName = STATIC_SECURITY_NAMES[securityId];
+    if (!securityName && securityCache.has(securityId)) {
+      const security = securityCache.get(securityId);
+      securityName = security?.stock?.symbol || securityId;
+    } else if (!securityName) {
+      securityName = securityId;
+    }
+
+    notes += `\n${quantity} ${securityName}`;
+  }
+
+  return notes;
+}
+
+/**
  * Investment account buy/sell transaction rules
  * These rules handle stock purchase and sale transactions in investment accounts
  *
@@ -1627,6 +1675,62 @@ export const INVESTMENT_BUY_SELL_TRANSACTION_RULES = [
         merchant,
         originalStatement: formatOriginalStatement(tx.type, tx.subType, statementParts),
         notes: formatOptionsOrderNotes(tx, extendedOrder, true),
+        technicalDetails: '',
+      };
+    },
+  },
+  {
+    id: 'options-short-expiry',
+    description: 'Short option position expiry transactions',
+    match: (tx) => tx.type === 'OPTIONS_SHORT_EXPIRY',
+    /**
+     * Process OPTIONS_SHORT_EXPIRY transactions
+     * These are short option position expirations (when sold options expire)
+     *
+     * Amount handling:
+     * - Amount is typically null when option expires worthless (use 0)
+     * - Amount has value when option is assigned
+     *
+     * Merchant format: "{assetSymbol} {prettyDate(expiryDate)} {currency}${strikePrice} {sentenceCase(contractType)}"
+     * Example: "PSNY Jan 16, 2026 USD$1 Call"
+     *
+     * Original statement format: "{type}:{subType}:{assetSymbol}:{expiryDate}:{strikePrice}:{contractType}"
+     * Example: "OPTIONS_SHORT_EXPIRY::PSNY:2026-01-16:1:CALL"
+     *
+     * Notes: Fetched via FetchShortOptionPositionExpiryDetail API, includes decision, reason,
+     * and released collateral with security names looked up via FetchSecurity API
+     *
+     * @param {Object} tx - Raw transaction
+     * @param {Map<string, Object>} enrichmentMap - Map containing short option expiry details and security cache
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx, enrichmentMap) => {
+      const assetSymbol = tx.assetSymbol || 'Unknown';
+      const expiryDate = tx.expiryDate || '';
+      const strikePrice = formatAmount(tx.strikePrice ?? 0);
+      const contractType = tx.contractType || '';
+      const currency = tx.currency || 'CAD';
+
+      // Format merchant: "{assetSymbol} {prettyDate} {currency}${strikePrice} {sentenceCase(contractType)}"
+      const prettyExpiryDate = formatPrettyDate(expiryDate);
+      const contractTypeDisplay = toSentenceCase(contractType);
+      const merchant = `${assetSymbol} ${prettyExpiryDate} ${currency}$${strikePrice} ${contractTypeDisplay}`;
+
+      // Format original statement: "{type}:{subType}:{assetSymbol}:{expiryDate}:{strikePrice}:{contractType}"
+      const statementParts = `${assetSymbol}:${expiryDate}:${tx.strikePrice ?? 0}:${contractType}`;
+
+      // Get expiry detail and security cache from enrichmentMap (keyed by externalCanonicalId)
+      const expiryDetail = enrichmentMap?.get(tx.externalCanonicalId)?.expiryDetail || null;
+      const securityCache = enrichmentMap?.get(tx.externalCanonicalId)?.securityCache || new Map();
+
+      // Build notes from expiry detail
+      const notes = formatShortOptionExpiryNotes(expiryDetail, securityCache);
+
+      return {
+        category: 'Options Expired',
+        merchant,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, statementParts),
+        notes,
         technicalDetails: '',
       };
     },

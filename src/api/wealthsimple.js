@@ -2457,6 +2457,59 @@ fragment ShortOptionPositionExpiryDetail on ShortPositionExpiryDetail {
 }
 
 /**
+ * Fetch security details by security ID
+ * Used to look up security names for deliverables in short option expiry details
+ *
+ * @param {string} securityId - Security ID (e.g., "sec-o-977d51d56c9a40e58ead71785a412b3d")
+ * @returns {Promise<Object|null>} Security details or null if not found
+ */
+export async function fetchSecurity(securityId) {
+  try {
+    if (!securityId) {
+      debugLog('No security ID provided');
+      return null;
+    }
+
+    debugLog(`Fetching security details for ${securityId}...`);
+
+    const query = `query FetchSecurity($securityId: ID!) {
+  security(id: $securityId) {
+    id
+    currency
+    securityType
+    stock {
+      name
+      symbol
+      __typename
+    }
+    __typename
+  }
+}`;
+
+    const response = await makeGraphQLQuery('FetchSecurity', query, { securityId });
+
+    if (!response || !response.security) {
+      debugLog(`No security data found for ${securityId}`);
+      return null;
+    }
+
+    const security = response.security;
+    debugLog(`Fetched security ${securityId}:`, {
+      symbol: security.stock?.symbol,
+      name: security.stock?.name,
+      currency: security.currency,
+      securityType: security.securityType,
+    });
+
+    return security;
+  } catch (error) {
+    debugLog(`Error fetching security ${securityId}:`, error);
+    // Return null on error - don't fail the entire sync
+    return null;
+  }
+}
+
+/**
  * Fetch cash balances for investment accounts using FetchAccountsWithBalance
  * Returns CAD and USD cash balances from the account's custodian financials
  *
@@ -2586,5 +2639,6 @@ export default {
   fetchExtendedOrder,
   fetchCorporateActionChildActivities,
   fetchShortOptionPositionExpiryDetail,
+  fetchSecurity,
   fetchAccountsWithBalance,
 };

@@ -1230,7 +1230,7 @@ function isInvestmentBuySellTransaction(transaction) {
  */
 function usesUnifiedStatus(transaction) {
   const unifiedStatusTypes = [
-    'MANAGED_BUY', 'DIY_BUY', 'MANAGED_SELL', 'DIY_SELL', 'OPTIONS_BUY', 'OPTIONS_SELL',
+    'MANAGED_BUY', 'DIY_BUY', 'MANAGED_SELL', 'DIY_SELL', 'OPTIONS_BUY', 'OPTIONS_SELL', 'OPTIONS_SHORT_EXPIRY',
     'DEPOSIT', 'DIVIDEND', 'INTEREST', 'INSTITUTIONAL_TRANSFER_INTENT',
   ];
   return unifiedStatusTypes.includes(transaction.type);
@@ -1291,6 +1291,25 @@ function collectCorporateActionIds(transactions) {
   }
 
   return corporateActionIds;
+}
+
+/**
+ * Collect short option expiry IDs from transactions that need expiry details
+ * Returns externalCanonicalIds from OPTIONS_SHORT_EXPIRY transactions
+ *
+ * @param {Array} transactions - Raw transactions from Wealthsimple API
+ * @returns {Array<string>} Array of expiry detail IDs for fetchShortOptionPositionExpiryDetail
+ */
+function collectShortOptionExpiryIds(transactions) {
+  const expiryIds = [];
+
+  for (const tx of transactions) {
+    if (tx.type === 'OPTIONS_SHORT_EXPIRY' && tx.externalCanonicalId) {
+      expiryIds.push(tx.externalCanonicalId);
+    }
+  }
+
+  return expiryIds;
 }
 
 /**
@@ -1596,6 +1615,42 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
         }
       }
       debugLog(`Fetched ${corporateActionIds.length} corporate action(s)`);
+    }
+
+    // Fetch short option expiry details (individual calls with progress)
+    const shortOptionExpiryIds = collectShortOptionExpiryIds(transactionsWithRules);
+    if (shortOptionExpiryIds.length > 0) {
+      debugLog(`Fetching ${shortOptionExpiryIds.length} short option expiry details...`);
+      for (let i = 0; i < shortOptionExpiryIds.length; i++) {
+        const expiryId = shortOptionExpiryIds[i];
+        const progressNum = i + 1;
+        debugLog(`Fetching short option expiry details (${progressNum}/${shortOptionExpiryIds.length}): ${expiryId}`);
+
+        // Update progress callback for UI
+        if (onProgress) {
+          onProgress(`Option expiries (${progressNum}/${shortOptionExpiryIds.length})`);
+        }
+
+        const expiryDetail = await wealthsimpleApi.fetchShortOptionPositionExpiryDetail(expiryId);
+        if (expiryDetail) {
+          // Fetch security names for deliverables
+          const securityCache = new Map();
+          if (expiryDetail.deliverables && Array.isArray(expiryDetail.deliverables)) {
+            for (const deliverable of expiryDetail.deliverables) {
+              const secId = deliverable.securityId;
+              // Skip static mappings (sec-s-cad, sec-s-usd)
+              if (secId && !secId.startsWith('sec-s-')) {
+                const security = await wealthsimpleApi.fetchSecurity(secId);
+                if (security) {
+                  securityCache.set(secId, security);
+                }
+              }
+            }
+          }
+          enrichmentMap.set(expiryId, { expiryDetail, securityCache });
+        }
+      }
+      debugLog(`Fetched ${shortOptionExpiryIds.length} short option expiry detail(s)`);
     }
 
     debugLog(`Enrichment map has ${enrichmentMap.size} entries`);
