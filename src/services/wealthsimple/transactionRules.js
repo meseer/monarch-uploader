@@ -1526,6 +1526,60 @@ export function formatShortOptionExpiryNotes(expiryDetail, securityCache = new M
 }
 
 /**
+ * Investment account non-resident tax transaction rules
+ * These rules handle non-resident withholding tax transactions in investment accounts
+ *
+ * Transaction types supported:
+ * - NON_RESIDENT_TAX: Withholding tax on foreign income (dividends, etc.)
+ */
+export const INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES = [
+  {
+    id: 'non-resident-tax',
+    description: 'Non-resident withholding tax on foreign income',
+    match: (tx) => tx.type === 'NON_RESIDENT_TAX',
+    /**
+     * Process NON_RESIDENT_TAX transactions
+     * These are withholding taxes on foreign income (e.g., US dividends)
+     *
+     * Merchant logic:
+     * - If assetSymbol==null: "Non-Resident Tax ({accountName})"
+     * - Otherwise: "Non-Resident Tax for {assetSymbol} ({accountName})"
+     *
+     * Original statement format: "{type}:{subType}:{assetSymbol}:{currency}"
+     *
+     * @param {Object} tx - Raw transaction
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx) => {
+      const assetSymbol = tx.assetSymbol || '';
+      const subType = tx.subType || '';
+      const currency = tx.currency || 'CAD';
+      const accountName = getAccountNameById(tx.accountId);
+
+      // Merchant: "Non-Resident Tax ({accountName})" if no assetSymbol,
+      // otherwise "Non-Resident Tax for {assetSymbol} ({accountName})"
+      let merchant;
+      if (!assetSymbol) {
+        merchant = `Non-Resident Tax (${accountName})`;
+      } else {
+        merchant = `Non-Resident Tax for ${assetSymbol} (${accountName})`;
+      }
+
+      // Original statement: "{type}:{subType}:{assetSymbol}:{currency}"
+      const originalStatement = `${tx.type || ''}:${subType}:${assetSymbol}:${currency}`;
+
+      return {
+        category: 'Dividends & Capital Gains',
+        merchant,
+        originalStatement,
+        notes: '',
+        technicalDetails: '',
+      };
+    },
+  },
+];
+
+/**
  * Investment account reimbursement transaction rules
  * These rules handle reimbursement transactions in investment accounts
  *
@@ -1895,6 +1949,7 @@ export default {
   INVESTMENT_DEPOSIT_TRANSACTION_RULES,
   INVESTMENT_DIVIDEND_TRANSACTION_RULES,
   INVESTMENT_INTEREST_TRANSACTION_RULES,
+  INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES,
   INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES,
   applyTransactionRule,
   hasRuleForTransaction,

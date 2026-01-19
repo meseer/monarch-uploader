@@ -13,6 +13,7 @@ import {
   INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES,
   INVESTMENT_BUY_SELL_TRANSACTION_RULES,
   INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES,
+  INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES,
   applyTransactionRule,
   hasRuleForTransaction,
   extractInteracMemo,
@@ -7442,6 +7443,296 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
       it('should have unique rule ID', () => {
         const ids = INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES.map((r) => r.id);
+        const uniqueIds = [...new Set(ids)];
+        expect(ids.length).toBe(uniqueIds.length);
+      });
+    });
+  });
+
+  describe('INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES', () => {
+    // Helper to set up mock accounts in GM storage
+    const setupMockAccounts = (accounts) => {
+      const consolidatedAccounts = accounts.map((acc) => ({
+        wealthsimpleAccount: {
+          id: acc.id,
+          nickname: acc.nickname,
+        },
+      }));
+      global.GM_getValue = jest.fn((key, defaultValue) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
+          return JSON.stringify(consolidatedAccounts);
+        }
+        return defaultValue;
+      });
+    };
+
+    beforeEach(() => {
+      setupMockAccounts([{ id: 'account-tfsa-123', nickname: 'Wealthsimple TFSA' }]);
+    });
+
+    describe('NON_RESIDENT_TAX rule matching', () => {
+      it('should match transactions with type NON_RESIDENT_TAX', () => {
+        const transaction = {
+          externalCanonicalId: 'nrt-123',
+          type: 'NON_RESIDENT_TAX',
+          subType: null,
+          assetSymbol: 'MSFT',
+          amount: 3.75,
+          currency: 'USD',
+        };
+
+        const rule = INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES.find((r) => r.id === 'non-resident-tax');
+        expect(rule.match(transaction)).toBe(true);
+      });
+
+      it('should match NON_RESIDENT_TAX with any subType', () => {
+        const rule = INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES.find((r) => r.id === 'non-resident-tax');
+
+        expect(rule.match({ type: 'NON_RESIDENT_TAX', subType: null })).toBe(true);
+        expect(rule.match({ type: 'NON_RESIDENT_TAX', subType: undefined })).toBe(true);
+        expect(rule.match({ type: 'NON_RESIDENT_TAX', subType: 'SOME_SUBTYPE' })).toBe(true);
+      });
+
+      it('should not match transactions with different type', () => {
+        const rule = INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES.find((r) => r.id === 'non-resident-tax');
+
+        expect(rule.match({ type: 'DIVIDEND', subType: null })).toBe(false);
+        expect(rule.match({ type: 'FEE', subType: 'NON_RESIDENT_TAX' })).toBe(false);
+        expect(rule.match({ type: 'INTEREST', subType: null })).toBe(false);
+        expect(rule.match({ type: 'TAX', subType: null })).toBe(false);
+      });
+    });
+
+    describe('NON_RESIDENT_TAX transaction processing', () => {
+      it('should process NON_RESIDENT_TAX with all fields correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'nrt-msft-123',
+          type: 'NON_RESIDENT_TAX',
+          subType: null,
+          assetSymbol: 'MSFT',
+          accountId: 'account-tfsa-123',
+          amount: 3.75,
+          currency: 'USD',
+        };
+
+        const rule = INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES.find((r) => r.id === 'non-resident-tax');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Dividends & Capital Gains');
+        expect(result.merchant).toBe('Non-Resident Tax for MSFT (Wealthsimple TFSA)');
+        expect(result.originalStatement).toBe('NON_RESIDENT_TAX::MSFT:USD');
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should process NON_RESIDENT_TAX with CAD currency correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'nrt-cad-123',
+          type: 'NON_RESIDENT_TAX',
+          subType: null,
+          assetSymbol: 'VFV',
+          accountId: 'account-tfsa-123',
+          amount: 5.25,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES.find((r) => r.id === 'non-resident-tax');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Dividends & Capital Gains');
+        expect(result.merchant).toBe('Non-Resident Tax for VFV (Wealthsimple TFSA)');
+        expect(result.originalStatement).toBe('NON_RESIDENT_TAX::VFV:CAD');
+      });
+
+      it('should process NON_RESIDENT_TAX with subType correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'nrt-subtype-123',
+          type: 'NON_RESIDENT_TAX',
+          subType: 'DIVIDEND_WITHHOLDING',
+          assetSymbol: 'AAPL',
+          accountId: 'account-tfsa-123',
+          amount: 2.50,
+          currency: 'USD',
+        };
+
+        const rule = INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES.find((r) => r.id === 'non-resident-tax');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Dividends & Capital Gains');
+        expect(result.merchant).toBe('Non-Resident Tax for AAPL (Wealthsimple TFSA)');
+        expect(result.originalStatement).toBe('NON_RESIDENT_TAX:DIVIDEND_WITHHOLDING:AAPL:USD');
+      });
+    });
+
+    describe('NON_RESIDENT_TAX edge cases', () => {
+      it('should handle missing assetSymbol with account name only', () => {
+        const transaction = {
+          externalCanonicalId: 'nrt-no-symbol',
+          type: 'NON_RESIDENT_TAX',
+          subType: null,
+          assetSymbol: null,
+          accountId: 'account-tfsa-123',
+          amount: 1.00,
+          currency: 'USD',
+        };
+
+        const rule = INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES.find((r) => r.id === 'non-resident-tax');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Dividends & Capital Gains');
+        expect(result.merchant).toBe('Non-Resident Tax (Wealthsimple TFSA)');
+        expect(result.originalStatement).toBe('NON_RESIDENT_TAX:::USD');
+      });
+
+      it('should handle empty string assetSymbol with account name only', () => {
+        const transaction = {
+          externalCanonicalId: 'nrt-empty-symbol',
+          type: 'NON_RESIDENT_TAX',
+          subType: null,
+          assetSymbol: '',
+          accountId: 'account-tfsa-123',
+          amount: 2.00,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES.find((r) => r.id === 'non-resident-tax');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Non-Resident Tax (Wealthsimple TFSA)');
+        expect(result.originalStatement).toBe('NON_RESIDENT_TAX:::CAD');
+      });
+
+      it('should handle undefined assetSymbol with account name only', () => {
+        const transaction = {
+          externalCanonicalId: 'nrt-undef-symbol',
+          type: 'NON_RESIDENT_TAX',
+          subType: null,
+          accountId: 'account-tfsa-123',
+          amount: 3.00,
+          currency: 'USD',
+        };
+
+        const rule = INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES.find((r) => r.id === 'non-resident-tax');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Non-Resident Tax (Wealthsimple TFSA)');
+        expect(result.originalStatement).toBe('NON_RESIDENT_TAX:::USD');
+      });
+
+      it('should handle missing currency with CAD fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'nrt-no-currency',
+          type: 'NON_RESIDENT_TAX',
+          subType: null,
+          assetSymbol: 'GOOGL',
+          accountId: 'account-tfsa-123',
+          amount: 4.50,
+          currency: null,
+        };
+
+        const rule = INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES.find((r) => r.id === 'non-resident-tax');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.originalStatement).toBe('NON_RESIDENT_TAX::GOOGL:CAD');
+      });
+
+      it('should handle undefined currency with CAD fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'nrt-undef-currency',
+          type: 'NON_RESIDENT_TAX',
+          subType: null,
+          assetSymbol: 'TSLA',
+          accountId: 'account-tfsa-123',
+          amount: 1.25,
+        };
+
+        const rule = INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES.find((r) => r.id === 'non-resident-tax');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.originalStatement).toBe('NON_RESIDENT_TAX::TSLA:CAD');
+      });
+
+      it('should handle all fields missing with appropriate fallbacks', () => {
+        setupMockAccounts([]);
+
+        const transaction = {
+          externalCanonicalId: 'nrt-all-missing',
+          type: 'NON_RESIDENT_TAX',
+        };
+
+        const rule = INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES.find((r) => r.id === 'non-resident-tax');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Dividends & Capital Gains');
+        expect(result.merchant).toBe('Non-Resident Tax (Unknown Account)');
+        expect(result.originalStatement).toBe('NON_RESIDENT_TAX:::CAD');
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should not set needsCategoryMapping flag (auto-categorized)', () => {
+        const transaction = {
+          externalCanonicalId: 'nrt-no-mapping',
+          type: 'NON_RESIDENT_TAX',
+          subType: null,
+          assetSymbol: 'NVDA',
+          currency: 'USD',
+        };
+
+        const rule = INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES.find((r) => r.id === 'non-resident-tax');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.needsCategoryMapping).toBeUndefined();
+      });
+
+      it('should have empty notes and technicalDetails', () => {
+        const transaction = {
+          externalCanonicalId: 'nrt-notes',
+          type: 'NON_RESIDENT_TAX',
+          subType: null,
+          assetSymbol: 'AMD',
+          currency: 'USD',
+        };
+
+        const rule = INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES.find((r) => r.id === 'non-resident-tax');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+    });
+
+    describe('Rule structure', () => {
+      it('should have required properties', () => {
+        const rule = INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES.find((r) => r.id === 'non-resident-tax');
+
+        expect(rule).toHaveProperty('id');
+        expect(rule).toHaveProperty('description');
+        expect(rule).toHaveProperty('match');
+        expect(rule).toHaveProperty('process');
+        expect(typeof rule.id).toBe('string');
+        expect(typeof rule.description).toBe('string');
+        expect(typeof rule.match).toBe('function');
+        expect(typeof rule.process).toBe('function');
+      });
+
+      it('should have exactly 1 rule', () => {
+        expect(INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES.length).toBe(1);
+      });
+
+      it('should have unique rule ID', () => {
+        const ids = INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES.map((r) => r.id);
         const uniqueIds = [...new Set(ids)];
         expect(ids.length).toBe(uniqueIds.length);
       });
