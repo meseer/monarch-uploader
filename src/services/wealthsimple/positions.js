@@ -29,6 +29,26 @@ const CASH_HOLDING_KEYS = {
 };
 
 /**
+ * MANAGED_* account types that should use FetchAccountManagedPortfolioPositions API
+ */
+const MANAGED_ACCOUNT_TYPES = new Set([
+  'MANAGED_RESP_FAMILY',
+  'MANAGED_RESP',
+  'MANAGED_NON_REGISTERED',
+  'MANAGED_TFSA',
+  'MANAGED_RRSP',
+]);
+
+/**
+ * Check if an account type is a managed account
+ * @param {string} accountType - Wealthsimple account type
+ * @returns {boolean} True if managed account
+ */
+export function isManagedAccount(accountType) {
+  return MANAGED_ACCOUNT_TYPES.has(accountType);
+}
+
+/**
  * Custom positions error class
  */
 export class PositionsError extends Error {
@@ -118,10 +138,16 @@ export function getSecuritySymbolForLookup(position) {
 
 /**
  * Get security name for display
+ * Handles both self-directed positions (nested structure) and managed positions (flat structure)
  * @param {Object} position - Position object with security details
  * @returns {string} Security name
  */
 function getSecurityName(position) {
+  // Managed positions have name directly on position
+  if (position.name) {
+    return position.name;
+  }
+
   const security = position.security;
   if (!security) {
     return 'Unknown';
@@ -140,18 +166,97 @@ function getSecurityName(position) {
 }
 
 /**
+ * Check if a position is from the managed portfolio API (flat structure)
+ * Managed positions have 'symbol' directly on the position object
+ * Self-directed positions have nested security.stock.symbol
+ * @param {Object} position - Position object
+ * @returns {boolean} True if managed position format
+ */
+function isManagedPositionFormat(position) {
+  // Managed positions have symbol directly on the position, not nested in security
+  return position.symbol !== undefined && !position.security;
+}
+
+/**
+ * Check if a managed portfolio position is a cash currency position
+ * @param {Object} position - Managed portfolio position
+ * @returns {boolean} True if cash currency position
+ */
+function isManagedCashPosition(position) {
+  return isManagedPositionFormat(position) && (position.symbol === 'CAD' || position.symbol === 'USD');
+}
+
+/**
+ * Get the security ID key for a position
+ * For managed positions: uses symbol (or cash-cad/cash-usd for currencies)
+ * For self-directed positions: uses security.id
+ * @param {Object} position - Position object
+ * @returns {string} Security ID key for storage
+ */
+function getPositionSecurityKey(position) {
+  if (isManagedPositionFormat(position)) {
+    // For managed cash positions, use cash holding keys
+    if (position.symbol === 'CAD') {
+      return CASH_HOLDING_KEYS.CAD;
+    }
+    if (position.symbol === 'USD') {
+      return CASH_HOLDING_KEYS.USD;
+    }
+    // For managed securities, use the position id as the key
+    return position.id || position.symbol;
+  }
+  // Self-directed positions use security.id
+  return position.security?.id;
+}
+
+/**
+ * Get the symbol to display/lookup for any position type
+ * @param {Object} position - Position object (managed or self-directed)
+ * @returns {string|null} Symbol for display/lookup
+ */
+function getPositionDisplaySymbol(position) {
+  if (isManagedPositionFormat(position)) {
+    // Map managed cash symbols to display format
+    if (position.symbol === 'CAD') {
+      return 'CUR:CAD';
+    }
+    if (position.symbol === 'USD') {
+      return 'CUR:USD';
+    }
+    return position.symbol;
+  }
+  // Self-directed positions
+  return getSecuritySymbolForLookup(position);
+}
+
+/**
  * Fetch positions for a Wealthsimple account
+ * Routes to appropriate API based on account type:
+ * - MANAGED_* accounts: Uses FetchAccountManagedPortfolioPositions API
+ * - SELF_DIRECTED_* accounts: Uses FetchIdentityPositions API
+ *
  * @param {string} accountId - Account ID
+ * @param {string} accountType - Account type (e.g., 'MANAGED_TFSA', 'SELF_DIRECTED_RRSP')
  * @returns {Promise<Array>} Array of position objects
  */
-export async function fetchPositions(accountId) {
+export async function fetchPositions(accountId, accountType = null) {
   try {
-    debugLog(`Fetching positions for account ${accountId}`);
+    debugLog(`Fetching positions for account ${accountId} (type: ${accountType})`);
 
     if (!accountId) {
       throw new PositionsError('Account ID is required', accountId);
     }
 
+    // Use managed portfolio API for MANAGED_* accounts
+    if (accountType && isManagedAccount(accountType)) {
+      debugLog(`Using FetchAccountManagedPortfolioPositions API for managed account ${accountId}`);
+      const positions = await wealthsimpleApi.fetchManagedPortfolioPositions(accountId);
+
+      debugLog(`Fetched ${positions.length} managed portfolio positions for account ${accountId}`);
+      return Array.isArray(positions) ? positions : [];
+    }
+
+    // Use standard FetchIdentityPositions API for self-directed accounts
     const positions = await wealthsimpleApi.fetchIdentityPositions(accountId);
 
     debugLog(`Fetched ${positions.length} positions for account ${accountId}`);
@@ -164,37 +269,47 @@ export async function fetchPositions(accountId) {
 
 /**
  * Resolve security mapping for a position
+ * For managed positions with CAD/USD symbols, automatically maps to hardcoded Monarch security IDs
  * @param {string} accountId - Wealthsimple account ID
  * @param {Object} position - Position object with security details
  * @returns {Promise<string|null>} Monarch security ID, or null if cancelled
  */
 export async function resolveSecurityMapping(accountId, position) {
   try {
-    const wsSecurityId = position.security?.id;
-    if (!wsSecurityId) {
+    // Get the security key based on position type
+    const securityKey = getPositionSecurityKey(position);
+    if (!securityKey) {
       throw new PositionsError('Position missing security ID', accountId, position);
     }
 
-    const symbol = getSecuritySymbolForLookup(position);
+    // Get display symbol for lookup/display
+    const symbol = getPositionDisplaySymbol(position);
+
+    // For managed cash positions (CAD/USD), automatically use hardcoded Monarch security IDs
+    if (isManagedCashPosition(position)) {
+      const monarchSecurityId = MONARCH_CASH_SECURITY_IDS[position.symbol];
+      debugLog(`Auto-mapped managed cash position ${position.symbol} to Monarch security ${monarchSecurityId}`);
+      return monarchSecurityId;
+    }
 
     // Check for existing mapping in consolidated account structure
     const mappings = loadHoldingsMappings(accountId);
-    if (mappings[wsSecurityId]?.monarchSecurityId) {
-      debugLog(`Found existing security mapping for ${symbol}: ${mappings[wsSecurityId].monarchSecurityId}`);
-      return mappings[wsSecurityId].monarchSecurityId;
+    if (mappings[securityKey]?.monarchSecurityId) {
+      debugLog(`Found existing security mapping for ${symbol}: ${mappings[securityKey].monarchSecurityId}`);
+      return mappings[securityKey].monarchSecurityId;
     }
 
     debugLog(`No mapping found for ${symbol}, showing security selector`);
 
-    // Build position info for the selector
+    // Build position info for the selector - handle both position formats
     const positionInfo = {
       security: {
         symbol,
         name: getSecurityName(position),
-        securityType: position.security?.securityType,
+        securityType: isManagedPositionFormat(position) ? position.type : position.security?.securityType,
       },
       openQuantity: Math.abs(parseFloat(position.quantity) || 0),
-      currentMarketValue: parseFloat(position.totalValue?.amount) || 0,
+      currentMarketValue: parseFloat(isManagedPositionFormat(position) ? position.value : position.totalValue?.amount) || 0,
       currentPrice: parseFloat(position.security?.quoteV2?.price) || 0,
     };
 
@@ -208,7 +323,7 @@ export async function resolveSecurityMapping(accountId, position) {
       return null;
     }
 
-    debugLog(`Selected security: ${symbol} (${wsSecurityId}) -> ${selectedSecurity.name} (${selectedSecurity.id})`);
+    debugLog(`Selected security: ${symbol} (${securityKey}) -> ${selectedSecurity.name} (${selectedSecurity.id})`);
 
     return selectedSecurity.id;
   } catch (error) {
@@ -247,6 +362,7 @@ function findExistingHolding(monarchAccountId, securityId, holdings) {
 
 /**
  * Resolve or create holding for a position
+ * Handles both self-directed positions (nested structure) and managed positions (flat structure)
  * @param {string} accountId - Wealthsimple account ID
  * @param {string} monarchAccountId - Monarch account ID
  * @param {string} monarchSecurityId - Monarch security ID
@@ -256,14 +372,14 @@ function findExistingHolding(monarchAccountId, securityId, holdings) {
  */
 export async function resolveOrCreateHolding(accountId, monarchAccountId, monarchSecurityId, position, holdings) {
   try {
-    const wsSecurityId = position.security?.id;
-    const symbol = getSecuritySymbolForLookup(position);
+    const securityKey = getPositionSecurityKey(position);
+    const symbol = getPositionDisplaySymbol(position);
 
     // Check for existing holding ID in consolidated account structure
     const mappings = loadHoldingsMappings(accountId);
-    if (mappings[wsSecurityId]?.monarchHoldingId) {
-      debugLog(`Found stored holding ID for ${symbol}: ${mappings[wsSecurityId].monarchHoldingId}`);
-      return mappings[wsSecurityId].monarchHoldingId;
+    if (mappings[securityKey]?.monarchHoldingId) {
+      debugLog(`Found stored holding ID for ${symbol}: ${mappings[securityKey].monarchHoldingId}`);
+      return mappings[securityKey].monarchHoldingId;
     }
 
     // Check if holding exists in Monarch
@@ -272,7 +388,7 @@ export async function resolveOrCreateHolding(accountId, monarchAccountId, monarc
     if (existingHolding) {
       debugLog(`Found existing holding in Monarch for ${symbol}: ${existingHolding.id}`);
       // Save the mapping
-      saveHoldingMapping(accountId, wsSecurityId, {
+      saveHoldingMapping(accountId, securityKey, {
         monarchSecurityId,
         monarchHoldingId: existingHolding.id,
         symbol,
@@ -291,7 +407,7 @@ export async function resolveOrCreateHolding(accountId, monarchAccountId, monarc
     );
 
     // Save the mapping
-    saveHoldingMapping(accountId, wsSecurityId, {
+    saveHoldingMapping(accountId, securityKey, {
       monarchSecurityId,
       monarchHoldingId: newHolding.id,
       symbol,
@@ -308,19 +424,21 @@ export async function resolveOrCreateHolding(accountId, monarchAccountId, monarc
 /**
  * Sync position data to Monarch holding
  * Uses abs(quantity) since Monarch doesn't support negative positions
+ * Handles both self-directed positions (nested structure) and managed positions (flat structure)
  * @param {string} holdingId - Holding ID to update
  * @param {Object} position - Position object with current data
  * @returns {Promise<void>}
  */
 export async function syncPositionToHolding(holdingId, position) {
   try {
-    const symbol = getSecuritySymbolForLookup(position);
+    const symbol = getPositionDisplaySymbol(position);
     debugLog(`Syncing position ${symbol} to holding ${holdingId}`);
 
     // Use abs() for quantity - Monarch doesn't support negative positions
     const quantity = Math.abs(parseFloat(position.quantity) || 0);
 
-    // Get cost basis from averagePrice
+    // Get cost basis - managed positions don't have averagePrice
+    // For managed accounts, we can't get cost basis, so default to 0
     const costBasis = parseFloat(position.averagePrice?.amount) || 0;
 
     const updates = {
@@ -329,16 +447,36 @@ export async function syncPositionToHolding(holdingId, position) {
     };
 
     // Map security type if available
-    const securityType = position.security?.securityType;
-    if (securityType) {
-      const typeMap = {
-        EQUITY: 'equity',
-        OPTION: 'option',
-        BOND: 'bond',
-        EXCHANGE_TRADED_FUND: 'etf',
-        MUTUAL_FUND: 'mutualFund',
+    // Managed positions have 'type' directly (e.g., 'exchange_traded_fund', 'currency')
+    // Self-directed positions have nested security.securityType
+    if (isManagedPositionFormat(position)) {
+      // Map managed position types to Monarch security types
+      const managedTypeMap = {
+        exchange_traded_fund: 'etf',
+        currency: 'cash',
+        mutual_fund: 'mutualFund',
+        equity: 'equity',
+        bond: 'bond',
       };
-      updates.securityType = typeMap[securityType] || 'equity';
+      const positionType = position.type?.toLowerCase();
+      if (positionType && managedTypeMap[positionType]) {
+        updates.securityType = managedTypeMap[positionType];
+      } else {
+        updates.securityType = 'etf'; // Default for managed accounts (most common)
+      }
+    } else {
+      // Self-directed positions
+      const securityType = position.security?.securityType;
+      if (securityType) {
+        const typeMap = {
+          EQUITY: 'equity',
+          OPTION: 'option',
+          BOND: 'bond',
+          EXCHANGE_TRADED_FUND: 'etf',
+          MUTUAL_FUND: 'mutualFund',
+        };
+        updates.securityType = typeMap[securityType] || 'equity';
+      }
     }
 
     await monarchApi.updateHolding(holdingId, updates);
@@ -458,9 +596,10 @@ export async function detectAndRemoveDeletedHoldings(accountId, monarchAccountId
  * @param {string} accountName - Account name for display
  * @param {string} monarchAccountId - Mapped Monarch account ID
  * @param {Object} progressDialog - Optional progress dialog for updates
+ * @param {string} accountType - Account type (e.g., 'MANAGED_TFSA', 'SELF_DIRECTED_RRSP')
  * @returns {Promise<Object>} Result with success status and counts
  */
-export async function processAccountPositions(accountId, accountName, monarchAccountId, progressDialog = null) {
+export async function processAccountPositions(accountId, accountName, monarchAccountId, progressDialog = null, accountType = null) {
   const result = {
     success: false,
     positionsProcessed: 0,
@@ -471,7 +610,7 @@ export async function processAccountPositions(accountId, accountName, monarchAcc
   };
 
   try {
-    debugLog(`Processing positions for account ${accountName} (${accountId})`);
+    debugLog(`Processing positions for account ${accountName} (${accountId}, type: ${accountType})`);
 
     toast.show(`Starting positions sync for ${accountName}...`, 'debug');
 
@@ -479,8 +618,8 @@ export async function processAccountPositions(accountId, accountName, monarchAcc
       progressDialog.updateStepStatus(accountId, 'positions', 'processing', 'Fetching positions...');
     }
 
-    // Fetch positions from Wealthsimple
-    const positions = await fetchPositions(accountId);
+    // Fetch positions from Wealthsimple - uses appropriate API based on account type
+    const positions = await fetchPositions(accountId, accountType);
 
     if (!positions || positions.length === 0) {
       debugLog(`No positions found for account ${accountId}`);
@@ -504,7 +643,7 @@ export async function processAccountPositions(accountId, accountName, monarchAcc
     // Process each position
     for (let i = 0; i < positions.length; i += 1) {
       const position = positions[i];
-      const symbol = getSecuritySymbolForLookup(position) || 'Unknown';
+      const symbol = getPositionDisplaySymbol(position) || 'Unknown';
 
       try {
         if (progressDialog) {
@@ -815,6 +954,7 @@ export async function processCashPositions(accountId, accountName, monarchAccoun
 }
 
 export default {
+  isManagedAccount,
   isInvestmentAccount,
   fetchPositions,
   resolveSecurityMapping,

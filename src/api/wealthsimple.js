@@ -2510,6 +2510,70 @@ export async function fetchSecurity(securityId) {
 }
 
 /**
+ * Fetch positions for a managed portfolio account using FetchAccountManagedPortfolioPositions
+ * This API is used for MANAGED_* account types which have a different data structure
+ * @param {string} accountId - Wealthsimple account ID
+ * @returns {Promise<Array>} Array of position objects with full details from the API
+ */
+export async function fetchManagedPortfolioPositions(accountId) {
+  try {
+    if (!accountId) {
+      throw new Error('Account ID is required');
+    }
+
+    debugLog(`Fetching managed portfolio positions for account ${accountId}...`);
+
+    // Use exact query as provided by Wealthsimple API
+    const query = `query FetchAccountManagedPortfolioPositions($accountId: ID!) {
+  account(id: $accountId) {
+    id
+    positions {
+      ...ManagedPortfolioPosition
+      __typename
+    }
+    __typename
+  }
+}
+
+fragment ManagedPortfolioPosition on Position {
+  id
+  allocation
+  className: class_name
+  currency
+  description
+  fee
+  name
+  performance
+  symbol
+  type
+  value
+  category
+  quantity
+  __typename
+}`;
+
+    const variables = {
+      accountId,
+    };
+
+    const response = await makeGraphQLQuery('FetchAccountManagedPortfolioPositions', query, variables);
+
+    if (!response || !response.account || !response.account.positions) {
+      debugLog('No positions data in managed portfolio response');
+      return [];
+    }
+
+    const positions = response.account.positions;
+    debugLog(`Fetched ${positions.length} managed portfolio positions for account ${accountId}`);
+
+    return positions;
+  } catch (error) {
+    debugLog(`Error fetching managed portfolio positions for account ${accountId}:`, error);
+    throw error;
+  }
+}
+
+/**
  * Fetch cash balances for investment accounts using FetchAccountsWithBalance
  * Returns CAD and USD cash balances from the account's custodian financials
  *
@@ -2632,6 +2696,7 @@ export default {
   fetchTransactions,
   fetchBalanceHistory,
   fetchIdentityPositions,
+  fetchManagedPortfolioPositions,
   fetchCreditCardAccountSummary,
   fetchFundingIntents,
   fetchInternalTransfer,

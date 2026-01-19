@@ -2880,6 +2880,69 @@ describe('Wealthsimple API Client', () => {
     });
   });
 
+  describe('fetchManagedPortfolioPositions', () => {
+    beforeEach(() => {
+      const futureDate = new Date(Date.now() + 3600000).toISOString();
+      GM_getValue.mockImplementation((key) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
+        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
+        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
+        return null;
+      });
+    });
+
+    it('should require accountId parameter', async () => {
+      await expect(
+        wealthsimpleApi.fetchManagedPortfolioPositions(null),
+      ).rejects.toThrow('Account ID is required');
+
+      await expect(
+        wealthsimpleApi.fetchManagedPortfolioPositions(''),
+      ).rejects.toThrow('Account ID is required');
+    });
+
+    it('should fetch managed portfolio positions successfully', async () => {
+      const mockResponse = {
+        account: {
+          id: 'resp-gjp2y-3a',
+          positions: [
+            { id: 'pos-1', symbol: 'CAD', quantity: '354.18', type: 'currency', name: 'CAD', value: '354.18' },
+            { id: 'pos-2', symbol: 'EEMV', quantity: '57.3763', type: 'exchange_traded_fund', name: 'iShares ETF', value: '5284.35' },
+          ],
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({ status: 200, responseText: JSON.stringify({ data: mockResponse }) });
+      });
+
+      const result = await wealthsimpleApi.fetchManagedPortfolioPositions('resp-gjp2y-3a');
+
+      expect(result).toHaveLength(2);
+      expect(result[0].symbol).toBe('CAD');
+      expect(result[0].quantity).toBe('354.18');
+      expect(result[1].symbol).toBe('EEMV');
+    });
+
+    it('should return empty array when no positions', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({ status: 200, responseText: JSON.stringify({ data: { account: { positions: [] } } }) });
+      });
+
+      const result = await wealthsimpleApi.fetchManagedPortfolioPositions('test-account');
+      expect(result).toEqual([]);
+    });
+
+    it('should return empty array when no account in response', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({ status: 200, responseText: JSON.stringify({ data: {} }) });
+      });
+
+      const result = await wealthsimpleApi.fetchManagedPortfolioPositions('test-account');
+      expect(result).toEqual([]);
+    });
+  });
+
   describe('fetchExtendedOrder', () => {
     beforeEach(() => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
