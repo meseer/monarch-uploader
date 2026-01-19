@@ -1526,6 +1526,62 @@ export function formatShortOptionExpiryNotes(expiryDetail, securityCache = new M
 }
 
 /**
+ * Investment account reimbursement transaction rules
+ * These rules handle reimbursement transactions in investment accounts
+ *
+ * Transaction types supported:
+ * - REIMBURSEMENT: Various reimbursements (fee rebates, etc.)
+ */
+export const INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES = [
+  {
+    id: 'reimbursement',
+    description: 'Reimbursement transactions for investment accounts',
+    match: (tx) => tx.type === 'REIMBURSEMENT',
+    /**
+     * Process REIMBURSEMENT transactions
+     * These are reimbursements in investment accounts (fee rebates, etc.)
+     *
+     * Merchant logic:
+     * - If subType==null && assetSymbol==null: "Reimbursement ({accountName})"
+     * - If subType==null && assetSymbol!=null: "Reimbursement for {assetSymbol} ({accountName})"
+     * - Otherwise: "sentenceCase({subType}) for {assetSymbol} ({accountName})"
+     *
+     * Original statement format: "{type}:{subType}:{assetSymbol}:{currency}"
+     *
+     * @param {Object} tx - Raw transaction
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx) => {
+      const subType = tx.subType || '';
+      const assetSymbol = tx.assetSymbol || '';
+      const currency = tx.currency || 'CAD';
+      const accountName = getAccountNameById(tx.accountId);
+
+      // Build merchant based on subType and assetSymbol presence
+      let merchant;
+      if (!subType && !assetSymbol) {
+        merchant = `Reimbursement (${accountName})`;
+      } else if (!subType && assetSymbol) {
+        merchant = `Reimbursement for ${assetSymbol} (${accountName})`;
+      } else {
+        merchant = `${toSentenceCase(subType)} for ${assetSymbol} (${accountName})`;
+      }
+
+      // Original statement: "{type}:{subType}:{assetSymbol}:{currency}"
+      const originalStatement = `${tx.type || ''}:${subType}:${assetSymbol}:${currency}`;
+
+      return {
+        category: 'Reimbursement',
+        merchant,
+        originalStatement,
+        notes: '',
+        technicalDetails: '',
+      };
+    },
+  },
+];
+
+/**
  * Investment account buy/sell transaction rules
  * These rules handle stock purchase and sale transactions in investment accounts
  *
@@ -1839,6 +1895,7 @@ export default {
   INVESTMENT_DEPOSIT_TRANSACTION_RULES,
   INVESTMENT_DIVIDEND_TRANSACTION_RULES,
   INVESTMENT_INTEREST_TRANSACTION_RULES,
+  INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES,
   applyTransactionRule,
   hasRuleForTransaction,
   getETransferDisplayName,

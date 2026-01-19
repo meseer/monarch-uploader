@@ -10,6 +10,7 @@ import {
   INVESTMENT_INTEREST_TRANSACTION_RULES,
   INVESTMENT_INSTITUTIONAL_TRANSFER_RULES,
   INVESTMENT_REFUND_TRANSACTION_RULES,
+  INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES,
   INVESTMENT_BUY_SELL_TRANSACTION_RULES,
   INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES,
   applyTransactionRule,
@@ -7198,6 +7199,249 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
       it('should have unique rule ID', () => {
         const ids = INVESTMENT_FEE_TRANSACTION_RULES.map((r) => r.id);
+        const uniqueIds = [...new Set(ids)];
+        expect(ids.length).toBe(uniqueIds.length);
+      });
+    });
+  });
+
+  describe('INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES', () => {
+    // Helper to set up mock accounts in GM storage
+    const setupMockAccounts = (accounts) => {
+      const consolidatedAccounts = accounts.map((acc) => ({
+        wealthsimpleAccount: {
+          id: acc.id,
+          nickname: acc.nickname,
+        },
+      }));
+      global.GM_getValue = jest.fn((key, defaultValue) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
+          return JSON.stringify(consolidatedAccounts);
+        }
+        return defaultValue;
+      });
+    };
+
+    beforeEach(() => {
+      setupMockAccounts([{ id: 'account-tfsa-123', nickname: 'Wealthsimple TFSA' }]);
+    });
+
+    describe('REIMBURSEMENT rule matching', () => {
+      it('should match transactions with type REIMBURSEMENT', () => {
+        const transaction = {
+          externalCanonicalId: 'reimbursement-123',
+          type: 'REIMBURSEMENT',
+          subType: 'TRANSFER_FEE_REBATE',
+          amount: 150.0,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES.find((r) => r.id === 'reimbursement');
+        expect(rule.match(transaction)).toBe(true);
+      });
+
+      it('should match REIMBURSEMENT with any subType', () => {
+        const rule = INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES.find((r) => r.id === 'reimbursement');
+
+        expect(rule.match({ type: 'REIMBURSEMENT', subType: 'TRANSFER_FEE_REBATE' })).toBe(true);
+        expect(rule.match({ type: 'REIMBURSEMENT', subType: 'FEE_REBATE' })).toBe(true);
+        expect(rule.match({ type: 'REIMBURSEMENT', subType: null })).toBe(true);
+        expect(rule.match({ type: 'REIMBURSEMENT', subType: undefined })).toBe(true);
+      });
+
+      it('should not match transactions with different type', () => {
+        const rule = INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES.find((r) => r.id === 'reimbursement');
+
+        expect(rule.match({ type: 'REFUND', subType: 'REIMBURSEMENT' })).toBe(false);
+        expect(rule.match({ type: 'DEPOSIT', subType: 'TRANSFER_FEE_REBATE' })).toBe(false);
+        expect(rule.match({ type: 'INTEREST', subType: null })).toBe(false);
+      });
+    });
+
+    describe('REIMBURSEMENT transaction processing with subType and assetSymbol', () => {
+      it('should process REIMBURSEMENT with subType and assetSymbol correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'reimbursement-transfer-fee',
+          type: 'REIMBURSEMENT',
+          subType: 'TRANSFER_FEE_REBATE',
+          assetSymbol: 'VFV',
+          accountId: 'account-tfsa-123',
+          amount: 150.0,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES.find((r) => r.id === 'reimbursement');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Reimbursement');
+        expect(result.merchant).toBe('Transfer fee rebate for VFV (Wealthsimple TFSA)');
+        expect(result.originalStatement).toBe('REIMBURSEMENT:TRANSFER_FEE_REBATE:VFV:CAD');
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should process REIMBURSEMENT with subType FEE_REBATE correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'reimbursement-fee',
+          type: 'REIMBURSEMENT',
+          subType: 'FEE_REBATE',
+          assetSymbol: 'XAW',
+          accountId: 'account-tfsa-123',
+          amount: 50.0,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES.find((r) => r.id === 'reimbursement');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Reimbursement');
+        expect(result.merchant).toBe('Fee rebate for XAW (Wealthsimple TFSA)');
+        expect(result.originalStatement).toBe('REIMBURSEMENT:FEE_REBATE:XAW:CAD');
+      });
+    });
+
+    describe('REIMBURSEMENT transaction processing without subType', () => {
+      it('should process REIMBURSEMENT with null subType and assetSymbol correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'reimbursement-null-subtype',
+          type: 'REIMBURSEMENT',
+          subType: null,
+          assetSymbol: 'AAPL',
+          accountId: 'account-tfsa-123',
+          amount: 100.0,
+          currency: 'USD',
+        };
+
+        const rule = INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES.find((r) => r.id === 'reimbursement');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Reimbursement');
+        expect(result.merchant).toBe('Reimbursement for AAPL (Wealthsimple TFSA)');
+        expect(result.originalStatement).toBe('REIMBURSEMENT::AAPL:USD');
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should process REIMBURSEMENT without subType or assetSymbol correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'reimbursement-minimal',
+          type: 'REIMBURSEMENT',
+          subType: null,
+          assetSymbol: null,
+          accountId: 'account-tfsa-123',
+          amount: 80.0,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES.find((r) => r.id === 'reimbursement');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Reimbursement');
+        expect(result.merchant).toBe('Reimbursement (Wealthsimple TFSA)');
+        expect(result.originalStatement).toBe('REIMBURSEMENT:::CAD');
+      });
+    });
+
+    describe('REIMBURSEMENT edge cases', () => {
+      it('should handle missing assetSymbol with empty string in originalStatement', () => {
+        const transaction = {
+          externalCanonicalId: 'reimbursement-no-symbol',
+          type: 'REIMBURSEMENT',
+          subType: 'TRANSFER_FEE_REBATE',
+          assetSymbol: null,
+          accountId: 'account-tfsa-123',
+          amount: 50.0,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES.find((r) => r.id === 'reimbursement');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Reimbursement');
+        expect(result.merchant).toBe('Transfer fee rebate for  (Wealthsimple TFSA)');
+        expect(result.originalStatement).toBe('REIMBURSEMENT:TRANSFER_FEE_REBATE::CAD');
+      });
+
+      it('should handle all fields missing with appropriate fallbacks', () => {
+        setupMockAccounts([]);
+
+        const transaction = {
+          externalCanonicalId: 'reimbursement-all-missing',
+          type: 'REIMBURSEMENT',
+        };
+
+        const rule = INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES.find((r) => r.id === 'reimbursement');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Reimbursement');
+        expect(result.merchant).toBe('Reimbursement (Unknown Account)');
+        expect(result.originalStatement).toBe('REIMBURSEMENT:::CAD');
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should not set needsCategoryMapping flag (auto-categorized)', () => {
+        const transaction = {
+          externalCanonicalId: 'reimbursement-no-mapping',
+          type: 'REIMBURSEMENT',
+          subType: 'TRANSFER_FEE_REBATE',
+          assetSymbol: 'VFV',
+          accountId: 'account-tfsa-123',
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES.find((r) => r.id === 'reimbursement');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.needsCategoryMapping).toBeUndefined();
+      });
+
+      it('should have empty notes and technicalDetails', () => {
+        const transaction = {
+          externalCanonicalId: 'reimbursement-notes',
+          type: 'REIMBURSEMENT',
+          subType: 'TRANSFER_FEE_REBATE',
+          assetSymbol: 'VFV',
+          accountId: 'account-tfsa-123',
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES.find((r) => r.id === 'reimbursement');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+    });
+
+    describe('Rule structure', () => {
+      it('should have required properties', () => {
+        const rule = INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES.find((r) => r.id === 'reimbursement');
+
+        expect(rule).toHaveProperty('id');
+        expect(rule).toHaveProperty('description');
+        expect(rule).toHaveProperty('match');
+        expect(rule).toHaveProperty('process');
+        expect(typeof rule.id).toBe('string');
+        expect(typeof rule.description).toBe('string');
+        expect(typeof rule.match).toBe('function');
+        expect(typeof rule.process).toBe('function');
+      });
+
+      it('should have exactly 1 rule', () => {
+        expect(INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES.length).toBe(1);
+      });
+
+      it('should have unique rule ID', () => {
+        const ids = INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES.map((r) => r.id);
         const uniqueIds = [...new Set(ids)];
         expect(ids.length).toBe(uniqueIds.length);
       });
