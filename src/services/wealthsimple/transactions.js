@@ -17,9 +17,13 @@ import {
   INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES,
   INVESTMENT_DEPOSIT_TRANSACTION_RULES,
   INVESTMENT_DIVIDEND_TRANSACTION_RULES,
+  INVESTMENT_FEE_TRANSACTION_RULES,
   INVESTMENT_INTEREST_TRANSACTION_RULES,
   INVESTMENT_INSTITUTIONAL_TRANSFER_RULES,
+  INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES,
   INVESTMENT_REFUND_TRANSACTION_RULES,
+  INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES,
+  INVESTMENT_RESP_GRANT_TRANSACTION_RULES,
   formatOriginalStatement,
   getTransactionId,
 } from './transactionRules';
@@ -1182,7 +1186,13 @@ export async function fetchAndProcessLineOfCreditTransactions(consolidatedAccoun
  * 4. Deposit rules (generic DEPOSIT for non-EFT)
  * 5. Dividend rules
  * 6. Interest rules (including FPL_INTEREST)
- * 7. Buy/sell transaction rules specific to investment accounts
+ * 7. Fee rules (service fees, management fees, etc.)
+ * 8. Refund rules (fee refunds, transfer fee refunds, etc.)
+ * 9. RESP grant rules (government grants for RESP accounts)
+ * 10. Non-resident tax rules (withholding tax on foreign income)
+ * 11. Reimbursement rules (fee rebates, etc.)
+ * 12. Corporate action rules (stock splits, consolidations, mergers, etc.)
+ * 13. Buy/sell transaction rules specific to investment accounts
  * Other unknown types are handled via manual categorization
  */
 const INVESTMENT_TRANSACTION_RULES = [
@@ -1198,8 +1208,16 @@ const INVESTMENT_TRANSACTION_RULES = [
   ...INVESTMENT_DIVIDEND_TRANSACTION_RULES,
   // Interest rules (including FPL_INTEREST for stock lending)
   ...INVESTMENT_INTEREST_TRANSACTION_RULES,
+  // Fee rules (service fees, management fees, etc.)
+  ...INVESTMENT_FEE_TRANSACTION_RULES,
   // Refund rules (fee refunds, transfer fee refunds, etc.)
   ...INVESTMENT_REFUND_TRANSACTION_RULES,
+  // RESP grant rules (government grants for RESP accounts)
+  ...INVESTMENT_RESP_GRANT_TRANSACTION_RULES,
+  // Non-resident tax rules (withholding tax on foreign income)
+  ...INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES,
+  // Reimbursement rules (fee rebates, etc.)
+  ...INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES,
   // Corporate action rules (stock splits, consolidations, mergers, etc.)
   ...INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES,
   // Investment buy/sell rules

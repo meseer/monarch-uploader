@@ -2471,10 +2471,10 @@ describe('Wealthsimple Transaction Service', () => {
     it('should process unknown transaction types via manual categorization', async () => {
       const mockRawTransactions = [
         {
-          externalCanonicalId: 'tx-unknown-fee-1',
+          externalCanonicalId: 'tx-unknown-type-1',
           occurredAt: '2026-01-15T10:30:00.000000+00:00',
-          type: 'FEE',
-          subType: 'SERVICE_FEE', // Unknown type - no rule exists for this
+          type: 'UNKNOWN_TYPE',
+          subType: 'UNKNOWN_SUBTYPE', // Truly unknown type - no rule exists for this
           status: 'completed',
           amount: 25.00,
           amountSign: 'negative',
@@ -2486,8 +2486,8 @@ describe('Wealthsimple Transaction Service', () => {
       // Mock manual categorization
       showManualTransactionCategorization.mockImplementation((transaction, callback) => {
         callback({
-          merchant: 'Service Fee',
-          category: { id: '1', name: 'Financial Fees' },
+          merchant: 'Unknown Transaction',
+          category: { id: '1', name: 'Miscellaneous' },
         });
       });
 
@@ -2501,17 +2501,17 @@ describe('Wealthsimple Transaction Service', () => {
       expect(showManualTransactionCategorization).toHaveBeenCalledTimes(1);
       expect(showManualTransactionCategorization).toHaveBeenCalledWith(
         expect.objectContaining({
-          externalCanonicalId: 'tx-unknown-fee-1',
-          type: 'FEE',
+          externalCanonicalId: 'tx-unknown-type-1',
+          type: 'UNKNOWN_TYPE',
         }),
         expect.any(Function),
       );
 
       expect(result).toHaveLength(1);
       expect(result[0]).toMatchObject({
-        id: 'tx-unknown-fee-1',
-        merchant: 'Service Fee',
-        resolvedMonarchCategory: 'Financial Fees',
+        id: 'tx-unknown-type-1',
+        merchant: 'Unknown Transaction',
+        resolvedMonarchCategory: 'Miscellaneous',
         ruleId: 'manual',
       });
     });
@@ -2530,10 +2530,10 @@ describe('Wealthsimple Transaction Service', () => {
           amountSign: 'positive',
         },
         {
-          externalCanonicalId: 'tx-unknown-fee',
+          externalCanonicalId: 'tx-unknown-type',
           occurredAt: '2026-01-16T10:30:00.000000+00:00',
-          type: 'FEE',
-          subType: 'SERVICE_FEE', // Unknown type - no rule exists for FEE transactions
+          type: 'UNKNOWN_TYPE',
+          subType: 'UNKNOWN_SUBTYPE', // Truly unknown type - no rule exists
           status: 'completed',
           amount: 25.00,
           amountSign: 'negative',
@@ -2554,11 +2554,11 @@ describe('Wealthsimple Transaction Service', () => {
       wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
       wealthsimpleApi.fetchInternalTransfer.mockResolvedValue({ annotation: '' });
 
-      // Mock manual categorization for the unknown fee transaction
+      // Mock manual categorization for the unknown type transaction
       showManualTransactionCategorization.mockImplementation((transaction, callback) => {
         callback({
-          merchant: 'Service Fee',
-          category: { id: '1', name: 'Financial Fees' },
+          merchant: 'Unknown Transaction',
+          category: { id: '1', name: 'Miscellaneous' },
         });
       });
 
@@ -2586,15 +2586,15 @@ describe('Wealthsimple Transaction Service', () => {
         ruleId: 'internal-transfer',
       });
 
-      // Fee - manually categorized
+      // Unknown type - manually categorized
       expect(result[2]).toMatchObject({
-        id: 'tx-unknown-fee',
-        merchant: 'Service Fee',
-        resolvedMonarchCategory: 'Financial Fees',
+        id: 'tx-unknown-type',
+        merchant: 'Unknown Transaction',
+        resolvedMonarchCategory: 'Miscellaneous',
         ruleId: 'manual',
       });
 
-      // Manual categorization called only for the unknown fee
+      // Manual categorization called only for the unknown type
       expect(showManualTransactionCategorization).toHaveBeenCalledTimes(1);
     });
 
@@ -2603,8 +2603,8 @@ describe('Wealthsimple Transaction Service', () => {
         {
           externalCanonicalId: 'tx-unknown',
           occurredAt: '2026-01-15T10:30:00.000000+00:00',
-          type: 'FEE',
-          subType: 'ADMIN_FEE',
+          type: 'UNKNOWN_TYPE',
+          subType: 'UNKNOWN_SUBTYPE', // Truly unknown type - no rule exists
           status: 'completed',
           amount: 10.00,
           amountSign: 'negative',

@@ -14,6 +14,7 @@ import {
   INVESTMENT_BUY_SELL_TRANSACTION_RULES,
   INVESTMENT_CORPORATE_ACTION_TRANSACTION_RULES,
   INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES,
+  INVESTMENT_RESP_GRANT_TRANSACTION_RULES,
   applyTransactionRule,
   hasRuleForTransaction,
   extractInteracMemo,
@@ -7735,6 +7736,195 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const ids = INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES.map((r) => r.id);
         const uniqueIds = [...new Set(ids)];
         expect(ids.length).toBe(uniqueIds.length);
+      });
+    });
+  });
+
+  describe('INVESTMENT_RESP_GRANT_TRANSACTION_RULES', () => {
+    // Helper to set up mock accounts in GM storage
+    const setupMockAccounts = (accounts) => {
+      const consolidatedAccounts = accounts.map((acc) => ({
+        wealthsimpleAccount: {
+          id: acc.id,
+          nickname: acc.nickname,
+        },
+      }));
+      global.GM_getValue = jest.fn((key, defaultValue) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
+          return JSON.stringify(consolidatedAccounts);
+        }
+        return defaultValue;
+      });
+    };
+
+    beforeEach(() => {
+      setupMockAccounts([{ id: 'account-resp-123', nickname: 'Family RESP' }]);
+    });
+
+    describe('RESP_GRANT rule matching', () => {
+      it('should match transactions with type RESP_GRANT', () => {
+        const transaction = {
+          externalCanonicalId: 'resp-grant-123',
+          type: 'RESP_GRANT',
+          subType: 'CESG',
+          accountId: 'account-resp-123',
+          amount: 500.0,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_RESP_GRANT_TRANSACTION_RULES.find((r) => r.id === 'resp-grant');
+        expect(rule.match(transaction)).toBe(true);
+      });
+
+      it('should match RESP_GRANT with any subType', () => {
+        const rule = INVESTMENT_RESP_GRANT_TRANSACTION_RULES.find((r) => r.id === 'resp-grant');
+
+        expect(rule.match({ type: 'RESP_GRANT', subType: 'CESG' })).toBe(true);
+        expect(rule.match({ type: 'RESP_GRANT', subType: 'CLB' })).toBe(true);
+        expect(rule.match({ type: 'RESP_GRANT', subType: null })).toBe(true);
+        expect(rule.match({ type: 'RESP_GRANT', subType: undefined })).toBe(true);
+      });
+
+      it('should not match transactions with different type', () => {
+        const rule = INVESTMENT_RESP_GRANT_TRANSACTION_RULES.find((r) => r.id === 'resp-grant');
+
+        expect(rule.match({ type: 'DEPOSIT', subType: 'RESP_GRANT' })).toBe(false);
+        expect(rule.match({ type: 'DIVIDEND', subType: 'CESG' })).toBe(false);
+        expect(rule.match({ type: 'INTEREST', subType: null })).toBe(false);
+      });
+    });
+
+    describe('RESP_GRANT transaction processing with subType', () => {
+      it('should process RESP_GRANT with subType CESG correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'resp-cesg-123',
+          type: 'RESP_GRANT',
+          subType: 'CESG',
+          assetSymbol: 'CAD',
+          accountId: 'account-resp-123',
+          amount: 500.0,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_RESP_GRANT_TRANSACTION_RULES.find((r) => r.id === 'resp-grant');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Grant');
+        expect(result.merchant).toBe('RESP Grant: Cesg (Family RESP)');
+        expect(result.originalStatement).toBe('RESP_GRANT:CESG:CAD:CAD');
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should process RESP_GRANT with subType CLB correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'resp-clb-123',
+          type: 'RESP_GRANT',
+          subType: 'CLB',
+          assetSymbol: 'CAD',
+          accountId: 'account-resp-123',
+          amount: 500.0,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_RESP_GRANT_TRANSACTION_RULES.find((r) => r.id === 'resp-grant');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Grant');
+        expect(result.merchant).toBe('RESP Grant: Clb (Family RESP)');
+        expect(result.originalStatement).toBe('RESP_GRANT:CLB:CAD:CAD');
+      });
+    });
+
+    describe('RESP_GRANT transaction processing without subType', () => {
+      it('should process RESP_GRANT with null subType correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'resp-null-subtype',
+          type: 'RESP_GRANT',
+          subType: null,
+          assetSymbol: 'CAD',
+          accountId: 'account-resp-123',
+          amount: 250.0,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_RESP_GRANT_TRANSACTION_RULES.find((r) => r.id === 'resp-grant');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Grant');
+        expect(result.merchant).toBe('RESP Grant (Family RESP)');
+        expect(result.originalStatement).toBe('RESP_GRANT::CAD:CAD');
+      });
+
+      it('should process RESP_GRANT with empty subType correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'resp-empty-subtype',
+          type: 'RESP_GRANT',
+          subType: '',
+          assetSymbol: 'CAD',
+          accountId: 'account-resp-123',
+          amount: 100.0,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_RESP_GRANT_TRANSACTION_RULES.find((r) => r.id === 'resp-grant');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('RESP Grant (Family RESP)');
+        expect(result.originalStatement).toBe('RESP_GRANT::CAD:CAD');
+      });
+    });
+
+    describe('RESP_GRANT edge cases', () => {
+      it('should handle all fields missing with appropriate fallbacks', () => {
+        setupMockAccounts([]);
+
+        const transaction = {
+          externalCanonicalId: 'resp-all-missing',
+          type: 'RESP_GRANT',
+        };
+
+        const rule = INVESTMENT_RESP_GRANT_TRANSACTION_RULES.find((r) => r.id === 'resp-grant');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Grant');
+        expect(result.merchant).toBe('RESP Grant (Unknown Account)');
+        expect(result.originalStatement).toBe('RESP_GRANT:::CAD');
+      });
+
+      it('should not set needsCategoryMapping flag (auto-categorized)', () => {
+        const transaction = {
+          externalCanonicalId: 'resp-no-mapping',
+          type: 'RESP_GRANT',
+          subType: 'CESG',
+          accountId: 'account-resp-123',
+        };
+
+        const rule = INVESTMENT_RESP_GRANT_TRANSACTION_RULES.find((r) => r.id === 'resp-grant');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.needsCategoryMapping).toBeUndefined();
+      });
+    });
+
+    describe('Rule structure', () => {
+      it('should have required properties', () => {
+        const rule = INVESTMENT_RESP_GRANT_TRANSACTION_RULES.find((r) => r.id === 'resp-grant');
+
+        expect(rule).toHaveProperty('id');
+        expect(rule).toHaveProperty('description');
+        expect(rule).toHaveProperty('match');
+        expect(rule).toHaveProperty('process');
+      });
+
+      it('should have exactly 1 rule', () => {
+        expect(INVESTMENT_RESP_GRANT_TRANSACTION_RULES.length).toBe(1);
       });
     });
   });
