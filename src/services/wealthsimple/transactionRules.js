@@ -1075,6 +1075,48 @@ export const CASH_TRANSACTION_RULES = [
 ];
 
 /**
+ * Investment account fee transaction rules
+ * These rules handle fee transactions in investment accounts
+ *
+ * Transaction types supported:
+ * - FEE: Various fees charged on investment accounts (service fees, management fees, etc.)
+ */
+export const INVESTMENT_FEE_TRANSACTION_RULES = [
+  {
+    id: 'fee',
+    description: 'Fee transactions for investment accounts (service fees, management fees, etc.)',
+    match: (tx) => tx.type === 'FEE',
+    /**
+     * Process FEE transactions
+     * These are fees charged on investment accounts such as management fees, service fees, etc.
+     *
+     * Merchant logic:
+     * - If subType is null/undefined/empty: "Fee ({accountName})"
+     * - Otherwise: "sentenceCase(subType) ({accountName})" (e.g., "SERVICE_FEE" -> "Service fee (My TFSA)")
+     *
+     * @param {Object} tx - Raw transaction
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx) => {
+      const subType = tx.subType || '';
+      const currency = tx.currency || 'CAD';
+      const accountName = getAccountNameById(tx.accountId);
+
+      // Merchant: "Fee ({accountName})" if no subType, otherwise "sentenceCase(subType) ({accountName})"
+      const merchant = subType ? `${toSentenceCase(subType)} (${accountName})` : `Fee (${accountName})`;
+
+      return {
+        category: 'Financial Fees',
+        merchant,
+        originalStatement: formatOriginalStatement(tx.type, subType, currency),
+        notes: '',
+        technicalDetails: '',
+      };
+    },
+  },
+];
+
+/**
  * Investment account refund transaction rules
  * These rules handle refund transactions in investment accounts
  *
@@ -1793,6 +1835,7 @@ export function hasRuleForTransaction(type, subType) {
 
 export default {
   CASH_TRANSACTION_RULES,
+  INVESTMENT_FEE_TRANSACTION_RULES,
   INVESTMENT_DEPOSIT_TRANSACTION_RULES,
   INVESTMENT_DIVIDEND_TRANSACTION_RULES,
   INVESTMENT_INTEREST_TRANSACTION_RULES,

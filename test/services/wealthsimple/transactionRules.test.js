@@ -4,6 +4,7 @@
 
 import {
   CASH_TRANSACTION_RULES,
+  INVESTMENT_FEE_TRANSACTION_RULES,
   INVESTMENT_DIVIDEND_TRANSACTION_RULES,
   INVESTMENT_DEPOSIT_TRANSACTION_RULES,
   INVESTMENT_INTEREST_TRANSACTION_RULES,
@@ -6856,6 +6857,350 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       const result = formatShortOptionExpiryNotes(expiryDetail);
 
       expect(result).toBe('Decision: EXPIRE, reason: OUT_OF_THE_MONEY. Released collateral:');
+    });
+  });
+
+  describe('INVESTMENT_FEE_TRANSACTION_RULES', () => {
+    // Helper to set up mock accounts in GM storage
+    const setupMockAccounts = (accounts) => {
+      const consolidatedAccounts = accounts.map((acc) => ({
+        wealthsimpleAccount: {
+          id: acc.id,
+          nickname: acc.nickname,
+        },
+      }));
+      global.GM_getValue = jest.fn((key, defaultValue) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
+          return JSON.stringify(consolidatedAccounts);
+        }
+        return defaultValue;
+      });
+    };
+
+    beforeEach(() => {
+      setupMockAccounts([
+        { id: 'account-tfsa-123', nickname: 'Wealthsimple TFSA' },
+        { id: 'account-rrsp-456', nickname: 'My RRSP Account' },
+      ]);
+    });
+
+    describe('FEE rule matching', () => {
+      it('should match transactions with type FEE', () => {
+        const transaction = {
+          externalCanonicalId: 'fee-123',
+          type: 'FEE',
+          subType: 'SERVICE_FEE',
+          accountId: 'account-tfsa-123',
+          currency: 'CAD',
+          amount: 10.0,
+        };
+
+        const rule = INVESTMENT_FEE_TRANSACTION_RULES.find((r) => r.id === 'fee');
+        expect(rule.match(transaction)).toBe(true);
+      });
+
+      it('should match FEE with any subType', () => {
+        const rule = INVESTMENT_FEE_TRANSACTION_RULES.find((r) => r.id === 'fee');
+
+        expect(rule.match({ type: 'FEE', subType: 'SERVICE_FEE' })).toBe(true);
+        expect(rule.match({ type: 'FEE', subType: 'MANAGEMENT_FEE' })).toBe(true);
+        expect(rule.match({ type: 'FEE', subType: null })).toBe(true);
+        expect(rule.match({ type: 'FEE', subType: undefined })).toBe(true);
+      });
+
+      it('should not match transactions with different type', () => {
+        const rule = INVESTMENT_FEE_TRANSACTION_RULES.find((r) => r.id === 'fee');
+
+        expect(rule.match({ type: 'REFUND', subType: 'FEE' })).toBe(false);
+        expect(rule.match({ type: 'DEPOSIT', subType: 'SERVICE_FEE' })).toBe(false);
+        expect(rule.match({ type: 'DIVIDEND', subType: null })).toBe(false);
+      });
+    });
+
+    describe('FEE transaction processing with subType', () => {
+      it('should process FEE with subType SERVICE_FEE correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'fee-service-123',
+          type: 'FEE',
+          subType: 'SERVICE_FEE',
+          accountId: 'account-tfsa-123',
+          currency: 'CAD',
+          amount: 15.0,
+        };
+
+        const rule = INVESTMENT_FEE_TRANSACTION_RULES.find((r) => r.id === 'fee');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Financial Fees');
+        expect(result.merchant).toBe('Service fee (Wealthsimple TFSA)');
+        expect(result.originalStatement).toBe('FEE:SERVICE_FEE:CAD');
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should process FEE with subType MANAGEMENT_FEE correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'fee-mgmt-123',
+          type: 'FEE',
+          subType: 'MANAGEMENT_FEE',
+          accountId: 'account-rrsp-456',
+          currency: 'CAD',
+          amount: 25.0,
+        };
+
+        const rule = INVESTMENT_FEE_TRANSACTION_RULES.find((r) => r.id === 'fee');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Financial Fees');
+        expect(result.merchant).toBe('Management fee (My RRSP Account)');
+        expect(result.originalStatement).toBe('FEE:MANAGEMENT_FEE:CAD');
+      });
+
+      it('should handle complex subTypes with underscores using sentenceCase', () => {
+        const transaction = {
+          externalCanonicalId: 'fee-complex-123',
+          type: 'FEE',
+          subType: 'ACCOUNT_MAINTENANCE_FEE',
+          accountId: 'account-tfsa-123',
+          currency: 'USD',
+          amount: 5.0,
+        };
+
+        const rule = INVESTMENT_FEE_TRANSACTION_RULES.find((r) => r.id === 'fee');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Financial Fees');
+        expect(result.merchant).toBe('Account maintenance fee (Wealthsimple TFSA)');
+        expect(result.originalStatement).toBe('FEE:ACCOUNT_MAINTENANCE_FEE:USD');
+      });
+    });
+
+    describe('FEE transaction processing without subType', () => {
+      it('should process FEE with null subType using "Fee ({accountName})" as merchant', () => {
+        const transaction = {
+          externalCanonicalId: 'fee-null-subtype',
+          type: 'FEE',
+          subType: null,
+          accountId: 'account-tfsa-123',
+          currency: 'CAD',
+          amount: 10.0,
+        };
+
+        const rule = INVESTMENT_FEE_TRANSACTION_RULES.find((r) => r.id === 'fee');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Financial Fees');
+        expect(result.merchant).toBe('Fee (Wealthsimple TFSA)');
+        expect(result.originalStatement).toBe('FEE::CAD');
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should process FEE with undefined subType using "Fee ({accountName})" as merchant', () => {
+        const transaction = {
+          externalCanonicalId: 'fee-undef-subtype',
+          type: 'FEE',
+          accountId: 'account-rrsp-456',
+          currency: 'CAD',
+          amount: 8.0,
+        };
+
+        const rule = INVESTMENT_FEE_TRANSACTION_RULES.find((r) => r.id === 'fee');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Financial Fees');
+        expect(result.merchant).toBe('Fee (My RRSP Account)');
+        expect(result.originalStatement).toBe('FEE::CAD');
+      });
+
+      it('should process FEE with empty string subType using "Fee ({accountName})" as merchant', () => {
+        const transaction = {
+          externalCanonicalId: 'fee-empty-subtype',
+          type: 'FEE',
+          subType: '',
+          accountId: 'account-tfsa-123',
+          currency: 'CAD',
+          amount: 12.0,
+        };
+
+        const rule = INVESTMENT_FEE_TRANSACTION_RULES.find((r) => r.id === 'fee');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Financial Fees');
+        expect(result.merchant).toBe('Fee (Wealthsimple TFSA)');
+        expect(result.originalStatement).toBe('FEE::CAD');
+      });
+    });
+
+    describe('FEE edge cases', () => {
+      it('should handle missing accountId with Unknown Account fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'fee-no-account',
+          type: 'FEE',
+          subType: 'SERVICE_FEE',
+          accountId: null,
+          currency: 'CAD',
+          amount: 5.0,
+        };
+
+        const rule = INVESTMENT_FEE_TRANSACTION_RULES.find((r) => r.id === 'fee');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Financial Fees');
+        expect(result.merchant).toBe('Service fee (Unknown Account)');
+        expect(result.originalStatement).toBe('FEE:SERVICE_FEE:CAD');
+      });
+
+      it('should handle unknown accountId with Unknown Account fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'fee-unknown-account',
+          type: 'FEE',
+          subType: 'MANAGEMENT_FEE',
+          accountId: 'account-unknown-999',
+          currency: 'CAD',
+          amount: 3.0,
+        };
+
+        const rule = INVESTMENT_FEE_TRANSACTION_RULES.find((r) => r.id === 'fee');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Management fee (Unknown Account)');
+      });
+
+      it('should handle missing currency with CAD fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'fee-no-currency',
+          type: 'FEE',
+          subType: 'SERVICE_FEE',
+          accountId: 'account-tfsa-123',
+          currency: null,
+          amount: 7.0,
+        };
+
+        const rule = INVESTMENT_FEE_TRANSACTION_RULES.find((r) => r.id === 'fee');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.originalStatement).toBe('FEE:SERVICE_FEE:CAD');
+      });
+
+      it('should handle undefined currency with CAD fallback', () => {
+        const transaction = {
+          externalCanonicalId: 'fee-undef-currency',
+          type: 'FEE',
+          subType: null,
+          accountId: 'account-tfsa-123',
+          amount: 4.0,
+        };
+
+        const rule = INVESTMENT_FEE_TRANSACTION_RULES.find((r) => r.id === 'fee');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.originalStatement).toBe('FEE::CAD');
+      });
+
+      it('should handle all fields missing with appropriate fallbacks', () => {
+        setupMockAccounts([]);
+
+        const transaction = {
+          externalCanonicalId: 'fee-all-missing',
+          type: 'FEE',
+        };
+
+        const rule = INVESTMENT_FEE_TRANSACTION_RULES.find((r) => r.id === 'fee');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.category).toBe('Financial Fees');
+        expect(result.merchant).toBe('Fee (Unknown Account)');
+        expect(result.originalStatement).toBe('FEE::CAD');
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should handle USD currency correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'fee-usd',
+          type: 'FEE',
+          subType: 'SERVICE_FEE',
+          accountId: 'account-tfsa-123',
+          currency: 'USD',
+          amount: 20.0,
+        };
+
+        const rule = INVESTMENT_FEE_TRANSACTION_RULES.find((r) => r.id === 'fee');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.originalStatement).toBe('FEE:SERVICE_FEE:USD');
+      });
+
+      it('should not set needsCategoryMapping flag (auto-categorized)', () => {
+        const transaction = {
+          externalCanonicalId: 'fee-no-mapping',
+          type: 'FEE',
+          subType: 'SERVICE_FEE',
+          accountId: 'account-tfsa-123',
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_FEE_TRANSACTION_RULES.find((r) => r.id === 'fee');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.needsCategoryMapping).toBeUndefined();
+      });
+
+      it('should have empty notes and technicalDetails', () => {
+        const transaction = {
+          externalCanonicalId: 'fee-notes',
+          type: 'FEE',
+          subType: 'SERVICE_FEE',
+          accountId: 'account-tfsa-123',
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_FEE_TRANSACTION_RULES.find((r) => r.id === 'fee');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+    });
+
+    describe('Rule structure', () => {
+      it('should have required properties', () => {
+        const rule = INVESTMENT_FEE_TRANSACTION_RULES.find((r) => r.id === 'fee');
+
+        expect(rule).toHaveProperty('id');
+        expect(rule).toHaveProperty('description');
+        expect(rule).toHaveProperty('match');
+        expect(rule).toHaveProperty('process');
+        expect(typeof rule.id).toBe('string');
+        expect(typeof rule.description).toBe('string');
+        expect(typeof rule.match).toBe('function');
+        expect(typeof rule.process).toBe('function');
+      });
+
+      it('should have exactly 1 rule', () => {
+        expect(INVESTMENT_FEE_TRANSACTION_RULES.length).toBe(1);
+      });
+
+      it('should have unique rule ID', () => {
+        const ids = INVESTMENT_FEE_TRANSACTION_RULES.map((r) => r.id);
+        const uniqueIds = [...new Set(ids)];
+        expect(ids.length).toBe(uniqueIds.length);
+      });
     });
   });
 
