@@ -1995,16 +1995,35 @@ function cleanSystemNotesFromNotes(notes) {
 }
 
 /**
+ * Investment account types for status field determination
+ */
+const INVESTMENT_ACCOUNT_TYPES = new Set([
+  'MANAGED_RESP_FAMILY',
+  'MANAGED_RESP',
+  'MANAGED_NON_REGISTERED',
+  'MANAGED_TFSA',
+  'MANAGED_RRSP',
+  'SELF_DIRECTED_RESP_FAMILY',
+  'SELF_DIRECTED_RESP',
+  'SELF_DIRECTED_NON_REGISTERED',
+  'SELF_DIRECTED_TFSA',
+  'SELF_DIRECTED_RRSP',
+  'SELF_DIRECTED_CRYPTO',
+]);
+
+/**
  * Get the transaction status for reconciliation based on account type and transaction type
  * Credit cards use 'status' field, CASH accounts use 'unifiedStatus' field,
  * EXCEPT for SPEND/PREPAID transactions in CASH accounts which use 'status' field.
+ * Investment accounts use 'unifiedStatus' for most transactions, but 'status' for internal transfers.
  *
  * @param {Object} transaction - Raw Wealthsimple transaction
- * @param {string} accountType - Account type (CREDIT_CARD, CASH, CASH_USD, etc.)
+ * @param {string} accountType - Account type (CREDIT_CARD, CASH, CASH_USD, investment types, etc.)
  * @returns {Object} Status info { isPending, isSettled, rawStatus }
  */
 function getTransactionStatusForReconciliation(transaction, accountType) {
   const isCashAccount = accountType === 'CASH' || accountType === 'CASH_USD';
+  const isInvestmentAccountType = INVESTMENT_ACCOUNT_TYPES.has(accountType);
 
   if (isCashAccount) {
     // SPEND/PREPAID transactions use 'status' field (like credit cards)
@@ -2018,6 +2037,27 @@ function getTransactionStatusForReconciliation(transaction, accountType) {
     }
 
     // Regular CASH transactions use unifiedStatus field
+    const status = transaction.unifiedStatus;
+    return {
+      isPending: status === 'IN_PROGRESS' || status === 'PENDING',
+      isSettled: status === 'COMPLETED',
+      rawStatus: status,
+    };
+  }
+
+  if (isInvestmentAccountType) {
+    // Internal transfers in investment accounts use 'status' field
+    if (transaction.type === 'INTERNAL_TRANSFER') {
+      const status = transaction.status;
+      return {
+        isPending: status === 'authorized',
+        isSettled: status === 'settled' || status === 'completed',
+        rawStatus: status,
+      };
+    }
+
+    // Most investment transactions use unifiedStatus field
+    // This includes buy/sell orders, deposits, dividends, etc.
     const status = transaction.unifiedStatus;
     return {
       isPending: status === 'IN_PROGRESS' || status === 'PENDING',

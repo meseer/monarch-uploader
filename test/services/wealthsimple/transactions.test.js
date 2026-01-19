@@ -2811,6 +2811,354 @@ describe('Wealthsimple Transaction Service', () => {
     });
   });
 
+  describe('reconcilePendingTransactions - investment accounts', () => {
+    const mockMonarchAccountId = 'monarch-investment-123';
+    const mockPendingTagId = 'pending-tag-456';
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('should reconcile investment account transactions using unifiedStatus field', async () => {
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [
+          {
+            id: 'monarch-tx-1',
+            amount: -100.00,
+            date: '2026-01-10',
+            notes: 'ws-tx:diy-buy-order-123',
+            ownedByUser: { id: 'user-123' },
+          },
+        ],
+      });
+      monarchApi.updateTransaction.mockResolvedValue({});
+      monarchApi.setTransactionTags.mockResolvedValue({});
+
+      // Investment buy transaction uses unifiedStatus, not status
+      const wealthsimpleTransactions = [
+        {
+          externalCanonicalId: 'diy-buy-order-123',
+          type: 'DIY_BUY',
+          status: null, // Investment orders often have null status
+          unifiedStatus: 'COMPLETED',
+          amount: 100.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        wealthsimpleTransactions,
+        30,
+        'SELF_DIRECTED_TFSA', // Investment account type
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.settled).toBe(1);
+      expect(result.cancelled).toBe(0);
+      expect(monarchApi.updateTransaction).toHaveBeenCalled();
+      expect(monarchApi.setTransactionTags).toHaveBeenCalledWith('monarch-tx-1', []);
+    });
+
+    it('should skip investment transaction when unifiedStatus is IN_PROGRESS', async () => {
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [
+          {
+            id: 'monarch-tx-1',
+            amount: -50.00,
+            date: '2026-01-10',
+            notes: 'ws-tx:diy-buy-order-pending',
+            ownedByUser: { id: 'user-123' },
+          },
+        ],
+      });
+
+      const wealthsimpleTransactions = [
+        {
+          externalCanonicalId: 'diy-buy-order-pending',
+          type: 'DIY_BUY',
+          status: null,
+          unifiedStatus: 'IN_PROGRESS', // Still pending
+          amount: 50.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        wealthsimpleTransactions,
+        30,
+        'SELF_DIRECTED_RRSP',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.settled).toBe(0);
+      expect(result.cancelled).toBe(0);
+      expect(monarchApi.updateTransaction).not.toHaveBeenCalled();
+      expect(monarchApi.deleteTransaction).not.toHaveBeenCalled();
+    });
+
+    it('should skip investment transaction when unifiedStatus is PENDING', async () => {
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [
+          {
+            id: 'monarch-tx-1',
+            amount: -75.00,
+            date: '2026-01-10',
+            notes: 'ws-tx:managed-buy-order-pending',
+            ownedByUser: { id: 'user-123' },
+          },
+        ],
+      });
+
+      const wealthsimpleTransactions = [
+        {
+          externalCanonicalId: 'managed-buy-order-pending',
+          type: 'MANAGED_BUY',
+          status: null,
+          unifiedStatus: 'PENDING',
+          amount: 75.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        wealthsimpleTransactions,
+        30,
+        'MANAGED_TFSA',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.settled).toBe(0);
+      expect(result.cancelled).toBe(0);
+    });
+
+    it('should delete investment transaction when unifiedStatus is CANCELLED', async () => {
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [
+          {
+            id: 'monarch-tx-1',
+            amount: -200.00,
+            date: '2026-01-10',
+            notes: 'ws-tx:diy-sell-order-cancelled',
+            ownedByUser: null,
+          },
+        ],
+      });
+      monarchApi.deleteTransaction.mockResolvedValue(true);
+
+      const wealthsimpleTransactions = [
+        {
+          externalCanonicalId: 'diy-sell-order-cancelled',
+          type: 'DIY_SELL',
+          status: null,
+          unifiedStatus: 'CANCELLED', // Order was cancelled
+          amount: 200.00,
+          amountSign: 'positive',
+        },
+      ];
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        wealthsimpleTransactions,
+        30,
+        'SELF_DIRECTED_NON_REGISTERED',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.settled).toBe(0);
+      expect(result.cancelled).toBe(1);
+      expect(monarchApi.deleteTransaction).toHaveBeenCalledWith('monarch-tx-1');
+    });
+
+    it('should use status field for INTERNAL_TRANSFER in investment accounts', async () => {
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [
+          {
+            id: 'monarch-tx-1',
+            amount: 500.00,
+            date: '2026-01-10',
+            notes: 'ws-tx:funding_intent-transfer-123',
+            ownedByUser: { id: 'user-123' },
+          },
+        ],
+      });
+      monarchApi.updateTransaction.mockResolvedValue({});
+      monarchApi.setTransactionTags.mockResolvedValue({});
+
+      // Internal transfers use status field even in investment accounts
+      const wealthsimpleTransactions = [
+        {
+          externalCanonicalId: 'funding_intent-transfer-123',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'DESTINATION',
+          status: 'settled', // Internal transfers use status field
+          unifiedStatus: null,
+          amount: 500.00,
+          amountSign: 'positive',
+        },
+      ];
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        wealthsimpleTransactions,
+        30,
+        'SELF_DIRECTED_TFSA',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.settled).toBe(1);
+      expect(monarchApi.setTransactionTags).toHaveBeenCalledWith('monarch-tx-1', []);
+    });
+
+    it('should skip internal transfer when status is authorized in investment account', async () => {
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [
+          {
+            id: 'monarch-tx-1',
+            amount: 300.00,
+            date: '2026-01-10',
+            notes: 'ws-tx:funding_intent-transfer-pending',
+            ownedByUser: { id: 'user-123' },
+          },
+        ],
+      });
+
+      const wealthsimpleTransactions = [
+        {
+          externalCanonicalId: 'funding_intent-transfer-pending',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'DESTINATION',
+          status: 'authorized', // Still pending
+          unifiedStatus: null,
+          amount: 300.00,
+          amountSign: 'positive',
+        },
+      ];
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        wealthsimpleTransactions,
+        30,
+        'MANAGED_RRSP',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.settled).toBe(0);
+      expect(result.cancelled).toBe(0);
+      expect(monarchApi.updateTransaction).not.toHaveBeenCalled();
+    });
+
+    it('should delete investment transaction when not found in Wealthsimple', async () => {
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [
+          {
+            id: 'monarch-tx-1',
+            amount: -150.00,
+            date: '2026-01-10',
+            notes: 'ws-tx:cancelled-order-not-in-ws',
+            ownedByUser: null,
+          },
+        ],
+      });
+      monarchApi.deleteTransaction.mockResolvedValue(true);
+
+      // Transaction not in Wealthsimple data - was cancelled
+      const wealthsimpleTransactions = [];
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        wealthsimpleTransactions,
+        30,
+        'SELF_DIRECTED_CRYPTO',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.settled).toBe(0);
+      expect(result.cancelled).toBe(1);
+      expect(monarchApi.deleteTransaction).toHaveBeenCalledWith('monarch-tx-1');
+    });
+
+    it('should handle mixed investment transaction types correctly', async () => {
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [
+          {
+            id: 'monarch-tx-buy',
+            amount: -100.00,
+            date: '2026-01-10',
+            notes: 'ws-tx:diy-buy-completed',
+            ownedByUser: { id: 'user-123' },
+          },
+          {
+            id: 'monarch-tx-transfer',
+            amount: 500.00,
+            date: '2026-01-11',
+            notes: 'ws-tx:funding_intent-transfer-settled',
+            ownedByUser: { id: 'user-123' },
+          },
+          {
+            id: 'monarch-tx-sell-pending',
+            amount: 200.00,
+            date: '2026-01-12',
+            notes: 'ws-tx:diy-sell-in-progress',
+            ownedByUser: null,
+          },
+        ],
+      });
+      monarchApi.updateTransaction.mockResolvedValue({});
+      monarchApi.setTransactionTags.mockResolvedValue({});
+
+      const wealthsimpleTransactions = [
+        {
+          externalCanonicalId: 'diy-buy-completed',
+          type: 'DIY_BUY',
+          status: null,
+          unifiedStatus: 'COMPLETED', // Buy order completed
+          amount: 100.00,
+          amountSign: 'negative',
+        },
+        {
+          externalCanonicalId: 'funding_intent-transfer-settled',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'DESTINATION',
+          status: 'settled', // Transfer settled (uses status)
+          unifiedStatus: null,
+          amount: 500.00,
+          amountSign: 'positive',
+        },
+        {
+          externalCanonicalId: 'diy-sell-in-progress',
+          type: 'DIY_SELL',
+          status: null,
+          unifiedStatus: 'IN_PROGRESS', // Sell order still pending
+          amount: 200.00,
+          amountSign: 'positive',
+        },
+      ];
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        wealthsimpleTransactions,
+        30,
+        'SELF_DIRECTED_NON_REGISTERED',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.settled).toBe(2); // Buy completed + transfer settled
+      expect(result.cancelled).toBe(0);
+      expect(result.failed).toBe(0);
+    });
+  });
+
   describe('formatReconciliationMessage', () => {
     it('should return "No pending transactions" when noPendingTag is true', () => {
       const result = formatReconciliationMessage({ noPendingTag: true });

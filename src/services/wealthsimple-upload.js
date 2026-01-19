@@ -376,9 +376,26 @@ export function buildSyncStepsForAccount(consolidatedAccount) {
     steps.push({ key: 'transactions', name: 'Transaction sync' });
   }
 
-  // Pending transaction reconciliation for credit card and CASH accounts
+  // Pending transaction reconciliation for credit card, CASH, and investment accounts
   // Deleting cancelled transactions may adjust balance in Monarch
-  const pendingReconciliationTypes = ['CREDIT_CARD', 'CASH', 'CASH_USD'];
+  const pendingReconciliationTypes = [
+    'CREDIT_CARD',
+    'CASH',
+    'CASH_USD',
+    // Investment accounts - Managed
+    'MANAGED_RESP_FAMILY',
+    'MANAGED_RESP',
+    'MANAGED_NON_REGISTERED',
+    'MANAGED_TFSA',
+    'MANAGED_RRSP',
+    // Investment accounts - Self-directed
+    'SELF_DIRECTED_RESP_FAMILY',
+    'SELF_DIRECTED_RESP',
+    'SELF_DIRECTED_NON_REGISTERED',
+    'SELF_DIRECTED_TFSA',
+    'SELF_DIRECTED_RRSP',
+    'SELF_DIRECTED_CRYPTO',
+  ];
   if (pendingReconciliationTypes.includes(accountType)) {
     steps.push({ key: 'pendingReconciliation', name: 'Pending reconciliation' });
   }
@@ -729,9 +746,26 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
       }
     }
 
-    // Step 2: Pending transaction reconciliation (for credit card and CASH accounts)
+    // Step 2: Pending transaction reconciliation (for credit card, CASH, and investment accounts)
     // Deleting cancelled transactions may implicitly adjust the balance in Monarch
-    const pendingReconciliationTypes = ['CREDIT_CARD', 'CASH', 'CASH_USD'];
+    const pendingReconciliationTypes = [
+      'CREDIT_CARD',
+      'CASH',
+      'CASH_USD',
+      // Investment accounts - Managed
+      'MANAGED_RESP_FAMILY',
+      'MANAGED_RESP',
+      'MANAGED_NON_REGISTERED',
+      'MANAGED_TFSA',
+      'MANAGED_RRSP',
+      // Investment accounts - Self-directed
+      'SELF_DIRECTED_RESP_FAMILY',
+      'SELF_DIRECTED_RESP',
+      'SELF_DIRECTED_NON_REGISTERED',
+      'SELF_DIRECTED_TFSA',
+      'SELF_DIRECTED_RRSP',
+      'SELF_DIRECTED_CRYPTO',
+    ];
     if (pendingReconciliationTypes.includes(accountType)) {
       progressDialog.updateStepStatus(account.id, 'pendingReconciliation', 'processing', 'Reconciling pending');
 
