@@ -255,8 +255,8 @@ export async function makeGraphQLQuery(operationName, query, variables = {}) {
   }
 
   // Inject identity ID into variables if not present
-  // Note: FetchFundingIntent, FetchInternalTransfer, FetchFundsTransfer, and FetchSoOrdersExtendedOrder don't accept identityId and return 403 if it's passed
-  const skipIdentityInjection = ['FetchFundingIntent', 'FetchInternalTransfer', 'FetchFundsTransfer', 'FetchSoOrdersExtendedOrder'];
+  // Note: FetchFundingIntent, FetchInternalTransfer, FetchFundsTransfer, FetchSoOrdersExtendedOrder, and FetchActivityByOrdersServiceOrderId don't accept identityId and return 403 if it's passed
+  const skipIdentityInjection = ['FetchFundingIntent', 'FetchInternalTransfer', 'FetchFundsTransfer', 'FetchSoOrdersExtendedOrder', 'FetchActivityByOrdersServiceOrderId'];
   if (!variables.identityId && authStatus.identityId && !skipIdentityInjection.includes(operationName)) {
     variables.identityId = authStatus.identityId;
   }
@@ -2237,6 +2237,82 @@ fragment CustodianAccount on CustodianAccount {
 }
 
 /**
+ * Fetch activity by Orders Service order ID
+ * Used for MANAGED_BUY and MANAGED_SELL transactions with order IDs prefixed with "order-"
+ * These orders cannot be fetched via FetchSoOrdersExtendedOrder
+ *
+ * Returns limited data compared to FetchSoOrdersExtendedOrder:
+ * - quantity: Filled quantity
+ * - fxRate: Exchange rate
+ * - marketPrice: { amount, currency } - Fill price
+ *
+ * @param {string} accountId - Wealthsimple account ID (e.g., "resp-gjp2y-3a")
+ * @param {string} ordersServiceOrderId - Order ID (e.g., "order-00YDx9aoiwh1")
+ * @returns {Promise<Object|null>} Activity data or null if not found
+ */
+export async function fetchActivityByOrdersServiceOrderId(accountId, ordersServiceOrderId) {
+  try {
+    if (!accountId) {
+      debugLog('No account ID provided for fetchActivityByOrdersServiceOrderId');
+      return null;
+    }
+
+    if (!ordersServiceOrderId) {
+      debugLog('No order ID provided for fetchActivityByOrdersServiceOrderId');
+      return null;
+    }
+
+    debugLog(`Fetching activity by orders service order ID: ${ordersServiceOrderId} for account ${accountId}...`);
+
+    const query = `query FetchActivityByOrdersServiceOrderId($id: ID!, $ordersServiceOrderId: ID!) {
+  account(id: $id) {
+    id
+    activityByOrdersServiceOrderId(id: $ordersServiceOrderId) {
+      ...ActivityByOrdersServiceOrderId
+      __typename
+    }
+    __typename
+  }
+}
+
+fragment ActivityByOrdersServiceOrderId on PaginatedActivity {
+  id
+  quantity
+  fxRate: fx_rate
+  marketPrice: market_price {
+    amount
+    currency
+    __typename
+  }
+  __typename
+}`;
+
+    const response = await makeGraphQLQuery('FetchActivityByOrdersServiceOrderId', query, {
+      id: accountId,
+      ordersServiceOrderId,
+    });
+
+    if (!response || !response.account || !response.account.activityByOrdersServiceOrderId) {
+      debugLog(`No activity data found for order ${ordersServiceOrderId}`);
+      return null;
+    }
+
+    const activityData = response.account.activityByOrdersServiceOrderId;
+    debugLog(`Fetched activity for order ${ordersServiceOrderId}:`, {
+      quantity: activityData.quantity,
+      fxRate: activityData.fxRate,
+      marketPrice: activityData.marketPrice,
+    });
+
+    return activityData;
+  } catch (error) {
+    debugLog(`Error fetching activity by orders service order ID ${ordersServiceOrderId}:`, error);
+    // Return null on error - don't fail the entire sync
+    return null;
+  }
+}
+
+/**
  * Fetch extended order details for a stock/options order
  * Used to get detailed fill information, fees, exchange rates, and timestamps for orders
  *
@@ -2702,6 +2778,7 @@ export default {
   fetchInternalTransfer,
   fetchFundsTransfer,
   fetchExtendedOrder,
+  fetchActivityByOrdersServiceOrderId,
   fetchCorporateActionChildActivities,
   fetchShortOptionPositionExpiryDetail,
   fetchSecurity,

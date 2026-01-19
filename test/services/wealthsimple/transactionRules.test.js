@@ -30,6 +30,7 @@ import {
   formatTransferNotes,
   formatCorporateActionNotes,
   formatShortOptionExpiryNotes,
+  formatManagedOrderNotes,
 } from '../../../src/services/wealthsimple/transactionRules';
 import { STORAGE } from '../../../src/core/config';
 
@@ -7926,6 +7927,170 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       it('should have exactly 1 rule', () => {
         expect(INVESTMENT_RESP_GRANT_TRANSACTION_RULES.length).toBe(1);
       });
+    });
+  });
+
+  describe('formatManagedOrderNotes', () => {
+    it('should return empty string for null activity', () => {
+      expect(formatManagedOrderNotes(null, null)).toBe('');
+    });
+
+    it('should return empty string for undefined activity', () => {
+      expect(formatManagedOrderNotes(undefined, null)).toBe('');
+    });
+
+    it('should format buy order with all fields correctly', () => {
+      const activity = {
+        currency: 'CAD',
+        assetSymbol: 'EEMV',
+        assetQuantity: 0.8257,
+        amount: 9.22,
+        assetName: 'iShares Edge MSCI Min Vol Emerging Mkt ETF',
+      };
+      const managedActivity = {
+        quantity: '0.8257',
+        fxRate: '1.0',
+        marketPrice: { amount: '11.165', currency: 'CAD' },
+      };
+
+      const result = formatManagedOrderNotes(activity, managedActivity, false);
+
+      expect(result).toBe('Bought 0.8257 shares of iShares Edge MSCI Min Vol Emerging Mkt ETF (EEMV) at CAD$11.165 per share\nTotal CAD$9.22');
+    });
+
+    it('should format sell order with all fields correctly', () => {
+      const activity = {
+        currency: 'CAD',
+        assetSymbol: 'XAW',
+        assetQuantity: 5.5,
+        amount: 150.25,
+        assetName: 'iShares Core MSCI All Country World ex Canada Index ETF',
+      };
+      const managedActivity = {
+        quantity: '5.5',
+        fxRate: '1.0',
+        marketPrice: { amount: '27.32', currency: 'CAD' },
+      };
+
+      const result = formatManagedOrderNotes(activity, managedActivity, true);
+
+      expect(result).toBe('Sold 5.5 shares of iShares Core MSCI All Country World ex Canada Index ETF (XAW) at CAD$27.32 per share\nTotal CAD$150.25');
+    });
+
+    it('should handle USD currency', () => {
+      const activity = {
+        currency: 'USD',
+        assetSymbol: 'VTI',
+        assetQuantity: 2.0,
+        amount: 500.00,
+        assetName: 'Vanguard Total Stock Market ETF',
+      };
+      const managedActivity = {
+        quantity: '2.0',
+        fxRate: '1.35',
+        marketPrice: { amount: '250.00', currency: 'USD' },
+      };
+
+      const result = formatManagedOrderNotes(activity, managedActivity, false);
+
+      expect(result).toBe('Bought 2 shares of Vanguard Total Stock Market ETF (VTI) at USD$250 per share\nTotal USD$500');
+    });
+
+    it('should return basic notes when managedActivity is null', () => {
+      const activity = {
+        currency: 'CAD',
+        assetSymbol: 'EEMV',
+        assetQuantity: 1,
+        amount: 15.00,
+        assetName: 'iShares Edge MSCI Min Vol Emerging Mkt ETF',
+      };
+
+      const result = formatManagedOrderNotes(activity, null, false);
+
+      expect(result).toBe('Buy order EEMV\nTotal CAD$15');
+    });
+
+    it('should return basic notes for sell when managedActivity is null', () => {
+      const activity = {
+        currency: 'CAD',
+        assetSymbol: 'XAW',
+        assetQuantity: 2,
+        amount: 50.00,
+        assetName: 'Some ETF',
+      };
+
+      const result = formatManagedOrderNotes(activity, null, true);
+
+      expect(result).toBe('Sell order XAW\nTotal CAD$50');
+    });
+
+    it('should handle missing assetName with symbol only', () => {
+      const activity = {
+        currency: 'CAD',
+        assetSymbol: 'VFV',
+        assetQuantity: 3,
+        amount: 300.00,
+        assetName: null,
+      };
+      const managedActivity = {
+        quantity: '3',
+        fxRate: '1.0',
+        marketPrice: { amount: '100.00', currency: 'CAD' },
+      };
+
+      const result = formatManagedOrderNotes(activity, managedActivity, false);
+
+      expect(result).toBe('Bought 3 shares of VFV at CAD$100 per share\nTotal CAD$300');
+    });
+
+    it('should handle missing marketPrice', () => {
+      const activity = {
+        currency: 'CAD',
+        assetSymbol: 'EEMV',
+        assetQuantity: 1,
+        amount: 15.00,
+        assetName: 'Some ETF',
+      };
+      const managedActivity = {
+        quantity: '1',
+        fxRate: '1.0',
+        marketPrice: null,
+      };
+
+      const result = formatManagedOrderNotes(activity, managedActivity, false);
+
+      expect(result).toBe('Buy order EEMV\nTotal CAD$15');
+    });
+
+    it('should handle all fields missing with defaults', () => {
+      const activity = {
+        type: 'MANAGED_BUY',
+      };
+
+      const result = formatManagedOrderNotes(activity, null, false);
+
+      expect(result).toContain('Buy order');
+      expect(result).toContain('N/A');
+      expect(result).toContain('CAD$');
+    });
+
+    it('should use quantity from managedActivity when available', () => {
+      const activity = {
+        currency: 'CAD',
+        assetSymbol: 'VFV',
+        assetQuantity: 5, // This should be ignored
+        amount: 500.00,
+        assetName: 'Vanguard S&P 500 Index ETF',
+      };
+      const managedActivity = {
+        quantity: '3.5', // Use this instead
+        fxRate: '1.0',
+        marketPrice: { amount: '142.86', currency: 'CAD' },
+      };
+
+      const result = formatManagedOrderNotes(activity, managedActivity, false);
+
+      expect(result).toBe('Bought 3.5 shares of Vanguard S&P 500 Index ETF (VFV) at CAD$142.86 per share\nTotal CAD$500');
     });
   });
 

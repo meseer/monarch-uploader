@@ -1371,22 +1371,44 @@ function collectShortOptionExpiryIds(transactions) {
 }
 
 /**
+ * Check if an external order ID is an Orders Service order ID
+ * Orders Service order IDs start with "order-" prefix
+ * These orders use the FetchActivityByOrdersServiceOrderId API instead of FetchSoOrdersExtendedOrder
+ *
+ * @param {string} externalId - External canonical ID
+ * @returns {boolean} True if starts with "order-"
+ */
+function isOrdersServiceOrderId(externalId) {
+  return externalId && externalId.startsWith('order-');
+}
+
+/**
  * Collect order IDs from buy/sell transactions that need extended order data
- * Returns only externalCanonicalIds from MANAGED_BUY, DIY_BUY, MANAGED_SELL, DIY_SELL transactions
+ * Separates managed orders (use FetchActivityByOrdersServiceOrderId) from DIY orders (use FetchSoOrdersExtendedOrder)
  *
  * @param {Array} transactions - Raw transactions from Wealthsimple API
- * @returns {Array<string>} Array of order IDs for fetchExtendedOrder
+ * @returns {Object} Object with { managedOrders: Array<{id, accountId}>, diyOrderIds: Array<string> }
  */
 function collectBuySellOrderIds(transactions) {
-  const orderIds = [];
+  const managedOrders = [];
+  const diyOrderIds = [];
 
   for (const tx of transactions) {
     if (isInvestmentBuySellTransaction(tx) && tx.externalCanonicalId) {
-      orderIds.push(tx.externalCanonicalId);
+      // Managed orders (MANAGED_BUY, MANAGED_SELL) with "order-" prefix need the new API
+      if ((tx.type === 'MANAGED_BUY' || tx.type === 'MANAGED_SELL') && isOrdersServiceOrderId(tx.externalCanonicalId)) {
+        managedOrders.push({
+          id: tx.externalCanonicalId,
+          accountId: tx.accountId,
+        });
+      } else {
+        // DIY orders and other types use the standard API
+        diyOrderIds.push(tx.externalCanonicalId);
+      }
     }
   }
 
-  return orderIds;
+  return { managedOrders, diyOrderIds };
 }
 
 /**
@@ -1633,17 +1655,42 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
       debugLog(`Fetched ${eftTransferIds.length} EFT transfer(s)`);
     }
 
-    // Fetch extended order data for buy/sell transactions (individual calls with progress)
-    if (buySellOrderIds.length > 0) {
-      debugLog(`Fetching ${buySellOrderIds.length} extended order(s) for order details...`);
-      for (let i = 0; i < buySellOrderIds.length; i++) {
-        const orderId = buySellOrderIds[i];
-        const progressNum = i + 1;
-        debugLog(`Fetching extended order details (${progressNum}/${buySellOrderIds.length}): ${orderId}`);
+    // Fetch extended order data for buy/sell transactions
+    // Managed orders use fetchActivityByOrdersServiceOrderId, DIY orders use fetchExtendedOrder
+    const { managedOrders, diyOrderIds } = buySellOrderIds;
+    const totalOrderCount = managedOrders.length + diyOrderIds.length;
+
+    if (totalOrderCount > 0) {
+      debugLog(`Fetching order details: ${managedOrders.length} managed order(s), ${diyOrderIds.length} DIY order(s)...`);
+      let orderProgressNum = 0;
+
+      // Fetch managed orders using FetchActivityByOrdersServiceOrderId API
+      for (let i = 0; i < managedOrders.length; i++) {
+        const { id: orderId, accountId: orderAccountId } = managedOrders[i];
+        orderProgressNum += 1;
+        debugLog(`Fetching managed order details (${orderProgressNum}/${totalOrderCount}): ${orderId}`);
 
         // Update progress callback for UI
         if (onProgress) {
-          onProgress(`Order details (${progressNum}/${buySellOrderIds.length})`);
+          onProgress(`Order details (${orderProgressNum}/${totalOrderCount})`);
+        }
+
+        const activityData = await wealthsimpleApi.fetchActivityByOrdersServiceOrderId(orderAccountId, orderId);
+        if (activityData) {
+          // Store with a marker to indicate it's from the new API (limited data)
+          enrichmentMap.set(orderId, { ...activityData, isManagedOrderData: true });
+        }
+      }
+
+      // Fetch DIY orders using FetchSoOrdersExtendedOrder API
+      for (let i = 0; i < diyOrderIds.length; i++) {
+        const orderId = diyOrderIds[i];
+        orderProgressNum += 1;
+        debugLog(`Fetching DIY order details (${orderProgressNum}/${totalOrderCount}): ${orderId}`);
+
+        // Update progress callback for UI
+        if (onProgress) {
+          onProgress(`Order details (${orderProgressNum}/${totalOrderCount})`);
         }
 
         const extendedOrder = await wealthsimpleApi.fetchExtendedOrder(orderId);
@@ -1651,7 +1698,8 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
           enrichmentMap.set(orderId, extendedOrder);
         }
       }
-      debugLog(`Fetched ${buySellOrderIds.length} extended order(s)`);
+
+      debugLog(`Fetched ${totalOrderCount} order(s) (${managedOrders.length} managed, ${diyOrderIds.length} DIY)`);
     }
 
     // Fetch corporate action child activities (individual calls with progress)

@@ -73,8 +73,12 @@ export function toSentenceCase(str) {
 
 /**
  * Format investment order notes from activity and extended order data
+ * Handles two data sources:
+ * 1. FetchSoOrdersExtendedOrder (DIY orders) - Full data including orderType, fees, limitPrice, etc.
+ * 2. FetchActivityByOrdersServiceOrderId (Managed orders) - Limited data: quantity, fxRate, marketPrice
+ *
  * @param {Object} activity - Raw transaction from Wealthsimple API
- * @param {Object|null} extendedOrder - Extended order details from FetchSoOrdersExtendedOrder
+ * @param {Object|null} extendedOrder - Extended order details (from either API)
  * @returns {string} Formatted notes string
  */
 export function formatInvestmentOrderNotes(activity, extendedOrder) {
@@ -90,6 +94,13 @@ export function formatInvestmentOrderNotes(activity, extendedOrder) {
     return `${toSentenceCase(subType)} ${symbol}\nTotal ${currency}$${amount}`;
   }
 
+  // Check if this is managed order data (from FetchActivityByOrdersServiceOrderId)
+  // Managed order data has isManagedOrderData marker and marketPrice field
+  if (extendedOrder.isManagedOrderData) {
+    return formatManagedOrderNotes(activity, extendedOrder);
+  }
+
+  // Full extended order data from FetchSoOrdersExtendedOrder (DIY orders)
   const orderType = extendedOrder.orderType ? toSentenceCase(extendedOrder.orderType) : 'Order';
   const submittedQuantity = formatAmount(extendedOrder.submittedQuantity ?? 0);
   const filledQuantity = formatAmount(extendedOrder.filledQuantity ?? 0);
@@ -109,6 +120,66 @@ export function formatInvestmentOrderNotes(activity, extendedOrder) {
   // Format for MARKET_ORDER, RECURRING_ORDER, FRACTIONAL_ORDER:
   // "Market Order Buy 10 VFV\nFilled 10 @ CAD$45.23, fees: CAD$0.00\nTotal CAD$452.30"
   return `${toSentenceCase(subType)} ${orderType} ${submittedQuantity} ${symbol}\nFilled ${filledQuantity} @ ${currency}$${averageFilledPrice}, fees: ${currency}$${filledTotalFee}\nTotal ${currency}$${amount}`;
+}
+
+/**
+ * Format notes for managed orders (from FetchActivityByOrdersServiceOrderId)
+ * These orders have limited data: quantity, fxRate, marketPrice
+ *
+ * Format:
+ * "Managed buy 0.8257 VEQT
+ * Filled at CAD$11.165
+ * FX rate: 1.35" (only if fxRate !== "1.0")
+ * "Total CAD$9.22"
+ *
+ * @param {Object} activity - Raw transaction from Wealthsimple API
+ * @param {Object} managedOrderData - Data from FetchActivityByOrdersServiceOrderId
+ * @returns {string} Formatted notes string
+ */
+export function formatManagedOrderNotes(activity, managedOrderData, isSell = false) {
+  if (!activity) return '';
+
+  const symbol = activity.assetSymbol || 'N/A';
+  const totalAmount = formatAmount(activity.amount ?? 0);
+  const activityCurrency = activity.currency || 'CAD';
+
+  // If no managed order data, return minimal notes
+  if (!managedOrderData) {
+    const action = isSell ? 'Sell' : 'Buy';
+    return `${action} order ${symbol}\nTotal ${activityCurrency}$${totalAmount}`;
+  }
+
+  // Extract data from managed order response
+  const quantity = formatAmount(managedOrderData.quantity ?? 0);
+  const marketPrice = managedOrderData.marketPrice;
+
+  // If marketPrice is missing, fall back to minimal notes
+  if (!marketPrice) {
+    const action = isSell ? 'Sell' : 'Buy';
+    return `${action} order ${symbol}\nTotal ${activityCurrency}$${totalAmount}`;
+  }
+
+  // Get fill price and currency from marketPrice
+  const fillPrice = formatAmount(marketPrice?.amount ?? 0);
+  const fillCurrency = marketPrice?.currency || activityCurrency;
+
+  // Determine action type - use isSell parameter
+  const action = isSell ? 'Sold' : 'Bought';
+
+  // Build a descriptive name string
+  const assetName = activity.assetName;
+  const assetDescription = assetName ? `${assetName} (${symbol})` : symbol;
+
+  // Line 1: "Bought 0.8257 shares of iShares Edge MSCI Min Vol Emerging Mkt ETF (EEMV) at CAD$11.165 per share"
+  const line1 = `${action} ${quantity} shares of ${assetDescription} at ${fillCurrency}$${fillPrice} per share`;
+
+  // Build notes
+  const noteLines = [line1];
+
+  // Add Total line
+  noteLines.push(`Total ${activityCurrency}$${totalAmount}`);
+
+  return noteLines.join('\n');
 }
 
 /**

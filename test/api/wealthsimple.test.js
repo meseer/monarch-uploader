@@ -2943,6 +2943,189 @@ describe('Wealthsimple API Client', () => {
     });
   });
 
+  describe('fetchActivityByOrdersServiceOrderId', () => {
+    beforeEach(() => {
+      const futureDate = new Date(Date.now() + 3600000).toISOString();
+      GM_getValue.mockImplementation((key) => {
+        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
+        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
+        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
+        return null;
+      });
+    });
+
+    it('should return null for null accountId', async () => {
+      const result = await wealthsimpleApi.fetchActivityByOrdersServiceOrderId(null, 'order-123');
+      expect(result).toBeNull();
+      expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
+    });
+
+    it('should return null for null ordersServiceOrderId', async () => {
+      const result = await wealthsimpleApi.fetchActivityByOrdersServiceOrderId('resp-gjp2y-3a', null);
+      expect(result).toBeNull();
+      expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
+    });
+
+    it('should return null for empty accountId', async () => {
+      const result = await wealthsimpleApi.fetchActivityByOrdersServiceOrderId('', 'order-123');
+      expect(result).toBeNull();
+      expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
+    });
+
+    it('should return null for empty ordersServiceOrderId', async () => {
+      const result = await wealthsimpleApi.fetchActivityByOrdersServiceOrderId('resp-gjp2y-3a', '');
+      expect(result).toBeNull();
+      expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
+    });
+
+    it('should fetch activity by orders service order ID successfully', async () => {
+      const mockResponse = {
+        account: {
+          id: 'resp-gjp2y-3a',
+          activityByOrdersServiceOrderId: {
+            id: 'custodian_account_activity-6cjmdMiO9VzGoLt_l8pKqGcvdxU',
+            quantity: '0.8257',
+            fxRate: '1.0',
+            marketPrice: {
+              amount: '11.165',
+              currency: 'CAD',
+              __typename: 'Amount',
+            },
+            __typename: 'PaginatedActivity',
+          },
+          __typename: 'Account',
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchActivityByOrdersServiceOrderId('resp-gjp2y-3a', 'order-00YDx9aoiwh1');
+
+      expect(result).not.toBeNull();
+      expect(result.id).toBe('custodian_account_activity-6cjmdMiO9VzGoLt_l8pKqGcvdxU');
+      expect(result.quantity).toBe('0.8257');
+      expect(result.fxRate).toBe('1.0');
+      expect(result.marketPrice.amount).toBe('11.165');
+      expect(result.marketPrice.currency).toBe('CAD');
+    });
+
+    it('should pass correct variables in GraphQL query', async () => {
+      const mockResponse = {
+        account: {
+          id: 'test-account-id',
+          activityByOrdersServiceOrderId: {
+            id: 'activity-123',
+            quantity: '1.0',
+            fxRate: '1.35',
+            marketPrice: { amount: '50.00', currency: 'USD' },
+          },
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ data, onload }) => {
+        const parsedData = JSON.parse(data);
+        expect(parsedData.operationName).toBe('FetchActivityByOrdersServiceOrderId');
+        expect(parsedData.variables.id).toBe('test-account-id');
+        expect(parsedData.variables.ordersServiceOrderId).toBe('order-test123');
+        // FetchActivityByOrdersServiceOrderId should NOT have identityId injected
+        expect(parsedData.variables.identityId).toBeUndefined();
+
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      await wealthsimpleApi.fetchActivityByOrdersServiceOrderId('test-account-id', 'order-test123');
+    });
+
+    it('should return null when no account in response', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: {} }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchActivityByOrdersServiceOrderId('resp-gjp2y-3a', 'order-123');
+      expect(result).toBeNull();
+    });
+
+    it('should return null when no activityByOrdersServiceOrderId in response', async () => {
+      const mockResponse = {
+        account: {
+          id: 'resp-gjp2y-3a',
+          activityByOrdersServiceOrderId: null,
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchActivityByOrdersServiceOrderId('resp-gjp2y-3a', 'order-not-found');
+      expect(result).toBeNull();
+    });
+
+    it('should return null on API error without failing', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({ status: 500 });
+      });
+
+      // Should not throw, just return null
+      const result = await wealthsimpleApi.fetchActivityByOrdersServiceOrderId('resp-gjp2y-3a', 'order-error');
+      expect(result).toBeNull();
+    });
+
+    it('should return null on network error without failing', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onerror }) => {
+        onerror(new Error('Network failure'));
+      });
+
+      // Should not throw, just return null
+      const result = await wealthsimpleApi.fetchActivityByOrdersServiceOrderId('resp-gjp2y-3a', 'order-network-error');
+      expect(result).toBeNull();
+    });
+
+    it('should handle activity with different FX rate', async () => {
+      const mockResponse = {
+        account: {
+          id: 'rrsp-abc123',
+          activityByOrdersServiceOrderId: {
+            id: 'activity-fx',
+            quantity: '5.5',
+            fxRate: '1.3567',
+            marketPrice: {
+              amount: '100.50',
+              currency: 'USD',
+            },
+          },
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchActivityByOrdersServiceOrderId('rrsp-abc123', 'order-fx-test');
+
+      expect(result).not.toBeNull();
+      expect(result.fxRate).toBe('1.3567');
+      expect(result.marketPrice.currency).toBe('USD');
+    });
+  });
+
   describe('fetchExtendedOrder', () => {
     beforeEach(() => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
