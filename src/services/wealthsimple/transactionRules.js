@@ -1526,6 +1526,61 @@ export function formatShortOptionExpiryNotes(expiryDetail, securityCache = new M
 }
 
 /**
+ * Investment account RESP grant transaction rules
+ * These rules handle government grant transactions for RESP accounts
+ *
+ * Transaction types supported:
+ * - RESP_GRANT: Government grants deposited into RESP accounts (CESG, CLB, etc.)
+ */
+export const INVESTMENT_RESP_GRANT_TRANSACTION_RULES = [
+  {
+    id: 'resp-grant',
+    description: 'RESP grant transactions (government grants for RESP accounts)',
+    match: (tx) => tx.type === 'RESP_GRANT',
+    /**
+     * Process RESP_GRANT transactions
+     * These are government grants deposited into RESP accounts
+     * (e.g., Canada Education Savings Grant, Canada Learning Bond)
+     *
+     * Merchant logic:
+     * - If subType is null/empty: "RESP Grant ({accountName})"
+     * - Otherwise: "RESP Grant: sentenceCase({subType}) ({accountName})"
+     *
+     * Original statement format: "{type}:{subType}:{assetSymbol}:{currency}"
+     *
+     * @param {Object} tx - Raw transaction
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx) => {
+      const subType = tx.subType || '';
+      const assetSymbol = tx.assetSymbol || '';
+      const currency = tx.currency || 'CAD';
+      const accountName = getAccountNameById(tx.accountId);
+
+      // Merchant: "RESP Grant ({accountName})" if no subType,
+      // otherwise "RESP Grant: sentenceCase({subType}) ({accountName})"
+      let merchant;
+      if (!subType) {
+        merchant = `RESP Grant (${accountName})`;
+      } else {
+        merchant = `RESP Grant: ${toSentenceCase(subType)} (${accountName})`;
+      }
+
+      // Original statement: "{type}:{subType}:{assetSymbol}:{currency}"
+      const originalStatement = `${tx.type || ''}:${subType}:${assetSymbol}:${currency}`;
+
+      return {
+        category: 'Grant',
+        merchant,
+        originalStatement,
+        notes: '',
+        technicalDetails: '',
+      };
+    },
+  },
+];
+
+/**
  * Investment account non-resident tax transaction rules
  * These rules handle non-resident withholding tax transactions in investment accounts
  *
@@ -1949,6 +2004,7 @@ export default {
   INVESTMENT_DEPOSIT_TRANSACTION_RULES,
   INVESTMENT_DIVIDEND_TRANSACTION_RULES,
   INVESTMENT_INTEREST_TRANSACTION_RULES,
+  INVESTMENT_RESP_GRANT_TRANSACTION_RULES,
   INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES,
   INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES,
   applyTransactionRule,
