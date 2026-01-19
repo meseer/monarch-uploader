@@ -233,11 +233,18 @@ describe('Utility Functions', () => {
   });
 
   describe('debugLog', () => {
+    // Regex pattern for timestamp format [HH:MM:SS.mmm]
+    const timestampPattern = /^\[\d{2}:\d{2}:\d{2}\.\d{3}\]/;
+
     it('should log messages at appropriate levels', () => {
       global.GM_getValue.mockReturnValue('debug');
 
       debugLog('test message');
-      expect(console.log).toHaveBeenCalledWith('[Monarch Uploader]', 'test message');
+      expect(console.log).toHaveBeenCalledWith(
+        expect.stringMatching(timestampPattern),
+        'test message',
+      );
+      expect(console.log.mock.calls[0][0]).toContain('[Monarch Uploader]');
     });
 
     it('should respect log level filtering', () => {
@@ -247,7 +254,11 @@ describe('Utility Functions', () => {
       debugLog('error message', 'error');
 
       expect(console.log).not.toHaveBeenCalled();
-      expect(console.error).toHaveBeenCalledWith('[Monarch Uploader - ERROR]', 'error message');
+      expect(console.error).toHaveBeenCalledWith(
+        expect.stringMatching(timestampPattern),
+        'error message',
+      );
+      expect(console.error.mock.calls[0][0]).toContain('[Monarch Uploader - ERROR]');
     });
 
     it('should use different console methods for different levels', () => {
@@ -257,29 +268,68 @@ describe('Utility Functions', () => {
       debugLog('warning message', 'warning');
       debugLog('error message', 'error');
 
-      expect(console.info).toHaveBeenCalledWith('[Monarch Uploader - INFO]', 'info message');
-      expect(console.warn).toHaveBeenCalledWith('[Monarch Uploader - WARNING]', 'warning message');
-      expect(console.error).toHaveBeenCalledWith('[Monarch Uploader - ERROR]', 'error message');
+      expect(console.info).toHaveBeenCalledWith(
+        expect.stringMatching(timestampPattern),
+        'info message',
+      );
+      expect(console.info.mock.calls[0][0]).toContain('[Monarch Uploader - INFO]');
+
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.stringMatching(timestampPattern),
+        'warning message',
+      );
+      expect(console.warn.mock.calls[0][0]).toContain('[Monarch Uploader - WARNING]');
+
+      expect(console.error).toHaveBeenCalledWith(
+        expect.stringMatching(timestampPattern),
+        'error message',
+      );
+      expect(console.error.mock.calls[0][0]).toContain('[Monarch Uploader - ERROR]');
+    });
+
+    it('should include timestamp in correct format', () => {
+      global.GM_getValue.mockReturnValue('debug');
+
+      debugLog('test message');
+
+      const prefix = console.log.mock.calls[0][0];
+      // Should match format: [HH:MM:SS.mmm] [Monarch Uploader]
+      expect(prefix).toMatch(/^\[\d{2}:\d{2}:\d{2}\.\d{3}\] \[Monarch Uploader\]$/);
     });
   });
 
   describe('log helper functions', () => {
+    // Regex pattern for timestamp format [HH:MM:SS.mmm]
+    const timestampPattern = /^\[\d{2}:\d{2}:\d{2}\.\d{3}\]/;
+
     it('logInfo should call debugLog with info level', () => {
       global.GM_getValue.mockReturnValue('debug');
       logInfo('test info');
-      expect(console.info).toHaveBeenCalledWith('[Monarch Uploader - INFO]', 'test info');
+      expect(console.info).toHaveBeenCalledWith(
+        expect.stringMatching(timestampPattern),
+        'test info',
+      );
+      expect(console.info.mock.calls[0][0]).toContain('[Monarch Uploader - INFO]');
     });
 
     it('logWarning should call debugLog with warning level', () => {
       global.GM_getValue.mockReturnValue('debug');
       logWarning('test warning');
-      expect(console.warn).toHaveBeenCalledWith('[Monarch Uploader - WARNING]', 'test warning');
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.stringMatching(timestampPattern),
+        'test warning',
+      );
+      expect(console.warn.mock.calls[0][0]).toContain('[Monarch Uploader - WARNING]');
     });
 
     it('logError should call debugLog with error level', () => {
       global.GM_getValue.mockReturnValue('debug');
       logError('test error');
-      expect(console.error).toHaveBeenCalledWith('[Monarch Uploader - ERROR]', 'test error');
+      expect(console.error).toHaveBeenCalledWith(
+        expect.stringMatching(timestampPattern),
+        'test error',
+      );
+      expect(console.error.mock.calls[0][0]).toContain('[Monarch Uploader - ERROR]');
     });
   });
 

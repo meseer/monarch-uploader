@@ -15,6 +15,19 @@ export function getLocalToday() {
 }
 
 /**
+ * Formats the current time as a timestamp string
+ * @returns {string} Timestamp in HH:MM:SS.mmm format
+ */
+function formatTimestamp() {
+  const now = new Date();
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+  const ms = String(now.getMilliseconds()).padStart(3, '0');
+  return `${hours}:${minutes}:${seconds}.${ms}`;
+}
+
+/**
  * Debug logging function
  * @param {...any} args - Arguments to log
  * @param {string} level - Log level (debug, info, warning, error)
@@ -31,7 +44,8 @@ export function debugLog(...args) {
 
   // Only log if the message level is at or above the current log level
   if (logLevels[level] >= logLevels[currentLogLevel]) {
-    const prefix = level === 'debug' ? '[Monarch Uploader]' : `[Monarch Uploader - ${level.toUpperCase()}]`;
+    const timestamp = `[${formatTimestamp()}]`;
+    const prefix = level === 'debug' ? `${timestamp} [Monarch Uploader]` : `${timestamp} [Monarch Uploader - ${level.toUpperCase()}]`;
 
     if (level === 'error') {
       console.error(prefix, ...args);
