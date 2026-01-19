@@ -826,6 +826,7 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
             account.nickname || account.id,
             monarchAccount.id,
             progressDialog,
+            accountType,
           );
 
           if (positionsResult.success) {
