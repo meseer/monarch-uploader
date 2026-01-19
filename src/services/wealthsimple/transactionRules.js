@@ -1614,8 +1614,8 @@ export const INVESTMENT_RESP_GRANT_TRANSACTION_RULES = [
      * (e.g., Canada Education Savings Grant, Canada Learning Bond)
      *
      * Merchant logic:
-     * - If subType is null/empty: "RESP Grant ({accountName})"
-     * - Otherwise: "RESP Grant: sentenceCase({subType}) ({accountName})"
+     * - If subType is null/empty: "RESP Grant"
+     * - Otherwise: "RESP Grant: sentenceCase({subType})"
      *
      * Original statement format: "{type}:{subType}:{assetSymbol}:{currency}"
      *
@@ -1626,15 +1626,13 @@ export const INVESTMENT_RESP_GRANT_TRANSACTION_RULES = [
       const subType = tx.subType || '';
       const assetSymbol = tx.assetSymbol || '';
       const currency = tx.currency || 'CAD';
-      const accountName = getAccountNameById(tx.accountId);
 
-      // Merchant: "RESP Grant ({accountName})" if no subType,
-      // otherwise "RESP Grant: sentenceCase({subType}) ({accountName})"
+      // Merchant: "RESP Grant" if no subType, otherwise "RESP Grant: sentenceCase({subType})"
       let merchant;
       if (!subType) {
-        merchant = `RESP Grant (${accountName})`;
+        merchant = 'RESP Grant';
       } else {
-        merchant = `RESP Grant: ${toSentenceCase(subType)} (${accountName})`;
+        merchant = `RESP Grant: ${toSentenceCase(subType)}`;
       }
 
       // Original statement: "{type}:{subType}:{assetSymbol}:{currency}"
@@ -1668,8 +1666,8 @@ export const INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES = [
      * These are withholding taxes on foreign income (e.g., US dividends)
      *
      * Merchant logic:
-     * - If assetSymbol==null: "Non-Resident Tax ({accountName})"
-     * - Otherwise: "Non-Resident Tax for {assetSymbol} ({accountName})"
+     * - If assetSymbol==null: "Non-Resident Tax"
+     * - Otherwise: "Non-Resident Tax for {assetSymbol}"
      *
      * Original statement format: "{type}:{subType}:{assetSymbol}:{currency}"
      *
@@ -1680,15 +1678,13 @@ export const INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES = [
       const assetSymbol = tx.assetSymbol || '';
       const subType = tx.subType || '';
       const currency = tx.currency || 'CAD';
-      const accountName = getAccountNameById(tx.accountId);
 
-      // Merchant: "Non-Resident Tax ({accountName})" if no assetSymbol,
-      // otherwise "Non-Resident Tax for {assetSymbol} ({accountName})"
+      // Merchant: "Non-Resident Tax" if no assetSymbol, otherwise "Non-Resident Tax for {assetSymbol}"
       let merchant;
       if (!assetSymbol) {
-        merchant = `Non-Resident Tax (${accountName})`;
+        merchant = 'Non-Resident Tax';
       } else {
-        merchant = `Non-Resident Tax for ${assetSymbol} (${accountName})`;
+        merchant = `Non-Resident Tax for ${assetSymbol}`;
       }
 
       // Original statement: "{type}:{subType}:{assetSymbol}:{currency}"
@@ -1722,9 +1718,11 @@ export const INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES = [
      * These are reimbursements in investment accounts (fee rebates, etc.)
      *
      * Merchant logic:
-     * - If subType==null && assetSymbol==null: "Reimbursement ({accountName})"
-     * - If subType==null && assetSymbol!=null: "Reimbursement for {assetSymbol} ({accountName})"
-     * - Otherwise: "sentenceCase({subType}) for {assetSymbol} ({accountName})"
+     * - Skip "for {assetSymbol}" if assetSymbol is CAD or USD (these are currency, not securities)
+     * - If subType==null && (no assetSymbol OR assetSymbol is CAD/USD): "Reimbursement ({currency})"
+     * - If subType==null && assetSymbol is not CAD/USD: "Reimbursement for {assetSymbol} ({currency})"
+     * - If subType present && (no assetSymbol OR assetSymbol is CAD/USD): "sentenceCase({subType}) ({currency})"
+     * - If subType present && assetSymbol is not CAD/USD: "sentenceCase({subType}) for {assetSymbol} ({currency})"
      *
      * Original statement format: "{type}:{subType}:{assetSymbol}:{currency}"
      *
@@ -1735,16 +1733,21 @@ export const INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES = [
       const subType = tx.subType || '';
       const assetSymbol = tx.assetSymbol || '';
       const currency = tx.currency || 'CAD';
-      const accountName = getAccountNameById(tx.accountId);
+
+      // Check if assetSymbol is a currency (CAD or USD) - skip "for {asset}" in this case
+      const isCurrencyAsset = assetSymbol === 'CAD' || assetSymbol === 'USD';
+      const hasAsset = assetSymbol && !isCurrencyAsset;
 
       // Build merchant based on subType and assetSymbol presence
       let merchant;
-      if (!subType && !assetSymbol) {
-        merchant = `Reimbursement (${accountName})`;
-      } else if (!subType && assetSymbol) {
-        merchant = `Reimbursement for ${assetSymbol} (${accountName})`;
+      if (!subType && !hasAsset) {
+        merchant = `Reimbursement (${currency})`;
+      } else if (!subType && hasAsset) {
+        merchant = `Reimbursement for ${assetSymbol} (${currency})`;
+      } else if (subType && !hasAsset) {
+        merchant = `${toSentenceCase(subType)} (${currency})`;
       } else {
-        merchant = `${toSentenceCase(subType)} for ${assetSymbol} (${accountName})`;
+        merchant = `${toSentenceCase(subType)} for ${assetSymbol} (${currency})`;
       }
 
       // Original statement: "{type}:{subType}:{assetSymbol}:{currency}"

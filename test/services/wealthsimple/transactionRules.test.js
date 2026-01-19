@@ -7278,7 +7278,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.category).toBe('Reimbursement');
-        expect(result.merchant).toBe('Transfer fee rebate for VFV (Wealthsimple TFSA)');
+        expect(result.merchant).toBe('Transfer fee rebate for VFV (CAD)');
         expect(result.originalStatement).toBe('REIMBURSEMENT:TRANSFER_FEE_REBATE:VFV:CAD');
         expect(result.notes).toBe('');
         expect(result.technicalDetails).toBe('');
@@ -7300,8 +7300,46 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.category).toBe('Reimbursement');
-        expect(result.merchant).toBe('Fee rebate for XAW (Wealthsimple TFSA)');
+        expect(result.merchant).toBe('Fee rebate for XAW (CAD)');
         expect(result.originalStatement).toBe('REIMBURSEMENT:FEE_REBATE:XAW:CAD');
+      });
+
+      it('should skip "for {asset}" when assetSymbol is CAD', () => {
+        const transaction = {
+          externalCanonicalId: 'reimbursement-cad-asset',
+          type: 'REIMBURSEMENT',
+          subType: 'TRANSFER_FEE_REBATE',
+          assetSymbol: 'CAD',
+          accountId: 'account-tfsa-123',
+          amount: 100.0,
+          currency: 'CAD',
+        };
+
+        const rule = INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES.find((r) => r.id === 'reimbursement');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Transfer fee rebate (CAD)');
+        expect(result.originalStatement).toBe('REIMBURSEMENT:TRANSFER_FEE_REBATE:CAD:CAD');
+      });
+
+      it('should skip "for {asset}" when assetSymbol is USD', () => {
+        const transaction = {
+          externalCanonicalId: 'reimbursement-usd-asset',
+          type: 'REIMBURSEMENT',
+          subType: 'FEE_REBATE',
+          assetSymbol: 'USD',
+          accountId: 'account-tfsa-123',
+          amount: 75.0,
+          currency: 'USD',
+        };
+
+        const rule = INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES.find((r) => r.id === 'reimbursement');
+        const result = rule.process(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Fee rebate (USD)');
+        expect(result.originalStatement).toBe('REIMBURSEMENT:FEE_REBATE:USD:USD');
       });
     });
 
@@ -7322,7 +7360,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.category).toBe('Reimbursement');
-        expect(result.merchant).toBe('Reimbursement for AAPL (Wealthsimple TFSA)');
+        expect(result.merchant).toBe('Reimbursement for AAPL (USD)');
         expect(result.originalStatement).toBe('REIMBURSEMENT::AAPL:USD');
         expect(result.notes).toBe('');
         expect(result.technicalDetails).toBe('');
@@ -7344,7 +7382,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.category).toBe('Reimbursement');
-        expect(result.merchant).toBe('Reimbursement (Wealthsimple TFSA)');
+        expect(result.merchant).toBe('Reimbursement (CAD)');
         expect(result.originalStatement).toBe('REIMBURSEMENT:::CAD');
       });
     });
@@ -7366,7 +7404,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.category).toBe('Reimbursement');
-        expect(result.merchant).toBe('Transfer fee rebate for  (Wealthsimple TFSA)');
+        expect(result.merchant).toBe('Transfer fee rebate (CAD)');
         expect(result.originalStatement).toBe('REIMBURSEMENT:TRANSFER_FEE_REBATE::CAD');
       });
 
@@ -7383,7 +7421,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.category).toBe('Reimbursement');
-        expect(result.merchant).toBe('Reimbursement (Unknown Account)');
+        expect(result.merchant).toBe('Reimbursement (CAD)');
         expect(result.originalStatement).toBe('REIMBURSEMENT:::CAD');
         expect(result.notes).toBe('');
         expect(result.technicalDetails).toBe('');
@@ -7522,7 +7560,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.category).toBe('Dividends & Capital Gains');
-        expect(result.merchant).toBe('Non-Resident Tax for MSFT (Wealthsimple TFSA)');
+        expect(result.merchant).toBe('Non-Resident Tax for MSFT');
         expect(result.originalStatement).toBe('NON_RESIDENT_TAX::MSFT:USD');
         expect(result.notes).toBe('');
         expect(result.technicalDetails).toBe('');
@@ -7544,7 +7582,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.category).toBe('Dividends & Capital Gains');
-        expect(result.merchant).toBe('Non-Resident Tax for VFV (Wealthsimple TFSA)');
+        expect(result.merchant).toBe('Non-Resident Tax for VFV');
         expect(result.originalStatement).toBe('NON_RESIDENT_TAX::VFV:CAD');
       });
 
@@ -7564,13 +7602,13 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.category).toBe('Dividends & Capital Gains');
-        expect(result.merchant).toBe('Non-Resident Tax for AAPL (Wealthsimple TFSA)');
+        expect(result.merchant).toBe('Non-Resident Tax for AAPL');
         expect(result.originalStatement).toBe('NON_RESIDENT_TAX:DIVIDEND_WITHHOLDING:AAPL:USD');
       });
     });
 
     describe('NON_RESIDENT_TAX edge cases', () => {
-      it('should handle missing assetSymbol with account name only', () => {
+      it('should handle missing assetSymbol', () => {
         const transaction = {
           externalCanonicalId: 'nrt-no-symbol',
           type: 'NON_RESIDENT_TAX',
@@ -7586,11 +7624,11 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.category).toBe('Dividends & Capital Gains');
-        expect(result.merchant).toBe('Non-Resident Tax (Wealthsimple TFSA)');
+        expect(result.merchant).toBe('Non-Resident Tax');
         expect(result.originalStatement).toBe('NON_RESIDENT_TAX:::USD');
       });
 
-      it('should handle empty string assetSymbol with account name only', () => {
+      it('should handle empty string assetSymbol', () => {
         const transaction = {
           externalCanonicalId: 'nrt-empty-symbol',
           type: 'NON_RESIDENT_TAX',
@@ -7605,11 +7643,11 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = rule.process(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.merchant).toBe('Non-Resident Tax (Wealthsimple TFSA)');
+        expect(result.merchant).toBe('Non-Resident Tax');
         expect(result.originalStatement).toBe('NON_RESIDENT_TAX:::CAD');
       });
 
-      it('should handle undefined assetSymbol with account name only', () => {
+      it('should handle undefined assetSymbol', () => {
         const transaction = {
           externalCanonicalId: 'nrt-undef-symbol',
           type: 'NON_RESIDENT_TAX',
@@ -7623,7 +7661,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = rule.process(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.merchant).toBe('Non-Resident Tax (Wealthsimple TFSA)');
+        expect(result.merchant).toBe('Non-Resident Tax');
         expect(result.originalStatement).toBe('NON_RESIDENT_TAX:::USD');
       });
 
@@ -7675,7 +7713,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.category).toBe('Dividends & Capital Gains');
-        expect(result.merchant).toBe('Non-Resident Tax (Unknown Account)');
+        expect(result.merchant).toBe('Non-Resident Tax');
         expect(result.originalStatement).toBe('NON_RESIDENT_TAX:::CAD');
         expect(result.notes).toBe('');
         expect(result.technicalDetails).toBe('');
@@ -7812,7 +7850,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.category).toBe('Grant');
-        expect(result.merchant).toBe('RESP Grant: Cesg (Family RESP)');
+        expect(result.merchant).toBe('RESP Grant: Cesg');
         expect(result.originalStatement).toBe('RESP_GRANT:CESG:CAD:CAD');
         expect(result.notes).toBe('');
         expect(result.technicalDetails).toBe('');
@@ -7834,7 +7872,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.category).toBe('Grant');
-        expect(result.merchant).toBe('RESP Grant: Clb (Family RESP)');
+        expect(result.merchant).toBe('RESP Grant: Clb');
         expect(result.originalStatement).toBe('RESP_GRANT:CLB:CAD:CAD');
       });
     });
@@ -7856,7 +7894,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.category).toBe('Grant');
-        expect(result.merchant).toBe('RESP Grant (Family RESP)');
+        expect(result.merchant).toBe('RESP Grant');
         expect(result.originalStatement).toBe('RESP_GRANT::CAD:CAD');
       });
 
@@ -7875,7 +7913,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         const result = rule.process(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.merchant).toBe('RESP Grant (Family RESP)');
+        expect(result.merchant).toBe('RESP Grant');
         expect(result.originalStatement).toBe('RESP_GRANT::CAD:CAD');
       });
     });
@@ -7894,7 +7932,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
 
         expect(result).not.toBeNull();
         expect(result.category).toBe('Grant');
-        expect(result.merchant).toBe('RESP Grant (Unknown Account)');
+        expect(result.merchant).toBe('RESP Grant');
         expect(result.originalStatement).toBe('RESP_GRANT:::CAD');
       });
 
