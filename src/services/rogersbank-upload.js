@@ -4,16 +4,16 @@
  */
 
 import {
-  debugLog, getTodayLocal, calculateFromDateWithLookback, saveLastUploadDate,
+  debugLog, getTodayLocal, calculateFromDateWithLookback, saveLastUploadDate, formatDate, parseLocalDate,
 } from '../core/utils';
 import toast from '../ui/toast';
 import { STORAGE, LOGO_CLOUDINARY_IDS } from '../core/config';
 import stateManager from '../core/state';
-import { getRogersBankCredentials, fetchRogersBankBalance } from '../api/rogersbank';
+import { getRogersBankCredentials, fetchRogersBankAccountDetails } from '../api/rogersbank';
 import monarchApi from '../api/monarch';
 import { showMonarchAccountSelectorWithCreate } from '../ui/components/accountSelectorWithCreate';
 import { convertTransactionsToMonarchCSV } from '../utils/csv';
-import { showDatePickerPromise } from '../ui/components/datePicker';
+import { showDatePickerWithOptionsPromise } from '../ui/components/datePicker';
 import { applyCategoryMapping, saveUserCategorySelection, calculateAllCategorySimilarities } from '../mappers/category';
 import { showMonarchCategorySelector } from '../ui/components/categorySelector';
 import { showProgressDialog } from '../ui/components/progressDialog';
@@ -36,43 +36,13 @@ function getRogersAccountName() {
 }
 
 /**
- * Get saved from date or prompt user for one
- * @param {string} rogersAccountId - Rogers account ID for lookup
- * @returns {Promise<string|null>} The from date in YYYY-MM-DD format or null if cancelled
+ * Check if this is the first sync for the account (no previous upload date)
+ * @param {string} rogersAccountId - Rogers account ID
+ * @returns {boolean} True if first sync
  */
-async function getFromDate(rogersAccountId) {
-  try {
-    // Use new unified date calculation with configurable lookback
-    const calculatedFromDate = calculateFromDateWithLookback('rogersbank', rogersAccountId);
-
-    if (calculatedFromDate) {
-      debugLog('Using calculated from date based on last upload and lookback:', calculatedFromDate);
-      return calculatedFromDate;
-    }
-
-    // No previous upload date - show date picker with 14 days ago default
-    const defaultDate = new Date();
-    defaultDate.setDate(defaultDate.getDate() - 14);
-    const defaultDateStr = defaultDate.toISOString().split('T')[0];
-
-    debugLog('No previous upload found, showing date picker with default:', defaultDateStr);
-
-    // Use date picker component with the calculated default
-    const selectedDate = await showDatePickerPromise(
-      defaultDateStr,
-      'Select the start date for transaction download',
-    );
-
-    if (!selectedDate) {
-      debugLog('User cancelled date input');
-      return null;
-    }
-
-    return selectedDate;
-  } catch (error) {
-    debugLog('Error getting from date:', error);
-    throw error;
-  }
+function isFirstSync(rogersAccountId) {
+  const lastUploadDate = GM_getValue(`${STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX}${rogersAccountId}`, null);
+  return !lastUploadDate;
 }
 
 /**
@@ -92,7 +62,6 @@ function getEndOfCurrentMonth() {
  * @returns {Object} Filtered transactions and statistics
  */
 function filterDuplicateTransactions(transactions, accountId) {
-  // Use new transaction storage utility to get uploaded IDs
   const uploadedIds = getUploadedTransactionIds(accountId, 'rogersbank');
   const uploadedRefs = new Set(uploadedIds);
   const originalCount = transactions.length;
@@ -108,15 +77,11 @@ function filterDuplicateTransactions(transactions, accountId) {
     toast.show(`Skipping ${duplicateCount} already uploaded transactions`, 'debug');
   }
 
-  return {
-    transactions: newTransactions,
-    duplicateCount,
-    originalCount,
-  };
+  return { transactions: newTransactions, duplicateCount, originalCount };
 }
 
 /**
- * Resolve categories for transactions, handling both automatic mapping and manual selection
+ * Resolve categories for transactions
  * @param {Array} transactions - Array of transactions to process
  * @returns {Promise<Array>} Transactions with resolved Monarch categories
  */
@@ -127,20 +92,15 @@ async function resolveCategoriesForTransactions(transactions) {
 
   debugLog('Starting category resolution for transactions');
 
-  // Fetch categories and category groups from Monarch for similarity scoring
   let availableCategories = [];
   try {
-    debugLog('Fetching categories from Monarch for similarity scoring');
     const categoryData = await monarchApi.getCategoriesAndGroups();
     availableCategories = categoryData.categories || [];
-    debugLog(`Fetched ${availableCategories.length} categories from Monarch`);
   } catch (error) {
-    debugLog('Failed to fetch categories from Monarch, will use manual selection for all:', error);
-    // Continue with empty categories array - all mappings will require manual selection
+    debugLog('Failed to fetch categories from Monarch:', error);
   }
 
-  // Find all unique bank categories that need resolution and track transaction details
-  const uniqueBankCategories = new Map(); // Use Map to store category with example transaction
+  const uniqueBankCategories = new Map();
   const categoriesToResolve = [];
 
   transactions.forEach((transaction) => {
@@ -149,223 +109,217 @@ async function resolveCategoriesForTransactions(transactions) {
       || 'Uncategorized';
 
     if (!uniqueBankCategories.has(bankCategory)) {
-      // Store the first transaction as an example for this category
       uniqueBankCategories.set(bankCategory, transaction);
-
-      // Test the category mapping with available categories for similarity scoring
       const mappingResult = applyCategoryMapping(bankCategory, availableCategories);
 
       if (mappingResult && typeof mappingResult === 'object' && mappingResult.needsManualSelection) {
-        // This category needs manual selection, attach example transaction
-        categoriesToResolve.push({
-          ...mappingResult,
-          exampleTransaction: transaction,
-        });
+        categoriesToResolve.push({ ...mappingResult, exampleTransaction: transaction });
       }
     }
   });
 
-  debugLog(`Found ${uniqueBankCategories.size} unique bank categories, ${categoriesToResolve.length} need manual selection`);
-
-  // Handle categories that need manual selection
   if (categoriesToResolve.length > 0) {
-    toast.show(`Resolving ${categoriesToResolve.length} categories that need manual selection...`, 'debug');
+    toast.show(`Resolving ${categoriesToResolve.length} categories...`, 'debug');
 
     for (let i = 0; i < categoriesToResolve.length; i += 1) {
       const categoryToResolve = categoriesToResolve[i];
-
-      debugLog(`Showing category selector for: ${categoryToResolve.bankCategory} (${i + 1}/${categoriesToResolve.length})`);
-
-      // Show progress in toast
-      toast.show(`Selecting category ${i + 1} of ${categoriesToResolve.length}: "${categoryToResolve.bankCategory}"`, 'debug');
-
-      // Calculate comprehensive similarity data for the UI
       const similarityData = calculateAllCategorySimilarities(categoryToResolve.bankCategory, availableCategories);
 
-      // Prepare transaction details for the selector
       const transactionDetails = {};
       if (categoryToResolve.exampleTransaction) {
         const exampleTx = categoryToResolve.exampleTransaction;
-
-        // Extract merchant name
-        transactionDetails.merchant = exampleTx.description
-          || exampleTx.merchant?.name
-          || exampleTx.transactionDescription
-          || 'Unknown Merchant';
-
-        // Extract amount
+        transactionDetails.merchant = exampleTx.description || exampleTx.merchant?.name || 'Unknown';
         transactionDetails.amount = exampleTx.transactionAmount || exampleTx.amount || 0;
-
-        // Extract and format date
         if (exampleTx.activityDate) {
-          const date = new Date(exampleTx.activityDate);
-          transactionDetails.date = date.toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
+          transactionDetails.date = new Date(exampleTx.activityDate).toLocaleDateString('en-US', {
+            year: 'numeric', month: 'short', day: 'numeric',
           });
         }
-
-        debugLog('Transaction details for category selector:', transactionDetails);
       }
 
-      // Show the category selector with transaction details
       const selectedCategory = await new Promise((resolve) => {
         showMonarchCategorySelector(categoryToResolve.bankCategory, resolve, similarityData, transactionDetails);
       });
 
       if (!selectedCategory) {
-        // User cancelled - this will abort the upload
-        throw new Error(`Category selection cancelled for "${categoryToResolve.bankCategory}". Upload aborted.`);
+        throw new Error(`Category selection cancelled for "${categoryToResolve.bankCategory}".`);
       }
 
-      // Save the user's selection for future use
       saveUserCategorySelection(categoryToResolve.bankCategory, selectedCategory.name);
-      debugLog(`User selected category mapping: ${categoryToResolve.bankCategory} -> ${selectedCategory.name}`);
-
-      toast.show(`Mapped "${categoryToResolve.bankCategory}" to "${selectedCategory.name}"`, 'debug');
     }
   }
 
-  // Now resolve all categories (they should all have mappings now)
-  const resolvedTransactions = transactions.map((transaction) => {
+  return transactions.map((transaction) => {
     const bankCategory = transaction.merchant?.categoryDescription
       || transaction.merchant?.category
       || 'Uncategorized';
-
     const mappingResult = applyCategoryMapping(bankCategory, availableCategories);
-
-    // At this point, all categories should resolve to strings (Monarch category names)
     const resolvedCategory = typeof mappingResult === 'string' ? mappingResult : 'Uncategorized';
 
-    return {
-      ...transaction,
-      resolvedMonarchCategory: resolvedCategory,
-      originalBankCategory: bankCategory,
-    };
+    return { ...transaction, resolvedMonarchCategory: resolvedCategory, originalBankCategory: bankCategory };
   });
-
-  debugLog('Category resolution completed for all transactions');
-  return resolvedTransactions;
 }
 
 /**
  * Fetch Rogers Bank transactions
- * @param {string} fromDate - Start date for transactions (YYYY-MM-DD)
- * @param {string} toDate - End date for transactions (YYYY-MM-DD)
+ * @param {string} fromDate - Start date (YYYY-MM-DD)
+ * @param {string} toDate - End date (YYYY-MM-DD)
  * @returns {Promise<Object>} API response with transactions
  */
 async function fetchRogersBankTransactions(fromDate, toDate) {
-  try {
-    const credentials = getRogersBankCredentials(); // Get credentials for API calls
+  const credentials = getRogersBankCredentials();
 
-    // Check if we have all required credentials
-    if (!credentials.authToken || !credentials.accountId || !credentials.customerId
-        || !credentials.accountIdEncoded || !credentials.customerIdEncoded || !credentials.deviceId) {
-      throw new Error('Missing Rogers Bank credentials. Please navigate to your account page first.');
+  if (!credentials.authToken || !credentials.accountId || !credentials.customerId
+      || !credentials.accountIdEncoded || !credentials.customerIdEncoded || !credentials.deviceId) {
+    throw new Error('Missing Rogers Bank credentials.');
+  }
+
+  let offset = 10;
+  let allTransactions = [];
+  let totalCount = 0;
+
+  do {
+    const url = `https://selfserve.apis.rogersbank.com/corebank/v1/account/${credentials.accountId}/customer/${credentials.customerId}/transactions?limit=0&offset=${offset}&fromDate=${fromDate}&toDate=${toDate}`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        accept: 'application/json, text/plain, */*',
+        accountid: credentials.accountIdEncoded,
+        authorization: credentials.authToken,
+        channel: '101',
+        customerid: credentials.customerIdEncoded,
+        deviceid: credentials.deviceId,
+        isrefresh: 'false',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status}`);
     }
 
-    // Start with offset of 10 (will fetch up to 500 transactions)
-    let offset = 10;
-    let allTransactions = [];
-    let totalCount = 0;
+    const data = await response.json();
+    if (!data.activitySummary) throw new Error('Invalid API response');
 
-    do {
-      const url = `https://selfserve.apis.rogersbank.com/corebank/v1/account/${credentials.accountId}/customer/${credentials.customerId}/transactions?limit=0&offset=${offset}&fromDate=${fromDate}&toDate=${toDate}`;
+    totalCount = data.activitySummary.totalCount || 0;
+    if (data.activitySummary.activities?.length > 0) {
+      allTransactions = allTransactions.concat(data.activitySummary.activities);
+    }
 
-      debugLog('Fetching transactions with offset:', offset);
+    if (allTransactions.length < totalCount) {
+      offset += 10;
+    } else {
+      break;
+    }
+  } while (allTransactions.length < totalCount && offset <= 100);
 
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          accept: 'application/json, text/plain, */*',
-          accountid: credentials.accountIdEncoded,
-          authorization: credentials.authToken,
-          channel: '101',
-          customerid: credentials.customerIdEncoded,
-          deviceid: credentials.deviceId,
-          isrefresh: 'false',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`API request failed: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json();
-
-      if (!data.activitySummary) {
-        throw new Error('Invalid API response: missing activitySummary');
-      }
-
-      totalCount = data.activitySummary.totalCount || 0;
-      const currentBatchSize = data.activitySummary.activities?.length || 0;
-
-      debugLog(`Fetched ${currentBatchSize} transactions. Total available: ${totalCount}`);
-
-      if (data.activitySummary.activities && data.activitySummary.activities.length > 0) {
-        allTransactions = allTransactions.concat(data.activitySummary.activities);
-      }
-
-      // Check if we need to fetch more
-      if (allTransactions.length < totalCount) {
-        // Increment offset for next batch
-        offset += 10;
-        debugLog(`Need to fetch more transactions. Current: ${allTransactions.length}, Total: ${totalCount}`);
-      } else {
-        break;
-      }
-    } while (allTransactions.length < totalCount && offset <= 100); // Safety limit
-
-    debugLog(`Fetched total of ${allTransactions.length} transactions`);
-
-    return {
-      success: true,
-      transactions: allTransactions,
-      totalCount,
-      fromDate,
-      toDate,
-    };
-  } catch (error) {
-    debugLog('Error fetching Rogers Bank transactions:', error);
-    throw error;
-  }
+  return { success: true, transactions: allTransactions, totalCount, fromDate, toDate };
 }
 
 /**
- * Build the list of sync steps for a Rogers Bank account
- * @param {boolean} hasTransactions - Whether transactions will be processed
- * @returns {Array} Array of step definitions [{key, name}]
+ * Build sync steps for progress dialog
  */
-function buildRogersBankSteps(hasTransactions = true) {
-  const steps = [
-    { key: 'balance', name: 'Balance upload' },
-  ];
-
-  if (hasTransactions) {
-    steps.push({ key: 'transactions', name: 'Transaction sync' });
-  }
-
+function buildRogersBankSteps(hasTransactions = true, includeCreditLimit = true) {
+  const steps = [];
+  if (includeCreditLimit) steps.push({ key: 'creditLimit', name: 'Credit limit sync' });
+  steps.push({ key: 'balance', name: 'Balance upload' });
+  if (hasTransactions) steps.push({ key: 'transactions', name: 'Transaction sync' });
   return steps;
 }
 
 /**
- * Generate CSV data for Rogers Bank balance
- * @param {number} balance - Current balance (negative value)
- * @param {string} accountName - Rogers account name
- * @returns {string} CSV formatted balance data
+ * Reconstruct balance history from transactions starting with 0 balance
+ */
+function reconstructBalanceFromTransactions(transactions, fromDate, toDate, currentBalance) {
+  const transactionsByDate = new Map();
+  if (transactions?.length > 0) {
+    transactions.forEach((tx) => {
+      const dateStr = tx.activityDate?.substring(0, 10);
+      if (!dateStr) return;
+      const amount = tx.transactionAmount || tx.amount || 0;
+      if (!transactionsByDate.has(dateStr)) transactionsByDate.set(dateStr, []);
+      transactionsByDate.get(dateStr).push(amount);
+    });
+  }
+
+  const balanceHistory = [];
+  let runningBalance = 0;
+  const fromDateObj = parseLocalDate(fromDate);
+  const toDateObj = parseLocalDate(toDate);
+  const todayStr = getTodayLocal();
+  const currentDateObj = new Date(fromDateObj);
+
+  while (currentDateObj <= toDateObj) {
+    const dateStr = formatDate(currentDateObj);
+    const dayTransactions = transactionsByDate.get(dateStr) || [];
+    const dayTotal = dayTransactions.reduce((sum, amt) => sum + amt, 0);
+    runningBalance += dayTotal;
+
+    if (dateStr === todayStr && currentBalance !== null && currentBalance !== undefined) {
+      balanceHistory.push({ date: dateStr, amount: currentBalance });
+    } else {
+      balanceHistory.push({ date: dateStr, amount: Math.round(runningBalance * 100) / 100 });
+    }
+    currentDateObj.setDate(currentDateObj.getDate() + 1);
+  }
+
+  return balanceHistory;
+}
+
+/**
+ * Generate CSV for balance history
+ */
+function generateBalanceHistoryCSV(balanceHistory, accountName) {
+  let csvContent = '"Date","Total Equity","Account Name"\n';
+  balanceHistory.forEach((entry) => {
+    csvContent += `"${entry.date}","${entry.amount}","${accountName}"\n`;
+  });
+  return csvContent;
+}
+
+/**
+ * Generate CSV for single-day balance
  */
 function generateBalanceCSV(balance, accountName) {
+  const todayFormatted = getTodayLocal();
+  let csvContent = '"Date","Total Equity","Account Name"\n';
+  csvContent += `"${todayFormatted}","${balance}","${accountName}"\n`;
+  return csvContent;
+}
+
+/**
+ * Sync credit limit from Rogers Bank to Monarch
+ */
+async function syncCreditLimit(rogersAccountId, monarchAccountId, creditLimit) {
+  if (creditLimit === null || creditLimit === undefined) return true;
+
+  const storedCreditLimit = GM_getValue(`${STORAGE.ROGERSBANK_LAST_CREDIT_LIMIT_PREFIX}${rogersAccountId}`, null);
+  if (storedCreditLimit !== null && storedCreditLimit === creditLimit) return true;
+
   try {
-    const todayFormatted = getTodayLocal();
-    let csvContent = '"Date","Total Equity","Account Name"\n';
-    csvContent += `"${todayFormatted}","${balance}","${accountName}"\n`;
-    debugLog(`Generated balance CSV for ${accountName}: ${balance} on ${todayFormatted}`);
-    return csvContent;
+    await monarchApi.setCreditLimit(monarchAccountId, creditLimit);
+    GM_setValue(`${STORAGE.ROGERSBANK_LAST_CREDIT_LIMIT_PREFIX}${rogersAccountId}`, creditLimit);
+    return true;
   } catch (error) {
-    debugLog('Error generating balance CSV:', error);
-    throw new Error(`Failed to generate balance CSV: ${error.message}`);
+    debugLog('Error syncing credit limit:', error);
+    return false;
   }
+}
+
+/**
+ * Get or store balance checkpoint
+ */
+function getOrStoreBalanceCheckpoint(accountId, checkpoint = null) {
+  const storageKey = `${STORAGE.ROGERSBANK_BALANCE_CHECKPOINT_PREFIX}${accountId}`;
+  if (checkpoint) {
+    GM_setValue(storageKey, JSON.stringify(checkpoint));
+    return checkpoint;
+  }
+  const stored = GM_getValue(storageKey, null);
+  if (stored) {
+    try { return JSON.parse(stored); } catch (e) { return null; }
+  }
+  return null;
 }
 
 /**
@@ -375,407 +329,258 @@ function generateBalanceCSV(balance, accountName) {
 export async function uploadRogersBankToMonarch() {
   let progressDialog = null;
   const abortController = new AbortController();
-  let rogersAccountId = null; // Declare at function level for catch block access
+  let rogersAccountId = null;
 
   try {
     debugLog('Rogers Bank upload service started');
 
-    // Get Rogers Bank credentials to use API account ID
     const credentials = getRogersBankCredentials();
-
-    // Extract Rogers account name for display purposes (always needed)
     const rogersAccountName = getRogersAccountName();
 
-    // Use API account ID if available, otherwise fallback to DOM-based ID
     if (credentials.accountId) {
       rogersAccountId = credentials.accountId;
-      debugLog('Using Rogers Bank API account ID:', rogersAccountId);
     } else {
-      // Fallback: Extract Rogers account name from DOM and sanitize
-      // Keep only alphanumeric characters and convert to lowercase
-      const sanitizedName = rogersAccountName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-      rogersAccountId = `rogers_${sanitizedName}`;
-      debugLog('Rogers Bank API credentials not available, using sanitized DOM-based ID:', rogersAccountId);
-      debugLog('Original account name:', rogersAccountName, 'Sanitized:', sanitizedName);
+      rogersAccountId = `rogers_${rogersAccountName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}`;
     }
 
-    // Get date range (now with account ID for lookback calculation)
-    const fromDate = await getFromDate(rogersAccountId);
-    if (!fromDate) {
-      return {
-        success: false,
-        message: 'Date selection cancelled',
-      };
+    // Fetch account details (balance, credit limit, openedDate) in ONE API call
+    let accountDetails;
+    try {
+      accountDetails = await fetchRogersBankAccountDetails();
+    } catch (error) {
+      toast.show('Failed to fetch account details from Rogers Bank', 'error');
+      return { success: false, message: error.message };
+    }
+
+    const { balance: currentBalance, creditLimit, openedDate } = accountDetails;
+    const firstSync = isFirstSync(rogersAccountId);
+
+    debugLog(`First sync: ${firstSync}, Balance: ${currentBalance}, Credit limit: ${creditLimit}, Opened: ${openedDate}`);
+
+    // Determine fromDate and reconstruction
+    let fromDate;
+    let reconstructBalance = false;
+
+    if (firstSync) {
+      const defaultDate = openedDate || (() => {
+        const d = new Date();
+        d.setDate(d.getDate() - 14);
+        return d.toISOString().split('T')[0];
+      })();
+
+      const datePickerResult = await showDatePickerWithOptionsPromise(
+        defaultDate,
+        `Select the start date for syncing "${rogersAccountName}". Default is the account creation date.`,
+        { showReconstructCheckbox: true, reconstructCheckedByDefault: true },
+      );
+
+      if (!datePickerResult) {
+        toast.show('Sync cancelled', 'info');
+        return { success: false, message: 'Date selection cancelled' };
+      }
+
+      fromDate = datePickerResult.date;
+      reconstructBalance = datePickerResult.reconstructBalance;
+    } else {
+      fromDate = calculateFromDateWithLookback('rogersbank', rogersAccountId) || (() => {
+        const d = new Date();
+        d.setDate(d.getDate() - 14);
+        return d.toISOString().split('T')[0];
+      })();
     }
 
     const toDate = getEndOfCurrentMonth();
-    debugLog(`Date range: ${fromDate} to ${toDate}`);
-
-    // Set the account in state manager so it displays correctly in the account selector
     stateManager.setAccount(rogersAccountId, rogersAccountName);
-    debugLog(`Set account in state: ${rogersAccountId}, ${rogersAccountName}`);
 
-    // Create progress dialog for Rogers Bank account
-    const accountForDialog = {
-      key: rogersAccountId,
-      nickname: rogersAccountName,
-      name: 'Rogers Bank Upload to Monarch',
-    };
-
+    // Create progress dialog
     progressDialog = showProgressDialog(
-      [accountForDialog],
+      [{ key: rogersAccountId, nickname: rogersAccountName, name: 'Rogers Bank Upload' }],
       'Uploading Rogers Bank Data to Monarch Money',
     );
+    progressDialog.initSteps(rogersAccountId, buildRogersBankSteps(true, true));
+    progressDialog.onCancel(() => abortController.abort());
 
-    // Initialize steps for this account
-    progressDialog.initSteps(rogersAccountId, buildRogersBankSteps(true));
-
-    // Set up cancellation callback
-    progressDialog.onCancel(() => {
-      debugLog('Upload cancellation requested by user');
-      abortController.abort();
-    });
-
-    // STEP 1: Establish Monarch account mapping (always needed for both balance and transactions)
+    // Resolve Monarch account mapping
     let monarchAccount = null;
     const savedMapping = GM_getValue(`${STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX}${rogersAccountId}`, null);
 
     if (savedMapping) {
-      try {
-        monarchAccount = JSON.parse(savedMapping);
-        debugLog('Using existing Monarch account mapping:', monarchAccount);
-      } catch (e) {
-        debugLog('Error parsing saved mapping, will prompt for new one:', e);
-      }
+      try { monarchAccount = JSON.parse(savedMapping); } catch (e) { /* ignore */ }
     }
 
-    // If no mapping exists, show the account selector
     if (!monarchAccount) {
       progressDialog.updateProgress(rogersAccountId, 'processing', 'Getting Monarch account mapping...');
-      debugLog('No Monarch account mapping found, showing account selector');
 
-      // Fetch Monarch credit card accounts (for Rogers Bank)
       const monarchAccounts = await monarchApi.listAccounts('credit');
-      if (!monarchAccounts || monarchAccounts.length === 0) {
-        throw new Error('No Monarch credit card accounts found. Please ensure you have credit card accounts in Monarch.');
-      }
+      if (!monarchAccounts?.length) throw new Error('No Monarch credit card accounts found.');
 
-      // Fetch current balance for display in account selector
-      let currentBalance = null;
-      try {
-        const balance = await fetchRogersBankBalance();
-        currentBalance = { amount: balance, currency: 'CAD' };
-      } catch (e) {
-        debugLog('Could not fetch balance for account selector display:', e);
-      }
-
-      // Show account selector with create option (pass 'credit' as account type)
       monarchAccount = await new Promise((resolve) => {
-        showMonarchAccountSelectorWithCreate(
-          monarchAccounts,
-          resolve,
-          null,
-          'credit',
-          {
-            defaultName: rogersAccountName,
-            defaultType: 'credit',
-            defaultSubtype: 'credit_card',
-            currentBalance,
-            accountType: 'Credit Card',
-          },
-        );
+        showMonarchAccountSelectorWithCreate(monarchAccounts, resolve, null, 'credit', {
+          defaultName: rogersAccountName,
+          defaultType: 'credit',
+          defaultSubtype: 'credit_card',
+          defaultBalance: currentBalance,
+          currentBalance: { amount: currentBalance, currency: 'CAD' },
+          accountType: 'Credit Card',
+        });
       });
 
       if (!monarchAccount) {
-        // User cancelled selection
-        progressDialog.updateProgress(rogersAccountId, 'error', 'Account mapping cancelled by user');
+        progressDialog.updateProgress(rogersAccountId, 'error', 'Cancelled');
         progressDialog.hideCancel();
         progressDialog.showSummary({ success: 0, failed: 1, total: 1 });
-        toast.show('Account selection cancelled', 'info');
-        return {
-          success: false,
-          message: 'Account selection cancelled by user',
-        };
+        return { success: false, message: 'Account selection cancelled' };
       }
 
-      // If this is a newly created account, set the Rogers Bank logo
       if (monarchAccount.newlyCreated) {
         try {
-          debugLog(`Setting Rogers Bank logo for newly created account ${monarchAccount.id}`);
           await monarchApi.setAccountLogo(monarchAccount.id, LOGO_CLOUDINARY_IDS.ROGERS);
-          debugLog(`Successfully set Rogers Bank logo for account ${monarchAccount.displayName}`);
-          toast.show(`Set Rogers Bank logo for ${monarchAccount.displayName}`, 'debug');
-        } catch (logoError) {
-          // Logo setting failed, but account creation succeeded - continue with warning
-          debugLog('Failed to set Rogers Bank logo for account:', logoError);
-          toast.show(`Warning: Failed to set logo for ${monarchAccount.displayName}`, 'warning');
-        }
+        } catch (e) { /* ignore */ }
       }
 
-      // Save the mapping for future use
-      GM_setValue(
-        `${STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX}${rogersAccountId}`,
-        JSON.stringify(monarchAccount),
-      );
-      debugLog(`Saved account mapping: ${rogersAccountName} -> ${monarchAccount.displayName}`);
-      progressDialog.updateProgress(rogersAccountId, 'processing', `Mapped to Monarch account: ${monarchAccount.displayName}`);
-    } else {
-      progressDialog.updateProgress(rogersAccountId, 'processing', `Using existing Monarch account mapping: ${monarchAccount.displayName}`);
+      GM_setValue(`${STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX}${rogersAccountId}`, JSON.stringify(monarchAccount));
     }
 
-    // STEP 2: Upload current balance to Monarch (now that we have account mapping)
-    try {
-      // Fetch current balance from Rogers Bank
-      progressDialog.updateStepStatus(rogersAccountId, 'balance', 'processing', 'Fetching balance...');
-      const currentBalance = await fetchRogersBankBalance();
+    // STEP 1: Sync credit limit
+    progressDialog.updateStepStatus(rogersAccountId, 'creditLimit', 'processing', 'Syncing...');
+    const creditLimitSuccess = await syncCreditLimit(rogersAccountId, monarchAccount.id, creditLimit);
+    if (creditLimitSuccess && creditLimit) {
+      progressDialog.updateStepStatus(rogersAccountId, 'creditLimit', 'success', `$${creditLimit.toLocaleString()}`);
+    } else if (creditLimit === null || creditLimit === undefined) {
+      progressDialog.updateStepStatus(rogersAccountId, 'creditLimit', 'skipped', 'Not available');
+    } else {
+      progressDialog.updateStepStatus(rogersAccountId, 'creditLimit', 'error', 'Sync failed');
+    }
 
-      // Generate balance CSV
-      progressDialog.updateStepStatus(rogersAccountId, 'balance', 'processing', 'Preparing data...');
+    // STEP 2: Upload balance
+    progressDialog.updateStepStatus(rogersAccountId, 'balance', 'processing', 'Preparing...');
+    let balanceUploadSuccess = false;
+    const todayFormatted = getTodayLocal();
+
+    if (firstSync && reconstructBalance) {
+      progressDialog.updateStepStatus(rogersAccountId, 'balance', 'processing', 'Fetching transactions...');
+      const txResult = await fetchRogersBankTransactions(fromDate, toDate);
+      const approvedTx = (txResult.transactions || []).filter((tx) => tx.activityStatus === 'APPROVED');
+
+      progressDialog.updateStepStatus(rogersAccountId, 'balance', 'processing', 'Reconstructing...');
+      const balanceHistory = reconstructBalanceFromTransactions(approvedTx, fromDate, todayFormatted, currentBalance);
+
+      if (balanceHistory.length > 0) {
+        const balanceCSV = generateBalanceHistoryCSV(balanceHistory, rogersAccountName);
+        progressDialog.updateStepStatus(rogersAccountId, 'balance', 'processing', 'Uploading...');
+        balanceUploadSuccess = await monarchApi.uploadBalance(monarchAccount.id, balanceCSV, fromDate, todayFormatted);
+
+        if (balanceUploadSuccess) {
+          getOrStoreBalanceCheckpoint(rogersAccountId, { date: todayFormatted, amount: currentBalance });
+          progressDialog.updateStepStatus(rogersAccountId, 'balance', 'success', `${balanceHistory.length} days`);
+          progressDialog.updateBalanceChange(rogersAccountId, { newBalance: currentBalance });
+        } else {
+          progressDialog.updateStepStatus(rogersAccountId, 'balance', 'error', 'Upload failed');
+        }
+      } else {
+        progressDialog.updateStepStatus(rogersAccountId, 'balance', 'error', 'No data');
+      }
+    } else {
       const balanceCSV = generateBalanceCSV(currentBalance, rogersAccountName);
-
-      // Upload balance to Monarch
-      progressDialog.updateStepStatus(rogersAccountId, 'balance', 'processing', 'Uploading balance');
-      const todayFormatted = getTodayLocal();
-      const balanceUploadSuccess = await monarchApi.uploadBalance(
-        monarchAccount.id, // Use actual Monarch account ID
-        balanceCSV,
-        todayFormatted, // fromDate = today
-        todayFormatted, // toDate = today
-      );
+      balanceUploadSuccess = await monarchApi.uploadBalance(monarchAccount.id, balanceCSV, todayFormatted, todayFormatted);
 
       if (balanceUploadSuccess) {
-        const formattedBalance = `$${Math.abs(currentBalance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        progressDialog.updateStepStatus(rogersAccountId, 'balance', 'success', formattedBalance);
+        const formatted = `$${Math.abs(currentBalance).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+        progressDialog.updateStepStatus(rogersAccountId, 'balance', 'success', formatted);
         progressDialog.updateBalanceChange(rogersAccountId, { newBalance: currentBalance });
-        debugLog(`Successfully uploaded balance ${currentBalance} for ${rogersAccountName}`);
       } else {
-        // Balance upload failed, but continue with transactions
         progressDialog.updateStepStatus(rogersAccountId, 'balance', 'error', 'Upload failed');
-        debugLog('Balance upload failed, but continuing with transaction upload');
       }
-    } catch (balanceError) {
-      // Balance upload failed, but continue with transactions
-      progressDialog.updateStepStatus(rogersAccountId, 'balance', 'error', balanceError.message);
-      debugLog('Balance upload failed:', balanceError);
     }
 
-    // STEP 3: Fetch and process transactions if any exist
-    progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Fetching transactions');
-
-    // Check for cancellation before fetching
+    // STEP 3: Upload transactions
     if (abortController.signal.aborted) {
-      progressDialog?.updateProgress(rogersAccountId, 'error', 'Upload cancelled');
-      progressDialog?.hideCancel();
-      return { success: false, message: 'Upload cancelled by user' };
+      progressDialog.updateProgress(rogersAccountId, 'error', 'Cancelled');
+      progressDialog.hideCancel();
+      return { success: false, message: 'Cancelled' };
     }
 
-    // Fetch transactions
-    const result = await fetchRogersBankTransactions(fromDate, toDate);
+    progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Fetching...');
+    const txResult = await fetchRogersBankTransactions(fromDate, toDate);
 
-    // Check for cancellation after fetching
-    if (abortController.signal.aborted) {
-      progressDialog?.updateProgress(rogersAccountId, 'error', 'Upload cancelled');
-      progressDialog?.hideCancel();
-      return { success: false, message: 'Upload cancelled by user' };
-    }
+    if (txResult.success && txResult.transactions.length > 0) {
+      const approvedTx = txResult.transactions.filter((tx) => tx.activityStatus === 'APPROVED');
 
-    if (result.success && result.transactions.length > 0) {
-      // Log first 3 transactions for testing
-      debugLog('First 3 transactions:', result.transactions.slice(0, 3));
-
-      // Update progress - filtering transactions
-      progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', `Processing ${result.transactions.length}...`);
-
-      // Filter only approved transactions
-      const approvedTransactions = result.transactions.filter(
-        (transaction) => transaction.activityStatus === 'APPROVED',
-      );
-
-      debugLog(`Filtered ${approvedTransactions.length} approved transactions from ${result.transactions.length} total`);
-
-      if (approvedTransactions.length === 0) {
-        progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', 'No transactions');
+      if (approvedTx.length === 0) {
+        progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', 'No approved');
         progressDialog.hideCancel();
         progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
-        toast.show('Balance uploaded successfully. No approved transactions found to upload', 'info');
-        return {
-          success: true,
-          message: 'Balance uploaded successfully. No approved transactions found.',
-          data: { ...result, transactions: approvedTransactions },
-        };
+        return { success: true, message: 'Balance uploaded. No approved transactions.' };
       }
 
-      // Filter out duplicate transactions
       progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Checking duplicates...');
-      const filterResult = filterDuplicateTransactions(approvedTransactions, rogersAccountId);
-      const transactionsToUpload = filterResult.transactions;
+      const filterResult = filterDuplicateTransactions(approvedTx, rogersAccountId);
 
-      if (transactionsToUpload.length === 0) {
-        const message = filterResult.duplicateCount > 0
-          ? `${filterResult.duplicateCount} already uploaded`
-          : 'No new transactions';
-        progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', message);
+      if (filterResult.transactions.length === 0) {
+        const msg = filterResult.duplicateCount > 0 ? `${filterResult.duplicateCount} already uploaded` : 'No new';
+        progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', msg);
         progressDialog.hideCancel();
         progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
-        toast.show(`Balance uploaded successfully. ${message}`, 'info');
-        return {
-          success: true,
-          message: `Balance uploaded successfully. ${message}`,
-          data: {
-            ...result,
-            transactions: transactionsToUpload,
-            skippedDuplicates: filterResult.duplicateCount,
-          },
-        };
+        return { success: true, message: `Balance uploaded. ${msg}` };
       }
 
-      // Show info about duplicates if any
-      if (filterResult.duplicateCount > 0) {
-        debugLog(`Processing ${transactionsToUpload.length} new transactions (skipped ${filterResult.duplicateCount} duplicates)`);
-        progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', `${transactionsToUpload.length} new (${filterResult.duplicateCount} skipped)`);
-      } else {
-        progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', `${transactionsToUpload.length} to upload`);
-      }
-
-      // Check for cancellation before category resolution
-      if (abortController.signal.aborted) {
-        progressDialog?.updateProgress(rogersAccountId, 'error', 'Upload cancelled');
-        progressDialog?.hideCancel();
-        return { success: false, message: 'Upload cancelled by user' };
-      }
-
-      // Resolve categories for all transactions (handle automatic mapping and manual selection)
       progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Resolving categories...');
-      const transactionsWithResolvedCategories = await resolveCategoriesForTransactions(transactionsToUpload);
+      const resolvedTx = await resolveCategoriesForTransactions(filterResult.transactions);
 
-      // Check for cancellation after category resolution
-      if (abortController.signal.aborted) {
-        progressDialog?.updateProgress(rogersAccountId, 'error', 'Upload cancelled');
-        progressDialog?.hideCancel();
-        return { success: false, message: 'Upload cancelled by user' };
-      }
+      progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Converting...');
+      const csvData = convertTransactionsToMonarchCSV(resolvedTx, rogersAccountName);
+      if (!csvData) throw new Error('Failed to convert transactions to CSV');
 
-      // Convert transactions to Monarch CSV format (use transactions with resolved categories)
-      progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Converting to CSV...');
-      const csvData = convertTransactionsToMonarchCSV(transactionsWithResolvedCategories, rogersAccountName);
-
-      if (!csvData) {
-        throw new Error('Failed to convert transactions to CSV');
-      }
-
-      // Check for cancellation before upload
-      if (abortController.signal.aborted) {
-        progressDialog?.updateProgress(rogersAccountId, 'error', 'Upload cancelled');
-        progressDialog?.hideCancel();
-        return { success: false, message: 'Upload cancelled by user' };
-      }
-
-      // Upload to Monarch with balance update enabled
       progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Uploading...');
-
       const filename = `rogers_transactions_${fromDate}_to_${toDate}.csv`;
-      const uploadSuccess = await monarchApi.uploadTransactions(
-        monarchAccount.id,
-        csvData,
-        filename,
-        true, // shouldUpdateBalance = true
-        false, // skipCheckForDuplicates = false
-      );
+      const uploadSuccess = await monarchApi.uploadTransactions(monarchAccount.id, csvData, filename, true, false);
 
       if (uploadSuccess) {
-        // Save reference numbers with dates for successful uploads
-        const referenceNumbers = transactionsToUpload
-          .map((transaction) => transaction.referenceNumber)
-          .filter((ref) => ref); // Filter out any null/undefined references
-
-        if (referenceNumbers.length > 0) {
-          // Extract the most recent transaction date (or use today as fallback)
-          let transactionDate = getTodayLocal();
-          const transactionsWithDates = transactionsToUpload.filter((transaction) => transaction.activityDate);
-          if (transactionsWithDates.length > 0) {
-            // Find the most recent transaction date
-            const mostRecentDate = transactionsWithDates
-              .map((transaction) => new Date(transaction.activityDate))
-              .sort((a, b) => b - a)[0];
-            transactionDate = mostRecentDate.toISOString().split('T')[0];
+        const refs = filterResult.transactions.map((tx) => tx.referenceNumber).filter(Boolean);
+        if (refs.length > 0) {
+          let txDate = getTodayLocal();
+          const withDates = filterResult.transactions.filter((tx) => tx.activityDate);
+          if (withDates.length > 0) {
+            txDate = withDates.map((tx) => new Date(tx.activityDate)).sort((a, b) => b - a)[0].toISOString().split('T')[0];
           }
-
-          // Use new transaction storage utility with dates
-          saveUploadedTransactions(rogersAccountId, referenceNumbers, 'rogersbank', transactionDate);
+          saveUploadedTransactions(rogersAccountId, refs, 'rogersbank', txDate);
         }
 
-        // Save last upload date for future uploads with configurable lookback
         saveLastUploadDate(rogersAccountId, getTodayLocal(), 'rogersbank');
 
-        const successMessage = filterResult.duplicateCount > 0
-          ? `${transactionsToUpload.length} uploaded (${filterResult.duplicateCount} skipped)`
-          : `${transactionsToUpload.length} uploaded`;
+        const msg = filterResult.duplicateCount > 0
+          ? `${filterResult.transactions.length} uploaded (${filterResult.duplicateCount} skipped)`
+          : `${filterResult.transactions.length} uploaded`;
 
-        progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', successMessage);
+        progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', msg);
         progressDialog.hideCancel();
         progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
+        toast.show(`${msg} to Monarch!`, 'info');
 
-        // Also show toast for user confirmation
-        toast.show(`${successMessage} to Monarch!`, 'info');
-
-        return {
-          success: true,
-          message: `${successMessage} to Monarch!`,
-          data: {
-            ...result,
-            transactions: transactionsToUpload,
-            skippedDuplicates: filterResult.duplicateCount,
-            monarchAccountId: monarchAccount.id,
-            monarchAccountName: monarchAccount.displayName,
-          },
-        };
+        return { success: true, message: `${msg} to Monarch!` };
       }
       throw new Error('Upload to Monarch failed');
     }
 
-    if (result.transactions.length === 0) {
-      progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', 'No transactions');
-      progressDialog.hideCancel();
-      progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
-      toast.show('Balance uploaded successfully. No transactions found in the specified date range', 'info');
-      return {
-        success: true,
-        message: 'Balance uploaded successfully. No transactions found',
-        data: result,
-      };
-    }
-
-    // Fallback return for any edge case
-    progressDialog?.updateProgress(rogersAccountId, 'error', 'Unexpected error occurred');
-    progressDialog?.hideCancel();
-    progressDialog?.showSummary({ success: 0, failed: 1, total: 1 });
-    return {
-      success: false,
-      message: 'Unexpected error occurred',
-    };
+    progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', 'No transactions');
+    progressDialog.hideCancel();
+    progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
+    return { success: true, message: 'Balance uploaded. No transactions found.' };
   } catch (error) {
-    debugLog('Error in Rogers Bank upload service:', error);
-
-    // Update progress dialog with error if it exists
+    debugLog('Error in Rogers Bank upload:', error);
     if (progressDialog && rogersAccountId) {
-      progressDialog.updateProgress(rogersAccountId, 'error', `Upload failed: ${error.message}`);
+      progressDialog.updateProgress(rogersAccountId, 'error', `Failed: ${error.message}`);
       progressDialog.hideCancel();
       progressDialog.showSummary({ success: 0, failed: 1, total: 1 });
     }
-
-    // Also show error toast for user confirmation
     toast.show(`Error: ${error.message}`, 'error');
-    return {
-      success: false,
-      message: error.message,
-      error,
-    };
+    return { success: false, message: error.message, error };
   }
 }
 
 export default {
   uploadRogersBankToMonarch,
   fetchRogersBankTransactions,
-  getFromDate,
+  isFirstSync,
   getEndOfCurrentMonth,
 };

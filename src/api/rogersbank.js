@@ -384,10 +384,11 @@ export function clearRogersBankCredentials() {
 }
 
 /**
- * Fetch current account balance from Rogers Bank API
- * @returns {Promise<number>} Current balance (as negative value for credit card)
+ * Fetch account details from Rogers Bank API
+ * Returns balance, credit limit, and account opened date in a single API call
+ * @returns {Promise<Object>} Account details object {balance, creditLimit, openedDate}
  */
-export async function fetchRogersBankBalance() {
+export async function fetchRogersBankAccountDetails() {
   try {
     const creds = getRogersBankCredentials();
 
@@ -399,7 +400,7 @@ export async function fetchRogersBankBalance() {
 
     const url = `https://selfserve.apis.rogersbank.com/corebank/v1/account/${creds.accountId}/customer/${creds.customerId}/detail`;
 
-    debugLog('Fetching Rogers Bank balance from:', url);
+    debugLog('Fetching Rogers Bank account details from:', url);
 
     const response = await fetch(url, {
       method: 'GET',
@@ -431,18 +432,51 @@ export async function fetchRogersBankBalance() {
       throw new Error('Current balance not found in API response');
     }
 
-    // Convert to number
+    // Convert balance to number
     const balanceValue = parseFloat(currentBalance);
     if (Number.isNaN(balanceValue)) {
       throw new Error('Invalid balance value received from API');
     }
 
-    debugLog(`Rogers Bank current balance: ${balanceValue}`);
-    return balanceValue;
+    // Extract credit limit
+    const creditLimitValue = data.accountDetail?.creditLimit?.value;
+    let creditLimit = null;
+    if (creditLimitValue !== undefined && creditLimitValue !== null) {
+      creditLimit = parseFloat(creditLimitValue);
+      if (Number.isNaN(creditLimit)) {
+        debugLog('Warning: Invalid credit limit value, setting to null');
+        creditLimit = null;
+      }
+    }
+
+    // Extract account opened date (YYYY-MM-DD format expected)
+    const openedDate = data.accountDetail?.openedDate || null;
+
+    debugLog('Rogers Bank account details:', {
+      balance: balanceValue,
+      creditLimit,
+      openedDate,
+    });
+
+    return {
+      balance: balanceValue,
+      creditLimit,
+      openedDate,
+    };
   } catch (error) {
-    debugLog('Error fetching Rogers Bank balance:', error);
+    debugLog('Error fetching Rogers Bank account details:', error);
     throw error;
   }
+}
+
+/**
+ * Fetch current account balance from Rogers Bank API
+ * @deprecated Use fetchRogersBankAccountDetails() instead for better efficiency
+ * @returns {Promise<number>} Current balance (as negative value for credit card)
+ */
+export async function fetchRogersBankBalance() {
+  const details = await fetchRogersBankAccountDetails();
+  return details.balance;
 }
 
 // Export as default object
@@ -452,5 +486,6 @@ export default {
   checkCredentialStatus,
   setupCredentialInterception,
   clearRogersBankCredentials,
+  fetchRogersBankAccountDetails,
   fetchRogersBankBalance,
 };

@@ -48,6 +48,11 @@ jest.mock('../../src/core/config', () => ({
     ROGERSBANK_UPLOADED_REFS_PREFIX: 'rogersbank_uploaded_refs_',
     ROGERSBANK_LAST_UPLOAD_DATE_PREFIX: 'rogersbank_last_upload_date_',
     ROGERSBANK_LOOKBACK_DAYS: 'rogersbank_lookback_days',
+    ROGERSBANK_LAST_CREDIT_LIMIT_PREFIX: 'rogersbank_last_credit_limit_',
+    ROGERSBANK_BALANCE_CHECKPOINT_PREFIX: 'rogersbank_balance_checkpoint_',
+  },
+  LOGO_CLOUDINARY_IDS: {
+    ROGERS: 'production/account_logos/rogers',
   },
 }));
 
@@ -65,7 +70,7 @@ jest.mock('../../src/core/state', () => ({
 jest.mock('../../src/api/rogersbank', () => ({
   getRogersBankCredentials: jest.fn(),
   checkRogersBankAuth: jest.fn(),
-  fetchRogersBankBalance: jest.fn(),
+  fetchRogersBankAccountDetails: jest.fn(),
 }));
 
 jest.mock('../../src/api/monarch', () => ({
@@ -75,6 +80,8 @@ jest.mock('../../src/api/monarch', () => ({
     uploadTransactions: jest.fn(),
     uploadBalance: jest.fn(),
     getCategoriesAndGroups: jest.fn(),
+    setCreditLimit: jest.fn().mockResolvedValue(true),
+    setAccountLogo: jest.fn().mockResolvedValue(true),
   },
 }));
 
@@ -98,7 +105,7 @@ jest.mock('../../src/ui/components/progressDialog', () => ({
 }));
 
 jest.mock('../../src/ui/components/datePicker', () => ({
-  showDatePickerPromise: jest.fn(),
+  showDatePickerWithOptionsPromise: jest.fn(),
 }));
 
 jest.mock('../../src/ui/components/accountSelectorWithCreate', () => ({
@@ -135,10 +142,10 @@ globalThis.GM_xmlhttpRequest = jest.fn();
 
 describe('Rogers Bank Upload Service', () => {
   let getRogersBankCredentials;
-  let fetchRogersBankBalance;
+  let fetchRogersBankAccountDetails;
   let monarchApi;
   let toast;
-  let showDatePickerPromise;
+  let showDatePickerWithOptionsPromise;
   let showMonarchAccountSelectorWithCreate;
   let showProgressDialog;
   let convertTransactionsToMonarchCSV;
@@ -155,11 +162,11 @@ describe('Rogers Bank Upload Service', () => {
     // Get all the mocked modules
     const rogersbankMock = jest.requireMock('../../src/api/rogersbank');
     getRogersBankCredentials = rogersbankMock.getRogersBankCredentials;
-    fetchRogersBankBalance = rogersbankMock.fetchRogersBankBalance;
+    fetchRogersBankAccountDetails = rogersbankMock.fetchRogersBankAccountDetails;
 
     monarchApi = jest.requireMock('../../src/api/monarch').default;
     toast = jest.requireMock('../../src/ui/toast').default;
-    showDatePickerPromise = jest.requireMock('../../src/ui/components/datePicker').showDatePickerPromise;
+    showDatePickerWithOptionsPromise = jest.requireMock('../../src/ui/components/datePicker').showDatePickerWithOptionsPromise;
     showMonarchAccountSelectorWithCreate = jest.requireMock('../../src/ui/components/accountSelectorWithCreate').showMonarchAccountSelectorWithCreate;
     showProgressDialog = jest.requireMock('../../src/ui/components/progressDialog').showProgressDialog;
     convertTransactionsToMonarchCSV = jest.requireMock('../../src/utils/csv').convertTransactionsToMonarchCSV;
@@ -210,7 +217,7 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: null,
       });
 
-      showDatePickerPromise.mockResolvedValue('2024-01-01');
+      showDatePickerWithOptionsPromise.mockResolvedValue('2024-01-01');
 
       await uploadRogersBankToMonarch();
 
@@ -230,7 +237,7 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: 'test-device',
       });
 
-      showDatePickerPromise.mockResolvedValue(null);
+      showDatePickerWithOptionsPromise.mockResolvedValue(null);
 
       const result = await uploadRogersBankToMonarch();
 
@@ -248,7 +255,7 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: 'test-device',
       });
 
-      showDatePickerPromise.mockResolvedValue('2024-01-01');
+      showDatePickerWithOptionsPromise.mockResolvedValue('2024-01-01');
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
       globalThis.GM_getValue.mockReturnValue(null); // No saved mapping
 
@@ -269,7 +276,7 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: 'test-device',
       });
 
-      showDatePickerPromise.mockResolvedValue('2024-01-01');
+      showDatePickerWithOptionsPromise.mockResolvedValue('2024-01-01');
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
       globalThis.GM_getValue.mockReturnValue(null); // No saved mapping
       monarchApi.listAccounts.mockResolvedValue([
@@ -300,7 +307,7 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: 'test-device',
       });
 
-      showDatePickerPromise.mockResolvedValue('2024-01-01');
+      showDatePickerWithOptionsPromise.mockResolvedValue('2024-01-01');
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
 
       // Mock existing account mapping
@@ -309,7 +316,7 @@ describe('Rogers Bank Upload Service', () => {
       );
 
       // Mock successful balance fetch
-      fetchRogersBankBalance.mockResolvedValue(-1500.50);
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1500.50, creditLimit: 5000, openedDate: "2023-01-01" });
       monarchApi.uploadBalance.mockResolvedValue(true);
 
       // Mock fetch to return no transactions
@@ -327,7 +334,7 @@ describe('Rogers Bank Upload Service', () => {
 
       expect(result.success).toBe(true);
       expect(result.message).toContain('Balance uploaded successfully');
-      expect(fetchRogersBankBalance).toHaveBeenCalled();
+      expect(fetchRogersBankAccountDetails).toHaveBeenCalled();
       expect(monarchApi.uploadBalance).toHaveBeenCalledWith(
         'monarch123',
         expect.stringContaining('-1500.5'),
@@ -347,14 +354,14 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: 'test-device',
       });
 
-      showDatePickerPromise.mockResolvedValue('2024-01-01');
+      showDatePickerWithOptionsPromise.mockResolvedValue('2024-01-01');
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
       globalThis.GM_getValue.mockReturnValue(
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
       );
 
       // Mock balance fetch failure
-      fetchRogersBankBalance.mockRejectedValue(new Error('Balance fetch failed'));
+      fetchRogersBankAccountDetails.mockRejectedValue(new Error('Balance fetch failed'));
 
       // Mock transactions
       global.fetch.mockResolvedValue({
@@ -404,13 +411,13 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: 'test-device',
       });
 
-      showDatePickerPromise.mockResolvedValue('2024-01-01');
+      showDatePickerWithOptionsPromise.mockResolvedValue('2024-01-01');
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
       globalThis.GM_getValue.mockReturnValue(
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
       );
 
-      fetchRogersBankBalance.mockResolvedValue(-1000);
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: "2023-01-01" });
       monarchApi.uploadBalance.mockResolvedValue(true);
 
       // Mock transactions with mixed statuses
@@ -473,7 +480,7 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: 'test-device',
       });
 
-      showDatePickerPromise.mockResolvedValue('2024-01-01');
+      showDatePickerWithOptionsPromise.mockResolvedValue('2024-01-01');
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
       globalThis.GM_getValue.mockImplementation((key) => {
         if (key.includes('rogersbank_account_')) {
@@ -485,7 +492,7 @@ describe('Rogers Bank Upload Service', () => {
       // Mock that REF1 is already uploaded
       getUploadedTransactionIds.mockReturnValue(['REF1']);
 
-      fetchRogersBankBalance.mockResolvedValue(-1000);
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: "2023-01-01" });
       monarchApi.uploadBalance.mockResolvedValue(true);
 
       global.fetch.mockResolvedValue({
@@ -540,7 +547,7 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: 'test-device',
       });
 
-      showDatePickerPromise.mockResolvedValue('2024-01-01');
+      showDatePickerWithOptionsPromise.mockResolvedValue('2024-01-01');
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
       globalThis.GM_getValue.mockImplementation((key) => {
         if (key.includes('rogersbank_account_')) {
@@ -552,7 +559,7 @@ describe('Rogers Bank Upload Service', () => {
       // Mock that both REF1 and REF2 are already uploaded
       getUploadedTransactionIds.mockReturnValue(['REF1', 'REF2']);
 
-      fetchRogersBankBalance.mockResolvedValue(-1000);
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: "2023-01-01" });
       monarchApi.uploadBalance.mockResolvedValue(true);
 
       global.fetch.mockResolvedValue({
@@ -599,7 +606,7 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: 'test-device',
       });
 
-      showDatePickerPromise.mockResolvedValue('2024-01-01');
+      showDatePickerWithOptionsPromise.mockResolvedValue('2024-01-01');
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
       globalThis.GM_getValue.mockReturnValue(
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
@@ -608,7 +615,7 @@ describe('Rogers Bank Upload Service', () => {
       // Explicitly mock no uploaded transactions
       getUploadedTransactionIds.mockReturnValue([]);
 
-      fetchRogersBankBalance.mockResolvedValue(-1000);
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: "2023-01-01" });
       monarchApi.uploadBalance.mockResolvedValue(true);
 
       global.fetch.mockResolvedValue({
@@ -665,7 +672,7 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: 'test-device',
       });
 
-      showDatePickerPromise.mockResolvedValue('2024-01-01');
+      showDatePickerWithOptionsPromise.mockResolvedValue('2024-01-01');
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
       globalThis.GM_getValue.mockReturnValue(
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
@@ -674,7 +681,7 @@ describe('Rogers Bank Upload Service', () => {
       // Explicitly mock no uploaded transactions
       getUploadedTransactionIds.mockReturnValue([]);
 
-      fetchRogersBankBalance.mockResolvedValue(-1000);
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: "2023-01-01" });
       monarchApi.uploadBalance.mockResolvedValue(true);
 
       global.fetch.mockResolvedValue({
@@ -753,7 +760,7 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: 'test-device',
       });
 
-      showDatePickerPromise.mockResolvedValue('2024-01-01');
+      showDatePickerWithOptionsPromise.mockResolvedValue('2024-01-01');
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
       globalThis.GM_getValue.mockReturnValue(
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
@@ -762,7 +769,7 @@ describe('Rogers Bank Upload Service', () => {
       // Explicitly mock no uploaded transactions
       getUploadedTransactionIds.mockReturnValue([]);
 
-      fetchRogersBankBalance.mockResolvedValue(-1000);
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: "2023-01-01" });
       monarchApi.uploadBalance.mockResolvedValue(true);
 
       global.fetch.mockResolvedValue({
@@ -813,13 +820,13 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: 'test-device',
       });
 
-      showDatePickerPromise.mockResolvedValue('2024-01-01');
+      showDatePickerWithOptionsPromise.mockResolvedValue('2024-01-01');
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
       globalThis.GM_getValue.mockReturnValue(
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
       );
 
-      fetchRogersBankBalance.mockResolvedValue(-1000);
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: "2023-01-01" });
       monarchApi.uploadBalance.mockResolvedValue(true);
 
       // Mock API failure
@@ -845,13 +852,13 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: 'test-device',
       });
 
-      showDatePickerPromise.mockResolvedValue('2024-01-01');
+      showDatePickerWithOptionsPromise.mockResolvedValue('2024-01-01');
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
       globalThis.GM_getValue.mockReturnValue(
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
       );
 
-      fetchRogersBankBalance.mockResolvedValue(-1000);
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: "2023-01-01" });
       monarchApi.uploadBalance.mockResolvedValue(true);
 
       // Mock invalid response structure
@@ -876,13 +883,13 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: 'test-device',
       });
 
-      showDatePickerPromise.mockResolvedValue('2024-01-01');
+      showDatePickerWithOptionsPromise.mockResolvedValue('2024-01-01');
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
       globalThis.GM_getValue.mockReturnValue(
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
       );
 
-      fetchRogersBankBalance.mockResolvedValue(-1000);
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: "2023-01-01" });
       monarchApi.uploadBalance.mockResolvedValue(true);
 
       // Mock network error
@@ -908,13 +915,13 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: 'test-device',
       });
 
-      showDatePickerPromise.mockResolvedValue('2024-01-01');
+      showDatePickerWithOptionsPromise.mockResolvedValue('2024-01-01');
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
       globalThis.GM_getValue.mockReturnValue(
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
       );
 
-      fetchRogersBankBalance.mockResolvedValue(-1000);
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: "2023-01-01" });
       monarchApi.uploadBalance.mockResolvedValue(true);
 
       // Mock response with invalid JSON
@@ -955,13 +962,13 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: 'test-device',
       });
 
-      showDatePickerPromise.mockResolvedValue('2024-01-01');
+      showDatePickerWithOptionsPromise.mockResolvedValue('2024-01-01');
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
       globalThis.GM_getValue.mockReturnValue(
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
       );
 
-      fetchRogersBankBalance.mockResolvedValue(-1500);
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1500, creditLimit: 5000, openedDate: "2023-01-01" });
       monarchApi.uploadBalance.mockResolvedValue(true);
 
       global.fetch.mockResolvedValue({
@@ -1024,7 +1031,7 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: 'test-device',
       });
 
-      showDatePickerPromise.mockResolvedValue('2024-01-01');
+      showDatePickerWithOptionsPromise.mockResolvedValue('2024-01-01');
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
       globalThis.GM_getValue.mockReturnValue(
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
@@ -1036,7 +1043,7 @@ describe('Rogers Bank Upload Service', () => {
         cancelCallback = callback;
       });
 
-      fetchRogersBankBalance.mockImplementation(() => {
+      fetchRogersBankAccountDetails.mockImplementation(() => {
         // Trigger cancellation during balance fetch
         if (cancelCallback) cancelCallback();
         return Promise.resolve(-1500);
@@ -1060,13 +1067,13 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: 'test-device',
       });
 
-      showDatePickerPromise.mockResolvedValue('2024-01-01');
+      showDatePickerWithOptionsPromise.mockResolvedValue('2024-01-01');
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
       globalThis.GM_getValue.mockReturnValue(
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
       );
 
-      fetchRogersBankBalance.mockResolvedValue(-1500);
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1500, creditLimit: 5000, openedDate: "2023-01-01" });
       monarchApi.uploadBalance.mockResolvedValue(true);
 
       global.fetch.mockResolvedValue({
@@ -1096,7 +1103,7 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: 'test-device',
       });
 
-      showDatePickerPromise.mockResolvedValue('2024-01-01');
+      showDatePickerWithOptionsPromise.mockResolvedValue('2024-01-01');
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
       globalThis.GM_getValue.mockReturnValue(
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
@@ -1105,7 +1112,7 @@ describe('Rogers Bank Upload Service', () => {
       // Explicitly mock no uploaded transactions
       getUploadedTransactionIds.mockReturnValue([]);
 
-      fetchRogersBankBalance.mockResolvedValue(-1000);
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: "2023-01-01" });
       monarchApi.uploadBalance.mockResolvedValue(true);
 
       global.fetch.mockResolvedValue({
@@ -1151,7 +1158,7 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: 'test-device',
       });
 
-      showDatePickerPromise.mockResolvedValue('2024-01-01');
+      showDatePickerWithOptionsPromise.mockResolvedValue('2024-01-01');
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
       globalThis.GM_getValue.mockReturnValue(
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
@@ -1160,7 +1167,7 @@ describe('Rogers Bank Upload Service', () => {
       // Explicitly mock no uploaded transactions
       getUploadedTransactionIds.mockReturnValue([]);
 
-      fetchRogersBankBalance.mockResolvedValue(-1000);
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: "2023-01-01" });
       monarchApi.uploadBalance.mockResolvedValue(true);
 
       global.fetch.mockResolvedValue({
@@ -1209,7 +1216,7 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: 'test-device',
       });
 
-      showDatePickerPromise.mockResolvedValue('2024-01-01');
+      showDatePickerWithOptionsPromise.mockResolvedValue('2024-01-01');
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
       globalThis.GM_getValue.mockReturnValue(
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
@@ -1218,7 +1225,7 @@ describe('Rogers Bank Upload Service', () => {
       // Explicitly mock no uploaded transactions
       getUploadedTransactionIds.mockReturnValue([]);
 
-      fetchRogersBankBalance.mockResolvedValue(-1000);
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: "2023-01-01" });
       monarchApi.uploadBalance.mockResolvedValue(true);
 
       // Generate 100 transactions
@@ -1272,7 +1279,7 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: 'test-device',
       });
 
-      showDatePickerPromise.mockResolvedValue('2024-01-01');
+      showDatePickerWithOptionsPromise.mockResolvedValue('2024-01-01');
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
       globalThis.GM_getValue.mockReturnValue(
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
@@ -1281,7 +1288,7 @@ describe('Rogers Bank Upload Service', () => {
       // Explicitly mock no uploaded transactions
       getUploadedTransactionIds.mockReturnValue([]);
 
-      fetchRogersBankBalance.mockResolvedValue(-1000);
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: "2023-01-01" });
       monarchApi.uploadBalance.mockResolvedValue(true);
 
       global.fetch.mockResolvedValue({
@@ -1342,7 +1349,7 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: 'test-device',
       });
 
-      showDatePickerPromise.mockResolvedValue('2024-01-01');
+      showDatePickerWithOptionsPromise.mockResolvedValue('2024-01-01');
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
 
       // Mock existing references and account mapping
@@ -1356,7 +1363,7 @@ describe('Rogers Bank Upload Service', () => {
       // Mock existing uploaded transactions
       getUploadedTransactionIds.mockReturnValue(['OLD_REF1', 'OLD_REF2']);
 
-      fetchRogersBankBalance.mockResolvedValue(-1000);
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: "2023-01-01" });
       monarchApi.uploadBalance.mockResolvedValue(true);
 
       global.fetch.mockResolvedValue({
