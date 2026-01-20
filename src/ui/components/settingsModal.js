@@ -679,10 +679,153 @@ function renderCanadaLifeTab(container) {
 }
 
 /**
+ * Clears all Rogers Bank settings except category mappings
+ * @returns {number} Number of keys deleted
+ */
+function clearRogersBankSettings() {
+  const allKeys = GM_listValues();
+  let deletedCount = 0;
+
+  // Fixed keys to delete
+  const fixedKeysToDelete = [
+    STORAGE.ROGERSBANK_AUTH_TOKEN,
+    STORAGE.ROGERSBANK_ACCOUNT_ID,
+    STORAGE.ROGERSBANK_CUSTOMER_ID,
+    STORAGE.ROGERSBANK_ACCOUNT_ID_ENCODED,
+    STORAGE.ROGERSBANK_CUSTOMER_ID_ENCODED,
+    STORAGE.ROGERSBANK_DEVICE_ID,
+    STORAGE.ROGERSBANK_LAST_UPDATED,
+    STORAGE.ROGERSBANK_FROM_DATE,
+    STORAGE.ROGERSBANK_STORE_TX_DETAILS_IN_NOTES,
+    STORAGE.ROGERSBANK_LOOKBACK_DAYS,
+    STORAGE.ROGERSBANK_TRANSACTION_RETENTION_DAYS,
+    STORAGE.ROGERSBANK_TRANSACTION_RETENTION_COUNT,
+    STORAGE.ROGERSBANK_ACCOUNTS_LIST,
+  ];
+
+  // Prefixes for dynamic keys to delete
+  const prefixesToDelete = [
+    STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX,
+    STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX,
+    STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX,
+    STORAGE.ROGERSBANK_LAST_CREDIT_LIMIT_PREFIX,
+    STORAGE.ROGERSBANK_BALANCE_CHECKPOINT_PREFIX,
+  ];
+
+  // Delete fixed keys
+  fixedKeysToDelete.forEach((key) => {
+    if (GM_getValue(key) !== undefined) {
+      GM_deleteValue(key);
+      deletedCount++;
+      debugLog(`Deleted Rogers Bank setting: ${key}`);
+    }
+  });
+
+  // Delete prefixed keys (except category mappings)
+  allKeys.forEach((key) => {
+    for (const prefix of prefixesToDelete) {
+      if (key.startsWith(prefix)) {
+        GM_deleteValue(key);
+        deletedCount++;
+        debugLog(`Deleted Rogers Bank setting: ${key}`);
+        break;
+      }
+    }
+  });
+
+  return deletedCount;
+}
+
+/**
  * Renders the Rogers Bank settings tab
  * @param {HTMLElement} container - Container element
  */
 function renderRogersBankTab(container) {
+  // Connection Section
+  const connectionSection = createSection('Connection', '🔗', 'Manage Rogers Bank connection');
+  const connectionContainer = document.createElement('div');
+  connectionContainer.style.cssText = 'margin: 10px 0;';
+
+  const isConnected = checkInstitutionConnection('rogersbank');
+
+  // Connection status display
+  const statusDisplay = document.createElement('div');
+  statusDisplay.id = 'rogersbank-connection-status';
+  statusDisplay.style.cssText = `
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 15px;
+    background: ${isConnected ? '#d4edda' : '#f8d7da'};
+    border: 1px solid ${isConnected ? '#c3e6cb' : '#f5c6cb'};
+    border-radius: 8px;
+    margin-bottom: 10px;
+  `;
+
+  const statusInfo = document.createElement('div');
+  statusInfo.innerHTML = `
+    <div style="font-weight: 500; font-size: 14px; color: ${isConnected ? '#155724' : '#721c24'};">
+      ${isConnected ? '✅ Connected' : '❌ Not connected'}
+    </div>
+    <div style="font-size: 12px; color: ${isConnected ? '#155724' : '#721c24'}; margin-top: 2px;">
+      ${isConnected ? 'Rogers Bank credentials are stored' : 'Log in to Rogers Bank to capture credentials'}
+    </div>
+  `;
+  statusDisplay.appendChild(statusInfo);
+
+  // Remove Connection button (only show if connected)
+  if (isConnected) {
+    const removeButton = document.createElement('button');
+    removeButton.id = 'rogersbank-remove-connection-btn';
+    removeButton.textContent = 'Remove Connection';
+    removeButton.style.cssText = `
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      background: #dc3545;
+      color: white;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: background-color 0.2s;
+    `;
+
+    removeButton.addEventListener('click', async () => {
+      const confirmed = await showConfirmDialog(
+        'Are you sure you want to remove the Rogers Bank connection?\n\n' +
+        'This will delete:\n' +
+        '• Authentication credentials\n' +
+        '• Account mappings\n' +
+        '• Uploaded transaction references\n' +
+        '• Last sync dates\n' +
+        '• All other Rogers Bank settings\n\n' +
+        'Category mappings will be preserved.',
+      );
+
+      if (confirmed) {
+        const deletedCount = clearRogersBankSettings();
+        toast.show(`Rogers Bank connection removed (${deletedCount} settings cleared)`, 'info');
+        debugLog(`Removed Rogers Bank connection, deleted ${deletedCount} settings`);
+
+        // Refresh the tab
+        renderTabContent(container, 'rogersbank');
+      }
+    });
+
+    removeButton.addEventListener('mouseover', () => {
+      removeButton.style.backgroundColor = '#c82333';
+    });
+    removeButton.addEventListener('mouseout', () => {
+      removeButton.style.backgroundColor = '#dc3545';
+    });
+
+    statusDisplay.appendChild(removeButton);
+  }
+
+  connectionContainer.appendChild(statusDisplay);
+  connectionSection.appendChild(connectionContainer);
+  container.appendChild(connectionSection);
+
   // Lookback Period Section
   const lookbackSection = createLookbackPeriodSection('rogersbank');
   container.appendChild(lookbackSection);
@@ -765,6 +908,53 @@ function renderRogersBankTab(container) {
     }
   });
   categorySection.appendChild(categoryTable);
+
+  // Add "Delete All" button for category mappings (only if there are mappings)
+  if (categoryData.length > 0) {
+    const deleteAllContainer = document.createElement('div');
+    deleteAllContainer.style.cssText = 'margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0;';
+
+    const deleteAllButton = document.createElement('button');
+    deleteAllButton.id = 'rogersbank-delete-all-categories-btn';
+    deleteAllButton.textContent = 'Delete All Category Mappings';
+    deleteAllButton.style.cssText = `
+      padding: 10px 16px;
+      border: none;
+      border-radius: 4px;
+      background: #dc3545;
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: background-color 0.2s;
+      width: 100%;
+    `;
+
+    deleteAllButton.addEventListener('click', async () => {
+      const confirmed = await showConfirmDialog(
+        `Are you sure you want to delete ALL ${categoryData.length} category mapping(s)?\n\nThis action cannot be undone.`,
+      );
+
+      if (confirmed) {
+        GM_setValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS, '{}');
+        toast.show(`Deleted ${categoryData.length} category mapping(s)`, 'info');
+        debugLog(`Deleted all Rogers Bank category mappings (${categoryData.length} total)`);
+
+        // Refresh the tab
+        renderTabContent(container, 'rogersbank');
+      }
+    });
+
+    deleteAllButton.addEventListener('mouseover', () => {
+      deleteAllButton.style.backgroundColor = '#c82333';
+    });
+    deleteAllButton.addEventListener('mouseout', () => {
+      deleteAllButton.style.backgroundColor = '#dc3545';
+    });
+
+    deleteAllContainer.appendChild(deleteAllButton);
+    categorySection.appendChild(deleteAllContainer);
+  }
 
   container.appendChild(mappingsSection);
   container.appendChild(transactionsSection);
