@@ -69,12 +69,16 @@ export function convertToCSV(data, columns = null) {
  * Convert Rogers Bank transactions to Monarch CSV format
  * @param {Array} transactions - Array of Rogers Bank transaction objects
  * @param {string} accountName - Rogers account name for the Account column
+ * @param {Object} options - Conversion options
+ * @param {boolean} options.storeTransactionDetailsInNotes - Whether to include activityType and referenceNumber in notes (default: false)
  * @returns {string} CSV string formatted for Monarch
  */
-export function convertTransactionsToMonarchCSV(transactions, accountName) {
+export function convertTransactionsToMonarchCSV(transactions, accountName, options = {}) {
   if (!transactions || transactions.length === 0) {
     return '';
   }
+
+  const { storeTransactionDetailsInNotes = false } = options;
 
   // Define Monarch CSV columns
   const columns = [
@@ -111,8 +115,11 @@ export function convertTransactionsToMonarchCSV(transactions, accountName) {
       }
     }
 
-    // Create notes field
-    const notes = `${transaction.activityType || ''} / ${transaction.referenceNumber || ''}`.trim();
+    // Create notes field - only include transaction details if setting is enabled
+    let notes = '';
+    if (storeTransactionDetailsInNotes) {
+      notes = `${transaction.activityType || ''} / ${transaction.referenceNumber || ''}`.trim();
+    }
 
     return {
       Date: transaction.date || '',

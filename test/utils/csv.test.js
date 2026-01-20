@@ -112,6 +112,64 @@ describe('CSV Conversion Utilities', () => {
   });
 
   describe('convertTransactionsToMonarchCSV', () => {
+    test('should not include transaction details in notes by default', () => {
+      const transactions = [
+        {
+          date: '2024-01-15',
+          merchant: { name: 'Amazon' },
+          amount: { value: 50.00 },
+          activityType: 'PURCHASE',
+          referenceNumber: 'REF123',
+        },
+      ];
+
+      const result = convertTransactionsToMonarchCSV(transactions, 'Test Account');
+
+      // Notes should be empty when storeTransactionDetailsInNotes is false (default)
+      expect(result).not.toContain('PURCHASE');
+      expect(result).not.toContain('REF123');
+      // Notes column should be empty (just commas between fields)
+      expect(result).toContain('Amazon,,-50'); // Empty notes between original statement and amount
+    });
+
+    test('should include transaction details in notes when option is enabled', () => {
+      const transactions = [
+        {
+          date: '2024-01-15',
+          merchant: { name: 'Amazon' },
+          amount: { value: 50.00 },
+          activityType: 'PURCHASE',
+          referenceNumber: 'REF123',
+        },
+      ];
+
+      const result = convertTransactionsToMonarchCSV(transactions, 'Test Account', {
+        storeTransactionDetailsInNotes: true,
+      });
+
+      // Notes should contain activity type and reference number
+      expect(result).toContain('PURCHASE');
+      expect(result).toContain('REF123');
+    });
+
+    test('should handle missing activity type and reference number gracefully', () => {
+      const transactions = [
+        {
+          date: '2024-01-15',
+          merchant: { name: 'Amazon' },
+          amount: { value: 50.00 },
+        },
+      ];
+
+      const result = convertTransactionsToMonarchCSV(transactions, 'Test Account', {
+        storeTransactionDetailsInNotes: true,
+      });
+
+      // Should not throw and should produce valid CSV
+      expect(result).toContain('Date');
+      expect(result).toContain('Amazon');
+    });
+
     test('should convert Rogers Bank transactions to Monarch CSV format', () => {
       const transactions = [
         {
@@ -137,7 +195,10 @@ describe('CSV Conversion Utilities', () => {
       ];
 
       const accountName = 'Rogers Mastercard';
-      const result = convertTransactionsToMonarchCSV(transactions, accountName);
+      // With storeTransactionDetailsInNotes enabled to test full functionality
+      const result = convertTransactionsToMonarchCSV(transactions, accountName, {
+        storeTransactionDetailsInNotes: true,
+      });
 
       expect(result).toContain('Date,Merchant,Category,Account,Original Statement,Notes,Amount,Tags');
       expect(result).toContain('2024-01-15');
@@ -182,14 +243,16 @@ describe('CSV Conversion Utilities', () => {
         },
       ];
 
-      const result = convertTransactionsToMonarchCSV(transactions, 'Test Account');
+      const result = convertTransactionsToMonarchCSV(transactions, 'Test Account', {
+        storeTransactionDetailsInNotes: true,
+      });
       expect(result).toContain('Date,Merchant,Category,Account,Original Statement,Notes,Amount,Tags');
       expect(result).toContain(',,'); // Empty fields for missing data
       expect(result).toContain('Test Account');
       expect(result).toContain('PURCHASE');
     });
 
-    test('should create proper notes field', () => {
+    test('should create proper notes field when storeTransactionDetailsInNotes is enabled', () => {
       const transactions = [
         {
           date: '2024-01-15',
@@ -206,7 +269,9 @@ describe('CSV Conversion Utilities', () => {
         },
       ];
 
-      const result = convertTransactionsToMonarchCSV(transactions, 'Test Account');
+      const result = convertTransactionsToMonarchCSV(transactions, 'Test Account', {
+        storeTransactionDetailsInNotes: true,
+      });
       expect(result).toContain('PURCHASE / REF123');
       expect(result).toContain(' / '); // Empty activityType and referenceNumber should still create separator
     });

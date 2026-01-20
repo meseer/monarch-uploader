@@ -50,6 +50,7 @@ jest.mock('../../src/core/config', () => ({
     ROGERSBANK_LOOKBACK_DAYS: 'rogersbank_lookback_days',
     ROGERSBANK_LAST_CREDIT_LIMIT_PREFIX: 'rogersbank_last_credit_limit_',
     ROGERSBANK_BALANCE_CHECKPOINT_PREFIX: 'rogersbank_balance_checkpoint_',
+    ROGERSBANK_STORE_TX_DETAILS_IN_NOTES: 'rogersbank_store_tx_details_in_notes',
   },
   LOGO_CLOUDINARY_IDS: {
     ROGERS: 'production/account_logos/rogers',
@@ -117,7 +118,7 @@ jest.mock('../../src/ui/components/monarchLoginLink', () => ({
 }));
 
 jest.mock('../../src/utils/csv', () => ({
-  convertTransactionsToMonarchCSV: jest.fn(),
+  convertTransactionsToMonarchCSV: jest.fn(() => 'csv,data'),
 }));
 
 jest.mock('../../src/mappers/category', () => ({
@@ -493,6 +494,7 @@ describe('Rogers Bank Upload Service', () => {
           expect.objectContaining({ referenceNumber: 'REF3' }),
         ]),
         expect.any(String),
+        expect.any(Object), // options parameter
       );
     });
 
@@ -560,6 +562,7 @@ describe('Rogers Bank Upload Service', () => {
           expect.objectContaining({ referenceNumber: 'REF2' }),
         ]),
         expect.any(String),
+        expect.any(Object), // options parameter
       );
     });
 
@@ -685,6 +688,7 @@ describe('Rogers Bank Upload Service', () => {
           }),
         ]),
         expect.any(String),
+        expect.any(Object), // options parameter
       );
     });
 
@@ -1499,6 +1503,7 @@ describe('Rogers Bank Upload Service', () => {
           })),
         ),
         expect.any(String),
+        expect.any(Object), // options parameter
       );
     });
   });

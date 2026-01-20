@@ -65,6 +65,7 @@ export const STORAGE = {
   ROGERSBANK_CATEGORY_MAPPINGS: 'rogersbank_category_mappings', // Store bank category to Monarch category mappings
   ROGERSBANK_LAST_CREDIT_LIMIT_PREFIX: 'rogersbank_last_credit_limit_', // Store last synced credit limit per account
   ROGERSBANK_BALANCE_CHECKPOINT_PREFIX: 'rogersbank_balance_checkpoint_', // Store balance checkpoint for reconstruction
+  ROGERSBANK_STORE_TX_DETAILS_IN_NOTES: 'rogersbank_store_tx_details_in_notes', // Whether to store transaction details in notes (default: false)
   // Wealthsimple specific storage keys
   WEALTHSIMPLE_AUTH_TOKEN: 'wealthsimple_auth_token',
   WEALTHSIMPLE_ACCESS_TOKEN: 'wealthsimple_access_token',

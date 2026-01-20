@@ -687,6 +687,39 @@ function renderRogersBankTab(container) {
   const lookbackSection = createLookbackPeriodSection('rogersbank');
   container.appendChild(lookbackSection);
 
+  // Transaction Settings Section
+  const txSettingsSection = createSection('Transaction Settings', '📝', 'Configure how transactions are uploaded');
+  const txSettingsContainer = document.createElement('div');
+  txSettingsContainer.style.cssText = 'margin: 10px 0;';
+
+  // Store transaction details in notes toggle
+  const transactionDetailsSetting = document.createElement('div');
+  transactionDetailsSetting.id = 'rogersbank-tx-details-setting';
+  transactionDetailsSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 12px 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e0e0e0;';
+
+  const transactionDetailsLabel = document.createElement('div');
+  transactionDetailsLabel.innerHTML = `
+    <div style="font-weight: 500; font-size: 14px; margin-bottom: 4px;">Store transaction details in notes</div>
+    <div style="font-size: 12px; color: #666;">When enabled, transaction type and reference number will be included in the Notes field</div>
+  `;
+
+  const currentValue = GM_getValue(STORAGE.ROGERSBANK_STORE_TX_DETAILS_IN_NOTES, false);
+  const transactionDetailsToggle = createToggleSwitch(
+    currentValue,
+    (isEnabled) => {
+      GM_setValue(STORAGE.ROGERSBANK_STORE_TX_DETAILS_IN_NOTES, isEnabled);
+      toast.show(`Transaction details in notes ${isEnabled ? 'enabled' : 'disabled'}`, 'info');
+      debugLog(`Rogers Bank store transaction details in notes: ${isEnabled}`);
+    },
+    false, // Don't show Enabled/Disabled label
+  );
+
+  transactionDetailsSetting.appendChild(transactionDetailsLabel);
+  transactionDetailsSetting.appendChild(transactionDetailsToggle);
+  txSettingsContainer.appendChild(transactionDetailsSetting);
+  txSettingsSection.appendChild(txSettingsContainer);
+  container.appendChild(txSettingsSection);
+
   // Account Mappings Section
   const mappingsSection = createSection('Account Mappings', '🔗', 'Rogers Bank to Monarch account mappings');
   const mappingsData = getStorageData(STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX);

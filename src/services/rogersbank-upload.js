@@ -569,7 +569,8 @@ export async function uploadRogersBankToMonarch() {
       const resolvedTx = await resolveCategoriesForTransactions(filterResult.transactions);
 
       progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Converting...');
-      const csvData = convertTransactionsToMonarchCSV(resolvedTx, rogersAccountName);
+      const storeTransactionDetailsInNotes = GM_getValue(STORAGE.ROGERSBANK_STORE_TX_DETAILS_IN_NOTES, false);
+      const csvData = convertTransactionsToMonarchCSV(resolvedTx, rogersAccountName, { storeTransactionDetailsInNotes });
       if (!csvData) throw new Error('Failed to convert transactions to CSV');
 
       progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Uploading...');
