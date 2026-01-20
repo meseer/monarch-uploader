@@ -162,11 +162,25 @@ async function resolveCategoriesForTransactions(transactions) {
 
 /**
  * Fetch Rogers Bank transactions
+ *
+ * IMPORTANT: Rogers Bank API offset parameter is counter-intuitive!
+ * The offset does NOT skip transactions - instead it specifies how many "pages" of 50 transactions
+ * to load in a single request. The API returns ALL transactions from the beginning up to (offset * 50).
+ *
+ * Examples:
+ * - offset=10 → loads up to 500 transactions (10 pages × 50 per page)
+ * - offset=20 → loads up to 1000 transactions (20 pages × 50 per page) - API MAXIMUM
+ *
+ * The API has a hard limit of 1000 transactions maximum. If totalCount == 1000, there may be
+ * more transactions that cannot be retrieved.
+ *
  * @param {string} fromDate - Start date (YYYY-MM-DD)
  * @param {string} toDate - End date (YYYY-MM-DD)
+ * @param {boolean} fullHistory - If true, fetch maximum transactions (offset=20, ~1000 transactions).
+ *                                 If false, fetch recent transactions (offset=10, ~500 transactions).
  * @returns {Promise<Object>} API response with transactions
  */
-async function fetchRogersBankTransactions(fromDate, toDate) {
+async function fetchRogersBankTransactions(fromDate, toDate, fullHistory = false) {
   const credentials = getRogersBankCredentials();
 
   if (!credentials.authToken || !credentials.accountId || !credentials.customerId
@@ -174,46 +188,51 @@ async function fetchRogersBankTransactions(fromDate, toDate) {
     throw new Error('Missing Rogers Bank credentials.');
   }
 
-  let offset = 10;
-  let allTransactions = [];
-  let totalCount = 0;
+  // Rogers Bank API offset explanation:
+  // - offset specifies number of "pages" to load, NOT transactions to skip
+  // - Each "page" contains 50 transactions
+  // - offset=10 → 500 transactions max (sufficient for regular sync)
+  // - offset=20 → 1000 transactions max (API limit, needed for balance reconstruction)
+  const offset = fullHistory ? 20 : 10;
 
-  do {
-    const url = `https://selfserve.apis.rogersbank.com/corebank/v1/account/${credentials.accountId}/customer/${credentials.customerId}/transactions?limit=0&offset=${offset}&fromDate=${fromDate}&toDate=${toDate}`;
+  const url = `https://selfserve.apis.rogersbank.com/corebank/v1/account/${credentials.accountId}/customer/${credentials.customerId}/transactions?limit=0&offset=${offset}&fromDate=${fromDate}&toDate=${toDate}`;
 
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        accept: 'application/json, text/plain, */*',
-        accountid: credentials.accountIdEncoded,
-        authorization: credentials.authToken,
-        channel: '101',
-        customerid: credentials.customerIdEncoded,
-        deviceid: credentials.deviceId,
-        isrefresh: 'false',
-      },
-    });
+  debugLog(`Fetching Rogers Bank transactions (offset=${offset}, fullHistory=${fullHistory})`);
 
-    if (!response.ok) {
-      throw new Error(`API request failed: ${response.status}`);
-    }
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      accept: 'application/json, text/plain, */*',
+      accountid: credentials.accountIdEncoded,
+      authorization: credentials.authToken,
+      channel: '101',
+      customerid: credentials.customerIdEncoded,
+      deviceid: credentials.deviceId,
+      isrefresh: 'false',
+    },
+  });
 
-    const data = await response.json();
-    if (!data.activitySummary) throw new Error('Invalid API response');
+  if (!response.ok) {
+    throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+  }
 
-    totalCount = data.activitySummary.totalCount || 0;
-    if (data.activitySummary.activities?.length > 0) {
-      allTransactions = allTransactions.concat(data.activitySummary.activities);
-    }
+  const data = await response.json();
+  if (!data.activitySummary) throw new Error('Invalid API response: missing activitySummary');
 
-    if (allTransactions.length < totalCount) {
-      offset += 10;
-    } else {
-      break;
-    }
-  } while (allTransactions.length < totalCount && offset <= 100);
+  const totalCount = data.activitySummary.totalCount || 0;
+  const transactions = data.activitySummary.activities || [];
 
-  return { success: true, transactions: allTransactions, totalCount, fromDate, toDate };
+  debugLog(`Rogers Bank API returned ${transactions.length} transactions (totalCount: ${totalCount})`);
+
+  return {
+    success: true,
+    transactions,
+    totalCount,
+    fromDate,
+    toDate,
+    // Flag to indicate if we hit the API limit (may be missing older transactions)
+    truncated: totalCount >= 1000,
+  };
 }
 
 /**
@@ -459,8 +478,15 @@ export async function uploadRogersBankToMonarch() {
 
     if (firstSync && reconstructBalance) {
       progressDialog.updateStepStatus(rogersAccountId, 'balance', 'processing', 'Fetching transactions...');
-      const txResult = await fetchRogersBankTransactions(fromDate, toDate);
+      // Use fullHistory=true to fetch maximum transactions (up to 1000) for balance reconstruction
+      const txResult = await fetchRogersBankTransactions(fromDate, toDate, true);
       const approvedTx = (txResult.transactions || []).filter((tx) => tx.activityStatus === 'APPROVED');
+
+      // Warn if we hit the API limit - balance reconstruction may be incomplete
+      if (txResult.truncated) {
+        toast.show('⚠️ Transaction history may be incomplete (>1000 transactions). Balance reconstruction may not be accurate for early dates.', 'warning');
+        debugLog('Warning: Transaction history truncated at 1000 transactions');
+      }
 
       progressDialog.updateStepStatus(rogersAccountId, 'balance', 'processing', 'Reconstructing...');
       const balanceHistory = reconstructBalanceFromTransactions(approvedTx, fromDate, todayFormatted, currentBalance);
