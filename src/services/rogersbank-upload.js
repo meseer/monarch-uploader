@@ -248,8 +248,13 @@ function buildRogersBankSteps(hasTransactions = true, includeCreditLimit = true)
 
 /**
  * Reconstruct balance history from transactions starting with 0 balance
+ * @param {Array} transactions - Array of transactions
+ * @param {string} fromDate - Start date
+ * @param {string} toDate - End date
+ * @param {number} currentBalance - Current balance
+ * @param {boolean} invertBalance - If true, invert (negate) all balance values
  */
-function reconstructBalanceFromTransactions(transactions, fromDate, toDate, currentBalance) {
+function reconstructBalanceFromTransactions(transactions, fromDate, toDate, currentBalance, invertBalance = false) {
   const transactionsByDate = new Map();
   if (transactions?.length > 0) {
     transactions.forEach((tx) => {
@@ -275,9 +280,11 @@ function reconstructBalanceFromTransactions(transactions, fromDate, toDate, curr
     runningBalance += dayTotal;
 
     if (dateStr === todayStr && currentBalance !== null && currentBalance !== undefined) {
-      balanceHistory.push({ date: dateStr, amount: currentBalance });
+      const finalBalance = invertBalance ? -currentBalance : currentBalance;
+      balanceHistory.push({ date: dateStr, amount: finalBalance });
     } else {
-      balanceHistory.push({ date: dateStr, amount: Math.round(runningBalance * 100) / 100 });
+      const dayBalance = Math.round(runningBalance * 100) / 100;
+      balanceHistory.push({ date: dateStr, amount: invertBalance ? -dayBalance : dayBalance });
     }
     currentDateObj.setDate(currentDateObj.getDate() + 1);
   }
@@ -287,22 +294,30 @@ function reconstructBalanceFromTransactions(transactions, fromDate, toDate, curr
 
 /**
  * Generate CSV for balance history
+ * @param {Array} balanceHistory - Array of balance entries with date and amount
+ * @param {string} accountName - Account name for CSV
+ * @param {boolean} invertBalance - If true, invert (negate) all balance values (applied if not already inverted during reconstruction)
  */
-function generateBalanceHistoryCSV(balanceHistory, accountName) {
+function generateBalanceHistoryCSV(balanceHistory, accountName, invertBalance = false) {
   let csvContent = '"Date","Total Equity","Account Name"\n';
   balanceHistory.forEach((entry) => {
-    csvContent += `"${entry.date}","${entry.amount}","${accountName}"\n`;
+    const amount = invertBalance ? -entry.amount : entry.amount;
+    csvContent += `"${entry.date}","${amount}","${accountName}"\n`;
   });
   return csvContent;
 }
 
 /**
  * Generate CSV for single-day balance
+ * @param {number} balance - Current balance
+ * @param {string} accountName - Account name for CSV
+ * @param {boolean} invertBalance - If true, invert (negate) the balance value
  */
-function generateBalanceCSV(balance, accountName) {
+function generateBalanceCSV(balance, accountName, invertBalance = false) {
   const todayFormatted = getTodayLocal();
+  const finalBalance = invertBalance ? -balance : balance;
   let csvContent = '"Date","Total Equity","Account Name"\n';
-  csvContent += `"${todayFormatted}","${balance}","${accountName}"\n`;
+  csvContent += `"${todayFormatted}","${finalBalance}","${accountName}"\n`;
   return csvContent;
 }
 
@@ -505,9 +520,16 @@ export async function uploadRogersBankToMonarch() {
     let balanceUploadSuccess = false;
     const todayFormatted = getTodayLocal();
 
+    // For manually created accounts, invert the balance (Rogers API returns negative values,
+    // but manual accounts need positive values for credit card balances)
+    const invertBalance = monarchAccount.newlyCreated === true;
+    if (invertBalance) {
+      debugLog('Inverting balance for manually created account');
+    }
+
     if (firstSync && reconstructBalance) {
       progressDialog.updateStepStatus(rogersAccountId, 'balance', 'processing', 'Reconstructing...');
-      const balanceHistory = reconstructBalanceFromTransactions(allApprovedTx, fromDate, todayFormatted, currentBalance);
+      const balanceHistory = reconstructBalanceFromTransactions(allApprovedTx, fromDate, todayFormatted, currentBalance, invertBalance);
 
       if (balanceHistory.length > 0) {
         const balanceCSV = generateBalanceHistoryCSV(balanceHistory, rogersAccountName);
@@ -525,7 +547,7 @@ export async function uploadRogersBankToMonarch() {
         progressDialog.updateStepStatus(rogersAccountId, 'balance', 'error', 'No data');
       }
     } else {
-      const balanceCSV = generateBalanceCSV(currentBalance, rogersAccountName);
+      const balanceCSV = generateBalanceCSV(currentBalance, rogersAccountName, invertBalance);
       balanceUploadSuccess = await monarchApi.uploadBalance(monarchAccount.id, balanceCSV, todayFormatted, todayFormatted);
 
       if (balanceUploadSuccess) {
@@ -575,7 +597,7 @@ export async function uploadRogersBankToMonarch() {
 
       progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Uploading...');
       const filename = `rogers_transactions_${fromDate}_to_${toDate}.csv`;
-      const uploadSuccess = await monarchApi.uploadTransactions(monarchAccount.id, csvData, filename, true, false);
+      const uploadSuccess = await monarchApi.uploadTransactions(monarchAccount.id, csvData, filename, false, false);
 
       if (uploadSuccess) {
         const refs = filterResult.transactions.map((tx) => tx.referenceNumber).filter(Boolean);
