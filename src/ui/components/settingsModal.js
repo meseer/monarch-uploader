@@ -741,91 +741,6 @@ function clearRogersBankSettings() {
  * @param {HTMLElement} container - Container element
  */
 function renderRogersBankTab(container) {
-  // Connection Section
-  const connectionSection = createSection('Connection', '🔗', 'Manage Rogers Bank connection');
-  const connectionContainer = document.createElement('div');
-  connectionContainer.style.cssText = 'margin: 10px 0;';
-
-  const isConnected = checkInstitutionConnection('rogersbank');
-
-  // Connection status display
-  const statusDisplay = document.createElement('div');
-  statusDisplay.id = 'rogersbank-connection-status';
-  statusDisplay.style.cssText = `
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 15px;
-    background: ${isConnected ? '#d4edda' : '#f8d7da'};
-    border: 1px solid ${isConnected ? '#c3e6cb' : '#f5c6cb'};
-    border-radius: 8px;
-    margin-bottom: 10px;
-  `;
-
-  const statusInfo = document.createElement('div');
-  statusInfo.innerHTML = `
-    <div style="font-weight: 500; font-size: 14px; color: ${isConnected ? '#155724' : '#721c24'};">
-      ${isConnected ? '✅ Connected' : '❌ Not connected'}
-    </div>
-    <div style="font-size: 12px; color: ${isConnected ? '#155724' : '#721c24'}; margin-top: 2px;">
-      ${isConnected ? 'Rogers Bank credentials are stored' : 'Log in to Rogers Bank to capture credentials'}
-    </div>
-  `;
-  statusDisplay.appendChild(statusInfo);
-
-  // Remove Connection button (only show if connected)
-  if (isConnected) {
-    const removeButton = document.createElement('button');
-    removeButton.id = 'rogersbank-remove-connection-btn';
-    removeButton.textContent = 'Remove Connection';
-    removeButton.style.cssText = `
-      padding: 8px 16px;
-      border: none;
-      border-radius: 4px;
-      background: #dc3545;
-      color: white;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 500;
-      transition: background-color 0.2s;
-    `;
-
-    removeButton.addEventListener('click', async () => {
-      const confirmed = await showConfirmDialog(
-        'Are you sure you want to remove the Rogers Bank connection?\n\n' +
-        'This will delete:\n' +
-        '• Authentication credentials\n' +
-        '• Account mappings\n' +
-        '• Uploaded transaction references\n' +
-        '• Last sync dates\n' +
-        '• All other Rogers Bank settings\n\n' +
-        'Category mappings will be preserved.',
-      );
-
-      if (confirmed) {
-        const deletedCount = clearRogersBankSettings();
-        toast.show(`Rogers Bank connection removed (${deletedCount} settings cleared)`, 'info');
-        debugLog(`Removed Rogers Bank connection, deleted ${deletedCount} settings`);
-
-        // Refresh the tab
-        renderTabContent(container, 'rogersbank');
-      }
-    });
-
-    removeButton.addEventListener('mouseover', () => {
-      removeButton.style.backgroundColor = '#c82333';
-    });
-    removeButton.addEventListener('mouseout', () => {
-      removeButton.style.backgroundColor = '#dc3545';
-    });
-
-    statusDisplay.appendChild(removeButton);
-  }
-
-  connectionContainer.appendChild(statusDisplay);
-  connectionSection.appendChild(connectionContainer);
-  container.appendChild(connectionSection);
-
   // Lookback Period Section
   const lookbackSection = createLookbackPeriodSection('rogersbank');
   container.appendChild(lookbackSection);
@@ -867,8 +782,12 @@ function renderRogersBankTab(container) {
   const mappingsSection = createSection('Account Mappings', '🔗', 'Rogers Bank to Monarch account mappings');
   const mappingsData = getStorageData(STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX);
   const mappingsCards = createAccountMappingCards(mappingsData, (key) => {
+    // Delete the account mapping
     GM_deleteValue(key);
-    toast.show('Account mapping deleted', 'info');
+    // Also clear all related Rogers Bank settings (except category mappings)
+    const deletedCount = clearRogersBankSettings();
+    toast.show(`Account mapping deleted and ${deletedCount} related settings cleared`, 'info');
+    debugLog(`Deleted Rogers Bank account mapping and ${deletedCount} related settings`);
     renderTabContent(container, 'rogersbank');
   }, 'Rogers Bank', 'rogersbank');
   mappingsSection.appendChild(mappingsCards);
@@ -912,22 +831,21 @@ function renderRogersBankTab(container) {
   // Add "Delete All" button for category mappings (only if there are mappings)
   if (categoryData.length > 0) {
     const deleteAllContainer = document.createElement('div');
-    deleteAllContainer.style.cssText = 'margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0;';
+    deleteAllContainer.style.cssText = 'margin-top: 10px;';
 
     const deleteAllButton = document.createElement('button');
     deleteAllButton.id = 'rogersbank-delete-all-categories-btn';
-    deleteAllButton.textContent = 'Delete All Category Mappings';
+    deleteAllButton.textContent = 'Delete All';
     deleteAllButton.style.cssText = `
-      padding: 10px 16px;
+      padding: 4px 10px;
       border: none;
       border-radius: 4px;
       background: #dc3545;
       color: white;
       cursor: pointer;
-      font-size: 14px;
+      font-size: 12px;
       font-weight: 500;
       transition: background-color 0.2s;
-      width: 100%;
     `;
 
     deleteAllButton.addEventListener('click', async () => {

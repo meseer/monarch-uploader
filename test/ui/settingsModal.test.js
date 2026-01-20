@@ -1071,89 +1071,6 @@ describe('Settings Modal Component', () => {
     });
   });
 
-  describe('Rogers Bank Connection Management', () => {
-    test('should display connection status section in Rogers Bank tab', () => {
-      modal = createSettingsModal();
-
-      const rogersBankTab = Array.from(modal.querySelectorAll('.settings-tab-button'))
-        .find((btn) => btn.textContent.includes('Rogers Bank'));
-      rogersBankTab.click();
-
-      const tabContent = modal.querySelector('.settings-tab-content');
-      expect(tabContent.textContent).toContain('Connection');
-      expect(tabContent.textContent).toContain('Manage Rogers Bank connection');
-    });
-
-    test('should show "Not connected" status when Rogers Bank is not authenticated', () => {
-      globalThis.GM_getValue.mockReturnValue(null);
-
-      modal = createSettingsModal();
-
-      const rogersBankTab = Array.from(modal.querySelectorAll('.settings-tab-button'))
-        .find((btn) => btn.textContent.includes('Rogers Bank'));
-      rogersBankTab.click();
-
-      const tabContent = modal.querySelector('.settings-tab-content');
-      expect(tabContent.textContent).toContain('Not connected');
-      expect(tabContent.textContent).toContain('Log in to Rogers Bank to capture credentials');
-    });
-
-    test('should show "Connected" status and "Remove Connection" button when authenticated', () => {
-      globalThis.GM_getValue.mockImplementation((key) => {
-        if (key === 'rogersbank_auth_token') return 'valid-token';
-        return null;
-      });
-
-      modal = createSettingsModal();
-
-      const rogersBankTab = Array.from(modal.querySelectorAll('.settings-tab-button'))
-        .find((btn) => btn.textContent.includes('Rogers Bank'));
-      rogersBankTab.click();
-
-      const tabContent = modal.querySelector('.settings-tab-content');
-      expect(tabContent.textContent).toContain('Connected');
-      expect(tabContent.textContent).toContain('Rogers Bank credentials are stored');
-
-      const removeButton = tabContent.querySelector('#rogersbank-remove-connection-btn');
-      expect(removeButton).toBeTruthy();
-      expect(removeButton.textContent).toBe('Remove Connection');
-    });
-
-    test('should not show "Remove Connection" button when not connected', () => {
-      globalThis.GM_getValue.mockReturnValue(null);
-
-      modal = createSettingsModal();
-
-      const rogersBankTab = Array.from(modal.querySelectorAll('.settings-tab-button'))
-        .find((btn) => btn.textContent.includes('Rogers Bank'));
-      rogersBankTab.click();
-
-      const removeButton = modal.querySelector('#rogersbank-remove-connection-btn');
-      expect(removeButton).toBeNull();
-    });
-
-    test('should handle "Remove Connection" button hover effects', () => {
-      globalThis.GM_getValue.mockImplementation((key) => {
-        if (key === 'rogersbank_auth_token') return 'valid-token';
-        return null;
-      });
-
-      modal = createSettingsModal();
-
-      const rogersBankTab = Array.from(modal.querySelectorAll('.settings-tab-button'))
-        .find((btn) => btn.textContent.includes('Rogers Bank'));
-      rogersBankTab.click();
-
-      const removeButton = modal.querySelector('#rogersbank-remove-connection-btn');
-
-      removeButton.dispatchEvent(new Event('mouseover'));
-      expect(removeButton.style.backgroundColor).toBe('rgb(200, 35, 51)');
-
-      removeButton.dispatchEvent(new Event('mouseout'));
-      expect(removeButton.style.backgroundColor).toBe('rgb(220, 53, 69)');
-    });
-  });
-
   describe('Rogers Bank Delete All Category Mappings', () => {
     test('should display "Delete All" button when category mappings exist', () => {
       globalThis.GM_getValue.mockImplementation((key) => {
@@ -1174,7 +1091,7 @@ describe('Settings Modal Component', () => {
 
       const deleteAllButton = modal.querySelector('#rogersbank-delete-all-categories-btn');
       expect(deleteAllButton).toBeTruthy();
-      expect(deleteAllButton.textContent).toBe('Delete All Category Mappings');
+      expect(deleteAllButton.textContent).toBe('Delete All');
     });
 
     test('should not display "Delete All" button when no category mappings exist', () => {
