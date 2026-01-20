@@ -247,8 +247,29 @@ function buildRogersBankSteps(hasTransactions = true, includeCreditLimit = true)
 }
 
 /**
+ * Normalize Rogers Bank transaction for balance reconstruction
+ * Rogers API returns: { date: "2024-01-19", amount: { value: "10.99", currency: "CAD" } }
+ * Reconstruction expects: { date: "2024-01-19", amount: 10.99 }
+ * @param {Object} tx - Raw Rogers Bank transaction
+ * @returns {Object} Normalized transaction with date and numeric amount
+ */
+function normalizeRogersTransaction(tx) {
+  // Rogers API uses 'date' field directly in YYYY-MM-DD format
+  const date = tx.date || null;
+
+  // Rogers API has amount as { value: "10.99", currency: "CAD" }
+  // Parse the string value to a number
+  let amount = 0;
+  if (tx.amount?.value !== undefined) {
+    amount = parseFloat(tx.amount.value) || 0;
+  }
+
+  return { date, amount };
+}
+
+/**
  * Reconstruct balance history from transactions starting with 0 balance
- * @param {Array} transactions - Array of transactions
+ * @param {Array} transactions - Array of normalized transactions with date and amount
  * @param {string} fromDate - Start date
  * @param {string} toDate - End date
  * @param {number} currentBalance - Current balance
@@ -258,9 +279,9 @@ function reconstructBalanceFromTransactions(transactions, fromDate, toDate, curr
   const transactionsByDate = new Map();
   if (transactions?.length > 0) {
     transactions.forEach((tx) => {
-      const dateStr = tx.activityDate?.substring(0, 10);
+      const dateStr = tx.date;
       if (!dateStr) return;
-      const amount = tx.transactionAmount || tx.amount || 0;
+      const amount = tx.amount || 0;
       if (!transactionsByDate.has(dateStr)) transactionsByDate.set(dateStr, []);
       transactionsByDate.get(dateStr).push(amount);
     });
@@ -529,7 +550,14 @@ export async function uploadRogersBankToMonarch() {
 
     if (firstSync && reconstructBalance) {
       progressDialog.updateStepStatus(rogersAccountId, 'balance', 'processing', 'Reconstructing...');
-      const balanceHistory = reconstructBalanceFromTransactions(allApprovedTx, fromDate, todayFormatted, currentBalance, invertBalance);
+
+      // Normalize Rogers transactions for balance reconstruction
+      // Rogers API returns: { date: "2024-01-19", amount: { value: "10.99" } }
+      // Reconstruction expects: { date: "2024-01-19", amount: 10.99 }
+      const normalizedTx = allApprovedTx.map(normalizeRogersTransaction);
+      debugLog(`Normalized ${normalizedTx.length} transactions for balance reconstruction`);
+
+      const balanceHistory = reconstructBalanceFromTransactions(normalizedTx, fromDate, todayFormatted, currentBalance, invertBalance);
 
       if (balanceHistory.length > 0) {
         const balanceCSV = generateBalanceHistoryCSV(balanceHistory, rogersAccountName);
