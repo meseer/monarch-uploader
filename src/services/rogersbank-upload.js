@@ -308,6 +308,10 @@ function generateBalanceCSV(balance, accountName) {
 
 /**
  * Sync credit limit from Rogers Bank to Monarch
+ * @param {string} rogersAccountId - Rogers account ID
+ * @param {string} monarchAccountId - Monarch account ID
+ * @param {number} creditLimit - Credit limit to set
+ * @returns {Promise<boolean>} True if credit limit was synced successfully
  */
 async function syncCreditLimit(rogersAccountId, monarchAccountId, creditLimit) {
   if (creditLimit === null || creditLimit === undefined) return true;
@@ -316,9 +320,18 @@ async function syncCreditLimit(rogersAccountId, monarchAccountId, creditLimit) {
   if (storedCreditLimit !== null && storedCreditLimit === creditLimit) return true;
 
   try {
-    await monarchApi.setCreditLimit(monarchAccountId, creditLimit);
-    GM_setValue(`${STORAGE.ROGERSBANK_LAST_CREDIT_LIMIT_PREFIX}${rogersAccountId}`, creditLimit);
-    return true;
+    const updatedAccount = await monarchApi.setCreditLimit(monarchAccountId, creditLimit);
+
+    // Verify the credit limit was actually set before caching
+    if (updatedAccount && updatedAccount.limit === creditLimit) {
+      GM_setValue(`${STORAGE.ROGERSBANK_LAST_CREDIT_LIMIT_PREFIX}${rogersAccountId}`, creditLimit);
+      debugLog(`Credit limit synced: $${creditLimit}`);
+      return true;
+    }
+
+    // API call succeeded but limit wasn't applied correctly
+    debugLog(`Credit limit update returned but value not applied. Expected: ${creditLimit}, Got: ${updatedAccount?.limit}`);
+    return false;
   } catch (error) {
     debugLog('Error syncing credit limit:', error);
     return false;
