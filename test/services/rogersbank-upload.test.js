@@ -899,7 +899,7 @@ describe('Rogers Bank Upload Service', () => {
       expect(result.message).toContain('Invalid API response: missing activitySummary');
     });
 
-    test('should use fullHistory=true for balance reconstruction on first sync', async () => {
+    test('should use fullHistory=true for first sync (fetches only once)', async () => {
       getRogersBankCredentials.mockReturnValue({
         authToken: 'test-token',
         accountId: 'test-account',
@@ -929,7 +929,9 @@ describe('Rogers Bank Upload Service', () => {
       fetchRogersBankAccountDetails.mockResolvedValue({ balance: -500, creditLimit: 5000, openedDate: '2023-01-01' });
       monarchApi.uploadBalance.mockResolvedValue(true);
 
-      // Track ALL URLs called to verify offset=20 for fullHistory
+      // Track ALL URLs called to verify:
+      // 1. Only ONE fetch call is made
+      // 2. It uses offset=20 for first sync
       const capturedUrls = [];
       global.fetch.mockImplementation((url) => {
         capturedUrls.push(url);
@@ -959,8 +961,9 @@ describe('Rogers Bank Upload Service', () => {
 
       await uploadRogersBankToMonarch();
 
-      // First fetch (for balance reconstruction) should have offset=20
-      expect(capturedUrls.length).toBeGreaterThanOrEqual(1);
+      // Should only fetch once (not twice!)
+      expect(capturedUrls.length).toBe(1);
+      // First sync should use offset=20
       expect(capturedUrls[0]).toContain('offset=20');
     });
 

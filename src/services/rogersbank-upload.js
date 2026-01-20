@@ -471,25 +471,30 @@ export async function uploadRogersBankToMonarch() {
       progressDialog.updateStepStatus(rogersAccountId, 'creditLimit', 'error', 'Sync failed');
     }
 
+    // STEP 2 & 3 COMBINED: Fetch transactions ONCE and use for both balance and transaction upload
+    // On first sync, use fullHistory=true to get up to 1000 transactions
+    // On regular sync, use fullHistory=false (500 transactions is sufficient)
+    const useFullHistory = firstSync;
+
+    progressDialog.updateStepStatus(rogersAccountId, 'balance', 'processing', 'Fetching transactions...');
+    const txResult = await fetchRogersBankTransactions(fromDate, toDate, useFullHistory);
+
+    // Warn if we hit the API limit on first sync
+    if (txResult.truncated && firstSync) {
+      toast.show('⚠️ Transaction history may be incomplete (>1000 transactions). Balance reconstruction may not be accurate for early dates.', 'warning');
+      debugLog('Warning: Transaction history truncated at 1000 transactions');
+    }
+
+    const allApprovedTx = (txResult.transactions || []).filter((tx) => tx.activityStatus === 'APPROVED');
+
     // STEP 2: Upload balance
     progressDialog.updateStepStatus(rogersAccountId, 'balance', 'processing', 'Preparing...');
     let balanceUploadSuccess = false;
     const todayFormatted = getTodayLocal();
 
     if (firstSync && reconstructBalance) {
-      progressDialog.updateStepStatus(rogersAccountId, 'balance', 'processing', 'Fetching transactions...');
-      // Use fullHistory=true to fetch maximum transactions (up to 1000) for balance reconstruction
-      const txResult = await fetchRogersBankTransactions(fromDate, toDate, true);
-      const approvedTx = (txResult.transactions || []).filter((tx) => tx.activityStatus === 'APPROVED');
-
-      // Warn if we hit the API limit - balance reconstruction may be incomplete
-      if (txResult.truncated) {
-        toast.show('⚠️ Transaction history may be incomplete (>1000 transactions). Balance reconstruction may not be accurate for early dates.', 'warning');
-        debugLog('Warning: Transaction history truncated at 1000 transactions');
-      }
-
       progressDialog.updateStepStatus(rogersAccountId, 'balance', 'processing', 'Reconstructing...');
-      const balanceHistory = reconstructBalanceFromTransactions(approvedTx, fromDate, todayFormatted, currentBalance);
+      const balanceHistory = reconstructBalanceFromTransactions(allApprovedTx, fromDate, todayFormatted, currentBalance);
 
       if (balanceHistory.length > 0) {
         const balanceCSV = generateBalanceHistoryCSV(balanceHistory, rogersAccountName);
@@ -519,20 +524,17 @@ export async function uploadRogersBankToMonarch() {
       }
     }
 
-    // STEP 3: Upload transactions
+    // STEP 3: Upload transactions (reuse the already-fetched transactions)
     if (abortController.signal.aborted) {
       progressDialog.updateProgress(rogersAccountId, 'error', 'Cancelled');
       progressDialog.hideCancel();
       return { success: false, message: 'Cancelled' };
     }
 
-    progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Fetching...');
-    const txResult = await fetchRogersBankTransactions(fromDate, toDate);
+    progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Processing...');
 
-    if (txResult.success && txResult.transactions.length > 0) {
-      const approvedTx = txResult.transactions.filter((tx) => tx.activityStatus === 'APPROVED');
-
-      if (approvedTx.length === 0) {
+    if (txResult.success && allApprovedTx.length > 0) {
+      if (allApprovedTx.length === 0) {
         progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', 'No approved');
         progressDialog.hideCancel();
         progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
@@ -540,7 +542,7 @@ export async function uploadRogersBankToMonarch() {
       }
 
       progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Checking duplicates...');
-      const filterResult = filterDuplicateTransactions(approvedTx, rogersAccountId);
+      const filterResult = filterDuplicateTransactions(allApprovedTx, rogersAccountId);
 
       if (filterResult.transactions.length === 0) {
         const msg = filterResult.duplicateCount > 0 ? `${filterResult.duplicateCount} already uploaded` : 'No new';
