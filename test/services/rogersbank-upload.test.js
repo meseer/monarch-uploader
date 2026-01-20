@@ -1687,6 +1687,7 @@ describe('Rogers Bank Upload Service', () => {
       monarchApi.uploadBalance.mockResolvedValue(true);
 
       // Mock transactions for balance reconstruction
+      // Must include 'date' and 'amount.value' fields for normalizeRogersTransaction
       global.fetch.mockResolvedValue({
         ok: true,
         json: async () => ({
@@ -1696,6 +1697,8 @@ describe('Rogers Bank Upload Service', () => {
               {
                 referenceNumber: 'REF1',
                 activityStatus: 'APPROVED',
+                date: '2024-01-10',
+                amount: { value: '-100.00', currency: 'CAD' },
                 transactionAmount: -100.00,
                 description: 'Purchase 1',
                 activityDate: '2024-01-10',
@@ -1703,9 +1706,11 @@ describe('Rogers Bank Upload Service', () => {
               {
                 referenceNumber: 'REF2',
                 activityStatus: 'APPROVED',
-                transactionAmount: -200.00,
+                date: '2024-01-14',
+                amount: { value: '-400.00', currency: 'CAD' },
+                transactionAmount: -400.00,
                 description: 'Purchase 2',
-                activityDate: '2024-01-11',
+                activityDate: '2024-01-14',
               },
             ],
           },
@@ -1726,12 +1731,13 @@ describe('Rogers Bank Upload Service', () => {
       const uploadBalanceCall = monarchApi.uploadBalance.mock.calls[0];
       const csvData = uploadBalanceCall[1];
 
-      // The reconstructed balance values should be inverted (positive instead of negative)
-      // Running balance starts at 0, then becomes -100, then -200
-      // After inversion: 0, 100, 200 (positive values)
+      // With balance correction (always applied during reconstruction):
+      // - Transactions sum to -500 by day 2024-01-15 (today)
+      // - Current balance is -500, so correction factor is 0
+      // - After inversion for manual account: all values become positive
       // The current balance -500 should become 500
       expect(csvData).toContain('500'); // Current balance inverted
-      // Should NOT contain negative running balance values
+      // Should NOT contain negative values in CSV for manual accounts
       expect(csvData).not.toMatch(/"-\d/); // No negative values in CSV
     });
 
@@ -1926,6 +1932,427 @@ describe('Rogers Bank Upload Service', () => {
         ['NEW_REF1'],
         'rogersbank',
         expect.any(String), // transaction date
+      );
+    });
+  });
+
+  describe('uploadRogersBankToMonarch - Balance Correction for Truncated History', () => {
+    test('should apply balance correction when transaction history is truncated', async () => {
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+
+      // First sync - no last upload date
+      globalThis.GM_getValue.mockImplementation((key) => {
+        if (key.includes('rogersbank_account_')) {
+          return JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' });
+        }
+        if (key.includes('rogersbank_last_upload_date_')) {
+          return null; // First sync
+        }
+        return null;
+      });
+
+      // User selects reconstruct balance
+      showDatePickerWithOptionsPromise.mockResolvedValue({
+        date: '2024-01-10',
+        reconstructBalance: true,
+      });
+
+      // Current balance is -500 (owes $500)
+      fetchRogersBankAccountDetails.mockResolvedValue({
+        balance: -500,
+        creditLimit: 5000,
+        openedDate: '2024-01-01',
+      });
+
+      monarchApi.uploadBalance.mockResolvedValue(true);
+
+      // Simulate truncated transaction history (totalCount >= 1000)
+      // The transactions only sum to -150, but actual balance is -500
+      // So correction factor should be -350
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          activitySummary: {
+            totalCount: 1000, // Truncated!
+            activities: [
+              {
+                referenceNumber: 'REF1',
+                activityStatus: 'APPROVED',
+                date: '2024-01-12',
+                amount: { value: '-50.00', currency: 'CAD' },
+                transactionAmount: -50.00,
+                description: 'Purchase 1',
+                activityDate: '2024-01-12',
+              },
+              {
+                referenceNumber: 'REF2',
+                activityStatus: 'APPROVED',
+                date: '2024-01-14',
+                amount: { value: '-100.00', currency: 'CAD' },
+                transactionAmount: -100.00,
+                description: 'Purchase 2',
+                activityDate: '2024-01-14',
+              },
+            ],
+          },
+        }),
+      });
+
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [] });
+      applyCategoryMapping.mockReturnValue('Uncategorized');
+      convertTransactionsToMonarchCSV.mockReturnValue('csv,data');
+      monarchApi.uploadTransactions.mockResolvedValue(true);
+
+      await uploadRogersBankToMonarch();
+
+      // Verify uploadBalance was called
+      expect(monarchApi.uploadBalance).toHaveBeenCalled();
+
+      // The balance CSV should contain the current balance value for today
+      const uploadBalanceCall = monarchApi.uploadBalance.mock.calls[0];
+      const csvData = uploadBalanceCall[1];
+
+      // Today's balance (2024-01-15) should be -500 (the actual current balance)
+      expect(csvData).toContain('-500');
+
+      // Warning should have been shown about truncated history
+      expect(toast.show).toHaveBeenCalledWith(
+        expect.stringContaining('Transaction history may be incomplete'),
+        'warning',
+      );
+    });
+
+    test('should not apply balance correction when history is complete', async () => {
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+
+      // First sync - no last upload date
+      globalThis.GM_getValue.mockImplementation((key) => {
+        if (key.includes('rogersbank_account_')) {
+          return JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' });
+        }
+        if (key.includes('rogersbank_last_upload_date_')) {
+          return null; // First sync
+        }
+        return null;
+      });
+
+      // User selects reconstruct balance
+      showDatePickerWithOptionsPromise.mockResolvedValue({
+        date: '2024-01-10',
+        reconstructBalance: true,
+      });
+
+      // Current balance is -150 (matches transaction sum)
+      fetchRogersBankAccountDetails.mockResolvedValue({
+        balance: -150,
+        creditLimit: 5000,
+        openedDate: '2024-01-01',
+      });
+
+      monarchApi.uploadBalance.mockResolvedValue(true);
+
+      // Complete transaction history (totalCount < 1000)
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          activitySummary: {
+            totalCount: 2, // NOT truncated
+            activities: [
+              {
+                referenceNumber: 'REF1',
+                activityStatus: 'APPROVED',
+                date: '2024-01-12',
+                amount: { value: '-50.00', currency: 'CAD' },
+                transactionAmount: -50.00,
+                description: 'Purchase 1',
+                activityDate: '2024-01-12',
+              },
+              {
+                referenceNumber: 'REF2',
+                activityStatus: 'APPROVED',
+                date: '2024-01-14',
+                amount: { value: '-100.00', currency: 'CAD' },
+                transactionAmount: -100.00,
+                description: 'Purchase 2',
+                activityDate: '2024-01-14',
+              },
+            ],
+          },
+        }),
+      });
+
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [] });
+      applyCategoryMapping.mockReturnValue('Uncategorized');
+      convertTransactionsToMonarchCSV.mockReturnValue('csv,data');
+      monarchApi.uploadTransactions.mockResolvedValue(true);
+
+      await uploadRogersBankToMonarch();
+
+      // No warning should have been shown
+      expect(toast.show).not.toHaveBeenCalledWith(
+        expect.stringContaining('Transaction history may be incomplete'),
+        'warning',
+      );
+    });
+
+    test('should apply balance correction with inversion for manual accounts', async () => {
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+
+      // First sync - no last upload date
+      globalThis.GM_getValue.mockImplementation((key) => {
+        if (key.includes('rogersbank_last_upload_date_')) {
+          return null; // First sync
+        }
+        return null;
+      });
+
+      // User selects reconstruct balance
+      showDatePickerWithOptionsPromise.mockResolvedValue({
+        date: '2024-01-10',
+        reconstructBalance: true,
+      });
+
+      // Current balance is -500
+      fetchRogersBankAccountDetails.mockResolvedValue({
+        balance: -500,
+        creditLimit: 5000,
+        openedDate: '2024-01-01',
+      });
+
+      monarchApi.listAccounts.mockResolvedValue([
+        { id: 'monarch123', displayName: 'Rogers Card' },
+      ]);
+
+      // User creates a NEW account (newlyCreated: true)
+      showMonarchAccountSelectorWithCreate.mockImplementation((accounts, callback) => {
+        callback({
+          id: 'new-monarch-account',
+          displayName: 'Rogers Card',
+          newlyCreated: true,
+        });
+      });
+
+      monarchApi.uploadBalance.mockResolvedValue(true);
+
+      // Truncated history with partial transactions
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          activitySummary: {
+            totalCount: 1000, // Truncated!
+            activities: [
+              {
+                referenceNumber: 'REF1',
+                activityStatus: 'APPROVED',
+                date: '2024-01-12',
+                amount: { value: '-100.00', currency: 'CAD' },
+                transactionAmount: -100.00,
+                description: 'Purchase',
+                activityDate: '2024-01-12',
+              },
+            ],
+          },
+        }),
+      });
+
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [] });
+      applyCategoryMapping.mockReturnValue('Uncategorized');
+      convertTransactionsToMonarchCSV.mockReturnValue('csv,data');
+      monarchApi.uploadTransactions.mockResolvedValue(true);
+
+      await uploadRogersBankToMonarch();
+
+      // Verify uploadBalance was called
+      expect(monarchApi.uploadBalance).toHaveBeenCalled();
+
+      const uploadBalanceCall = monarchApi.uploadBalance.mock.calls[0];
+      const csvData = uploadBalanceCall[1];
+
+      // For newly created manual accounts, balance should be inverted
+      // -500 becomes 500
+      expect(csvData).toContain('500');
+      // Should NOT contain -500 (the non-inverted value)
+      expect(csvData).not.toContain('-500');
+    });
+
+    test('should correctly shift all historical balances by correction factor', async () => {
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+
+      // First sync - no last upload date
+      globalThis.GM_getValue.mockImplementation((key) => {
+        if (key.includes('rogersbank_account_')) {
+          return JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' });
+        }
+        if (key.includes('rogersbank_last_upload_date_')) {
+          return null; // First sync
+        }
+        return null;
+      });
+
+      // User selects reconstruct balance - starting from 2024-01-13
+      showDatePickerWithOptionsPromise.mockResolvedValue({
+        date: '2024-01-13',
+        reconstructBalance: true,
+      });
+
+      // Current balance is -1000, but transactions only sum to -150
+      // Correction factor = -1000 - (-150) = -850
+      fetchRogersBankAccountDetails.mockResolvedValue({
+        balance: -1000,
+        creditLimit: 5000,
+        openedDate: '2024-01-01',
+      });
+
+      monarchApi.uploadBalance.mockResolvedValue(true);
+
+      // Truncated history
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          activitySummary: {
+            totalCount: 1000, // Truncated!
+            activities: [
+              {
+                referenceNumber: 'REF1',
+                activityStatus: 'APPROVED',
+                date: '2024-01-14',
+                amount: { value: '-50.00', currency: 'CAD' },
+                transactionAmount: -50.00,
+                description: 'Purchase 1',
+                activityDate: '2024-01-14',
+              },
+              {
+                referenceNumber: 'REF2',
+                activityStatus: 'APPROVED',
+                date: '2024-01-15', // Today
+                amount: { value: '-100.00', currency: 'CAD' },
+                transactionAmount: -100.00,
+                description: 'Purchase 2',
+                activityDate: '2024-01-15',
+              },
+            ],
+          },
+        }),
+      });
+
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [] });
+      applyCategoryMapping.mockReturnValue('Uncategorized');
+      convertTransactionsToMonarchCSV.mockReturnValue('csv,data');
+      monarchApi.uploadTransactions.mockResolvedValue(true);
+
+      await uploadRogersBankToMonarch();
+
+      // Verify uploadBalance was called
+      expect(monarchApi.uploadBalance).toHaveBeenCalled();
+
+      const uploadBalanceCall = monarchApi.uploadBalance.mock.calls[0];
+      const csvData = uploadBalanceCall[1];
+
+      // With correction applied:
+      // Day 2024-01-13: runningBalance=0, after correction: 0 + (-850) = -850
+      // Day 2024-01-14: runningBalance=-50, after correction: -50 + (-850) = -900
+      // Day 2024-01-15: runningBalance=-150, after correction: -150 + (-850) = -1000 (matches current!)
+
+      // The CSV should contain today's corrected balance of -1000
+      expect(csvData).toContain('-1000');
+    });
+
+    test('should log correction factor when applied', async () => {
+      const debugLog = jest.requireMock('../../src/core/utils').debugLog;
+
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+
+      // First sync - no last upload date
+      globalThis.GM_getValue.mockImplementation((key) => {
+        if (key.includes('rogersbank_account_')) {
+          return JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' });
+        }
+        if (key.includes('rogersbank_last_upload_date_')) {
+          return null; // First sync
+        }
+        return null;
+      });
+
+      showDatePickerWithOptionsPromise.mockResolvedValue({
+        date: '2024-01-14',
+        reconstructBalance: true,
+      });
+
+      // Large discrepancy between actual and reconstructed balance
+      fetchRogersBankAccountDetails.mockResolvedValue({
+        balance: -5000,
+        creditLimit: 10000,
+        openedDate: '2024-01-01',
+      });
+
+      monarchApi.uploadBalance.mockResolvedValue(true);
+
+      // Truncated history with small transaction sum
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          activitySummary: {
+            totalCount: 1000, // Truncated!
+            activities: [
+              {
+                referenceNumber: 'REF1',
+                activityStatus: 'APPROVED',
+                date: '2024-01-15',
+                amount: { value: '-100.00', currency: 'CAD' },
+                transactionAmount: -100.00,
+                description: 'Purchase',
+                activityDate: '2024-01-15',
+              },
+            ],
+          },
+        }),
+      });
+
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [] });
+      applyCategoryMapping.mockReturnValue('Uncategorized');
+      convertTransactionsToMonarchCSV.mockReturnValue('csv,data');
+      monarchApi.uploadTransactions.mockResolvedValue(true);
+
+      await uploadRogersBankToMonarch();
+
+      // Verify debugLog was called with correction information
+      expect(debugLog).toHaveBeenCalledWith(
+        expect.stringContaining('Balance correction applied'),
       );
     });
   });

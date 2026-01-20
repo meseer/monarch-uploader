@@ -269,13 +269,22 @@ function normalizeRogersTransaction(tx) {
 
 /**
  * Reconstruct balance history from transactions starting with 0 balance
+ *
+ * When applyCorrection is true (typically when transaction history is truncated at 1000),
+ * the function calculates a correction factor based on the difference between the actual
+ * current balance and the reconstructed today's balance, then applies this correction
+ * to all historical balance entries. This ensures:
+ * 1. Today's balance matches the actual current balance exactly
+ * 2. Historical balances are reasonable approximations (shifted by the correction factor)
+ *
  * @param {Array} transactions - Array of normalized transactions with date and amount
  * @param {string} fromDate - Start date
  * @param {string} toDate - End date
  * @param {number} currentBalance - Current balance
  * @param {boolean} invertBalance - If true, invert (negate) all balance values
+ * @param {boolean} applyCorrection - If true, apply correction factor to align reconstructed balance with actual
  */
-function reconstructBalanceFromTransactions(transactions, fromDate, toDate, currentBalance, invertBalance = false) {
+function reconstructBalanceFromTransactions(transactions, fromDate, toDate, currentBalance, invertBalance = false, applyCorrection = false) {
   const transactionsByDate = new Map();
   if (transactions?.length > 0) {
     transactions.forEach((tx) => {
@@ -294,23 +303,41 @@ function reconstructBalanceFromTransactions(transactions, fromDate, toDate, curr
   const todayStr = getTodayLocal();
   const currentDateObj = new Date(fromDateObj);
 
+  // First pass: calculate raw running balance for each day
   while (currentDateObj <= toDateObj) {
     const dateStr = formatDate(currentDateObj);
     const dayTransactions = transactionsByDate.get(dateStr) || [];
     const dayTotal = dayTransactions.reduce((sum, amt) => sum + amt, 0);
     runningBalance += dayTotal;
 
-    if (dateStr === todayStr && currentBalance !== null && currentBalance !== undefined) {
-      const finalBalance = invertBalance ? -currentBalance : currentBalance;
-      balanceHistory.push({ date: dateStr, amount: finalBalance });
-    } else {
-      const dayBalance = Math.round(runningBalance * 100) / 100;
-      balanceHistory.push({ date: dateStr, amount: invertBalance ? -dayBalance : dayBalance });
-    }
+    const dayBalance = Math.round(runningBalance * 100) / 100;
+    balanceHistory.push({ date: dateStr, amount: dayBalance });
     currentDateObj.setDate(currentDateObj.getDate() + 1);
   }
 
-  return balanceHistory;
+  // Calculate correction factor if needed
+  // This corrects for incomplete transaction history (e.g., when truncated at 1000 transactions)
+  let correctionFactor = 0;
+  if (applyCorrection && currentBalance !== null && currentBalance !== undefined && balanceHistory.length > 0) {
+    // Find today's reconstructed balance (or the last entry if today is not in range)
+    const todayEntry = balanceHistory.find((entry) => entry.date === todayStr);
+    const currentReconstructedBalance = todayEntry ? todayEntry.amount : balanceHistory[balanceHistory.length - 1].amount;
+    correctionFactor = currentBalance - currentReconstructedBalance;
+
+    if (correctionFactor !== 0) {
+      debugLog(`Balance correction applied: factor=${correctionFactor}, reconstructed=${currentReconstructedBalance}, actual=${currentBalance}`);
+    }
+  }
+
+  // Apply correction factor and inversion to all entries
+  return balanceHistory.map((entry) => {
+    let adjustedAmount = entry.amount + correctionFactor;
+    adjustedAmount = Math.round(adjustedAmount * 100) / 100;
+
+    // Apply inversion if needed
+    const finalAmount = invertBalance ? -adjustedAmount : adjustedAmount;
+    return { date: entry.date, amount: finalAmount };
+  });
 }
 
 /**
@@ -557,7 +584,17 @@ export async function uploadRogersBankToMonarch() {
       const normalizedTx = allApprovedTx.map(normalizeRogersTransaction);
       debugLog(`Normalized ${normalizedTx.length} transactions for balance reconstruction`);
 
-      const balanceHistory = reconstructBalanceFromTransactions(normalizedTx, fromDate, todayFormatted, currentBalance, invertBalance);
+      // Always apply balance correction during reconstruction to ensure today's balance matches actual
+      // When history is complete, the correction factor will be 0 (or negligible)
+      // When history is truncated (>1000 transactions), the correction adjusts for missing older transactions
+      const balanceHistory = reconstructBalanceFromTransactions(
+        normalizedTx,
+        fromDate,
+        todayFormatted,
+        currentBalance,
+        invertBalance,
+        true, // applyCorrection: always true during reconstruction
+      );
 
       if (balanceHistory.length > 0) {
         const balanceCSV = generateBalanceHistoryCSV(balanceHistory, rogersAccountName);
