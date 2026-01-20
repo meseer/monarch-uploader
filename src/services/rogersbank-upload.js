@@ -7,11 +7,11 @@ import {
   debugLog, getTodayLocal, calculateFromDateWithLookback, saveLastUploadDate,
 } from '../core/utils';
 import toast from '../ui/toast';
-import { STORAGE } from '../core/config';
+import { STORAGE, LOGO_CLOUDINARY_IDS } from '../core/config';
 import stateManager from '../core/state';
 import { getRogersBankCredentials, fetchRogersBankBalance } from '../api/rogersbank';
 import monarchApi from '../api/monarch';
-import { showMonarchAccountSelector } from '../ui/components/accountSelector';
+import { showMonarchAccountSelectorWithCreate } from '../ui/components/accountSelectorWithCreate';
 import { convertTransactionsToMonarchCSV } from '../utils/csv';
 import { showDatePickerPromise } from '../ui/components/datePicker';
 import { applyCategoryMapping, saveUserCategorySelection, calculateAllCategorySimilarities } from '../mappers/category';
@@ -460,9 +460,30 @@ export async function uploadRogersBankToMonarch() {
         throw new Error('No Monarch credit card accounts found. Please ensure you have credit card accounts in Monarch.');
       }
 
-      // Show account selector and wait for user selection (pass 'credit' as account type)
+      // Fetch current balance for display in account selector
+      let currentBalance = null;
+      try {
+        const balance = await fetchRogersBankBalance();
+        currentBalance = { amount: balance, currency: 'CAD' };
+      } catch (e) {
+        debugLog('Could not fetch balance for account selector display:', e);
+      }
+
+      // Show account selector with create option (pass 'credit' as account type)
       monarchAccount = await new Promise((resolve) => {
-        showMonarchAccountSelector(monarchAccounts, resolve, null, 'credit');
+        showMonarchAccountSelectorWithCreate(
+          monarchAccounts,
+          resolve,
+          null,
+          'credit',
+          {
+            defaultName: rogersAccountName,
+            defaultType: 'credit',
+            defaultSubtype: 'credit_card',
+            currentBalance,
+            accountType: 'Credit Card',
+          },
+        );
       });
 
       if (!monarchAccount) {
@@ -475,6 +496,20 @@ export async function uploadRogersBankToMonarch() {
           success: false,
           message: 'Account selection cancelled by user',
         };
+      }
+
+      // If this is a newly created account, set the Rogers Bank logo
+      if (monarchAccount.newlyCreated) {
+        try {
+          debugLog(`Setting Rogers Bank logo for newly created account ${monarchAccount.id}`);
+          await monarchApi.setAccountLogo(monarchAccount.id, LOGO_CLOUDINARY_IDS.ROGERS);
+          debugLog(`Successfully set Rogers Bank logo for account ${monarchAccount.displayName}`);
+          toast.show(`Set Rogers Bank logo for ${monarchAccount.displayName}`, 'debug');
+        } catch (logoError) {
+          // Logo setting failed, but account creation succeeded - continue with warning
+          debugLog('Failed to set Rogers Bank logo for account:', logoError);
+          toast.show(`Warning: Failed to set logo for ${monarchAccount.displayName}`, 'warning');
+        }
       }
 
       // Save the mapping for future use

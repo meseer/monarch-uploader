@@ -7,7 +7,7 @@ import { API } from '../core/config';
 import { debugLog } from '../core/utils';
 import stateManager from '../core/state';
 import authService from '../services/auth';
-import { showMonarchAccountSelector } from '../ui/components/accountSelector';
+import { showMonarchAccountSelectorWithCreate } from '../ui/components/accountSelectorWithCreate';
 
 /**
  * Construct GraphQL request options
@@ -620,7 +620,7 @@ export async function resolveMonarchAccountMapping(institutionAccountId, storage
 
     // Show account selector and wait for user selection
     const monarchAccount = await new Promise((resolve) => {
-      showMonarchAccountSelector(monarchAccounts, resolve, null, accountType);
+      showMonarchAccountSelectorWithCreate(monarchAccounts, resolve, null, accountType, {});
     });
 
     if (!monarchAccount) {

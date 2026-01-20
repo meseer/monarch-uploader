@@ -5,7 +5,7 @@
  */
 
 import { debugLog, getTodayLocal, formatDate } from '../../core/utils';
-import { STORAGE } from '../../core/config';
+import { STORAGE, LOGO_CLOUDINARY_IDS } from '../../core/config';
 import stateManager from '../../core/state';
 import monarchApi from '../../api/monarch';
 import questradeApi from '../../api/questrade';
@@ -15,7 +15,7 @@ import transactionsService from './transactions';
 import toast from '../../ui/toast';
 import { showProgressDialog } from '../../ui/components/progressDialog';
 import { showDatePickerPromise } from '../../ui/components/datePicker';
-import { showMonarchAccountSelector } from '../../ui/questrade/components/accountSelector';
+import { showMonarchAccountSelectorWithCreate } from '../../ui/components/accountSelectorWithCreate';
 import { ensureMonarchAuthentication } from '../../ui/components/monarchLoginLink';
 
 /**
@@ -355,12 +355,43 @@ async function ensureAllAccountMappings(accounts, progressDialog) {
     const accountName = account.nickname || account.name || 'Account';
     stateManager.setAccount(account.key, accountName);
 
+    // Prepare createDefaults for account creation
+    const createDefaults = {
+      defaultName: accountName,
+      defaultType: 'brokerage',
+      defaultSubtype: 'brokerage',
+      currentBalance: null,
+      accountType: 'Investment',
+    };
+
     // Show account selector for this Questrade account
-    const monarchAccount = await new Promise((resolve) => showMonarchAccountSelector(investmentAccounts, resolve));
+    const monarchAccount = await new Promise((resolve) => {
+      showMonarchAccountSelectorWithCreate(
+        investmentAccounts,
+        resolve,
+        null,
+        'brokerage',
+        createDefaults,
+      );
+    });
 
     if (!monarchAccount) {
       // User cancelled
       return false;
+    }
+
+    // If this is a newly created account, set the Questrade logo
+    if (monarchAccount.newlyCreated) {
+      try {
+        debugLog(`Setting Questrade logo for newly created account ${monarchAccount.id}`);
+        await monarchApi.setAccountLogo(monarchAccount.id, LOGO_CLOUDINARY_IDS.QUESTRADE);
+        debugLog(`Successfully set Questrade logo for account ${monarchAccount.displayName}`);
+        toast.show(`Set Questrade logo for ${monarchAccount.displayName}`, 'debug');
+      } catch (logoError) {
+        // Logo setting failed, but account creation succeeded - continue with warning
+        debugLog('Failed to set Questrade logo for account:', logoError);
+        toast.show(`Warning: Failed to set logo for ${monarchAccount.displayName}`, 'warning');
+      }
     }
 
     // Save the mapping

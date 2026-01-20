@@ -35,7 +35,6 @@ import {
 import authService from '../../src/services/auth';
 import stateManager from '../../src/core/state';
 import { debugLog } from '../../src/core/utils';
-import { showMonarchAccountSelector } from '../../src/ui/components/accountSelector';
 
 // Mock all external dependencies
 jest.mock('../../src/services/auth', () => ({
@@ -54,8 +53,8 @@ jest.mock('../../src/core/utils', () => ({
   debugLog: jest.fn(),
 }));
 
-jest.mock('../../src/ui/components/accountSelector', () => ({
-  showMonarchAccountSelector: jest.fn(),
+jest.mock('../../src/ui/components/accountSelectorWithCreate', () => ({
+  showMonarchAccountSelectorWithCreate: jest.fn(),
 }));
 
 describe('Monarch API', () => {
@@ -635,7 +634,8 @@ describe('Monarch API', () => {
       });
 
       const selectedAccount = { id: 'monarch123', displayName: 'Selected Account' };
-      showMonarchAccountSelector.mockImplementation((accounts, callback) => {
+      const showMonarchAccountSelectorWithCreate = jest.requireMock('../../src/ui/components/accountSelectorWithCreate').showMonarchAccountSelectorWithCreate;
+      showMonarchAccountSelectorWithCreate.mockImplementation((accounts, callback) => {
         callback(selectedAccount);
       });
 
@@ -646,7 +646,7 @@ describe('Monarch API', () => {
         'prefix_inst123',
         JSON.stringify(selectedAccount),
       );
-      expect(showMonarchAccountSelector).toHaveBeenCalled();
+      expect(showMonarchAccountSelectorWithCreate).toHaveBeenCalled();
     });
 
     test('returns null when user cancels selection', async () => {
@@ -670,7 +670,8 @@ describe('Monarch API', () => {
         }), 0);
       });
 
-      showMonarchAccountSelector.mockImplementation((accounts, callback) => {
+      const showMonarchAccountSelectorWithCreate = jest.requireMock('../../src/ui/components/accountSelectorWithCreate').showMonarchAccountSelectorWithCreate;
+      showMonarchAccountSelectorWithCreate.mockImplementation((accounts, callback) => {
         callback(null); // User cancelled
       });
 
@@ -720,7 +721,8 @@ describe('Monarch API', () => {
       });
 
       const selectedAccount = { id: 'monarch123', displayName: 'Selected Account' };
-      showMonarchAccountSelector.mockImplementation((accounts, callback) => {
+      const showMonarchAccountSelectorWithCreate = jest.requireMock('../../src/ui/components/accountSelectorWithCreate').showMonarchAccountSelectorWithCreate;
+      showMonarchAccountSelectorWithCreate.mockImplementation((accounts, callback) => {
         callback(selectedAccount);
       });
 

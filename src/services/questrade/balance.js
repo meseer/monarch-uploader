@@ -14,7 +14,7 @@ import monarchApi from '../../api/monarch';
 import toast from '../../ui/toast';
 import { showProgressDialog } from '../../ui/components/progressDialog';
 import { showDatePickerPromise } from '../../ui/components/datePicker';
-import { showMonarchAccountSelector } from '../../ui/questrade/components/accountSelector';
+import { showMonarchAccountSelectorWithCreate } from '../../ui/components/accountSelectorWithCreate';
 import { ensureMonarchAuthentication } from '../../ui/components/monarchLoginLink';
 
 /**
@@ -624,8 +624,25 @@ async function ensureAllAccountMappings(accounts, progressDialog) {
     const accountName = account.nickname || account.name || 'Account';
     stateManager.setAccount(account.key, accountName);
 
-    // Show account selector for this Questrade account
-    const monarchAccount = await new Promise((resolve) => showMonarchAccountSelector(investmentAccounts, resolve));
+    // Prepare createDefaults for account creation
+    const createDefaults = {
+      defaultName: accountName,
+      defaultType: 'brokerage',
+      defaultSubtype: 'brokerage',
+      currentBalance: null, // Balance not yet available at mapping time
+      accountType: 'Investment',
+    };
+
+    // Show enhanced account selector with create option (both balance and holdings tracking)
+    const monarchAccount = await new Promise((resolve) => {
+      showMonarchAccountSelectorWithCreate(
+        investmentAccounts,
+        resolve,
+        null,
+        'brokerage',
+        createDefaults,
+      );
+    });
 
     if (!monarchAccount) {
       // User cancelled

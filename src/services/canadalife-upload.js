@@ -7,14 +7,14 @@ import {
   debugLog, formatDate, getTodayLocal, getYesterdayLocal, formatDaysAgoLocal, parseLocalDate,
   calculateFromDateWithLookback, saveLastUploadDate, getLastUpdateDate,
 } from '../core/utils';
-import { STORAGE } from '../core/config';
+import { STORAGE, LOGO_CLOUDINARY_IDS } from '../core/config';
 import stateManager from '../core/state';
 import canadalife from '../api/canadalife';
 import monarchApi from '../api/monarch';
 import toast from '../ui/toast';
 import { showProgressDialog } from '../ui/components/progressDialog';
 import { showDatePickerPromise } from '../ui/components/datePicker';
-import { showMonarchAccountSelector } from '../ui/questrade/components/accountSelector';
+import { showMonarchAccountSelectorWithCreate } from '../ui/components/accountSelectorWithCreate';
 import { ensureMonarchAuthentication } from '../ui/components/monarchLoginLink';
 
 /**
@@ -259,11 +259,44 @@ async function getMonarchAccountMapping(canadalifAccount) {
   const accountName = canadalifAccount.LongNameEnglish || canadalifAccount.EnglishShortName;
   stateManager.setAccount(accountId, accountName);
 
-  // Show account selector
-  const monarchAccount = await new Promise((resolve) => showMonarchAccountSelector(investmentAccounts, resolve));
+  // Prepare createDefaults with balance-only tracking
+  // Canada Life only supports balance tracking (no holdings - private mutual funds)
+  const createDefaults = {
+    defaultName: accountName,
+    defaultType: 'brokerage',
+    defaultSubtype: 'brokerage',
+    currentBalance: null, // Balance fetched later during sync
+    accountType: 'Investment',
+    balanceOnlyTracking: true, // Only show balance tracking option
+  };
+
+  // Show account selector with create option (balance-only for Canada Life)
+  const monarchAccount = await new Promise((resolve) => {
+    showMonarchAccountSelectorWithCreate(
+      investmentAccounts,
+      resolve,
+      null,
+      'brokerage',
+      createDefaults,
+    );
+  });
 
   if (!monarchAccount) {
     return null; // User cancelled
+  }
+
+  // If this is a newly created account, set the Canada Life logo
+  if (monarchAccount.newlyCreated) {
+    try {
+      debugLog(`Setting Canada Life logo for newly created account ${monarchAccount.id}`);
+      await monarchApi.setAccountLogo(monarchAccount.id, LOGO_CLOUDINARY_IDS.CANADALIFE);
+      debugLog(`Successfully set Canada Life logo for account ${monarchAccount.displayName}`);
+      toast.show(`Set Canada Life logo for ${monarchAccount.displayName}`, 'debug');
+    } catch (logoError) {
+      // Logo setting failed, but account creation succeeded - continue with warning
+      debugLog('Failed to set Canada Life logo for account:', logoError);
+      toast.show(`Warning: Failed to set logo for ${monarchAccount.displayName}`, 'warning');
+    }
   }
 
   // Save the mapping

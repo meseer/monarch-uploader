@@ -83,8 +83,8 @@ jest.mock('../../src/ui/components/datePicker', () => ({
   showDatePickerPromise: jest.fn(),
 }));
 
-jest.mock('../../src/ui/questrade/components/accountSelector', () => ({
-  showMonarchAccountSelector: jest.fn(),
+jest.mock('../../src/ui/components/accountSelectorWithCreate', () => ({
+  showMonarchAccountSelectorWithCreate: jest.fn(),
 }));
 
 jest.mock('../../src/ui/components/monarchLoginLink', () => ({

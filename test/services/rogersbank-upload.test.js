@@ -101,8 +101,8 @@ jest.mock('../../src/ui/components/datePicker', () => ({
   showDatePickerPromise: jest.fn(),
 }));
 
-jest.mock('../../src/ui/components/accountSelector', () => ({
-  showMonarchAccountSelector: jest.fn(),
+jest.mock('../../src/ui/components/accountSelectorWithCreate', () => ({
+  showMonarchAccountSelectorWithCreate: jest.fn(),
 }));
 
 jest.mock('../../src/ui/components/monarchLoginLink', () => ({
@@ -139,7 +139,7 @@ describe('Rogers Bank Upload Service', () => {
   let monarchApi;
   let toast;
   let showDatePickerPromise;
-  let showMonarchAccountSelector;
+  let showMonarchAccountSelectorWithCreate;
   let showProgressDialog;
   let convertTransactionsToMonarchCSV;
   let applyCategoryMapping;
@@ -160,7 +160,7 @@ describe('Rogers Bank Upload Service', () => {
     monarchApi = jest.requireMock('../../src/api/monarch').default;
     toast = jest.requireMock('../../src/ui/toast').default;
     showDatePickerPromise = jest.requireMock('../../src/ui/components/datePicker').showDatePickerPromise;
-    showMonarchAccountSelector = jest.requireMock('../../src/ui/components/accountSelector').showMonarchAccountSelector;
+    showMonarchAccountSelectorWithCreate = jest.requireMock('../../src/ui/components/accountSelectorWithCreate').showMonarchAccountSelectorWithCreate;
     showProgressDialog = jest.requireMock('../../src/ui/components/progressDialog').showProgressDialog;
     convertTransactionsToMonarchCSV = jest.requireMock('../../src/utils/csv').convertTransactionsToMonarchCSV;
     applyCategoryMapping = jest.requireMock('../../src/mappers/category').applyCategoryMapping;
@@ -277,7 +277,7 @@ describe('Rogers Bank Upload Service', () => {
       ]);
 
       // User cancels account selection
-      showMonarchAccountSelector.mockImplementation((accounts, callback) => {
+      showMonarchAccountSelectorWithCreate.mockImplementation((accounts, callback) => {
         callback(null);
       });
 

@@ -132,6 +132,9 @@ export const COLORS = {
 // These are used to set logos for manually created accounts
 export const LOGO_CLOUDINARY_IDS = {
   WEALTHSIMPLE: 'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/qpy5muxbdwcuzpq2krap',
+  ROGERS: 'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/bqobv1ada0bjpyg5gnio',
+  CANADALIFE: 'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/pvkztvf863k4btje6tal',
+  QUESTRADE: 'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/dyk2dqsh5q8txe76duml',
 };
 
 // UI settings

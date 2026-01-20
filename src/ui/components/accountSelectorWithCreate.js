@@ -22,6 +22,7 @@ import { showConfirmationDialog } from './confirmationDialog';
  * @param {string} createDefaults.defaultType - Default account type
  * @param {string} createDefaults.defaultSubtype - Default account subtype
  * @param {Object} createDefaults.currentBalance - Current balance object {amount, currency}
+ * @param {boolean} createDefaults.balanceOnlyTracking - If true, only show balance tracking option for investment accounts
  * @returns {Promise} Promise that resolves when selection or creation is complete
  */
 export async function showMonarchAccountSelectorWithCreate(
@@ -196,14 +197,19 @@ function showInstitutionSelectorWithCreate(institutions, callback, accountType, 
 
   // Add "Create New Account" button(s)
   // For investment accounts (brokerage), show two options: Track Balance and Track Holdings
+  // Unless balanceOnlyTracking is true (e.g., for Canada Life where holdings are private mutual funds)
   const isInvestmentAccount = accountType === 'brokerage';
+  const showHoldingsOption = isInvestmentAccount && !createDefaults.balanceOnlyTracking;
 
   if (isInvestmentAccount) {
     // Create button for balance tracking
     const createBalanceButton = document.createElement('button');
     createBalanceButton.id = 'create-new-account-balance-button';
     createBalanceButton.type = 'button';
-    createBalanceButton.textContent = '+ Create New Account (Track Balance)';
+    // Simplify button text if this is the only option
+    createBalanceButton.textContent = showHoldingsOption
+      ? '+ Create New Account (Track Balance)'
+      : '+ Create New Account';
     createBalanceButton.style.cssText = `
       width: 100%;
       padding: 15px;
@@ -214,7 +220,7 @@ function showInstitutionSelectorWithCreate(institutions, callback, accountType, 
       cursor: pointer;
       font-size: 1em;
       font-weight: bold;
-      margin-bottom: 10px;
+      margin-bottom: ${showHoldingsOption ? '10px' : '20px'};
       transition: background-color 0.2s;
     `;
     createBalanceButton.onmouseover = () => {
@@ -232,38 +238,40 @@ function showInstitutionSelectorWithCreate(institutions, callback, accountType, 
     };
     modal.appendChild(createBalanceButton);
 
-    // Create button for holdings tracking
-    const createHoldingsButton = document.createElement('button');
-    createHoldingsButton.id = 'create-new-account-holdings-button';
-    createHoldingsButton.type = 'button';
-    createHoldingsButton.textContent = '+ Create Manual Investment Account (Track Holdings)';
-    createHoldingsButton.style.cssText = `
-      width: 100%;
-      padding: 15px;
-      background-color: #2e7d32;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 1em;
-      font-weight: bold;
-      margin-bottom: 20px;
-      transition: background-color 0.2s;
-    `;
-    createHoldingsButton.onmouseover = () => {
-      createHoldingsButton.style.backgroundColor = '#1b5e20';
-    };
-    createHoldingsButton.onmouseout = () => {
-      createHoldingsButton.style.backgroundColor = '#2e7d32';
-    };
-    createHoldingsButton.onclick = async () => {
-      cleanupKeyboard();
-      overlay.remove();
+    // Create button for holdings tracking (only if not balance-only mode)
+    if (showHoldingsOption) {
+      const createHoldingsButton = document.createElement('button');
+      createHoldingsButton.id = 'create-new-account-holdings-button';
+      createHoldingsButton.type = 'button';
+      createHoldingsButton.textContent = '+ Create Manual Investment Account (Track Holdings)';
+      createHoldingsButton.style.cssText = `
+        width: 100%;
+        padding: 15px;
+        background-color: #2e7d32;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 1em;
+        font-weight: bold;
+        margin-bottom: 20px;
+        transition: background-color 0.2s;
+      `;
+      createHoldingsButton.onmouseover = () => {
+        createHoldingsButton.style.backgroundColor = '#1b5e20';
+      };
+      createHoldingsButton.onmouseout = () => {
+        createHoldingsButton.style.backgroundColor = '#2e7d32';
+      };
+      createHoldingsButton.onclick = async () => {
+        cleanupKeyboard();
+        overlay.remove();
 
-      const createdAccount = await showAccountCreationDialog({ ...createDefaults, trackingMethod: 'holdings' });
-      callback(createdAccount);
-    };
-    modal.appendChild(createHoldingsButton);
+        const createdAccount = await showAccountCreationDialog({ ...createDefaults, trackingMethod: 'holdings' });
+        callback(createdAccount);
+      };
+      modal.appendChild(createHoldingsButton);
+    }
   } else {
     // For non-investment accounts, show single create button
     const createAccountButton = document.createElement('button');
