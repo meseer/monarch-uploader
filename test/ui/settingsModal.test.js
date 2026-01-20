@@ -378,44 +378,73 @@ describe('Settings Modal Component', () => {
   });
 
   describe('Institution Logo Handling', () => {
-    test('should use account logo when available in storage', () => {
-      globalThis.GM_listValues.mockReturnValue(['questrade_account_mapping_test123']);
-      globalThis.GM_getValue.mockImplementation((key) => {
-        if (key === 'questrade_account_mapping_test123') {
-          return JSON.stringify({ logoUrl: 'https://example.com/logo.png' });
-        }
-        return null;
-      });
-
+    test('should use Google Favicon API for Questrade tab', () => {
       modal = createSettingsModal();
 
       expect(globalThis.GM_addElement).toHaveBeenCalledWith(
         expect.any(HTMLElement),
         'img',
         expect.objectContaining({
-          src: 'https://example.com/logo.png',
+          src: 'https://www.google.com/s2/favicons?domain=questrade.com&sz=128',
         }),
       );
     });
 
-    test('should create letter fallback when no logo available', () => {
-      modal = createSettingsModal();
-
-      // Check for fallback divs created for institutions without logos
-      const fallbackDivs = modal.querySelectorAll('div[style*="background-color: rgb(224, 224, 224)"]');
-      expect(fallbackDivs.length).toBeGreaterThan(0);
-    });
-
-    test('should handle monarch logo using Google favicon', () => {
+    test('should use Google Favicon API for CanadaLife tab', () => {
       modal = createSettingsModal();
 
       expect(globalThis.GM_addElement).toHaveBeenCalledWith(
         expect.any(HTMLElement),
         'img',
         expect.objectContaining({
-          src: 'https://www.google.com/s2/favicons?domain=monarch.com&sz=128',
+          src: 'https://www.google.com/s2/favicons?domain=canadalife.com&sz=128',
         }),
       );
+    });
+
+    test('should use Google Favicon API for Rogers Bank tab', () => {
+      modal = createSettingsModal();
+
+      expect(globalThis.GM_addElement).toHaveBeenCalledWith(
+        expect.any(HTMLElement),
+        'img',
+        expect.objectContaining({
+          src: 'https://www.google.com/s2/favicons?domain=rogersbank.com&sz=128',
+        }),
+      );
+    });
+
+    test('should use Google Favicon API for Wealthsimple tab', () => {
+      modal = createSettingsModal();
+
+      expect(globalThis.GM_addElement).toHaveBeenCalledWith(
+        expect.any(HTMLElement),
+        'img',
+        expect.objectContaining({
+          src: 'https://www.google.com/s2/favicons?domain=wealthsimple.com&sz=128',
+        }),
+      );
+    });
+
+    test('should use Google Favicon API for Monarch tab', () => {
+      modal = createSettingsModal();
+
+      expect(globalThis.GM_addElement).toHaveBeenCalledWith(
+        expect.any(HTMLElement),
+        'img',
+        expect.objectContaining({
+          src: 'https://www.google.com/s2/favicons?domain=monarchmoney.com&sz=128',
+        }),
+      );
+    });
+
+    test('should use emoji fallback for General tab', () => {
+      modal = createSettingsModal();
+
+      const generalTab = Array.from(modal.querySelectorAll('.settings-tab-button'))
+        .find((btn) => btn.textContent.includes('General'));
+
+      expect(generalTab.textContent).toContain('⚙️');
     });
 
     test('should handle JSON parse errors gracefully when loading logos', () => {

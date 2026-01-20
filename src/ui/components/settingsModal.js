@@ -13,59 +13,6 @@ import { createMonarchLoginLink } from './monarchLoginLink';
 import { getMonarchAccountTypeMapping } from '../../mappers/wealthsimple-account-types';
 
 /**
- * Gets institution logo from stored account mappings
- * @param {string} storagePrefix - Storage prefix for account mappings
- * @param {string} institutionName - Institution name for fallback
- * @returns {HTMLElement} Logo element (img or fallback)
- */
-function getInstitutionLogo(storagePrefix, institutionName) {
-  const allKeys = GM_listValues();
-
-  // Look for stored account mappings with this prefix
-  for (const key of allKeys) {
-    if (key.startsWith(storagePrefix)) {
-      try {
-        const accountData = GM_getValue(key, '');
-        const parsedAccount = JSON.parse(accountData);
-
-        // Check if this account has a logoUrl
-        if (parsedAccount && parsedAccount.logoUrl) {
-          const logoContainer = document.createElement('div');
-          logoContainer.style.cssText = 'display: inline-flex; margin-right: 6px;';
-          GM_addElement(logoContainer, 'img', {
-            src: parsedAccount.logoUrl,
-            style: 'width: 16px; height: 16px; border-radius: 3px; object-fit: contain;',
-          });
-          return logoContainer;
-        }
-      } catch (error) {
-        debugLog('Error parsing account data for logo:', error);
-        continue;
-      }
-    }
-  }
-
-  // No logo found - create letter fallback
-  const logoFallback = document.createElement('div');
-  logoFallback.style.cssText = `
-    width: 16px;
-    height: 16px;
-    border-radius: 3px;
-    background-color: #e0e0e0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 10px;
-    color: #666;
-    font-weight: bold;
-    margin-right: 6px;
-  `;
-  const firstChar = institutionName ? institutionName.charAt(0).toUpperCase() : '?';
-  logoFallback.textContent = firstChar;
-  return logoFallback;
-}
-
-/**
  * Checks connection status for an institution
  * @param {string} institutionId - Institution identifier
  * @returns {boolean} True if connected
@@ -263,7 +210,7 @@ export function createSettingsModal() {
       logoContainer.style.cssText = 'display: inline-flex; margin-right: 6px;';
 
       GM_addElement(logoContainer, 'img', {
-        src: 'https://www.google.com/s2/favicons?domain=monarch.com&sz=128',
+        src: 'https://www.google.com/s2/favicons?domain=monarchmoney.com&sz=128',
         style: 'width: 16px; height: 16px; border-radius: 3px; object-fit: contain;',
       });
 
@@ -279,10 +226,39 @@ export function createSettingsModal() {
       });
 
       buttonContent.appendChild(logoContainer);
-    } else if (tab.storagePrefix && tab.institutionName) {
-      // Get institution logo from stored mappings
-      const logoElement = getInstitutionLogo(tab.storagePrefix, tab.institutionName);
-      buttonContent.appendChild(logoElement);
+    } else if (tab.id === 'questrade') {
+      // Use Google Favicon API for Questrade tab
+      const logoContainer = document.createElement('div');
+      logoContainer.style.cssText = 'display: inline-flex; margin-right: 6px;';
+
+      GM_addElement(logoContainer, 'img', {
+        src: 'https://www.google.com/s2/favicons?domain=questrade.com&sz=128',
+        style: 'width: 16px; height: 16px; border-radius: 3px; object-fit: contain;',
+      });
+
+      buttonContent.appendChild(logoContainer);
+    } else if (tab.id === 'canadalife') {
+      // Use Google Favicon API for CanadaLife tab
+      const logoContainer = document.createElement('div');
+      logoContainer.style.cssText = 'display: inline-flex; margin-right: 6px;';
+
+      GM_addElement(logoContainer, 'img', {
+        src: 'https://www.google.com/s2/favicons?domain=canadalife.com&sz=128',
+        style: 'width: 16px; height: 16px; border-radius: 3px; object-fit: contain;',
+      });
+
+      buttonContent.appendChild(logoContainer);
+    } else if (tab.id === 'rogersbank') {
+      // Use Google Favicon API for Rogers Bank tab
+      const logoContainer = document.createElement('div');
+      logoContainer.style.cssText = 'display: inline-flex; margin-right: 6px;';
+
+      GM_addElement(logoContainer, 'img', {
+        src: 'https://www.google.com/s2/favicons?domain=rogersbank.com&sz=128',
+        style: 'width: 16px; height: 16px; border-radius: 3px; object-fit: contain;',
+      });
+
+      buttonContent.appendChild(logoContainer);
     } else {
       // Use fallback emoji for general tab
       const iconSpan = document.createElement('span');
