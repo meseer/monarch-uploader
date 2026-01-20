@@ -330,8 +330,16 @@ function reconstructBalanceFromTransactions(transactions, fromDate, toDate, curr
   }
 
   // Apply correction factor and inversion to all entries
+  // Only apply correction starting from first non-zero balance to preserve leading zeros
+  let hasSeenNonZeroBalance = false;
   return balanceHistory.map((entry) => {
-    let adjustedAmount = entry.amount + correctionFactor;
+    // Track when we see the first non-zero balance
+    if (entry.amount !== 0) {
+      hasSeenNonZeroBalance = true;
+    }
+
+    // Only apply correction once we've seen a non-zero balance
+    let adjustedAmount = hasSeenNonZeroBalance ? entry.amount + correctionFactor : entry.amount;
     adjustedAmount = Math.round(adjustedAmount * 100) / 100;
 
     // Apply inversion if needed

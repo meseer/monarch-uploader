@@ -2285,6 +2285,110 @@ describe('Rogers Bank Upload Service', () => {
       expect(csvData).toContain('-1000');
     });
 
+    test('should preserve leading zero balances and only apply correction after first non-zero balance', async () => {
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+
+      // First sync - no last upload date
+      globalThis.GM_getValue.mockImplementation((key) => {
+        if (key.includes('rogersbank_account_')) {
+          return JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' });
+        }
+        if (key.includes('rogersbank_last_upload_date_')) {
+          return null; // First sync
+        }
+        return null;
+      });
+
+      // User selects reconstruct balance - starting from 2024-01-01 (well before first transaction)
+      showDatePickerWithOptionsPromise.mockResolvedValue({
+        date: '2024-01-01',
+        reconstructBalance: true,
+      });
+
+      // Current balance is -1000, but transactions only sum to -150
+      // This creates a correction factor of -850
+      fetchRogersBankAccountDetails.mockResolvedValue({
+        balance: -1000,
+        creditLimit: 5000,
+        openedDate: '2024-01-01',
+      });
+
+      monarchApi.uploadBalance.mockResolvedValue(true);
+
+      // Truncated history - first transaction is on 2024-01-12 (not 2024-01-01)
+      // This means days 2024-01-01 through 2024-01-11 have $0 balance
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          activitySummary: {
+            totalCount: 1000, // Truncated!
+            activities: [
+              {
+                referenceNumber: 'REF1',
+                activityStatus: 'APPROVED',
+                date: '2024-01-12', // First transaction
+                amount: { value: '-50.00', currency: 'CAD' },
+                transactionAmount: -50.00,
+                description: 'Purchase 1',
+                activityDate: '2024-01-12',
+              },
+              {
+                referenceNumber: 'REF2',
+                activityStatus: 'APPROVED',
+                date: '2024-01-14',
+                amount: { value: '-100.00', currency: 'CAD' },
+                transactionAmount: -100.00,
+                description: 'Purchase 2',
+                activityDate: '2024-01-14',
+              },
+            ],
+          },
+        }),
+      });
+
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [] });
+      applyCategoryMapping.mockReturnValue('Uncategorized');
+      convertTransactionsToMonarchCSV.mockReturnValue('csv,data');
+      monarchApi.uploadTransactions.mockResolvedValue(true);
+
+      await uploadRogersBankToMonarch();
+
+      // Verify uploadBalance was called
+      expect(monarchApi.uploadBalance).toHaveBeenCalled();
+
+      const uploadBalanceCall = monarchApi.uploadBalance.mock.calls[0];
+      const csvData = uploadBalanceCall[1];
+
+      // Parse the CSV to verify the behavior
+      const lines = csvData.split('\n').filter((line) => line.trim());
+
+      // Days 2024-01-01 through 2024-01-11 should have $0 (correction NOT applied)
+      // Because these are leading zeros before the first transaction
+      const jan01Line = lines.find((line) => line.includes('2024-01-01'));
+      const jan05Line = lines.find((line) => line.includes('2024-01-05'));
+      const jan11Line = lines.find((line) => line.includes('2024-01-11'));
+
+      expect(jan01Line).toContain('"0"'); // Should be $0, not -$850
+      expect(jan05Line).toContain('"0"'); // Should be $0, not -$850
+      expect(jan11Line).toContain('"0"'); // Should be $0, not -$850
+
+      // Day 2024-01-12 (first transaction) should have correction applied
+      // Raw: -50, with correction: -50 + (-850) = -900
+      const jan12Line = lines.find((line) => line.includes('2024-01-12'));
+      expect(jan12Line).toContain('-900');
+
+      // Today (2024-01-15) should match the actual current balance of -1000
+      const jan15Line = lines.find((line) => line.includes('2024-01-15'));
+      expect(jan15Line).toContain('-1000');
+    });
+
     test('should log correction factor when applied', async () => {
       const debugLog = jest.requireMock('../../src/core/utils').debugLog;
 
