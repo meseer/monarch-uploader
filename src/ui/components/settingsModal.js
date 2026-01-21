@@ -752,7 +752,7 @@ function renderRogersBankTab(container) {
   transactionDetailsSetting.appendChild(transactionDetailsToggle);
   txSettingsContainer.appendChild(transactionDetailsSetting);
   txSettingsSection.appendChild(txSettingsContainer);
-  container.appendChild(txSettingsSection);
+  // Note: txSettingsSection is appended later, after Account Mappings
 
   // Account Mappings Section
   const mappingsSection = createSection('Account Mappings', '🔗', 'Rogers Bank to Monarch account mappings');
@@ -851,6 +851,7 @@ function renderRogersBankTab(container) {
   }
 
   container.appendChild(mappingsSection);
+  container.appendChild(txSettingsSection);
   container.appendChild(transactionsSection);
   container.appendChild(categorySection);
 }
@@ -1498,6 +1499,17 @@ function createAccountMappingCards(data, onDelete, institutionName, institutionT
         // Add letter fallback if favicon fails
         addAccountLogoFallback(logoContainer, institutionName);
       }
+    } else if (institutionType === 'rogersbank') {
+      // Use Google Favicon API for Rogers Bank accounts as fallback
+      try {
+        GM_addElement(logoContainer, 'img', {
+          src: 'https://www.google.com/s2/favicons?domain=rogersbank.com&sz=128',
+          style: 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;',
+        });
+      } catch (error) {
+        // Add letter fallback if favicon fails
+        addAccountLogoFallback(logoContainer, institutionName);
+      }
     } else {
       // Add letter fallback for other institutions
       addAccountLogoFallback(logoContainer, institutionName);
@@ -2014,14 +2026,46 @@ function createTransactionsManagementTable() {
       checkbox.style.cssText = 'margin-right: 10px;';
       checkbox.dataset.accountKey = account.key;
       checkbox.dataset.refIndex = refIndex;
-      checkbox.dataset.refValue = ref;
+      // Store the ref value as string for data attribute (handles both string and object refs)
+      checkbox.dataset.refValue = typeof ref === 'object' ? JSON.stringify(ref) : ref;
 
-      const refText = document.createElement('span');
-      refText.textContent = ref;
-      refText.style.cssText = 'font-family: monospace; font-size: 13px;';
+      // Create formatted display for transaction reference
+      const refDisplay = document.createElement('div');
+      refDisplay.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+
+      // Check if ref is an object with id and date
+      if (typeof ref === 'object' && ref !== null && ref.id) {
+        // Date badge
+        if (ref.date) {
+          const dateBadge = document.createElement('span');
+          dateBadge.textContent = ref.date;
+          dateBadge.style.cssText = `
+            background-color: #e3f2fd;
+            color: #1565c0;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          `;
+          refDisplay.appendChild(dateBadge);
+        }
+
+        // Transaction ID
+        const idText = document.createElement('span');
+        idText.textContent = ref.id;
+        idText.style.cssText = 'font-family: monospace; font-size: 13px; color: #333;';
+        refDisplay.appendChild(idText);
+      } else {
+        // Fallback for string references (legacy format)
+        const refText = document.createElement('span');
+        refText.textContent = typeof ref === 'object' ? JSON.stringify(ref) : ref;
+        refText.style.cssText = 'font-family: monospace; font-size: 13px;';
+        refDisplay.appendChild(refText);
+      }
 
       refRow.appendChild(checkbox);
-      refRow.appendChild(refText);
+      refRow.appendChild(refDisplay);
       transactionsList.appendChild(refRow);
     });
 
