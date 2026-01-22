@@ -237,12 +237,28 @@ async function getStartDateForAccount(accountId) {
  */
 async function getMonarchAccountMapping(canadalifAccount) {
   const accountId = canadalifAccount.agreementId;
+  const storageKey = `${STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX}${accountId}`;
+  let accountWarningMessage = null;
 
   // Check for existing mapping
-  const existingMapping = GM_getValue(`${STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX}${accountId}`, null);
+  const existingMapping = GM_getValue(storageKey, null);
   if (existingMapping) {
     try {
-      return JSON.parse(existingMapping);
+      const parsed = JSON.parse(existingMapping);
+
+      // Validate and refresh the stored account mapping
+      const validation = await monarchApi.validateAndRefreshAccountMapping(
+        parsed.id,
+        storageKey,
+        parsed.displayName,
+      );
+
+      if (validation.valid) {
+        return validation.account;
+      }
+      // Account was deleted - show warning in account selector
+      accountWarningMessage = validation.warningMessage;
+      // Fall through to create new mapping
     } catch (error) {
       debugLog('Error parsing existing Canada Life account mapping:', error);
       // Fall through to create new mapping
@@ -268,6 +284,7 @@ async function getMonarchAccountMapping(canadalifAccount) {
     currentBalance: null, // Balance fetched later during sync
     accountType: 'Investment',
     balanceOnlyTracking: true, // Only show balance tracking option
+    warningMessage: accountWarningMessage, // Show warning if previous account was deleted
   };
 
   // Show account selector with create option (balance-only for Canada Life)

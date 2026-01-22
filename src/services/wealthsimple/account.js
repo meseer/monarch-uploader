@@ -53,9 +53,39 @@ export async function resolveWealthsimpleAccountMapping(consolidatedAccount, cur
 
     // Check for existing mapping in consolidated structure
     const accountData = getAccountData(accountId);
+    let warningMessage = null;
+
     if (accountData?.monarchAccount) {
       debugLog(`Found existing mapping: ${nickname} -> ${accountData.monarchAccount.displayName}`);
-      return accountData.monarchAccount;
+
+      // Validate that the Monarch account still exists
+      try {
+        const allAccounts = await monarchApi.getFilteredAccounts({});
+        const freshMonarchAccount = allAccounts.find((acc) => acc.id === accountData.monarchAccount.id);
+
+        if (freshMonarchAccount) {
+          // Account still exists - update with fresh data and return
+          const updatedMonarchAccount = {
+            ...accountData.monarchAccount,
+            ...freshMonarchAccount,
+          };
+
+          // Save the refreshed data back to storage
+          updateAccountInList(accountId, { monarchAccount: updatedMonarchAccount });
+          debugLog(`Refreshed Monarch account data for mapping: ${updatedMonarchAccount.displayName}`);
+
+          return updatedMonarchAccount;
+        }
+
+        // Account not found - clear the mapping and show selector with warning
+        debugLog(`Monarch account ${accountData.monarchAccount.id} no longer exists, clearing mapping`);
+        warningMessage = `The previously mapped account "${accountData.monarchAccount.displayName}" was not found in Monarch and may have been deleted. Please select or create a new account.`;
+        updateAccountInList(accountId, { monarchAccount: null });
+      } catch (validationError) {
+        debugLog('Error validating Monarch account:', validationError);
+        // On network error, trust the existing mapping
+        return accountData.monarchAccount;
+      }
     }
 
     debugLog('No existing mapping found, showing account selector with create option');
@@ -73,6 +103,7 @@ export async function resolveWealthsimpleAccountMapping(consolidatedAccount, cur
       defaultIncludeInNetWorth: true,
       currentBalance, // Pass balance for display in UI
       accountType: type, // Pass raw account type for display
+      warningMessage, // Pass warning if previous mapping was invalid
     };
 
     // Determine account type for filtering Monarch accounts

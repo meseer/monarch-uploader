@@ -2517,6 +2517,52 @@ export async function deleteTransaction(transactionId) {
 }
 
 /**
+ * Validate and refresh a Monarch account mapping
+ * Checks if the mapped Monarch account still exists and refreshes stored data
+ * @param {string} monarchAccountId - The stored Monarch account ID
+ * @param {string} storageKey - The full storage key for this mapping
+ * @param {string} previousAccountName - Name of the previously mapped account (for warning message)
+ * @returns {Promise<{valid: boolean, account: Object|null, wasDeleted: boolean, warningMessage: string|null}>}
+ *   - valid=true: Account exists, mapping updated with fresh data
+ *   - valid=false: Account deleted/not found, mapping cleared
+ */
+export async function validateAndRefreshAccountMapping(monarchAccountId, storageKey, previousAccountName = null) {
+  if (!monarchAccountId || !storageKey) {
+    return { valid: false, account: null, wasDeleted: false, warningMessage: null };
+  }
+
+  debugLog(`Validating account mapping for ${monarchAccountId}`);
+
+  const allAccounts = await getFilteredAccounts({});
+  const account = allAccounts.find((acc) => acc.id === monarchAccountId);
+
+  if (account) {
+    // Account exists - update stored mapping with fresh data
+    const refreshedMapping = {
+      id: account.id,
+      displayName: account.displayName,
+      logoUrl: account.logoUrl,
+      currentBalance: account.displayBalance,
+      type: account.type,
+      isManual: account.isManual,
+      icon: account.icon,
+      limit: account.limit,
+    };
+    GM_setValue(storageKey, JSON.stringify(refreshedMapping));
+    debugLog(`Account mapping refreshed: ${account.displayName}`);
+    return { valid: true, account: refreshedMapping, wasDeleted: false, warningMessage: null };
+  }
+
+  // Account no longer exists - clear mapping
+  GM_deleteValue(storageKey);
+  const accountDesc = previousAccountName || 'The previously mapped account';
+  const warningMessage = `${accountDesc} was not found in Monarch and may have been deleted. Please select or create a new account.`;
+  debugLog(`Account not found, mapping cleared: ${monarchAccountId}`);
+
+  return { valid: false, account: null, wasDeleted: true, warningMessage };
+}
+
+/**
  * Get the credit limit for a credit card account
  * @param {string} accountId - Monarch account ID
  * @returns {Promise<number|null>} Credit limit value, or null if not set
@@ -2642,4 +2688,5 @@ export default {
   deleteTransaction,
   getCreditLimit,
   setCreditLimit,
+  validateAndRefreshAccountMapping,
 };

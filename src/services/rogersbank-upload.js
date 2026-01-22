@@ -505,10 +505,32 @@ export async function uploadRogersBankToMonarch() {
 
     // Resolve Monarch account mapping
     let monarchAccount = null;
-    const savedMapping = GM_getValue(`${STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX}${rogersAccountId}`, null);
+    let accountWarningMessage = null;
+    const storageKey = `${STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX}${rogersAccountId}`;
+    const savedMapping = GM_getValue(storageKey, null);
 
     if (savedMapping) {
-      try { monarchAccount = JSON.parse(savedMapping); } catch (e) { /* ignore */ }
+      try {
+        const parsed = JSON.parse(savedMapping);
+        // Validate and refresh the stored account mapping
+        progressDialog.updateProgress(rogersAccountId, 'processing', 'Validating Monarch account...');
+        const validation = await monarchApi.validateAndRefreshAccountMapping(
+          parsed.id,
+          storageKey,
+          parsed.displayName,
+        );
+
+        if (validation.valid) {
+          monarchAccount = validation.account;
+        } else {
+          // Account was deleted - show warning in account selector
+          accountWarningMessage = validation.warningMessage;
+          monarchAccount = null;
+        }
+      } catch (e) {
+        // Parse error - clear invalid mapping
+        monarchAccount = null;
+      }
     }
 
     if (!monarchAccount) {
@@ -525,6 +547,7 @@ export async function uploadRogersBankToMonarch() {
           defaultBalance: currentBalance,
           currentBalance: { amount: currentBalance, currency: 'CAD' },
           accountType: 'Credit Card',
+          warningMessage: accountWarningMessage,
         });
       });
 

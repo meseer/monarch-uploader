@@ -195,6 +195,33 @@ function showInstitutionSelectorWithCreate(institutions, callback, accountType, 
 
   modal.appendChild(accountBanner);
 
+  // Warning message banner (if provided - e.g., when previously mapped account was deleted)
+  if (createDefaults.warningMessage) {
+    const warningBanner = document.createElement('div');
+    warningBanner.id = 'institution-selector-warning-banner';
+    warningBanner.style.cssText = `
+      background: #fff3cd;
+      padding: 12px 15px;
+      border-radius: 6px;
+      margin-bottom: 15px;
+      border-left: 4px solid #ffc107;
+      color: #856404;
+      font-size: 0.95em;
+      line-height: 1.4;
+    `;
+
+    const warningIcon = document.createElement('span');
+    warningIcon.textContent = '⚠️ ';
+    warningIcon.style.marginRight = '5px';
+    warningBanner.appendChild(warningIcon);
+
+    const warningText = document.createElement('span');
+    warningText.textContent = createDefaults.warningMessage;
+    warningBanner.appendChild(warningText);
+
+    modal.appendChild(warningBanner);
+  }
+
   // Add "Create New Account" button(s)
   // For investment accounts (brokerage), show two options: Track Balance and Track Holdings
   // Unless balanceOnlyTracking is true (e.g., for Canada Life where holdings are private mutual funds)
