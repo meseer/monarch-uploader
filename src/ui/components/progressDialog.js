@@ -159,6 +159,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     margin-bottom: 20px;
     max-height: 400px;
     overflow-y: auto;
+    position: relative;
   `;
   modal.appendChild(accountList);
 
@@ -167,10 +168,13 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
   // It is disabled when user interacts with the dialog (scrolling or clicking to expand/collapse)
   let autoScrollEnabled = true;
   let isProgrammaticAction = false; // Flag to distinguish programmatic scrolling from user scrolling
+  let isScrollMonitoringActive = false; // Only start monitoring after first account starts processing
 
   // Add scroll event listener to detect user scrolling
+  // Only monitors after isScrollMonitoringActive is true (when first account starts processing)
+  // This prevents false triggers during dialog initialization/rendering
   accountList.addEventListener('scroll', () => {
-    if (!isProgrammaticAction) {
+    if (!isProgrammaticAction && isScrollMonitoringActive) {
       autoScrollEnabled = false;
       debugLog('Auto-scroll disabled due to user scroll interaction');
     }
@@ -630,6 +634,13 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
           s.status === 'success' || s.status === 'error' || s.status === 'skipped');
 
         if (accountStatus === 'processing' && status === 'processing') {
+          // Activate scroll monitoring on first processing status
+          // This ensures dialog initialization scroll events don't disable auto-scroll
+          if (!isScrollMonitoringActive) {
+            isScrollMonitoringActive = true;
+            debugLog('Scroll monitoring activated - first account started processing');
+          }
+
           // Account is actively processing - scroll into view and expand
           isProgrammaticAction = true;
 
@@ -650,11 +661,11 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
             behavior: 'smooth',
           });
 
-          // Reset the programmatic action flag after a short delay
-          // to allow the scroll event to fire without disabling auto-scroll
+          // Reset the programmatic action flag after a delay longer than smooth scroll animation
+          // (smooth scroll typically takes ~400-500ms)
           setTimeout(() => {
             isProgrammaticAction = false;
-          }, 300);
+          }, 600);
 
           debugLog(`Auto-scrolled to account ${accountId}, scrollTop: ${targetScrollTop}`);
         } else if (allDone && el.isExpanded()) {
