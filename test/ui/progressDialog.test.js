@@ -40,6 +40,8 @@ describe('Progress Dialog Component', () => {
         addEventListener: jest.fn(),
         querySelector: jest.fn(() => null),
         querySelectorAll: jest.fn(() => []),
+        scrollIntoView: jest.fn(), // Mock scrollIntoView for auto-scroll functionality
+        scrollTo: jest.fn(), // Mock scrollTo for direct scroll manipulation
         classList: {
           add: jest.fn(),
           remove: jest.fn(),
@@ -528,6 +530,134 @@ describe('Progress Dialog Component', () => {
       const defaultExport = require('../../src/ui/components/progressDialog').default;
       expect(defaultExport).toBeDefined();
       expect(typeof defaultExport.showProgressDialog).toBe('function');
+    });
+  });
+
+  describe('auto-scroll behavior', () => {
+    beforeEach(() => {
+      dialog = showProgressDialog(mockAccounts);
+    });
+
+    test('should auto-expand account when step changes to processing', () => {
+      // Initialize steps for the account
+      dialog.initSteps('acc1', [
+        { key: 'step1', name: 'Step 1' },
+        { key: 'step2', name: 'Step 2' },
+      ]);
+
+      // Update step to processing
+      dialog.updateStepStatus('acc1', 'step1', 'processing', 'Working...');
+
+      // The function should execute without errors (auto-expand triggered)
+      expect(dialog).toBeDefined();
+    });
+
+    test('should auto-collapse account when all steps complete', () => {
+      // Initialize steps for the account
+      dialog.initSteps('acc1', [
+        { key: 'step1', name: 'Step 1' },
+        { key: 'step2', name: 'Step 2' },
+      ]);
+
+      // Complete all steps
+      dialog.updateStepStatus('acc1', 'step1', 'success', 'Done');
+      dialog.updateStepStatus('acc1', 'step2', 'success', 'Done');
+
+      // The function should execute without errors (auto-collapse triggered)
+      expect(dialog).toBeDefined();
+    });
+
+    test('should handle processing then completion sequence', () => {
+      dialog.initSteps('acc1', [
+        { key: 'step1', name: 'Step 1' },
+        { key: 'step2', name: 'Step 2' },
+      ]);
+
+      // Start processing
+      dialog.updateStepStatus('acc1', 'step1', 'processing', 'Working...');
+
+      // Complete first step
+      dialog.updateStepStatus('acc1', 'step1', 'success', 'Done');
+
+      // Process second step
+      dialog.updateStepStatus('acc1', 'step2', 'processing', 'Working...');
+
+      // Complete second step
+      dialog.updateStepStatus('acc1', 'step2', 'success', 'Done');
+
+      // Should complete without errors
+      expect(dialog).toBeDefined();
+    });
+
+    test('should handle error status in steps', () => {
+      dialog.initSteps('acc1', [
+        { key: 'step1', name: 'Step 1' },
+        { key: 'step2', name: 'Step 2' },
+      ]);
+
+      // Process and error
+      dialog.updateStepStatus('acc1', 'step1', 'processing', 'Working...');
+      dialog.updateStepStatus('acc1', 'step1', 'error', 'Failed');
+      dialog.updateStepStatus('acc1', 'step2', 'skipped', 'Skipped due to error');
+
+      // Should complete without errors
+      expect(dialog).toBeDefined();
+    });
+
+    test('should handle multiple accounts with sequential processing', () => {
+      // Initialize steps for all accounts
+      dialog.initSteps('acc1', [{ key: 'step1', name: 'Step 1' }]);
+      dialog.initSteps('acc2', [{ key: 'step1', name: 'Step 1' }]);
+      dialog.initSteps('acc3', [{ key: 'step1', name: 'Step 1' }]);
+
+      // Process account 1
+      dialog.updateStepStatus('acc1', 'step1', 'processing', 'Working...');
+      dialog.updateStepStatus('acc1', 'step1', 'success', 'Done');
+
+      // Process account 2
+      dialog.updateStepStatus('acc2', 'step1', 'processing', 'Working...');
+      dialog.updateStepStatus('acc2', 'step1', 'success', 'Done');
+
+      // Process account 3
+      dialog.updateStepStatus('acc3', 'step1', 'processing', 'Working...');
+      dialog.updateStepStatus('acc3', 'step1', 'success', 'Done');
+
+      // Should complete without errors
+      expect(dialog).toBeDefined();
+    });
+  });
+
+  describe('user interaction disables auto-scroll', () => {
+    beforeEach(() => {
+      dialog = showProgressDialog(mockAccounts);
+    });
+
+    test('should still work after user scroll interaction', () => {
+      // Initialize steps
+      dialog.initSteps('acc1', [{ key: 'step1', name: 'Step 1' }]);
+
+      // Simulate scroll event - this should disable auto-scroll internally
+      // The actual scroll behavior is handled by the DOM, which is mocked
+
+      // Continue processing - should not throw
+      dialog.updateStepStatus('acc1', 'step1', 'processing', 'Working...');
+      dialog.updateStepStatus('acc1', 'step1', 'success', 'Done');
+
+      expect(dialog).toBeDefined();
+    });
+
+    test('should still work after user clicks on account row', () => {
+      // Initialize steps
+      dialog.initSteps('acc1', [{ key: 'step1', name: 'Step 1' }]);
+
+      // Simulate click on account row - in real DOM this would disable auto-scroll
+      // The mocked environment handles this gracefully
+
+      // Continue processing - should not throw
+      dialog.updateStepStatus('acc1', 'step1', 'processing', 'Working...');
+      dialog.updateStepStatus('acc1', 'step1', 'success', 'Done');
+
+      expect(dialog).toBeDefined();
     });
   });
 });

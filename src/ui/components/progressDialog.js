@@ -162,6 +162,20 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
   `;
   modal.appendChild(accountList);
 
+  // Auto-scroll state management (defined early so it can be used in account row click handlers)
+  // Auto-scroll keeps the currently syncing account in view and expands its details
+  // It is disabled when user interacts with the dialog (scrolling or clicking to expand/collapse)
+  let autoScrollEnabled = true;
+  let isProgrammaticAction = false; // Flag to distinguish programmatic scrolling from user scrolling
+
+  // Add scroll event listener to detect user scrolling
+  accountList.addEventListener('scroll', () => {
+    if (!isProgrammaticAction) {
+      autoScrollEnabled = false;
+      debugLog('Auto-scroll disabled due to user scroll interaction');
+    }
+  });
+
   // Create account rows
   const accountElements = {};
   accounts.forEach((account) => {
@@ -291,6 +305,12 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
 
     // Toggle expand/collapse on row click
     accountRow.addEventListener('click', () => {
+      // Disable auto-scroll when user manually interacts with expand/collapse
+      // Only if this is not a programmatic action
+      if (!isProgrammaticAction) {
+        autoScrollEnabled = false;
+        debugLog('Auto-scroll disabled due to user click on account row');
+      }
       isExpanded = !isExpanded;
       stepsContainer.style.display = isExpanded ? 'block' : 'none';
       expandIcon.style.transform = isExpanded ? 'rotate(90deg)' : 'rotate(0deg)';
@@ -600,6 +620,54 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
         el.row.style.backgroundColor = '#ffebee';
       } else {
         el.row.style.backgroundColor = 'transparent';
+      }
+
+      // Auto-scroll and auto-expand behavior
+      // When account starts processing (first step becomes 'processing'), scroll into view and expand
+      // When account completes (all steps done), collapse
+      if (autoScrollEnabled) {
+        const allDone = el.steps.every((s) =>
+          s.status === 'success' || s.status === 'error' || s.status === 'skipped');
+
+        if (accountStatus === 'processing' && status === 'processing') {
+          // Account is actively processing - scroll into view and expand
+          isProgrammaticAction = true;
+
+          // Expand the account details
+          el.setExpanded(true);
+
+          // Scroll the account container into view within the accountList container
+          // Using direct scroll manipulation because scrollIntoView doesn't work
+          // reliably for nested scrollable containers
+          const containerTop = el.container.offsetTop;
+
+          // Scroll to position the element near the top of the visible area
+          // with a small margin for context
+          const targetScrollTop = Math.max(0, containerTop - 10);
+
+          accountList.scrollTo({
+            top: targetScrollTop,
+            behavior: 'smooth',
+          });
+
+          // Reset the programmatic action flag after a short delay
+          // to allow the scroll event to fire without disabling auto-scroll
+          setTimeout(() => {
+            isProgrammaticAction = false;
+          }, 300);
+
+          debugLog(`Auto-scrolled to account ${accountId}, scrollTop: ${targetScrollTop}`);
+        } else if (allDone && el.isExpanded()) {
+          // Account has completed all steps - collapse the details
+          isProgrammaticAction = true;
+          el.setExpanded(false);
+
+          setTimeout(() => {
+            isProgrammaticAction = false;
+          }, 150);
+
+          debugLog(`Auto-collapsed completed account ${accountId}`);
+        }
       }
 
       debugLog(`Updated step ${stepKey} for account ${accountId}: ${status} - ${message}`);
