@@ -702,6 +702,7 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
     // Transactions are synced first so pending reconciliation can delete cancelled transactions
     // before balance upload captures any implicit balance adjustments
     let rawWealthsimpleTransactions = null; // Store for pending reconciliation
+    let transactionsSyncedCount = 0; // Track synced count for collapsed summary display
 
     if (transactionSupportedTypes.includes(accountType)) {
       progressDialog.updateStepStatus(account.id, 'transactions', 'processing', 'Fetching from WS...');
@@ -735,6 +736,8 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
       );
 
       if (transactionsResult && transactionsResult.success) {
+        // Track synced count for collapsed summary display
+        transactionsSyncedCount = transactionsResult.synced || 0;
         // Format transaction count message
         const txMessage = formatTransactionCountMessage(transactionsResult.synced, transactionsResult.skipped);
         progressDialog.updateStepStatus(account.id, 'transactions', 'success', txMessage);
@@ -834,15 +837,28 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
       const balanceMessage = formatBalanceMessage(currentBalance?.amount, daysUploaded);
       progressDialog.updateStepStatus(account.id, 'balance', 'success', balanceMessage);
 
+      // Determine account type for collapsed summary display
+      const isInvestment = isInvestmentAccount(accountType);
+      const summaryAccountType = isInvestment ? 'investment' : (accountType === 'CREDIT_CARD' ? 'credit' : 'cash');
+
+      // Get transaction count from the transactions step result (stored earlier in the flow)
+      const transactionCount = transactionsSyncedCount;
+
       // Extract and display balance change (using checkpoint data BEFORE updating it)
       const balanceChange = extractWealthsimpleBalanceChange(consolidatedAccount, currentBalance);
       if (balanceChange) {
-        progressDialog.updateBalanceChange(account.id, balanceChange);
+        progressDialog.updateBalanceChange(account.id, {
+          ...balanceChange,
+          accountType: summaryAccountType,
+          transactionCount: !isInvestment ? transactionCount : undefined,
+        });
       } else {
         // Fallback: just show the new balance if no old data available
         progressDialog.updateBalanceChange(account.id, {
           newBalance: currentBalance?.amount,
           daysUploaded,
+          accountType: summaryAccountType,
+          transactionCount: !isInvestment ? transactionCount : undefined,
         });
       }
     } else {

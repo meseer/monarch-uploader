@@ -69,7 +69,11 @@ export async function syncAccountToMonarch(accountId, accountName, fromDate, toD
     if (progressDialog) {
       const balanceChange = extractBalanceChange(accountId, balanceData);
       if (balanceChange) {
-        progressDialog.updateBalanceChange(accountId, balanceChange);
+        // Add accountType for collapsed summary display
+        progressDialog.updateBalanceChange(accountId, {
+          ...balanceChange,
+          accountType: 'investment',
+        });
       }
     }
 

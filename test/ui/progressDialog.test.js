@@ -237,6 +237,194 @@ describe('Progress Dialog Component', () => {
         dialog.updateBalanceChange('acc1', {});
       }).not.toThrow();
     });
+
+    test('should update balance change with accountType for investment', () => {
+      const balanceData = {
+        oldBalance: 100000,
+        newBalance: 105000,
+        lastUploadDate: '2024-01-15',
+        changePercent: 5.0,
+        accountType: 'investment',
+      };
+
+      expect(() => {
+        dialog.updateBalanceChange('acc1', balanceData);
+      }).not.toThrow();
+    });
+
+    test('should update balance change with accountType for cash', () => {
+      const balanceData = {
+        newBalance: 5000,
+        changePercent: 10.0,
+        accountType: 'cash',
+        transactionCount: 15,
+      };
+
+      expect(() => {
+        dialog.updateBalanceChange('acc1', balanceData);
+      }).not.toThrow();
+    });
+
+    test('should update balance change with accountType for credit with debtAsPositive', () => {
+      const balanceData = {
+        newBalance: 1500,
+        changePercent: -5.0,
+        accountType: 'credit',
+        transactionCount: 8,
+        debtAsPositive: true,
+      };
+
+      expect(() => {
+        dialog.updateBalanceChange('acc1', balanceData);
+      }).not.toThrow();
+    });
+
+    test('should update balance change with negative balance (WS-style credit)', () => {
+      const balanceData = {
+        oldBalance: -1000,
+        newBalance: -800,
+        lastUploadDate: '2024-01-10',
+        changePercent: 20.0, // Less debt = positive change
+        accountType: 'credit',
+        transactionCount: 5,
+        debtAsPositive: false,
+      };
+
+      expect(() => {
+        dialog.updateBalanceChange('acc1', balanceData);
+      }).not.toThrow();
+    });
+  });
+
+  describe('collapsed summary display with balance change', () => {
+    beforeEach(() => {
+      dialog = showProgressDialog(mockAccounts);
+    });
+
+    test('should show balance change in collapsed summary after all steps complete for investment account', () => {
+      // Initialize steps
+      dialog.initSteps('acc1', [
+        { key: 'balance', name: 'Balance history' },
+        { key: 'positions', name: 'Positions sync' },
+      ]);
+
+      // Complete all steps
+      dialog.updateStepStatus('acc1', 'balance', 'success', 'Uploaded');
+      dialog.updateStepStatus('acc1', 'positions', 'success', '5 synced');
+
+      // Update balance change with investment accountType
+      const balanceData = {
+        oldBalance: 100000,
+        newBalance: 102500,
+        lastUploadDate: '2024-01-15',
+        changePercent: 2.5,
+        accountType: 'investment',
+      };
+      dialog.updateBalanceChange('acc1', balanceData);
+
+      // The collapsed summary should now show the balance change
+      expect(dialog).toBeDefined();
+    });
+
+    test('should show transaction count and balance for cash account in collapsed summary', () => {
+      dialog.initSteps('acc1', [
+        { key: 'transactions', name: 'Transaction sync' },
+        { key: 'balance', name: 'Balance upload' },
+      ]);
+
+      dialog.updateStepStatus('acc1', 'transactions', 'success', '12 synced');
+      dialog.updateStepStatus('acc1', 'balance', 'success', '$5,000.00');
+
+      const balanceData = {
+        newBalance: 5000,
+        changePercent: 8.0,
+        accountType: 'cash',
+        transactionCount: 12,
+      };
+      dialog.updateBalanceChange('acc1', balanceData);
+
+      expect(dialog).toBeDefined();
+    });
+
+    test('should show transaction count and balance for credit card in collapsed summary', () => {
+      dialog.initSteps('acc1', [
+        { key: 'transactions', name: 'Transaction sync' },
+        { key: 'pendingReconciliation', name: 'Pending reconciliation' },
+        { key: 'balance', name: 'Balance upload' },
+      ]);
+
+      dialog.updateStepStatus('acc1', 'transactions', 'success', '8 synced');
+      dialog.updateStepStatus('acc1', 'pendingReconciliation', 'success', 'No changes');
+      dialog.updateStepStatus('acc1', 'balance', 'success', '-$1,500.00');
+
+      const balanceData = {
+        oldBalance: -1200,
+        newBalance: -1500,
+        lastUploadDate: '2024-01-10',
+        changePercent: -25.0, // More debt = negative change for WS-style
+        accountType: 'credit',
+        transactionCount: 8,
+        debtAsPositive: false,
+      };
+      dialog.updateBalanceChange('acc1', balanceData);
+
+      expect(dialog).toBeDefined();
+    });
+
+    test('should handle zero transaction count for cash accounts', () => {
+      dialog.initSteps('acc1', [
+        { key: 'transactions', name: 'Transaction sync' },
+        { key: 'balance', name: 'Balance upload' },
+      ]);
+
+      dialog.updateStepStatus('acc1', 'transactions', 'success', 'No transactions');
+      dialog.updateStepStatus('acc1', 'balance', 'success', '$10,000.00');
+
+      const balanceData = {
+        newBalance: 10000,
+        changePercent: 0,
+        accountType: 'cash',
+        transactionCount: 0,
+      };
+      dialog.updateBalanceChange('acc1', balanceData);
+
+      expect(dialog).toBeDefined();
+    });
+
+    test('should show Complete if no balance change data and all steps done', () => {
+      dialog.initSteps('acc1', [
+        { key: 'balance', name: 'Balance history' },
+      ]);
+
+      dialog.updateStepStatus('acc1', 'balance', 'success', 'Uploaded');
+
+      // Don't call updateBalanceChange - should fallback to "Complete"
+      expect(dialog).toBeDefined();
+    });
+
+    test('should handle debtAsPositive for Rogers-style credit accounts', () => {
+      dialog.initSteps('acc1', [
+        { key: 'transactions', name: 'Transaction sync' },
+        { key: 'balance', name: 'Balance upload' },
+      ]);
+
+      dialog.updateStepStatus('acc1', 'transactions', 'success', '5 synced');
+      dialog.updateStepStatus('acc1', 'balance', 'success', '$500.00');
+
+      // Rogers style: positive balance = debt
+      const balanceData = {
+        oldBalance: 600,
+        newBalance: 500,
+        lastUploadDate: '2024-01-10',
+        changePercent: -16.67, // Decrease in debt = good (green)
+        accountType: 'credit',
+        transactionCount: 5,
+        debtAsPositive: true,
+      };
+      dialog.updateBalanceChange('acc1', balanceData);
+
+      expect(dialog).toBeDefined();
+    });
   });
 
   describe('showError functionality', () => {

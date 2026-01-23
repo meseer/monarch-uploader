@@ -64,11 +64,12 @@ function formatCurrency(amount, showSign = false) {
  * Calculate step summary for display in collapsed account row
  * Shows the current step being processed, or final status when complete
  * @param {Array} steps - Array of step objects with status
+ * @param {Object} balanceChangeData - Optional balance change data to show on completion
  * @returns {Object} Summary object with counts and display text
  */
-function calculateStepSummary(steps) {
+function calculateStepSummary(steps, balanceChangeData = null) {
   if (!steps || steps.length === 0) {
-    return { complete: 0, total: 0, hasError: false, currentStep: null, text: '' };
+    return { complete: 0, total: 0, hasError: false, currentStep: null, text: '', color: null };
   }
 
   let complete = 0;
@@ -93,18 +94,117 @@ function calculateStepSummary(steps) {
   const allDone = complete + errors + skipped === total;
 
   let text;
+  let color = null; // Color for the summary text (used for balance display)
+
   if (currentStep) {
     // Show current step being processed
     text = currentStep.message || currentStep.name || 'Processing...';
   } else if (hasError) {
     text = `${complete}/${total} complete, ${errors} error${errors > 1 ? 's' : ''}`;
+  } else if (allDone && balanceChangeData) {
+    // Show balance change info when complete
+    const summaryResult = formatCollapsedBalanceSummary(balanceChangeData);
+    text = summaryResult.text;
+    color = summaryResult.color;
   } else if (allDone) {
     text = 'Complete';
   } else {
     text = 'Pending';
   }
 
-  return { complete, total, hasError, currentStep, text };
+  return { complete, total, hasError, currentStep, text, color };
+}
+
+/**
+ * Format balance change summary for collapsed row display
+ * @param {Object} balanceChangeData - Balance change data
+ * @returns {Object} Summary with text and color
+ */
+function formatCollapsedBalanceSummary(balanceChangeData) {
+  const {
+    accountType, changePercent, oldBalance, newBalance,
+    transactionCount, debtAsPositive,
+  } = balanceChangeData;
+
+  // Investment accounts: show dollar change and percentage
+  if (accountType === 'investment') {
+    if (oldBalance !== undefined && oldBalance !== null
+        && newBalance !== undefined && newBalance !== null) {
+      const dollarChange = newBalance - oldBalance;
+      const formattedDollarChange = formatCurrency(dollarChange, true);
+      const changeSymbol = changePercent > 0 ? '+' : '';
+      const formattedPercent = `${changeSymbol}${(changePercent || 0).toFixed(2)}%`;
+
+      // Determine color based on change
+      let color;
+      if (changePercent > 0) {
+        color = '#2e7d32'; // Green
+      } else if (changePercent < 0) {
+        color = '#c62828'; // Red
+      } else {
+        color = '#666'; // Grey for no change
+      }
+
+      return { text: `${formattedDollarChange} / ${formattedPercent}`, color };
+    }
+    return { text: 'Complete', color: null };
+  }
+
+  // Cash/Credit accounts: show transaction count and colored balance
+  const parts = [];
+
+  // Add transaction count if available
+  if (transactionCount !== undefined && transactionCount !== null && transactionCount > 0) {
+    parts.push(`${transactionCount} new`);
+  }
+
+  // Add balance with color coding
+  if (newBalance !== undefined && newBalance !== null) {
+    const formattedBalance = formatCurrency(newBalance);
+    parts.push(formattedBalance);
+  }
+
+  // Determine color for cash/credit accounts based on balance change
+  // debtAsPositive: true for Rogers (positive balance = debt, increase is bad)
+  // debtAsPositive: false/undefined for WS (negative balance = debt, decrease is bad)
+  let color = '#666'; // Grey default
+  if (changePercent !== undefined && changePercent !== null) {
+    if (debtAsPositive) {
+      // Rogers-style: positive balance is debt, so increase is bad (red), decrease is good (green)
+      if (changePercent > 0) {
+        color = '#c62828'; // Red - more debt
+      } else if (changePercent < 0) {
+        color = '#2e7d32'; // Green - less debt
+      }
+    } else {
+      // WS-style: negative balance is debt
+      // For regular cash: increase is green, decrease is red
+      // For credit (negative balance): decrease (less negative) is green, increase (more negative) is red
+      if (newBalance < 0) {
+        // Credit card with negative balance (debt tracked as negative)
+        // Balance going from -1000 to -800 (less debt) = changePercent positive = green
+        // Balance going from -1000 to -1200 (more debt) = changePercent negative = red
+        if (changePercent > 0) {
+          color = '#2e7d32'; // Green - less debt
+        } else if (changePercent < 0) {
+          color = '#c62828'; // Red - more debt
+        }
+      } else {
+        // Regular cash account
+        if (changePercent > 0) {
+          color = '#2e7d32'; // Green - balance increased
+        } else if (changePercent < 0) {
+          color = '#c62828'; // Red - balance decreased
+        }
+      }
+    }
+  }
+
+  if (parts.length === 0) {
+    return { text: 'Complete', color: null };
+  }
+
+  return { text: parts.join(' • '), color };
 }
 
 /**
@@ -399,6 +499,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
       stepsContainer,
       balanceChange: balanceChangeDiv,
       steps: [], // Array of step objects: { key, name, status, message, element }
+      balanceChangeData: null, // Stored balance change data for collapsed summary display
       isExpanded: () => isExpanded,
       setExpanded: (expanded) => {
         isExpanded = expanded;
@@ -492,9 +593,14 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
       return;
     }
 
-    const summaryData = calculateStepSummary(el.steps);
+    // Pass balance change data for collapsed summary display when complete
+    const summaryData = calculateStepSummary(el.steps, el.balanceChangeData);
     if (summaryData.text) {
       el.status.textContent = summaryData.text;
+      // Apply color if specified (for balance change display)
+      if (summaryData.color) {
+        el.status.style.color = summaryData.color;
+      }
     }
   }
 
@@ -789,7 +895,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
 
     /**
      * Update balance change information for a specific account
-     * This is displayed in the expandable steps section
+     * This is displayed in the expandable steps section AND in the collapsed row summary
      * New format: $oldBalance (date) → $newBalance (+$dollarChange / +percent%)
      * Example: $132,085.72 (Jan 20) → $133,407.31 (+$1,321.59 / +1.00%)
      * @param {string} accountId - Account ID to update
@@ -799,6 +905,9 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
      * @param {string} balanceChangeData.lastUploadDate - Last upload date in YYYY-MM-DD format (optional)
      * @param {number} balanceChangeData.changePercent - Percentage change (optional, null means no history)
      * @param {number} balanceChangeData.daysUploaded - Number of days uploaded (optional, legacy)
+     * @param {string} balanceChangeData.accountType - 'investment' | 'cash' | 'credit' for collapsed summary display
+     * @param {number} balanceChangeData.transactionCount - Number of new transactions (for cash/credit accounts)
+     * @param {boolean} balanceChangeData.debtAsPositive - True if debt is tracked as positive balance (Rogers style)
      */
     updateBalanceChange: (accountId, balanceChangeData) => {
       const el = accountElements[accountId];
@@ -808,6 +917,9 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
       }
 
       try {
+        // Store balance change data for collapsed summary display
+        el.balanceChangeData = balanceChangeData;
+
         const {
           oldBalance, newBalance, lastUploadDate, changePercent,
         } = balanceChangeData;
@@ -879,6 +991,9 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
         el.balanceChange.style.backgroundColor = backgroundColor;
         el.balanceChange.style.color = textColor;
         el.balanceChange.style.display = 'block';
+
+        // Update the collapsed row summary to show balance change info
+        updateStepSummaryDisplay(accountId);
 
         debugLog(`Updated balance change for ${accountId}: ${displayText}`);
       } catch (error) {
