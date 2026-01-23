@@ -317,7 +317,7 @@ export async function bulkProcessAccounts(accounts, fromDate, toDate) {
  * @param {Object} balanceData - Balance data from fetchBalanceHistory
  * @returns {Object|null} Balance change data or null if not available
  */
-function extractBalanceChange(accountId, balanceData) {
+export function extractBalanceChange(accountId, balanceData) {
   try {
     // Get today's balance (CAD)
     const currentBalance = balanceData.currentBalance?.totalEquity?.combined?.find((i) => i.currencyCode === 'CAD')?.amount;
@@ -716,5 +716,6 @@ export default {
   processAndUploadBalance,
   bulkProcessAccounts,
   uploadAllAccountsToMonarch,
+  extractBalanceChange,
   BalanceError,
 };

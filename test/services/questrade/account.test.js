@@ -27,9 +27,18 @@ jest.mock('../../../src/services/questrade/auth', () => ({
 }));
 
 jest.mock('../../../src/services/questrade/balance', () => ({
+  default: {
+    processAndUploadBalance: jest.fn(),
+    bulkProcessAccounts: jest.fn(),
+    getDefaultDateRange: jest.fn(),
+    fetchBalanceHistory: jest.fn(),
+    extractBalanceChange: jest.fn(),
+  },
   processAndUploadBalance: jest.fn(),
   bulkProcessAccounts: jest.fn(),
   getDefaultDateRange: jest.fn(),
+  fetchBalanceHistory: jest.fn(),
+  extractBalanceChange: jest.fn(),
 }));
 
 jest.mock('../../../src/core/state', () => ({

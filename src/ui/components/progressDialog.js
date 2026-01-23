@@ -7,10 +7,58 @@
  * - Accordion-style expandable account rows (collapsed by default)
  * - Per-step progress tracking within each account
  * - Dynamic step initialization based on sync process scope
- * - Balance change display with amounts, days, and percentage
+ * - Balance change display showing: $old (date) → $new (+$change / +%)
  */
 
 import { debugLog } from '../../core/utils';
+
+/**
+ * Format a date string (YYYY-MM-DD) as "Jan 20" style
+ * @param {string} dateString - Date in YYYY-MM-DD format
+ * @returns {string} Formatted date like "Jan 20"
+ */
+function formatShortDate(dateString) {
+  if (!dateString) return '';
+
+  try {
+    // Parse the date string as local date (not UTC)
+    const [year, month, day] = dateString.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+
+    if (Number.isNaN(date.getTime())) {
+      return dateString; // Fallback to original
+    }
+
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${monthNames[date.getMonth()]} ${date.getDate()}`;
+  } catch (error) {
+    return dateString; // Fallback to original
+  }
+}
+
+/**
+ * Format a currency amount with proper formatting
+ * @param {number} amount - Amount to format
+ * @param {boolean} showSign - Whether to show +/- sign for non-negative amounts
+ * @returns {string} Formatted amount like "$1,234.56" or "+$1,234.56"
+ */
+function formatCurrency(amount, showSign = false) {
+  if (amount === undefined || amount === null) return '';
+
+  const absAmount = Math.abs(amount);
+  const formatted = `$${absAmount.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+
+  if (showSign) {
+    if (amount > 0) return `+${formatted}`;
+    if (amount < 0) return `-${formatted}`;
+  }
+
+  return amount < 0 ? `-${formatted}` : formatted;
+}
 
 /**
  * Calculate step summary for display in collapsed account row
@@ -742,14 +790,15 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     /**
      * Update balance change information for a specific account
      * This is displayed in the expandable steps section
-     * Display order: days synced → current balance → percentage change
+     * New format: $oldBalance (date) → $newBalance (+$dollarChange / +percent%)
+     * Example: $132,085.72 (Jan 20) → $133,407.31 (+$1,321.59 / +1.00%)
      * @param {string} accountId - Account ID to update
      * @param {Object} balanceChangeData - Balance change data
      * @param {number} balanceChangeData.oldBalance - Previous balance (optional)
      * @param {number} balanceChangeData.newBalance - Current balance
      * @param {string} balanceChangeData.lastUploadDate - Last upload date in YYYY-MM-DD format (optional)
      * @param {number} balanceChangeData.changePercent - Percentage change (optional, null means no history)
-     * @param {number} balanceChangeData.daysUploaded - Number of days uploaded (optional)
+     * @param {number} balanceChangeData.daysUploaded - Number of days uploaded (optional, legacy)
      */
     updateBalanceChange: (accountId, balanceChangeData) => {
       const el = accountElements[accountId];
@@ -759,44 +808,61 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
       }
 
       try {
-        const { oldBalance, newBalance, changePercent, daysUploaded } = balanceChangeData;
+        const {
+          oldBalance, newBalance, lastUploadDate, changePercent,
+        } = balanceChangeData;
 
         // Build display string based on available data
-        // Order: days synced → current balance → percentage change
-        const parts = [];
+        // Full format: $oldBalance (date) → $newBalance (+$dollarChange / +percent%)
+        // Fallback: just $newBalance if no old balance data available
 
-        // Days uploaded (first, if available)
-        if (daysUploaded && daysUploaded > 0) {
-          parts.push(`${daysUploaded} day${daysUploaded > 1 ? 's' : ''}`);
-        }
+        let displayText = '';
+        let effectiveChangePercent = changePercent;
 
-        // Current balance
-        if (newBalance !== undefined && newBalance !== null) {
-          const formattedNewBalance = `$${Math.abs(newBalance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-          parts.push(formattedNewBalance);
-        }
+        // If we have all the data for the full format
+        if (oldBalance !== undefined && oldBalance !== null
+            && newBalance !== undefined && newBalance !== null
+            && lastUploadDate) {
+          // Calculate dollar change
+          const dollarChange = newBalance - oldBalance;
 
-        // Change percentage (always show if we have old balance data, including 0%)
-        if (changePercent !== undefined && changePercent !== null) {
-          const changeSymbol = changePercent > 0 ? '+' : '';
-          const formattedChangePercent = `${changeSymbol}${changePercent.toFixed(2)}%`;
-          parts.push(formattedChangePercent);
-        } else if (oldBalance !== undefined && newBalance !== undefined) {
-          // Calculate and show 0% if balances are the same but no changePercent provided
-          parts.push('0.00%');
+          // Calculate percentage if not provided
+          if (effectiveChangePercent === undefined || effectiveChangePercent === null) {
+            effectiveChangePercent = oldBalance !== 0
+              ? ((newBalance - oldBalance) / Math.abs(oldBalance)) * 100
+              : 0;
+          }
+
+          // Format the components
+          const formattedOldBalance = formatCurrency(oldBalance);
+          const formattedDate = formatShortDate(lastUploadDate);
+          const formattedNewBalance = formatCurrency(newBalance);
+          const formattedDollarChange = formatCurrency(dollarChange, true);
+          const changeSymbol = effectiveChangePercent > 0 ? '+' : '';
+          const formattedPercent = `${changeSymbol}${effectiveChangePercent.toFixed(2)}%`;
+
+          // Build the full format: $old (date) → $new (+$change / +%)
+          displayText = `${formattedOldBalance} (${formattedDate}) → ${formattedNewBalance} (${formattedDollarChange} / ${formattedPercent})`;
+        } else if (newBalance !== undefined && newBalance !== null) {
+          // Fallback: just show the current balance
+          displayText = formatCurrency(newBalance);
+        } else {
+          // No balance data available
+          debugLog(`No balance data available for ${accountId}`);
+          return;
         }
 
         // Set the content
-        el.balanceChange.textContent = parts.join(' | ');
+        el.balanceChange.textContent = displayText;
 
         // Set colors based on change (or neutral if no change data)
         let backgroundColor;
         let textColor;
-        if (changePercent !== undefined && changePercent !== null) {
-          if (changePercent > 0) {
+        if (effectiveChangePercent !== undefined && effectiveChangePercent !== null) {
+          if (effectiveChangePercent > 0) {
             backgroundColor = '#e8f5e9';
             textColor = '#2e7d32';
-          } else if (changePercent < 0) {
+          } else if (effectiveChangePercent < 0) {
             backgroundColor = '#ffebee';
             textColor = '#c62828';
           } else {
@@ -814,7 +880,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
         el.balanceChange.style.color = textColor;
         el.balanceChange.style.display = 'block';
 
-        debugLog(`Updated balance change for ${accountId}: ${parts.join(' | ')}`);
+        debugLog(`Updated balance change for ${accountId}: ${displayText}`);
       } catch (error) {
         debugLog(`Error updating balance change for ${accountId}:`, error);
       }

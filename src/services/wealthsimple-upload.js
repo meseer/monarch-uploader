@@ -3,7 +3,7 @@
  * Handles uploading Wealthsimple account data to Monarch
  */
 
-import { debugLog, getDefaultLookbackDays } from '../core/utils';
+import { debugLog, getDefaultLookbackDays, getTodayLocal } from '../core/utils';
 import { STORAGE } from '../core/config';
 import toast from '../ui/toast';
 import wealthsimpleApi from '../api/wealthsimple';
@@ -834,11 +834,17 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
       const balanceMessage = formatBalanceMessage(currentBalance?.amount, daysUploaded);
       progressDialog.updateStepStatus(account.id, 'balance', 'success', balanceMessage);
 
-      // Update balance change display with current balance
-      progressDialog.updateBalanceChange(account.id, {
-        newBalance: currentBalance?.amount,
-        daysUploaded,
-      });
+      // Extract and display balance change (using checkpoint data BEFORE updating it)
+      const balanceChange = extractWealthsimpleBalanceChange(consolidatedAccount, currentBalance);
+      if (balanceChange) {
+        progressDialog.updateBalanceChange(account.id, balanceChange);
+      } else {
+        // Fallback: just show the new balance if no old data available
+        progressDialog.updateBalanceChange(account.id, {
+          newBalance: currentBalance?.amount,
+          daysUploaded,
+        });
+      }
     } else {
       progressDialog.updateStepStatus(account.id, 'balance', 'error', 'Upload failed');
       return { success: false };
@@ -928,10 +934,24 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
     // Update lastSyncDate after successful sync
     if (balanceSuccess) {
       const { updateAccountInList } = await import('./wealthsimple/account');
-      updateAccountInList(account.id, { lastSyncDate: toDate });
-      debugLog(`Updated lastSyncDate for account ${account.id} to ${toDate}`);
 
-      // Handle balance checkpoint for accounts that need reconstruction
+      // Get today's date for checkpoint (use local timezone)
+      const todayDate = getTodayLocal();
+
+      // Always store a simple balance checkpoint for balance change display
+      // This is stored with today's date and current balance for comparing on next sync
+      updateAccountInList(account.id, {
+        lastSyncDate: toDate,
+        // Store simple checkpoint for balance change display (separate from reconstruction checkpoint)
+        balanceCheckpoint: {
+          date: todayDate,
+          amount: currentBalance?.amount,
+        },
+      });
+      debugLog(`Updated lastSyncDate and balance checkpoint for account ${account.id} to ${toDate}`);
+
+      // Handle detailed balance checkpoint for accounts that need ongoing balance reconstruction
+      // This is a more sophisticated checkpoint with calculated historical balance
       if (accountNeedsBalanceReconstruction(accountType) && reconstructBalance) {
         await createBalanceCheckpoint(account.id, actualFromDate, toDate);
       } else if (accountNeedsBalanceReconstruction(accountType) && consolidatedAccount.balanceCheckpoint) {
@@ -949,6 +969,56 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
     const firstStep = errorSupportedTypes.includes(accountType) ? 'transactions' : 'balance';
     progressDialog.updateStepStatus(account.id, firstStep, 'error', error.message);
     return { success: false };
+  }
+}
+
+/**
+ * Extract balance change information for a Wealthsimple account
+ * Uses the stored balance checkpoint for comparison
+ * @param {Object} consolidatedAccount - Consolidated account object
+ * @param {Object} currentBalance - Current balance object {amount, currency}
+ * @returns {Object|null} Balance change data or null if not available
+ */
+function extractWealthsimpleBalanceChange(consolidatedAccount, currentBalance) {
+  try {
+    if (!currentBalance || currentBalance.amount === undefined || currentBalance.amount === null) {
+      debugLog(`No current balance found for Wealthsimple account ${consolidatedAccount.wealthsimpleAccount?.id}`);
+      return null;
+    }
+
+    // Get the balance checkpoint (stores old balance and date)
+    const checkpoint = consolidatedAccount.balanceCheckpoint;
+    if (!checkpoint || checkpoint.amount === undefined || checkpoint.amount === null) {
+      // Try lastSyncDate as fallback
+      const lastSyncDate = consolidatedAccount.lastSyncDate;
+      if (!lastSyncDate) {
+        debugLog(`No balance checkpoint or lastSyncDate found for Wealthsimple account ${consolidatedAccount.wealthsimpleAccount?.id}`);
+        return null;
+      }
+      // No old balance available, but we have a date - can't calculate change
+      return null;
+    }
+
+    const oldBalance = checkpoint.amount;
+    const compareDate = checkpoint.date;
+    const newBalance = currentBalance.amount;
+
+    // Calculate percentage change
+    const changePercent = oldBalance !== 0
+      ? ((newBalance - oldBalance) / Math.abs(oldBalance)) * 100
+      : 0;
+
+    debugLog(`Balance change for Wealthsimple account ${consolidatedAccount.wealthsimpleAccount?.id}: ${oldBalance} (${compareDate}) -> ${newBalance} (${changePercent.toFixed(2)}%)`);
+
+    return {
+      oldBalance,
+      newBalance,
+      lastUploadDate: compareDate,
+      changePercent,
+    };
+  } catch (error) {
+    debugLog('Error extracting balance change for Wealthsimple account:', error);
+    return null;
   }
 }
 

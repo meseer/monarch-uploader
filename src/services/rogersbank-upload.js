@@ -5,6 +5,7 @@
 
 import {
   debugLog, getTodayLocal, calculateFromDateWithLookback, saveLastUploadDate, formatDate, parseLocalDate,
+  getLastUpdateDate,
 } from '../core/utils';
 import toast from '../ui/toast';
 import { STORAGE, LOGO_CLOUDINARY_IDS } from '../core/config';
@@ -410,6 +411,55 @@ async function syncCreditLimit(rogersAccountId, monarchAccountId, creditLimit) {
 }
 
 /**
+ * Extract balance change information for a Rogers Bank account
+ * @param {string} accountId - Account ID
+ * @param {number} currentBalance - Current balance
+ * @returns {Object|null} Balance change data or null if not available
+ */
+function extractRogersBankBalanceChange(accountId, currentBalance) {
+  try {
+    if (currentBalance === null || currentBalance === undefined) {
+      debugLog(`No current balance found for Rogers account ${accountId}`);
+      return null;
+    }
+
+    // Get last upload date
+    const lastUploadDate = getLastUpdateDate(accountId, 'rogersbank');
+    if (!lastUploadDate) {
+      debugLog(`No last upload date found for Rogers account ${accountId}`);
+      return null;
+    }
+
+    // Get previous balance from checkpoint
+    const checkpoint = getOrStoreBalanceCheckpoint(accountId);
+    if (!checkpoint || checkpoint.amount === undefined || checkpoint.amount === null) {
+      debugLog(`No balance checkpoint found for Rogers account ${accountId}`);
+      return null;
+    }
+
+    const oldBalance = checkpoint.amount;
+    const compareDate = checkpoint.date || lastUploadDate;
+
+    // Calculate percentage change
+    const changePercent = oldBalance !== 0
+      ? ((currentBalance - oldBalance) / Math.abs(oldBalance)) * 100
+      : 0;
+
+    debugLog(`Balance change for Rogers account ${accountId}: ${oldBalance} (${compareDate}) -> ${currentBalance} (${changePercent.toFixed(2)}%)`);
+
+    return {
+      oldBalance,
+      newBalance: currentBalance,
+      lastUploadDate: compareDate,
+      changePercent,
+    };
+  } catch (error) {
+    debugLog(`Error extracting balance change for Rogers account ${accountId}:`, error);
+    return null;
+  }
+}
+
+/**
  * Get or store balance checkpoint
  */
 function getOrStoreBalanceCheckpoint(accountId, checkpoint = null) {
@@ -633,6 +683,8 @@ export async function uploadRogersBankToMonarch() {
         balanceUploadSuccess = await monarchApi.uploadBalance(monarchAccount.id, balanceCSV, fromDate, todayFormatted);
 
         if (balanceUploadSuccess) {
+          // Save lastUploadDate immediately after balance upload so balance change works on next sync
+          saveLastUploadDate(rogersAccountId, todayFormatted, 'rogersbank');
           getOrStoreBalanceCheckpoint(rogersAccountId, { date: todayFormatted, amount: currentBalance });
           progressDialog.updateStepStatus(rogersAccountId, 'balance', 'success', `${balanceHistory.length} days`);
           progressDialog.updateBalanceChange(rogersAccountId, { newBalance: currentBalance });
@@ -649,7 +701,18 @@ export async function uploadRogersBankToMonarch() {
       if (balanceUploadSuccess) {
         const formatted = `$${Math.abs(currentBalance).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
         progressDialog.updateStepStatus(rogersAccountId, 'balance', 'success', formatted);
-        progressDialog.updateBalanceChange(rogersAccountId, { newBalance: currentBalance });
+
+        // Extract and display balance change BEFORE updating checkpoint
+        const balanceChange = extractRogersBankBalanceChange(rogersAccountId, currentBalance);
+        if (balanceChange) {
+          progressDialog.updateBalanceChange(rogersAccountId, balanceChange);
+        } else {
+          progressDialog.updateBalanceChange(rogersAccountId, { newBalance: currentBalance });
+        }
+
+        // Save lastUploadDate and update checkpoint after displaying change
+        saveLastUploadDate(rogersAccountId, todayFormatted, 'rogersbank');
+        getOrStoreBalanceCheckpoint(rogersAccountId, { date: todayFormatted, amount: currentBalance });
       } else {
         progressDialog.updateStepStatus(rogersAccountId, 'balance', 'error', 'Upload failed');
       }

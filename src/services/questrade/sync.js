@@ -9,7 +9,7 @@ import { STORAGE, LOGO_CLOUDINARY_IDS } from '../../core/config';
 import stateManager from '../../core/state';
 import monarchApi from '../../api/monarch';
 import questradeApi from '../../api/questrade';
-import balanceService from './balance';
+import balanceService, { fetchBalanceHistory, extractBalanceChange } from './balance';
 import positionsService from './positions';
 import transactionsService from './transactions';
 import toast from '../../ui/toast';
@@ -52,6 +52,27 @@ export async function syncAccountToMonarch(accountId, accountName, fromDate, toD
     }
 
     // Step 1: Sync balance history
+    if (progressDialog) {
+      progressDialog.updateStepStatus(accountId, 'balance', 'processing', 'Fetching balance...');
+    }
+
+    // Fetch balance data for both upload and change extraction
+    const balanceData = await fetchBalanceHistory(accountId, fromDate, toDate);
+    if (!balanceData) {
+      if (progressDialog) {
+        progressDialog.updateStepStatus(accountId, 'balance', 'error', 'Fetch failed');
+      }
+      throw new Error('Failed to fetch balance history');
+    }
+
+    // Extract and display balance change BEFORE uploading (uses previous lastUploadDate)
+    if (progressDialog) {
+      const balanceChange = extractBalanceChange(accountId, balanceData);
+      if (balanceChange) {
+        progressDialog.updateBalanceChange(accountId, balanceChange);
+      }
+    }
+
     if (progressDialog) {
       progressDialog.updateStepStatus(accountId, 'balance', 'processing', 'Uploading balance');
     }
