@@ -1902,7 +1902,7 @@ export const INVESTMENT_BUY_SELL_TRANSACTION_RULES = [
     process: (tx, enrichmentMap) => {
       const assetSymbol = tx.assetSymbol || 'Unknown';
       const expiryDate = tx.expiryDate || '';
-      const strikePrice = tx.strikePrice ?? 0;
+      const strikePrice = formatAmount(tx.strikePrice ?? 0);
       const contractType = tx.contractType || '';
       const currency = tx.currency || 'CAD';
       const extendedOrder = enrichmentMap?.get(tx.externalCanonicalId) || null;
@@ -1947,7 +1947,7 @@ export const INVESTMENT_BUY_SELL_TRANSACTION_RULES = [
     process: (tx, enrichmentMap) => {
       const assetSymbol = tx.assetSymbol || 'Unknown';
       const expiryDate = tx.expiryDate || '';
-      const strikePrice = tx.strikePrice ?? 0;
+      const strikePrice = formatAmount(tx.strikePrice ?? 0);
       const contractType = tx.contractType || '';
       const currency = tx.currency || 'CAD';
       const extendedOrder = enrichmentMap?.get(tx.externalCanonicalId) || null;
@@ -2007,7 +2007,7 @@ export const INVESTMENT_BUY_SELL_TRANSACTION_RULES = [
       const merchant = `${assetSymbol} ${prettyExpiryDate} ${currency}$${strikePrice} ${contractTypeDisplay}`;
 
       // Format original statement: "{type}:{subType}:{assetSymbol}:{expiryDate}:{strikePrice}:{contractType}"
-      const statementParts = `${assetSymbol}:${expiryDate}:${tx.strikePrice ?? 0}:${contractType}`;
+      const statementParts = `${assetSymbol}:${expiryDate}:${strikePrice}:${contractType}`;
 
       // Get expiry detail and security cache from enrichmentMap (keyed by externalCanonicalId)
       const expiryDetail = enrichmentMap?.get(tx.externalCanonicalId)?.expiryDetail || null;
