@@ -83,6 +83,7 @@ jest.mock('../../src/api/monarch', () => ({
     getCategoriesAndGroups: jest.fn(),
     setCreditLimit: jest.fn().mockResolvedValue(true),
     setAccountLogo: jest.fn().mockResolvedValue(true),
+    validateAndRefreshAccountMapping: jest.fn(),
   },
 }));
 
@@ -166,6 +167,12 @@ describe('Rogers Bank Upload Service', () => {
     fetchRogersBankAccountDetails = rogersbankMock.fetchRogersBankAccountDetails;
 
     monarchApi = jest.requireMock('../../src/api/monarch').default;
+
+    // Default: validateAndRefreshAccountMapping returns valid existing account (not newlyCreated)
+    monarchApi.validateAndRefreshAccountMapping.mockResolvedValue({
+      valid: true,
+      account: { id: 'monarch123', displayName: 'Rogers Card' },
+    });
     toast = jest.requireMock('../../src/ui/toast').default;
     showDatePickerWithOptionsPromise = jest.requireMock('../../src/ui/components/datePicker').showDatePickerWithOptionsPromise;
     showMonarchAccountSelectorWithCreate = jest.requireMock('../../src/ui/components/accountSelectorWithCreate').showMonarchAccountSelectorWithCreate;

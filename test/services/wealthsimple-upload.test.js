@@ -28,9 +28,20 @@ jest.mock('../../src/services/wealthsimple/balance', () => ({
   getBalanceAtDate: jest.fn(() => 0),
   reconstructBalanceFromTransactions: jest.fn(() => []),
 }));
+jest.mock('../../src/services/wealthsimple/positions', () => ({
+  isInvestmentAccount: jest.fn(() => false), // Default to non-investment to simplify tests
+  processAccountPositions: jest.fn(() => Promise.resolve({ success: true, positionsProcessed: 0 })),
+  processCashPositions: jest.fn(() => Promise.resolve({ success: true, cashSynced: 0, cashSkipped: 0 })),
+}));
+jest.mock('../../src/services/wealthsimple/transactions', () => ({
+  fetchAndProcessTransactions: jest.fn(() => Promise.resolve([])),
+  reconcilePendingTransactions: jest.fn(() => Promise.resolve({ success: true, deleted: 0, pending: 0 })),
+  formatReconciliationMessage: jest.fn(() => 'No changes'),
+}));
 jest.mock('../../src/core/utils', () => ({
   debugLog: jest.fn(),
   getDefaultLookbackDays: jest.fn(() => 2),
+  getTodayLocal: jest.fn(() => '2026-01-03'),
 }));
 
 describe('Wealthsimple Upload Service', () => {
@@ -309,11 +320,12 @@ describe('Wealthsimple Upload Service', () => {
           ['acc-1', { amount: 10000, currency: 'CAD' }],
         ]),
       });
+      wealthsimpleApi.fetchTransactions.mockResolvedValue([]);
 
       const mockMonarchAccount = { id: 'monarch-1', displayName: 'Test Account' };
       accountService.resolveWealthsimpleAccountMapping.mockResolvedValue(mockMonarchAccount);
       accountService.uploadWealthsimpleBalance.mockResolvedValue(true);
-      accountService.uploadWealthsimpleTransactions.mockResolvedValue(true);
+      accountService.uploadWealthsimpleTransactions.mockResolvedValue({ success: true, synced: 0, skipped: 0 });
       accountService.getAccountData.mockReturnValue(mockAccounts[0]);
 
       await uploadAllWealthsimpleAccountsToMonarch();
@@ -417,6 +429,7 @@ describe('Wealthsimple Upload Service', () => {
           // acc-3 has no balance
         ]),
       });
+      wealthsimpleApi.fetchTransactions.mockResolvedValue([]);
 
       const mockMonarchAccount = { id: 'monarch-1', displayName: 'Test Account' };
       accountService.resolveWealthsimpleAccountMapping.mockResolvedValue(mockMonarchAccount);
@@ -424,8 +437,8 @@ describe('Wealthsimple Upload Service', () => {
         .mockResolvedValueOnce(true)
         .mockResolvedValueOnce(false);
       accountService.uploadWealthsimpleTransactions
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(false);
+        .mockResolvedValueOnce({ success: true, synced: 1, skipped: 0 })
+        .mockResolvedValueOnce({ success: false, error: 'Failed' });
       accountService.getAccountData.mockReturnValue(mockAccounts[0]);
 
       await uploadAllWealthsimpleAccountsToMonarch();

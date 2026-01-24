@@ -56,6 +56,7 @@ jest.mock('../../src/api/monarch', () => ({
   default: {
     listAccounts: jest.fn(),
     uploadBalance: jest.fn(),
+    validateAndRefreshAccountMapping: jest.fn(),
   },
 }));
 
@@ -258,6 +259,12 @@ describe('Canada Life Upload Service', () => {
       ensureMonarchAuthentication = require('../../src/ui/components/monarchLoginLink').ensureMonarchAuthentication;
       canadalife = require('../../src/api/canadalife').default;
       monarchApi = require('../../src/api/monarch').default;
+
+      // Default: validateAndRefreshAccountMapping returns valid existing account
+      monarchApi.validateAndRefreshAccountMapping.mockResolvedValue({
+        valid: true,
+        account: { id: 'monarch123', displayName: 'Investment Account' },
+      });
       toast = require('../../src/ui/toast').default;
       showProgressDialog = require('../../src/ui/components/progressDialog').showProgressDialog;
       utils = require('../../src/core/utils');

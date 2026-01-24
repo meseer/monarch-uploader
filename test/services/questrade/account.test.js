@@ -14,6 +14,7 @@ import questradeApi from '../../../src/api/questrade';
 import stateManager from '../../../src/core/state';
 import authService from '../../../src/services/questrade/auth';
 import balanceService from '../../../src/services/questrade/balance';
+import syncService from '../../../src/services/questrade/sync';
 import { STORAGE } from '../../../src/core/config';
 
 // Mock dependencies
@@ -39,6 +40,15 @@ jest.mock('../../../src/services/questrade/balance', () => ({
   getDefaultDateRange: jest.fn(),
   fetchBalanceHistory: jest.fn(),
   extractBalanceChange: jest.fn(),
+}));
+
+jest.mock('../../../src/services/questrade/sync', () => ({
+  default: {
+    syncAccountToMonarch: jest.fn(),
+    syncAllAccountsToMonarch: jest.fn(),
+  },
+  syncAccountToMonarch: jest.fn(),
+  syncAllAccountsToMonarch: jest.fn(),
 }));
 
 jest.mock('../../../src/core/state', () => ({
@@ -278,9 +288,9 @@ describe('Account Service', () => {
   });
 
   describe('processAccountBalanceHistory', () => {
-    test('should delegate to balance service', async () => {
-      // Mock balance service method
-      balanceService.processAndUploadBalance.mockResolvedValueOnce(true);
+    test('should delegate to sync service', async () => {
+      // Mock sync service method
+      syncService.syncAccountToMonarch.mockResolvedValueOnce(true);
 
       const result = await processAccountBalanceHistory(
         '12345',
@@ -290,7 +300,7 @@ describe('Account Service', () => {
       );
 
       expect(result).toBe(true);
-      expect(balanceService.processAndUploadBalance).toHaveBeenCalledWith(
+      expect(syncService.syncAccountToMonarch).toHaveBeenCalledWith(
         '12345',
         'Test Account',
         '2025-01-01',

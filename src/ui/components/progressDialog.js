@@ -921,12 +921,18 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
         el.balanceChangeData = balanceChangeData;
 
         const {
-          oldBalance, newBalance, lastUploadDate, changePercent,
+          oldBalance, newBalance, lastUploadDate, changePercent, debtAsPositive,
         } = balanceChangeData;
 
         // Build display string based on available data
         // Full format: $oldBalance (date) → $newBalance (+$dollarChange / +percent%)
         // Fallback: just $newBalance if no old balance data available
+        //
+        // For debtAsPositive accounts (like Rogers credit cards):
+        // - Debt is tracked as positive balance
+        // - An increase in balance = MORE DEBT = BAD (should show as negative change, red)
+        // - A decrease in balance = LESS DEBT = GOOD (should show as positive change, green)
+        // So we invert the sign for display purposes when debtAsPositive is true
 
         let displayText = '';
         let effectiveChangePercent = changePercent;
@@ -945,13 +951,18 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
               : 0;
           }
 
+          // For debtAsPositive accounts, invert the display values
+          // This makes an increase in debt show as a negative change (which is semantically correct)
+          const displayDollarChange = debtAsPositive ? -dollarChange : dollarChange;
+          const displayChangePercent = debtAsPositive ? -effectiveChangePercent : effectiveChangePercent;
+
           // Format the components
           const formattedOldBalance = formatCurrency(oldBalance);
           const formattedDate = formatShortDate(lastUploadDate);
           const formattedNewBalance = formatCurrency(newBalance);
-          const formattedDollarChange = formatCurrency(dollarChange, true);
-          const changeSymbol = effectiveChangePercent > 0 ? '+' : '';
-          const formattedPercent = `${changeSymbol}${effectiveChangePercent.toFixed(2)}%`;
+          const formattedDollarChange = formatCurrency(displayDollarChange, true);
+          const changeSymbol = displayChangePercent > 0 ? '+' : '';
+          const formattedPercent = `${changeSymbol}${displayChangePercent.toFixed(2)}%`;
 
           // Build the full format: $old (date) → $new (+$change / +%)
           displayText = `${formattedOldBalance} (${formattedDate}) → ${formattedNewBalance} (${formattedDollarChange} / ${formattedPercent})`;
@@ -968,19 +979,32 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
         el.balanceChange.textContent = displayText;
 
         // Set colors based on change (or neutral if no change data)
+        // For debtAsPositive accounts, invert the color logic:
+        // - Positive raw change (more debt) = red
+        // - Negative raw change (less debt) = green
         let backgroundColor;
         let textColor;
         if (effectiveChangePercent !== undefined && effectiveChangePercent !== null) {
-          if (effectiveChangePercent > 0) {
-            backgroundColor = '#e8f5e9';
-            textColor = '#2e7d32';
-          } else if (effectiveChangePercent < 0) {
-            backgroundColor = '#ffebee';
-            textColor = '#c62828';
+          // Determine if this is a "good" or "bad" change
+          let isPositiveChange;
+          if (debtAsPositive) {
+            // For debt accounts: decrease is good, increase is bad
+            isPositiveChange = effectiveChangePercent < 0;
           } else {
+            // For normal accounts: increase is good, decrease is bad
+            isPositiveChange = effectiveChangePercent > 0;
+          }
+
+          if (effectiveChangePercent === 0) {
             // Zero change - neutral gray
             backgroundColor = '#f5f5f5';
             textColor = '#666';
+          } else if (isPositiveChange) {
+            backgroundColor = '#e8f5e9';
+            textColor = '#2e7d32';
+          } else {
+            backgroundColor = '#ffebee';
+            textColor = '#c62828';
           }
         } else {
           // Neutral color when no change data

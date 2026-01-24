@@ -452,6 +452,8 @@ function extractRogersBankBalanceChange(accountId, currentBalance) {
       newBalance: currentBalance,
       lastUploadDate: compareDate,
       changePercent,
+      accountType: 'credit',
+      debtAsPositive: true, // Rogers tracks debt as positive balance, so increase = more debt (bad)
     };
   } catch (error) {
     debugLog(`Error extracting balance change for Rogers account ${accountId}:`, error);

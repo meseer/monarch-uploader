@@ -402,7 +402,7 @@ describe('Progress Dialog Component', () => {
       expect(dialog).toBeDefined();
     });
 
-    test('should handle debtAsPositive for Rogers-style credit accounts', () => {
+    test('should handle debtAsPositive for Rogers-style credit accounts (debt decreased)', () => {
       dialog.initSteps('acc1', [
         { key: 'transactions', name: 'Transaction sync' },
         { key: 'balance', name: 'Balance upload' },
@@ -412,6 +412,10 @@ describe('Progress Dialog Component', () => {
       dialog.updateStepStatus('acc1', 'balance', 'success', '$500.00');
 
       // Rogers style: positive balance = debt
+      // Balance went from $600 to $500 (less debt = good)
+      // Raw changePercent is -16.67 (negative), but for debtAsPositive:
+      // - A decrease in debt is GOOD, should show GREEN
+      // - Display should invert to +16.67%
       const balanceData = {
         oldBalance: 600,
         newBalance: 500,
@@ -419,6 +423,55 @@ describe('Progress Dialog Component', () => {
         changePercent: -16.67, // Decrease in debt = good (green)
         accountType: 'credit',
         transactionCount: 5,
+        debtAsPositive: true,
+      };
+      dialog.updateBalanceChange('acc1', balanceData);
+
+      expect(dialog).toBeDefined();
+    });
+
+    test('should handle debtAsPositive for Rogers-style credit accounts (debt increased)', () => {
+      dialog.initSteps('acc1', [
+        { key: 'transactions', name: 'Transaction sync' },
+        { key: 'balance', name: 'Balance upload' },
+      ]);
+
+      dialog.updateStepStatus('acc1', 'transactions', 'success', '3 synced');
+      dialog.updateStepStatus('acc1', 'balance', 'success', '$2,274.10');
+
+      // Rogers style: positive balance = debt
+      // Balance went from $1,982.43 to $2,274.10 (more debt = bad)
+      // Raw changePercent is +14.71 (positive), but for debtAsPositive:
+      // - An increase in debt is BAD, should show RED
+      // - Display should invert to -14.71%
+      const balanceData = {
+        oldBalance: 1982.43,
+        newBalance: 2274.10,
+        lastUploadDate: '2024-01-22',
+        changePercent: 14.71, // Increase in debt = bad (red)
+        accountType: 'credit',
+        transactionCount: 3,
+        debtAsPositive: true,
+      };
+      dialog.updateBalanceChange('acc1', balanceData);
+
+      expect(dialog).toBeDefined();
+    });
+
+    test('should handle debtAsPositive with zero change', () => {
+      dialog.initSteps('acc1', [
+        { key: 'balance', name: 'Balance upload' },
+      ]);
+
+      dialog.updateStepStatus('acc1', 'balance', 'success', '$1,000.00');
+
+      // No change in debt
+      const balanceData = {
+        oldBalance: 1000,
+        newBalance: 1000,
+        lastUploadDate: '2024-01-20',
+        changePercent: 0, // No change - should be neutral grey
+        accountType: 'credit',
         debtAsPositive: true,
       };
       dialog.updateBalanceChange('acc1', balanceData);
