@@ -125,13 +125,24 @@ export function applyMerchantMapping(merchantName, options = {}) {
     });
   }
 
-  // Rule 3: Strip store numbers (configurable)
+  // Rule 3: Transform Spotify variants to standardized name
+  // Matches merchant names starting with "Spotify" followed by alphanumeric codes (e.g., "Spotify P3EAF45098")
+  if (/^spotify/i.test(transformed)) {
+    const originalSpotify = transformed;
+    transformed = 'Spotify';
+    debugLog('Transformed Spotify variant to standardized name:', {
+      original: originalSpotify,
+      transformed,
+    });
+  }
+
+  // Rule 4: Strip store numbers (configurable)
   transformed = stripStoreNumbers(transformed, shouldStripStoreNumbers);
 
-  // Rule 4: Convert to title case (as last step to ensure proper capitalization)
+  // Rule 5: Convert to title case (as last step to ensure proper capitalization)
   transformed = toTitleCase(transformed);
 
-  // Rule 5: Specific merchant name corrections
+  // Rule 6: Specific merchant name corrections
   const merchantCorrections = {
     // 'OLD NAME': 'NEW NAME',
     // Add specific corrections as needed
@@ -141,7 +152,7 @@ export function applyMerchantMapping(merchantName, options = {}) {
     transformed = merchantCorrections[transformed.toUpperCase()];
   }
 
-  // Rule 6: Clean up extra spaces
+  // Rule 7: Clean up extra spaces
   transformed = transformed.replace(/\s+/g, ' ').trim();
 
   debugLog('Merchant mapping applied:', { original: merchantName, transformed, options });

@@ -60,6 +60,15 @@ describe('Merchant Mapping Utilities', () => {
       expect(applyMerchantMapping('NotImpark Store')).toBe('Notimpark Store');
     });
 
+    test('should transform Spotify variants to standardized name', () => {
+      expect(applyMerchantMapping('Spotify P3EAF45098')).toBe('Spotify');
+      expect(applyMerchantMapping('SPOTIFY P3EAF45098')).toBe('Spotify');
+      expect(applyMerchantMapping('spotify abc123')).toBe('Spotify');
+      expect(applyMerchantMapping('Spotify')).toBe('Spotify');
+      // Should not transform merchants that don't start with Spotify
+      expect(applyMerchantMapping('NotSpotify Store')).toBe('Notspotify Store');
+    });
+
     test('should handle multiple spaces and clean them up', () => {
       expect(applyMerchantMapping('STARBUCKS    COFFEE   SHOP')).toBe('Starbucks Coffee Shop');
       expect(applyMerchantMapping('  WALMART  SUPERCENTER  ')).toBe('Walmart Supercenter');
