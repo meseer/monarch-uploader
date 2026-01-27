@@ -408,7 +408,8 @@ function renderTabContent(container, tabId) {
  * @param {HTMLElement} container - Container element
  */
 function renderGeneralTab(container) {
-  const section = createSection('Log Level', '🔍', 'Configure application logging level');
+  // Log Level Section
+  const logLevelSection = createSection('Log Level', '🔍', 'Configure application logging level');
 
   const logLevelContainer = document.createElement('div');
   logLevelContainer.style.cssText = 'margin: 15px 0;';
@@ -418,6 +419,7 @@ function renderGeneralTab(container) {
   label.style.cssText = 'display: block; margin-bottom: 8px; font-weight: bold;';
 
   const select = document.createElement('select');
+  select.id = 'settings-log-level-select';
   select.style.cssText = `
     padding: 8px 12px;
     border: 1px solid #ccc;
@@ -451,9 +453,39 @@ function renderGeneralTab(container) {
 
   logLevelContainer.appendChild(label);
   logLevelContainer.appendChild(select);
-  section.appendChild(logLevelContainer);
+  logLevelSection.appendChild(logLevelContainer);
 
-  container.appendChild(section);
+  container.appendChild(logLevelSection);
+
+  // Development Mode Section
+  const devModeSection = createSection('Development Mode', '🔧', 'Enable development features and testing tools');
+
+  const devModeContainer = document.createElement('div');
+  devModeContainer.id = 'settings-dev-mode-container';
+  devModeContainer.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 12px 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e0e0e0;';
+
+  const devModeLabel = document.createElement('div');
+  devModeLabel.innerHTML = `
+    <div style="font-weight: 500; font-size: 14px; margin-bottom: 4px;">Enable Development Mode</div>
+    <div style="font-size: 12px; color: #666;">When enabled, shows development-only UI elements like testing sections in Canada Life</div>
+  `;
+
+  const currentDevMode = GM_getValue(STORAGE.DEVELOPMENT_MODE, false);
+  const devModeToggle = createToggleSwitch(
+    currentDevMode,
+    (isEnabled) => {
+      GM_setValue(STORAGE.DEVELOPMENT_MODE, isEnabled);
+      toast.show(`Development mode ${isEnabled ? 'enabled' : 'disabled'}. Refresh the page to see changes.`, 'info');
+      debugLog(`Development mode changed to: ${isEnabled}`);
+    },
+    false, // Don't show Enabled/Disabled label
+  );
+
+  devModeContainer.appendChild(devModeLabel);
+  devModeContainer.appendChild(devModeToggle);
+  devModeSection.appendChild(devModeContainer);
+
+  container.appendChild(devModeSection);
 }
 
 /**

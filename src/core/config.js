@@ -34,6 +34,8 @@ export const API = {
 // This will allow storing all account-specific settings (retention, mappings, etc.)
 // in a single unified structure per institution instead of scattered storage keys.
 export const STORAGE = {
+  // Global settings
+  DEVELOPMENT_MODE: 'development_mode', // Global development mode toggle
   ACCOUNTS_LIST: 'questrade_accounts_list',
   MONARCH_TOKEN: 'monarch_graphql_token',
   // Account lists with enhanced properties (skip flags, etc.)

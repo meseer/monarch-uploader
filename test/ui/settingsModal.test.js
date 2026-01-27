@@ -8,6 +8,7 @@ import { createSettingsModal, showSettingsModal } from '../../src/ui/components/
 // Mock dependencies
 jest.mock('../../src/core/config', () => ({
   STORAGE: {
+    DEVELOPMENT_MODE: 'development_mode',
     CANADALIFE_TOKEN_KEY: 'canadalife_token',
     ROGERSBANK_AUTH_TOKEN: 'rogersbank_auth_token',
     ROGERSBANK_ACCOUNT_ID: 'rogersbank_account_id',
@@ -372,6 +373,98 @@ describe('Settings Modal Component', () => {
       expect(globalThis.GM_setValue).toHaveBeenCalledWith('debug_log_level', 'error');
       expect(toast.show).toHaveBeenCalledWith(
         expect.stringContaining('Log level set to'),
+        'info',
+      );
+    });
+
+    test('should render Development Mode toggle section', () => {
+      modal = createSettingsModal();
+
+      const tabContent = modal.querySelector('.settings-tab-content');
+      expect(tabContent.textContent).toContain('Development Mode');
+      expect(tabContent.textContent).toContain('Enable Development Mode');
+      expect(tabContent.textContent).toContain('development-only UI elements');
+    });
+
+    test('should render Development Mode toggle with correct ID', () => {
+      modal = createSettingsModal();
+
+      const devModeContainer = modal.querySelector('#settings-dev-mode-container');
+      expect(devModeContainer).toBeTruthy();
+    });
+
+    test('should load Development Mode initial value from storage as false by default', () => {
+      globalThis.GM_getValue.mockImplementation((key, defaultValue) => {
+        if (key === 'development_mode') return false;
+        return defaultValue;
+      });
+
+      modal = createSettingsModal();
+
+      // The toggle switch should show as disabled (unchecked)
+      const devModeContainer = modal.querySelector('#settings-dev-mode-container');
+      expect(devModeContainer).toBeTruthy();
+
+      // Check that the toggle is in off state (background should be #ccc)
+      const switchContainer = devModeContainer.querySelector('div[style*="background-color"]');
+      expect(switchContainer).toBeTruthy();
+    });
+
+    test('should load Development Mode initial value from storage as true when enabled', () => {
+      globalThis.GM_getValue.mockImplementation((key, defaultValue) => {
+        if (key === 'development_mode') return true;
+        return defaultValue;
+      });
+
+      modal = createSettingsModal();
+
+      const devModeContainer = modal.querySelector('#settings-dev-mode-container');
+      expect(devModeContainer).toBeTruthy();
+
+      // Toggle should be in on state
+      const toggleSwitch = devModeContainer.querySelector('div[style*="background-color: rgb(33, 150, 243)"]');
+      expect(toggleSwitch).toBeTruthy();
+    });
+
+    test('should save Development Mode when toggled', () => {
+      globalThis.GM_getValue.mockImplementation((key, defaultValue) => {
+        if (key === 'development_mode') return false;
+        return defaultValue;
+      });
+
+      modal = createSettingsModal();
+
+      const devModeContainer = modal.querySelector('#settings-dev-mode-container');
+      const checkbox = devModeContainer.querySelector('input[type="checkbox"]');
+      expect(checkbox).toBeTruthy();
+
+      // Simulate toggle click
+      checkbox.checked = true;
+      checkbox.dispatchEvent(new Event('change'));
+
+      expect(globalThis.GM_setValue).toHaveBeenCalledWith('development_mode', true);
+      expect(toast.show).toHaveBeenCalledWith(
+        expect.stringContaining('Development mode enabled'),
+        'info',
+      );
+    });
+
+    test('should show refresh message when Development Mode is toggled', () => {
+      globalThis.GM_getValue.mockImplementation((key, defaultValue) => {
+        if (key === 'development_mode') return false;
+        return defaultValue;
+      });
+
+      modal = createSettingsModal();
+
+      const devModeContainer = modal.querySelector('#settings-dev-mode-container');
+      const checkbox = devModeContainer.querySelector('input[type="checkbox"]');
+
+      checkbox.checked = true;
+      checkbox.dispatchEvent(new Event('change'));
+
+      expect(toast.show).toHaveBeenCalledWith(
+        expect.stringContaining('Refresh the page'),
         'info',
       );
     });

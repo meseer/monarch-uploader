@@ -4,7 +4,7 @@
  */
 
 import { debugLog, getTodayLocal, formatDaysAgoLocal } from '../../../core/utils';
-import { COLORS } from '../../../core/config';
+import { COLORS, STORAGE } from '../../../core/config';
 import canadalife from '../../../api/canadalife';
 import toast from '../../toast';
 import { uploadAllCanadaLifeAccountsToMonarch, uploadCanadaLifeAccountWithDateRange } from '../../../services/canadalife-upload';
@@ -636,7 +636,13 @@ export function createCanadaLifeUploadButton() {
   mainUploadContainer.appendChild(uploadCustomRangeButton);
   container.appendChild(mainUploadContainer);
 
-  // Create collapsible testing section
+  // Only show testing section when Development Mode is enabled
+  const isDevelopmentMode = GM_getValue(STORAGE.DEVELOPMENT_MODE, false);
+  if (!isDevelopmentMode) {
+    return container;
+  }
+
+  // Create collapsible testing section (only visible in Development Mode)
   const testingSection = document.createElement('div');
   testingSection.style.cssText = `
     border: 1px solid #ddd;
