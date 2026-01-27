@@ -287,8 +287,39 @@ function updateConnectionStatus(connectionStatus) {
   }
 }
 
+/**
+ * Refreshes the Canada Life UI by re-initializing the upload button component
+ * Call this when Development Mode is toggled to apply changes immediately
+ */
+export function refreshCanadaLifeUI() {
+  try {
+    const container = document.getElementById('canadalife-balance-uploader-container');
+    if (!container) {
+      debugLog('Canada Life container not found, cannot refresh');
+      return false;
+    }
+
+    // Find and remove the existing upload button container
+    const existingUploadButton = container.querySelector('.canadalife-upload-button-container');
+    if (existingUploadButton) {
+      existingUploadButton.remove();
+    }
+
+    // Re-create the upload button (which will now reflect the current Development Mode state)
+    const uploadButton = createCanadaLifeUploadButton();
+    container.appendChild(uploadButton);
+
+    debugLog('Canada Life UI refreshed');
+    return true;
+  } catch (error) {
+    debugLog('Error refreshing Canada Life UI:', error);
+    return false;
+  }
+}
+
 export default {
   initCanadaLifeUI,
   createUIContainer,
   updateConnectionStatus,
+  refreshCanadaLifeUI,
 };

@@ -62,6 +62,7 @@ jest.mock('../../src/core/utils', () => ({
   validateLookbackVsRetention: jest.fn(() => ({ valid: true })),
   getMinRetentionForInstitution: jest.fn(() => 91),
   getLookbackForInstitution: jest.fn(() => 7),
+  getCurrentInstitution: jest.fn(() => 'unknown'),
 }));
 
 jest.mock('../../src/services/auth', () => ({

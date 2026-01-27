@@ -3,7 +3,7 @@
  * Provides a unified interface for managing application settings and stored data
  */
 
-import { debugLog, getDefaultLookbackDays, validateLookbackVsRetention, getMinRetentionForInstitution, getLookbackForInstitution } from '../../core/utils';
+import { debugLog, getDefaultLookbackDays, validateLookbackVsRetention, getMinRetentionForInstitution, getLookbackForInstitution, getCurrentInstitution } from '../../core/utils';
 import { STORAGE, API, TRANSACTION_RETENTION_DEFAULTS } from '../../core/config';
 import { checkMonarchAuth } from '../../services/auth';
 import { checkQuestradeAuth } from '../../services/questrade/auth';
@@ -475,7 +475,26 @@ function renderGeneralTab(container) {
     currentDevMode,
     (isEnabled) => {
       GM_setValue(STORAGE.DEVELOPMENT_MODE, isEnabled);
-      toast.show(`Development mode ${isEnabled ? 'enabled' : 'disabled'}. Refresh the page to see changes.`, 'info');
+
+      // If on Canada Life, refresh UI immediately
+      const currentInstitution = getCurrentInstitution();
+      if (currentInstitution === 'canadalife') {
+        // Dynamically import to avoid circular dependencies
+        import('../canadalife/uiManager').then((module) => {
+          const refreshed = module.refreshCanadaLifeUI();
+          if (refreshed) {
+            toast.show(`Development mode ${isEnabled ? 'enabled' : 'disabled'}`, 'info');
+          } else {
+            toast.show(`Development mode ${isEnabled ? 'enabled' : 'disabled'}. Refresh the page to see changes.`, 'info');
+          }
+        }).catch((error) => {
+          debugLog('Error refreshing Canada Life UI:', error);
+          toast.show(`Development mode ${isEnabled ? 'enabled' : 'disabled'}. Refresh the page to see changes.`, 'info');
+        });
+      } else {
+        toast.show(`Development mode ${isEnabled ? 'enabled' : 'disabled'}. Refresh the page to see changes.`, 'info');
+      }
+
       debugLog(`Development mode changed to: ${isEnabled}`);
     },
     false, // Don't show Enabled/Disabled label
