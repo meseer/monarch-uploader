@@ -131,14 +131,27 @@ export function reconstructBalanceFromCheckpoint(transactions, checkpoint, toDat
 
   debugLog(`Reconstructing balance from checkpoint: ${checkpoint.date} (${checkpoint.amount}) to ${toDate}`);
 
+  // Special case: checkpoint date equals today (same-day re-sync)
+  // Only return today's current balance to avoid duplicate dates
+  if (checkpoint.date === toDate) {
+    debugLog('Checkpoint date equals today, returning only current balance (same-day re-sync)');
+    if (currentBalance && currentBalance.amount !== undefined) {
+      return [{
+        date: toDate,
+        amount: currentBalance.amount,
+      }];
+    }
+    return [];
+  }
+
   // Reconstruct balance from checkpoint date to the day before today
   const yesterdayObj = parseLocalDate(toDate);
   yesterdayObj.setDate(yesterdayObj.getDate() - 1);
   const yesterday = formatDate(yesterdayObj);
 
-  // If checkpoint date is yesterday or later, we only need today's balance
-  if (checkpoint.date >= yesterday) {
-    debugLog('Checkpoint is recent enough, returning checkpoint and current balance');
+  // If checkpoint date is yesterday, we only need checkpoint and today's balance
+  if (checkpoint.date === yesterday) {
+    debugLog('Checkpoint is from yesterday, returning checkpoint and current balance');
     const result = [];
 
     // Include checkpoint date balance

@@ -497,6 +497,42 @@ describe('Wealthsimple Balance Service', () => {
       expect(result[1]).toEqual({ date: '2025-01-02', amount: -100 }); // Same as checkpoint, no transactions
       expect(result[2]).toEqual({ date: '2025-01-03', amount: -100 }); // Current balance
     });
+
+    test('handles same-day re-sync (checkpoint date equals today)', () => {
+      // This scenario happens when user syncs multiple times on the same day
+      // The checkpoint was saved earlier today with one balance, but balance has changed
+      const checkpoint = { date: '2025-01-15', amount: -142.24 };
+      const transactions = [];
+      const currentBalance = { amount: -175.50 }; // Balance changed since earlier sync
+
+      const result = reconstructBalanceFromCheckpoint(transactions, checkpoint, '2025-01-15', currentBalance);
+
+      // Should return ONLY today's current balance, not both checkpoint and current
+      // (which would cause duplicate date error in Monarch)
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual({ date: '2025-01-15', amount: -175.50 });
+    });
+
+    test('handles same-day re-sync with no current balance', () => {
+      const checkpoint = { date: '2025-01-15', amount: -142.24 };
+      const transactions = [];
+
+      const result = reconstructBalanceFromCheckpoint(transactions, checkpoint, '2025-01-15', null);
+
+      // No current balance available, should return empty
+      expect(result).toEqual([]);
+    });
+
+    test('handles same-day re-sync with undefined current balance amount', () => {
+      const checkpoint = { date: '2025-01-15', amount: -142.24 };
+      const transactions = [];
+      const currentBalance = { currency: 'CAD' }; // Missing amount
+
+      const result = reconstructBalanceFromCheckpoint(transactions, checkpoint, '2025-01-15', currentBalance);
+
+      // No valid current balance amount, should return empty
+      expect(result).toEqual([]);
+    });
   });
 
   describe('filterInvalidBalanceEntries', () => {
