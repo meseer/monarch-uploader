@@ -149,14 +149,21 @@ export const UI = {
   ANIMATION_DURATION: 200, // Duration for UI animations (ms)
 };
 
-// Wealthsimple UI injection settings
-// Injection points are tried in order - first matching selector wins
+/**
+ * Wealthsimple UI injection settings
+ *
+ * Injection points are tried in order - first matching selector wins.
+ * Each injection point specifies a CSS selector and an insert method.
+ *
+ * Supported insertMethod values:
+ * - 'prepend': Insert UI as the first child of the matched element
+ * - 'prependToSecondChild': Navigate to the second child of the matched element,
+ *   then insert UI as its first child
+ * - 'insertBefore': Insert UI as the previous sibling of the matched element
+ *   (injects into the parent, before the target)
+ */
 export const WEALTHSIMPLE_UI = {
-  INJECTION_POINTS: [
-    { selector: '.bfsRGT', insertMethod: 'prepend' },
-    { selector: '.etXzES', insertMethod: 'prependToSecondChild' },
-    { selector: '.bZQXKE', insertMethod: 'insertBefore' },
-  ],
+  INJECTION_POINTS: [{ selector: '.bZQXKE', insertMethod: 'prepend' }],
 };
 
 // Default export with all config values

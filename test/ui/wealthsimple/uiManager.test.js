@@ -30,22 +30,10 @@ describe('Wealthsimple UI Injection Points', () => {
       });
     });
 
-    test('first injection point should be .bfsRGT with prepend method', () => {
+    test('first injection point should be .bZQXKE with prepend method', () => {
       const firstPoint = WEALTHSIMPLE_UI.INJECTION_POINTS[0];
-      expect(firstPoint.selector).toBe('.bfsRGT');
+      expect(firstPoint.selector).toBe('.bZQXKE');
       expect(firstPoint.insertMethod).toBe('prepend');
-    });
-
-    test('second injection point should be .etXzES with prependToSecondChild method', () => {
-      const secondPoint = WEALTHSIMPLE_UI.INJECTION_POINTS[1];
-      expect(secondPoint.selector).toBe('.etXzES');
-      expect(secondPoint.insertMethod).toBe('prependToSecondChild');
-    });
-
-    test('third injection point should be .bZQXKE with insertBefore method', () => {
-      const thirdPoint = WEALTHSIMPLE_UI.INJECTION_POINTS[2];
-      expect(thirdPoint.selector).toBe('.bZQXKE');
-      expect(thirdPoint.insertMethod).toBe('insertBefore');
     });
   });
 
@@ -55,34 +43,15 @@ describe('Wealthsimple UI Injection Points', () => {
       document.body.innerHTML = '';
     });
 
-    test('should find first injection point when available', () => {
-      // Create both injection points
-      const primaryContainer = document.createElement('div');
-      primaryContainer.className = 'bfsRGT';
-      document.body.appendChild(primaryContainer);
+    test('should find injection point when available', () => {
+      // Create injection point
+      const container = document.createElement('div');
+      container.className = 'bZQXKE';
+      document.body.appendChild(container);
 
-      const secondaryContainer = document.createElement('div');
-      secondaryContainer.className = 'etXzES';
-      document.body.appendChild(secondaryContainer);
-
-      // Verify primary is found first
+      // Verify injection point is found
       const found = document.querySelector(WEALTHSIMPLE_UI.INJECTION_POINTS[0].selector);
-      expect(found).toBe(primaryContainer);
-    });
-
-    test('should fallback to second injection point when first is not available', () => {
-      // Only create secondary injection point
-      const secondaryContainer = document.createElement('div');
-      secondaryContainer.className = 'etXzES';
-      document.body.appendChild(secondaryContainer);
-
-      // Verify primary is not found
-      const primaryFound = document.querySelector(WEALTHSIMPLE_UI.INJECTION_POINTS[0].selector);
-      expect(primaryFound).toBeNull();
-
-      // Verify secondary is found
-      const secondaryFound = document.querySelector(WEALTHSIMPLE_UI.INJECTION_POINTS[1].selector);
-      expect(secondaryFound).toBe(secondaryContainer);
+      expect(found).toBe(container);
     });
 
     test('should return null when no injection points are available', () => {
@@ -101,7 +70,7 @@ describe('Wealthsimple UI Injection Points', () => {
 
     test('should insert element as first child', () => {
       const container = document.createElement('div');
-      container.className = 'bfsRGT';
+      container.className = 'bZQXKE';
 
       const existingChild = document.createElement('div');
       existingChild.id = 'existing-child';
@@ -126,14 +95,14 @@ describe('Wealthsimple UI Injection Points', () => {
 
     test('should insert element as first child of second child', () => {
       // Create container with structure:
-      // <div class="etXzES">
+      // <div class="test-container">
       //   <div id="first-child"></div>
       //   <div id="second-child">
       //     <div id="second-child-content"></div>
       //   </div>
       // </div>
       const container = document.createElement('div');
-      container.className = 'etXzES';
+      container.className = 'test-container';
 
       const firstChild = document.createElement('div');
       firstChild.id = 'first-child';
@@ -168,7 +137,7 @@ describe('Wealthsimple UI Injection Points', () => {
 
     test('should return null when container has less than 2 children', () => {
       const container = document.createElement('div');
-      container.className = 'etXzES';
+      container.className = 'test-container';
 
       // Only one child
       const firstChild = document.createElement('div');
@@ -188,7 +157,7 @@ describe('Wealthsimple UI Injection Points', () => {
 
     test('should return null when container has no children', () => {
       const container = document.createElement('div');
-      container.className = 'etXzES';
+      container.className = 'test-container';
       document.body.appendChild(container);
 
       // No children
@@ -210,7 +179,7 @@ describe('Wealthsimple UI Injection Points', () => {
       // Create container with structure:
       // <div id="parent">
       //   <div id="sibling-before"></div>
-      //   <div class="bZQXKE"></div>   <!-- Target element -->
+      //   <div class="target"></div>   <!-- Target element -->
       //   <div id="sibling-after"></div>
       // </div>
       const parent = document.createElement('div');
@@ -221,7 +190,7 @@ describe('Wealthsimple UI Injection Points', () => {
       parent.appendChild(siblingBefore);
 
       const targetElement = document.createElement('div');
-      targetElement.className = 'bZQXKE';
+      targetElement.className = 'target';
       parent.appendChild(targetElement);
 
       const siblingAfter = document.createElement('div');
@@ -248,7 +217,7 @@ describe('Wealthsimple UI Injection Points', () => {
       parent.id = 'parent';
 
       const targetElement = document.createElement('div');
-      targetElement.className = 'bZQXKE';
+      targetElement.className = 'target';
       parent.appendChild(targetElement);
 
       document.body.appendChild(parent);
@@ -266,7 +235,7 @@ describe('Wealthsimple UI Injection Points', () => {
     test('should return null when element has no parent', () => {
       // Create orphan element (not attached to DOM)
       const orphanElement = document.createElement('div');
-      orphanElement.className = 'bZQXKE';
+      orphanElement.className = 'target';
 
       // Element is not attached, so parentNode is null
       expect(orphanElement.parentNode).toBeNull();
@@ -276,7 +245,7 @@ describe('Wealthsimple UI Injection Points', () => {
   describe('getAllInjectionSelectors helper', () => {
     test('should combine all selectors with comma separator', () => {
       const combinedSelector = WEALTHSIMPLE_UI.INJECTION_POINTS.map((ip) => ip.selector).join(', ');
-      expect(combinedSelector).toBe('.bfsRGT, .etXzES, .bZQXKE');
+      expect(combinedSelector).toBe('.bZQXKE');
     });
   });
 });
