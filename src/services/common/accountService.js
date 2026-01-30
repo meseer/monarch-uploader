@@ -336,6 +336,42 @@ export function hasLegacyData(integrationId) {
 }
 
 /**
+ * Detect if stored data is a raw source account (e.g., Questrade account) vs a Monarch mapping
+ * @param {Object} data - Parsed JSON data from storage
+ * @param {string} integrationId - Integration identifier
+ * @returns {boolean} True if this is raw source account data
+ */
+function isSourceAccountData(data, integrationId) {
+  if (!data || typeof data !== 'object') {
+    return false;
+  }
+
+  // Questrade accounts have distinctive fields like 'number', 'accountDetailType', 'productType'
+  if (integrationId === INTEGRATIONS.QUESTRADE) {
+    return Boolean(data.number || data.accountDetailType || data.productType || data.accountStatus);
+  }
+
+  // CanadaLife accounts have 'id' and usually 'nickname' but no 'displayName' at root
+  if (integrationId === INTEGRATIONS.CANADALIFE) {
+    // If it has canadalifAccount nested, it's already in consolidated format
+    if (data.canadalifAccount) {
+      return false;
+    }
+    // If it has displayName at root, it's likely a Monarch mapping
+    return !data.displayName && (data.id || data.nickname);
+  }
+
+  // Rogers Bank similar pattern
+  if (integrationId === INTEGRATIONS.ROGERSBANK) {
+    // Monarch accounts have displayName, source accounts might have accountNumber
+    return !data.displayName && (data.accountNumber || data.accountId);
+  }
+
+  // Default: assume Monarch mapping if it has displayName
+  return !data.displayName;
+}
+
+/**
  * Migrate from legacy prefix-based storage to consolidated structure
  * Does NOT delete legacy data (safety rule)
  * @param {string} integrationId - Integration identifier
@@ -367,13 +403,13 @@ export function migrateFromLegacyStorage(integrationId) {
     for (const key of accountMappingKeys) {
       try {
         const accountId = key.replace(prefix, '');
-        const monarchAccountJson = GM_getValue(key, null);
+        const storedJson = GM_getValue(key, null);
 
-        if (!monarchAccountJson) {
+        if (!storedJson) {
           continue;
         }
 
-        const monarchAccount = JSON.parse(monarchAccountJson);
+        const storedData = JSON.parse(storedJson);
 
         // Get last upload date from legacy storage
         let lastSyncDate = null;
@@ -381,21 +417,55 @@ export function migrateFromLegacyStorage(integrationId) {
           lastSyncDate = GM_getValue(`${lastUploadPrefix}${accountId}`, null);
         }
 
-        // Create consolidated account structure
-        const consolidatedAccount = {
-          // Source account (minimal info from legacy - just ID)
-          [accountKeyName]: {
-            id: accountId,
-            nickname: monarchAccount.displayName || accountId,
-          },
-          // Monarch mapping
-          monarchAccount,
-          // Sync state
-          syncEnabled: true,
-          lastSyncDate,
-          // Default settings
-          ...defaults,
-        };
+        let consolidatedAccount;
+
+        // Detect if stored data is source account data or Monarch mapping
+        if (isSourceAccountData(storedData, integrationId)) {
+          // Stored data is the raw source account (e.g., Questrade account)
+          // Use stored data as the source account, no Monarch mapping yet
+          debugLog(`Detected source account data for ${accountId} in ${integrationId}`);
+
+          consolidatedAccount = {
+            // Source account from stored data
+            [accountKeyName]: {
+              id: storedData.key || storedData.id || accountId,
+              nickname: storedData.nickname || storedData.name || accountId,
+              // Preserve additional source account fields
+              ...(storedData.number && { number: storedData.number }),
+              ...(storedData.type && { type: storedData.type }),
+              ...(storedData.accountDetailType && { accountDetailType: storedData.accountDetailType }),
+              ...(storedData.accountType && { accountType: storedData.accountType }),
+              ...(storedData.productType && { productType: storedData.productType }),
+              ...(storedData.accountStatus && { accountStatus: storedData.accountStatus }),
+            },
+            // No Monarch mapping - will be created on next sync
+            monarchAccount: null,
+            // Sync state
+            syncEnabled: true,
+            lastSyncDate,
+            // Default settings
+            ...defaults,
+          };
+        } else {
+          // Stored data is a Monarch account mapping (has displayName, etc.)
+          // This is the original expected format
+          debugLog(`Detected Monarch mapping data for ${accountId} in ${integrationId}`);
+
+          consolidatedAccount = {
+            // Source account (minimal info from legacy - just ID)
+            [accountKeyName]: {
+              id: accountId,
+              nickname: storedData.displayName || accountId,
+            },
+            // Monarch mapping
+            monarchAccount: storedData,
+            // Sync state
+            syncEnabled: true,
+            lastSyncDate,
+            // Default settings
+            ...defaults,
+          };
+        }
 
         migratedAccounts.push(consolidatedAccount);
         debugLog(`Migrated account ${accountId} for ${integrationId}`);

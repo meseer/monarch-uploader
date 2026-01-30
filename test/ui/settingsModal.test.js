@@ -95,6 +95,56 @@ jest.mock('../../src/mappers/wealthsimple-account-types', () => ({
   getMonarchAccountTypeMapping: jest.fn(() => ({ type: 'credit' })),
 }));
 
+jest.mock('../../src/services/common/accountService', () => ({
+  __esModule: true,
+  default: {
+    getAccounts: jest.fn(() => []),
+    getAccountData: jest.fn(() => null),
+    saveAccounts: jest.fn(() => true),
+    updateAccountInList: jest.fn(() => true),
+    removeAccount: jest.fn(() => true),
+    markAccountAsSkipped: jest.fn(() => true),
+    isAccountSkipped: jest.fn(() => false),
+  },
+  getAccounts: jest.fn(() => []),
+  getAccountData: jest.fn(() => null),
+  saveAccounts: jest.fn(() => true),
+  updateAccountInList: jest.fn(() => true),
+  removeAccount: jest.fn(() => true),
+  markAccountAsSkipped: jest.fn(() => true),
+  isAccountSkipped: jest.fn(() => false),
+}));
+
+jest.mock('../../src/core/integrationCapabilities', () => ({
+  INTEGRATIONS: {
+    WEALTHSIMPLE: 'wealthsimple',
+    QUESTRADE: 'questrade',
+    CANADALIFE: 'canadalife',
+    ROGERSBANK: 'rogersbank',
+  },
+  ACCOUNT_SETTINGS: {
+    STORE_TX_DETAILS_IN_NOTES: 'storeTransactionDetailsInNotes',
+    TRANSACTION_RETENTION_DAYS: 'transactionRetentionDays',
+    TRANSACTION_RETENTION_COUNT: 'transactionRetentionCount',
+    STRIP_STORE_NUMBERS: 'stripStoreNumbers',
+    INCLUDE_PENDING_TRANSACTIONS: 'includePendingTransactions',
+  },
+  getCapabilities: jest.fn((integrationId) => ({
+    id: integrationId,
+    displayName: integrationId.charAt(0).toUpperCase() + integrationId.slice(1),
+    accountKeyName: `${integrationId}Account`,
+    hasTransactions: true,
+    hasDeduplication: true,
+    settings: [],
+    settingDefaults: {},
+  })),
+  getAccountKeyName: jest.fn((integrationId) => `${integrationId}Account`),
+  getDisplayName: jest.fn((integrationId) => integrationId.charAt(0).toUpperCase() + integrationId.slice(1)),
+  getFaviconUrl: jest.fn(() => 'https://www.google.com/s2/favicons?domain=example.com&sz=128'),
+  hasSetting: jest.fn(() => false),
+  getSettingDefault: jest.fn(() => null),
+}));
+
 // Mock localStorage
 const localStorageMock = {
   getItem: jest.fn(),
@@ -698,22 +748,26 @@ describe('Settings Modal Component', () => {
       questradeTab.click();
 
       const tabContent = modal.querySelector('.settings-tab-content');
-      expect(tabContent.textContent).toContain('No account mappings found');
+      // Generic account cards show "No accounts found" when no accounts are available
+      expect(tabContent.textContent).toContain('No accounts found');
     });
 
     test('should display account mappings when available', () => {
-      globalThis.GM_listValues.mockReturnValue(['questrade_account_mapping_12345']);
-      globalThis.GM_getValue.mockImplementation((key) => {
-        if (key === 'questrade_account_mapping_12345') {
-          return JSON.stringify({
-            displayName: 'Test Account',
-            subtype: { display: 'Checking' },
-            currentBalance: 1000.50,
-            logoUrl: 'https://example.com/logo.png',
-          });
-        }
-        return null;
-      });
+      // Mock accountService to return accounts
+      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      accountService.getAccounts.mockReturnValue([{
+        questradeAccount: {
+          id: '12345',
+          nickname: 'Test Account',
+          type: 'Checking',
+        },
+        monarchAccount: {
+          id: 'monarch-123',
+          displayName: 'Monarch Test Account',
+        },
+        syncEnabled: true,
+        lastSyncDate: '2023-01-15T10:30:00Z',
+      }]);
 
       modal = createSettingsModal();
 
@@ -724,20 +778,23 @@ describe('Settings Modal Component', () => {
       const tabContent = modal.querySelector('.settings-tab-content');
       expect(tabContent.textContent).toContain('Test Account');
       expect(tabContent.textContent).toContain('Checking');
-      expect(tabContent.textContent).toContain('$1,000.50');
     });
 
     test('should handle account mapping card expansion', () => {
-      globalThis.GM_listValues.mockReturnValue(['questrade_account_mapping_12345']);
-      globalThis.GM_getValue.mockImplementation((key) => {
-        if (key === 'questrade_account_mapping_12345') {
-          return JSON.stringify({
-            displayName: 'Test Account',
-            subtype: { display: 'Checking' },
-          });
-        }
-        return null;
-      });
+      // Mock accountService to return accounts
+      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      accountService.getAccounts.mockReturnValue([{
+        questradeAccount: {
+          id: '12345',
+          nickname: 'Test Account',
+          type: 'Checking',
+        },
+        monarchAccount: {
+          id: 'monarch-123',
+          displayName: 'Monarch Test Account',
+        },
+        syncEnabled: true,
+      }]);
 
       modal = createSettingsModal();
 
@@ -756,15 +813,19 @@ describe('Settings Modal Component', () => {
     });
 
     test('should handle account mapping deletion with confirmation', () => {
-      globalThis.GM_listValues.mockReturnValue(['questrade_account_mapping_12345']);
-      globalThis.GM_getValue.mockImplementation((key) => {
-        if (key === 'questrade_account_mapping_12345') {
-          return JSON.stringify({
-            displayName: 'Test Account',
-          });
-        }
-        return null;
-      });
+      // Mock accountService to return accounts
+      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      accountService.getAccounts.mockReturnValue([{
+        questradeAccount: {
+          id: '12345',
+          nickname: 'Test Account',
+        },
+        monarchAccount: {
+          id: 'monarch-123',
+          displayName: 'Monarch Test Account',
+        },
+        syncEnabled: true,
+      }]);
 
       modal = createSettingsModal();
 
@@ -780,17 +841,21 @@ describe('Settings Modal Component', () => {
   });
 
   describe('Last Update Date Management', () => {
-    test('should display last update date when available', () => {
-      globalThis.GM_listValues.mockReturnValue(['questrade_account_mapping_12345']);
-      globalThis.GM_getValue.mockImplementation((key) => {
-        if (key === 'questrade_account_mapping_12345') {
-          return JSON.stringify({ displayName: 'Test Account' });
-        }
-        if (key === 'questrade_last_upload_date_12345') {
-          return '2023-01-15T10:30:00Z';
-        }
-        return null;
-      });
+    test('should display last synced date when available', () => {
+      // Mock accountService to return accounts with lastSyncDate
+      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      accountService.getAccounts.mockReturnValue([{
+        questradeAccount: {
+          id: '12345',
+          nickname: 'Test Account',
+        },
+        monarchAccount: {
+          id: 'monarch-123',
+          displayName: 'Monarch Test Account',
+        },
+        syncEnabled: true,
+        lastSyncDate: '2023-01-15T10:30:00Z',
+      }]);
 
       modal = createSettingsModal();
 
@@ -799,18 +864,25 @@ describe('Settings Modal Component', () => {
       questradeTab.click();
 
       const tabContent = modal.querySelector('.settings-tab-content');
-      expect(tabContent.textContent).toContain('Last Updated');
+      expect(tabContent.textContent).toContain('Last synced');
       expect(tabContent.textContent).toContain('Jan');
     });
 
-    test('should show "Never" when no last update date exists', () => {
-      globalThis.GM_listValues.mockReturnValue(['questrade_account_mapping_12345']);
-      globalThis.GM_getValue.mockImplementation((key) => {
-        if (key === 'questrade_account_mapping_12345') {
-          return JSON.stringify({ displayName: 'Test Account' });
-        }
-        return null;
-      });
+    test('should not show last sync info when no date exists', () => {
+      // Mock accountService to return accounts without lastSyncDate
+      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      accountService.getAccounts.mockReturnValue([{
+        questradeAccount: {
+          id: '12345',
+          nickname: 'Test Account',
+        },
+        monarchAccount: {
+          id: 'monarch-123',
+          displayName: 'Monarch Test Account',
+        },
+        syncEnabled: true,
+        // No lastSyncDate
+      }]);
 
       modal = createSettingsModal();
 
@@ -819,20 +891,25 @@ describe('Settings Modal Component', () => {
       questradeTab.click();
 
       const tabContent = modal.querySelector('.settings-tab-content');
-      expect(tabContent.textContent).toContain('Never');
+      // Should show account but no "Last synced" info
+      expect(tabContent.textContent).toContain('Test Account');
     });
 
-    test('should clear last update date when clear button clicked', () => {
-      globalThis.GM_listValues.mockReturnValue(['questrade_account_mapping_12345']);
-      globalThis.GM_getValue.mockImplementation((key) => {
-        if (key === 'questrade_account_mapping_12345') {
-          return JSON.stringify({ displayName: 'Test Account' });
-        }
-        if (key === 'questrade_last_upload_date_12345') {
-          return '2023-01-15T10:30:00Z';
-        }
-        return null;
-      });
+    test('should show delete button for accounts', () => {
+      // Mock accountService to return accounts
+      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      accountService.getAccounts.mockReturnValue([{
+        questradeAccount: {
+          id: '12345',
+          nickname: 'Test Account',
+        },
+        monarchAccount: {
+          id: 'monarch-123',
+          displayName: 'Monarch Test Account',
+        },
+        syncEnabled: true,
+        lastSyncDate: '2023-01-15T10:30:00Z',
+      }]);
 
       modal = createSettingsModal();
 
@@ -840,27 +917,25 @@ describe('Settings Modal Component', () => {
         .find((btn) => btn.textContent.includes('Questrade'));
       questradeTab.click();
 
-      const clearButton = Array.from(modal.querySelectorAll('button'))
-        .find((btn) => btn.textContent === 'Clear');
-      expect(clearButton).toBeTruthy();
-
-      clearButton.click();
-
-      expect(globalThis.GM_deleteValue).toHaveBeenCalledWith('questrade_last_upload_date_12345');
-      expect(toast.show).toHaveBeenCalledWith('Last update date cleared', 'info');
+      const deleteButton = Array.from(modal.querySelectorAll('button'))
+        .find((btn) => btn.textContent === '🗑️');
+      expect(deleteButton).toBeTruthy();
     });
 
-    test('should handle invalid date formatting gracefully', () => {
-      globalThis.GM_listValues.mockReturnValue(['questrade_account_mapping_12345']);
-      globalThis.GM_getValue.mockImplementation((key) => {
-        if (key === 'questrade_account_mapping_12345') {
-          return JSON.stringify({ displayName: 'Test Account' });
-        }
-        if (key === 'questrade_last_upload_date_12345') {
-          return 'invalid-date';
-        }
-        return null;
-      });
+    test('should handle accounts without sync date', () => {
+      // Mock accountService to return accounts
+      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      accountService.getAccounts.mockReturnValue([{
+        questradeAccount: {
+          id: '12345',
+          nickname: 'Test Account',
+        },
+        monarchAccount: {
+          id: 'monarch-123',
+          displayName: 'Monarch Test Account',
+        },
+        syncEnabled: true,
+      }]);
 
       modal = createSettingsModal();
 
@@ -869,7 +944,8 @@ describe('Settings Modal Component', () => {
       questradeTab.click();
 
       const tabContent = modal.querySelector('.settings-tab-content');
-      expect(tabContent.textContent).toContain('Invalid date');
+      // Account should be displayed without errors
+      expect(tabContent.textContent).toContain('Test Account');
     });
   });
 
@@ -1261,16 +1337,20 @@ describe('Settings Modal Component', () => {
 
   describe('Additional Helper Functions', () => {
     test('should format dates correctly', () => {
-      globalThis.GM_listValues.mockReturnValue(['questrade_account_mapping_12345']);
-      globalThis.GM_getValue.mockImplementation((key) => {
-        if (key === 'questrade_account_mapping_12345') {
-          return JSON.stringify({ displayName: 'Test Account' });
-        }
-        if (key === 'questrade_last_upload_date_12345') {
-          return '2023-12-25T15:30:00Z';
-        }
-        return null;
-      });
+      // Mock accountService to return accounts with lastSyncDate
+      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      accountService.getAccounts.mockReturnValue([{
+        questradeAccount: {
+          id: '12345',
+          nickname: 'Test Account',
+        },
+        monarchAccount: {
+          id: 'monarch-123',
+          displayName: 'Monarch Test Account',
+        },
+        syncEnabled: true,
+        lastSyncDate: '2023-12-25T15:30:00Z',
+      }]);
 
       modal = createSettingsModal();
 
@@ -1284,17 +1364,20 @@ describe('Settings Modal Component', () => {
       expect(tabContent.textContent).toContain('2023');
     });
 
-    test('should handle currency formatting in account display', () => {
-      globalThis.GM_listValues.mockReturnValue(['questrade_account_mapping_12345']);
-      globalThis.GM_getValue.mockImplementation((key) => {
-        if (key === 'questrade_account_mapping_12345') {
-          return JSON.stringify({
-            displayName: 'Test Account',
-            currentBalance: 1234.56,
-          });
-        }
-        return null;
-      });
+    test('should handle mapping status display', () => {
+      // Mock accountService to return accounts with monarch mapping
+      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      accountService.getAccounts.mockReturnValue([{
+        questradeAccount: {
+          id: '12345',
+          nickname: 'Test Account',
+        },
+        monarchAccount: {
+          id: 'monarch-123',
+          displayName: 'Mapped Monarch Account',
+        },
+        syncEnabled: true,
+      }]);
 
       modal = createSettingsModal();
 
@@ -1303,19 +1386,19 @@ describe('Settings Modal Component', () => {
       questradeTab.click();
 
       const tabContent = modal.querySelector('.settings-tab-content');
-      expect(tabContent.textContent).toContain('$1,234.56');
+      expect(tabContent.textContent).toContain('Mapped to');
     });
 
     test('should handle missing account properties gracefully', () => {
-      globalThis.GM_listValues.mockReturnValue(['questrade_account_mapping_12345']);
-      globalThis.GM_getValue.mockImplementation((key) => {
-        if (key === 'questrade_account_mapping_12345') {
-          return JSON.stringify({
-            // Missing displayName and other properties
-          });
-        }
-        return null;
-      });
+      // Mock accountService to return accounts without optional properties
+      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      accountService.getAccounts.mockReturnValue([{
+        questradeAccount: {
+          id: '12345',
+          // Missing nickname - should show "Unknown Account"
+        },
+        syncEnabled: true,
+      }]);
 
       modal = createSettingsModal();
 

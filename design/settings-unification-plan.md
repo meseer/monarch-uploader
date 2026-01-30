@@ -59,17 +59,17 @@ Create a common interface for account operations with backward compatibility.
 - [x] Verify tests pass (42 tests passing)
 
 ### Phase 3: Refactor Settings UI
-**Status**: ⏳ Not Started
+**Status**: ⏳ In Progress
 
 Update settings modal to use capabilities and unified account service.
 
 #### Phase 3.1: Account Cards Standardization
-- [ ] Create generic `createAccountCards()` function based on Wealthsimple pattern
-- [ ] Refactor `renderQuestradeTab()` to use generic cards
-- [ ] Refactor `renderCanadaLifeTab()` to use generic cards
-- [ ] Refactor `renderRogersBankTab()` to use generic cards
-- [ ] Add enable/disable toggle to all account cards
-- [ ] Update tests
+- [x] Create generic `createGenericAccountCards()` function based on Wealthsimple pattern
+- [x] Refactor `renderQuestradeTab()` to use generic cards
+- [x] Refactor `renderCanadaLifeTab()` to use generic cards
+- [ ] Refactor `renderRogersBankTab()` to use generic cards (has custom transaction management UI)
+- [x] Enable/disable toggle per account (via `createToggleSwitch`)
+- [x] Update tests for refactored tabs
 
 #### Phase 3.2: Per-Account Settings
 - [ ] Add per-account settings toggles based on capabilities

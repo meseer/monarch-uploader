@@ -12,6 +12,7 @@ import toast from '../toast';
 import { createMonarchLoginLink } from './monarchLoginLink';
 import { getMonarchAccountTypeMapping } from '../../mappers/wealthsimple-account-types';
 import {
+  INTEGRATIONS,
   ACCOUNT_SETTINGS,
   getCapabilities,
   getAccountKeyName,
@@ -680,15 +681,17 @@ function renderQuestradeTab(container) {
   const lookbackSection = createLookbackPeriodSection('questrade');
   container.appendChild(lookbackSection);
 
-  // Account Mappings Section
+  // Account Mappings Section using generic account cards
   const mappingsSection = createSection('Account Mappings', '🔗', 'Questrade to Monarch account mappings');
-  const mappingsData = getStorageData(STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX);
-  const mappingsCards = createAccountMappingCards(mappingsData, (key) => {
-    GM_deleteValue(key);
-    toast.show('Account mapping deleted', 'info');
+
+  // Get accounts from unified account service (handles migration from legacy storage)
+  const accounts = accountService.getAccounts(INTEGRATIONS.QUESTRADE);
+
+  const accountCards = createGenericAccountCards(INTEGRATIONS.QUESTRADE, accounts, () => {
+    // Refresh callback
     renderTabContent(container, 'questrade');
-  }, 'Questrade', 'questrade');
-  mappingsSection.appendChild(mappingsCards);
+  });
+  mappingsSection.appendChild(accountCards);
 
   container.appendChild(mappingsSection);
 }
@@ -702,15 +705,17 @@ function renderCanadaLifeTab(container) {
   const lookbackSection = createLookbackPeriodSection('canadalife');
   container.appendChild(lookbackSection);
 
-  // Account Mappings Section
+  // Account Mappings Section using generic account cards
   const mappingsSection = createSection('Account Mappings', '🔗', 'CanadaLife to Monarch account mappings');
-  const mappingsData = getStorageData(STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX);
-  const mappingsCards = createAccountMappingCards(mappingsData, (key) => {
-    GM_deleteValue(key);
-    toast.show('Account mapping deleted', 'info');
+
+  // Get accounts from unified account service (handles migration from legacy storage)
+  const accounts = accountService.getAccounts(INTEGRATIONS.CANADALIFE);
+
+  const accountCards = createGenericAccountCards(INTEGRATIONS.CANADALIFE, accounts, () => {
+    // Refresh callback
     renderTabContent(container, 'canadalife');
-  }, 'Canada Life', 'canadalife');
-  mappingsSection.appendChild(mappingsCards);
+  });
+  mappingsSection.appendChild(accountCards);
 
   container.appendChild(mappingsSection);
 }
