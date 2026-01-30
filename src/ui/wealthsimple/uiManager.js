@@ -4,7 +4,7 @@
  */
 
 import { debugLog } from '../../core/utils';
-import { STORAGE, COLORS } from '../../core/config';
+import { STORAGE, COLORS, WEALTHSIMPLE_UI } from '../../core/config';
 import stateManager from '../../core/state';
 import wealthsimpleApi from '../../api/wealthsimple';
 import toast from '../toast';
@@ -14,15 +14,72 @@ import { showSettingsModal } from '../components/settingsModal';
 import { createMonarchLoginLink } from '../components/monarchLoginLink';
 
 /**
+ * Find the first available injection point from the prioritized list
+ * @returns {{element: HTMLElement, insertMethod: string, selector: string}|null} Injection point info or null
+ */
+function findInjectionPoint() {
+  for (const injectionPoint of WEALTHSIMPLE_UI.INJECTION_POINTS) {
+    const element = document.querySelector(injectionPoint.selector);
+    if (element) {
+      debugLog(`Found injection point: ${injectionPoint.selector} (method: ${injectionPoint.insertMethod})`);
+      return {
+        element,
+        insertMethod: injectionPoint.insertMethod,
+        selector: injectionPoint.selector,
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Get the actual target container for UI insertion based on insert method
+ * @param {HTMLElement} element - The element found by selector
+ * @param {string} insertMethod - The insertion method ('prepend' or 'prependToSecondChild')
+ * @returns {HTMLElement|null} The target container element or null
+ */
+function getTargetContainer(element, insertMethod) {
+  if (insertMethod === 'prepend') {
+    return element;
+  }
+  if (insertMethod === 'prependToSecondChild') {
+    // Get children (excluding text nodes)
+    const children = Array.from(element.children);
+    if (children.length >= 2) {
+      return children[1]; // Second child (0-indexed)
+    }
+    debugLog(`prependToSecondChild: element has only ${children.length} children, need at least 2`);
+    return null;
+  }
+  debugLog(`Unknown insert method: ${insertMethod}`);
+  return null;
+}
+
+/**
+ * Get all possible injection point selectors as a comma-separated string for querySelector
+ * @returns {string} Combined selector string
+ */
+function getAllInjectionSelectors() {
+  return WEALTHSIMPLE_UI.INJECTION_POINTS.map((ip) => ip.selector).join(', ');
+}
+
+/**
  * Creates and appends the main UI container to Wealthsimple page
  * @returns {HTMLElement|null} Created container element
  */
 async function createUIContainer() {
-  // Find target container (don't wait, observer will retry)
-  const targetContainer = document.querySelector('.bfsRGT');
+  // Find target container using prioritized injection points
+  const injectionPoint = findInjectionPoint();
 
+  if (!injectionPoint) {
+    const selectors = getAllInjectionSelectors();
+    debugLog(`No injection point found yet (tried: ${selectors}), will retry via observer`);
+    return null;
+  }
+
+  const targetContainer = getTargetContainer(injectionPoint.element, injectionPoint.insertMethod);
   if (!targetContainer) {
-    debugLog('Target container (.bfsRGT) not found yet, will retry via observer');
+    debugLog(`Could not resolve target container for ${injectionPoint.selector}, will retry via observer`);
     return null;
   }
 
@@ -112,10 +169,12 @@ async function createUIContainer() {
 
   container.appendChild(header);
 
-  // Insert as FIRST child of target container
+  // Insert as FIRST child of target container (prepend)
   targetContainer.insertBefore(container, targetContainer.firstChild);
 
-  debugLog('Wealthsimple UI container created and inserted as first child of .bfsRGT');
+  debugLog(
+    `Wealthsimple UI container created using injection point: ${injectionPoint.selector} (method: ${injectionPoint.insertMethod})`,
+  );
   return container;
 }
 
@@ -182,15 +241,23 @@ function scheduleUIReinjection() {
  */
 async function checkAndInitializeUI() {
   try {
-    // Check if target container exists
-    const targetContainer = document.querySelector('.bfsRGT');
-    if (!targetContainer) {
-      debugLog('Target container (.bfsRGT) not found yet, waiting for observer');
+    // Check if any injection point exists
+    const injectionPoint = findInjectionPoint();
+    if (!injectionPoint) {
+      const selectors = getAllInjectionSelectors();
+      debugLog(`No injection point found yet (tried: ${selectors}), waiting for observer`);
       isUIInitialized = false;
       return;
     }
 
-    debugLog('Target container (.bfsRGT) found!');
+    const targetContainer = getTargetContainer(injectionPoint.element, injectionPoint.insertMethod);
+    if (!targetContainer) {
+      debugLog(`Could not resolve target container for ${injectionPoint.selector}, waiting for observer`);
+      isUIInitialized = false;
+      return;
+    }
+
+    debugLog(`Injection point found: ${injectionPoint.selector}!`);
 
     // Check if our UI already exists and is properly positioned
     const existingContainer = document.getElementById('wealthsimple-balance-uploader-container');
@@ -212,7 +279,7 @@ async function checkAndInitializeUI() {
       debugLog('Wealthsimple UI successfully initialized!');
 
       // Set up observer on target container to watch for our UI removal
-      observeTargetContainer(targetContainer);
+      observeTargetContainer(container.parentNode);
     } else {
       debugLog('Failed to create UI container, observer will retry');
     }
@@ -262,26 +329,32 @@ function startPersistentMonitoring() {
     return;
   }
 
-  debugLog('Starting persistent UI monitoring for .bfsRGT...');
+  const selectors = getAllInjectionSelectors();
+  debugLog(`Starting persistent UI monitoring for injection points: ${selectors}...`);
 
   // Create observer that watches for target container and our UI
   bodyObserver = new MutationObserver(() => {
-    const targetContainer = document.querySelector('.bfsRGT');
+    const injectionPoint = findInjectionPoint();
     const ourUI = document.getElementById('wealthsimple-balance-uploader-container');
 
-    // If target exists but our UI doesn't, or our UI is detached
-    if (targetContainer && (!ourUI || ourUI.parentNode !== targetContainer)) {
-      // Always reinject when UI is missing - the isUIInitialized flag may be stale
-      // if the page replaced .bfsRGT (e.g., during SPA navigation from home to account page)
-      debugLog('Observer detected .bfsRGT without UI, scheduling injection...');
-      isUIInitialized = false;
-      scheduleUIReinjection();
-    } else if (!targetContainer && isUIInitialized) {
-      // Target container disappeared (navigation), reset flag
-      debugLog('Observer detected .bfsRGT removed, marking for re-initialization');
+    // If any injection point exists, check if we need to reinject
+    if (injectionPoint) {
+      const targetContainer = getTargetContainer(injectionPoint.element, injectionPoint.insertMethod);
+
+      // If target exists but our UI doesn't, or our UI is detached
+      if (targetContainer && (!ourUI || ourUI.parentNode !== targetContainer)) {
+        // Always reinject when UI is missing - the isUIInitialized flag may be stale
+        // if the page replaced injection points (e.g., during SPA navigation)
+        debugLog(`Observer detected ${injectionPoint.selector} without UI, scheduling injection...`);
+        isUIInitialized = false;
+        scheduleUIReinjection();
+      }
+    } else if (isUIInitialized) {
+      // No injection points found (navigation), reset flag
+      debugLog('Observer detected all injection points removed, marking for re-initialization');
       isUIInitialized = false;
 
-      // Disconnect observer
+      // Disconnect target container observer
       if (targetContainerObserver) {
         targetContainerObserver.disconnect();
         targetContainerObserver = null;

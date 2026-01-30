@@ -149,6 +149,15 @@ export const UI = {
   ANIMATION_DURATION: 200, // Duration for UI animations (ms)
 };
 
+// Wealthsimple UI injection settings
+// Injection points are tried in order - first matching selector wins
+export const WEALTHSIMPLE_UI = {
+  INJECTION_POINTS: [
+    { selector: '.bfsRGT', insertMethod: 'prepend' },
+    { selector: '.edYMHM', insertMethod: 'prependToSecondChild' },
+  ],
+};
+
 // Default export with all config values
 export default {
   DEBUG_LOG,
@@ -158,4 +167,5 @@ export default {
   COLORS,
   LOGO_CLOUDINARY_IDS,
   UI,
+  WEALTHSIMPLE_UI,
 };

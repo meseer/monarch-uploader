@@ -1,0 +1,248 @@
+/**
+ * Integration Capabilities Configuration
+ *
+ * Defines what each integration supports in terms of features and settings.
+ * Used by the settings UI to dynamically render appropriate options.
+ */
+
+import { TRANSACTION_RETENTION_DEFAULTS } from './config';
+
+/**
+ * Integration identifiers
+ */
+export const INTEGRATIONS = {
+  WEALTHSIMPLE: 'wealthsimple',
+  QUESTRADE: 'questrade',
+  CANADALIFE: 'canadalife',
+  ROGERSBANK: 'rogersbank',
+};
+
+/**
+ * Available settings keys for per-account configuration
+ */
+export const ACCOUNT_SETTINGS = {
+  STORE_TX_DETAILS_IN_NOTES: 'storeTransactionDetailsInNotes',
+  TRANSACTION_RETENTION_DAYS: 'transactionRetentionDays',
+  TRANSACTION_RETENTION_COUNT: 'transactionRetentionCount',
+  STRIP_STORE_NUMBERS: 'stripStoreNumbers',
+  INCLUDE_PENDING_TRANSACTIONS: 'includePendingTransactions',
+};
+
+/**
+ * Capabilities configuration for each integration
+ *
+ * @typedef {Object} IntegrationCapabilities
+ * @property {string} id - Integration identifier
+ * @property {string} displayName - Human-readable name
+ * @property {string} accountKeyName - Key name for the source account in consolidated structure
+ * @property {boolean} hasTransactions - Whether the integration supports transaction upload
+ * @property {boolean} hasDeduplication - Whether the integration needs transaction deduplication
+ * @property {boolean} hasBalanceHistory - Whether the integration supports balance history
+ * @property {boolean} hasCreditLimit - Whether the integration supports credit limit sync
+ * @property {boolean} hasHoldings - Whether the integration supports holdings/positions
+ * @property {boolean} hasBalanceReconstruction - Whether balance can be reconstructed from transactions
+ * @property {string[]} settings - List of available per-account settings
+ * @property {Object} settingDefaults - Default values for per-account settings
+ */
+
+/**
+ * Integration capabilities definitions
+ */
+export const INTEGRATION_CAPABILITIES = {
+  [INTEGRATIONS.WEALTHSIMPLE]: {
+    id: INTEGRATIONS.WEALTHSIMPLE,
+    displayName: 'Wealthsimple',
+    accountKeyName: 'wealthsimpleAccount',
+    hasTransactions: true,
+    hasDeduplication: true,
+    hasBalanceHistory: true,
+    hasCreditLimit: true, // For credit card accounts
+    hasHoldings: true,
+    hasBalanceReconstruction: true, // For credit cards
+    settings: [
+      ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES,
+      ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS,
+      ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT,
+      ACCOUNT_SETTINGS.STRIP_STORE_NUMBERS,
+      ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS,
+    ],
+    settingDefaults: {
+      [ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES]: false,
+      [ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS]: TRANSACTION_RETENTION_DEFAULTS.DAYS,
+      [ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT]: TRANSACTION_RETENTION_DEFAULTS.COUNT,
+      [ACCOUNT_SETTINGS.STRIP_STORE_NUMBERS]: true,
+      [ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS]: true,
+    },
+  },
+
+  [INTEGRATIONS.QUESTRADE]: {
+    id: INTEGRATIONS.QUESTRADE,
+    displayName: 'Questrade',
+    accountKeyName: 'questradeAccount',
+    hasTransactions: true, // Order transactions
+    hasDeduplication: true,
+    hasBalanceHistory: true,
+    hasCreditLimit: false,
+    hasHoldings: true,
+    hasBalanceReconstruction: false,
+    settings: [
+      ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES,
+      ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS,
+      ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT,
+    ],
+    settingDefaults: {
+      [ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES]: false,
+      [ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS]: TRANSACTION_RETENTION_DEFAULTS.DAYS,
+      [ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT]: TRANSACTION_RETENTION_DEFAULTS.COUNT,
+    },
+  },
+
+  [INTEGRATIONS.CANADALIFE]: {
+    id: INTEGRATIONS.CANADALIFE,
+    displayName: 'Canada Life',
+    accountKeyName: 'canadalifAccount',
+    hasTransactions: false, // Balance only
+    hasDeduplication: false,
+    hasBalanceHistory: true,
+    hasCreditLimit: false,
+    hasHoldings: false, // Private mutual funds - no positions API
+    hasBalanceReconstruction: false,
+    settings: [], // No transaction settings needed
+    settingDefaults: {},
+  },
+
+  [INTEGRATIONS.ROGERSBANK]: {
+    id: INTEGRATIONS.ROGERSBANK,
+    displayName: 'Rogers Bank',
+    accountKeyName: 'rogersbankAccount',
+    hasTransactions: true,
+    hasDeduplication: true,
+    hasBalanceHistory: true,
+    hasCreditLimit: true,
+    hasHoldings: false, // Credit card only
+    hasBalanceReconstruction: true,
+    settings: [
+      ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES,
+      ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS,
+      ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT,
+    ],
+    settingDefaults: {
+      [ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES]: false,
+      [ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS]: TRANSACTION_RETENTION_DEFAULTS.DAYS,
+      [ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT]: TRANSACTION_RETENTION_DEFAULTS.COUNT,
+    },
+  },
+};
+
+/**
+ * Get capabilities for a specific integration
+ * @param {string} integrationId - Integration identifier
+ * @returns {IntegrationCapabilities|null} Capabilities object or null if not found
+ */
+export function getCapabilities(integrationId) {
+  return INTEGRATION_CAPABILITIES[integrationId] || null;
+}
+
+/**
+ * Check if an integration supports a specific capability
+ * @param {string} integrationId - Integration identifier
+ * @param {string} capability - Capability name (e.g., 'hasTransactions', 'hasDeduplication')
+ * @returns {boolean} True if the integration has the capability
+ */
+export function hasCapability(integrationId, capability) {
+  const capabilities = getCapabilities(integrationId);
+  return capabilities ? Boolean(capabilities[capability]) : false;
+}
+
+/**
+ * Check if an integration supports a specific setting
+ * @param {string} integrationId - Integration identifier
+ * @param {string} settingKey - Setting key from ACCOUNT_SETTINGS
+ * @returns {boolean} True if the integration supports the setting
+ */
+export function hasSetting(integrationId, settingKey) {
+  const capabilities = getCapabilities(integrationId);
+  return capabilities ? capabilities.settings.includes(settingKey) : false;
+}
+
+/**
+ * Get default value for a specific setting
+ * @param {string} integrationId - Integration identifier
+ * @param {string} settingKey - Setting key from ACCOUNT_SETTINGS
+ * @returns {*} Default value for the setting, or undefined if not found
+ */
+export function getSettingDefault(integrationId, settingKey) {
+  const capabilities = getCapabilities(integrationId);
+  if (!capabilities || !capabilities.settingDefaults) {
+    return undefined;
+  }
+  return capabilities.settingDefaults[settingKey];
+}
+
+/**
+ * Get all settings with their defaults for an integration
+ * @param {string} integrationId - Integration identifier
+ * @returns {Object} Object with setting keys and default values
+ */
+export function getDefaultSettings(integrationId) {
+  const capabilities = getCapabilities(integrationId);
+  return capabilities?.settingDefaults || {};
+}
+
+/**
+ * Get the account key name for an integration
+ * Used to access the source account data in consolidated structure
+ * @param {string} integrationId - Integration identifier
+ * @returns {string|null} Account key name (e.g., 'wealthsimpleAccount')
+ */
+export function getAccountKeyName(integrationId) {
+  const capabilities = getCapabilities(integrationId);
+  return capabilities?.accountKeyName || null;
+}
+
+/**
+ * Get all integrations that support a specific capability
+ * @param {string} capability - Capability name
+ * @returns {string[]} Array of integration IDs that have the capability
+ */
+export function getIntegrationsWithCapability(capability) {
+  return Object.keys(INTEGRATION_CAPABILITIES).filter(
+    (id) => INTEGRATION_CAPABILITIES[id][capability],
+  );
+}
+
+/**
+ * Get all integrations that support a specific setting
+ * @param {string} settingKey - Setting key from ACCOUNT_SETTINGS
+ * @returns {string[]} Array of integration IDs that support the setting
+ */
+export function getIntegrationsWithSetting(settingKey) {
+  return Object.keys(INTEGRATION_CAPABILITIES).filter(
+    (id) => INTEGRATION_CAPABILITIES[id].settings.includes(settingKey),
+  );
+}
+
+/**
+ * Get display name for an integration
+ * @param {string} integrationId - Integration identifier
+ * @returns {string} Display name or the ID if not found
+ */
+export function getDisplayName(integrationId) {
+  const capabilities = getCapabilities(integrationId);
+  return capabilities?.displayName || integrationId;
+}
+
+export default {
+  INTEGRATIONS,
+  ACCOUNT_SETTINGS,
+  INTEGRATION_CAPABILITIES,
+  getCapabilities,
+  hasCapability,
+  hasSetting,
+  getSettingDefault,
+  getDefaultSettings,
+  getAccountKeyName,
+  getIntegrationsWithCapability,
+  getIntegrationsWithSetting,
+  getDisplayName,
+};
