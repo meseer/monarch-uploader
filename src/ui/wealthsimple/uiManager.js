@@ -73,22 +73,28 @@ function getAllInjectionSelectors() {
 
 /**
  * Creates and appends the main UI container to Wealthsimple page
+ * @param {Object} injectionPoint - Pre-resolved injection point info (optional, for efficiency)
+ * @param {Object} targetInfo - Pre-resolved target container info (optional, for efficiency)
  * @returns {HTMLElement|null} Created container element
  */
-async function createUIContainer() {
-  // Find target container using prioritized injection points
-  const injectionPoint = findInjectionPoint();
-
+async function createUIContainer(injectionPoint = null, targetInfo = null) {
+  // Use provided injection point or find one
   if (!injectionPoint) {
-    const selectors = getAllInjectionSelectors();
-    debugLog(`No injection point found yet (tried: ${selectors}), will retry via observer`);
-    return null;
+    injectionPoint = findInjectionPoint();
+    if (!injectionPoint) {
+      const selectors = getAllInjectionSelectors();
+      debugLog(`No injection point found yet (tried: ${selectors}), will retry via observer`);
+      return null;
+    }
   }
 
-  const targetInfo = getTargetContainer(injectionPoint.element, injectionPoint.insertMethod);
+  // Use provided target info or resolve it
   if (!targetInfo) {
-    debugLog(`Could not resolve target container for ${injectionPoint.selector}, will retry via observer`);
-    return null;
+    targetInfo = getTargetContainer(injectionPoint.element, injectionPoint.insertMethod);
+    if (!targetInfo) {
+      debugLog(`Could not resolve target container for ${injectionPoint.selector}, will retry via observer`);
+      return null;
+    }
   }
 
   // Check if container already exists
@@ -229,6 +235,7 @@ function initializeUIComponents(container) {
 let bodyObserver = null;
 let targetContainerObserver = null;
 let isUIInitialized = false;
+let isInitializing = false; // Mutex flag to prevent concurrent initialization
 let reinjectionTimeout = null;
 
 /**
@@ -251,7 +258,15 @@ function scheduleUIReinjection() {
  * Check and initialize UI if target container exists and UI is not already present
  */
 async function checkAndInitializeUI() {
+  // Prevent concurrent initialization attempts (race condition protection)
+  if (isInitializing) {
+    debugLog('Initialization already in progress, skipping');
+    return;
+  }
+
   try {
+    isInitializing = true;
+
     // Check if our UI already exists in the DOM - if so, skip initialization
     // We use document.contains() instead of checking specific parent references
     // because multiple injection point elements may exist and querySelector order may vary
@@ -285,7 +300,8 @@ async function checkAndInitializeUI() {
     debugLog('Creating/recreating Wealthsimple UI...');
     isUIInitialized = false;
 
-    const container = await createUIContainer();
+    // Pass injection point info to avoid redundant lookup
+    const container = await createUIContainer(injectionPoint, targetInfo);
     if (container) {
       initializeUIComponents(container);
       isUIInitialized = true;
@@ -299,6 +315,8 @@ async function checkAndInitializeUI() {
   } catch (error) {
     debugLog('Error in checkAndInitializeUI:', error);
     isUIInitialized = false;
+  } finally {
+    isInitializing = false;
   }
 }
 
