@@ -1169,6 +1169,78 @@ describe('Wealthsimple Transaction Service', () => {
       });
     });
 
+    it('should find pending transactions with future dates (user-modified dates)', async () => {
+      // This test covers the fix for future-dated pending transactions
+      // When a user modifies a pending transaction date in Monarch to be in the future,
+      // the reconciliation should still find and process it
+
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+
+      // Mock transaction with a future date (e.g., 6 months from now)
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [
+          {
+            id: 'monarch-tx-future',
+            amount: -75.00,
+            date: '2026-07-15', // Future date
+            notes: 'PURCHASE / credit-transaction-future-dated',
+            ownedByUser: { id: 'user-123' },
+          },
+        ],
+      });
+      monarchApi.updateTransaction.mockResolvedValue({});
+      monarchApi.setTransactionTags.mockResolvedValue({});
+
+      // The transaction has settled in Wealthsimple
+      const wealthsimpleTransactions = [
+        {
+          externalCanonicalId: 'credit-transaction-future-dated',
+          status: 'settled',
+          amount: 75.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        wealthsimpleTransactions,
+        30, // lookback days
+      );
+
+      // The fix: endDate is now 1 year in the future, so this transaction should be found
+      // and processed correctly
+      expect(result.success).toBe(true);
+      expect(result.settled).toBe(1);
+      expect(result.cancelled).toBe(0);
+
+      // Verify getTransactionsList was called with an endDate in the future
+      expect(monarchApi.getTransactionsList).toHaveBeenCalledWith(
+        expect.objectContaining({
+          accountIds: [mockMonarchAccountId],
+          tags: [mockPendingTagId],
+          // startDate should be around 30 days ago
+          startDate: expect.any(String),
+          // endDate should be about 1 year in the future
+          endDate: expect.any(String),
+        }),
+      );
+
+      // Verify the endDate is actually in the future (approximately 1 year from now)
+      const callArgs = monarchApi.getTransactionsList.mock.calls[0][0];
+      const endDateParsed = new Date(callArgs.endDate);
+      const today = new Date();
+      const oneYearFromNow = new Date(today);
+      oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
+
+      // endDate should be close to 1 year from now (within a few days tolerance)
+      const diffDays = Math.abs((endDateParsed - oneYearFromNow) / (1000 * 60 * 60 * 24));
+      expect(diffDays).toBeLessThan(5);
+
+      // Should have processed the transaction
+      expect(monarchApi.updateTransaction).toHaveBeenCalled();
+      expect(monarchApi.setTransactionTags).toHaveBeenCalledWith('monarch-tx-future', []);
+    });
+
     it('should handle multiple pending transactions', async () => {
       monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
       monarchApi.getTransactionsList.mockResolvedValue({

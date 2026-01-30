@@ -2113,12 +2113,18 @@ export async function reconcilePendingTransactions(monarchAccountId, wealthsimpl
     debugLog(`Found "Pending" tag with ID: ${pendingTag.id}`);
 
     // Step 2: Calculate date range (local timezone)
+    // Start date: lookbackDays in the past
     const today = new Date();
     const startDate = new Date(today);
     startDate.setDate(startDate.getDate() - lookbackDays);
 
+    // End date: 1 year in the future to catch transactions with user-modified future dates
+    // This handles cases where users adjust transaction dates in Monarch to be in the future
+    const endDate = new Date(today);
+    endDate.setFullYear(endDate.getFullYear() + 1);
+
     const startDateStr = formatDate(startDate);
-    const endDateStr = formatDate(today);
+    const endDateStr = formatDate(endDate);
 
     debugLog(`Searching for pending transactions from ${startDateStr} to ${endDateStr}`);
 
