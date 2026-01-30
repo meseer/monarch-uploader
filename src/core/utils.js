@@ -45,7 +45,7 @@ export function debugLog(...args) {
   // Only log if the message level is at or above the current log level
   if (logLevels[level] >= logLevels[currentLogLevel]) {
     const timestamp = `[${formatTimestamp()}]`;
-    const prefix = level === 'debug' ? `${timestamp}[Monarch Uploader]` : `${timestamp}[Monarch Uploader][${level.toUpperCase()}]`;
+    const prefix = `${timestamp}[${level.toUpperCase()}][Monarch Uploader]`;
 
     if (level === 'error') {
       console.error(prefix, ...args);

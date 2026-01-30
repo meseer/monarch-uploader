@@ -258,7 +258,7 @@ describe('Utility Functions', () => {
         expect.stringMatching(timestampPattern),
         'error message',
       );
-      expect(console.error.mock.calls[0][0]).toContain('[Monarch Uploader][ERROR]');
+      expect(console.error.mock.calls[0][0]).toContain('[ERROR][Monarch Uploader]');
     });
 
     it('should use different console methods for different levels', () => {
@@ -272,19 +272,19 @@ describe('Utility Functions', () => {
         expect.stringMatching(timestampPattern),
         'info message',
       );
-      expect(console.info.mock.calls[0][0]).toContain('[Monarch Uploader][INFO]');
+      expect(console.info.mock.calls[0][0]).toContain('[INFO][Monarch Uploader]');
 
       expect(console.warn).toHaveBeenCalledWith(
         expect.stringMatching(timestampPattern),
         'warning message',
       );
-      expect(console.warn.mock.calls[0][0]).toContain('[Monarch Uploader][WARNING]');
+      expect(console.warn.mock.calls[0][0]).toContain('[WARNING][Monarch Uploader]');
 
       expect(console.error).toHaveBeenCalledWith(
         expect.stringMatching(timestampPattern),
         'error message',
       );
-      expect(console.error.mock.calls[0][0]).toContain('[Monarch Uploader][ERROR]');
+      expect(console.error.mock.calls[0][0]).toContain('[ERROR][Monarch Uploader]');
     });
 
     it('should include timestamp in correct format', () => {
@@ -293,8 +293,8 @@ describe('Utility Functions', () => {
       debugLog('test message');
 
       const prefix = console.log.mock.calls[0][0];
-      // Should match format: [HH:MM:SS.mmm][Monarch Uploader]
-      expect(prefix).toMatch(/^\[\d{2}:\d{2}:\d{2}\.\d{3}\]\[Monarch Uploader\]$/);
+      // Should match format: [HH:MM:SS.mmm][DEBUG][Monarch Uploader]
+      expect(prefix).toMatch(/^\[\d{2}:\d{2}:\d{2}\.\d{3}\]\[DEBUG\]\[Monarch Uploader\]$/);
     });
   });
 
@@ -309,7 +309,7 @@ describe('Utility Functions', () => {
         expect.stringMatching(timestampPattern),
         'test info',
       );
-      expect(console.info.mock.calls[0][0]).toContain('[Monarch Uploader][INFO]');
+      expect(console.info.mock.calls[0][0]).toContain('[INFO][Monarch Uploader]');
     });
 
     it('logWarning should call debugLog with warning level', () => {
@@ -319,7 +319,7 @@ describe('Utility Functions', () => {
         expect.stringMatching(timestampPattern),
         'test warning',
       );
-      expect(console.warn.mock.calls[0][0]).toContain('[Monarch Uploader][WARNING]');
+      expect(console.warn.mock.calls[0][0]).toContain('[WARNING][Monarch Uploader]');
     });
 
     it('logError should call debugLog with error level', () => {
@@ -329,7 +329,7 @@ describe('Utility Functions', () => {
         expect.stringMatching(timestampPattern),
         'test error',
       );
-      expect(console.error.mock.calls[0][0]).toContain('[Monarch Uploader][ERROR]');
+      expect(console.error.mock.calls[0][0]).toContain('[ERROR][Monarch Uploader]');
     });
   });
 
