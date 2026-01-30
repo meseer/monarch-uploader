@@ -15,6 +15,37 @@ import { STORAGE } from '../../core/config';
 import { applyMerchantMapping } from '../../mappers/merchant';
 
 /**
+ * Format spend transaction notes from spend details
+ * Adds foreign currency info and reward info if applicable
+ *
+ * @param {Object|null} spendDetails - Spend transaction details from FetchSpendTransactions API
+ * @returns {string} Formatted notes string or empty string if no relevant details
+ */
+export function formatSpendNotes(spendDetails) {
+  if (!spendDetails) {
+    return '';
+  }
+
+  const notes = [];
+
+  // Add foreign currency details if applicable
+  if (spendDetails.isForeign === true) {
+    const foreignAmount = spendDetails.foreignAmount ?? 'N/A';
+    const foreignCurrency = spendDetails.foreignCurrency ?? 'N/A';
+    const foreignExchangeRate = spendDetails.foreignExchangeRate ?? 'N/A';
+    notes.push(`Amount: ${foreignAmount} ${foreignCurrency} (rate: ${foreignExchangeRate})`);
+  }
+
+  // Add reward details if applicable
+  if (spendDetails.hasReward === true) {
+    const rewardAmount = spendDetails.rewardAmount ?? 0;
+    notes.push(`Rewards: ${rewardAmount}`);
+  }
+
+  return notes.join('\n');
+}
+
+/**
  * Format transfer notes with currency and amount
  * @param {Object} transaction - Raw transaction from Wealthsimple API
  * @param {string} existingNote - Any existing annotation/note to append
@@ -639,19 +670,31 @@ export const CASH_TRANSACTION_RULES = [
      * - 'authorized': Pending transaction (sync with Pending tag)
      * - Other statuses: Rejected (exclude from sync)
      *
+     * Enrichment data:
+     * - Spend details are available via enrichmentMap with key "spend:{externalCanonicalId}"
+     * - If isForeign: adds foreign currency info to notes
+     * - If hasReward: adds reward info to notes
+     *
      * @param {Object} tx - Raw transaction
+     * @param {Map<string, Object>} enrichmentMap - Map containing spend details (keyed by "spend:{id}")
      * @returns {Object} Processed transaction fields
      */
-    process: (tx) => {
+    process: (tx, enrichmentMap) => {
       const originalMerchant = tx.spendMerchant || 'Unknown Merchant';
       const cleanedMerchant = applyMerchantMapping(originalMerchant, { stripStoreNumbers: true });
+
+      // Look up spend details from enrichment map
+      const spendDetails = enrichmentMap?.get(`spend:${tx.externalCanonicalId}`) || null;
+
+      // Format notes from spend details (foreign currency and reward info)
+      const notes = formatSpendNotes(spendDetails);
 
       return {
         // Category will be resolved via user category mapping (like credit cards)
         category: null, // null indicates needs category mapping
         merchant: cleanedMerchant,
         originalStatement: formatOriginalStatement(tx.type, tx.subType, originalMerchant),
-        notes: '',
+        notes,
         technicalDetails: '',
         // Flag to indicate this transaction needs category resolution
         needsCategoryMapping: true,

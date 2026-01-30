@@ -28,6 +28,11 @@ jest.mock('../../../src/ui/components/categorySelector', () => ({
   showManualTransactionCategorization: jest.fn(),
 }));
 
+// Set up default mock for fetchSpendTransactions to return empty Map
+beforeEach(() => {
+  wealthsimpleApi.fetchSpendTransactions = jest.fn().mockResolvedValue(new Map());
+});
+
 describe('Wealthsimple Transaction Service', () => {
   const mockConsolidatedAccount = {
     wealthsimpleAccount: {

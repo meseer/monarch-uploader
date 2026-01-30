@@ -25,6 +25,7 @@ import {
   INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES,
   INVESTMENT_RESP_GRANT_TRANSACTION_RULES,
   formatOriginalStatement,
+  formatSpendNotes,
   getTransactionId,
 } from './transactionRules';
 
@@ -45,10 +46,11 @@ function convertToLocalDate(isoTimestamp) {
  * @param {Object} transaction - Raw transaction from Wealthsimple API
  * @param {Object} options - Processing options
  * @param {boolean} options.stripStoreNumbers - Whether to strip store numbers from merchant names
+ * @param {Map} options.spendDetailsMap - Map of transaction ID to spend details (for PURCHASE transactions)
  * @returns {Object} Processed transaction object
  */
 function processCreditCardTransaction(transaction, options = {}) {
-  const { stripStoreNumbers = true } = options;
+  const { stripStoreNumbers = true, spendDetailsMap = null } = options;
 
   // Check for auto-mapping first
   const autoMapping = getAutoMappingForSubType(transaction.subType);
@@ -70,6 +72,15 @@ function processCreditCardTransaction(transaction, options = {}) {
   const isNegative = transaction.amountSign === 'negative';
   const finalAmount = isNegative ? -Math.abs(transaction.amount) : Math.abs(transaction.amount);
 
+  // Get spend details for PURCHASE transactions (foreign currency and reward info)
+  let notes = '';
+  if (transaction.subType === 'PURCHASE' && spendDetailsMap) {
+    const spendDetails = spendDetailsMap.get(transaction.externalCanonicalId);
+    if (spendDetails) {
+      notes = formatSpendNotes(spendDetails);
+    }
+  }
+
   return {
     id: getTransactionId(transaction),
     date: convertToLocalDate(transaction.occurredAt),
@@ -79,6 +90,8 @@ function processCreditCardTransaction(transaction, options = {}) {
     type: transaction.type,
     subType: transaction.subType,
     status: transaction.status,
+    // Notes from spend details (foreign currency, rewards)
+    notes,
     // Store for category resolution
     categoryKey: cleanedMerchant,
   };
@@ -423,14 +436,24 @@ export async function fetchAndProcessCreditCardTransactions(consolidatedAccount,
       return [];
     }
 
-    // Step 4: Process transactions with stripStoreNumbers option
+    // Step 4: Fetch spend details for PURCHASE transactions (foreign currency and reward info)
+    const purchaseTransactionIds = collectCreditCardPurchaseIds(notYetUploadedTransactions);
+    let spendDetailsMap = new Map();
+
+    if (purchaseTransactionIds.length > 0) {
+      debugLog(`Fetching spend transaction details for ${purchaseTransactionIds.length} PURCHASE transaction(s)...`);
+      spendDetailsMap = await wealthsimpleApi.fetchSpendTransactions(accountId, purchaseTransactionIds);
+      debugLog(`Fetched ${spendDetailsMap.size} spend transaction detail(s)`);
+    }
+
+    // Step 5: Process transactions with stripStoreNumbers option and spend details
     const processedTransactions = notYetUploadedTransactions.map((transaction) =>
-      processCreditCardTransaction(transaction, { stripStoreNumbers }),
+      processCreditCardTransaction(transaction, { stripStoreNumbers, spendDetailsMap }),
     );
 
     debugLog(`Processed ${processedTransactions.length} credit card transactions`);
 
-    // Step 5: Resolve categories (will prompt user for unknown merchants)
+    // Step 6: Resolve categories (will prompt user for unknown merchants)
     const transactionsWithCategories = await resolveCategoriesForTransactions(processedTransactions);
 
     debugLog(`Category resolution complete, returning ${transactionsWithCategories.length} transactions (${uploadedSkipCount} already uploaded)`);
@@ -641,6 +664,55 @@ function collectInternalTransferIds(transactions) {
 }
 
 /**
+ * Collect SPEND transaction IDs from transactions that need spend details enrichment
+ * For CASH accounts: type=SPEND transactions
+ * For CREDIT_CARD accounts: subType=PURCHASE transactions
+ *
+ * @param {Array} transactions - Raw transactions from Wealthsimple API
+ * @param {string} idField - Field to use for ID ('externalCanonicalId' or other)
+ * @returns {Array<string>} Array of spend transaction IDs
+ */
+function collectSpendTransactionIds(transactions, idField = 'externalCanonicalId') {
+  const spendIds = [];
+
+  for (const tx of transactions) {
+    // CASH accounts: type=SPEND transactions
+    if (tx.type === 'SPEND' && tx[idField]) {
+      // For spend transactions, the ID is a numeric string
+      // Extract just the numeric part for the API call
+      const id = tx[idField];
+      // The spend API uses simple numeric IDs like "549257972"
+      // Extract from externalCanonicalId format if needed
+      if (id && !spendIds.includes(id)) {
+        spendIds.push(id);
+      }
+    }
+  }
+
+  return spendIds;
+}
+
+/**
+ * Collect PURCHASE transaction IDs from credit card transactions that need spend details enrichment
+ * For CREDIT_CARD accounts: subType=PURCHASE transactions
+ *
+ * @param {Array} transactions - Raw transactions from Wealthsimple API
+ * @returns {Array<string>} Array of spend transaction IDs (using full externalCanonicalId)
+ */
+function collectCreditCardPurchaseIds(transactions) {
+  const purchaseIds = [];
+
+  for (const tx of transactions) {
+    // CREDIT_CARD accounts: subType=PURCHASE transactions
+    if (tx.subType === 'PURCHASE' && tx.externalCanonicalId) {
+      purchaseIds.push(tx.externalCanonicalId);
+    }
+  }
+
+  return purchaseIds;
+}
+
+/**
  * Collect EFT transfer IDs from transactions that need funds transfer enrichment
  * Returns only externalCanonicalIds from EFT transactions (DEPOSIT/EFT and WITHDRAWAL/EFT)
  *
@@ -763,12 +835,14 @@ export async function fetchAndProcessCashTransactions(consolidatedAccount, fromD
     // - E-transfers need funding intent data for memos
     // - Internal transfers need internal transfer data for annotations
     // - EFT transfers need funds transfer data for bank account details
+    // - SPEND transactions need spend details for foreign currency and reward info
     const eTransferIds = collectETransferIds(transactionsWithRules);
     const internalTransferIds = collectInternalTransferIds(transactionsWithRules);
     const eftTransferIds = collectEftTransferIds(transactionsWithRules);
+    const spendTransactionIds = collectSpendTransactionIds(transactionsWithRules);
 
     // Create a combined enrichment map for the rules engine
-    // The rules engine expects a single map that can contain funding intents, internal transfers, and funds transfers
+    // The rules engine expects a single map that can contain funding intents, internal transfers, funds transfers, and spend details
     const enrichmentMap = new Map();
 
     // Fetch funding intent data for e-transfers (batch API - single call)
@@ -823,6 +897,18 @@ export async function fetchAndProcessCashTransactions(consolidatedAccount, fromD
         }
       }
       debugLog(`Fetched ${eftTransferIds.length} EFT transfer(s)`);
+    }
+
+    // Fetch spend transaction details for foreign currency and reward info (batch API - single call)
+    if (spendTransactionIds.length > 0) {
+      debugLog(`Fetching spend transaction details for ${spendTransactionIds.length} transaction(s)...`);
+      const spendDetailsMap = await wealthsimpleApi.fetchSpendTransactions(accountId, spendTransactionIds);
+      debugLog(`Fetched ${spendDetailsMap.size} spend transaction detail(s)`);
+
+      // Add spend details to enrichment map with a prefix to distinguish them
+      for (const [id, data] of spendDetailsMap) {
+        enrichmentMap.set(`spend:${id}`, data);
+      }
     }
 
     debugLog(`Combined enrichment map has ${enrichmentMap.size} entries`);

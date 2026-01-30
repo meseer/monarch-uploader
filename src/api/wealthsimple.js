@@ -2760,6 +2760,112 @@ fragment Balance on Balance {
   }
 }
 
+/**
+ * Fetch spend transaction details for multiple transactions
+ * Used to get foreign currency exchange details and reward information for CASH and CREDIT_CARD transactions
+ *
+ * @param {string} accountId - Wealthsimple account ID (e.g., "ca-cash-msb-iusfagkx" or "ca-credit-card-xxx")
+ * @param {Array<string>} transactionIds - Array of transaction IDs to fetch details for
+ * @returns {Promise<Map<string, Object>>} Map of transaction ID to spend details
+ */
+export async function fetchSpendTransactions(accountId, transactionIds) {
+  try {
+    if (!accountId) {
+      debugLog('No account ID provided for fetchSpendTransactions');
+      return new Map();
+    }
+
+    if (!transactionIds || transactionIds.length === 0) {
+      debugLog('No transaction IDs provided for fetchSpendTransactions');
+      return new Map();
+    }
+
+    debugLog(`Fetching spend transaction details for ${transactionIds.length} transaction(s) in account ${accountId}...`);
+
+    const query = `query FetchSpendTransactions($transactionIds: [String!], $accountId: String!, $cursor: String) {
+  spendTransactions(
+    transactionIds: $transactionIds
+    accountId: $accountId
+    after: $cursor
+  ) {
+    edges {
+      node {
+        ...SpendTransaction
+        __typename
+      }
+      __typename
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+      __typename
+    }
+    __typename
+  }
+}
+
+fragment SpendTransaction on SpendTransaction {
+  id
+  hasReward
+  rewardAmount
+  rewardPayoutType
+  rewardPayoutSecurityId
+  rewardPayoutCustodianAccountId
+  foreignAmount
+  foreignCurrency
+  foreignExchangeRate
+  isForeign
+  roundupAmount
+  roundupTotal
+  __typename
+}`;
+
+    const variables = {
+      accountId,
+      transactionIds,
+    };
+
+    const response = await makeGraphQLQuery('FetchSpendTransactions', query, variables);
+
+    if (!response || !response.spendTransactions) {
+      debugLog('No spendTransactions in response');
+      return new Map();
+    }
+
+    const { edges, pageInfo } = response.spendTransactions;
+
+    // Build map of ID to spend transaction details
+    const spendTransactionMap = new Map();
+
+    if (edges && Array.isArray(edges)) {
+      edges.forEach((edge) => {
+        if (edge.node && edge.node.id) {
+          spendTransactionMap.set(edge.node.id, edge.node);
+          debugLog(`Fetched spend details for transaction ${edge.node.id}:`, {
+            isForeign: edge.node.isForeign,
+            foreignCurrency: edge.node.foreignCurrency,
+            hasReward: edge.node.hasReward,
+            rewardAmount: edge.node.rewardAmount,
+          });
+        }
+      });
+    }
+
+    debugLog(`Fetched ${spendTransactionMap.size} spend transaction detail(s)`);
+
+    // Handle pagination if needed (unlikely for typical batch sizes)
+    if (pageInfo?.hasNextPage) {
+      debugLog('Warning: More spend transactions available but pagination not implemented');
+    }
+
+    return spendTransactionMap;
+  } catch (error) {
+    debugLog('Error fetching spend transactions:', error);
+    // Return empty map on error - don't fail the entire sync
+    return new Map();
+  }
+}
+
 export default {
   checkAuth,
   setupTokenMonitoring,
@@ -2783,4 +2889,5 @@ export default {
   fetchShortOptionPositionExpiryDetail,
   fetchSecurity,
   fetchAccountsWithBalance,
+  fetchSpendTransactions,
 };
