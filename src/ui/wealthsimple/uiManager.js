@@ -252,6 +252,17 @@ function scheduleUIReinjection() {
  */
 async function checkAndInitializeUI() {
   try {
+    // Check if our UI already exists in the DOM - if so, skip initialization
+    // We use document.contains() instead of checking specific parent references
+    // because multiple injection point elements may exist and querySelector order may vary
+    const existingContainer = document.getElementById('wealthsimple-balance-uploader-container');
+    if (existingContainer && document.contains(existingContainer)) {
+      // UI already exists in DOM, no need to re-initialize
+      debugLog('UI already present in DOM, skipping initialization');
+      isUIInitialized = true;
+      return;
+    }
+
     // Check if any injection point exists
     const injectionPoint = findInjectionPoint();
     if (!injectionPoint) {
@@ -269,15 +280,6 @@ async function checkAndInitializeUI() {
     }
 
     debugLog(`Injection point found: ${injectionPoint.selector}!`);
-
-    // Check if our UI already exists and is properly positioned
-    const existingContainer = document.getElementById('wealthsimple-balance-uploader-container');
-    if (existingContainer && existingContainer.parentNode === targetInfo.container) {
-      // UI already exists and is properly attached, no need to re-initialize
-      debugLog('UI already present and attached, skipping initialization');
-      isUIInitialized = true;
-      return;
-    }
 
     // UI doesn't exist or was removed, create it
     debugLog('Creating/recreating Wealthsimple UI...');
@@ -312,11 +314,13 @@ function observeTargetContainer(targetContainer) {
   debugLog('Setting up observer on target container...');
 
   targetContainerObserver = new MutationObserver(() => {
-    // Check if our UI was removed
+    // Check if our UI was removed from the DOM entirely
+    // We use document.contains() instead of checking specific parent references
+    // because multiple injection point elements may exist
     const ourUI = document.getElementById('wealthsimple-balance-uploader-container');
 
-    if (!ourUI || ourUI.parentNode !== targetContainer) {
-      debugLog('Our UI was removed from target container, scheduling reinjection...');
+    if (!ourUI || !document.contains(ourUI)) {
+      debugLog('Our UI was removed from DOM, scheduling reinjection...');
       isUIInitialized = false;
       scheduleUIReinjection();
     }
@@ -345,17 +349,21 @@ function startPersistentMonitoring() {
 
   // Create observer that watches for target container and our UI
   bodyObserver = new MutationObserver(() => {
-    const injectionPoint = findInjectionPoint();
     const ourUI = document.getElementById('wealthsimple-balance-uploader-container');
 
-    // If any injection point exists, check if we need to reinject
+    // If our UI exists in the DOM, no need to do anything
+    // We use document.contains() instead of checking specific parent references
+    // because multiple injection point elements may exist and querySelector order may vary
+    if (ourUI && document.contains(ourUI)) {
+      return;
+    }
+
+    // UI doesn't exist or was removed - check if we can reinject
+    const injectionPoint = findInjectionPoint();
     if (injectionPoint) {
       const targetInfo = getTargetContainer(injectionPoint.element, injectionPoint.insertMethod);
 
-      // If target exists but our UI doesn't, or our UI is detached
-      if (targetInfo && (!ourUI || ourUI.parentNode !== targetInfo.container)) {
-        // Always reinject when UI is missing - the isUIInitialized flag may be stale
-        // if the page replaced injection points (e.g., during SPA navigation)
+      if (targetInfo) {
         debugLog(`Observer detected ${injectionPoint.selector} without UI, scheduling injection...`);
         isUIInitialized = false;
         scheduleUIReinjection();
