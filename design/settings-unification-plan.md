@@ -143,6 +143,20 @@ After achieving baseline consistency, update cline rules to maintain consistency
 - [ ] Document migration requirements for storage changes
 - [ ] Add checklist for adding new integrations
 
+### Phase 7: Code Cleanup
+**Status**: ⏳ Not Started
+
+After all integrations are migrated to the unified pattern, remove deprecated code.
+
+- [ ] Remove `createAccountMappingCards()` from settingsModal.js
+- [ ] Remove `createWealthsimpleAccountCards()` (replaced by generic)
+- [ ] Remove legacy `getStorageData()` function if unused
+- [ ] Remove legacy render functions that were replaced
+- [ ] Clean up any duplicate helper functions
+- [ ] Remove unused imports
+- [ ] Run full test suite to verify no regressions
+- [ ] Update documentation to reflect final architecture
+
 ---
 
 ## Migration Safety Rules

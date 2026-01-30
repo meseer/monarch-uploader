@@ -11,6 +11,16 @@ import { isAccountSkipped, markAccountAsSkipped, getWealthsimpleAccounts } from 
 import toast from '../toast';
 import { createMonarchLoginLink } from './monarchLoginLink';
 import { getMonarchAccountTypeMapping } from '../../mappers/wealthsimple-account-types';
+import {
+  ACCOUNT_SETTINGS,
+  getCapabilities,
+  getAccountKeyName,
+  getDisplayName,
+  getFaviconUrl,
+  hasSetting,
+  getSettingDefault,
+} from '../../core/integrationCapabilities';
+import accountService from '../../services/common/accountService';
 
 /**
  * Checks connection status for an institution
@@ -2405,10 +2415,694 @@ function deleteSelectedTransactionRefs(selectedCheckboxes) {
 }
 
 /**
- * Creates Wealthsimple account cards from consolidated structure
+ * Renders the account settings section based on integration capabilities
+ * @param {string} integrationId - Integration identifier
+ * @param {Object} accountEntry - Consolidated account data object
+ * @param {string} accountId - Account ID for updates
+ * @param {Function} onUpdate - Callback when settings are updated
+ * @returns {HTMLElement} Settings section element
+ */
+function renderAccountSettingsSection(integrationId, accountEntry, accountId, onUpdate) {
+  const settingsSection = document.createElement('div');
+  settingsSection.id = `account-settings-section-${accountId}`;
+  settingsSection.style.cssText = 'margin-bottom: 15px;';
+
+  const settingsTitle = document.createElement('h4');
+  settingsTitle.textContent = 'Account Settings';
+  settingsTitle.style.cssText = 'margin: 0 0 10px 0; font-size: 14px; color: #333;';
+  settingsSection.appendChild(settingsTitle);
+
+  const capabilities = getCapabilities(integrationId);
+  if (!capabilities || capabilities.settings.length === 0) {
+    const noSettingsMsg = document.createElement('div');
+    noSettingsMsg.style.cssText = 'font-size: 13px; color: #666; font-style: italic;';
+    noSettingsMsg.textContent = 'No configurable settings for this integration.';
+    settingsSection.appendChild(noSettingsMsg);
+    return settingsSection;
+  }
+
+  // Store transaction details in notes toggle
+  if (hasSetting(integrationId, ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES)) {
+    const transactionDetailsSetting = document.createElement('div');
+    transactionDetailsSetting.id = `setting-tx-details-${accountId}`;
+    transactionDetailsSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: white; border-radius: 6px; margin-bottom: 8px;';
+
+    const transactionDetailsLabel = document.createElement('div');
+    transactionDetailsLabel.innerHTML = `
+      <div style="font-weight: 500; font-size: 13px;">Store transaction details in notes</div>
+      <div style="font-size: 11px; color: #666;">When enabled, transaction details will be included in the Notes field</div>
+    `;
+
+    const currentValue = accountEntry.storeTransactionDetailsInNotes ?? getSettingDefault(integrationId, ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES);
+    const transactionDetailsToggle = createToggleSwitch(
+      currentValue,
+      (isEnabled) => {
+        const success = accountService.updateAccountInList(integrationId, accountId, { storeTransactionDetailsInNotes: isEnabled });
+        if (success) {
+          toast.show(`Transaction details in notes ${isEnabled ? 'enabled' : 'disabled'}`, 'info');
+          if (onUpdate) onUpdate();
+        } else {
+          toast.show('Failed to update setting', 'error');
+        }
+      },
+      false,
+    );
+
+    transactionDetailsSetting.appendChild(transactionDetailsLabel);
+    transactionDetailsSetting.appendChild(transactionDetailsToggle);
+    transactionDetailsSetting.addEventListener('click', (e) => e.stopPropagation());
+    settingsSection.appendChild(transactionDetailsSetting);
+  }
+
+  // Strip store numbers toggle (Wealthsimple only)
+  if (hasSetting(integrationId, ACCOUNT_SETTINGS.STRIP_STORE_NUMBERS)) {
+    const stripStoreNumbersSetting = document.createElement('div');
+    stripStoreNumbersSetting.id = `setting-strip-store-${accountId}`;
+    stripStoreNumbersSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: white; border-radius: 6px; margin-bottom: 8px;';
+
+    const stripStoreNumbersLabel = document.createElement('div');
+    stripStoreNumbersLabel.innerHTML = `
+      <div style="font-weight: 500; font-size: 13px;">Strip store numbers from merchants</div>
+      <div style="font-size: 11px; color: #666;">Remove store numbers from merchant names (e.g., "WALMART #1234" → "WALMART")</div>
+    `;
+
+    const currentValue = accountEntry.stripStoreNumbers ?? getSettingDefault(integrationId, ACCOUNT_SETTINGS.STRIP_STORE_NUMBERS);
+    const stripStoreNumbersToggle = createToggleSwitch(
+      currentValue,
+      (isEnabled) => {
+        const success = accountService.updateAccountInList(integrationId, accountId, { stripStoreNumbers: isEnabled });
+        if (success) {
+          toast.show(`Store number stripping ${isEnabled ? 'enabled' : 'disabled'}`, 'info');
+          if (onUpdate) onUpdate();
+        } else {
+          toast.show('Failed to update setting', 'error');
+        }
+      },
+      false,
+    );
+
+    stripStoreNumbersSetting.appendChild(stripStoreNumbersLabel);
+    stripStoreNumbersSetting.appendChild(stripStoreNumbersToggle);
+    stripStoreNumbersSetting.addEventListener('click', (e) => e.stopPropagation());
+    settingsSection.appendChild(stripStoreNumbersSetting);
+  }
+
+  // Include pending transactions toggle (Wealthsimple only)
+  if (hasSetting(integrationId, ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS)) {
+    const includePendingSetting = document.createElement('div');
+    includePendingSetting.id = `setting-pending-${accountId}`;
+    includePendingSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: white; border-radius: 6px; margin-bottom: 8px;';
+
+    const includePendingLabel = document.createElement('div');
+    includePendingLabel.innerHTML = `
+      <div style="font-weight: 500; font-size: 13px;">Include pending transactions</div>
+      <div style="font-size: 11px; color: #666;">When enabled, authorized (pending) transactions are included with a "Pending" tag</div>
+    `;
+
+    const currentValue = accountEntry.includePendingTransactions ?? getSettingDefault(integrationId, ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS);
+    const includePendingToggle = createToggleSwitch(
+      currentValue,
+      (isEnabled) => {
+        const success = accountService.updateAccountInList(integrationId, accountId, { includePendingTransactions: isEnabled });
+        if (success) {
+          toast.show(`Pending transactions ${isEnabled ? 'enabled' : 'disabled'}`, 'info');
+          if (onUpdate) onUpdate();
+        } else {
+          toast.show('Failed to update setting', 'error');
+        }
+      },
+      false,
+    );
+
+    includePendingSetting.appendChild(includePendingLabel);
+    includePendingSetting.appendChild(includePendingToggle);
+    includePendingSetting.addEventListener('click', (e) => e.stopPropagation());
+    settingsSection.appendChild(includePendingSetting);
+  }
+
+  // Transaction retention days (for deduplication-enabled integrations)
+  if (hasSetting(integrationId, ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS)) {
+    const retentionDaysSetting = document.createElement('div');
+    retentionDaysSetting.id = `setting-retention-days-${accountId}`;
+    retentionDaysSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: white; border-radius: 6px; margin-bottom: 8px;';
+
+    const retentionDaysLabel = document.createElement('div');
+    retentionDaysLabel.innerHTML = `
+      <div style="font-weight: 500; font-size: 13px;">Transaction retention days</div>
+      <div style="font-size: 11px; color: #666;">Number of days to keep transaction IDs for deduplication (0 = unlimited)</div>
+    `;
+
+    const retentionDaysInputContainer = document.createElement('div');
+    retentionDaysInputContainer.style.cssText = 'display: flex; align-items: center; gap: 4px;';
+
+    const defaultRetentionDays = getSettingDefault(integrationId, ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS);
+    const retentionDaysInput = document.createElement('input');
+    retentionDaysInput.type = 'number';
+    retentionDaysInput.min = '0';
+    retentionDaysInput.max = '3650';
+    retentionDaysInput.value = accountEntry.transactionRetentionDays ?? defaultRetentionDays;
+    retentionDaysInput.style.cssText = 'width: 70px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px;';
+
+    retentionDaysInput.addEventListener('change', () => {
+      const value = parseInt(retentionDaysInput.value, 10);
+      const previousValue = accountEntry.transactionRetentionDays ?? defaultRetentionDays;
+      if (Number.isNaN(value) || value < 0) {
+        retentionDaysInput.value = previousValue;
+        toast.show('Please enter a valid number (0 or greater)', 'error');
+        return;
+      }
+
+      // Validate retention vs lookback
+      const currentLookback = getLookbackForInstitution(integrationId);
+      const validation = validateLookbackVsRetention(currentLookback, value);
+      if (!validation.valid) {
+        retentionDaysInput.value = previousValue;
+        toast.show(`Retention period (${value} days) must be greater than lookback period (${currentLookback} days)`, 'error');
+        return;
+      }
+
+      const success = accountService.updateAccountInList(integrationId, accountId, { transactionRetentionDays: value });
+      if (success) {
+        toast.show(`Transaction retention days set to ${value === 0 ? 'unlimited' : value}`, 'info');
+        if (onUpdate) onUpdate();
+      } else {
+        toast.show('Failed to update setting', 'error');
+      }
+    });
+
+    const daysLabel = document.createElement('span');
+    daysLabel.textContent = 'days';
+    daysLabel.style.cssText = 'font-size: 12px; color: #666;';
+
+    retentionDaysInputContainer.appendChild(retentionDaysInput);
+    retentionDaysInputContainer.appendChild(daysLabel);
+
+    retentionDaysSetting.appendChild(retentionDaysLabel);
+    retentionDaysSetting.appendChild(retentionDaysInputContainer);
+    retentionDaysSetting.addEventListener('click', (e) => e.stopPropagation());
+    settingsSection.appendChild(retentionDaysSetting);
+  }
+
+  // Transaction retention count (for deduplication-enabled integrations)
+  if (hasSetting(integrationId, ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT)) {
+    const retentionCountSetting = document.createElement('div');
+    retentionCountSetting.id = `setting-retention-count-${accountId}`;
+    retentionCountSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: white; border-radius: 6px; margin-bottom: 8px;';
+
+    const retentionCountLabel = document.createElement('div');
+    retentionCountLabel.innerHTML = `
+      <div style="font-weight: 500; font-size: 13px;">Transaction retention count</div>
+      <div style="font-size: 11px; color: #666;">Maximum number of transaction IDs to keep (0 = unlimited)</div>
+    `;
+
+    const retentionCountInputContainer = document.createElement('div');
+    retentionCountInputContainer.style.cssText = 'display: flex; align-items: center; gap: 4px;';
+
+    const defaultRetentionCount = getSettingDefault(integrationId, ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT);
+    const retentionCountInput = document.createElement('input');
+    retentionCountInput.type = 'number';
+    retentionCountInput.min = '0';
+    retentionCountInput.max = '100000';
+    retentionCountInput.value = accountEntry.transactionRetentionCount ?? defaultRetentionCount;
+    retentionCountInput.style.cssText = 'width: 70px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px;';
+
+    retentionCountInput.addEventListener('change', () => {
+      const value = parseInt(retentionCountInput.value, 10);
+      if (Number.isNaN(value) || value < 0) {
+        retentionCountInput.value = accountEntry.transactionRetentionCount ?? defaultRetentionCount;
+        toast.show('Please enter a valid number (0 or greater)', 'error');
+        return;
+      }
+
+      const success = accountService.updateAccountInList(integrationId, accountId, { transactionRetentionCount: value });
+      if (success) {
+        toast.show(`Transaction retention count set to ${value === 0 ? 'unlimited' : value}`, 'info');
+        if (onUpdate) onUpdate();
+      } else {
+        toast.show('Failed to update setting', 'error');
+      }
+    });
+
+    const countLabel = document.createElement('span');
+    countLabel.textContent = 'IDs';
+    countLabel.style.cssText = 'font-size: 12px; color: #666;';
+
+    retentionCountInputContainer.appendChild(retentionCountInput);
+    retentionCountInputContainer.appendChild(countLabel);
+
+    retentionCountSetting.appendChild(retentionCountLabel);
+    retentionCountSetting.appendChild(retentionCountInputContainer);
+    retentionCountSetting.addEventListener('click', (e) => e.stopPropagation());
+    settingsSection.appendChild(retentionCountSetting);
+  }
+
+  return settingsSection;
+}
+
+/**
+ * Renders the debug JSON section with editable functionality
+ * @param {string} integrationId - Integration identifier
+ * @param {Object} accountEntry - Consolidated account data object
+ * @param {string} accountId - Account ID for updates
+ * @param {Function} onSave - Callback after successful save
+ * @returns {HTMLElement} Debug section element
+ */
+function renderDebugJsonSection(integrationId, accountEntry, accountId, onSave) {
+  const debugSection = document.createElement('div');
+  debugSection.id = `debug-section-${integrationId}-${accountId}`;
+
+  const debugHeader = document.createElement('div');
+  debugHeader.style.cssText = 'display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;';
+
+  const debugTitle = document.createElement('h4');
+  debugTitle.textContent = 'Debug Information';
+  debugTitle.style.cssText = 'margin: 0; font-size: 14px; color: #333;';
+  debugHeader.appendChild(debugTitle);
+
+  // Button container for Edit/Save/Cancel
+  const buttonContainer = document.createElement('div');
+  buttonContainer.id = `debug-buttons-${integrationId}-${accountId}`;
+  buttonContainer.style.cssText = 'display: flex; gap: 8px;';
+
+  // Edit button (visible in view mode)
+  const editButton = document.createElement('button');
+  editButton.id = `debug-edit-btn-${integrationId}-${accountId}`;
+  editButton.textContent = '✍️ Edit';
+  editButton.style.cssText = `
+    padding: 4px 10px;
+    border: 1px solid #6c757d;
+    border-radius: 4px;
+    background: white;
+    color: #6c757d;
+    cursor: pointer;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.2s;
+  `;
+  editButton.addEventListener('mouseover', () => {
+    editButton.style.backgroundColor = '#f8f9fa';
+    editButton.style.borderColor = '#5a6268';
+  });
+  editButton.addEventListener('mouseout', () => {
+    editButton.style.backgroundColor = 'white';
+    editButton.style.borderColor = '#6c757d';
+  });
+
+  // Save button (hidden in view mode)
+  const saveButton = document.createElement('button');
+  saveButton.id = `debug-save-btn-${integrationId}-${accountId}`;
+  saveButton.textContent = '✔ Save';
+  saveButton.style.cssText = `
+    padding: 4px 10px;
+    border: none;
+    border-radius: 4px;
+    background: #28a745;
+    color: white;
+    cursor: pointer;
+    font-size: 12px;
+    display: none;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.2s;
+  `;
+  saveButton.addEventListener('mouseover', () => {
+    saveButton.style.backgroundColor = '#218838';
+  });
+  saveButton.addEventListener('mouseout', () => {
+    saveButton.style.backgroundColor = '#28a745';
+  });
+
+  // Cancel button (hidden in view mode)
+  const cancelButton = document.createElement('button');
+  cancelButton.id = `debug-cancel-btn-${integrationId}-${accountId}`;
+  cancelButton.textContent = '✘ Cancel';
+  cancelButton.style.cssText = `
+    padding: 4px 10px;
+    border: 1px solid #dc3545;
+    border-radius: 4px;
+    background: white;
+    color: #dc3545;
+    cursor: pointer;
+    font-size: 12px;
+    display: none;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.2s;
+  `;
+  cancelButton.addEventListener('mouseover', () => {
+    cancelButton.style.backgroundColor = '#f8d7da';
+  });
+  cancelButton.addEventListener('mouseout', () => {
+    cancelButton.style.backgroundColor = 'white';
+  });
+
+  buttonContainer.appendChild(editButton);
+  buttonContainer.appendChild(saveButton);
+  buttonContainer.appendChild(cancelButton);
+  debugHeader.appendChild(buttonContainer);
+  debugSection.appendChild(debugHeader);
+
+  // JSON container (view mode)
+  const jsonContainer = document.createElement('pre');
+  jsonContainer.id = `debug-json-view-${integrationId}-${accountId}`;
+  jsonContainer.style.cssText = `
+    background-color: #2d3748;
+    color: #e2e8f0;
+    padding: 12px;
+    border-radius: 4px;
+    font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.4;
+    overflow-x: auto;
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+  `;
+  jsonContainer.textContent = JSON.stringify(accountEntry, null, 2);
+  debugSection.appendChild(jsonContainer);
+
+  // JSON textarea (edit mode - hidden by default)
+  const jsonTextarea = document.createElement('textarea');
+  jsonTextarea.id = `debug-json-edit-${integrationId}-${accountId}`;
+  jsonTextarea.style.cssText = `
+    width: 100%;
+    min-height: 300px;
+    padding: 12px;
+    border: 2px solid #0073b1;
+    border-radius: 4px;
+    font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.4;
+    resize: vertical;
+    display: none;
+    box-sizing: border-box;
+    background-color: #2d3748;
+    color: #e2e8f0;
+  `;
+  jsonTextarea.value = JSON.stringify(accountEntry, null, 2);
+  debugSection.appendChild(jsonTextarea);
+
+  // Store original JSON for cancel functionality
+  let originalJson = JSON.stringify(accountEntry, null, 2);
+
+  // Edit button click handler
+  editButton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    jsonContainer.style.display = 'none';
+    jsonTextarea.style.display = 'block';
+    editButton.style.display = 'none';
+    saveButton.style.display = 'flex';
+    cancelButton.style.display = 'flex';
+    originalJson = jsonTextarea.value;
+  });
+
+  // Save button click handler
+  saveButton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const newJsonValue = jsonTextarea.value;
+
+    // Validate JSON
+    let parsedJson;
+    try {
+      parsedJson = JSON.parse(newJsonValue);
+    } catch (error) {
+      toast.show('Invalid JSON format. Please fix the syntax and try again.', 'error');
+      return;
+    }
+
+    // Update the account in storage
+    const success = accountService.updateAccountInList(integrationId, accountId, parsedJson);
+
+    if (success) {
+      toast.show('Debug information saved successfully', 'info');
+      jsonContainer.textContent = JSON.stringify(parsedJson, null, 2);
+      originalJson = newJsonValue;
+      jsonContainer.style.display = 'block';
+      jsonTextarea.style.display = 'none';
+      editButton.style.display = 'flex';
+      saveButton.style.display = 'none';
+      cancelButton.style.display = 'none';
+      if (onSave) setTimeout(onSave, 500);
+    } else {
+      toast.show('Failed to save debug information', 'error');
+    }
+  });
+
+  // Cancel button click handler
+  cancelButton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    jsonTextarea.value = originalJson;
+    jsonContainer.style.display = 'block';
+    jsonTextarea.style.display = 'none';
+    editButton.style.display = 'flex';
+    saveButton.style.display = 'none';
+    cancelButton.style.display = 'none';
+  });
+
+  return debugSection;
+}
+
+/**
+ * Creates generic account cards for any integration using the unified account service
+ * @param {string} integrationId - Integration identifier from INTEGRATIONS enum
  * @param {Array} accounts - Array of consolidated account objects
- * @param {Function} onRefresh - Refresh callback
- * @returns {HTMLElement} Cards container element
+ * @param {Function} onRefresh - Callback to refresh the tab after changes
+ * @returns {HTMLElement} Container with account cards
+ */
+function createGenericAccountCards(integrationId, accounts, onRefresh) {
+  const container = document.createElement('div');
+  container.id = `${integrationId}-account-cards-container`;
+  container.style.cssText = 'margin: 10px 0;';
+
+  if (!accounts || accounts.length === 0) {
+    const emptyMessage = document.createElement('p');
+    emptyMessage.textContent = `No accounts found. Accounts will appear here after syncing with ${getDisplayName(integrationId)}.`;
+    emptyMessage.style.cssText = 'color: #666; font-style: italic; margin: 10px 0;';
+    return emptyMessage;
+  }
+
+  const accountKeyName = getAccountKeyName(integrationId);
+  const faviconUrl = getFaviconUrl(integrationId);
+
+  accounts.forEach((accountEntry) => {
+    const sourceAccount = accountEntry[accountKeyName] || {};
+    const monarchAccount = accountEntry.monarchAccount;
+    const syncEnabled = accountEntry.syncEnabled !== false; // Default to true
+    const lastSyncDate = accountEntry.lastSyncDate;
+    const accountId = sourceAccount.id || 'unknown';
+
+    // Create card container
+    const card = document.createElement('div');
+    card.id = `${integrationId}-account-card-${accountId}`;
+    card.style.cssText = `
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      margin-bottom: 15px;
+      overflow: hidden;
+      transition: all 0.2s;
+    `;
+
+    // Create card header
+    const cardHeader = document.createElement('div');
+    cardHeader.id = `${integrationId}-account-header-${accountId}`;
+    cardHeader.style.cssText = `
+      display: flex;
+      align-items: center;
+      padding: 15px;
+      background-color: ${!syncEnabled ? '#fafafa' : '#fff'};
+      cursor: pointer;
+      transition: background-color 0.2s;
+    `;
+
+    // Expand/collapse icon
+    const expandIcon = document.createElement('div');
+    expandIcon.id = `${integrationId}-expand-icon-${accountId}`;
+    expandIcon.style.cssText = `
+      margin-right: 10px;
+      font-size: 1.2em;
+      color: ${!syncEnabled ? '#999' : '#666'};
+      transition: transform 0.2s;
+      cursor: pointer;
+      flex-shrink: 0;
+      transform: rotate(270deg);
+    `;
+    expandIcon.textContent = '▼';
+    cardHeader.appendChild(expandIcon);
+
+    // Logo
+    const logoContainer = document.createElement('div');
+    logoContainer.id = `${integrationId}-logo-${accountId}`;
+    logoContainer.style.cssText = `margin-right: 15px; flex-shrink: 0; ${!syncEnabled ? 'opacity: 0.5;' : ''}`;
+    if (faviconUrl) {
+      try {
+        GM_addElement(logoContainer, 'img', {
+          src: faviconUrl,
+          style: 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;',
+        });
+      } catch (error) {
+        addAccountLogoFallback(logoContainer, getDisplayName(integrationId));
+      }
+    } else {
+      addAccountLogoFallback(logoContainer, getDisplayName(integrationId));
+    }
+    cardHeader.appendChild(logoContainer);
+
+    // Account info
+    const infoContainer = document.createElement('div');
+    infoContainer.id = `${integrationId}-info-${accountId}`;
+    infoContainer.style.cssText = 'flex-grow: 1;';
+
+    const nameDiv = document.createElement('div');
+    nameDiv.id = `${integrationId}-name-${accountId}`;
+    nameDiv.style.cssText = `font-weight: bold; font-size: 1.1em; margin-bottom: 2px; color: ${!syncEnabled ? '#999' : '#333'};`;
+    nameDiv.textContent = sourceAccount.nickname || sourceAccount.name || 'Unknown Account';
+    infoContainer.appendChild(nameDiv);
+
+    // Account type
+    if (sourceAccount.type) {
+      const typeDiv = document.createElement('div');
+      typeDiv.id = `${integrationId}-type-${accountId}`;
+      typeDiv.style.cssText = 'font-size: 0.9em; color: #666; margin-bottom: 2px;';
+      typeDiv.textContent = sourceAccount.type;
+      infoContainer.appendChild(typeDiv);
+    }
+
+    // Mapping status
+    const mappingDiv = document.createElement('div');
+    mappingDiv.id = `${integrationId}-mapping-${accountId}`;
+    mappingDiv.style.cssText = 'font-size: 0.8em; margin-top: 5px;';
+    if (monarchAccount) {
+      mappingDiv.innerHTML = `<span style="color: #28a745;">✓ Mapped to:</span> <span style="color: #666;">${monarchAccount.displayName || monarchAccount.name || 'Monarch Account'}</span>`;
+    } else {
+      mappingDiv.innerHTML = '<span style="color: #dc3545;">✗ Not mapped</span>';
+    }
+    infoContainer.appendChild(mappingDiv);
+
+    // Last sync date
+    if (lastSyncDate) {
+      const syncDiv = document.createElement('div');
+      syncDiv.id = `${integrationId}-sync-date-${accountId}`;
+      syncDiv.style.cssText = 'font-size: 0.8em; color: #555; margin-top: 2px;';
+      syncDiv.textContent = `Last synced: ${formatLastUpdateDate(lastSyncDate)}`;
+      infoContainer.appendChild(syncDiv);
+    }
+
+    cardHeader.appendChild(infoContainer);
+
+    // Toggle switch for enable/disable
+    const toggleContainer = document.createElement('div');
+    toggleContainer.id = `${integrationId}-toggle-container-${accountId}`;
+    toggleContainer.style.cssText = 'margin-left: auto; margin-right: 10px; flex-shrink: 0;';
+    const toggle = createToggleSwitch(syncEnabled, (isEnabled) => {
+      const success = accountService.markAccountAsSkipped(integrationId, accountId, !isEnabled);
+      if (success) {
+        toast.show(`Account ${sourceAccount.nickname || sourceAccount.name} ${isEnabled ? 'enabled' : 'disabled'}`, 'info');
+        setTimeout(onRefresh, 500);
+      } else {
+        toast.show('Failed to update account status', 'error');
+        setTimeout(onRefresh, 100);
+      }
+    });
+    toggleContainer.appendChild(toggle);
+    cardHeader.appendChild(toggleContainer);
+
+    // Stop propagation on toggle
+    toggleContainer.addEventListener('click', (e) => e.stopPropagation());
+
+    // Delete button
+    const deleteButton = document.createElement('button');
+    deleteButton.id = `${integrationId}-delete-btn-${accountId}`;
+    deleteButton.textContent = '🗑️';
+    deleteButton.style.cssText = `
+      margin-left: 10px;
+      background: transparent;
+      color: #dc3545;
+      border: none;
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+      cursor: pointer;
+      font-size: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    `;
+    deleteButton.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const accountName = sourceAccount.nickname || sourceAccount.name || accountId;
+      const confirmed = await showConfirmDialog(
+        `Are you sure you want to delete the account "${accountName}"?\n\nThis will remove all mappings and settings for this account.`,
+      );
+      if (confirmed) {
+        const success = accountService.removeAccount(integrationId, accountId);
+        if (success) {
+          toast.show('Account deleted', 'info');
+          onRefresh();
+        } else {
+          toast.show('Failed to delete account', 'error');
+        }
+      }
+    });
+    deleteButton.addEventListener('mouseover', () => {
+      deleteButton.style.backgroundColor = '#f8d7da';
+    });
+    deleteButton.addEventListener('mouseout', () => {
+      deleteButton.style.backgroundColor = 'transparent';
+    });
+    cardHeader.appendChild(deleteButton);
+
+    // Expandable content with settings and debug
+    const expandableContent = document.createElement('div');
+    expandableContent.id = `${integrationId}-expandable-${accountId}`;
+    expandableContent.style.cssText = 'display: none; padding: 15px; background-color: #f8f9fa; border-top: 1px solid #e0e0e0;';
+
+    // Account Settings Section
+    const settingsSection = renderAccountSettingsSection(integrationId, accountEntry, accountId, onRefresh);
+    expandableContent.appendChild(settingsSection);
+
+    // Debug JSON Section
+    const debugSection = renderDebugJsonSection(integrationId, accountEntry, accountId, onRefresh);
+    expandableContent.appendChild(debugSection);
+
+    card.appendChild(cardHeader);
+    card.appendChild(expandableContent);
+
+    // Toggle functionality
+    let isExpanded = false;
+    cardHeader.addEventListener('click', (e) => {
+      // Don't toggle if interactive elements were clicked
+      if (e.target === deleteButton || e.target.closest('[id*="toggle-container"]')) return;
+      isExpanded = !isExpanded;
+      expandableContent.style.display = isExpanded ? 'block' : 'none';
+      expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(270deg)';
+    });
+
+    // Hover effects
+    cardHeader.addEventListener('mouseover', () => {
+      if (!isExpanded) {
+        cardHeader.style.backgroundColor = !syncEnabled ? '#f0f0f0' : '#f8f9fa';
+      }
+    });
+    cardHeader.addEventListener('mouseout', () => {
+      if (!isExpanded) {
+        cardHeader.style.backgroundColor = !syncEnabled ? '#fafafa' : '#fff';
+      }
+    });
+
+    container.appendChild(card);
+  });
+
+  return container;
+}
+
+/**
+ * Creates Wealthsimple account cards (legacy function, kept for backward compatibility)
+ * @param {Array} accounts - Array of consolidated account objects
+ * @param {Function} onRefresh - Callback to refresh the tab after changes
+ * @returns {HTMLElement} Container with account cards
  */
 function createWealthsimpleAccountCards(accounts, onRefresh) {
   const container = document.createElement('div');
@@ -3051,7 +3745,10 @@ export function showSettingsModal() {
   document.body.appendChild(modal);
 }
 
+export { createGenericAccountCards };
+
 export default {
   createSettingsModal,
   showSettingsModal,
+  createGenericAccountCards,
 };

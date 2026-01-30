@@ -18,6 +18,17 @@ export const INTEGRATIONS = {
 };
 
 /**
+ * Favicon domains for each integration
+ * Used to fetch logos via Google Favicon API
+ */
+export const FAVICON_DOMAINS = {
+  [INTEGRATIONS.WEALTHSIMPLE]: 'wealthsimple.com',
+  [INTEGRATIONS.QUESTRADE]: 'questrade.com',
+  [INTEGRATIONS.CANADALIFE]: 'canadalife.com',
+  [INTEGRATIONS.ROGERSBANK]: 'rogersbank.com',
+};
+
+/**
  * Available settings keys for per-account configuration
  */
 export const ACCOUNT_SETTINGS = {
@@ -232,10 +243,33 @@ export function getDisplayName(integrationId) {
   return capabilities?.displayName || integrationId;
 }
 
+/**
+ * Get favicon domain for an integration
+ * Used to fetch logos via Google Favicon API
+ * @param {string} integrationId - Integration identifier
+ * @returns {string|null} Domain for favicon URL or null if not found
+ */
+export function getFaviconDomain(integrationId) {
+  return FAVICON_DOMAINS[integrationId] || null;
+}
+
+/**
+ * Get full Google Favicon API URL for an integration
+ * @param {string} integrationId - Integration identifier
+ * @param {number} size - Icon size (default 128)
+ * @returns {string|null} Full favicon URL or null if domain not found
+ */
+export function getFaviconUrl(integrationId, size = 128) {
+  const domain = getFaviconDomain(integrationId);
+  if (!domain) return null;
+  return `https://www.google.com/s2/favicons?domain=${domain}&sz=${size}`;
+}
+
 export default {
   INTEGRATIONS,
   ACCOUNT_SETTINGS,
   INTEGRATION_CAPABILITIES,
+  FAVICON_DOMAINS,
   getCapabilities,
   hasCapability,
   hasSetting,
@@ -245,4 +279,6 @@ export default {
   getIntegrationsWithCapability,
   getIntegrationsWithSetting,
   getDisplayName,
+  getFaviconDomain,
+  getFaviconUrl,
 };
