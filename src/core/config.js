@@ -154,7 +154,8 @@ export const UI = {
 export const WEALTHSIMPLE_UI = {
   INJECTION_POINTS: [
     { selector: '.bfsRGT', insertMethod: 'prepend' },
-    { selector: '.edYMHM', insertMethod: 'prependToSecondChild' },
+    { selector: '.etXzES', insertMethod: 'prependToSecondChild' },
+    { selector: '.bZQXKE', insertMethod: 'insertBefore' },
   ],
 };
 

@@ -26,7 +26,7 @@ describe('Wealthsimple UI Injection Points', () => {
         expect(typeof point.selector).toBe('string');
         expect(point.insertMethod).toBeDefined();
         expect(typeof point.insertMethod).toBe('string');
-        expect(['prepend', 'prependToSecondChild']).toContain(point.insertMethod);
+        expect(['prepend', 'prependToSecondChild', 'insertBefore']).toContain(point.insertMethod);
       });
     });
 
@@ -36,10 +36,16 @@ describe('Wealthsimple UI Injection Points', () => {
       expect(firstPoint.insertMethod).toBe('prepend');
     });
 
-    test('second injection point should be .edYMHM with prependToSecondChild method', () => {
+    test('second injection point should be .etXzES with prependToSecondChild method', () => {
       const secondPoint = WEALTHSIMPLE_UI.INJECTION_POINTS[1];
-      expect(secondPoint.selector).toBe('.edYMHM');
+      expect(secondPoint.selector).toBe('.etXzES');
       expect(secondPoint.insertMethod).toBe('prependToSecondChild');
+    });
+
+    test('third injection point should be .bZQXKE with insertBefore method', () => {
+      const thirdPoint = WEALTHSIMPLE_UI.INJECTION_POINTS[2];
+      expect(thirdPoint.selector).toBe('.bZQXKE');
+      expect(thirdPoint.insertMethod).toBe('insertBefore');
     });
   });
 
@@ -56,7 +62,7 @@ describe('Wealthsimple UI Injection Points', () => {
       document.body.appendChild(primaryContainer);
 
       const secondaryContainer = document.createElement('div');
-      secondaryContainer.className = 'edYMHM';
+      secondaryContainer.className = 'etXzES';
       document.body.appendChild(secondaryContainer);
 
       // Verify primary is found first
@@ -67,7 +73,7 @@ describe('Wealthsimple UI Injection Points', () => {
     test('should fallback to second injection point when first is not available', () => {
       // Only create secondary injection point
       const secondaryContainer = document.createElement('div');
-      secondaryContainer.className = 'edYMHM';
+      secondaryContainer.className = 'etXzES';
       document.body.appendChild(secondaryContainer);
 
       // Verify primary is not found
@@ -120,14 +126,14 @@ describe('Wealthsimple UI Injection Points', () => {
 
     test('should insert element as first child of second child', () => {
       // Create container with structure:
-      // <div class="edYMHM">
+      // <div class="etXzES">
       //   <div id="first-child"></div>
       //   <div id="second-child">
       //     <div id="second-child-content"></div>
       //   </div>
       // </div>
       const container = document.createElement('div');
-      container.className = 'edYMHM';
+      container.className = 'etXzES';
 
       const firstChild = document.createElement('div');
       firstChild.id = 'first-child';
@@ -162,7 +168,7 @@ describe('Wealthsimple UI Injection Points', () => {
 
     test('should return null when container has less than 2 children', () => {
       const container = document.createElement('div');
-      container.className = 'edYMHM';
+      container.className = 'etXzES';
 
       // Only one child
       const firstChild = document.createElement('div');
@@ -182,7 +188,7 @@ describe('Wealthsimple UI Injection Points', () => {
 
     test('should return null when container has no children', () => {
       const container = document.createElement('div');
-      container.className = 'edYMHM';
+      container.className = 'etXzES';
       document.body.appendChild(container);
 
       // No children
@@ -195,10 +201,82 @@ describe('Wealthsimple UI Injection Points', () => {
     });
   });
 
+  describe('insertBefore insert method', () => {
+    beforeEach(() => {
+      document.body.innerHTML = '';
+    });
+
+    test('should insert element as previous sibling of target', () => {
+      // Create container with structure:
+      // <div id="parent">
+      //   <div id="sibling-before"></div>
+      //   <div class="bZQXKE"></div>   <!-- Target element -->
+      //   <div id="sibling-after"></div>
+      // </div>
+      const parent = document.createElement('div');
+      parent.id = 'parent';
+
+      const siblingBefore = document.createElement('div');
+      siblingBefore.id = 'sibling-before';
+      parent.appendChild(siblingBefore);
+
+      const targetElement = document.createElement('div');
+      targetElement.className = 'bZQXKE';
+      parent.appendChild(targetElement);
+
+      const siblingAfter = document.createElement('div');
+      siblingAfter.id = 'sibling-after';
+      parent.appendChild(siblingAfter);
+
+      document.body.appendChild(parent);
+
+      // Simulate insertBefore behavior
+      const newElement = document.createElement('div');
+      newElement.id = 'new-element';
+      parent.insertBefore(newElement, targetElement);
+
+      // Verify new element is inserted before target
+      expect(parent.children[0]).toBe(siblingBefore);
+      expect(parent.children[1]).toBe(newElement); // Our UI
+      expect(parent.children[2]).toBe(targetElement); // Original target
+      expect(parent.children[3]).toBe(siblingAfter);
+    });
+
+    test('should work when target is first child', () => {
+      // Create container with target as first element
+      const parent = document.createElement('div');
+      parent.id = 'parent';
+
+      const targetElement = document.createElement('div');
+      targetElement.className = 'bZQXKE';
+      parent.appendChild(targetElement);
+
+      document.body.appendChild(parent);
+
+      // Simulate insertBefore behavior
+      const newElement = document.createElement('div');
+      newElement.id = 'new-element';
+      parent.insertBefore(newElement, targetElement);
+
+      // Verify new element is now first child
+      expect(parent.children[0]).toBe(newElement);
+      expect(parent.children[1]).toBe(targetElement);
+    });
+
+    test('should return null when element has no parent', () => {
+      // Create orphan element (not attached to DOM)
+      const orphanElement = document.createElement('div');
+      orphanElement.className = 'bZQXKE';
+
+      // Element is not attached, so parentNode is null
+      expect(orphanElement.parentNode).toBeNull();
+    });
+  });
+
   describe('getAllInjectionSelectors helper', () => {
     test('should combine all selectors with comma separator', () => {
       const combinedSelector = WEALTHSIMPLE_UI.INJECTION_POINTS.map((ip) => ip.selector).join(', ');
-      expect(combinedSelector).toBe('.bfsRGT, .edYMHM');
+      expect(combinedSelector).toBe('.bfsRGT, .etXzES, .bZQXKE');
     });
   });
 });

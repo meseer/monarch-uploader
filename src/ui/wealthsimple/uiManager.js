@@ -35,21 +35,29 @@ function findInjectionPoint() {
 /**
  * Get the actual target container for UI insertion based on insert method
  * @param {HTMLElement} element - The element found by selector
- * @param {string} insertMethod - The insertion method ('prepend' or 'prependToSecondChild')
- * @returns {HTMLElement|null} The target container element or null
+ * @param {string} insertMethod - The insertion method ('prepend', 'prependToSecondChild', or 'insertBefore')
+ * @returns {{container: HTMLElement, referenceNode: HTMLElement|null}|null} Target info or null
  */
 function getTargetContainer(element, insertMethod) {
   if (insertMethod === 'prepend') {
-    return element;
+    return { container: element, referenceNode: null };
   }
   if (insertMethod === 'prependToSecondChild') {
     // Get children (excluding text nodes)
     const children = Array.from(element.children);
     if (children.length >= 2) {
-      return children[1]; // Second child (0-indexed)
+      return { container: children[1], referenceNode: null }; // Second child (0-indexed)
     }
     debugLog(`prependToSecondChild: element has only ${children.length} children, need at least 2`);
     return null;
+  }
+  if (insertMethod === 'insertBefore') {
+    // Insert as previous sibling of the element
+    if (!element.parentNode) {
+      debugLog('insertBefore: element has no parent node');
+      return null;
+    }
+    return { container: element.parentNode, referenceNode: element };
   }
   debugLog(`Unknown insert method: ${insertMethod}`);
   return null;
@@ -77,8 +85,8 @@ async function createUIContainer() {
     return null;
   }
 
-  const targetContainer = getTargetContainer(injectionPoint.element, injectionPoint.insertMethod);
-  if (!targetContainer) {
+  const targetInfo = getTargetContainer(injectionPoint.element, injectionPoint.insertMethod);
+  if (!targetInfo) {
     debugLog(`Could not resolve target container for ${injectionPoint.selector}, will retry via observer`);
     return null;
   }
@@ -169,8 +177,11 @@ async function createUIContainer() {
 
   container.appendChild(header);
 
-  // Insert as FIRST child of target container (prepend)
-  targetContainer.insertBefore(container, targetContainer.firstChild);
+  // Insert into the DOM based on method
+  // For prepend/prependToSecondChild: insert as first child
+  // For insertBefore: insert before the reference node
+  const referenceNode = targetInfo.referenceNode ?? targetInfo.container.firstChild;
+  targetInfo.container.insertBefore(container, referenceNode);
 
   debugLog(
     `Wealthsimple UI container created using injection point: ${injectionPoint.selector} (method: ${injectionPoint.insertMethod})`,
@@ -250,8 +261,8 @@ async function checkAndInitializeUI() {
       return;
     }
 
-    const targetContainer = getTargetContainer(injectionPoint.element, injectionPoint.insertMethod);
-    if (!targetContainer) {
+    const targetInfo = getTargetContainer(injectionPoint.element, injectionPoint.insertMethod);
+    if (!targetInfo) {
       debugLog(`Could not resolve target container for ${injectionPoint.selector}, waiting for observer`);
       isUIInitialized = false;
       return;
@@ -261,7 +272,7 @@ async function checkAndInitializeUI() {
 
     // Check if our UI already exists and is properly positioned
     const existingContainer = document.getElementById('wealthsimple-balance-uploader-container');
-    if (existingContainer && existingContainer.parentNode === targetContainer) {
+    if (existingContainer && existingContainer.parentNode === targetInfo.container) {
       // UI already exists and is properly attached, no need to re-initialize
       debugLog('UI already present and attached, skipping initialization');
       isUIInitialized = true;
@@ -339,10 +350,10 @@ function startPersistentMonitoring() {
 
     // If any injection point exists, check if we need to reinject
     if (injectionPoint) {
-      const targetContainer = getTargetContainer(injectionPoint.element, injectionPoint.insertMethod);
+      const targetInfo = getTargetContainer(injectionPoint.element, injectionPoint.insertMethod);
 
       // If target exists but our UI doesn't, or our UI is detached
-      if (targetContainer && (!ourUI || ourUI.parentNode !== targetContainer)) {
+      if (targetInfo && (!ourUI || ourUI.parentNode !== targetInfo.container)) {
         // Always reinject when UI is missing - the isUIInitialized flag may be stale
         // if the page replaced injection points (e.g., during SPA navigation)
         debugLog(`Observer detected ${injectionPoint.selector} without UI, scheduling injection...`);
