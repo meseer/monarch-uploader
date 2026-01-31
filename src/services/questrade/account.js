@@ -36,7 +36,7 @@ export async function loadCurrentAccountInfo() {
     debugLog(`Detected account ID in URL: ${accountId}`);
 
     // Fetch accounts if not already cached
-    let accounts = JSON.parse(GM_getValue(STORAGE.ACCOUNTS_LIST, '[]'));
+    let accounts = JSON.parse(GM_getValue(STORAGE.QUESTRADE_ACCOUNTS_CACHE, '[]'));
     if (accounts.length === 0) {
       accounts = await questradeApi.fetchAccounts();
     }
@@ -120,7 +120,7 @@ export async function getAllAccounts(refresh = false) {
     }
 
     // Try to get from cache first
-    const accounts = JSON.parse(GM_getValue(STORAGE.ACCOUNTS_LIST, '[]'));
+    const accounts = JSON.parse(GM_getValue(STORAGE.QUESTRADE_ACCOUNTS_CACHE, '[]'));
     if (accounts.length > 0) {
       return accounts;
     }

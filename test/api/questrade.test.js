@@ -174,7 +174,7 @@ describe('Questrade API', () => {
 
       expect(result).toEqual(mockAccounts);
       expect(globalThis.GM_setValue).toHaveBeenCalledWith(
-        'questrade_accounts_list',
+        'questrade_accounts_cache',
         JSON.stringify(mockAccounts),
       );
     });
@@ -200,7 +200,7 @@ describe('Questrade API', () => {
 
       expect(result).toEqual(mockAccounts);
       expect(globalThis.GM_setValue).toHaveBeenCalledWith(
-        'questrade_accounts_list',
+        'questrade_accounts_cache',
         JSON.stringify(mockAccounts),
       );
     });
@@ -226,7 +226,7 @@ describe('Questrade API', () => {
 
       expect(result).toEqual(mockAccounts);
       expect(globalThis.GM_setValue).toHaveBeenCalledWith(
-        'questrade_accounts_list',
+        'questrade_accounts_cache',
         JSON.stringify(mockAccounts),
       );
     });
@@ -302,7 +302,7 @@ describe('Questrade API', () => {
       const result = getQuestradeAccount('acc2');
 
       expect(result).toEqual({ key: 'acc2', type: 'TFSA', name: 'TFSA Account' });
-      expect(globalThis.GM_getValue).toHaveBeenCalledWith('questrade_accounts_list', '[]');
+      expect(globalThis.GM_getValue).toHaveBeenCalledWith('questrade_accounts_cache', '[]');
     });
 
     test('should return undefined for non-existent account', () => {

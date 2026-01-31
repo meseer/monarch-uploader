@@ -73,7 +73,7 @@ export async function fetchAndCacheQuestradeAccounts() {
     }
 
     if (accounts && accounts.length > 0) {
-      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(accounts));
+      GM_setValue(STORAGE.QUESTRADE_ACCOUNTS_CACHE, JSON.stringify(accounts));
       debugLog(`Successfully fetched and cached ${accounts.length} accounts.`);
       return accounts;
     }
@@ -92,7 +92,7 @@ export async function fetchAndCacheQuestradeAccounts() {
  * @returns {Object|undefined} Account object or undefined if not found
  */
 export function getQuestradeAccount(accountId) {
-  const accounts = JSON.parse(GM_getValue(STORAGE.ACCOUNTS_LIST, '[]'));
+  const accounts = JSON.parse(GM_getValue(STORAGE.QUESTRADE_ACCOUNTS_CACHE, '[]'));
   return accounts.find((acc) => acc.key === accountId);
 }
 

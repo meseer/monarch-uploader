@@ -21,9 +21,31 @@ This document tracks the progress of unifying the settings UI across all integra
 | Integration | Storage Pattern | Account Settings | Transaction Tracking |
 |-------------|-----------------|------------------|---------------------|
 | **Wealthsimple** | ✅ Consolidated `ACCOUNTS_LIST` | ✅ Per-account | ✅ Array in account object |
-| **Questrade** | ❌ Prefix-based keys | ❌ Global only | ✅ Separate prefix keys |
+| **Questrade** | ⚠️ Mixed (see note below) | ❌ Global only | ✅ Separate prefix keys |
 | **CanadaLife** | ❌ Prefix-based keys | ❌ Global only | ❌ N/A (balance only) |
 | **Rogers Bank** | ❌ Prefix-based keys | ❌ Global only | ✅ Separate prefix keys |
+
+### ⚠️ Questrade Storage Issue (Discovered & Fixed in v5.58.2)
+
+**Problem:** The `questrade_accounts_list` key had conflicting dual usage:
+1. **Questrade API layer** (`src/api/questrade.js`) used it as a raw account cache
+2. **accountService** expected it to contain consolidated account format
+
+**Root Cause:** The Questrade API was writing raw account objects from the API directly to `questrade_accounts_list`. This is historical behavior from before the consolidation effort.
+
+**Solution (Option B - Implemented):**
+- Created new `QUESTRADE_ACCOUNTS_CACHE` key for raw API cache
+- Updated `src/api/questrade.js` to use the new cache key
+- Updated `src/services/questrade/account.js` to use the new cache key
+- `ACCOUNTS_LIST` (`questrade_accounts_list`) is now exclusively for consolidated format
+
+**Storage Key Separation:**
+| Key | Purpose | Format |
+|-----|---------|--------|
+| `questrade_accounts_cache` | Raw API response cache | `[{key, number, name, nickname, type, ...}]` |
+| `questrade_accounts_list` | Consolidated account data | `[{questradeAccount, monarchAccount, syncEnabled, ...}]` |
+| `questrade_monarch_account_for_{id}` | Legacy Monarch mapping | `{id, displayName, ...}` |
+| `questrade_last_upload_date_{id}` | Legacy sync date | `"YYYY-MM-DD"` |
 
 ### Integration Capabilities
 

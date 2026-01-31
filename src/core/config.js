@@ -43,6 +43,7 @@ export const STORAGE = {
   ROGERSBANK_ACCOUNTS_LIST: 'rogersbank_accounts_list',
   CANADALIFE_ACCOUNTS_LIST: 'canadalife_accounts_list',
   // Questrade specific storage keys
+  QUESTRADE_ACCOUNTS_CACHE: 'questrade_accounts_cache', // Raw API cache (separate from consolidated ACCOUNTS_LIST)
   QUESTRADE_LAST_UPLOAD_DATE_PREFIX: 'questrade_last_upload_date_',
   QUESTRADE_ACCOUNT_MAPPING_PREFIX: 'questrade_monarch_account_for_',
   QUESTRADE_HOLDINGS_FOR_PREFIX: 'questrade_holdings_for_',
