@@ -238,24 +238,24 @@ async function getStartDateForAccount(accountId) {
  * @param {Object} canadalifAccount - Canada Life account object
  * @returns {Promise<Object|null>} Monarch account object, or null if cancelled
  */
-async function getMonarchAccountMapping(canadalifAccount) {
+async function getOrCreateMonarchAccountMapping(canadalifAccount) {
   const accountId = canadalifAccount.agreementId;
   const accountName = canadalifAccount.LongNameEnglish || canadalifAccount.EnglishShortName;
   let accountWarningMessage = null;
 
-  // Check for existing mapping in consolidated storage (handles legacy migration automatically)
-  const accountData = accountService.getAccountData(INTEGRATIONS.CANADALIFE, accountId);
-  if (accountData?.monarchAccount) {
+  // Check consolidated storage first, then fall back to legacy (migration path)
+  const existingMapping = accountService.getMonarchAccountMapping(INTEGRATIONS.CANADALIFE, accountId);
+  if (existingMapping) {
     // Validate and refresh the stored account mapping
     const validation = await monarchApi.validateAndRefreshAccountMapping(
-      accountData.monarchAccount.id,
+      existingMapping.id,
       null, // No storage key needed - we'll update via accountService
-      accountData.monarchAccount.displayName,
+      existingMapping.displayName,
     );
 
     if (validation.valid) {
       // Update the account entry with refreshed Monarch data if needed
-      if (validation.account.id !== accountData.monarchAccount.id) {
+      if (validation.account.id !== existingMapping.id) {
         accountService.updateAccountInList(INTEGRATIONS.CANADALIFE, accountId, {
           monarchAccount: validation.account,
         });
@@ -456,7 +456,7 @@ async function uploadSingleAccount(canadalifAccount, startDate, endDate, progres
     }
 
     // Get Monarch account mapping
-    const monarchAccount = await getMonarchAccountMapping(canadalifAccount);
+    const monarchAccount = await getOrCreateMonarchAccountMapping(canadalifAccount);
     if (!monarchAccount) {
       if (progressDialog) {
         progressDialog.updateStepStatus(accountId, 'fetchHistory', 'error', 'Mapping cancelled');

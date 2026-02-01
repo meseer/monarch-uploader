@@ -496,6 +496,184 @@ describe('Account Service', () => {
     });
   });
 
+  describe('getMonarchAccountMapping', () => {
+    const { getMonarchAccountMapping } = require('../../../src/services/common/accountService');
+
+    test('should return mapping from consolidated storage when available', () => {
+      // Set up consolidated storage with mapping
+      const consolidatedData = [{
+        questradeAccount: { id: 'qt-1', nickname: 'TFSA' },
+        monarchAccount: { id: 'monarch-1', displayName: 'My TFSA' },
+        syncEnabled: true,
+      }];
+      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+
+      const mapping = getMonarchAccountMapping(INTEGRATIONS.QUESTRADE, 'qt-1');
+
+      expect(mapping).not.toBeNull();
+      expect(mapping.id).toBe('monarch-1');
+      expect(mapping.displayName).toBe('My TFSA');
+    });
+
+    test('should fall back to legacy storage when consolidated has no mapping', () => {
+      // Consolidated storage exists but without monarchAccount
+      const consolidatedData = [{
+        questradeAccount: { id: 'qt-1', nickname: 'TFSA' },
+        syncEnabled: true,
+        // No monarchAccount
+      }];
+      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+
+      // Legacy storage has the mapping
+      GM_setValue(
+        `${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}qt-1`,
+        JSON.stringify({ id: 'legacy-monarch', displayName: 'Legacy Account' }),
+      );
+
+      const mapping = getMonarchAccountMapping(INTEGRATIONS.QUESTRADE, 'qt-1');
+
+      expect(mapping).not.toBeNull();
+      expect(mapping.id).toBe('legacy-monarch');
+      expect(mapping.displayName).toBe('Legacy Account');
+    });
+
+    test('should fall back to legacy storage when account not in consolidated', () => {
+      // Consolidated storage is empty or has different accounts
+      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify([]));
+
+      // Legacy storage has the mapping
+      GM_setValue(
+        `${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}qt-old`,
+        JSON.stringify({ id: 'legacy-old', displayName: 'Old Legacy Account' }),
+      );
+
+      const mapping = getMonarchAccountMapping(INTEGRATIONS.QUESTRADE, 'qt-old');
+
+      expect(mapping).not.toBeNull();
+      expect(mapping.id).toBe('legacy-old');
+      expect(mapping.displayName).toBe('Old Legacy Account');
+    });
+
+    test('should return null when no mapping exists in either storage', () => {
+      // Empty consolidated storage
+      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify([]));
+      // No legacy storage
+
+      const mapping = getMonarchAccountMapping(INTEGRATIONS.QUESTRADE, 'non-existent');
+
+      expect(mapping).toBeNull();
+    });
+
+    test('should prefer consolidated storage over legacy when both exist', () => {
+      // Consolidated storage with mapping
+      const consolidatedData = [{
+        questradeAccount: { id: 'qt-1', nickname: 'TFSA' },
+        monarchAccount: { id: 'consolidated-monarch', displayName: 'Consolidated Account' },
+        syncEnabled: true,
+      }];
+      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+
+      // Legacy storage also has a mapping (different)
+      GM_setValue(
+        `${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}qt-1`,
+        JSON.stringify({ id: 'legacy-monarch', displayName: 'Legacy Account' }),
+      );
+
+      const mapping = getMonarchAccountMapping(INTEGRATIONS.QUESTRADE, 'qt-1');
+
+      // Should use consolidated, not legacy
+      expect(mapping.id).toBe('consolidated-monarch');
+      expect(mapping.displayName).toBe('Consolidated Account');
+    });
+
+    test('should work for CanadaLife integration', () => {
+      // Set up consolidated storage with CanadaLife mapping
+      const consolidatedData = [{
+        canadalifAccount: { id: 'cl-1', nickname: 'RRSP' },
+        monarchAccount: { id: 'monarch-cl', displayName: 'CL RRSP' },
+        syncEnabled: true,
+      }];
+      GM_setValue(STORAGE.CANADALIFE_ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+
+      const mapping = getMonarchAccountMapping(INTEGRATIONS.CANADALIFE, 'cl-1');
+
+      expect(mapping).not.toBeNull();
+      expect(mapping.id).toBe('monarch-cl');
+      expect(mapping.displayName).toBe('CL RRSP');
+    });
+
+    test('should work for RogersBank integration', () => {
+      // Set up consolidated storage with RogersBank mapping
+      const consolidatedData = [{
+        rogersbankAccount: { id: 'rb-1', nickname: 'CC' },
+        monarchAccount: { id: 'monarch-rb', displayName: 'Rogers CC' },
+        syncEnabled: true,
+      }];
+      GM_setValue(STORAGE.ROGERSBANK_ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+
+      const mapping = getMonarchAccountMapping(INTEGRATIONS.ROGERSBANK, 'rb-1');
+
+      expect(mapping).not.toBeNull();
+      expect(mapping.id).toBe('monarch-rb');
+      expect(mapping.displayName).toBe('Rogers CC');
+    });
+
+    test('should handle legacy CanadaLife fallback', () => {
+      // No consolidated storage
+      GM_setValue(STORAGE.CANADALIFE_ACCOUNTS_LIST, JSON.stringify([]));
+
+      // Legacy storage has the mapping
+      GM_setValue(
+        `${STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX}cl-legacy`,
+        JSON.stringify({ id: 'monarch-legacy-cl', displayName: 'Legacy CL Account' }),
+      );
+
+      const mapping = getMonarchAccountMapping(INTEGRATIONS.CANADALIFE, 'cl-legacy');
+
+      expect(mapping).not.toBeNull();
+      expect(mapping.id).toBe('monarch-legacy-cl');
+    });
+
+    test('should handle invalid JSON in legacy storage gracefully', () => {
+      // No consolidated storage
+      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify([]));
+
+      // Invalid JSON in legacy storage
+      GM_setValue(`${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}qt-bad`, 'invalid json');
+
+      const mapping = getMonarchAccountMapping(INTEGRATIONS.QUESTRADE, 'qt-bad');
+
+      // Should return null, not throw
+      expect(mapping).toBeNull();
+    });
+
+    test('should return null for unknown integration', () => {
+      const mapping = getMonarchAccountMapping('unknown-integration', 'some-id');
+      expect(mapping).toBeNull();
+    });
+
+    test('should return null for Wealthsimple (already consolidated, no legacy fallback)', () => {
+      // Wealthsimple was always consolidated, so no legacy prefix exists
+      const mapping = getMonarchAccountMapping(INTEGRATIONS.WEALTHSIMPLE, 'ws-1');
+      expect(mapping).toBeNull();
+    });
+
+    test('should handle Wealthsimple from consolidated storage', () => {
+      // Wealthsimple has consolidated storage
+      const consolidatedData = [{
+        wealthsimpleAccount: { id: 'ws-1', nickname: 'TFSA' },
+        monarchAccount: { id: 'monarch-ws', displayName: 'WS TFSA' },
+        syncEnabled: true,
+      }];
+      GM_setValue(STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+
+      const mapping = getMonarchAccountMapping(INTEGRATIONS.WEALTHSIMPLE, 'ws-1');
+
+      expect(mapping).not.toBeNull();
+      expect(mapping.id).toBe('monarch-ws');
+    });
+  });
+
   describe('auto-migration on getAccounts', () => {
     test('should auto-migrate when consolidated is empty but legacy exists', () => {
       // Set up legacy data

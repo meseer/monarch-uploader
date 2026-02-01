@@ -657,9 +657,101 @@ export function getMigrationStatus(integrationId) {
 }
 
 /**
+ * Minimum number of successful syncs required before cleaning up legacy storage.
+ * This ensures the migration is working properly before deleting legacy keys.
+ */
+const MIN_SYNCS_BEFORE_CLEANUP = 2;
+
+/**
+ * Get Monarch account mapping for an integration account.
+ * Checks consolidated storage first, falls back to legacy prefix-based storage (migration only).
+ * @param {string} integrationId - Integration identifier (e.g., INTEGRATIONS.QUESTRADE)
+ * @param {string} accountId - Source account ID
+ * @returns {Object|null} Monarch account object or null if not mapped
+ */
+export function getMonarchAccountMapping(integrationId, accountId) {
+  debugLog(`[accountService.getMonarchAccountMapping] integrationId=${integrationId}, accountId=${accountId}`);
+
+  // Check consolidated storage first
+  const accountData = getAccountData(integrationId, accountId);
+  if (accountData?.monarchAccount) {
+    debugLog(`[accountService.getMonarchAccountMapping] Found in consolidated storage: ${accountData.monarchAccount.displayName}`);
+    return accountData.monarchAccount;
+  }
+
+  // Fall back to legacy storage (migration path only)
+  const prefix = LEGACY_MAPPING_PREFIXES[integrationId];
+  if (prefix) {
+    try {
+      const legacyMapping = GM_getValue(`${prefix}${accountId}`, null);
+      if (legacyMapping) {
+        const parsed = typeof legacyMapping === 'string'
+          ? JSON.parse(legacyMapping)
+          : legacyMapping;
+        debugLog(`[accountService.getMonarchAccountMapping] Found in legacy storage: ${parsed.displayName}`);
+        return parsed;
+      }
+    } catch (e) {
+      debugLog(`[accountService.getMonarchAccountMapping] Error parsing legacy mapping for ${accountId}:`, e);
+    }
+  }
+
+  debugLog(`[accountService.getMonarchAccountMapping] No mapping found for ${integrationId}/${accountId}`);
+  return null;
+}
+
+/**
+ * Increment the successful sync count for an account.
+ * Called after each successful sync operation.
+ * @param {string} integrationId - Integration identifier
+ * @param {string} accountId - Account ID
+ * @returns {number} New sync count
+ */
+export function incrementSyncCount(integrationId, accountId) {
+  const accountData = getAccountData(integrationId, accountId);
+  if (!accountData) {
+    debugLog(`Cannot increment sync count: account ${accountId} not found`);
+    return 0;
+  }
+
+  const currentCount = accountData.successfulSyncCount || 0;
+  const newCount = currentCount + 1;
+
+  updateAccountInList(integrationId, accountId, {
+    successfulSyncCount: newCount,
+  });
+
+  debugLog(`Sync count for ${integrationId} account ${accountId}: ${newCount}`);
+  return newCount;
+}
+
+/**
+ * Get the successful sync count for an account.
+ * @param {string} integrationId - Integration identifier
+ * @param {string} accountId - Account ID
+ * @returns {number} Sync count
+ */
+export function getSyncCount(integrationId, accountId) {
+  const accountData = getAccountData(integrationId, accountId);
+  return accountData?.successfulSyncCount || 0;
+}
+
+/**
+ * Check if an account is ready for legacy storage cleanup.
+ * Requires at least MIN_SYNCS_BEFORE_CLEANUP successful syncs.
+ * @param {string} integrationId - Integration identifier
+ * @param {string} accountId - Account ID
+ * @returns {boolean} True if ready for cleanup
+ */
+export function isReadyForLegacyCleanup(integrationId, accountId) {
+  const syncCount = getSyncCount(integrationId, accountId);
+  return syncCount >= MIN_SYNCS_BEFORE_CLEANUP;
+}
+
+/**
  * Clean up legacy storage keys after successful migration to consolidated format.
  * Should only be called after a successful sync operation using consolidated storage.
- * This is a one-time cleanup that removes the scattered legacy keys.
+ * Requires at least MIN_SYNCS_BEFORE_CLEANUP successful syncs before actually deleting.
  * @param {string} integrationId - Integration identifier
  * @param {string} accountId - Specific account ID to clean up legacy data for
  * @returns {Object} Cleanup result {cleaned: boolean, keysDeleted: number, keys: string[]}
@@ -677,6 +769,18 @@ export function cleanupLegacyStorage(integrationId, accountId) {
     if (!accountData.monarchAccount) {
       debugLog(`Cannot cleanup legacy storage: account ${accountId} has no Monarch mapping`);
       return { cleaned: false, keysDeleted: 0, keys: [], reason: 'No Monarch mapping in consolidated storage' };
+    }
+
+    // Safety check: require minimum successful syncs before cleanup
+    const syncCount = accountData.successfulSyncCount || 0;
+    if (syncCount < MIN_SYNCS_BEFORE_CLEANUP) {
+      debugLog(`Cannot cleanup legacy storage: account ${accountId} has only ${syncCount}/${MIN_SYNCS_BEFORE_CLEANUP} successful syncs`);
+      return {
+        cleaned: false,
+        keysDeleted: 0,
+        keys: [],
+        reason: `Requires ${MIN_SYNCS_BEFORE_CLEANUP} successful syncs, currently at ${syncCount}`,
+      };
     }
 
     const keysToDelete = [];
@@ -859,6 +963,9 @@ export default {
   getAccountSetting,
   setAccountSetting,
 
+  // Account mapping
+  getMonarchAccountMapping,
+
   // Migration helpers
   hasLegacyData,
   migrateFromLegacyStorage,
@@ -868,6 +975,11 @@ export default {
   // Legacy cleanup
   cleanupLegacyStorage,
   cleanupAllLegacyStorage,
+
+  // Sync count tracking
+  incrementSyncCount,
+  getSyncCount,
+  isReadyForLegacyCleanup,
 
   // Utilities
   getStorageKey,

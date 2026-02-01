@@ -18,6 +18,14 @@ jest.mock('../../../src/utils/transactionStorage', () => ({
   getUploadedTransactionIds: jest.fn(() => []),
   saveUploadedTransactions: jest.fn(),
 }));
+jest.mock('../../../src/services/common/accountService', () => ({
+  __esModule: true,
+  default: {
+    getMonarchAccountMapping: jest.fn(),
+    upsertAccount: jest.fn(),
+    updateAccountInList: jest.fn(),
+  },
+}));
 
 describe('Questrade Transactions Service', () => {
   let getUploadedTransactionIds;
@@ -162,7 +170,9 @@ describe('Questrade Transactions Service', () => {
       questradeApi.getAccount = jest.fn().mockReturnValue(mockAccount);
       global.GM_getValue = jest.fn(() => []); // No duplicates by default
       convertQuestradeOrdersToMonarchCSV.mockReturnValue('mock,csv,data');
-      monarchApi.resolveAccountMapping = jest.fn().mockResolvedValue({ id: 'monarch-account-id' });
+      // Mock accountService.getMonarchAccountMapping instead of monarchApi.resolveAccountMapping
+      const accountService = require('../../../src/services/common/accountService').default;
+      accountService.getMonarchAccountMapping.mockReturnValue({ id: 'monarch-account-id' });
       monarchApi.uploadTransactions = jest.fn().mockResolvedValue(true);
     });
 

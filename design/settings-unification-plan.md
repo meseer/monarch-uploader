@@ -121,16 +121,17 @@ Migrate each integration to consolidated structure with backward compatibility.
 - [x] Backward compatibility maintained (legacy storage still written for migration period)
 
 #### Phase 4.2: Questrade Migration
-- [ ] Create Questrade consolidated account service
-- [ ] Implement `getQuestradeAccounts()` with migration logic
-- [ ] Implement `updateAccountInList()` for Questrade
-- [ ] Implement `markAccountAsSkipped()` for Questrade
-- [ ] Add per-account settings (TX details in notes, retention)
-- [ ] Add migration from prefix-based to consolidated storage
-- [ ] Update Questrade services to use new account service
-- [ ] Update settings UI to use new account service
-- [ ] Add tests for migration
-- [ ] Verify backward compatibility
+**Status**: ✅ Complete (v5.59.0)
+
+*All items completed:*
+- [x] accountService.js supports Questrade via `INTEGRATIONS.QUESTRADE`
+- [x] Migration logic reads from legacy storage, writes to both
+- [x] `balance.js` uses `getLastUpdateDate()` and `saveLastUploadDate()` from utils
+- [x] `account.js` uses `accountService.upsertAccount()` for consolidated storage
+- [x] `sync.js` orchestrates sync count tracking and legacy cleanup
+- [x] Sync count tracking: cleanup only after 2 successful syncs (`MIN_SYNCS_BEFORE_CLEANUP = 2`)
+- [x] All tests passing (2194 tests)
+- [x] Backward compatibility maintained (legacy storage still written during migration period)
 
 #### Phase 4.3: Rogers Bank Migration (Most Complex)
 - [ ] Create Rogers Bank account service module
@@ -146,6 +147,31 @@ Migrate each integration to consolidated structure with backward compatibility.
 - [ ] Update settings UI to use new account service
 - [ ] Add tests for migration
 - [ ] Verify backward compatibility
+
+#### Phase 4.4: Legacy Storage Cleanup (Auto-delete after migration)
+**Status**: ⏳ Partially Complete
+
+After migration is complete and data exists in consolidated storage, automatically cleanup legacy keys after first successful sync.
+
+| Integration | Migration Status | Cleanup Status | Legacy Keys to Clean |
+|-------------|------------------|----------------|---------------------|
+| **Wealthsimple** | ✅ N/A | ✅ N/A | None (always consolidated) |
+| **Canada Life** | ✅ v5.58.8 | ✅ v5.58.10 | `canadalife_monarch_account_for_{id}`, `canadalife_last_upload_date_{id}` |
+| **Questrade** | ✅ v5.59.0 | ✅ v5.59.0 | `questrade_monarch_account_for_{id}`, `questrade_last_upload_date_{id}` |
+| **Rogers Bank** | ❌ Phase 4.3 | ❌ Blocked | `rogersbank_monarch_account_for_{id}`, `rogersbank_last_upload_date_{id}`, `rogersbank_last_credit_limit_{id}`, `rogersbank_balance_checkpoint_{id}`, `rogersbank_uploaded_refs_{id}` |
+
+**Cleanup Implementation Pattern (from Canada Life v5.58.10):**
+1. After successful sync completes
+2. Call `accountService.cleanupLegacyStorage(integrationId, accountId)`
+3. Function validates consolidated data exists before deleting legacy keys
+4. Logs cleanup actions for debugging
+
+**Implementation Tasks:**
+- [x] Create `cleanupLegacyStorage()` function in accountService (v5.58.10)
+- [x] Integrate cleanup into CanadaLife upload service (v5.58.10)
+- [x] Fix `getLastUpdateDate()` and `saveLastUploadDate()` to use consolidated storage first (v5.58.11)
+- [x] Integrate cleanup into Questrade sync service with sync count tracking (v5.59.0)
+- [ ] Integrate cleanup into Rogers Bank upload service (blocked: needs Phase 4.3 migration)
 
 ### Phase 5: Uploaded Transactions Management UI
 **Status**: ⏳ Not Started
@@ -190,10 +216,105 @@ After all integrations are migrated to the unified pattern, remove deprecated co
 ## Migration Safety Rules
 
 1. **Always read from both storage locations** during migration period
-2. **Never delete legacy storage** until migration is confirmed
+2. **Never delete legacy storage** until migration is confirmed (requires 2 successful syncs)
 3. **Add migration version flag** to track migration state per integration
 4. **Provide rollback function** in case of issues
 5. **Log all migration actions** for debugging
+
+---
+
+## Architecture Pattern: Account Mapping Resolution (v5.59.1)
+
+### Problem Discovered
+After legacy storage cleanup, account mappings were lost because code was still checking legacy storage directly (via `monarchApi.resolveAccountMapping` or direct `GM_getValue`) instead of using `accountService`.
+
+### Solution: Centralized Mapping Lookup
+
+**Always use `accountService.getMonarchAccountMapping()`** to look up Monarch account mappings:
+
+```javascript
+// ❌ DON'T: Check legacy storage directly (will fail after cleanup)
+const monarchAccount = await monarchApi.resolveAccountMapping(
+  accountId, 
+  STORAGE.PREFIX, 
+  'brokerage'
+);
+
+// ✅ DO: Use accountService (checks consolidated first, falls back to legacy)
+import accountService from '../services/common/accountService';
+import { INTEGRATIONS } from '../core/integrationCapabilities';
+
+const monarchAccount = accountService.getMonarchAccountMapping(
+  INTEGRATIONS.QUESTRADE,  // or CANADALIFE, ROGERSBANK, etc.
+  accountId
+);
+
+if (!monarchAccount) {
+  // Show account selector UI for new mapping
+  const selectedAccount = await showMonarchAccountSelector(...);
+  
+  if (selectedAccount) {
+    // Save ONLY to consolidated storage (not legacy)
+    accountService.upsertAccount(INTEGRATIONS.QUESTRADE, {
+      questradeAccount: { id: accountId, nickname: accountName },
+      monarchAccount: selectedAccount,
+    });
+  }
+}
+```
+
+### Key Functions in accountService
+
+| Function | Purpose | When to Use |
+|----------|---------|-------------|
+| `getMonarchAccountMapping(integrationId, accountId)` | Get Monarch mapping (consolidated first, legacy fallback) | Before any upload/sync |
+| `upsertAccount(integrationId, accountData)` | Save account with mapping to consolidated | After user selects new mapping |
+| `updateAccountInList(integrationId, accountId, updates)` | Update specific properties | Update lastSyncDate, etc. |
+| `getLastUpdateDate(accountId, integrationId)` | Get last sync date | In utils.js, for date range |
+| `saveLastUploadDate(accountId, integrationId, date)` | Save last sync date | After successful sync |
+
+### Legacy Storage is Read-Only
+
+During migration period:
+- **Read**: Check consolidated first, fall back to legacy
+- **Write**: ONLY to consolidated storage
+- **Delete**: After 2 successful syncs via `cleanupLegacyStorage()`
+
+### Migration Checklist for Each Integration
+
+When migrating an integration to consolidated storage:
+
+1. **Import accountService and INTEGRATIONS**
+2. **⚠️ CRITICAL: Find ALL usages of `monarchApi.resolveAccountMapping()` calls**
+   - Search the entire codebase: `resolveAccountMapping|resolveMonarchAccountMapping`
+   - This includes sync services, position services, transaction services, balance services
+   - Bug found in v5.59.1: Questrade had 3 places calling this (balance, sync positions, transactions)
+   - Replace with `accountService.getMonarchAccountMapping()` for lookup
+   - Use `accountService.upsertAccount()` for saving new mappings
+3. **Replace direct GM_getValue for mappings** with accountService calls
+4. **Replace direct GM_setValue for mappings** - remove entirely, use `upsertAccount`
+5. **Replace date storage** - use `getLastUpdateDate()` / `saveLastUploadDate()` from utils
+6. **Add sync count tracking** in sync orchestration:
+   ```javascript
+   const newSyncCount = accountService.incrementSyncCount(integrationId, accountId);
+   if (accountService.isReadyForLegacyCleanup(integrationId, accountId)) {
+     accountService.cleanupLegacyStorage(integrationId, accountId);
+   }
+   ```
+7. **Test**: Verify sync works with fresh install (no legacy data)
+8. **Test**: Verify sync works after migration (legacy data exists)
+9. **Test**: Verify sync works after cleanup (legacy data deleted)
+
+### Files Updated in Questrade Migration (v5.59.1 bug fix)
+
+For reference, these files were updated to use `accountService.getMonarchAccountMapping()`:
+
+| File | Location | Previous Call |
+|------|----------|---------------|
+| `src/services/questrade/balance.js` | `uploadBalanceToMonarch()` | `monarchApi.resolveAccountMapping()` |
+| `src/services/questrade/balance.js` | `ensureAllAccountMappings()` | `GM_getValue` |
+| `src/services/questrade/sync.js` | `syncAccountToMonarch()` positions step | `monarchApi.resolveAccountMapping()` |
+| `src/services/questrade/transactions.js` | `processAndUploadTransactions()` | `monarchApi.resolveAccountMapping()` |
 
 ---
 

@@ -4,11 +4,13 @@
  * between Questrade and Monarch
  */
 
-import { debugLog, getTodayLocal, formatDate } from '../../core/utils';
+import { debugLog, getTodayLocal, formatDate, getLastUpdateDate } from '../../core/utils';
 import { STORAGE, LOGO_CLOUDINARY_IDS } from '../../core/config';
+import { INTEGRATIONS } from '../../core/integrationCapabilities';
 import stateManager from '../../core/state';
 import monarchApi from '../../api/monarch';
 import questradeApi from '../../api/questrade';
+import accountService from '../common/accountService';
 import balanceService, { fetchBalanceHistory, extractBalanceChange } from './balance';
 import positionsService from './positions';
 import transactionsService from './transactions';
@@ -108,12 +110,8 @@ export async function syncAccountToMonarch(accountId, accountName, fromDate, toD
     }
 
     try {
-      // Get Monarch account mapping
-      const monarchAccount = await monarchApi.resolveAccountMapping(
-        accountId,
-        STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX,
-        'brokerage',
-      );
+      // Get Monarch account mapping from consolidated storage (or legacy fallback)
+      const monarchAccount = accountService.getMonarchAccountMapping(INTEGRATIONS.QUESTRADE, accountId);
 
       if (!monarchAccount) {
         debugLog(`No Monarch account mapping for ${accountId}, skipping positions sync`);
@@ -181,6 +179,19 @@ export async function syncAccountToMonarch(accountId, accountName, fromDate, toD
       debugLog('Error syncing transactions (non-fatal):', transactionsError);
       if (progressDialog) {
         progressDialog.updateStepStatus(accountId, 'transactions', 'error', transactionsError.message);
+      }
+    }
+
+    // Post-sync: Increment sync count and attempt legacy cleanup
+    // Cleanup only happens after 2+ successful syncs (safety measure)
+    const newSyncCount = accountService.incrementSyncCount(INTEGRATIONS.QUESTRADE, accountId);
+    debugLog(`Questrade account ${accountId} sync count: ${newSyncCount}`);
+
+    // Try to clean up legacy storage if ready (2+ successful syncs)
+    if (accountService.isReadyForLegacyCleanup(INTEGRATIONS.QUESTRADE, accountId)) {
+      const cleanupResult = accountService.cleanupLegacyStorage(INTEGRATIONS.QUESTRADE, accountId);
+      if (cleanupResult.cleaned && cleanupResult.keysDeleted > 0) {
+        debugLog(`Cleaned up ${cleanupResult.keysDeleted} legacy keys for account ${accountId}:`, cleanupResult.keys);
       }
     }
 
@@ -336,6 +347,7 @@ export async function syncAllAccountsToMonarch() {
 
 /**
  * Ensure all accounts have Monarch account mappings
+ * Checks consolidated storage first, then falls back to legacy storage
  * @param {Array} accounts - List of Questrade accounts
  * @param {Object} progressDialog - Progress dialog instance
  * @returns {Promise<boolean>} True if all accounts are mapped, false if cancelled
@@ -343,11 +355,19 @@ export async function syncAllAccountsToMonarch() {
 async function ensureAllAccountMappings(accounts, progressDialog) {
   const unmappedAccounts = [];
 
-  // Check each account for mapping
+  // Check each account for mapping - check consolidated storage first, then legacy
   for (let i = 0; i < accounts.length; i += 1) {
     const account = accounts[i];
-    const monarchAccount = JSON.parse(GM_getValue(`${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}${account.key}`, null));
-    if (!monarchAccount) {
+
+    // Check consolidated storage first via accountService
+    const accountData = accountService.getAccountData(INTEGRATIONS.QUESTRADE, account.key);
+    if (accountData?.monarchAccount) {
+      continue; // Already mapped in consolidated storage
+    }
+
+    // Fall back to legacy storage
+    const legacyMapping = JSON.parse(GM_getValue(`${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}${account.key}`, null));
+    if (!legacyMapping) {
       unmappedAccounts.push(account);
     }
   }
@@ -419,8 +439,21 @@ async function ensureAllAccountMappings(accounts, progressDialog) {
       }
     }
 
-    // Save the mapping
+    // Save the mapping to both consolidated and legacy storage
+    const upsertSuccess = accountService.upsertAccount(INTEGRATIONS.QUESTRADE, {
+      questradeAccount: {
+        id: account.key,
+        nickname: accountName,
+        number: account.number,
+        type: account.type,
+      },
+      monarchAccount,
+    });
+
+    // Also save to legacy storage for backward compatibility during migration
     GM_setValue(`${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}${account.key}`, JSON.stringify(monarchAccount));
+
+    debugLog(`Saved account mapping for ${accountName}, consolidated: ${upsertSuccess}`);
 
     // Update progress if dialog exists
     if (progressDialog) {
@@ -433,6 +466,7 @@ async function ensureAllAccountMappings(accounts, progressDialog) {
 
 /**
  * Get start dates for all accounts
+ * Uses consolidated storage first, then falls back to legacy storage
  * @param {Array} accounts - List of accounts
  * @returns {Promise<Object|null>} Object mapping account keys to start dates, or null if cancelled
  */
@@ -441,9 +475,9 @@ async function getStartDatesForAllAccounts(accounts) {
   let needsDatePicker = false;
   let oldestDate = null;
 
-  // Check each account for lastUsedDate
+  // Check each account for lastUsedDate - use unified getLastUpdateDate which checks both storages
   for (const account of accounts) {
-    const lastDate = GM_getValue(`${STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX}${account.key}`, null);
+    const lastDate = getLastUpdateDate(account.key, 'questrade');
     if (lastDate && /^\d{4}-\d{2}-\d{2}$/.test(lastDate)) {
       startDates[account.key] = lastDate;
       // Track oldest date among accounts that have one

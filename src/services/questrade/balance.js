@@ -5,12 +5,14 @@
 
 import {
   debugLog, formatDate, getLocalToday, getTodayLocal, formatDaysAgoLocal, parseLocalDate,
-  getLastUpdateDate,
+  getLastUpdateDate, saveLastUploadDate,
 } from '../../core/utils';
 import { STORAGE } from '../../core/config';
 import stateManager from '../../core/state';
 import questradeApi from '../../api/questrade';
 import monarchApi from '../../api/monarch';
+import accountService from '../common/accountService';
+import { INTEGRATIONS } from '../../core/integrationCapabilities';
 import toast from '../../ui/toast';
 import { showProgressDialog } from '../../ui/components/progressDialog';
 import { showDatePickerPromise } from '../../ui/components/datePicker';
@@ -115,6 +117,7 @@ export function processBalanceData(rawData, accountName) {
 
 /**
  * Get the appropriate date range for balance history
+ * Uses consolidated storage first, then falls back to legacy storage
  * @param {string} accountId - Account ID
  * @param {number} days - Number of days to look back (default: 90)
  * @returns {Object} Object with fromDate and toDate in YYYY-MM-DD format
@@ -124,8 +127,9 @@ export function getDefaultDateRange(accountId, days = 90) {
   const toDate = getLocalToday();
 
   // Check if we have a last used date for this account
+  // getLastUpdateDate handles both consolidated and legacy storage
   let fromDate;
-  const lastUsedDate = GM_getValue(`${STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX}${accountId}`);
+  const lastUsedDate = getLastUpdateDate(accountId, 'questrade');
 
   if (lastUsedDate) {
     // Parse the saved date in local timezone
@@ -156,6 +160,7 @@ export function getDefaultDateRange(accountId, days = 90) {
 
 /**
  * Store the last used date for an account
+ * Saves to both consolidated storage and legacy storage for backward compatibility
  * @param {string} accountId - Account ID
  * @param {string} toDate - End date in YYYY-MM-DD format
  */
@@ -163,8 +168,9 @@ export function storeDateRange(accountId, toDate) {
   if (!accountId || !toDate) return;
 
   try {
-    GM_setValue(`${STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX}${accountId}`, toDate);
-    debugLog(`Stored last used date ${toDate} for account ${accountId}`);
+    // Use the unified saveLastUploadDate function which handles both storages
+    saveLastUploadDate(accountId, 'questrade', toDate);
+    debugLog(`Stored last used date ${toDate} for Questrade account ${accountId}`);
   } catch (error) {
     debugLog('Error storing date range:', error);
   }
@@ -189,15 +195,50 @@ export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDat
     // Get account name from state
     const accountName = stateManager.getState().currentAccount.nickname || 'Unknown Account';
 
-    // Resolve Monarch account mapping for this Questrade account
-    const monarchAccount = await monarchApi.resolveAccountMapping(
-      accountId,
-      STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX,
-      'brokerage',
-    );
+    // Check consolidated storage first, then fall back to legacy (migration path)
+    let monarchAccount = accountService.getMonarchAccountMapping(INTEGRATIONS.QUESTRADE, accountId);
 
+    // If no mapping found, prompt user to select/create one
     if (!monarchAccount) {
-      throw new BalanceError('Account mapping cancelled by user', accountId);
+      debugLog(`No mapping found for account ${accountId}, prompting user to select`);
+
+      // Get Monarch accounts for selector
+      const investmentAccounts = await monarchApi.listAccounts();
+      if (!investmentAccounts.length) {
+        throw new BalanceError('No investment accounts found in Monarch', accountId);
+      }
+
+      // Prepare createDefaults for account creation
+      const createDefaults = {
+        defaultName: accountName,
+        defaultType: 'brokerage',
+        defaultSubtype: 'brokerage',
+        currentBalance: null,
+        accountType: 'Investment',
+      };
+
+      // Show account selector with create option
+      const selectedAccount = await new Promise((resolve) => {
+        showMonarchAccountSelectorWithCreate(
+          investmentAccounts,
+          resolve,
+          null,
+          'brokerage',
+          createDefaults,
+        );
+      });
+
+      if (!selectedAccount) {
+        throw new BalanceError('Account mapping cancelled by user', accountId);
+      }
+
+      // Save the mapping to consolidated storage using upsertAccount
+      accountService.upsertAccount(INTEGRATIONS.QUESTRADE, {
+        questradeAccount: { id: accountId, nickname: accountName },
+        monarchAccount: selectedAccount,
+      });
+      monarchAccount = selectedAccount;
+      debugLog(`Saved new mapping for ${accountId} -> ${selectedAccount.displayName}`);
     }
 
     // Upload using Monarch API with resolved account ID
@@ -587,10 +628,10 @@ export async function uploadAllAccountsToMonarch() {
 async function ensureAllAccountMappings(accounts, progressDialog) {
   const unmappedAccounts = [];
 
-  // Check each account for mapping
+  // Check each account for mapping using accountService (checks consolidated first, then legacy)
   for (let i = 0; i < accounts.length; i += 1) {
     const account = accounts[i];
-    const monarchAccount = JSON.parse(GM_getValue(`${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}${account.key}`, null));
+    const monarchAccount = accountService.getMonarchAccountMapping(INTEGRATIONS.QUESTRADE, account.key);
     if (!monarchAccount) {
       unmappedAccounts.push(account);
     }
@@ -634,7 +675,7 @@ async function ensureAllAccountMappings(accounts, progressDialog) {
     };
 
     // Show enhanced account selector with create option (both balance and holdings tracking)
-    const monarchAccount = await new Promise((resolve) => {
+    const selectedAccount = await new Promise((resolve) => {
       showMonarchAccountSelectorWithCreate(
         investmentAccounts,
         resolve,
@@ -644,13 +685,17 @@ async function ensureAllAccountMappings(accounts, progressDialog) {
       );
     });
 
-    if (!monarchAccount) {
+    if (!selectedAccount) {
       // User cancelled
       return false;
     }
 
-    // Save the mapping
-    GM_setValue(`${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}${account.key}`, JSON.stringify(monarchAccount));
+    // Save the mapping to consolidated storage using upsertAccount
+    accountService.upsertAccount(INTEGRATIONS.QUESTRADE, {
+      questradeAccount: { id: account.key, nickname: accountName },
+      monarchAccount: selectedAccount,
+    });
+    debugLog(`Saved new mapping for ${account.key} -> ${selectedAccount.displayName}`);
 
     // Update progress if dialog exists
     if (progressDialog) {

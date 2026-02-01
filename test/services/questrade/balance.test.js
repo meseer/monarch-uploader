@@ -14,9 +14,10 @@ import {
 } from '../../../src/services/questrade/balance';
 import questradeApi from '../../../src/api/questrade';
 import monarchApi from '../../../src/api/monarch';
+import accountService from '../../../src/services/common/accountService';
 import stateManager from '../../../src/core/state';
-import { STORAGE } from '../../../src/core/config';
 import toast from '../../../src/ui/toast';
+import * as utils from '../../../src/core/utils';
 
 // Mock dependencies
 jest.mock('../../../src/api/questrade', () => ({
@@ -26,6 +27,16 @@ jest.mock('../../../src/api/questrade', () => ({
 jest.mock('../../../src/api/monarch', () => ({
   uploadBalance: jest.fn(),
   resolveAccountMapping: jest.fn(),
+  listAccounts: jest.fn(),
+}));
+
+jest.mock('../../../src/services/common/accountService', () => ({
+  getMonarchAccountMapping: jest.fn(),
+  upsertAccount: jest.fn(),
+}));
+
+jest.mock('../../../src/ui/components/accountSelectorWithCreate', () => ({
+  showMonarchAccountSelectorWithCreate: jest.fn(),
 }));
 
 jest.mock('../../../src/core/state', () => ({
@@ -38,6 +49,16 @@ jest.mock('../../../src/core/state', () => ({
 jest.mock('../../../src/ui/toast', () => ({
   show: jest.fn(),
 }));
+
+// Mock utils functions for date storage
+jest.mock('../../../src/core/utils', () => {
+  const actual = jest.requireActual('../../../src/core/utils');
+  return {
+    ...actual,
+    getLastUpdateDate: jest.fn(),
+    saveLastUploadDate: jest.fn(),
+  };
+});
 
 // Mock GM storage functions
 globalThis.GM_getValue = jest.fn();
@@ -154,28 +175,31 @@ describe('Balance Service', () => {
     });
 
     test('getDefaultDateRange should use saved date when available', () => {
-      // Mock saved date (30 days ago)
+      // Mock saved date (30 days ago) via getLastUpdateDate
       const savedDate = new Date();
       savedDate.setDate(savedDate.getDate() - 30);
-      GM_getValue.mockReturnValueOnce(savedDate.toISOString().split('T')[0]);
+      const savedDateStr = savedDate.toISOString().split('T')[0];
+      utils.getLastUpdateDate.mockReturnValueOnce(savedDateStr);
 
       const result = getDefaultDateRange('12345');
 
       // Check that fromDate matches saved date
-      expect(result.fromDate).toBe(savedDate.toISOString().split('T')[0]);
+      expect(result.fromDate).toBe(savedDateStr);
+      expect(utils.getLastUpdateDate).toHaveBeenCalledWith('12345', 'questrade');
     });
 
     test('storeDateRange should save date for account', () => {
       storeDateRange('12345', '2025-01-31');
 
-      expect(GM_setValue).toHaveBeenCalledWith(`${STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX}12345`, '2025-01-31');
+      // Should now call saveLastUploadDate instead of direct GM_setValue
+      expect(utils.saveLastUploadDate).toHaveBeenCalledWith('12345', 'questrade', '2025-01-31');
     });
   });
 
   describe('uploadBalanceToMonarch', () => {
     test('should upload CSV data to Monarch', async () => {
-      // Mock successful upload and account mapping
-      monarchApi.resolveAccountMapping.mockResolvedValueOnce({ id: 'monarch-account-123' });
+      // Mock successful upload and account mapping via accountService
+      accountService.getMonarchAccountMapping.mockReturnValueOnce({ id: 'monarch-account-123', displayName: 'My Account' });
       monarchApi.uploadBalance.mockResolvedValueOnce(true);
 
       const result = await uploadBalanceToMonarch(
@@ -186,7 +210,7 @@ describe('Balance Service', () => {
       );
 
       expect(result).toBe(true);
-      expect(monarchApi.resolveAccountMapping).toHaveBeenCalled();
+      expect(accountService.getMonarchAccountMapping).toHaveBeenCalled();
       expect(monarchApi.uploadBalance).toHaveBeenCalled();
     });
 
@@ -201,8 +225,8 @@ describe('Balance Service', () => {
 
   describe('processAndUploadBalance', () => {
     test('should complete the full balance processing workflow', async () => {
-      // Mock successful API calls and account mapping
-      monarchApi.resolveAccountMapping.mockResolvedValueOnce({ id: 'monarch-account-123' });
+      // Mock successful API calls and account mapping via accountService
+      accountService.getMonarchAccountMapping.mockReturnValueOnce({ id: 'monarch-account-123', displayName: 'My Account' });
       questradeApi.makeApiCall
         .mockResolvedValueOnce({
           totalEquity: {
@@ -257,8 +281,8 @@ describe('Balance Service', () => {
         { id: '67890', nickname: 'Account 2' },
       ];
 
-      // Mock successful API calls for both accounts
-      monarchApi.resolveAccountMapping.mockResolvedValue({ id: 'monarch-account-123' });
+      // Mock successful API calls for both accounts via accountService
+      accountService.getMonarchAccountMapping.mockReturnValue({ id: 'monarch-account-123', displayName: 'My Account' });
       questradeApi.makeApiCall.mockResolvedValue({
         totalEquity: {
           combined: [{ currencyCode: 'CAD', amount: 10000 }],
@@ -286,10 +310,10 @@ describe('Balance Service', () => {
         { id: '67890', nickname: 'Account 2' },
       ];
 
-      // Mock first account success, second account failure
-      monarchApi.resolveAccountMapping
-        .mockResolvedValueOnce({ id: 'monarch-account-123' })
-        .mockResolvedValueOnce({ id: 'monarch-account-456' });
+      // Mock first account success, second account failure via accountService
+      accountService.getMonarchAccountMapping
+        .mockReturnValueOnce({ id: 'monarch-account-123', displayName: 'Account 1' })
+        .mockReturnValueOnce({ id: 'monarch-account-456', displayName: 'Account 2' });
       questradeApi.makeApiCall
         .mockResolvedValueOnce({
           totalEquity: {
@@ -511,8 +535,8 @@ describe('Balance Service', () => {
     });
 
     test('should handle state management correctly', async () => {
-      // Mock successful flow to test state management
-      monarchApi.resolveAccountMapping.mockResolvedValue({ id: 'monarch-123' });
+      // Mock successful flow to test state management via accountService
+      accountService.getMonarchAccountMapping.mockReturnValue({ id: 'monarch-123', displayName: 'My Account' });
       questradeApi.makeApiCall
         .mockResolvedValueOnce({ totalEquity: { combined: [{ currencyCode: 'CAD', amount: 10000 }] } })
         .mockResolvedValueOnce({ data: [{ date: '2024-12-01', totalEquity: 9500 }] });
@@ -530,18 +554,18 @@ describe('Balance Service', () => {
     test('should store date range on successful upload', async () => {
       // Test the storeDateRange function with edge cases
       storeDateRange('', '2024-12-31');
-      expect(GM_setValue).not.toHaveBeenCalled();
+      expect(utils.saveLastUploadDate).not.toHaveBeenCalled();
 
       storeDateRange('account123', '');
-      expect(GM_setValue).not.toHaveBeenCalled();
+      expect(utils.saveLastUploadDate).not.toHaveBeenCalled();
 
       storeDateRange('account123', '2024-12-31');
-      expect(GM_setValue).toHaveBeenCalledWith('questrade_last_upload_date_account123', '2024-12-31');
+      expect(utils.saveLastUploadDate).toHaveBeenCalledWith('account123', 'questrade', '2024-12-31');
     });
 
-    test('should handle GM_setValue errors gracefully', () => {
-      // Mock GM_setValue to throw an error
-      GM_setValue.mockImplementation(() => {
+    test('should handle saveLastUploadDate errors gracefully', () => {
+      // Mock saveLastUploadDate to throw an error
+      utils.saveLastUploadDate.mockImplementation(() => {
         throw new Error('Storage error');
       });
 

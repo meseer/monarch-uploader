@@ -4,9 +4,10 @@
  */
 
 import { debugLog, getTodayLocal, saveLastUploadDate } from '../../core/utils';
-import { STORAGE } from '../../core/config';
+import { INTEGRATIONS } from '../../core/integrationCapabilities';
 import questradeApi from '../../api/questrade';
 import monarchApi from '../../api/monarch';
+import accountService from '../common/accountService';
 import toast from '../../ui/toast';
 import { convertQuestradeOrdersToMonarchCSV } from '../../utils/csv';
 import { applyCategoryMapping, saveUserCategorySelection, calculateAllCategorySimilarities } from '../../mappers/category';
@@ -325,12 +326,8 @@ export async function processAndUploadTransactions(accountId, accountName, fromD
       throw new Error('Failed to convert orders to CSV');
     }
 
-    // Get Monarch account mapping
-    const monarchAccount = await monarchApi.resolveAccountMapping(
-      accountId,
-      STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX,
-      'brokerage',
-    );
+    // Get Monarch account mapping from consolidated storage (or legacy fallback)
+    const monarchAccount = accountService.getMonarchAccountMapping(INTEGRATIONS.QUESTRADE, accountId);
 
     if (!monarchAccount) {
       throw new Error('Account mapping cancelled or not found');

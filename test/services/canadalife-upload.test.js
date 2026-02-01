@@ -23,6 +23,7 @@ jest.mock('../../src/services/common/accountService', () => ({
   __esModule: true,
   default: {
     getAccountData: jest.fn(),
+    getMonarchAccountMapping: jest.fn(),
     upsertAccount: jest.fn(),
     updateAccountInList: jest.fn(),
     cleanupLegacyStorage: jest.fn(() => ({ cleaned: true, keysDeleted: 0, keys: [] })),
@@ -280,11 +281,9 @@ describe('Canada Life Upload Service', () => {
       monarchApi = require('../../src/api/monarch').default;
       accountService = require('../../src/services/common/accountService').default;
 
-      // Default: accountService.getAccountData returns stored monarch account
+      // Default: accountService.getMonarchAccountMapping returns stored monarch account
       // This simulates having an existing account mapping in consolidated storage
-      accountService.getAccountData.mockReturnValue({
-        monarchAccount: { id: 'monarch123', displayName: 'Investment Account' },
-      });
+      accountService.getMonarchAccountMapping.mockReturnValue({ id: 'monarch123', displayName: 'Investment Account' });
 
       // Default: validateAndRefreshAccountMapping returns valid existing account
       monarchApi.validateAndRefreshAccountMapping.mockResolvedValue({
