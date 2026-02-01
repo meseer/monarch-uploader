@@ -643,4 +643,189 @@ describe('Account Service', () => {
       expect(accounts[0].questradeAccount.id).toBe('qt-1');
     });
   });
+
+  describe('legacy uploaded transactions migration', () => {
+    test('should migrate legacy uploaded orders for Questrade during full migration', () => {
+      // Set up legacy mapping data
+      GM_setValue(
+        `${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}qt-uuid-1`,
+        JSON.stringify({ id: 'monarch-1', displayName: 'TFSA' }),
+      );
+      // Set up legacy uploaded orders (array of strings)
+      GM_setValue(
+        `${STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX}qt-uuid-1`,
+        ['order-1', 'order-2', 'order-3'],
+      );
+
+      // Call getAccounts - should trigger migration including transactions
+      const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
+
+      expect(accounts).toHaveLength(1);
+      expect(accounts[0].uploadedTransactions).toHaveLength(3);
+      expect(accounts[0].uploadedTransactions[0]).toEqual({ id: 'order-1', date: null });
+      expect(accounts[0].uploadedTransactions[1]).toEqual({ id: 'order-2', date: null });
+      expect(accounts[0].uploadedTransactions[2]).toEqual({ id: 'order-3', date: null });
+    });
+
+    test('should merge legacy transactions into already-migrated accounts', () => {
+      // Set up already-migrated consolidated data WITHOUT uploadedTransactions
+      const consolidatedData = [
+        {
+          questradeAccount: { id: 'qt-uuid-1', nickname: 'TFSA' },
+          monarchAccount: { id: 'monarch-1' },
+          syncEnabled: true,
+          // Note: no uploadedTransactions field
+        },
+      ];
+      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+
+      // Set up legacy uploaded orders that need to be merged
+      GM_setValue(
+        `${STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX}qt-uuid-1`,
+        ['order-a', 'order-b'],
+      );
+
+      // Call getAccounts - should merge legacy transactions
+      const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
+
+      expect(accounts).toHaveLength(1);
+      expect(accounts[0].uploadedTransactions).toHaveLength(2);
+      expect(accounts[0].uploadedTransactions[0].id).toBe('order-a');
+    });
+
+    test('should not overwrite existing uploadedTransactions', () => {
+      // Set up consolidated data WITH uploadedTransactions already populated
+      const consolidatedData = [
+        {
+          questradeAccount: { id: 'qt-uuid-1', nickname: 'TFSA' },
+          monarchAccount: { id: 'monarch-1' },
+          syncEnabled: true,
+          uploadedTransactions: [{ id: 'existing-1', date: '2024-01-10' }],
+        },
+      ];
+      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+
+      // Set up legacy data that should be ignored
+      GM_setValue(
+        `${STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX}qt-uuid-1`,
+        ['should-not-appear'],
+      );
+
+      // Call getAccounts - should NOT overwrite existing transactions
+      const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
+
+      expect(accounts[0].uploadedTransactions).toHaveLength(1);
+      expect(accounts[0].uploadedTransactions[0].id).toBe('existing-1');
+      expect(accounts[0].uploadedTransactions[0].date).toBe('2024-01-10');
+    });
+
+    test('should handle Rogers Bank legacy transaction refs', () => {
+      // Set up legacy data for Rogers Bank
+      GM_setValue(
+        `${STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX}rb-123`,
+        JSON.stringify({ id: 'monarch-rb', displayName: 'Rogers CC' }),
+      );
+      GM_setValue(
+        `${STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX}rb-123`,
+        ['ref-001', 'ref-002'],
+      );
+
+      // Call getAccounts
+      const accounts = getAccounts(INTEGRATIONS.ROGERSBANK);
+
+      expect(accounts).toHaveLength(1);
+      expect(accounts[0].uploadedTransactions).toHaveLength(2);
+      expect(accounts[0].uploadedTransactions[0].id).toBe('ref-001');
+    });
+
+    test('should not try to merge transactions for CanadaLife (no deduplication)', () => {
+      // Set up consolidated data for CanadaLife
+      const consolidatedData = [
+        {
+          canadalifAccount: { id: 'cl-1', nickname: 'RRSP' },
+          monarchAccount: { id: 'monarch-cl' },
+          syncEnabled: true,
+        },
+      ];
+      GM_setValue(STORAGE.CANADALIFE_ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+
+      // CanadaLife doesn't have uploaded transactions prefix, so nothing to merge
+      const accounts = getAccounts(INTEGRATIONS.CANADALIFE);
+
+      expect(accounts).toHaveLength(1);
+      expect(accounts[0].uploadedTransactions).toBeUndefined();
+    });
+
+    test('should save merged accounts after migration', () => {
+      // Set up consolidated data without transactions
+      const consolidatedData = [
+        {
+          questradeAccount: { id: 'qt-1', nickname: 'Account' },
+          monarchAccount: { id: 'm-1' },
+          syncEnabled: true,
+        },
+      ];
+      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+
+      // Set up legacy transactions
+      GM_setValue(`${STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX}qt-1`, ['tx-1']);
+
+      // Trigger merge
+      getAccounts(INTEGRATIONS.QUESTRADE);
+
+      // Verify the consolidated storage was updated
+      const stored = JSON.parse(GM_getValue(STORAGE.ACCOUNTS_LIST, '[]'));
+      expect(stored[0].uploadedTransactions).toHaveLength(1);
+      expect(stored[0].uploadedTransactions[0].id).toBe('tx-1');
+    });
+
+    test('should handle JSON string format for legacy transactions', () => {
+      // Set up consolidated data
+      const consolidatedData = [
+        {
+          questradeAccount: { id: 'qt-1', nickname: 'Account' },
+          monarchAccount: { id: 'm-1' },
+          syncEnabled: true,
+        },
+      ];
+      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+
+      // Set up legacy transactions as JSON string instead of direct array
+      GM_setValue(
+        `${STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX}qt-1`,
+        JSON.stringify(['tx-json-1', 'tx-json-2']),
+      );
+
+      const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
+
+      expect(accounts[0].uploadedTransactions).toHaveLength(2);
+      expect(accounts[0].uploadedTransactions[0].id).toBe('tx-json-1');
+    });
+
+    test('should handle object format for legacy transactions', () => {
+      // Set up consolidated data
+      const consolidatedData = [
+        {
+          questradeAccount: { id: 'qt-1', nickname: 'Account' },
+          monarchAccount: { id: 'm-1' },
+          syncEnabled: true,
+        },
+      ];
+      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+
+      // Set up legacy transactions already in object format
+      GM_setValue(
+        `${STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX}qt-1`,
+        [
+          { id: 'tx-obj-1', date: '2024-01-15' },
+          { id: 'tx-obj-2', date: '2024-01-16' },
+        ],
+      );
+
+      const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
+
+      expect(accounts[0].uploadedTransactions).toHaveLength(2);
+      expect(accounts[0].uploadedTransactions[0]).toEqual({ id: 'tx-obj-1', date: '2024-01-15' });
+    });
+  });
 });

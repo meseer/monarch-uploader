@@ -45,6 +45,17 @@ const LEGACY_LAST_UPLOAD_PREFIXES = {
 };
 
 /**
+ * Legacy uploaded transactions/orders prefix mapping
+ * For integrations with deduplication, this is where transaction IDs are stored
+ */
+const LEGACY_UPLOADED_TRANSACTIONS_PREFIXES = {
+  [INTEGRATIONS.WEALTHSIMPLE]: null, // Stored in account object (uploadedTransactions)
+  [INTEGRATIONS.QUESTRADE]: STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX,
+  [INTEGRATIONS.CANADALIFE]: null, // CanadaLife doesn't have deduplication
+  [INTEGRATIONS.ROGERSBANK]: STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX,
+};
+
+/**
  * Get the storage key for an integration's account list
  * @param {string} integrationId - Integration identifier
  * @returns {string|null} Storage key or null if not found
@@ -112,6 +123,59 @@ export function getAccounts(integrationId) {
     if (accounts.length === 0 && hasLegacyData(integrationId)) {
       debugLog(`Migrating legacy data for ${integrationId}`);
       accounts = migrateFromLegacyStorage(integrationId);
+    }
+
+    // Check for and merge legacy transaction data if uploadedTransactions is missing
+    // This handles accounts that were migrated before transaction migration was added
+    const uploadedTransactionsPrefix = LEGACY_UPLOADED_TRANSACTIONS_PREFIXES[integrationId];
+    if (uploadedTransactionsPrefix && accounts.length > 0) {
+      const accountKeyName = getAccountKeyName(integrationId);
+      let needsSave = false;
+
+      accounts = accounts.map((account) => {
+        // Skip if already has uploadedTransactions
+        if (account.uploadedTransactions && account.uploadedTransactions.length > 0) {
+          return account;
+        }
+
+        const accountId = account[accountKeyName]?.id;
+        if (!accountId) {
+          return account;
+        }
+
+        // Check for legacy transaction data
+        const legacyTransactions = GM_getValue(`${uploadedTransactionsPrefix}${accountId}`, null);
+        if (legacyTransactions) {
+          try {
+            const parsed = Array.isArray(legacyTransactions)
+              ? legacyTransactions
+              : JSON.parse(legacyTransactions);
+
+            // Normalize to array of objects with id and optional date
+            const uploadedTransactions = parsed.map((item) => {
+              if (typeof item === 'string') {
+                return { id: item, date: null };
+              }
+              return item;
+            });
+
+            if (uploadedTransactions.length > 0) {
+              debugLog(`Merged ${uploadedTransactions.length} legacy transactions for ${accountId}`);
+              needsSave = true;
+              return { ...account, uploadedTransactions };
+            }
+          } catch (e) {
+            debugLog(`Error parsing legacy transactions for ${accountId}:`, e);
+          }
+        }
+
+        return account;
+      });
+
+      // Save the updated accounts if we merged any transactions
+      if (needsSave) {
+        saveAccounts(integrationId, accounts);
+      }
     }
 
     return accounts;
@@ -410,6 +474,7 @@ function isSourceAccountData(data, integrationId) {
 export function migrateFromLegacyStorage(integrationId) {
   const prefix = LEGACY_MAPPING_PREFIXES[integrationId];
   const lastUploadPrefix = LEGACY_LAST_UPLOAD_PREFIXES[integrationId];
+  const uploadedTransactionsPrefix = LEGACY_UPLOADED_TRANSACTIONS_PREFIXES[integrationId];
   const accountKeyName = getAccountKeyName(integrationId);
 
   if (!prefix || !accountKeyName) {
@@ -447,6 +512,31 @@ export function migrateFromLegacyStorage(integrationId) {
           lastSyncDate = GM_getValue(`${lastUploadPrefix}${accountId}`, null);
         }
 
+        // Get uploaded transactions from legacy storage (for deduplication)
+        let uploadedTransactions = [];
+        if (uploadedTransactionsPrefix) {
+          const legacyTransactions = GM_getValue(`${uploadedTransactionsPrefix}${accountId}`, null);
+          if (legacyTransactions) {
+            try {
+              // Legacy format could be array of strings or already array of objects
+              const parsed = Array.isArray(legacyTransactions)
+                ? legacyTransactions
+                : JSON.parse(legacyTransactions);
+
+              // Normalize to array of objects with id and optional date
+              uploadedTransactions = parsed.map((item) => {
+                if (typeof item === 'string') {
+                  return { id: item, date: null }; // Legacy string format
+                }
+                return item; // Already in object format
+              });
+              debugLog(`Migrated ${uploadedTransactions.length} uploaded transactions for ${accountId}`);
+            } catch (e) {
+              debugLog(`Error parsing legacy transactions for ${accountId}:`, e);
+            }
+          }
+        }
+
         let consolidatedAccount;
 
         // Detect if stored data is source account data or Monarch mapping
@@ -473,6 +563,8 @@ export function migrateFromLegacyStorage(integrationId) {
             // Sync state
             syncEnabled: true,
             lastSyncDate,
+            // Uploaded transactions for deduplication
+            uploadedTransactions,
             // Default settings
             ...defaults,
           };
@@ -492,6 +584,8 @@ export function migrateFromLegacyStorage(integrationId) {
             // Sync state
             syncEnabled: true,
             lastSyncDate,
+            // Uploaded transactions for deduplication
+            uploadedTransactions,
             // Default settings
             ...defaults,
           };
