@@ -536,4 +536,111 @@ describe('Account Service', () => {
       expect(accounts[0].canadalifAccount.id).toBe('cl-existing');
     });
   });
+
+  describe('stale raw cache detection (Questrade-specific)', () => {
+    // Before v5.58.2, Questrade API incorrectly wrote raw account cache to ACCOUNTS_LIST
+    // This tests the auto-detection and cleanup of that stale data
+
+    test('should detect and clear stale raw cache data for Questrade', () => {
+      // Set up stale raw cache data (format: [{key, number, type, ...}])
+      // This is what the old Questrade API incorrectly wrote to ACCOUNTS_LIST
+      const staleRawCache = [
+        { key: 'qt-uuid-1', number: '12345', type: 'Margin', nickname: 'My Margin' },
+        { key: 'qt-uuid-2', number: '67890', type: 'TFSA', nickname: 'My TFSA' },
+      ];
+      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(staleRawCache));
+
+      // Also set up legacy mapping data that should be migrated
+      GM_setValue(
+        `${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}qt-uuid-1`,
+        JSON.stringify({ id: 'monarch-1', displayName: 'Margin Account' }),
+      );
+
+      // Call getAccounts - should detect stale cache, clear it, and migrate legacy
+      const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
+
+      // Should have migrated from legacy, not returned stale cache
+      expect(accounts).toHaveLength(1);
+      expect(accounts[0].questradeAccount.id).toBe('qt-uuid-1');
+      expect(accounts[0].monarchAccount.id).toBe('monarch-1');
+
+      // Verify the stale cache was cleared
+      const stored = JSON.parse(GM_getValue(STORAGE.ACCOUNTS_LIST, '[]'));
+      expect(stored).toHaveLength(1);
+      // Should be consolidated format, not raw cache
+      expect(stored[0].questradeAccount).toBeDefined();
+      expect(stored[0].key).toBeUndefined();
+    });
+
+    test('should not clear valid consolidated data for Questrade', () => {
+      // Set up proper consolidated format data
+      const consolidatedData = [
+        {
+          questradeAccount: { id: 'qt-uuid-1', nickname: 'My Margin' },
+          monarchAccount: { id: 'monarch-1', displayName: 'Margin Account' },
+          syncEnabled: true,
+        },
+      ];
+      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+
+      const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
+
+      // Should return consolidated data as-is
+      expect(accounts).toHaveLength(1);
+      expect(accounts[0].questradeAccount.id).toBe('qt-uuid-1');
+      expect(accounts[0].monarchAccount.id).toBe('monarch-1');
+    });
+
+    test('should not affect other integrations with similar data shape', () => {
+      // CanadaLife might have data with 'key' field, but shouldn't be affected
+      // by Questrade-specific stale cache detection
+      const canadalifData = [
+        { canadalifAccount: { id: 'cl-1', nickname: 'RRSP' }, monarchAccount: { id: 'm-1' } },
+      ];
+      GM_setValue(STORAGE.CANADALIFE_ACCOUNTS_LIST, JSON.stringify(canadalifData));
+
+      const accounts = getAccounts(INTEGRATIONS.CANADALIFE);
+
+      expect(accounts).toHaveLength(1);
+      expect(accounts[0].canadalifAccount.id).toBe('cl-1');
+    });
+
+    test('should handle stale cache with no legacy data to migrate', () => {
+      // Set up stale raw cache data without any legacy mapping keys
+      const staleRawCache = [
+        { key: 'qt-uuid-1', number: '12345', type: 'Margin' },
+      ];
+      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(staleRawCache));
+
+      // No legacy mapping data
+
+      const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
+
+      // Should clear stale cache and return empty (no legacy to migrate)
+      expect(accounts).toEqual([]);
+
+      // Verify storage was cleared
+      const stored = JSON.parse(GM_getValue(STORAGE.ACCOUNTS_LIST, '[]'));
+      expect(stored).toEqual([]);
+    });
+
+    test('should identify stale cache by presence of key field without questradeAccount', () => {
+      // Edge case: data has 'key' but also has 'questradeAccount' (valid migrated data)
+      // This should NOT be detected as stale
+      const validData = [
+        {
+          key: 'some-key', // This might exist from old migration
+          questradeAccount: { id: 'qt-1', nickname: 'Test' },
+          monarchAccount: { id: 'm-1' },
+        },
+      ];
+      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(validData));
+
+      const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
+
+      // Should return data as-is since questradeAccount exists
+      expect(accounts).toHaveLength(1);
+      expect(accounts[0].questradeAccount.id).toBe('qt-1');
+    });
+  });
 });
