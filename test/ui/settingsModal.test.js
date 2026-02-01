@@ -1019,8 +1019,10 @@ describe('Settings Modal Component', () => {
       rogersBankTab.click();
 
       const tabContent = modal.querySelector('.settings-tab-content');
+      // Transactions are now shown in account cards with unified account service
+      // The text format changed to "(X stored)" in the new generic cards
       expect(tabContent.textContent).toContain('Uploaded Transactions');
-      expect(tabContent.textContent).toContain('3 transaction references');
+      expect(tabContent.textContent).toContain('stored');
     });
 
     test('should handle transaction accordion expansion', () => {

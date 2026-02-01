@@ -722,8 +722,10 @@ function renderCanadaLifeTab(container) {
 
 /**
  * Clears all Rogers Bank settings except category mappings
+ * @deprecated Will be removed in Phase 7 cleanup
  * @returns {number} Number of keys deleted
  */
+// eslint-disable-next-line no-unused-vars
 function clearRogersBankSettings() {
   const allKeys = GM_listValues();
   let deletedCount = 0;
@@ -787,57 +789,19 @@ function renderRogersBankTab(container) {
   const lookbackSection = createLookbackPeriodSection('rogersbank');
   container.appendChild(lookbackSection);
 
-  // Transaction Settings Section
-  const txSettingsSection = createSection('Transaction Settings', '📝', 'Configure how transactions are uploaded');
-  const txSettingsContainer = document.createElement('div');
-  txSettingsContainer.style.cssText = 'margin: 10px 0;';
-
-  // Store transaction details in notes toggle
-  const transactionDetailsSetting = document.createElement('div');
-  transactionDetailsSetting.id = 'rogersbank-tx-details-setting';
-  transactionDetailsSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 12px 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e0e0e0;';
-
-  const transactionDetailsLabel = document.createElement('div');
-  transactionDetailsLabel.innerHTML = `
-    <div style="font-weight: 500; font-size: 14px; margin-bottom: 4px;">Store transaction details in notes</div>
-    <div style="font-size: 12px; color: #666;">When enabled, transaction type and reference number will be included in the Notes field</div>
-  `;
-
-  const currentValue = GM_getValue(STORAGE.ROGERSBANK_STORE_TX_DETAILS_IN_NOTES, false);
-  const transactionDetailsToggle = createToggleSwitch(
-    currentValue,
-    (isEnabled) => {
-      GM_setValue(STORAGE.ROGERSBANK_STORE_TX_DETAILS_IN_NOTES, isEnabled);
-      toast.show(`Transaction details in notes ${isEnabled ? 'enabled' : 'disabled'}`, 'info');
-      debugLog(`Rogers Bank store transaction details in notes: ${isEnabled}`);
-    },
-    false, // Don't show Enabled/Disabled label
-  );
-
-  transactionDetailsSetting.appendChild(transactionDetailsLabel);
-  transactionDetailsSetting.appendChild(transactionDetailsToggle);
-  txSettingsContainer.appendChild(transactionDetailsSetting);
-  txSettingsSection.appendChild(txSettingsContainer);
-  // Note: txSettingsSection is appended later, after Account Mappings
-
-  // Account Mappings Section
+  // Account Mappings Section using generic account cards
   const mappingsSection = createSection('Account Mappings', '🔗', 'Rogers Bank to Monarch account mappings');
-  const mappingsData = getStorageData(STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX);
-  const mappingsCards = createAccountMappingCards(mappingsData, (key) => {
-    // Delete the account mapping
-    GM_deleteValue(key);
-    // Also clear all related Rogers Bank settings (except category mappings)
-    const deletedCount = clearRogersBankSettings();
-    toast.show(`Account mapping deleted and ${deletedCount} related settings cleared`, 'info');
-    debugLog(`Deleted Rogers Bank account mapping and ${deletedCount} related settings`);
-    renderTabContent(container, 'rogersbank');
-  }, 'Rogers Bank', 'rogersbank');
-  mappingsSection.appendChild(mappingsCards);
 
-  // Uploaded Transactions Section
-  const transactionsSection = createSection('Uploaded Transactions', '📋', 'Individual transaction references that have been uploaded');
-  const transactionsTable = createTransactionsManagementTable();
-  transactionsSection.appendChild(transactionsTable);
+  // Get accounts from unified account service (handles migration from legacy storage)
+  const accounts = accountService.getAccounts(INTEGRATIONS.ROGERSBANK);
+
+  const accountCards = createGenericAccountCards(INTEGRATIONS.ROGERSBANK, accounts, () => {
+    // Refresh callback
+    renderTabContent(container, 'rogersbank');
+  });
+  mappingsSection.appendChild(accountCards);
+
+  container.appendChild(mappingsSection);
 
   // Category Mappings Section
   const categorySection = createSection('Category Mappings', '🏷️', 'Bank category to Monarch category mappings');
@@ -916,9 +880,6 @@ function renderRogersBankTab(container) {
     categorySection.appendChild(deleteAllContainer);
   }
 
-  container.appendChild(mappingsSection);
-  container.appendChild(txSettingsSection);
-  container.appendChild(transactionsSection);
   container.appendChild(categorySection);
 }
 
@@ -1196,9 +1157,11 @@ function createSection(title, icon, description) {
 
 /**
  * Gets stored data based on prefix
+ * @deprecated Will be removed in Phase 7 cleanup
  * @param {string} prefix - Storage key prefix
  * @returns {Array} Array of [key, displayKey, value] tuples
  */
+// eslint-disable-next-line no-unused-vars
 function getStorageData(prefix) {
   const allKeys = GM_listValues();
   const data = [];
@@ -1474,12 +1437,14 @@ function createToggleSwitch(isEnabled, onChange, showLabel = true) {
 
 /**
  * Creates account mapping cards (for Monarch account mappings)
+ * @deprecated Will be removed in Phase 7 cleanup - use createGenericAccountCards instead
  * @param {Array} data - Array of [key, displayKey, value] tuples
  * @param {Function} onDelete - Delete handler
  * @param {string} institutionName - Institution name for logo fallback
  * @param {string} institutionType - Type of institution for last update date lookup
  * @returns {HTMLElement} Cards container element
  */
+// eslint-disable-next-line no-unused-vars
 function createAccountMappingCards(data, onDelete, institutionName, institutionType) {
   if (data.length === 0) {
     const emptyMessage = document.createElement('p');
@@ -1920,8 +1885,10 @@ function createDataTable(headers, data, onDelete, isJsonValue = false) {
 
 /**
  * Creates an enhanced table for managing individual transaction references
+ * @deprecated Will be removed in Phase 7 cleanup - use renderTransactionsManagementSection instead
  * @returns {HTMLElement} Transaction management table element
  */
+// eslint-disable-next-line no-unused-vars
 function createTransactionsManagementTable() {
   const container = document.createElement('div');
   container.style.cssText = 'margin: 10px 0;';
@@ -2367,6 +2334,7 @@ function createTransactionsManagementTable() {
 
 /**
  * Deletes selected transaction references
+ * @deprecated Will be removed in Phase 7 cleanup
  * @param {Array<HTMLInputElement>} selectedCheckboxes - Array of selected checkboxes
  */
 function deleteSelectedTransactionRefs(selectedCheckboxes) {
