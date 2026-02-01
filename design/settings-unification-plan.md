@@ -10,7 +10,7 @@ This document tracks the progress of unifying the settings UI across all integra
 - Enable/disable toggle per account
 - Expandable account cards with settings
 - Debug information section (editable JSON)
-- Transaction management (for integrations with deduplication)
+- Transaction management per account (for integrations with deduplication)
 
 ---
 
@@ -21,9 +21,9 @@ This document tracks the progress of unifying the settings UI across all integra
 | Integration | Storage Pattern | Account Settings | Transaction Tracking |
 |-------------|-----------------|------------------|---------------------|
 | **Wealthsimple** | ✅ Consolidated `ACCOUNTS_LIST` | ✅ Per-account | ✅ Array in account object |
-| **Questrade** | ⚠️ Mixed (see note below) | ❌ Global only | ✅ Separate prefix keys |
+| **Questrade** | ⚠️ Mixed (see note below) | ❌ Global only | ❌ Separate prefix keys |
 | **CanadaLife** | ❌ Prefix-based keys | ❌ Global only | ❌ N/A (balance only) |
-| **Rogers Bank** | ❌ Prefix-based keys | ❌ Global only | ✅ Separate prefix keys |
+| **Rogers Bank** | ❌ Prefix-based keys | ❌ Global only | ❌ Separate prefix keys |
 
 ### ⚠️ Questrade Storage Issue (Discovered & Fixed in v5.58.2)
 
@@ -57,6 +57,18 @@ This document tracks the progress of unifying the settings UI across all integra
 | Credit Limit | ✅ (credit cards) | ❌ | ❌ | ✅ |
 | Holdings | ✅ | ✅ | ❌ | ❌ |
 
+### Storage Size Analysis
+
+**Concern:** Will consolidated storage with transaction refs hit size limits?
+
+**Analysis:**
+- Userscript storage (GM_setValue) uses localStorage: ~5-10MB per domain
+- Each transaction entry: `{ id: "ref123456789", date: "2024-01-15" }` ≈ 50-60 bytes
+- **1000 transactions × 10 accounts ≈ 500-600 KB** (well within limits)
+- Default retention: 91 days / 1000 count keeps storage bounded
+
+**Conclusion:** ✅ No storage size concerns. Consolidated approach is safe.
+
 ---
 
 ## Implementation Phases
@@ -89,71 +101,60 @@ Update settings modal to use capabilities and unified account service.
 - [x] Create generic `createGenericAccountCards()` function based on Wealthsimple pattern
 - [x] Refactor `renderQuestradeTab()` to use generic cards
 - [x] Refactor `renderCanadaLifeTab()` to use generic cards
-- [ ] Refactor `renderRogersBankTab()` to use generic cards (has custom transaction management UI)
+- [ ] **Refactor `renderRogersBankTab()` to use generic cards** ← CURRENT
 - [x] Enable/disable toggle per account (via `createToggleSwitch`)
 - [x] Update tests for refactored tabs
 
-#### Phase 3.2: Per-Account Settings
-- [ ] Add per-account settings toggles based on capabilities
-- [ ] Add debug information section with editable JSON
+#### Phase 3.2: Per-Account Transaction Settings & UI
+Move transaction settings and uploaded transactions management UI from global/separate sections into expanded account cards.
+
+- [ ] Move "Transaction Settings" section inside expanded account card
+- [ ] Move "Uploaded Transactions" management UI inside expanded account card (per-account)
+- [ ] Keep Category Mappings section global (shared across all accounts)
 - [ ] Update tests
 
-### Phase 4: Storage Migration
+### Phase 4: Storage Migration (Transaction Refs to Consolidated)
 **Status**: ⏳ Not Started
 
-Migrate each integration to consolidated structure with backward compatibility.
+Migrate transaction reference storage from per-key to consolidated account structure.
 
-#### Phase 4.1: CanadaLife Migration (Simplest)
-- [ ] Create CanadaLife account service module
-- [ ] Implement `getCanadaLifeAccounts()` with migration logic
-- [ ] Implement `updateAccountInList()` for CanadaLife
-- [ ] Implement `markAccountAsSkipped()` for CanadaLife
-- [ ] Add migration from prefix-based to consolidated storage
-- [ ] Update `canadalife-upload.js` to use new account service
-- [ ] Update settings UI to use new account service
+#### Phase 4.1: Rogers Bank Migration
+- [ ] Update `accountService.js` to support `uploadedTransactions` field
+- [ ] Add migration from `rogersbank_uploaded_refs_{id}` to consolidated accounts
+- [ ] Update `rogersbank-upload.js` to write to consolidated storage
+- [ ] Keep legacy keys read-only during migration period
 - [ ] Add tests for migration
-- [ ] Verify backward compatibility
 
 #### Phase 4.2: Questrade Migration
-- [ ] Create Questrade consolidated account service
-- [ ] Implement `getQuestradeAccounts()` with migration logic
-- [ ] Implement `updateAccountInList()` for Questrade
-- [ ] Implement `markAccountAsSkipped()` for Questrade
-- [ ] Add per-account settings (TX details in notes, retention)
-- [ ] Add migration from prefix-based to consolidated storage
-- [ ] Update Questrade services to use new account service
-- [ ] Update settings UI to use new account service
+- [ ] Add migration from `questrade_uploaded_orders_{id}` to consolidated accounts
+- [ ] Update Questrade services to write to consolidated storage
 - [ ] Add tests for migration
-- [ ] Verify backward compatibility
 
-#### Phase 4.3: Rogers Bank Migration (Most Complex)
-- [ ] Create Rogers Bank account service module
-- [ ] Implement `getRogersBankAccounts()` with migration logic
-- [ ] Implement `updateAccountInList()` for Rogers Bank
-- [ ] Implement `markAccountAsSkipped()` for Rogers Bank
-- [ ] Migrate global settings to per-account
-  - [ ] `ROGERSBANK_STORE_TX_DETAILS_IN_NOTES` → per-account
-  - [ ] `ROGERSBANK_TRANSACTION_RETENTION_DAYS` → per-account
-  - [ ] `ROGERSBANK_TRANSACTION_RETENTION_COUNT` → per-account
-- [ ] Add migration from prefix-based to consolidated storage
-- [ ] Update `rogersbank-upload.js` to use new account service
-- [ ] Update settings UI to use new account service
-- [ ] Add tests for migration
-- [ ] Verify backward compatibility
-
-### Phase 5: Uploaded Transactions Management UI
+### Phase 5: Add Transaction UI to Other Integrations
 **Status**: ⏳ Not Started
 
-Add transaction management section to all integrations with deduplication.
+Add transaction management UI to all integrations with deduplication (inside expanded account cards).
 
-- [ ] Create generic `createTransactionsManagementSection()` function
-- [ ] Add to Questrade settings (for orders)
-- [ ] Add to Wealthsimple settings (existing data, needs UI)
-- [ ] Ensure Rogers Bank uses the generic function
-- [ ] Add bulk operations (select all, delete selected, add)
-- [ ] Update tests
+- [ ] Add transactions management UI to Questrade account cards
+- [ ] Add transactions management UI to Wealthsimple account cards
+- [ ] Ensure consistent UI pattern across all integrations
 
-### Phase 6: Update Cline Rules for Integration Consistency
+### Phase 6: Code Cleanup
+**Status**: ⏳ Not Started
+
+After all integrations are migrated to the unified pattern, remove deprecated code.
+
+- [ ] Remove `createAccountMappingCards()` from settingsModal.js
+- [ ] Remove `createWealthsimpleAccountCards()` (replaced by generic)
+- [ ] Remove legacy per-key transaction storage functions (after migration period)
+- [ ] Remove legacy `getStorageData()` function if unused
+- [ ] Remove legacy render functions that were replaced
+- [ ] Clean up any duplicate helper functions
+- [ ] Remove unused imports
+- [ ] Run full test suite to verify no regressions
+- [ ] Update documentation to reflect final architecture
+
+### Phase 7: Update Cline Rules for Integration Consistency
 **Status**: ⏳ Not Started
 
 After achieving baseline consistency, update cline rules to maintain consistency for future work.
@@ -164,20 +165,6 @@ After achieving baseline consistency, update cline rules to maintain consistency
 - [ ] Document settings UI patterns (account cards, per-account settings)
 - [ ] Document migration requirements for storage changes
 - [ ] Add checklist for adding new integrations
-
-### Phase 7: Code Cleanup
-**Status**: ⏳ Not Started
-
-After all integrations are migrated to the unified pattern, remove deprecated code.
-
-- [ ] Remove `createAccountMappingCards()` from settingsModal.js
-- [ ] Remove `createWealthsimpleAccountCards()` (replaced by generic)
-- [ ] Remove legacy `getStorageData()` function if unused
-- [ ] Remove legacy render functions that were replaced
-- [ ] Clean up any duplicate helper functions
-- [ ] Remove unused imports
-- [ ] Run full test suite to verify no regressions
-- [ ] Update documentation to reflect final architecture
 
 ---
 
@@ -225,7 +212,7 @@ All integrations should use this structure:
     stripStoreNumbers: true, // Wealthsimple-specific
     includePendingTransactions: true, // Wealthsimple-specific
     
-    // Transaction tracking (for deduplication)
+    // Transaction tracking (for deduplication) - IN-ACCOUNT, NOT PER-KEY
     uploadedTransactions: [
       { id: "tx-1", date: "2024-01-10" },
       { id: "tx-2", date: "2024-01-11" },
@@ -243,3 +230,8 @@ All integrations should use this structure:
 ## Version History
 
 - **v1.0** (2026-01-27): Initial plan created
+- **v1.1** (2026-01-31): Updated plan to include:
+  - Storage size analysis (confirmed safe)
+  - Per-account transaction UI (moved from global to inside expanded cards)
+  - Transaction refs migration to consolidated structure
+  - Explicit phases for Rogers Bank and Questrade migration

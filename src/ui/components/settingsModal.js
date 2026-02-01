@@ -7,7 +7,7 @@ import { debugLog, getDefaultLookbackDays, validateLookbackVsRetention, getMinRe
 import { STORAGE, API, TRANSACTION_RETENTION_DEFAULTS } from '../../core/config';
 import { checkMonarchAuth } from '../../services/auth';
 import { checkQuestradeAuth } from '../../services/questrade/auth';
-import { isAccountSkipped, markAccountAsSkipped, getWealthsimpleAccounts } from '../../services/wealthsimple/account';
+import { markAccountAsSkipped, getWealthsimpleAccounts } from '../../services/wealthsimple/account';
 import toast from '../toast';
 import { createMonarchLoginLink } from './monarchLoginLink';
 import { getMonarchAccountTypeMapping } from '../../mappers/wealthsimple-account-types';
@@ -721,64 +721,6 @@ function renderCanadaLifeTab(container) {
 }
 
 /**
- * Clears all Rogers Bank settings except category mappings
- * @returns {number} Number of keys deleted
- */
-function clearRogersBankSettings() {
-  const allKeys = GM_listValues();
-  let deletedCount = 0;
-
-  // Fixed keys to delete
-  const fixedKeysToDelete = [
-    STORAGE.ROGERSBANK_AUTH_TOKEN,
-    STORAGE.ROGERSBANK_ACCOUNT_ID,
-    STORAGE.ROGERSBANK_CUSTOMER_ID,
-    STORAGE.ROGERSBANK_ACCOUNT_ID_ENCODED,
-    STORAGE.ROGERSBANK_CUSTOMER_ID_ENCODED,
-    STORAGE.ROGERSBANK_DEVICE_ID,
-    STORAGE.ROGERSBANK_LAST_UPDATED,
-    STORAGE.ROGERSBANK_FROM_DATE,
-    STORAGE.ROGERSBANK_STORE_TX_DETAILS_IN_NOTES,
-    STORAGE.ROGERSBANK_LOOKBACK_DAYS,
-    STORAGE.ROGERSBANK_TRANSACTION_RETENTION_DAYS,
-    STORAGE.ROGERSBANK_TRANSACTION_RETENTION_COUNT,
-    STORAGE.ROGERSBANK_ACCOUNTS_LIST,
-  ];
-
-  // Prefixes for dynamic keys to delete
-  const prefixesToDelete = [
-    STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX,
-    STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX,
-    STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX,
-    STORAGE.ROGERSBANK_LAST_CREDIT_LIMIT_PREFIX,
-    STORAGE.ROGERSBANK_BALANCE_CHECKPOINT_PREFIX,
-  ];
-
-  // Delete fixed keys
-  fixedKeysToDelete.forEach((key) => {
-    if (GM_getValue(key) !== undefined) {
-      GM_deleteValue(key);
-      deletedCount++;
-      debugLog(`Deleted Rogers Bank setting: ${key}`);
-    }
-  });
-
-  // Delete prefixed keys (except category mappings)
-  allKeys.forEach((key) => {
-    for (const prefix of prefixesToDelete) {
-      if (key.startsWith(prefix)) {
-        GM_deleteValue(key);
-        deletedCount++;
-        debugLog(`Deleted Rogers Bank setting: ${key}`);
-        break;
-      }
-    }
-  });
-
-  return deletedCount;
-}
-
-/**
  * Renders the Rogers Bank settings tab
  * @param {HTMLElement} container - Container element
  */
@@ -787,54 +729,19 @@ function renderRogersBankTab(container) {
   const lookbackSection = createLookbackPeriodSection('rogersbank');
   container.appendChild(lookbackSection);
 
-  // Transaction Settings Section
-  const txSettingsSection = createSection('Transaction Settings', '📝', 'Configure how transactions are uploaded');
-  const txSettingsContainer = document.createElement('div');
-  txSettingsContainer.style.cssText = 'margin: 10px 0;';
-
-  // Store transaction details in notes toggle
-  const transactionDetailsSetting = document.createElement('div');
-  transactionDetailsSetting.id = 'rogersbank-tx-details-setting';
-  transactionDetailsSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 12px 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e0e0e0;';
-
-  const transactionDetailsLabel = document.createElement('div');
-  transactionDetailsLabel.innerHTML = `
-    <div style="font-weight: 500; font-size: 14px; margin-bottom: 4px;">Store transaction details in notes</div>
-    <div style="font-size: 12px; color: #666;">When enabled, transaction type and reference number will be included in the Notes field</div>
-  `;
-
-  const currentValue = GM_getValue(STORAGE.ROGERSBANK_STORE_TX_DETAILS_IN_NOTES, false);
-  const transactionDetailsToggle = createToggleSwitch(
-    currentValue,
-    (isEnabled) => {
-      GM_setValue(STORAGE.ROGERSBANK_STORE_TX_DETAILS_IN_NOTES, isEnabled);
-      toast.show(`Transaction details in notes ${isEnabled ? 'enabled' : 'disabled'}`, 'info');
-      debugLog(`Rogers Bank store transaction details in notes: ${isEnabled}`);
-    },
-    false, // Don't show Enabled/Disabled label
-  );
-
-  transactionDetailsSetting.appendChild(transactionDetailsLabel);
-  transactionDetailsSetting.appendChild(transactionDetailsToggle);
-  txSettingsContainer.appendChild(transactionDetailsSetting);
-  txSettingsSection.appendChild(txSettingsContainer);
-  // Note: txSettingsSection is appended later, after Account Mappings
-
-  // Account Mappings Section
+  // Account Mappings Section using generic account cards
   const mappingsSection = createSection('Account Mappings', '🔗', 'Rogers Bank to Monarch account mappings');
-  const mappingsData = getStorageData(STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX);
-  const mappingsCards = createAccountMappingCards(mappingsData, (key) => {
-    // Delete the account mapping
-    GM_deleteValue(key);
-    // Also clear all related Rogers Bank settings (except category mappings)
-    const deletedCount = clearRogersBankSettings();
-    toast.show(`Account mapping deleted and ${deletedCount} related settings cleared`, 'info');
-    debugLog(`Deleted Rogers Bank account mapping and ${deletedCount} related settings`);
-    renderTabContent(container, 'rogersbank');
-  }, 'Rogers Bank', 'rogersbank');
-  mappingsSection.appendChild(mappingsCards);
 
-  // Uploaded Transactions Section
+  // Get accounts from unified account service (handles migration from legacy storage)
+  const accounts = accountService.getAccounts(INTEGRATIONS.ROGERSBANK);
+
+  const accountCards = createGenericAccountCards(INTEGRATIONS.ROGERSBANK, accounts, () => {
+    // Refresh callback
+    renderTabContent(container, 'rogersbank');
+  });
+  mappingsSection.appendChild(accountCards);
+
+  // Uploaded Transactions Section (global for now - will be moved per-account in later phase)
   const transactionsSection = createSection('Uploaded Transactions', '📋', 'Individual transaction references that have been uploaded');
   const transactionsTable = createTransactionsManagementTable();
   transactionsSection.appendChild(transactionsTable);
@@ -917,7 +824,6 @@ function renderRogersBankTab(container) {
   }
 
   container.appendChild(mappingsSection);
-  container.appendChild(txSettingsSection);
   container.appendChild(transactionsSection);
   container.appendChild(categorySection);
 }
@@ -1195,26 +1101,6 @@ function createSection(title, icon, description) {
 }
 
 /**
- * Gets stored data based on prefix
- * @param {string} prefix - Storage key prefix
- * @returns {Array} Array of [key, displayKey, value] tuples
- */
-function getStorageData(prefix) {
-  const allKeys = GM_listValues();
-  const data = [];
-
-  allKeys.forEach((key) => {
-    if (key.startsWith(prefix)) {
-      const displayKey = key.replace(prefix, '');
-      const value = GM_getValue(key, '');
-      data.push([key, displayKey, value]);
-    }
-  });
-
-  return data;
-}
-
-/**
  * Creates a confirmation dialog
  * @param {string} message - Confirmation message
  * @returns {Promise<boolean>} Promise that resolves to true if confirmed
@@ -1317,60 +1203,6 @@ function addAccountLogoFallback(container, institutionName) {
 }
 
 /**
- * Gets the last update date for an account based on institution type
- * @param {string} displayKey - Account display key (without prefix)
- * @param {string} institutionType - Type of institution ('questrade', 'canadalife', 'rogersbank')
- * @returns {string|null} Last update date or null if not found
- */
-function getLastUpdateDate(displayKey, institutionType) {
-  let storageKey;
-
-  switch (institutionType) {
-  case 'questrade':
-    storageKey = STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX + displayKey;
-    break;
-  case 'canadalife':
-    storageKey = STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX + displayKey;
-    break;
-  case 'rogersbank':
-    storageKey = STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX + displayKey;
-    break;
-  default:
-    return null;
-  }
-
-  return GM_getValue(storageKey, null);
-}
-
-/**
- * Clears the last update date for an account based on institution type
- * @param {string} displayKey - Account display key (without prefix)
- * @param {string} institutionType - Type of institution ('questrade', 'canadalife', 'rogersbank')
- * @param {Function} onClear - Callback function to execute after clearing
- */
-function clearLastUpdateDate(displayKey, institutionType, onClear) {
-  let storageKey;
-
-  switch (institutionType) {
-  case 'questrade':
-    storageKey = STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX + displayKey;
-    break;
-  case 'canadalife':
-    storageKey = STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX + displayKey;
-    break;
-  case 'rogersbank':
-    storageKey = STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX + displayKey;
-    break;
-  default:
-    return;
-  }
-
-  GM_deleteValue(storageKey);
-  toast.show('Last update date cleared', 'info');
-  if (onClear) onClear();
-}
-
-/**
  * Formats a date for display
  * @param {string} dateValue - Date value to format
  * @returns {string} Formatted date string
@@ -1467,329 +1299,6 @@ function createToggleSwitch(isEnabled, onChange, showLabel = true) {
     e.preventDefault(); // Prevent default label behavior to avoid double-toggle
     checkbox.checked = !checkbox.checked;
     checkbox.dispatchEvent(new Event('change'));
-  });
-
-  return container;
-}
-
-/**
- * Creates account mapping cards (for Monarch account mappings)
- * @param {Array} data - Array of [key, displayKey, value] tuples
- * @param {Function} onDelete - Delete handler
- * @param {string} institutionName - Institution name for logo fallback
- * @param {string} institutionType - Type of institution for last update date lookup
- * @returns {HTMLElement} Cards container element
- */
-function createAccountMappingCards(data, onDelete, institutionName, institutionType) {
-  if (data.length === 0) {
-    const emptyMessage = document.createElement('p');
-    emptyMessage.textContent = 'No account mappings found.';
-    emptyMessage.style.cssText = 'color: #666; font-style: italic; margin: 10px 0;';
-    return emptyMessage;
-  }
-
-  const container = document.createElement('div');
-  container.style.cssText = 'margin: 10px 0;';
-
-  data.forEach(([key, displayKey, value]) => {
-    let accountData = null;
-    try {
-      accountData = JSON.parse(value);
-    } catch (error) {
-      debugLog('Error parsing account data:', error);
-      return; // Skip invalid entries
-    }
-
-    // Create card container
-    const card = document.createElement('div');
-    card.style.cssText = `
-      border: 1px solid #e0e0e0;
-      border-radius: 8px;
-      margin-bottom: 15px;
-      overflow: hidden;
-      transition: all 0.2s;
-    `;
-
-    // Check if account is skipped (from accounts list)
-    const accountId = displayKey;
-    const isSkipped = institutionType === 'wealthsimple' && isAccountSkipped(accountId);
-
-    // Create card header (always visible)
-    const cardHeader = document.createElement('div');
-    cardHeader.style.cssText = `
-      display: flex;
-      align-items: center;
-      padding: 15px;
-      background-color: ${isSkipped ? '#fafafa' : '#fff'};
-      cursor: pointer;
-      transition: background-color 0.2s;
-    `;
-
-    // Expand/collapse icon (moved to be first, before logo)
-    const expandIcon = document.createElement('div');
-    expandIcon.style.cssText = `
-      margin-right: 10px;
-      font-size: 1.2em;
-      color: ${isSkipped ? '#999' : '#666'};
-      transition: transform 0.2s;
-      cursor: pointer;
-      flex-shrink: 0;
-      transform: rotate(270deg);
-    `;
-    expandIcon.textContent = '▼';
-    cardHeader.appendChild(expandIcon);
-
-    // Logo container
-    const logoContainer = document.createElement('div');
-    logoContainer.style.cssText = `margin-right: 15px; flex-shrink: 0; ${isSkipped ? 'opacity: 0.5;' : ''}`;
-
-    // Use account logo or fallback
-    if (accountData.logoUrl) {
-      try {
-        GM_addElement(logoContainer, 'img', {
-          src: accountData.logoUrl,
-          style: 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;',
-        });
-      } catch (error) {
-        // Add letter fallback if logo fails
-        addAccountLogoFallback(logoContainer, institutionName);
-      }
-    } else if (institutionType === 'wealthsimple') {
-      // Use Google Favicon API for Wealthsimple accounts as fallback
-      try {
-        GM_addElement(logoContainer, 'img', {
-          src: 'https://www.google.com/s2/favicons?domain=wealthsimple.com&sz=128',
-          style: 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;',
-        });
-      } catch (error) {
-        // Add letter fallback if favicon fails
-        addAccountLogoFallback(logoContainer, institutionName);
-      }
-    } else if (institutionType === 'rogersbank') {
-      // Use Google Favicon API for Rogers Bank accounts as fallback
-      try {
-        GM_addElement(logoContainer, 'img', {
-          src: 'https://www.google.com/s2/favicons?domain=rogersbank.com&sz=128',
-          style: 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;',
-        });
-      } catch (error) {
-        // Add letter fallback if favicon fails
-        addAccountLogoFallback(logoContainer, institutionName);
-      }
-    } else {
-      // Add letter fallback for other institutions
-      addAccountLogoFallback(logoContainer, institutionName);
-    }
-    cardHeader.appendChild(logoContainer);
-
-    // Account info section
-    const infoContainer = document.createElement('div');
-    infoContainer.style.cssText = 'flex-grow: 1;';
-
-    // Account name
-    const nameDiv = document.createElement('div');
-    nameDiv.className = 'account-name';
-    nameDiv.style.cssText = `font-weight: bold; font-size: 1.1em; margin-bottom: 2px; color: ${isSkipped ? '#999' : '#333'};`;
-    nameDiv.textContent = accountData.displayName || 'Unknown Account';
-    infoContainer.appendChild(nameDiv);
-
-    // Account subtype
-    if (accountData.subtype?.display) {
-      const subtypeDiv = document.createElement('div');
-      subtypeDiv.style.cssText = 'font-size: 0.9em; color: #666; margin-bottom: 2px;';
-      subtypeDiv.textContent = accountData.subtype.display;
-      infoContainer.appendChild(subtypeDiv);
-    }
-
-    // Account balance (if available)
-    if (accountData.currentBalance !== undefined) {
-      const balanceDiv = document.createElement('div');
-      balanceDiv.style.cssText = 'font-size: 0.85em; color: #555;';
-      balanceDiv.textContent = `Balance: ${new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD',
-      }).format(accountData.currentBalance)}`;
-      infoContainer.appendChild(balanceDiv);
-    }
-
-    // Last update date (if available and institution type provided)
-    if (institutionType) {
-      const lastUpdateDate = getLastUpdateDate(displayKey, institutionType);
-      const lastUpdateDiv = document.createElement('div');
-      lastUpdateDiv.style.cssText = 'font-size: 0.8em; color: #555; margin-bottom: 2px; display: flex; align-items: center; gap: 8px;';
-
-      const dateText = document.createElement('span');
-      dateText.textContent = `Last Updated: ${formatLastUpdateDate(lastUpdateDate)}`;
-      lastUpdateDiv.appendChild(dateText);
-
-      // Add clear button if date exists
-      if (lastUpdateDate) {
-        const clearButton = document.createElement('button');
-        clearButton.textContent = 'Clear';
-        clearButton.style.cssText = `
-          background: #6c757d;
-          color: white;
-          border: none;
-          border-radius: 3px;
-          padding: 2px 6px;
-          font-size: 10px;
-          cursor: pointer;
-          transition: background-color 0.2s;
-        `;
-        clearButton.addEventListener('click', (e) => {
-          e.stopPropagation(); // Prevent card toggle
-          clearLastUpdateDate(displayKey, institutionType, () => {
-            // Refresh the current tab
-            const tabContainer = document.querySelector('.settings-tab-content');
-            if (tabContainer) {
-              renderTabContent(tabContainer, institutionType);
-            }
-          });
-        });
-        clearButton.addEventListener('mouseover', () => {
-          clearButton.style.backgroundColor = '#5a6268';
-        });
-        clearButton.addEventListener('mouseout', () => {
-          clearButton.style.backgroundColor = '#6c757d';
-        });
-        lastUpdateDiv.appendChild(clearButton);
-      }
-
-      infoContainer.appendChild(lastUpdateDiv);
-    }
-
-    // Mapping info (institution account name)
-    const mappingDiv = document.createElement('div');
-    mappingDiv.style.cssText = 'font-size: 0.8em; color: #888; margin-top: 5px;';
-    mappingDiv.textContent = `Mapped from: ${displayKey}`;
-    infoContainer.appendChild(mappingDiv);
-
-    cardHeader.appendChild(infoContainer);
-
-    // Add toggle switch for Wealthsimple accounts only (to enable/disable skip)
-    if (institutionType === 'wealthsimple') {
-      const toggleContainer = document.createElement('div');
-      toggleContainer.style.cssText = 'margin-left: auto; margin-right: 10px; flex-shrink: 0;';
-
-      const toggle = createToggleSwitch(!isSkipped, (isEnabled) => {
-        // Update skip status (inverted: enabled = not skipped)
-        const shouldSkip = !isEnabled;
-        const success = markAccountAsSkipped(accountId, shouldSkip);
-
-        if (success) {
-          // Update visual styling immediately
-          cardHeader.style.backgroundColor = shouldSkip ? '#fafafa' : '#fff';
-          nameDiv.style.color = shouldSkip ? '#999' : '#333';
-          expandIcon.style.color = shouldSkip ? '#999' : '#666';
-          logoContainer.style.opacity = shouldSkip ? '0.5' : '1';
-
-          // Show confirmation
-          const status = shouldSkip ? 'disabled' : 'enabled';
-          toast.show(`Account ${accountData.displayName} ${status}`, 'info');
-
-          // Optionally refresh the tab to ensure consistency
-          setTimeout(() => {
-            const tabContainer = document.querySelector('.settings-tab-content');
-            if (tabContainer) {
-              renderTabContent(tabContainer, institutionType);
-            }
-          }, 1500);
-        } else {
-          toast.show('Failed to update account status', 'error');
-        }
-      });
-
-      toggleContainer.appendChild(toggle);
-      cardHeader.appendChild(toggleContainer);
-
-      // Stop propagation on toggle clicks to prevent card expansion
-      toggleContainer.addEventListener('click', (e) => {
-        e.stopPropagation();
-      });
-    }
-
-    // Delete button (changed from ✕ to trash icon 🗑️)
-    const deleteButton = document.createElement('button');
-    deleteButton.textContent = '🗑️';
-    deleteButton.style.cssText = `
-      margin-left: 10px;
-      background: transparent;
-      color: #dc3545;
-      border: none;
-      border-radius: 50%;
-      width: 24px;
-      height: 24px;
-      cursor: pointer;
-      font-size: 24px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.2s;
-    `;
-    deleteButton.addEventListener('click', async (e) => {
-      e.stopPropagation(); // Prevent card toggle
-      const confirmed = await showConfirmDialog(
-        `Are you sure you want to delete the mapping for "${displayKey}"?\n\nThis will unlink the account from Monarch.`,
-      );
-      if (confirmed) {
-        onDelete(key);
-      }
-    });
-    deleteButton.addEventListener('mouseover', () => {
-      deleteButton.style.backgroundColor = '#f8d7da';
-    });
-    deleteButton.addEventListener('mouseout', () => {
-      deleteButton.style.backgroundColor = 'transparent';
-    });
-    cardHeader.appendChild(deleteButton);
-
-    // Expandable content (JSON display)
-    const expandableContent = document.createElement('div');
-    expandableContent.style.cssText = 'display: none; padding: 15px; background-color: #f8f9fa; border-top: 1px solid #e0e0e0;';
-
-    const jsonContainer = document.createElement('pre');
-    jsonContainer.style.cssText = `
-      background-color: #2d3748;
-      color: #e2e8f0;
-      padding: 12px;
-      border-radius: 4px;
-      font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
-      font-size: 12px;
-      line-height: 1.4;
-      overflow-x: auto;
-      margin: 0;
-      white-space: pre-wrap;
-      word-break: break-word;
-    `;
-    jsonContainer.textContent = JSON.stringify(accountData, null, 2);
-    expandableContent.appendChild(jsonContainer);
-
-    card.appendChild(cardHeader);
-    card.appendChild(expandableContent);
-
-    // Toggle functionality
-    let isExpanded = false;
-    const toggleCard = () => {
-      isExpanded = !isExpanded;
-      expandableContent.style.display = isExpanded ? 'block' : 'none';
-      expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(270deg)';
-    };
-
-    cardHeader.addEventListener('click', (e) => {
-      // Don't toggle if delete button was clicked
-      if (e.target === deleteButton) return;
-      toggleCard();
-    });
-
-    // Hover effects
-    cardHeader.addEventListener('mouseover', () => {
-      cardHeader.style.backgroundColor = '#f8f9fa';
-    });
-    cardHeader.addEventListener('mouseout', () => {
-      cardHeader.style.backgroundColor = '#fff';
-    });
-
-    container.appendChild(card);
   });
 
   return container;
