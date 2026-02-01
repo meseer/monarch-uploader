@@ -778,19 +778,23 @@ export async function uploadRogersBankToMonarch() {
     progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Processing...');
 
     if (txResult.success && allApprovedTx.length > 0) {
-      if (allApprovedTx.length === 0) {
-        progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', 'No approved');
-        progressDialog.hideCancel();
-        progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
-        return { success: true, message: 'Balance uploaded. No approved transactions.' };
-      }
-
       progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Checking duplicates...');
       const filterResult = filterDuplicateTransactions(allApprovedTx, rogersAccountId);
 
       if (filterResult.transactions.length === 0) {
         const msg = filterResult.duplicateCount > 0 ? `${filterResult.duplicateCount} already uploaded` : 'No new';
         progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', msg);
+
+        // Increment sync count and cleanup legacy storage if ready (even when all transactions are duplicates)
+        const newSyncCount = accountService.incrementSyncCount(INTEGRATIONS.ROGERSBANK, rogersAccountId);
+        debugLog(`Rogers Bank sync count for ${rogersAccountId}: ${newSyncCount}`);
+        if (accountService.isReadyForLegacyCleanup(INTEGRATIONS.ROGERSBANK, rogersAccountId)) {
+          const cleanupResult = accountService.cleanupLegacyStorage(INTEGRATIONS.ROGERSBANK, rogersAccountId);
+          if (cleanupResult.cleaned && cleanupResult.keysDeleted > 0) {
+            debugLog(`Cleaned up ${cleanupResult.keysDeleted} legacy storage keys for Rogers Bank account ${rogersAccountId}`);
+          }
+        }
+
         progressDialog.hideCancel();
         progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
         return { success: true, message: `Balance uploaded. ${msg}` };
