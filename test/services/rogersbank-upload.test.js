@@ -134,8 +134,9 @@ jest.mock('../../src/mappers/category', () => ({
 }));
 
 jest.mock('../../src/utils/transactionStorage', () => ({
-  getUploadedTransactionIds: jest.fn(() => []),
-  saveUploadedTransactions: jest.fn(),
+  getTransactionIdsFromArray: jest.fn(() => new Set()),
+  mergeAndRetainTransactions: jest.fn((existing, newRefs) => [...(existing || []), ...newRefs]),
+  getRetentionSettingsFromAccount: jest.fn(() => ({ retentionDays: 91, retentionCount: 1000 })),
 }));
 
 jest.mock('../../src/ui/components/categorySelector', () => ({
@@ -182,8 +183,7 @@ describe('Rogers Bank Upload Service', () => {
   let showMonarchCategorySelector;
   let calculateFromDateWithLookback;
   let saveLastUploadDate;
-  let getUploadedTransactionIds;
-  let saveUploadedTransactions;
+  let accountServiceMock;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -202,9 +202,9 @@ describe('Rogers Bank Upload Service', () => {
     });
 
     // Default: accountService returns valid account mapping
-    const accountServiceMock = jest.requireMock('../../src/services/common/accountService').default;
+    accountServiceMock = jest.requireMock('../../src/services/common/accountService').default;
     accountServiceMock.getMonarchAccountMapping.mockReturnValue({ id: 'monarch123', displayName: 'Rogers Card' });
-    accountServiceMock.getAccountData.mockReturnValue({ lastSyncedCreditLimit: null, balanceCheckpoint: null });
+    accountServiceMock.getAccountData.mockReturnValue({ lastSyncedCreditLimit: null, balanceCheckpoint: null, uploadedTransactions: [] });
     accountServiceMock.upsertAccount.mockReturnValue(true);
     accountServiceMock.updateAccountInList.mockReturnValue(true);
     accountServiceMock.incrementSyncCount.mockReturnValue(1);
@@ -220,10 +220,9 @@ describe('Rogers Bank Upload Service', () => {
     calculateFromDateWithLookback = jest.requireMock('../../src/core/utils').calculateFromDateWithLookback;
     saveLastUploadDate = jest.requireMock('../../src/core/utils').saveLastUploadDate;
 
-    // Get transaction storage mocks
+    // Reset getTransactionIdsFromArray to return empty Set by default
     const transactionStorageMock = jest.requireMock('../../src/utils/transactionStorage');
-    getUploadedTransactionIds = transactionStorageMock.getUploadedTransactionIds;
-    saveUploadedTransactions = transactionStorageMock.saveUploadedTransactions;
+    transactionStorageMock.getTransactionIdsFromArray.mockReturnValue(new Set());
 
     // Setup DOM mocks
     global.document.querySelector.mockReturnValue({
@@ -570,8 +569,9 @@ describe('Rogers Bank Upload Service', () => {
         return null;
       });
 
-      // Mock that REF1 is already uploaded
-      getUploadedTransactionIds.mockReturnValue(['REF1']);
+      // Mock that REF1 is already uploaded (via consolidated storage)
+      const transactionStorageMock = jest.requireMock('../../src/utils/transactionStorage');
+      transactionStorageMock.getTransactionIdsFromArray.mockReturnValue(new Set(['REF1']));
 
       fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
       monarchApi.uploadBalance.mockResolvedValue(true);
@@ -638,8 +638,9 @@ describe('Rogers Bank Upload Service', () => {
         return null;
       });
 
-      // Mock that both REF1 and REF2 are already uploaded
-      getUploadedTransactionIds.mockReturnValue(['REF1', 'REF2']);
+      // Mock that both REF1 and REF2 are already uploaded (via consolidated storage)
+      const transactionStorageMock = jest.requireMock('../../src/utils/transactionStorage');
+      transactionStorageMock.getTransactionIdsFromArray.mockReturnValue(new Set(['REF1', 'REF2']));
 
       fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
       monarchApi.uploadBalance.mockResolvedValue(true);
@@ -693,9 +694,6 @@ describe('Rogers Bank Upload Service', () => {
       globalThis.GM_getValue.mockReturnValue(
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
       );
-
-      // Explicitly mock no uploaded transactions
-      getUploadedTransactionIds.mockReturnValue([]);
 
       fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
       monarchApi.uploadBalance.mockResolvedValue(true);
@@ -760,9 +758,6 @@ describe('Rogers Bank Upload Service', () => {
       globalThis.GM_getValue.mockReturnValue(
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
       );
-
-      // Explicitly mock no uploaded transactions
-      getUploadedTransactionIds.mockReturnValue([]);
 
       fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
       monarchApi.uploadBalance.mockResolvedValue(true);
@@ -848,9 +843,6 @@ describe('Rogers Bank Upload Service', () => {
       globalThis.GM_getValue.mockReturnValue(
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
       );
-
-      // Explicitly mock no uploaded transactions
-      getUploadedTransactionIds.mockReturnValue([]);
 
       fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
       monarchApi.uploadBalance.mockResolvedValue(true);
@@ -1401,9 +1393,6 @@ describe('Rogers Bank Upload Service', () => {
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
       );
 
-      // Explicitly mock no uploaded transactions
-      getUploadedTransactionIds.mockReturnValue([]);
-
       fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
       monarchApi.uploadBalance.mockResolvedValue(true);
 
@@ -1455,9 +1444,6 @@ describe('Rogers Bank Upload Service', () => {
       globalThis.GM_getValue.mockReturnValue(
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
       );
-
-      // Explicitly mock no uploaded transactions
-      getUploadedTransactionIds.mockReturnValue([]);
 
       fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
       monarchApi.uploadBalance.mockResolvedValue(true);
@@ -1513,9 +1499,6 @@ describe('Rogers Bank Upload Service', () => {
       globalThis.GM_getValue.mockReturnValue(
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
       );
-
-      // Explicitly mock no uploaded transactions
-      getUploadedTransactionIds.mockReturnValue([]);
 
       fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
       monarchApi.uploadBalance.mockResolvedValue(true);
@@ -1581,7 +1564,6 @@ describe('Rogers Bank Upload Service', () => {
       });
 
       // Mock no account mapping to trigger account selector
-      const accountServiceMock = jest.requireMock('../../src/services/common/accountService').default;
       accountServiceMock.getMonarchAccountMapping.mockReturnValue(null);
 
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
@@ -1653,7 +1635,6 @@ describe('Rogers Bank Upload Service', () => {
       });
 
       // Mock no account mapping to trigger account selector
-      const accountServiceMock = jest.requireMock('../../src/services/common/accountService').default;
       accountServiceMock.getMonarchAccountMapping.mockReturnValue(null);
 
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
@@ -1720,7 +1701,6 @@ describe('Rogers Bank Upload Service', () => {
       });
 
       // Mock no account mapping to trigger account selector
-      const accountServiceMock = jest.requireMock('../../src/services/common/accountService').default;
       accountServiceMock.getMonarchAccountMapping.mockReturnValue(null);
 
       // User selects reconstruct balance
@@ -1825,7 +1805,6 @@ describe('Rogers Bank Upload Service', () => {
       });
 
       // Mock no account mapping to trigger account selector
-      const accountServiceMock = jest.requireMock('../../src/services/common/accountService').default;
       accountServiceMock.getMonarchAccountMapping.mockReturnValue(null);
 
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
@@ -1878,7 +1857,7 @@ describe('Rogers Bank Upload Service', () => {
   });
 
   describe('uploadRogersBankToMonarch - Data Storage', () => {
-    test('should save uploaded transaction references', async () => {
+    test('should save uploaded transaction references to consolidated storage', async () => {
       getRogersBankCredentials.mockReturnValue({
         authToken: 'test-token',
         accountId: 'test-account',
@@ -1893,9 +1872,6 @@ describe('Rogers Bank Upload Service', () => {
       globalThis.GM_getValue.mockReturnValue(
         JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
       );
-
-      // Explicitly mock no uploaded transactions
-      getUploadedTransactionIds.mockReturnValue([]);
 
       fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
       monarchApi.uploadBalance.mockResolvedValue(true);
@@ -1934,12 +1910,13 @@ describe('Rogers Bank Upload Service', () => {
 
       await uploadRogersBankToMonarch();
 
-      // Verify saveUploadedTransactions was called with the new API
-      expect(saveUploadedTransactions).toHaveBeenCalledWith(
-        'test-account',
-        ['REF1', 'REF2'],
+      // Verify accountService.updateAccountInList was called with uploadedTransactions
+      expect(accountServiceMock.updateAccountInList).toHaveBeenCalledWith(
         'rogersbank',
-        expect.any(String), // transaction date
+        'test-account',
+        expect.objectContaining({
+          uploadedTransactions: expect.any(Array),
+        }),
       );
       expect(saveLastUploadDate).toHaveBeenCalledWith(
         expect.any(String),
@@ -1948,7 +1925,7 @@ describe('Rogers Bank Upload Service', () => {
       );
     });
 
-    test('should preserve existing uploaded references', async () => {
+    test('should merge with existing uploaded references', async () => {
       getRogersBankCredentials.mockReturnValue({
         authToken: 'test-token',
         accountId: 'test-account',
@@ -1969,8 +1946,14 @@ describe('Rogers Bank Upload Service', () => {
         return null;
       });
 
-      // Mock existing uploaded transactions
-      getUploadedTransactionIds.mockReturnValue(['OLD_REF1', 'OLD_REF2']);
+      // Mock existing uploaded transactions in consolidated storage
+      accountServiceMock.getAccountData.mockReturnValue({
+        uploadedTransactions: ['OLD_REF1', 'OLD_REF2'],
+      });
+
+      // Mock that OLD_REF1 and OLD_REF2 are already uploaded
+      const transactionStorageMock = jest.requireMock('../../src/utils/transactionStorage');
+      transactionStorageMock.getTransactionIdsFromArray.mockReturnValue(new Set(['OLD_REF1', 'OLD_REF2']));
 
       fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
       monarchApi.uploadBalance.mockResolvedValue(true);
@@ -2001,12 +1984,13 @@ describe('Rogers Bank Upload Service', () => {
 
       await uploadRogersBankToMonarch();
 
-      // Verify saveUploadedTransactions was called with the new transaction
-      expect(saveUploadedTransactions).toHaveBeenCalledWith(
-        'test-account',
-        ['NEW_REF1'],
+      // Verify accountService.updateAccountInList was called with merged transactions
+      expect(accountServiceMock.updateAccountInList).toHaveBeenCalledWith(
         'rogersbank',
-        expect.any(String), // transaction date
+        'test-account',
+        expect.objectContaining({
+          uploadedTransactions: expect.any(Array),
+        }),
       );
     });
   });
@@ -2203,7 +2187,6 @@ describe('Rogers Bank Upload Service', () => {
       });
 
       // Mock no account mapping to trigger account selector
-      const accountServiceMock = jest.requireMock('../../src/services/common/accountService').default;
       accountServiceMock.getMonarchAccountMapping.mockReturnValue(null);
 
       // User selects reconstruct balance

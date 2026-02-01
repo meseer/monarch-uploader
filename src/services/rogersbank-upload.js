@@ -18,7 +18,11 @@ import { showDatePickerWithOptionsPromise } from '../ui/components/datePicker';
 import { applyCategoryMapping, saveUserCategorySelection, calculateAllCategorySimilarities } from '../mappers/category';
 import { showMonarchCategorySelector } from '../ui/components/categorySelector';
 import { showProgressDialog } from '../ui/components/progressDialog';
-import { getUploadedTransactionIds, saveUploadedTransactions } from '../utils/transactionStorage';
+import {
+  getTransactionIdsFromArray,
+  mergeAndRetainTransactions,
+  getRetentionSettingsFromAccount,
+} from '../utils/transactionStorage';
 import accountService from './common/accountService';
 import { INTEGRATIONS } from '../core/integrationCapabilities';
 
@@ -61,20 +65,51 @@ function getEndOfCurrentMonth() {
 
 /**
  * Filter out already uploaded transactions
+ * Uses consolidated storage for uploaded transaction IDs
  * @param {Array} transactions - Array of transactions
  * @param {string} accountId - Rogers account ID
  * @returns {Object} Filtered transactions and statistics
  */
 function filterDuplicateTransactions(transactions, accountId) {
-  const uploadedIds = getUploadedTransactionIds(accountId, 'rogersbank');
-  const uploadedRefs = new Set(uploadedIds);
+  // Read from consolidated storage (uploadedTransactions in account object)
+  const accountData = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, accountId);
+  const uploadedRefs = getTransactionIdsFromArray(accountData?.uploadedTransactions || []);
   const originalCount = transactions.length;
 
-  const newTransactions = transactions.filter(
-    (transaction) => !uploadedRefs.has(transaction.referenceNumber),
-  );
+  // DIAGNOSTIC: Log stored transaction IDs for debugging
+  debugLog(`[DEDUP DEBUG] Account: ${accountId}`);
+  debugLog(`[DEDUP DEBUG] Stored transaction IDs count: ${uploadedRefs.size}`);
+  if (uploadedRefs.size > 0) {
+    debugLog('[DEDUP DEBUG] Sample stored IDs (first 5):', Array.from(uploadedRefs).slice(0, 5));
+  }
+
+  const newTransactions = transactions.filter((transaction) => {
+    const refNum = transaction.referenceNumber;
+    const isNew = !uploadedRefs.has(refNum);
+
+    // DIAGNOSTIC: Log each transaction being checked if it passes filter
+    if (isNew) {
+      debugLog(`[DEDUP DEBUG] Transaction PASSED filter - refNum: "${refNum}" (type: ${typeof refNum}), date: ${transaction.activityDate}, amount: ${transaction.transactionAmount}, merchant: ${transaction.merchant?.name || 'N/A'}`);
+    }
+
+    return isNew;
+  });
 
   const duplicateCount = originalCount - newTransactions.length;
+
+  // DIAGNOSTIC: Summary logging
+  debugLog(`[DEDUP DEBUG] Filter summary: ${originalCount} total, ${duplicateCount} duplicates, ${newTransactions.length} new`);
+
+  if (newTransactions.length > 0) {
+    debugLog('[DEDUP DEBUG] NEW transactions that will be uploaded:',
+      newTransactions.map((tx) => ({
+        refNum: tx.referenceNumber,
+        refNumType: typeof tx.referenceNumber,
+        date: tx.activityDate,
+        amount: tx.transactionAmount,
+        merchant: tx.merchant?.name,
+      })));
+  }
 
   if (duplicateCount > 0) {
     debugLog(`Filtered out ${duplicateCount} duplicate transactions`);
@@ -784,7 +819,14 @@ export async function uploadRogersBankToMonarch() {
           if (withDates.length > 0) {
             txDate = withDates.map((tx) => new Date(tx.activityDate)).sort((a, b) => b - a)[0].toISOString().split('T')[0];
           }
-          saveUploadedTransactions(rogersAccountId, refs, 'rogersbank', txDate);
+          // Save to consolidated storage (uploadedTransactions in account object)
+          const txAccountData = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, rogersAccountId);
+          const existingTransactions = txAccountData?.uploadedTransactions || [];
+          const retentionSettings = getRetentionSettingsFromAccount(txAccountData);
+          const updatedTransactions = mergeAndRetainTransactions(existingTransactions, refs, retentionSettings, txDate);
+          accountService.updateAccountInList(INTEGRATIONS.ROGERSBANK, rogersAccountId, {
+            uploadedTransactions: updatedTransactions,
+          });
         }
 
         saveLastUploadDate(rogersAccountId, getTodayLocal(), 'rogersbank');
