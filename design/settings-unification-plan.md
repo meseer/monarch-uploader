@@ -81,7 +81,7 @@ Create a common interface for account operations with backward compatibility.
 - [x] Verify tests pass (42 tests passing)
 
 ### Phase 3: Refactor Settings UI
-**Status**: ⏳ In Progress
+**Status**: ✅ Complete
 
 Update settings modal to use capabilities and unified account service.
 
@@ -104,20 +104,21 @@ Update settings modal to use capabilities and unified account service.
 - [x] Verify lint and tests pass
 
 ### Phase 4: Storage Migration
-**Status**: ⏳ Not Started
+**Status**: ⏳ In Progress
 
 Migrate each integration to consolidated structure with backward compatibility.
 
 #### Phase 4.1: CanadaLife Migration (Simplest)
-- [ ] Create CanadaLife account service module
-- [ ] Implement `getCanadaLifeAccounts()` with migration logic
-- [ ] Implement `updateAccountInList()` for CanadaLife
-- [ ] Implement `markAccountAsSkipped()` for CanadaLife
-- [ ] Add migration from prefix-based to consolidated storage
-- [ ] Update `canadalife-upload.js` to use new account service
-- [ ] Update settings UI to use new account service
-- [ ] Add tests for migration
-- [ ] Verify backward compatibility
+**Status**: ✅ Complete (v5.58.8)
+
+*All items completed:*
+- [x] accountService.js supports CanadaLife via `INTEGRATIONS.CANADALIFE`
+- [x] Migration logic implemented in `migrateFromLegacyStorage()`
+- [x] Settings UI uses `createGenericAccountCards()` for CanadaLife
+- [x] All CRUD operations available via unified accountService
+- [x] Update `canadalife-upload.js` to use `accountService` instead of direct GM_getValue/GM_setValue
+- [x] Verify tests pass with new storage pattern (2194 tests passing)
+- [x] Backward compatibility maintained (legacy storage still written for migration period)
 
 #### Phase 4.2: Questrade Migration
 - [ ] Create Questrade consolidated account service

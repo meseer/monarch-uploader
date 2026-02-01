@@ -10,6 +10,22 @@ jest.mock('../../src/core/config', () => ({
   STORAGE: {
     CANADALIFE_ACCOUNT_MAPPING_PREFIX: 'canadalife_account_mapping_',
   },
+  TRANSACTION_RETENTION_DEFAULTS: {
+    DAYS: 91,
+    COUNT: 1000,
+  },
+  INTEGRATIONS: {
+    CANADALIFE: 'canadalife',
+  },
+}));
+
+jest.mock('../../src/services/common/accountService', () => ({
+  __esModule: true,
+  default: {
+    getAccountData: jest.fn(),
+    upsertAccount: jest.fn(),
+    updateAccountInList: jest.fn(),
+  },
 }));
 
 jest.mock('../../src/core/utils', () => ({
@@ -97,6 +113,7 @@ globalThis.GM_getValue = jest.fn();
 globalThis.GM_setValue = jest.fn();
 
 // Import the module under test after mocking all dependencies
+// eslint-disable-next-line import/first
 import {
   uploadAllCanadaLifeAccountsToMonarch,
   uploadCanadaLifeAccountWithDateRange,
@@ -253,12 +270,20 @@ describe('Canada Life Upload Service', () => {
     let utils;
     let showDatePickerPromise;
     let stateManager;
+    let accountService;
 
     beforeEach(() => {
       // Get the mocked modules that were set up at the top level
       ensureMonarchAuthentication = require('../../src/ui/components/monarchLoginLink').ensureMonarchAuthentication;
       canadalife = require('../../src/api/canadalife').default;
       monarchApi = require('../../src/api/monarch').default;
+      accountService = require('../../src/services/common/accountService').default;
+
+      // Default: accountService.getAccountData returns stored monarch account
+      // This simulates having an existing account mapping in consolidated storage
+      accountService.getAccountData.mockReturnValue({
+        monarchAccount: { id: 'monarch123', displayName: 'Investment Account' },
+      });
 
       // Default: validateAndRefreshAccountMapping returns valid existing account
       monarchApi.validateAndRefreshAccountMapping.mockResolvedValue({

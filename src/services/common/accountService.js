@@ -95,19 +95,25 @@ function isStaleRawCache(accounts, integrationId) {
 export function getAccounts(integrationId) {
   try {
     const storageKey = getStorageKey(integrationId);
+    debugLog(`[accountService.getAccounts] integrationId=${integrationId}, storageKey=${storageKey}`);
+
     if (!storageKey) {
-      debugLog(`Unknown integration: ${integrationId}`);
+      debugLog(`[accountService.getAccounts] Unknown integration: ${integrationId}`);
       return [];
     }
 
     // Try to read from consolidated storage
     const stored = GM_getValue(storageKey, '[]');
+    debugLog(`[accountService.getAccounts] Raw stored value type: ${typeof stored}, length: ${stored?.length || 0}`);
+    debugLog('[accountService.getAccounts] Raw stored value (first 500 chars):', stored?.substring?.(0, 500) || stored);
+
     let accounts = [];
 
     try {
       accounts = JSON.parse(stored);
+      debugLog(`[accountService.getAccounts] Parsed ${accounts?.length || 0} accounts`);
     } catch (e) {
-      debugLog(`Error parsing accounts for ${integrationId}:`, e);
+      debugLog(`[accountService.getAccounts] Error parsing accounts for ${integrationId}:`, e);
       accounts = [];
     }
 
@@ -192,14 +198,25 @@ export function getAccounts(integrationId) {
  * @returns {Object|null} Consolidated account object or null
  */
 export function getAccountData(integrationId, accountId) {
+  debugLog(`[accountService.getAccountData] integrationId=${integrationId}, accountId=${accountId}`);
+
   const accounts = getAccounts(integrationId);
   const accountKeyName = getAccountKeyName(integrationId);
+  debugLog(`[accountService.getAccountData] accountKeyName=${accountKeyName}, accounts.length=${accounts?.length || 0}`);
 
   if (!accountKeyName) {
+    debugLog('[accountService.getAccountData] No accountKeyName found, returning null');
     return null;
   }
 
-  return accounts.find((acc) => acc[accountKeyName]?.id === accountId) || null;
+  // Log all account IDs for debugging
+  const accountIds = accounts.map((acc) => acc[accountKeyName]?.id);
+  debugLog('[accountService.getAccountData] Available account IDs:', accountIds);
+
+  const foundAccount = accounts.find((acc) => acc[accountKeyName]?.id === accountId);
+  debugLog(`[accountService.getAccountData] Found account: ${foundAccount ? 'YES' : 'NO'}`, foundAccount ? `monarchAccount.id=${foundAccount.monarchAccount?.id}` : '');
+
+  return foundAccount || null;
 }
 
 /**

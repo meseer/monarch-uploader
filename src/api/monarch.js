@@ -2527,7 +2527,14 @@ export async function deleteTransaction(transactionId) {
  *   - valid=false: Account deleted/not found, mapping cleared
  */
 export async function validateAndRefreshAccountMapping(monarchAccountId, storageKey, previousAccountName = null) {
-  if (!monarchAccountId || !storageKey) {
+  debugLog('[validateAndRefreshAccountMapping] Called with:', {
+    monarchAccountId,
+    storageKey,
+    previousAccountName,
+  });
+
+  if (!monarchAccountId) {
+    debugLog('[validateAndRefreshAccountMapping] No monarchAccountId provided, returning invalid');
     return { valid: false, account: null, wasDeleted: false, warningMessage: null };
   }
 
@@ -2548,13 +2555,18 @@ export async function validateAndRefreshAccountMapping(monarchAccountId, storage
       icon: account.icon,
       limit: account.limit,
     };
-    GM_setValue(storageKey, JSON.stringify(refreshedMapping));
+    // Only update storage if a storageKey was provided (legacy flow)
+    if (storageKey) {
+      GM_setValue(storageKey, JSON.stringify(refreshedMapping));
+    }
     debugLog(`Account mapping refreshed: ${account.displayName}`);
     return { valid: true, account: refreshedMapping, wasDeleted: false, warningMessage: null };
   }
 
-  // Account no longer exists - clear mapping
-  GM_deleteValue(storageKey);
+  // Account no longer exists - clear mapping if we have a storageKey
+  if (storageKey) {
+    GM_deleteValue(storageKey);
+  }
   const accountDesc = previousAccountName || 'The previously mapped account';
   const warningMessage = `${accountDesc} was not found in Monarch and may have been deleted. Please select or create a new account.`;
   debugLog(`Account not found, mapping cleared: ${monarchAccountId}`);

@@ -16,6 +16,8 @@ import { showProgressDialog } from '../ui/components/progressDialog';
 import { showDatePickerPromise } from '../ui/components/datePicker';
 import { showMonarchAccountSelectorWithCreate } from '../ui/components/accountSelectorWithCreate';
 import { ensureMonarchAuthentication } from '../ui/components/monarchLoginLink';
+import accountService from './common/accountService';
+import { INTEGRATIONS } from '../core/integrationCapabilities';
 
 /**
  * Custom Canada Life upload error class
@@ -232,37 +234,37 @@ async function getStartDateForAccount(accountId) {
 
 /**
  * Get or create Monarch account mapping for a Canada Life account
+ * Uses unified accountService for storage (with backward compatibility)
  * @param {Object} canadalifAccount - Canada Life account object
  * @returns {Promise<Object|null>} Monarch account object, or null if cancelled
  */
 async function getMonarchAccountMapping(canadalifAccount) {
   const accountId = canadalifAccount.agreementId;
-  const storageKey = `${STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX}${accountId}`;
+  const accountName = canadalifAccount.LongNameEnglish || canadalifAccount.EnglishShortName;
   let accountWarningMessage = null;
 
-  // Check for existing mapping
-  const existingMapping = GM_getValue(storageKey, null);
-  if (existingMapping) {
-    try {
-      const parsed = JSON.parse(existingMapping);
+  // Check for existing mapping in consolidated storage (handles legacy migration automatically)
+  const accountData = accountService.getAccountData(INTEGRATIONS.CANADALIFE, accountId);
+  if (accountData?.monarchAccount) {
+    // Validate and refresh the stored account mapping
+    const validation = await monarchApi.validateAndRefreshAccountMapping(
+      accountData.monarchAccount.id,
+      null, // No storage key needed - we'll update via accountService
+      accountData.monarchAccount.displayName,
+    );
 
-      // Validate and refresh the stored account mapping
-      const validation = await monarchApi.validateAndRefreshAccountMapping(
-        parsed.id,
-        storageKey,
-        parsed.displayName,
-      );
-
-      if (validation.valid) {
-        return validation.account;
+    if (validation.valid) {
+      // Update the account entry with refreshed Monarch data if needed
+      if (validation.account.id !== accountData.monarchAccount.id) {
+        accountService.updateAccountInList(INTEGRATIONS.CANADALIFE, accountId, {
+          monarchAccount: validation.account,
+        });
       }
-      // Account was deleted - show warning in account selector
-      accountWarningMessage = validation.warningMessage;
-      // Fall through to create new mapping
-    } catch (error) {
-      debugLog('Error parsing existing Canada Life account mapping:', error);
-      // Fall through to create new mapping
+      return validation.account;
     }
+    // Account was deleted - show warning in account selector
+    accountWarningMessage = validation.warningMessage;
+    // Fall through to create new mapping
   }
 
   // No mapping exists - show account selector
@@ -272,7 +274,6 @@ async function getMonarchAccountMapping(canadalifAccount) {
   }
 
   // Set account context for the selector
-  const accountName = canadalifAccount.LongNameEnglish || canadalifAccount.EnglishShortName;
   stateManager.setAccount(accountId, accountName);
 
   // Prepare createDefaults with balance-only tracking
@@ -316,7 +317,21 @@ async function getMonarchAccountMapping(canadalifAccount) {
     }
   }
 
-  // Save the mapping
+  // Save the mapping using unified accountService (upsert creates or updates)
+  accountService.upsertAccount(INTEGRATIONS.CANADALIFE, {
+    canadalifAccount: {
+      id: accountId,
+      nickname: accountName,
+      agreementId: canadalifAccount.agreementId,
+      EnglishShortName: canadalifAccount.EnglishShortName,
+      LongNameEnglish: canadalifAccount.LongNameEnglish,
+      EnrollmentDate: canadalifAccount.EnrollmentDate,
+    },
+    monarchAccount,
+    syncEnabled: true,
+  });
+
+  // Also save to legacy storage for backward compatibility during migration period
   GM_setValue(`${STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX}${accountId}`, JSON.stringify(monarchAccount));
 
   debugLog(`Saved Canada Life account mapping: ${accountName} -> ${monarchAccount.displayName}`);
