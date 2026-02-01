@@ -5,7 +5,7 @@
  * Used by the settings UI to dynamically render appropriate options.
  */
 
-import { TRANSACTION_RETENTION_DEFAULTS } from './config';
+import { STORAGE, TRANSACTION_RETENTION_DEFAULTS } from './config';
 
 /**
  * Integration identifiers
@@ -52,6 +52,9 @@ export const ACCOUNT_SETTINGS = {
  * @property {boolean} hasCreditLimit - Whether the integration supports credit limit sync
  * @property {boolean} hasHoldings - Whether the integration supports holdings/positions
  * @property {boolean} hasBalanceReconstruction - Whether balance can be reconstructed from transactions
+ * @property {boolean} hasCategorization - Whether the integration supports category mappings
+ * @property {string|null} categoryMappingsStorageKey - Storage key for category mappings (null if no categorization)
+ * @property {string|null} categorySourceLabel - Label for the source column in category UI (null if no categorization)
  * @property {string[]} settings - List of available per-account settings
  * @property {Object} settingDefaults - Default values for per-account settings
  */
@@ -70,6 +73,9 @@ export const INTEGRATION_CAPABILITIES = {
     hasCreditLimit: true, // For credit card accounts
     hasHoldings: true,
     hasBalanceReconstruction: true, // For credit cards
+    hasCategorization: true, // Merchant name to Monarch category mappings
+    categoryMappingsStorageKey: STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS,
+    categorySourceLabel: 'Merchant Name',
     settings: [
       ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES,
       ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS,
@@ -96,6 +102,9 @@ export const INTEGRATION_CAPABILITIES = {
     hasCreditLimit: false,
     hasHoldings: true,
     hasBalanceReconstruction: false,
+    hasCategorization: false,
+    categoryMappingsStorageKey: null,
+    categorySourceLabel: null,
     settings: [
       ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES,
       ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS,
@@ -118,6 +127,9 @@ export const INTEGRATION_CAPABILITIES = {
     hasCreditLimit: false,
     hasHoldings: false, // Private mutual funds - no positions API
     hasBalanceReconstruction: false,
+    hasCategorization: false,
+    categoryMappingsStorageKey: null,
+    categorySourceLabel: null,
     settings: [], // No transaction settings needed
     settingDefaults: {},
   },
@@ -132,6 +144,9 @@ export const INTEGRATION_CAPABILITIES = {
     hasCreditLimit: true,
     hasHoldings: false, // Credit card only
     hasBalanceReconstruction: true,
+    hasCategorization: true, // Bank category to Monarch category mappings
+    categoryMappingsStorageKey: STORAGE.ROGERSBANK_CATEGORY_MAPPINGS,
+    categorySourceLabel: 'Bank Category',
     settings: [
       ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES,
       ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS,
@@ -244,6 +259,22 @@ export function getDisplayName(integrationId) {
 }
 
 /**
+ * Get category mappings configuration for an integration
+ * @param {string} integrationId - Integration identifier
+ * @returns {{storageKey: string|null, sourceLabel: string|null}|null} Category config or null
+ */
+export function getCategoryMappingsConfig(integrationId) {
+  const capabilities = getCapabilities(integrationId);
+  if (!capabilities || !capabilities.hasCategorization) {
+    return null;
+  }
+  return {
+    storageKey: capabilities.categoryMappingsStorageKey,
+    sourceLabel: capabilities.categorySourceLabel,
+  };
+}
+
+/**
  * Get favicon domain for an integration
  * Used to fetch logos via Google Favicon API
  * @param {string} integrationId - Integration identifier
@@ -281,4 +312,5 @@ export default {
   getDisplayName,
   getFaviconDomain,
   getFaviconUrl,
+  getCategoryMappingsConfig,
 };

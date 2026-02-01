@@ -135,6 +135,9 @@ jest.mock('../../src/core/integrationCapabilities', () => ({
     accountKeyName: `${integrationId}Account`,
     hasTransactions: true,
     hasDeduplication: true,
+    hasCategorization: integrationId === 'rogersbank' || integrationId === 'wealthsimple',
+    categoryMappingsStorageKey: integrationId === 'rogersbank' ? 'rogersbank_category_mappings' : (integrationId === 'wealthsimple' ? 'wealthsimple_category_mappings' : null),
+    categorySourceLabel: integrationId === 'rogersbank' ? 'Bank Category' : (integrationId === 'wealthsimple' ? 'Merchant Name' : null),
     settings: [],
     settingDefaults: {},
   })),
@@ -143,6 +146,15 @@ jest.mock('../../src/core/integrationCapabilities', () => ({
   getFaviconUrl: jest.fn(() => 'https://www.google.com/s2/favicons?domain=example.com&sz=128'),
   hasSetting: jest.fn(() => false),
   getSettingDefault: jest.fn(() => null),
+  getCategoryMappingsConfig: jest.fn((integrationId) => {
+    if (integrationId === 'rogersbank') {
+      return { storageKey: 'rogersbank_category_mappings', sourceLabel: 'Bank Category' };
+    }
+    if (integrationId === 'wealthsimple') {
+      return { storageKey: 'wealthsimple_category_mappings', sourceLabel: 'Merchant Name' };
+    }
+    return null;
+  }),
 }));
 
 // Mock localStorage
@@ -1273,7 +1285,7 @@ describe('Settings Modal Component', () => {
   });
 
   describe('Rogers Bank Delete All Category Mappings', () => {
-    test('should display "Delete All" button when category mappings exist', () => {
+    test('should display "Delete All" button when category mappings exist (inside collapsed section)', () => {
       globalThis.GM_getValue.mockImplementation((key) => {
         if (key === 'rogersbank_category_mappings') {
           return JSON.stringify({
@@ -1290,7 +1302,12 @@ describe('Settings Modal Component', () => {
         .find((btn) => btn.textContent.includes('Rogers Bank'));
       rogersBankTab.click();
 
-      const deleteAllButton = modal.querySelector('#rogersbank-delete-all-categories-btn');
+      // Category mappings section is collapsible - expand it first
+      const categoryHeader = modal.querySelector('#category-mappings-header-rogersbank');
+      expect(categoryHeader).toBeTruthy();
+      categoryHeader.click();
+
+      const deleteAllButton = modal.querySelector('#category-mappings-delete-all-rogersbank');
       expect(deleteAllButton).toBeTruthy();
       expect(deleteAllButton.textContent).toBe('Delete All');
     });
@@ -1309,7 +1326,8 @@ describe('Settings Modal Component', () => {
         .find((btn) => btn.textContent.includes('Rogers Bank'));
       rogersBankTab.click();
 
-      const deleteAllButton = modal.querySelector('#rogersbank-delete-all-categories-btn');
+      // With no mappings, Delete All button should not exist
+      const deleteAllButton = modal.querySelector('#category-mappings-delete-all-rogersbank');
       expect(deleteAllButton).toBeNull();
     });
 
@@ -1327,7 +1345,11 @@ describe('Settings Modal Component', () => {
         .find((btn) => btn.textContent.includes('Rogers Bank'));
       rogersBankTab.click();
 
-      const deleteAllButton = modal.querySelector('#rogersbank-delete-all-categories-btn');
+      // Expand the collapsible section first
+      const categoryHeader = modal.querySelector('#category-mappings-header-rogersbank');
+      categoryHeader.click();
+
+      const deleteAllButton = modal.querySelector('#category-mappings-delete-all-rogersbank');
 
       deleteAllButton.dispatchEvent(new Event('mouseover'));
       expect(deleteAllButton.style.backgroundColor).toBe('rgb(200, 35, 51)');

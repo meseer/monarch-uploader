@@ -20,6 +20,7 @@ import {
   getFaviconUrl,
   hasSetting,
   getSettingDefault,
+  getCategoryMappingsConfig,
 } from '../../core/integrationCapabilities';
 import accountService from '../../services/common/accountService';
 
@@ -803,83 +804,10 @@ function renderRogersBankTab(container) {
 
   container.appendChild(mappingsSection);
 
-  // Category Mappings Section
-  const categorySection = createSection('Category Mappings', '🏷️', 'Bank category to Monarch category mappings');
-  const categoryMappings = GM_getValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS, '{}');
-  let categoryData = [];
-
-  try {
-    const mappings = JSON.parse(categoryMappings);
-    categoryData = Object.entries(mappings).map(([bankCategory, monarchCategory]) => [
-      `${STORAGE.ROGERSBANK_CATEGORY_MAPPINGS}.${bankCategory}`,
-      bankCategory,
-      monarchCategory,
-    ]);
-  } catch (error) {
-    debugLog('Error parsing category mappings:', error);
-  }
-
-  const categoryTable = createDataTable(['Bank Category', 'Monarch Category', 'Actions'], categoryData, (key) => {
-    const [, bankCategory] = key.split('.');
-    try {
-      const currentMappings = JSON.parse(GM_getValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS, '{}'));
-      delete currentMappings[bankCategory];
-      GM_setValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS, JSON.stringify(currentMappings));
-      toast.show('Category mapping deleted', 'info');
-      renderTabContent(container, 'rogersbank');
-    } catch (error) {
-      toast.show('Error deleting category mapping', 'error');
-      debugLog('Error deleting category mapping:', error);
-    }
+  // Category Mappings Section (capability-driven)
+  const categorySection = renderCategoryMappingsSectionIfEnabled(INTEGRATIONS.ROGERSBANK, () => {
+    renderTabContent(container, 'rogersbank');
   });
-  categorySection.appendChild(categoryTable);
-
-  // Add "Delete All" button for category mappings (only if there are mappings)
-  if (categoryData.length > 0) {
-    const deleteAllContainer = document.createElement('div');
-    deleteAllContainer.style.cssText = 'margin-top: 10px;';
-
-    const deleteAllButton = document.createElement('button');
-    deleteAllButton.id = 'rogersbank-delete-all-categories-btn';
-    deleteAllButton.textContent = 'Delete All';
-    deleteAllButton.style.cssText = `
-      padding: 4px 10px;
-      border: none;
-      border-radius: 4px;
-      background: #dc3545;
-      color: white;
-      cursor: pointer;
-      font-size: 12px;
-      font-weight: 500;
-      transition: background-color 0.2s;
-    `;
-
-    deleteAllButton.addEventListener('click', async () => {
-      const confirmed = await showConfirmDialog(
-        `Are you sure you want to delete ALL ${categoryData.length} category mapping(s)?\n\nThis action cannot be undone.`,
-      );
-
-      if (confirmed) {
-        GM_setValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS, '{}');
-        toast.show(`Deleted ${categoryData.length} category mapping(s)`, 'info');
-        debugLog(`Deleted all Rogers Bank category mappings (${categoryData.length} total)`);
-
-        // Refresh the tab
-        renderTabContent(container, 'rogersbank');
-      }
-    });
-
-    deleteAllButton.addEventListener('mouseover', () => {
-      deleteAllButton.style.backgroundColor = '#c82333';
-    });
-    deleteAllButton.addEventListener('mouseout', () => {
-      deleteAllButton.style.backgroundColor = '#dc3545';
-    });
-
-    deleteAllContainer.appendChild(deleteAllButton);
-    categorySection.appendChild(deleteAllContainer);
-  }
-
   container.appendChild(categorySection);
 }
 
@@ -948,37 +876,10 @@ function renderWealthsimpleTab(container) {
 
   container.appendChild(mappingsSection);
 
-  // Category Mappings Section (shared across all Wealthsimple accounts)
-  const categorySection = createSection('Category Mappings', '🏷️', 'Merchant name to Monarch category mappings (shared across all accounts)');
-  const categoryMappings = GM_getValue(STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS, '{}');
-  let categoryData = [];
-
-  try {
-    const mappings = JSON.parse(categoryMappings);
-    categoryData = Object.entries(mappings).map(([merchantName, monarchCategory]) => [
-      `${STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS}.${merchantName}`,
-      merchantName,
-      monarchCategory,
-    ]);
-  } catch (error) {
-    debugLog('Error parsing Wealthsimple category mappings:', error);
-  }
-
-  const categoryTable = createDataTable(['Merchant Name', 'Monarch Category', 'Actions'], categoryData, (key) => {
-    const [, merchantName] = key.split('.');
-    try {
-      const currentMappings = JSON.parse(GM_getValue(STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS, '{}'));
-      delete currentMappings[merchantName];
-      GM_setValue(STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS, JSON.stringify(currentMappings));
-      toast.show('Category mapping deleted', 'info');
-      renderTabContent(container, 'wealthsimple');
-    } catch (error) {
-      toast.show('Error deleting category mapping', 'error');
-      debugLog('Error deleting Wealthsimple category mapping:', error);
-    }
+  // Category Mappings Section (capability-driven)
+  const categorySection = renderCategoryMappingsSectionIfEnabled(INTEGRATIONS.WEALTHSIMPLE, () => {
+    renderTabContent(container, 'wealthsimple');
   });
-  categorySection.appendChild(categoryTable);
-
   container.appendChild(categorySection);
 }
 
@@ -1761,13 +1662,549 @@ function createAccountMappingCards(data, onDelete, institutionName, institutionT
 }
 
 /**
+ * Renders category mappings section if the integration supports categorization
+ * This is the capability-driven entry point - checks capabilities and renders appropriately
+ * @param {string} integrationId - Integration identifier
+ * @param {Function} onRefresh - Callback to refresh the tab after changes
+ * @returns {HTMLElement} Category section element (or empty div if not supported)
+ */
+function renderCategoryMappingsSectionIfEnabled(integrationId, onRefresh) {
+  const categoryConfig = getCategoryMappingsConfig(integrationId);
+
+  // If integration doesn't support categorization, return empty element
+  if (!categoryConfig || !categoryConfig.storageKey) {
+    return document.createElement('div');
+  }
+
+  // Create section wrapper
+  const sectionWrapper = createSection('Category Mappings', '🏷️', `${categoryConfig.sourceLabel} to Monarch category mappings`);
+
+  // Render the collapsible category mappings section
+  const categorySection = renderCategoryMappingsSection(
+    integrationId,
+    categoryConfig.storageKey,
+    categoryConfig.sourceLabel,
+    onRefresh,
+  );
+
+  sectionWrapper.appendChild(categorySection);
+  return sectionWrapper;
+}
+
+/**
+ * Creates a collapsible category mappings section with filters
+ * @param {string} integrationId - Integration identifier (rogersbank or wealthsimple)
+ * @param {string} storageKey - Storage key for category mappings
+ * @param {string} sourceColumnLabel - Label for the source column (e.g., "Bank Category" or "Merchant Name")
+ * @param {Function} onRefresh - Callback to refresh the tab after changes
+ * @returns {HTMLElement} Category mappings section element
+ */
+function renderCategoryMappingsSection(integrationId, storageKey, sourceColumnLabel, onRefresh) {
+  const sectionContainer = document.createElement('div');
+  sectionContainer.id = `category-mappings-section-${integrationId}`;
+  sectionContainer.style.cssText = 'margin-bottom: 15px;';
+
+  // Get category mappings
+  const categoryMappingsStr = GM_getValue(storageKey, '{}');
+  let categoryData = [];
+  const allCategories = new Set();
+
+  try {
+    const mappings = JSON.parse(categoryMappingsStr);
+    categoryData = Object.entries(mappings).map(([sourceKey, monarchCategory]) => ({
+      key: `${storageKey}.${sourceKey}`,
+      sourceKey,
+      monarchCategory,
+    }));
+
+    // Collect unique Monarch categories for dropdown
+    categoryData.forEach((item) => {
+      if (item.monarchCategory) {
+        allCategories.add(item.monarchCategory);
+      }
+    });
+  } catch (error) {
+    debugLog(`Error parsing ${integrationId} category mappings:`, error);
+  }
+
+  // Section header with expand/collapse
+  const sectionHeader = document.createElement('div');
+  sectionHeader.id = `category-mappings-header-${integrationId}`;
+  sectionHeader.style.cssText = `
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background-color: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  `;
+
+  const headerLeft = document.createElement('div');
+  headerLeft.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+
+  const expandIcon = document.createElement('span');
+  expandIcon.id = `category-mappings-expand-icon-${integrationId}`;
+  expandIcon.textContent = '▼';
+  expandIcon.style.cssText = 'transition: transform 0.2s; font-size: 12px; transform: rotate(270deg);';
+  headerLeft.appendChild(expandIcon);
+
+  const headerTitle = document.createElement('h4');
+  headerTitle.textContent = 'Category Mappings';
+  headerTitle.style.cssText = 'margin: 0; font-size: 14px; color: #333;';
+  headerLeft.appendChild(headerTitle);
+
+  const mappingCount = document.createElement('span');
+  mappingCount.style.cssText = 'font-size: 12px; color: #666;';
+  mappingCount.textContent = `(${categoryData.length} mapping${categoryData.length !== 1 ? 's' : ''})`;
+  headerLeft.appendChild(mappingCount);
+
+  sectionHeader.appendChild(headerLeft);
+  sectionContainer.appendChild(sectionHeader);
+
+  // Expandable content
+  const expandableContent = document.createElement('div');
+  expandableContent.id = `category-mappings-content-${integrationId}`;
+  expandableContent.style.cssText = `
+    display: none;
+    padding: 12px;
+    border: 1px solid #e0e0e0;
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    background-color: #fff;
+  `;
+
+  if (categoryData.length === 0) {
+    const emptyMessage = document.createElement('p');
+    emptyMessage.textContent = 'No category mappings found. Mappings will appear here after you categorize transactions.';
+    emptyMessage.style.cssText = 'color: #666; font-style: italic; margin: 0; font-size: 13px;';
+    expandableContent.appendChild(emptyMessage);
+  } else {
+    // Filter controls container
+    const filterContainer = document.createElement('div');
+    filterContainer.id = `category-mappings-filters-${integrationId}`;
+    filterContainer.style.cssText = 'display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; align-items: flex-end;';
+
+    // Source name filter (freetext)
+    const sourceFilterWrapper = document.createElement('div');
+    sourceFilterWrapper.style.cssText = 'flex: 1; min-width: 200px;';
+
+    const sourceFilterLabel = document.createElement('label');
+    sourceFilterLabel.textContent = sourceColumnLabel;
+    sourceFilterLabel.style.cssText = 'display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: 500;';
+    sourceFilterWrapper.appendChild(sourceFilterLabel);
+
+    const sourceFilterInput = document.createElement('input');
+    sourceFilterInput.id = `category-mappings-source-filter-${integrationId}`;
+    sourceFilterInput.type = 'text';
+    sourceFilterInput.placeholder = `Filter by ${sourceColumnLabel.toLowerCase()}...`;
+    sourceFilterInput.style.cssText = `
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 13px;
+      box-sizing: border-box;
+    `;
+    sourceFilterWrapper.appendChild(sourceFilterInput);
+    filterContainer.appendChild(sourceFilterWrapper);
+
+    // Category filter (dropdown with search)
+    const categoryFilterWrapper = document.createElement('div');
+    categoryFilterWrapper.style.cssText = 'flex: 1; min-width: 200px; position: relative;';
+
+    const categoryFilterLabel = document.createElement('label');
+    categoryFilterLabel.textContent = 'Monarch Category';
+    categoryFilterLabel.style.cssText = 'display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: 500;';
+    categoryFilterWrapper.appendChild(categoryFilterLabel);
+
+    // Searchable dropdown container
+    const dropdownContainer = document.createElement('div');
+    dropdownContainer.id = `category-mappings-category-dropdown-${integrationId}`;
+    dropdownContainer.style.cssText = 'position: relative;';
+
+    const categoryInput = document.createElement('input');
+    categoryInput.id = `category-mappings-category-filter-${integrationId}`;
+    categoryInput.type = 'text';
+    categoryInput.placeholder = 'All Categories';
+    categoryInput.style.cssText = `
+      width: 100%;
+      padding: 8px 12px;
+      padding-right: 30px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 13px;
+      box-sizing: border-box;
+      cursor: pointer;
+    `;
+
+    // Dropdown arrow
+    const dropdownArrow = document.createElement('span');
+    dropdownArrow.textContent = '▼';
+    dropdownArrow.style.cssText = `
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 10px;
+      color: #666;
+      pointer-events: none;
+    `;
+
+    // Dropdown list
+    const dropdownList = document.createElement('div');
+    dropdownList.id = `category-mappings-dropdown-list-${integrationId}`;
+    dropdownList.style.cssText = `
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      max-height: 200px;
+      overflow-y: auto;
+      background: white;
+      border: 1px solid #ccc;
+      border-top: none;
+      border-radius: 0 0 4px 4px;
+      z-index: 100;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    `;
+
+    // Define applyFilters early (referenced in event handlers below)
+    // This will be properly initialized after table elements are created
+    let applyFiltersCallback = () => {};
+
+    // Add "All Categories" option
+    const allOption = document.createElement('div');
+    allOption.textContent = 'All Categories';
+    allOption.style.cssText = `
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 13px;
+      font-style: italic;
+      color: #666;
+      transition: background-color 0.1s;
+    `;
+    allOption.addEventListener('mouseover', () => {
+      allOption.style.backgroundColor = '#f0f0f0';
+    });
+    allOption.addEventListener('mouseout', () => {
+      allOption.style.backgroundColor = 'white';
+    });
+    allOption.addEventListener('click', () => {
+      categoryInput.value = '';
+      categoryInput.dataset.selectedCategory = '';
+      dropdownList.style.display = 'none';
+      applyFiltersCallback();
+    });
+    dropdownList.appendChild(allOption);
+
+    // Add category options
+    const sortedCategories = Array.from(allCategories).sort();
+    sortedCategories.forEach((category) => {
+      const option = document.createElement('div');
+      option.textContent = category;
+      option.dataset.category = category;
+      option.style.cssText = `
+        padding: 8px 12px;
+        cursor: pointer;
+        font-size: 13px;
+        transition: background-color 0.1s;
+      `;
+      option.addEventListener('mouseover', () => {
+        option.style.backgroundColor = '#f0f0f0';
+      });
+      option.addEventListener('mouseout', () => {
+        option.style.backgroundColor = 'white';
+      });
+      option.addEventListener('click', () => {
+        categoryInput.value = category;
+        categoryInput.dataset.selectedCategory = category;
+        dropdownList.style.display = 'none';
+        applyFiltersCallback();
+      });
+      dropdownList.appendChild(option);
+    });
+
+    // Toggle dropdown on input click
+    categoryInput.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isVisible = dropdownList.style.display === 'block';
+      dropdownList.style.display = isVisible ? 'none' : 'block';
+    });
+
+    // Filter dropdown options as user types
+    categoryInput.addEventListener('input', () => {
+      const searchTerm = categoryInput.value.toLowerCase();
+      const options = dropdownList.querySelectorAll('div[data-category]');
+      options.forEach((option) => {
+        const categoryName = option.dataset.category.toLowerCase();
+        option.style.display = categoryName.includes(searchTerm) ? 'block' : 'none';
+      });
+      // Always show "All Categories" option
+      allOption.style.display = 'block';
+      dropdownList.style.display = 'block';
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!dropdownContainer.contains(e.target)) {
+        dropdownList.style.display = 'none';
+      }
+    });
+
+    dropdownContainer.appendChild(categoryInput);
+    dropdownContainer.appendChild(dropdownArrow);
+    dropdownContainer.appendChild(dropdownList);
+    categoryFilterWrapper.appendChild(dropdownContainer);
+    filterContainer.appendChild(categoryFilterWrapper);
+
+    // Clear filters button
+    const clearFiltersBtn = document.createElement('button');
+    clearFiltersBtn.id = `category-mappings-clear-filters-${integrationId}`;
+    clearFiltersBtn.textContent = 'Clear Filters';
+    clearFiltersBtn.style.cssText = `
+      padding: 8px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background: white;
+      cursor: pointer;
+      font-size: 12px;
+      white-space: nowrap;
+      transition: background-color 0.2s;
+    `;
+    clearFiltersBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      sourceFilterInput.value = '';
+      categoryInput.value = '';
+      categoryInput.dataset.selectedCategory = '';
+      applyFiltersCallback();
+    });
+    clearFiltersBtn.addEventListener('mouseover', () => {
+      clearFiltersBtn.style.backgroundColor = '#f8f9fa';
+    });
+    clearFiltersBtn.addEventListener('mouseout', () => {
+      clearFiltersBtn.style.backgroundColor = 'white';
+    });
+    filterContainer.appendChild(clearFiltersBtn);
+
+    // Table container
+    const tableContainer = document.createElement('div');
+    tableContainer.id = `category-mappings-table-container-${integrationId}`;
+    tableContainer.style.cssText = 'max-height: 300px; overflow-y: auto;';
+
+    // Create table
+    const table = document.createElement('table');
+    table.id = `category-mappings-table-${integrationId}`;
+    table.style.cssText = `
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    `;
+
+    // Table header
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    [sourceColumnLabel, 'Monarch Category', 'Actions'].forEach((headerText) => {
+      const th = document.createElement('th');
+      th.textContent = headerText;
+      th.style.cssText = `
+        background-color: #f8f9fa;
+        padding: 10px;
+        text-align: left;
+        border: 1px solid #e0e0e0;
+        font-weight: bold;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+      `;
+      headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // Table body
+    const tbody = document.createElement('tbody');
+    tbody.id = `category-mappings-tbody-${integrationId}`;
+
+    categoryData.forEach((item, index) => {
+      const row = document.createElement('tr');
+      row.id = `category-mapping-row-${integrationId}-${index}`;
+      row.dataset.sourceKey = item.sourceKey.toLowerCase();
+      row.dataset.category = item.monarchCategory.toLowerCase();
+
+      // Source key cell
+      const sourceCell = document.createElement('td');
+      sourceCell.textContent = item.sourceKey;
+      sourceCell.style.cssText = 'padding: 10px; border: 1px solid #e0e0e0;';
+      row.appendChild(sourceCell);
+
+      // Monarch category cell
+      const categoryCell = document.createElement('td');
+      categoryCell.textContent = item.monarchCategory;
+      categoryCell.style.cssText = 'padding: 10px; border: 1px solid #e0e0e0;';
+      row.appendChild(categoryCell);
+
+      // Actions cell
+      const actionsCell = document.createElement('td');
+      actionsCell.style.cssText = 'padding: 10px; border: 1px solid #e0e0e0;';
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.textContent = 'Delete';
+      deleteBtn.style.cssText = `
+        background-color: #dc3545;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 5px 10px;
+        cursor: pointer;
+        font-size: 12px;
+        transition: background-color 0.2s;
+      `;
+      deleteBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const confirmed = await showConfirmDialog(
+          `Delete mapping for "${item.sourceKey}"?\n\nMonarch Category: ${item.monarchCategory}`,
+        );
+        if (confirmed) {
+          try {
+            const currentMappings = JSON.parse(GM_getValue(storageKey, '{}'));
+            delete currentMappings[item.sourceKey];
+            GM_setValue(storageKey, JSON.stringify(currentMappings));
+            toast.show('Category mapping deleted', 'info');
+            onRefresh();
+          } catch (error) {
+            toast.show('Error deleting category mapping', 'error');
+            debugLog('Error deleting category mapping:', error);
+          }
+        }
+      });
+      deleteBtn.addEventListener('mouseover', () => {
+        deleteBtn.style.backgroundColor = '#c82333';
+      });
+      deleteBtn.addEventListener('mouseout', () => {
+        deleteBtn.style.backgroundColor = '#dc3545';
+      });
+
+      actionsCell.appendChild(deleteBtn);
+      row.appendChild(actionsCell);
+      tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+    tableContainer.appendChild(table);
+    // Filter results count
+    const resultsCount = document.createElement('div');
+    resultsCount.id = `category-mappings-results-count-${integrationId}`;
+    resultsCount.style.cssText = 'margin-top: 8px; font-size: 12px; color: #666;';
+    resultsCount.textContent = `Showing ${categoryData.length} of ${categoryData.length} mappings`;
+
+    // Now define the actual applyFilters implementation and assign to callback
+    applyFiltersCallback = () => {
+      const sourceFilter = sourceFilterInput.value.toLowerCase();
+      const categoryFilter = (categoryInput.dataset.selectedCategory || '').toLowerCase();
+
+      const rows = tbody.querySelectorAll('tr');
+      let visibleCount = 0;
+
+      rows.forEach((row) => {
+        const sourceKey = row.dataset.sourceKey;
+        const category = row.dataset.category;
+
+        const sourceMatch = !sourceFilter || sourceKey.includes(sourceFilter);
+        const categoryMatch = !categoryFilter || category === categoryFilter;
+
+        if (sourceMatch && categoryMatch) {
+          row.style.display = '';
+          visibleCount++;
+        } else {
+          row.style.display = 'none';
+        }
+      });
+
+      resultsCount.textContent = `Showing ${visibleCount} of ${categoryData.length} mappings`;
+    };
+
+    // Attach filter event listeners
+    sourceFilterInput.addEventListener('input', () => applyFiltersCallback());
+
+    expandableContent.appendChild(filterContainer);
+    expandableContent.appendChild(tableContainer);
+    expandableContent.appendChild(resultsCount);
+
+    // Delete All button
+    const deleteAllContainer = document.createElement('div');
+    deleteAllContainer.style.cssText = 'margin-top: 12px; display: flex; gap: 8px;';
+
+    const deleteAllBtn = document.createElement('button');
+    deleteAllBtn.id = `category-mappings-delete-all-${integrationId}`;
+    deleteAllBtn.textContent = 'Delete All';
+    deleteAllBtn.style.cssText = `
+      padding: 6px 12px;
+      border: none;
+      border-radius: 4px;
+      background: #dc3545;
+      color: white;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      transition: background-color 0.2s;
+    `;
+    deleteAllBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const confirmed = await showConfirmDialog(
+        `Are you sure you want to delete ALL ${categoryData.length} category mapping(s)?\n\nThis action cannot be undone.`,
+      );
+      if (confirmed) {
+        GM_setValue(storageKey, '{}');
+        toast.show(`Deleted ${categoryData.length} category mapping(s)`, 'info');
+        debugLog(`Deleted all ${integrationId} category mappings (${categoryData.length} total)`);
+        onRefresh();
+      }
+    });
+    deleteAllBtn.addEventListener('mouseover', () => {
+      deleteAllBtn.style.backgroundColor = '#c82333';
+    });
+    deleteAllBtn.addEventListener('mouseout', () => {
+      deleteAllBtn.style.backgroundColor = '#dc3545';
+    });
+    deleteAllContainer.appendChild(deleteAllBtn);
+    expandableContent.appendChild(deleteAllContainer);
+  }
+
+  sectionContainer.appendChild(expandableContent);
+
+  // Toggle expand/collapse
+  let isExpanded = false;
+  sectionHeader.addEventListener('click', (e) => {
+    e.stopPropagation();
+    isExpanded = !isExpanded;
+    expandableContent.style.display = isExpanded ? 'block' : 'none';
+    expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(270deg)';
+  });
+
+  sectionHeader.addEventListener('mouseover', () => {
+    sectionHeader.style.backgroundColor = '#f8f9fa';
+  });
+  sectionHeader.addEventListener('mouseout', () => {
+    sectionHeader.style.backgroundColor = '#fff';
+  });
+
+  return sectionContainer;
+}
+
+/**
  * Creates a data table
+ * @deprecated Will be removed in Phase 7 cleanup - replaced by renderCategoryMappingsSection
  * @param {Array} headers - Table headers
  * @param {Array} data - Table data
  * @param {Function} onDelete - Delete handler
  * @param {boolean} isJsonValue - Whether to parse value as JSON
  * @returns {HTMLElement} Table element
  */
+// eslint-disable-next-line no-unused-vars
 function createDataTable(headers, data, onDelete, isJsonValue = false) {
   if (data.length === 0) {
     const emptyMessage = document.createElement('p');
@@ -3099,7 +3536,7 @@ function renderTransactionsManagementSection(integrationId, accountEntry, accoun
 }
 
 /**
- * Renders the debug JSON section with editable functionality
+ * Renders the debug JSON section with editable functionality (collapsible)
  * @param {string} integrationId - Integration identifier
  * @param {Object} accountEntry - Consolidated account data object
  * @param {string} accountId - Account ID for updates
@@ -3107,21 +3544,58 @@ function renderTransactionsManagementSection(integrationId, accountEntry, accoun
  * @returns {HTMLElement} Debug section element
  */
 function renderDebugJsonSection(integrationId, accountEntry, accountId, onSave) {
-  const debugSection = document.createElement('div');
-  debugSection.id = `debug-section-${integrationId}-${accountId}`;
+  const sectionContainer = document.createElement('div');
+  sectionContainer.id = `debug-section-${integrationId}-${accountId}`;
+  sectionContainer.style.cssText = 'margin-bottom: 15px;';
 
-  const debugHeader = document.createElement('div');
-  debugHeader.style.cssText = 'display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;';
+  // Section header with expand/collapse
+  const sectionHeader = document.createElement('div');
+  sectionHeader.id = `debug-header-${integrationId}-${accountId}`;
+  sectionHeader.style.cssText = `
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background-color: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  `;
 
-  const debugTitle = document.createElement('h4');
-  debugTitle.textContent = 'Debug Information';
-  debugTitle.style.cssText = 'margin: 0; font-size: 14px; color: #333;';
-  debugHeader.appendChild(debugTitle);
+  const headerLeft = document.createElement('div');
+  headerLeft.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+
+  const expandIcon = document.createElement('span');
+  expandIcon.id = `debug-expand-icon-${integrationId}-${accountId}`;
+  expandIcon.textContent = '▼';
+  expandIcon.style.cssText = 'transition: transform 0.2s; font-size: 12px; transform: rotate(270deg);';
+  headerLeft.appendChild(expandIcon);
+
+  const headerTitle = document.createElement('h4');
+  headerTitle.textContent = 'Debug Information';
+  headerTitle.style.cssText = 'margin: 0; font-size: 14px; color: #333;';
+  headerLeft.appendChild(headerTitle);
+
+  sectionHeader.appendChild(headerLeft);
+  sectionContainer.appendChild(sectionHeader);
+
+  // Expandable content
+  const expandableContent = document.createElement('div');
+  expandableContent.id = `debug-content-${integrationId}-${accountId}`;
+  expandableContent.style.cssText = `
+    display: none;
+    padding: 12px;
+    border: 1px solid #e0e0e0;
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    background-color: #fff;
+  `;
 
   // Button container for Edit/Save/Cancel
   const buttonContainer = document.createElement('div');
   buttonContainer.id = `debug-buttons-${integrationId}-${accountId}`;
-  buttonContainer.style.cssText = 'display: flex; gap: 8px;';
+  buttonContainer.style.cssText = 'display: flex; gap: 8px; margin-bottom: 10px;';
 
   // Edit button (visible in view mode)
   const editButton = document.createElement('button');
@@ -3200,8 +3674,7 @@ function renderDebugJsonSection(integrationId, accountEntry, accountId, onSave) 
   buttonContainer.appendChild(editButton);
   buttonContainer.appendChild(saveButton);
   buttonContainer.appendChild(cancelButton);
-  debugHeader.appendChild(buttonContainer);
-  debugSection.appendChild(debugHeader);
+  expandableContent.appendChild(buttonContainer);
 
   // JSON container (view mode)
   const jsonContainer = document.createElement('pre');
@@ -3220,7 +3693,7 @@ function renderDebugJsonSection(integrationId, accountEntry, accountId, onSave) 
     word-break: break-word;
   `;
   jsonContainer.textContent = JSON.stringify(accountEntry, null, 2);
-  debugSection.appendChild(jsonContainer);
+  expandableContent.appendChild(jsonContainer);
 
   // JSON textarea (edit mode - hidden by default)
   const jsonTextarea = document.createElement('textarea');
@@ -3241,10 +3714,28 @@ function renderDebugJsonSection(integrationId, accountEntry, accountId, onSave) 
     color: #e2e8f0;
   `;
   jsonTextarea.value = JSON.stringify(accountEntry, null, 2);
-  debugSection.appendChild(jsonTextarea);
+  expandableContent.appendChild(jsonTextarea);
+
+  sectionContainer.appendChild(expandableContent);
 
   // Store original JSON for cancel functionality
   let originalJson = JSON.stringify(accountEntry, null, 2);
+
+  // Toggle expand/collapse
+  let isExpanded = false;
+  sectionHeader.addEventListener('click', (e) => {
+    e.stopPropagation();
+    isExpanded = !isExpanded;
+    expandableContent.style.display = isExpanded ? 'block' : 'none';
+    expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(270deg)';
+  });
+
+  sectionHeader.addEventListener('mouseover', () => {
+    sectionHeader.style.backgroundColor = '#f8f9fa';
+  });
+  sectionHeader.addEventListener('mouseout', () => {
+    sectionHeader.style.backgroundColor = '#fff';
+  });
 
   // Edit button click handler
   editButton.addEventListener('click', (e) => {
@@ -3300,7 +3791,7 @@ function renderDebugJsonSection(integrationId, accountEntry, accountId, onSave) 
     cancelButton.style.display = 'none';
   });
 
-  return debugSection;
+  return sectionContainer;
 }
 
 /**
