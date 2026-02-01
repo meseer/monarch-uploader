@@ -542,6 +542,13 @@ async function uploadSingleAccount(canadalifAccount, startDate, endDate, progres
       saveLastUploadDate(accountId, endDate, 'canadalife');
     }
 
+    // Clean up legacy storage keys after successful sync using new unified storage
+    // This is idempotent - it only deletes keys that exist and is safe to call multiple times
+    const cleanupResult = accountService.cleanupLegacyStorage(INTEGRATIONS.CANADALIFE, accountId);
+    if (cleanupResult.keysDeleted > 0) {
+      debugLog(`Cleaned up ${cleanupResult.keysDeleted} legacy storage keys for ${accountName}:`, cleanupResult.keys);
+    }
+
     debugLog(`Successfully uploaded ${accountName} balance history to Monarch`);
     return true;
   } catch (error) {

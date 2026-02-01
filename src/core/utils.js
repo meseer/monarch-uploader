@@ -5,6 +5,7 @@
 
 import { STORAGE, TRANSACTION_RETENTION_DEFAULTS } from './config';
 import toast from '../ui/toast';
+import accountService from '../services/common/accountService';
 
 /**
  * Gets the current date in local timezone
@@ -190,12 +191,44 @@ export function getDefaultLookbackDays(institutionType) {
 }
 
 /**
- * Gets the last update date for an account based on institution type
+ * Maps institution type string to integration ID for accountService
+ * @param {string} institutionType - Institution type string ('questrade', 'canadalife', etc.)
+ * @returns {string|null} Integration ID or null
+ */
+function getIntegrationIdFromType(institutionType) {
+  switch (institutionType) {
+  case 'questrade':
+    return 'questrade';
+  case 'canadalife':
+    return 'canadalife';
+  case 'rogersbank':
+    return 'rogersbank';
+  case 'wealthsimple':
+    return 'wealthsimple';
+  default:
+    return null;
+  }
+}
+
+/**
+ * Gets the last update date for an account based on institution type.
+ * First checks consolidated storage (accountService), then falls back to legacy keys.
  * @param {string} accountId - Account ID
  * @param {string} institutionType - Institution type ('questrade', 'canadalife', 'rogersbank')
  * @returns {string|null} Last update date in YYYY-MM-DD format or null if not found
  */
 export function getLastUpdateDate(accountId, institutionType) {
+  // First try consolidated storage
+  const integrationId = getIntegrationIdFromType(institutionType);
+  if (integrationId) {
+    const accountData = accountService.getAccountData(integrationId, accountId);
+    if (accountData?.lastSyncDate) {
+      debugLog(`getLastUpdateDate: Found lastSyncDate in consolidated storage for ${institutionType}/${accountId}: ${accountData.lastSyncDate}`);
+      return accountData.lastSyncDate;
+    }
+  }
+
+  // Fall back to legacy storage keys
   let storageKey;
 
   switch (institutionType) {
@@ -213,7 +246,11 @@ export function getLastUpdateDate(accountId, institutionType) {
     return null;
   }
 
-  return GM_getValue(storageKey, null);
+  const legacyDate = GM_getValue(storageKey, null);
+  if (legacyDate) {
+    debugLog(`getLastUpdateDate: Found legacy storage date for ${institutionType}/${accountId}: ${legacyDate}`);
+  }
+  return legacyDate;
 }
 
 /**
@@ -245,12 +282,27 @@ export function calculateFromDateWithLookback(institutionType, accountId) {
 }
 
 /**
- * Saves the last upload date for an account based on institution type
+ * Saves the last upload date for an account based on institution type.
+ * Saves to consolidated storage first, then also to legacy keys for backward compatibility.
  * @param {string} accountId - Account ID
  * @param {string} uploadDate - Upload date in YYYY-MM-DD format
  * @param {string} institutionType - Institution type ('questrade', 'canadalife', 'rogersbank')
  */
 export function saveLastUploadDate(accountId, uploadDate, institutionType) {
+  // Save to consolidated storage first
+  const integrationId = getIntegrationIdFromType(institutionType);
+  if (integrationId) {
+    const success = accountService.updateAccountInList(integrationId, accountId, {
+      lastSyncDate: uploadDate,
+    });
+    if (success) {
+      debugLog(`saveLastUploadDate: Saved lastSyncDate to consolidated storage for ${institutionType}/${accountId}: ${uploadDate}`);
+    } else {
+      debugLog(`saveLastUploadDate: Account ${accountId} not found in consolidated storage for ${institutionType}, will create on next sync`);
+    }
+  }
+
+  // Also save to legacy keys for backward compatibility (will be cleaned up after successful sync)
   let storageKey;
 
   switch (institutionType) {
@@ -269,7 +321,7 @@ export function saveLastUploadDate(accountId, uploadDate, institutionType) {
   }
 
   GM_setValue(storageKey, uploadDate);
-  debugLog(`Saved last upload date ${uploadDate} for ${institutionType} account ${accountId}`);
+  debugLog(`saveLastUploadDate: Also saved to legacy key ${storageKey} for backward compatibility`);
 }
 /**
  * Extracts domain from a URL

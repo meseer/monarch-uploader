@@ -37,6 +37,15 @@ jest.mock('../../src/ui/toast', () => ({
   show: jest.fn(),
 }));
 
+// Mock the accountService module since utils now reads from consolidated storage
+jest.mock('../../src/services/common/accountService', () => ({
+  __esModule: true,
+  default: {
+    getAccountData: jest.fn(() => null), // Default: no account data found
+    updateAccountInList: jest.fn(() => false), // Default: account not found
+  },
+}));
+
 // Mock console methods before running tests
 beforeEach(() => {
   console.log = jest.fn();
@@ -444,18 +453,26 @@ describe('Utility Functions', () => {
     });
 
     it('should calculate correct from date with lookback', () => {
-      global.GM_getValue
-        .mockReturnValueOnce('2024-01-15') // Last upload date
-        .mockReturnValueOnce(3); // Lookback days
+      // Use mockImplementation to handle multiple GM_getValue calls
+      global.GM_getValue.mockImplementation((key, defaultValue) => {
+        if (key === 'questrade_last_upload_date_account123') return '2024-01-15';
+        if (key === 'questrade_lookback_days') return 3;
+        if (key === 'debug_log_level') return 'info';
+        return defaultValue;
+      });
 
       const result = calculateFromDateWithLookback('questrade', 'account123');
       expect(result).toBe('2024-01-12');
     });
 
     it('should use default lookback when not configured', () => {
-      global.GM_getValue
-        .mockReturnValueOnce('2024-01-15') // Last upload date
-        .mockReturnValueOnce(0); // Use default for questrade (0 days)
+      // Use mockImplementation to handle multiple GM_getValue calls
+      global.GM_getValue.mockImplementation((key, defaultValue) => {
+        if (key === 'questrade_last_upload_date_account123') return '2024-01-15';
+        if (key === 'questrade_lookback_days') return 0; // Use default for questrade (0 days)
+        if (key === 'debug_log_level') return 'info';
+        return defaultValue;
+      });
 
       const result = calculateFromDateWithLookback('questrade', 'account123');
       expect(result).toBe('2024-01-15'); // questrade default is 0 days

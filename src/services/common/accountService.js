@@ -657,6 +657,153 @@ export function getMigrationStatus(integrationId) {
 }
 
 /**
+ * Clean up legacy storage keys after successful migration to consolidated format.
+ * Should only be called after a successful sync operation using consolidated storage.
+ * This is a one-time cleanup that removes the scattered legacy keys.
+ * @param {string} integrationId - Integration identifier
+ * @param {string} accountId - Specific account ID to clean up legacy data for
+ * @returns {Object} Cleanup result {cleaned: boolean, keysDeleted: number, keys: string[]}
+ */
+export function cleanupLegacyStorage(integrationId, accountId) {
+  try {
+    // Safety check: only clean up if consolidated data exists
+    const accountData = getAccountData(integrationId, accountId);
+    if (!accountData) {
+      debugLog(`Cannot cleanup legacy storage: account ${accountId} not found in consolidated storage`);
+      return { cleaned: false, keysDeleted: 0, keys: [], reason: 'Account not found in consolidated storage' };
+    }
+
+    // Safety check: only clean up if monarchAccount mapping exists
+    if (!accountData.monarchAccount) {
+      debugLog(`Cannot cleanup legacy storage: account ${accountId} has no Monarch mapping`);
+      return { cleaned: false, keysDeleted: 0, keys: [], reason: 'No Monarch mapping in consolidated storage' };
+    }
+
+    const keysToDelete = [];
+
+    // Get legacy prefixes for this integration
+    const mappingPrefix = LEGACY_MAPPING_PREFIXES[integrationId];
+    const lastUploadPrefix = LEGACY_LAST_UPLOAD_PREFIXES[integrationId];
+    const uploadedTransactionsPrefix = LEGACY_UPLOADED_TRANSACTIONS_PREFIXES[integrationId];
+
+    // Check for legacy account mapping key
+    if (mappingPrefix) {
+      const legacyMappingKey = `${mappingPrefix}${accountId}`;
+      if (GM_getValue(legacyMappingKey, null) !== null) {
+        keysToDelete.push(legacyMappingKey);
+      }
+    }
+
+    // Check for legacy last upload date key
+    if (lastUploadPrefix) {
+      const legacyDateKey = `${lastUploadPrefix}${accountId}`;
+      if (GM_getValue(legacyDateKey, null) !== null) {
+        keysToDelete.push(legacyDateKey);
+      }
+    }
+
+    // Check for legacy uploaded transactions key (for integrations with deduplication)
+    if (uploadedTransactionsPrefix) {
+      const legacyTransactionsKey = `${uploadedTransactionsPrefix}${accountId}`;
+      if (GM_getValue(legacyTransactionsKey, null) !== null) {
+        keysToDelete.push(legacyTransactionsKey);
+      }
+    }
+
+    // Integration-specific legacy keys
+    if (integrationId === INTEGRATIONS.ROGERSBANK) {
+      // Rogers Bank has additional legacy keys
+      const creditLimitKey = `${STORAGE.ROGERSBANK_LAST_CREDIT_LIMIT_PREFIX}${accountId}`;
+      const balanceCheckpointKey = `${STORAGE.ROGERSBANK_BALANCE_CHECKPOINT_PREFIX}${accountId}`;
+
+      if (GM_getValue(creditLimitKey, null) !== null) {
+        keysToDelete.push(creditLimitKey);
+      }
+      if (GM_getValue(balanceCheckpointKey, null) !== null) {
+        keysToDelete.push(balanceCheckpointKey);
+      }
+    }
+
+    if (integrationId === INTEGRATIONS.QUESTRADE) {
+      // Questrade has holdings key
+      const holdingsKey = `${STORAGE.QUESTRADE_HOLDINGS_FOR_PREFIX}${accountId}`;
+      if (GM_getValue(holdingsKey, null) !== null) {
+        keysToDelete.push(holdingsKey);
+      }
+    }
+
+    // Delete all identified legacy keys
+    if (keysToDelete.length === 0) {
+      debugLog(`No legacy keys to clean up for ${integrationId} account ${accountId}`);
+      return { cleaned: true, keysDeleted: 0, keys: [] };
+    }
+
+    debugLog(`Cleaning up ${keysToDelete.length} legacy keys for ${integrationId} account ${accountId}:`, keysToDelete);
+
+    for (const key of keysToDelete) {
+      GM_deleteValue(key);
+    }
+
+    debugLog(`Successfully cleaned up legacy storage for ${integrationId} account ${accountId}`);
+    return { cleaned: true, keysDeleted: keysToDelete.length, keys: keysToDelete };
+  } catch (error) {
+    debugLog(`Error cleaning up legacy storage for ${integrationId} account ${accountId}:`, error);
+    return { cleaned: false, keysDeleted: 0, keys: [], reason: error.message };
+  }
+}
+
+/**
+ * Clean up all legacy storage keys for an integration
+ * Should only be called after confirming all accounts have been migrated successfully
+ * @param {string} integrationId - Integration identifier
+ * @returns {Object} Cleanup result {cleaned: boolean, totalKeysDeleted: number, accountsProcessed: number}
+ */
+export function cleanupAllLegacyStorage(integrationId) {
+  try {
+    const accounts = getAccounts(integrationId);
+    const accountKeyName = getAccountKeyName(integrationId);
+
+    if (!accountKeyName || accounts.length === 0) {
+      debugLog(`No accounts to clean up for ${integrationId}`);
+      return { cleaned: false, totalKeysDeleted: 0, accountsProcessed: 0, reason: 'No accounts found' };
+    }
+
+    let totalKeysDeleted = 0;
+    let accountsProcessed = 0;
+    const allDeletedKeys = [];
+
+    for (const account of accounts) {
+      const accountId = account[accountKeyName]?.id;
+      if (!accountId) continue;
+
+      // Only cleanup accounts that have Monarch mapping (successfully synced)
+      if (!account.monarchAccount) {
+        debugLog(`Skipping cleanup for ${accountId}: no Monarch mapping yet`);
+        continue;
+      }
+
+      const result = cleanupLegacyStorage(integrationId, accountId);
+      if (result.cleaned) {
+        totalKeysDeleted += result.keysDeleted;
+        accountsProcessed += 1;
+        allDeletedKeys.push(...result.keys);
+      }
+    }
+
+    debugLog(`Cleaned up legacy storage for ${accountsProcessed} accounts in ${integrationId}, ${totalKeysDeleted} total keys deleted`);
+    return {
+      cleaned: true,
+      totalKeysDeleted,
+      accountsProcessed,
+      keys: allDeletedKeys,
+    };
+  } catch (error) {
+    debugLog(`Error cleaning up all legacy storage for ${integrationId}:`, error);
+    return { cleaned: false, totalKeysDeleted: 0, accountsProcessed: 0, reason: error.message };
+  }
+}
+
+/**
  * Clear all account data for an integration (use with caution!)
  * @param {string} integrationId - Integration identifier
  * @param {boolean} includeLegacy - Also clear legacy data
@@ -717,6 +864,10 @@ export default {
   migrateFromLegacyStorage,
   getMigrationStatus,
   clearAllAccounts,
+
+  // Legacy cleanup
+  cleanupLegacyStorage,
+  cleanupAllLegacyStorage,
 
   // Utilities
   getStorageKey,

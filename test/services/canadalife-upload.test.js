@@ -25,6 +25,7 @@ jest.mock('../../src/services/common/accountService', () => ({
     getAccountData: jest.fn(),
     upsertAccount: jest.fn(),
     updateAccountInList: jest.fn(),
+    cleanupLegacyStorage: jest.fn(() => ({ cleaned: true, keysDeleted: 0, keys: [] })),
   },
 }));
 
