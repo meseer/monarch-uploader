@@ -51,9 +51,14 @@ jest.mock('../../src/core/config', () => ({
     ROGERSBANK_LAST_CREDIT_LIMIT_PREFIX: 'rogersbank_last_credit_limit_',
     ROGERSBANK_BALANCE_CHECKPOINT_PREFIX: 'rogersbank_balance_checkpoint_',
     ROGERSBANK_STORE_TX_DETAILS_IN_NOTES: 'rogersbank_store_tx_details_in_notes',
+    ROGERSBANK_ACCOUNTS_LIST: 'rogersbank_accounts_list',
   },
   LOGO_CLOUDINARY_IDS: {
     ROGERS: 'production/account_logos/rogers',
+  },
+  TRANSACTION_RETENTION_DEFAULTS: {
+    DAYS: 91,
+    COUNT: 1000,
   },
 }));
 
@@ -137,6 +142,28 @@ jest.mock('../../src/ui/components/categorySelector', () => ({
   showMonarchCategorySelector: jest.fn(),
 }));
 
+jest.mock('../../src/services/common/accountService', () => ({
+  __esModule: true,
+  default: {
+    getMonarchAccountMapping: jest.fn(),
+    upsertAccount: jest.fn(),
+    getAccountData: jest.fn(),
+    updateAccountInList: jest.fn(),
+    incrementSyncCount: jest.fn(),
+    isReadyForLegacyCleanup: jest.fn(),
+    cleanupLegacyStorage: jest.fn(),
+  },
+}));
+
+jest.mock('../../src/core/integrationCapabilities', () => ({
+  INTEGRATIONS: {
+    ROGERSBANK: 'rogersbank',
+    WEALTHSIMPLE: 'wealthsimple',
+    QUESTRADE: 'questrade',
+    CANADALIFE: 'canadalife',
+  },
+}));
+
 // Mock GM functions
 globalThis.GM_getValue = jest.fn();
 globalThis.GM_setValue = jest.fn();
@@ -173,6 +200,16 @@ describe('Rogers Bank Upload Service', () => {
       valid: true,
       account: { id: 'monarch123', displayName: 'Rogers Card' },
     });
+
+    // Default: accountService returns valid account mapping
+    const accountServiceMock = jest.requireMock('../../src/services/common/accountService').default;
+    accountServiceMock.getMonarchAccountMapping.mockReturnValue({ id: 'monarch123', displayName: 'Rogers Card' });
+    accountServiceMock.getAccountData.mockReturnValue({ lastSyncedCreditLimit: null, balanceCheckpoint: null });
+    accountServiceMock.upsertAccount.mockReturnValue(true);
+    accountServiceMock.updateAccountInList.mockReturnValue(true);
+    accountServiceMock.incrementSyncCount.mockReturnValue(1);
+    accountServiceMock.isReadyForLegacyCleanup.mockReturnValue(false);
+    accountServiceMock.cleanupLegacyStorage.mockReturnValue({ cleaned: false, keysDeleted: 0, keys: [] });
     toast = jest.requireMock('../../src/ui/toast').default;
     showDatePickerWithOptionsPromise = jest.requireMock('../../src/ui/components/datePicker').showDatePickerWithOptionsPromise;
     showMonarchAccountSelectorWithCreate = jest.requireMock('../../src/ui/components/accountSelectorWithCreate').showMonarchAccountSelectorWithCreate;
@@ -276,6 +313,10 @@ describe('Rogers Bank Upload Service', () => {
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
       globalThis.GM_getValue.mockReturnValue(null); // No saved mapping
 
+      // Mock no account mapping to trigger account listing
+      const accountServiceMock = jest.requireMock('../../src/services/common/accountService').default;
+      accountServiceMock.getMonarchAccountMapping.mockReturnValue(null);
+
       // Mock error in account mapping
       monarchApi.listAccounts.mockRejectedValue(new Error('Network error'));
       await uploadRogersBankToMonarch();
@@ -299,6 +340,11 @@ describe('Rogers Bank Upload Service', () => {
       showDatePickerWithOptionsPromise.mockResolvedValue({ date: '2024-01-01', reconstructBalance: false });
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
       globalThis.GM_getValue.mockReturnValue(null); // No saved mapping
+
+      // Mock no account mapping to trigger account selector
+      const accountServiceMock = jest.requireMock('../../src/services/common/accountService').default;
+      accountServiceMock.getMonarchAccountMapping.mockReturnValue(null);
+
       monarchApi.listAccounts.mockResolvedValue([
         { id: 'monarch123', displayName: 'Test Credit Card' },
       ]);
@@ -1039,7 +1085,7 @@ describe('Rogers Bank Upload Service', () => {
       );
     });
 
-    test('should use offset=10 for regular transaction sync (not balance reconstruction)', async () => {
+    test('should use offset=20 for regular transaction sync (consistent with first sync)', async () => {
       getRogersBankCredentials.mockReturnValue({
         authToken: 'test-token',
         accountId: 'test-account',
@@ -1064,7 +1110,7 @@ describe('Rogers Bank Upload Service', () => {
       fetchRogersBankAccountDetails.mockResolvedValue({ balance: -500, creditLimit: 5000, openedDate: '2023-01-01' });
       monarchApi.uploadBalance.mockResolvedValue(true);
 
-      // Track the URL called to verify offset=10 for regular sync
+      // Track the URL called to verify offset=20 for regular sync
       let capturedUrl = null;
       global.fetch.mockImplementation((url) => {
         capturedUrl = url;
@@ -1094,8 +1140,8 @@ describe('Rogers Bank Upload Service', () => {
 
       await uploadRogersBankToMonarch();
 
-      // Regular sync should have offset=10 (not fullHistory)
-      expect(capturedUrl).toContain('offset=10');
+      // Regular sync uses offset=20 (same as first sync)
+      expect(capturedUrl).toContain('offset=20');
     });
 
     test('should handle network errors during API requests', async () => {
@@ -1526,13 +1572,17 @@ describe('Rogers Bank Upload Service', () => {
         deviceId: 'test-device',
       });
 
-      // First sync - no last upload date
+      // Has previous sync (not first sync)
       globalThis.GM_getValue.mockImplementation((key) => {
         if (key.includes('rogersbank_last_upload_date_')) {
-          return '2024-01-01'; // Has previous sync (not first sync)
+          return '2024-01-01';
         }
-        return null; // No saved mapping
+        return null;
       });
+
+      // Mock no account mapping to trigger account selector
+      const accountServiceMock = jest.requireMock('../../src/services/common/accountService').default;
+      accountServiceMock.getMonarchAccountMapping.mockReturnValue(null);
 
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
 
@@ -1599,8 +1649,12 @@ describe('Rogers Bank Upload Service', () => {
         if (key.includes('rogersbank_last_upload_date_')) {
           return '2024-01-01';
         }
-        return null; // No saved mapping
+        return null;
       });
+
+      // Mock no account mapping to trigger account selector
+      const accountServiceMock = jest.requireMock('../../src/services/common/accountService').default;
+      accountServiceMock.getMonarchAccountMapping.mockReturnValue(null);
 
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
 
@@ -1664,6 +1718,10 @@ describe('Rogers Bank Upload Service', () => {
         }
         return null;
       });
+
+      // Mock no account mapping to trigger account selector
+      const accountServiceMock = jest.requireMock('../../src/services/common/accountService').default;
+      accountServiceMock.getMonarchAccountMapping.mockReturnValue(null);
 
       // User selects reconstruct balance
       showDatePickerWithOptionsPromise.mockResolvedValue({
@@ -1748,7 +1806,7 @@ describe('Rogers Bank Upload Service', () => {
       expect(csvData).not.toMatch(/"-\d/); // No negative values in CSV
     });
 
-    test('should preserve newlyCreated flag in account mapping storage', async () => {
+    test('should preserve newlyCreated flag in account mapping storage via accountService', async () => {
       getRogersBankCredentials.mockReturnValue({
         authToken: 'test-token',
         accountId: 'test-account',
@@ -1763,8 +1821,12 @@ describe('Rogers Bank Upload Service', () => {
         if (key.includes('rogersbank_last_upload_date_')) {
           return '2024-01-01';
         }
-        return null; // No saved mapping
+        return null;
       });
+
+      // Mock no account mapping to trigger account selector
+      const accountServiceMock = jest.requireMock('../../src/services/common/accountService').default;
+      accountServiceMock.getMonarchAccountMapping.mockReturnValue(null);
 
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
 
@@ -1801,10 +1863,16 @@ describe('Rogers Bank Upload Service', () => {
 
       await uploadRogersBankToMonarch();
 
-      // Verify that GM_setValue was called with the account mapping including newlyCreated
-      expect(globalThis.GM_setValue).toHaveBeenCalledWith(
-        expect.stringContaining('rogersbank_account_'),
-        expect.stringContaining('"newlyCreated":true'),
+      // Verify that accountService.upsertAccount was called with the newlyCreated flag
+      expect(accountServiceMock.upsertAccount).toHaveBeenCalledWith(
+        'rogersbank',
+        expect.objectContaining({
+          monarchAccount: expect.objectContaining({
+            id: 'new-monarch-account',
+            displayName: 'Rogers Card',
+            newlyCreated: true,
+          }),
+        }),
       );
     });
   });
@@ -2133,6 +2201,10 @@ describe('Rogers Bank Upload Service', () => {
         }
         return null;
       });
+
+      // Mock no account mapping to trigger account selector
+      const accountServiceMock = jest.requireMock('../../src/services/common/accountService').default;
+      accountServiceMock.getMonarchAccountMapping.mockReturnValue(null);
 
       // User selects reconstruct balance
       showDatePickerWithOptionsPromise.mockResolvedValue({

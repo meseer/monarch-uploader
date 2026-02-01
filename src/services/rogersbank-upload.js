@@ -19,6 +19,8 @@ import { applyCategoryMapping, saveUserCategorySelection, calculateAllCategorySi
 import { showMonarchCategorySelector } from '../ui/components/categorySelector';
 import { showProgressDialog } from '../ui/components/progressDialog';
 import { getUploadedTransactionIds, saveUploadedTransactions } from '../utils/transactionStorage';
+import accountService from './common/accountService';
+import { INTEGRATIONS } from '../core/integrationCapabilities';
 
 /**
  * Extract Rogers account name from DOM
@@ -38,11 +40,12 @@ function getRogersAccountName() {
 
 /**
  * Check if this is the first sync for the account (no previous upload date)
+ * Uses consolidated storage via getLastUpdateDate()
  * @param {string} rogersAccountId - Rogers account ID
  * @returns {boolean} True if first sync
  */
 function isFirstSync(rogersAccountId) {
-  const lastUploadDate = GM_getValue(`${STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX}${rogersAccountId}`, null);
+  const lastUploadDate = getLastUpdateDate(rogersAccountId, 'rogersbank');
   return !lastUploadDate;
 }
 
@@ -380,6 +383,7 @@ function generateBalanceCSV(balance, accountName, invertBalance = false) {
 
 /**
  * Sync credit limit from Rogers Bank to Monarch
+ * Uses consolidated storage for credit limit tracking
  * @param {string} rogersAccountId - Rogers account ID
  * @param {string} monarchAccountId - Monarch account ID
  * @param {number} creditLimit - Credit limit to set
@@ -388,15 +392,20 @@ function generateBalanceCSV(balance, accountName, invertBalance = false) {
 async function syncCreditLimit(rogersAccountId, monarchAccountId, creditLimit) {
   if (creditLimit === null || creditLimit === undefined) return true;
 
-  const storedCreditLimit = GM_getValue(`${STORAGE.ROGERSBANK_LAST_CREDIT_LIMIT_PREFIX}${rogersAccountId}`, null);
-  if (storedCreditLimit !== null && storedCreditLimit === creditLimit) return true;
+  // Check consolidated storage for last synced credit limit
+  const accountData = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, rogersAccountId);
+  const storedCreditLimit = accountData?.lastSyncedCreditLimit;
+  if (storedCreditLimit !== null && storedCreditLimit !== undefined && storedCreditLimit === creditLimit) return true;
 
   try {
     const updatedAccount = await monarchApi.setCreditLimit(monarchAccountId, creditLimit);
 
     // Verify the credit limit was actually set before caching
     if (updatedAccount && updatedAccount.limit === creditLimit) {
-      GM_setValue(`${STORAGE.ROGERSBANK_LAST_CREDIT_LIMIT_PREFIX}${rogersAccountId}`, creditLimit);
+      // Save to consolidated storage
+      accountService.updateAccountInList(INTEGRATIONS.ROGERSBANK, rogersAccountId, {
+        lastSyncedCreditLimit: creditLimit,
+      });
       debugLog(`Credit limit synced: $${creditLimit}`);
       return true;
     }
@@ -463,18 +472,20 @@ function extractRogersBankBalanceChange(accountId, currentBalance) {
 
 /**
  * Get or store balance checkpoint
+ * Uses consolidated storage for balance checkpoint tracking
+ * @param {string} accountId - Rogers account ID
+ * @param {Object|null} checkpoint - Checkpoint to store, or null to retrieve
+ * @returns {Object|null} Stored checkpoint or null
  */
 function getOrStoreBalanceCheckpoint(accountId, checkpoint = null) {
-  const storageKey = `${STORAGE.ROGERSBANK_BALANCE_CHECKPOINT_PREFIX}${accountId}`;
   if (checkpoint) {
-    GM_setValue(storageKey, JSON.stringify(checkpoint));
+    accountService.updateAccountInList(INTEGRATIONS.ROGERSBANK, accountId, {
+      balanceCheckpoint: checkpoint,
+    });
     return checkpoint;
   }
-  const stored = GM_getValue(storageKey, null);
-  if (stored) {
-    try { return JSON.parse(stored); } catch (e) { return null; }
-  }
-  return null;
+  const accountData = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, accountId);
+  return accountData?.balanceCheckpoint || null;
 }
 
 /**
@@ -555,33 +566,28 @@ export async function uploadRogersBankToMonarch() {
     progressDialog.initSteps(rogersAccountId, buildRogersBankSteps(true, true));
     progressDialog.onCancel(() => abortController.abort());
 
-    // Resolve Monarch account mapping
+    // Resolve Monarch account mapping using accountService (consolidated storage first, legacy fallback)
     let monarchAccount = null;
     let accountWarningMessage = null;
-    const storageKey = `${STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX}${rogersAccountId}`;
-    const savedMapping = GM_getValue(storageKey, null);
 
-    if (savedMapping) {
-      try {
-        const parsed = JSON.parse(savedMapping);
-        // Validate and refresh the stored account mapping
-        progressDialog.updateProgress(rogersAccountId, 'processing', 'Validating Monarch account...');
-        const validation = await monarchApi.validateAndRefreshAccountMapping(
-          parsed.id,
-          storageKey,
-          parsed.displayName,
-        );
+    // Check consolidated storage first via accountService
+    monarchAccount = accountService.getMonarchAccountMapping(INTEGRATIONS.ROGERSBANK, rogersAccountId);
 
-        if (validation.valid) {
-          monarchAccount = validation.account;
-        } else {
-          // Account was deleted - show warning in account selector
-          accountWarningMessage = validation.warningMessage;
-          monarchAccount = null;
-        }
-      } catch (e) {
-        // Parse error - clear invalid mapping
+    if (monarchAccount) {
+      // Validate the mapping is still valid (account not deleted in Monarch)
+      progressDialog.updateProgress(rogersAccountId, 'processing', 'Validating Monarch account...');
+      const validation = await monarchApi.validateAndRefreshAccountMapping(
+        monarchAccount.id,
+        null, // No legacy storage key to update
+        monarchAccount.displayName,
+      );
+
+      if (!validation.valid) {
+        // Account was deleted - show warning in account selector
+        accountWarningMessage = validation.warningMessage;
         monarchAccount = null;
+      } else {
+        monarchAccount = validation.account;
       }
     }
 
@@ -616,7 +622,14 @@ export async function uploadRogersBankToMonarch() {
         } catch (e) { /* ignore */ }
       }
 
-      GM_setValue(`${STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX}${rogersAccountId}`, JSON.stringify(monarchAccount));
+      // Save mapping to consolidated storage using accountService.upsertAccount()
+      accountService.upsertAccount(INTEGRATIONS.ROGERSBANK, {
+        rogersbankAccount: {
+          id: rogersAccountId,
+          nickname: rogersAccountName,
+        },
+        monarchAccount,
+      });
     }
 
     // STEP 1: Sync credit limit
@@ -752,7 +765,10 @@ export async function uploadRogersBankToMonarch() {
       const resolvedTx = await resolveCategoriesForTransactions(filterResult.transactions);
 
       progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Converting...');
-      const storeTransactionDetailsInNotes = GM_getValue(STORAGE.ROGERSBANK_STORE_TX_DETAILS_IN_NOTES, false);
+      // Use per-account setting from consolidated storage, fall back to global setting, then default to false
+      const accountData = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, rogersAccountId);
+      const storeTransactionDetailsInNotes = accountData?.storeTransactionDetailsInNotes
+        ?? GM_getValue(STORAGE.ROGERSBANK_STORE_TX_DETAILS_IN_NOTES, false);
       const csvData = convertTransactionsToMonarchCSV(resolvedTx, rogersAccountName, { storeTransactionDetailsInNotes });
       if (!csvData) throw new Error('Failed to convert transactions to CSV');
 
@@ -778,6 +794,17 @@ export async function uploadRogersBankToMonarch() {
           : `${filterResult.transactions.length} uploaded`;
 
         progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', msg);
+
+        // Increment sync count and cleanup legacy storage if ready
+        const newSyncCount = accountService.incrementSyncCount(INTEGRATIONS.ROGERSBANK, rogersAccountId);
+        debugLog(`Rogers Bank sync count for ${rogersAccountId}: ${newSyncCount}`);
+        if (accountService.isReadyForLegacyCleanup(INTEGRATIONS.ROGERSBANK, rogersAccountId)) {
+          const cleanupResult = accountService.cleanupLegacyStorage(INTEGRATIONS.ROGERSBANK, rogersAccountId);
+          if (cleanupResult.cleaned && cleanupResult.keysDeleted > 0) {
+            debugLog(`Cleaned up ${cleanupResult.keysDeleted} legacy storage keys for Rogers Bank account ${rogersAccountId}`);
+          }
+        }
+
         progressDialog.hideCancel();
         progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
         toast.show(`${msg} to Monarch!`, 'info');
@@ -787,7 +814,19 @@ export async function uploadRogersBankToMonarch() {
       throw new Error('Upload to Monarch failed');
     }
 
+    // No transactions case - still count as successful sync for legacy cleanup
     progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', 'No transactions');
+
+    // Increment sync count and cleanup legacy storage if ready
+    const newSyncCount = accountService.incrementSyncCount(INTEGRATIONS.ROGERSBANK, rogersAccountId);
+    debugLog(`Rogers Bank sync count for ${rogersAccountId}: ${newSyncCount}`);
+    if (accountService.isReadyForLegacyCleanup(INTEGRATIONS.ROGERSBANK, rogersAccountId)) {
+      const cleanupResult = accountService.cleanupLegacyStorage(INTEGRATIONS.ROGERSBANK, rogersAccountId);
+      if (cleanupResult.cleaned && cleanupResult.keysDeleted > 0) {
+        debugLog(`Cleaned up ${cleanupResult.keysDeleted} legacy storage keys for Rogers Bank account ${rogersAccountId}`);
+      }
+    }
+
     progressDialog.hideCancel();
     progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
     return { success: true, message: 'Balance uploaded. No transactions found.' };

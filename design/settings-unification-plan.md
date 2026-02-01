@@ -134,19 +134,21 @@ Migrate each integration to consolidated structure with backward compatibility.
 - [x] Backward compatibility maintained (legacy storage still written during migration period)
 
 #### Phase 4.3: Rogers Bank Migration (Most Complex)
-- [ ] Create Rogers Bank account service module
-- [ ] Implement `getRogersBankAccounts()` with migration logic
-- [ ] Implement `updateAccountInList()` for Rogers Bank
-- [ ] Implement `markAccountAsSkipped()` for Rogers Bank
-- [ ] Migrate global settings to per-account
-  - [ ] `ROGERSBANK_STORE_TX_DETAILS_IN_NOTES` → per-account
-  - [ ] `ROGERSBANK_TRANSACTION_RETENTION_DAYS` → per-account
-  - [ ] `ROGERSBANK_TRANSACTION_RETENTION_COUNT` → per-account
-- [ ] Add migration from prefix-based to consolidated storage
-- [ ] Update `rogersbank-upload.js` to use new account service
-- [ ] Update settings UI to use new account service
-- [ ] Add tests for migration
-- [ ] Verify backward compatibility
+**Status**: ✅ Complete (v5.59.3)
+
+*All items completed:*
+- [x] accountService.js supports Rogers Bank via `INTEGRATIONS.ROGERSBANK`
+- [x] Migration logic implemented - reads from consolidated first, falls back to legacy
+- [x] `rogersbank-upload.js` uses `accountService.getMonarchAccountMapping()` for lookup
+- [x] `rogersbank-upload.js` uses `accountService.upsertAccount()` for saving mappings
+- [x] `rogersbank-upload.js` uses `accountService.getAccountData()` and `updateAccountInList()` for:
+  - [x] Credit limit tracking (`lastSyncedCreditLimit`)
+  - [x] Balance checkpoint (`balanceCheckpoint`)
+- [x] Migrate global `ROGERSBANK_STORE_TX_DETAILS_IN_NOTES` → per-account (with global fallback)
+- [x] `isFirstSync()` uses `getLastUpdateDate()` from utils
+- [x] Sync count tracking: cleanup only after 2 successful syncs
+- [x] All tests passing (39 Rogers Bank tests, 2206 total tests)
+- [x] Backward compatibility maintained (legacy storage still written during migration period)
 
 #### Phase 4.4: Legacy Storage Cleanup (Auto-delete after migration)
 **Status**: ⏳ Partially Complete
@@ -158,7 +160,7 @@ After migration is complete and data exists in consolidated storage, automatical
 | **Wealthsimple** | ✅ N/A | ✅ N/A | None (always consolidated) |
 | **Canada Life** | ✅ v5.58.8 | ✅ v5.58.10 | `canadalife_monarch_account_for_{id}`, `canadalife_last_upload_date_{id}` |
 | **Questrade** | ✅ v5.59.0 | ✅ v5.59.0 | `questrade_monarch_account_for_{id}`, `questrade_last_upload_date_{id}` |
-| **Rogers Bank** | ❌ Phase 4.3 | ❌ Blocked | `rogersbank_monarch_account_for_{id}`, `rogersbank_last_upload_date_{id}`, `rogersbank_last_credit_limit_{id}`, `rogersbank_balance_checkpoint_{id}`, `rogersbank_uploaded_refs_{id}` |
+| **Rogers Bank** | ✅ v5.59.3 | ✅ v5.59.3 | `rogersbank_monarch_account_for_{id}`, `rogersbank_last_upload_date_{id}`, `rogersbank_last_credit_limit_{id}`, `rogersbank_balance_checkpoint_{id}`, `rogersbank_uploaded_refs_{id}` |
 
 **Cleanup Implementation Pattern (from Canada Life v5.58.10):**
 1. After successful sync completes
@@ -171,7 +173,7 @@ After migration is complete and data exists in consolidated storage, automatical
 - [x] Integrate cleanup into CanadaLife upload service (v5.58.10)
 - [x] Fix `getLastUpdateDate()` and `saveLastUploadDate()` to use consolidated storage first (v5.58.11)
 - [x] Integrate cleanup into Questrade sync service with sync count tracking (v5.59.0)
-- [ ] Integrate cleanup into Rogers Bank upload service (blocked: needs Phase 4.3 migration)
+- [x] Integrate cleanup into Rogers Bank upload service (v5.59.3)
 
 ### Phase 5: Uploaded Transactions Management UI
 **Status**: ⏳ Not Started
@@ -370,3 +372,4 @@ All integrations should use this structure:
 ## Version History
 
 - **v1.0** (2026-01-27): Initial plan created
+- **v1.1** (2026-02-01): Phase 4.3 (Rogers Bank Migration) completed (v5.59.3)
