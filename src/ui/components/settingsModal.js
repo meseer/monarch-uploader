@@ -23,6 +23,7 @@ import {
   getCategoryMappingsConfig,
 } from '../../core/integrationCapabilities';
 import accountService from '../../services/common/accountService';
+import scriptInfo from '../../scriptInfo.json';
 
 /**
  * Checks connection status for an institution
@@ -354,6 +355,40 @@ export function createSettingsModal() {
 
     tabNav.appendChild(tabButton);
   });
+
+  // Add version link at the bottom of tab navigation
+  const versionContainer = document.createElement('div');
+  versionContainer.id = 'settings-version-container';
+  versionContainer.style.cssText = `
+    margin-top: auto;
+    padding: 15px 20px;
+    border-top: 1px solid #e0e0e0;
+  `;
+
+  const versionLink = document.createElement('a');
+  versionLink.id = 'settings-version-link';
+  versionLink.href = scriptInfo.gistUrl;
+  versionLink.target = '_blank';
+  versionLink.rel = 'noopener noreferrer';
+  versionLink.textContent = `v${scriptInfo.version}`;
+  versionLink.style.cssText = `
+    font-size: 12px;
+    color: #666;
+    text-decoration: none;
+    display: inline-block;
+    transition: color 0.2s;
+  `;
+  versionLink.addEventListener('mouseover', () => {
+    versionLink.style.color = '#0073b1';
+    versionLink.style.textDecoration = 'underline';
+  });
+  versionLink.addEventListener('mouseout', () => {
+    versionLink.style.color = '#666';
+    versionLink.style.textDecoration = 'none';
+  });
+
+  versionContainer.appendChild(versionLink);
+  tabNav.appendChild(versionContainer);
 
   mainContainer.appendChild(tabNav);
   mainContainer.appendChild(tabContent);

@@ -115,6 +115,11 @@ jest.mock('../../src/services/common/accountService', () => ({
   isAccountSkipped: jest.fn(() => false),
 }));
 
+jest.mock('../../src/scriptInfo.json', () => ({
+  version: '5.60.0',
+  gistUrl: 'https://gist.github.com/meseer/f00fb552c96efeb3eb4e4e1fd520d4e7/raw/monarch-uploader.user.js',
+}), { virtual: true });
+
 jest.mock('../../src/core/integrationCapabilities', () => ({
   INTEGRATIONS: {
     WEALTHSIMPLE: 'wealthsimple',
@@ -1360,6 +1365,80 @@ describe('Settings Modal Component', () => {
 
       deleteAllButton.dispatchEvent(new Event('mouseout'));
       expect(deleteAllButton.style.backgroundColor).toBe('rgb(220, 53, 69)');
+    });
+  });
+
+  describe('Version Link in Tab Navigation', () => {
+    test('should display version link at the bottom of tab navigation', () => {
+      modal = createSettingsModal();
+
+      const versionContainer = modal.querySelector('#settings-version-container');
+      expect(versionContainer).toBeTruthy();
+    });
+
+    test('should display version link with correct ID', () => {
+      modal = createSettingsModal();
+
+      const versionLink = modal.querySelector('#settings-version-link');
+      expect(versionLink).toBeTruthy();
+    });
+
+    test('should display correct version from scriptInfo', () => {
+      modal = createSettingsModal();
+
+      const versionLink = modal.querySelector('#settings-version-link');
+      expect(versionLink.textContent).toBe('v5.60.0');
+    });
+
+    test('should have correct gist URL as href', () => {
+      modal = createSettingsModal();
+
+      const versionLink = modal.querySelector('#settings-version-link');
+      expect(versionLink.href).toBe('https://gist.github.com/meseer/f00fb552c96efeb3eb4e4e1fd520d4e7/raw/monarch-uploader.user.js');
+    });
+
+    test('should open gist URL in new tab', () => {
+      modal = createSettingsModal();
+
+      const versionLink = modal.querySelector('#settings-version-link');
+      expect(versionLink.target).toBe('_blank');
+      expect(versionLink.rel).toBe('noopener noreferrer');
+    });
+
+    test('should have version link inside tab navigation', () => {
+      modal = createSettingsModal();
+
+      const tabNav = modal.querySelector('.settings-tab-nav');
+      const versionContainer = tabNav.querySelector('#settings-version-container');
+      expect(versionContainer).toBeTruthy();
+    });
+
+    test('should handle version link hover effects', () => {
+      modal = createSettingsModal();
+
+      const versionLink = modal.querySelector('#settings-version-link');
+
+      // Initial state
+      expect(versionLink.style.color).toBe('rgb(102, 102, 102)');
+      expect(versionLink.style.textDecoration).toBe('none');
+
+      // Simulate mouseover
+      versionLink.dispatchEvent(new Event('mouseover'));
+      expect(versionLink.style.color).toBe('rgb(0, 115, 177)');
+      expect(versionLink.style.textDecoration).toBe('underline');
+
+      // Simulate mouseout
+      versionLink.dispatchEvent(new Event('mouseout'));
+      expect(versionLink.style.color).toBe('rgb(102, 102, 102)');
+      expect(versionLink.style.textDecoration).toBe('none');
+    });
+
+    test('should position version container at bottom with border-top', () => {
+      modal = createSettingsModal();
+
+      const versionContainer = modal.querySelector('#settings-version-container');
+      expect(versionContainer.style.marginTop).toBe('auto');
+      expect(versionContainer.style.borderTop).toContain('1px solid');
     });
   });
 

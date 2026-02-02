@@ -23,9 +23,12 @@
 // @run-at       document-idle
 // ==/UserScript==
 
+// Import shared script info
+const scriptInfo = require('./scriptInfo.json');
+
 function generateMetadata(_buildType = 'local') {
-  // All builds now point to the same Gist for updates
-  const gistUrl = 'https://gist.github.com/meseer/f00fb552c96efeb3eb4e4e1fd520d4e7/raw/monarch-uploader.user.js';
+  // Use shared constants
+  const { version, gistUrl } = scriptInfo;
 
   // Always include update URLs pointing to the Gist
   const downloadUrl = gistUrl;
@@ -37,7 +40,7 @@ function generateMetadata(_buildType = 'local') {
   return `// ==UserScript==
 // @name         Monarch Uploader
 // @namespace    https://github.com/meseer/monarch-uploader
-// @version      5.60.0
+// @version      ${version}
 // @description  Upload Questrade, CanadaLife, Rogers Bank, and Wealthsimple balance and transactions to Monarch.
 // @author       Mykhailo Delegan
 // @match        https://myportal.questrade.com/*
