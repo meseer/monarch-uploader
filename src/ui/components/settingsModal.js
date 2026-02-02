@@ -852,27 +852,20 @@ function renderWealthsimpleTab(container) {
   const lookbackSection = createLookbackPeriodSection('wealthsimple');
   container.appendChild(lookbackSection);
 
-  // Account Mappings Section with consolidated structure
+  // Account Mappings Section using generic account cards
   const mappingsSection = createSection('Account Mappings', '🔗', 'Wealthsimple to Monarch account mappings');
 
-  // Get all accounts from consolidated storage
-  const accounts = getWealthsimpleAccounts();
+  // Get accounts from unified account service (handles migration from legacy storage)
+  const accounts = accountService.getAccounts(INTEGRATIONS.WEALTHSIMPLE);
 
-  if (accounts.length === 0) {
-    const emptyMessage = document.createElement('p');
-    emptyMessage.textContent = 'No accounts found. Accounts will appear here after syncing with Wealthsimple.';
-    emptyMessage.style.cssText = 'color: #666; font-style: italic; margin: 10px 0;';
-    mappingsSection.appendChild(emptyMessage);
-  } else {
-    // Sort accounts before rendering
-    const sortedAccounts = sortWealthsimpleAccounts(accounts);
+  // Sort accounts before rendering (enabled first, then by type)
+  const sortedAccounts = sortWealthsimpleAccounts(accounts);
 
-    const accountCards = createWealthsimpleAccountCards(sortedAccounts, () => {
-      // Refresh callback
-      renderTabContent(container, 'wealthsimple');
-    });
-    mappingsSection.appendChild(accountCards);
-  }
+  const accountCards = createGenericAccountCards(INTEGRATIONS.WEALTHSIMPLE, sortedAccounts, () => {
+    // Refresh callback
+    renderTabContent(container, 'wealthsimple');
+  });
+  mappingsSection.appendChild(accountCards);
 
   container.appendChild(mappingsSection);
 
@@ -4034,10 +4027,12 @@ function createGenericAccountCards(integrationId, accounts, onRefresh) {
 
 /**
  * Creates Wealthsimple account cards (legacy function, kept for backward compatibility)
+ * @deprecated Will be removed in Phase 7 cleanup - use createGenericAccountCards instead
  * @param {Array} accounts - Array of consolidated account objects
  * @param {Function} onRefresh - Callback to refresh the tab after changes
  * @returns {HTMLElement} Container with account cards
  */
+// eslint-disable-next-line no-unused-vars
 function createWealthsimpleAccountCards(accounts, onRefresh) {
   const container = document.createElement('div');
   container.style.cssText = 'margin: 10px 0;';

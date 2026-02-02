@@ -90,6 +90,7 @@ Update settings modal to use capabilities and unified account service.
 - [x] Refactor `renderQuestradeTab()` to use generic cards
 - [x] Refactor `renderCanadaLifeTab()` to use generic cards
 - [x] Refactor `renderRogersBankTab()` to use generic cards (v5.58.5)
+- [x] Refactor `renderWealthsimpleTab()` to use generic cards (v5.59.6) - unified with others
 - [x] Enable/disable toggle per account (via `createToggleSwitch`)
 - [x] Update tests for refactored tabs
 
@@ -373,3 +374,4 @@ All integrations should use this structure:
 
 - **v1.0** (2026-01-27): Initial plan created
 - **v1.1** (2026-02-01): Phase 4.3 (Rogers Bank Migration) completed (v5.59.3)
+- **v1.2** (2026-02-01): Phase 3.1 fully complete - Wealthsimple tab migrated to generic pattern (v5.59.6)

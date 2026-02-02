@@ -1262,6 +1262,10 @@ describe('Settings Modal Component', () => {
     });
 
     test('should show empty message when no Wealthsimple accounts exist', () => {
+      // Reset accountService mock to return empty array
+      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      accountService.getAccounts.mockReturnValue([]);
+
       modal = createSettingsModal();
 
       const wealthsimpleTab = Array.from(modal.querySelectorAll('.settings-tab-button'))

@@ -30,9 +30,9 @@ describe('Wealthsimple UI Injection Points', () => {
       });
     });
 
-    test('first injection point should be .bZQXKE with prepend method', () => {
+    test('first injection point should be .kOjAGq with prepend method', () => {
       const firstPoint = WEALTHSIMPLE_UI.INJECTION_POINTS[0];
-      expect(firstPoint.selector).toBe('.bZQXKE');
+      expect(firstPoint.selector).toBe('.kOjAGq');
       expect(firstPoint.insertMethod).toBe('prepend');
     });
   });
@@ -46,7 +46,7 @@ describe('Wealthsimple UI Injection Points', () => {
     test('should find injection point when available', () => {
       // Create injection point
       const container = document.createElement('div');
-      container.className = 'bZQXKE';
+      container.className = 'kOjAGq';
       document.body.appendChild(container);
 
       // Verify injection point is found
@@ -245,7 +245,7 @@ describe('Wealthsimple UI Injection Points', () => {
   describe('getAllInjectionSelectors helper', () => {
     test('should combine all selectors with comma separator', () => {
       const combinedSelector = WEALTHSIMPLE_UI.INJECTION_POINTS.map((ip) => ip.selector).join(', ');
-      expect(combinedSelector).toBe('.bZQXKE');
+      expect(combinedSelector).toBe('.kOjAGq, .bZQXKE');
     });
   });
 });

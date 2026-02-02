@@ -164,7 +164,10 @@ export const UI = {
  *   (injects into the parent, before the target)
  */
 export const WEALTHSIMPLE_UI = {
-  INJECTION_POINTS: [{ selector: '.bZQXKE', insertMethod: 'prepend' }],
+  // XPath: //*[@id="main"]/div/div/div[2]/div[2]
+  INJECTION_POINTS: [{ selector: '.kOjAGq', insertMethod: 'prepend' },
+    { selector: '.bZQXKE', insertMethod: 'prepend' },
+  ],
 };
 
 // Default export with all config values
