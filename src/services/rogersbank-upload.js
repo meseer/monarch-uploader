@@ -658,12 +658,14 @@ export async function uploadRogersBankToMonarch() {
       }
 
       // Save mapping to consolidated storage using accountService.upsertAccount()
+      // Include invertBalance flag: true for newly created manual accounts, false for linked accounts
       accountService.upsertAccount(INTEGRATIONS.ROGERSBANK, {
         rogersbankAccount: {
           id: rogersAccountId,
           nickname: rogersAccountName,
         },
         monarchAccount,
+        invertBalance: monarchAccount.newlyCreated === true,
       });
     }
 
@@ -699,11 +701,21 @@ export async function uploadRogersBankToMonarch() {
     let balanceUploadSuccess = false;
     const todayFormatted = getTodayLocal();
 
-    // For manually created accounts, invert the balance (Rogers API returns negative values,
-    // but manual accounts need positive values for credit card balances)
-    const invertBalance = monarchAccount.newlyCreated === true;
+    // Get invertBalance setting from saved account data
+    // For migration: if undefined, derive from monarchAccount.newlyCreated (persisted) and save it
+    const accountDataForInvert = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, rogersAccountId);
+    let invertBalance = accountDataForInvert?.invertBalance;
+
+    if (invertBalance === undefined) {
+      // Migration: derive from persisted newlyCreated flag (matches previous dynamic calculation)
+      invertBalance = accountDataForInvert?.monarchAccount?.newlyCreated === true;
+      // Save for future syncs
+      accountService.updateAccountInList(INTEGRATIONS.ROGERSBANK, rogersAccountId, { invertBalance });
+      debugLog(`Migrated invertBalance setting: ${invertBalance} (derived from newlyCreated)`);
+    }
+
     if (invertBalance) {
-      debugLog('Inverting balance for manually created account');
+      debugLog('Inverting balance (invertBalance setting enabled)');
     }
 
     if (firstSync && reconstructBalance) {

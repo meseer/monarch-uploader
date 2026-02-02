@@ -1544,6 +1544,252 @@ describe('Rogers Bank Upload Service', () => {
     });
   });
 
+  describe('uploadRogersBankToMonarch - invertBalance Setting', () => {
+    test('should read invertBalance from saved account settings', async () => {
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+
+      // Has previous sync (not first sync)
+      globalThis.GM_getValue.mockImplementation((key) => {
+        if (key.includes('rogersbank_last_upload_date_')) {
+          return '2024-01-01';
+        }
+        return null;
+      });
+
+      calculateFromDateWithLookback.mockReturnValue('2024-01-01');
+
+      // Mock existing account mapping
+      accountServiceMock.getMonarchAccountMapping.mockReturnValue({ id: 'monarch123', displayName: 'Rogers Card' });
+
+      // Mock account data WITH invertBalance setting explicitly set to true
+      accountServiceMock.getAccountData.mockReturnValue({
+        invertBalance: true,
+        uploadedTransactions: [],
+      });
+
+      fetchRogersBankAccountDetails.mockResolvedValue({
+        balance: -1500.50,
+        creditLimit: 5000,
+        openedDate: '2023-01-01',
+      });
+
+      monarchApi.uploadBalance.mockResolvedValue(true);
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          activitySummary: {
+            totalCount: 0,
+            activities: [],
+          },
+        }),
+      });
+
+      await uploadRogersBankToMonarch();
+
+      // Verify uploadBalance was called with INVERTED (positive) balance
+      expect(monarchApi.uploadBalance).toHaveBeenCalledWith(
+        'monarch123',
+        expect.stringContaining('1500.5'), // Positive value (inverted from -1500.50)
+        expect.any(String),
+        expect.any(String),
+      );
+    });
+
+    test('should NOT invert balance when invertBalance setting is false', async () => {
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+
+      globalThis.GM_getValue.mockImplementation((key) => {
+        if (key.includes('rogersbank_last_upload_date_')) {
+          return '2024-01-01';
+        }
+        return null;
+      });
+
+      calculateFromDateWithLookback.mockReturnValue('2024-01-01');
+
+      accountServiceMock.getMonarchAccountMapping.mockReturnValue({ id: 'monarch123', displayName: 'Rogers Card' });
+
+      // Mock account data WITH invertBalance explicitly set to false
+      accountServiceMock.getAccountData.mockReturnValue({
+        invertBalance: false,
+        uploadedTransactions: [],
+      });
+
+      fetchRogersBankAccountDetails.mockResolvedValue({
+        balance: -1500.50,
+        creditLimit: 5000,
+        openedDate: '2023-01-01',
+      });
+
+      monarchApi.uploadBalance.mockResolvedValue(true);
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          activitySummary: {
+            totalCount: 0,
+            activities: [],
+          },
+        }),
+      });
+
+      await uploadRogersBankToMonarch();
+
+      // Verify uploadBalance was called with ORIGINAL (negative) balance
+      expect(monarchApi.uploadBalance).toHaveBeenCalledWith(
+        'monarch123',
+        expect.stringContaining('-1500.5'), // Original negative value
+        expect.any(String),
+        expect.any(String),
+      );
+    });
+
+    test('should migrate invertBalance from newlyCreated flag when invertBalance is undefined', async () => {
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+
+      globalThis.GM_getValue.mockImplementation((key) => {
+        if (key.includes('rogersbank_last_upload_date_')) {
+          return '2024-01-01';
+        }
+        return null;
+      });
+
+      calculateFromDateWithLookback.mockReturnValue('2024-01-01');
+
+      accountServiceMock.getMonarchAccountMapping.mockReturnValue({ id: 'monarch123', displayName: 'Rogers Card' });
+
+      // Mock account data WITHOUT invertBalance but WITH newlyCreated flag
+      accountServiceMock.getAccountData.mockReturnValue({
+        monarchAccount: { id: 'monarch123', displayName: 'Rogers Card', newlyCreated: true },
+        uploadedTransactions: [],
+        // invertBalance is undefined - should trigger migration
+      });
+
+      fetchRogersBankAccountDetails.mockResolvedValue({
+        balance: -1500.50,
+        creditLimit: 5000,
+        openedDate: '2023-01-01',
+      });
+
+      monarchApi.uploadBalance.mockResolvedValue(true);
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          activitySummary: {
+            totalCount: 0,
+            activities: [],
+          },
+        }),
+      });
+
+      await uploadRogersBankToMonarch();
+
+      // Should update account with migrated invertBalance setting
+      expect(accountServiceMock.updateAccountInList).toHaveBeenCalledWith(
+        'rogersbank',
+        'test-account',
+        expect.objectContaining({
+          invertBalance: true, // Derived from newlyCreated: true
+        }),
+      );
+
+      // Verify uploadBalance was called with INVERTED balance (migration applied)
+      expect(monarchApi.uploadBalance).toHaveBeenCalledWith(
+        'monarch123',
+        expect.stringContaining('1500.5'), // Inverted
+        expect.any(String),
+        expect.any(String),
+      );
+    });
+
+    test('should save invertBalance when creating new account mapping', async () => {
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+
+      globalThis.GM_getValue.mockImplementation((key) => {
+        if (key.includes('rogersbank_last_upload_date_')) {
+          return '2024-01-01';
+        }
+        return null;
+      });
+
+      // Mock no account mapping to trigger account selector
+      accountServiceMock.getMonarchAccountMapping.mockReturnValue(null);
+
+      calculateFromDateWithLookback.mockReturnValue('2024-01-01');
+
+      fetchRogersBankAccountDetails.mockResolvedValue({
+        balance: -1000,
+        creditLimit: 5000,
+        openedDate: '2023-01-01',
+      });
+
+      monarchApi.listAccounts.mockResolvedValue([
+        { id: 'monarch123', displayName: 'Rogers Card' },
+      ]);
+
+      // User creates a NEW account (newlyCreated: true)
+      showMonarchAccountSelectorWithCreate.mockImplementation((accounts, callback) => {
+        callback({
+          id: 'new-monarch-account',
+          displayName: 'Rogers Card',
+          newlyCreated: true,
+        });
+      });
+
+      monarchApi.uploadBalance.mockResolvedValue(true);
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          activitySummary: {
+            totalCount: 0,
+            activities: [],
+          },
+        }),
+      });
+
+      await uploadRogersBankToMonarch();
+
+      // Verify that accountService.upsertAccount was called with invertBalance flag
+      expect(accountServiceMock.upsertAccount).toHaveBeenCalledWith(
+        'rogersbank',
+        expect.objectContaining({
+          invertBalance: true, // Set based on newlyCreated
+        }),
+      );
+    });
+  });
+
   describe('uploadRogersBankToMonarch - Balance Inversion for Manual Accounts', () => {
     test('should invert balance for newly created manual accounts', async () => {
       getRogersBankCredentials.mockReturnValue({
@@ -1565,6 +1811,13 @@ describe('Rogers Bank Upload Service', () => {
 
       // Mock no account mapping to trigger account selector
       accountServiceMock.getMonarchAccountMapping.mockReturnValue(null);
+
+      // Mock account data with invertBalance: true (set when account was created)
+      // This simulates a previously created manual account
+      accountServiceMock.getAccountData.mockReturnValue({
+        invertBalance: true, // Saved setting from when account was created
+        uploadedTransactions: [],
+      });
 
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
 
@@ -1702,6 +1955,12 @@ describe('Rogers Bank Upload Service', () => {
 
       // Mock no account mapping to trigger account selector
       accountServiceMock.getMonarchAccountMapping.mockReturnValue(null);
+
+      // Mock account data with invertBalance: true (will be set when account is created)
+      accountServiceMock.getAccountData.mockReturnValue({
+        invertBalance: true, // Saved setting from when account was created
+        uploadedTransactions: [],
+      });
 
       // User selects reconstruct balance
       showDatePickerWithOptionsPromise.mockResolvedValue({
@@ -2188,6 +2447,12 @@ describe('Rogers Bank Upload Service', () => {
 
       // Mock no account mapping to trigger account selector
       accountServiceMock.getMonarchAccountMapping.mockReturnValue(null);
+
+      // Mock account data with invertBalance: true (will be set when account is created)
+      accountServiceMock.getAccountData.mockReturnValue({
+        invertBalance: true, // Saved setting from when account was created
+        uploadedTransactions: [],
+      });
 
       // User selects reconstruct balance
       showDatePickerWithOptionsPromise.mockResolvedValue({

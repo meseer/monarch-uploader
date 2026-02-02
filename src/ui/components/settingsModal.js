@@ -2924,6 +2924,39 @@ function renderAccountSettingsSection(integrationId, accountEntry, accountId, on
     settingsSection.appendChild(retentionDaysSetting);
   }
 
+  // Invert balance toggle (Rogers Bank only)
+  if (hasSetting(integrationId, ACCOUNT_SETTINGS.INVERT_BALANCE)) {
+    const invertBalanceSetting = document.createElement('div');
+    invertBalanceSetting.id = `setting-invert-balance-${accountId}`;
+    invertBalanceSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: white; border-radius: 6px; margin-bottom: 8px;';
+
+    const invertBalanceLabel = document.createElement('div');
+    invertBalanceLabel.innerHTML = `
+      <div style="font-weight: 500; font-size: 13px;">Invert balance values</div>
+      <div style="font-size: 11px; color: #666;">Negate balance values before uploading. Enable for manually created accounts where the bank reports negative balances.</div>
+    `;
+
+    const currentValue = accountEntry.invertBalance ?? getSettingDefault(integrationId, ACCOUNT_SETTINGS.INVERT_BALANCE);
+    const invertBalanceToggle = createToggleSwitch(
+      currentValue,
+      (isEnabled) => {
+        const success = accountService.updateAccountInList(integrationId, accountId, { invertBalance: isEnabled });
+        if (success) {
+          toast.show(`Balance inversion ${isEnabled ? 'enabled' : 'disabled'}`, 'info');
+          if (onUpdate) onUpdate();
+        } else {
+          toast.show('Failed to update setting', 'error');
+        }
+      },
+      false,
+    );
+
+    invertBalanceSetting.appendChild(invertBalanceLabel);
+    invertBalanceSetting.appendChild(invertBalanceToggle);
+    invertBalanceSetting.addEventListener('click', (e) => e.stopPropagation());
+    settingsSection.appendChild(invertBalanceSetting);
+  }
+
   // Transaction retention count (for deduplication-enabled integrations)
   if (hasSetting(integrationId, ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT)) {
     const retentionCountSetting = document.createElement('div');
