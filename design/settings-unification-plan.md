@@ -105,7 +105,7 @@ Update settings modal to use capabilities and unified account service.
 - [x] Verify lint and tests pass
 
 ### Phase 4: Storage Migration
-**Status**: ⏳ In Progress
+**Status**: ✅ Complete
 
 Migrate each integration to consolidated structure with backward compatibility.
 
@@ -177,16 +177,23 @@ After migration is complete and data exists in consolidated storage, automatical
 - [x] Integrate cleanup into Rogers Bank upload service (v5.59.3)
 
 ### Phase 5: Uploaded Transactions Management UI
-**Status**: ⏳ Not Started
+**Status**: ✅ Complete (implemented in Phase 3.3)
 
-Add transaction management section to all integrations with deduplication.
+Transaction management UI was implemented as part of Phase 3.3 and is now available for all integrations with deduplication.
 
-- [ ] Create generic `createTransactionsManagementSection()` function
-- [ ] Add to Questrade settings (for orders)
-- [ ] Add to Wealthsimple settings (existing data, needs UI)
-- [ ] Ensure Rogers Bank uses the generic function
-- [ ] Add bulk operations (select all, delete selected, add)
-- [ ] Update tests
+- [x] Create generic `renderTransactionsManagementSection()` function
+- [x] Add to Questrade settings (for orders)
+- [x] Add to Wealthsimple settings
+- [x] Ensure Rogers Bank uses the generic function
+- [x] Add bulk operations (select all, select none, delete selected, delete all, add)
+- [x] Tests exist in settingsModal.test.js
+
+**Implementation Details:**
+- Function is in `settingsModal.js` (`renderTransactionsManagementSection`)
+- Integrated into `createGenericAccountCards()` for all integrations with `hasDeduplication: true`
+- Shows collapsible section with transaction count
+- Displays date badges for transactions in `{id, date}` format
+- Supports both object format and legacy string format
 
 ### Phase 6: Update Cline Rules for Integration Consistency
 **Status**: ✅ Complete (v5.59.7)
@@ -201,7 +208,7 @@ After achieving baseline consistency, update cline rules to maintain consistency
 - [x] Add checklist for adding new integrations
 
 ### Phase 7: Code Cleanup
-**Status**: ⏳ In Progress (v5.59.7)
+**Status**: ⏸ Deferred (functions marked @deprecated, no functional impact)
 
 After all integrations are migrated to the unified pattern, remove deprecated code.
 
@@ -379,3 +386,4 @@ All integrations should use this structure:
 - **v1.1** (2026-02-01): Phase 4.3 (Rogers Bank Migration) completed (v5.59.3)
 - **v1.2** (2026-02-01): Phase 3.1 fully complete - Wealthsimple tab migrated to generic pattern (v5.59.6)
 - **v1.3** (2026-02-01): Phase 6 complete - Created .clinerules/12-integration-consistency.md, started Phase 7 cleanup (v5.59.7)
+- **v1.4** (2026-02-01): Phases 4 and 5 confirmed complete - Phase 5 was implemented as part of Phase 3.3
