@@ -722,66 +722,6 @@ function renderCanadaLifeTab(container) {
 }
 
 /**
- * Clears all Rogers Bank settings except category mappings
- * @deprecated Will be removed in Phase 7 cleanup
- * @returns {number} Number of keys deleted
- */
-// eslint-disable-next-line no-unused-vars
-function clearRogersBankSettings() {
-  const allKeys = GM_listValues();
-  let deletedCount = 0;
-
-  // Fixed keys to delete
-  const fixedKeysToDelete = [
-    STORAGE.ROGERSBANK_AUTH_TOKEN,
-    STORAGE.ROGERSBANK_ACCOUNT_ID,
-    STORAGE.ROGERSBANK_CUSTOMER_ID,
-    STORAGE.ROGERSBANK_ACCOUNT_ID_ENCODED,
-    STORAGE.ROGERSBANK_CUSTOMER_ID_ENCODED,
-    STORAGE.ROGERSBANK_DEVICE_ID,
-    STORAGE.ROGERSBANK_LAST_UPDATED,
-    STORAGE.ROGERSBANK_FROM_DATE,
-    STORAGE.ROGERSBANK_STORE_TX_DETAILS_IN_NOTES,
-    STORAGE.ROGERSBANK_LOOKBACK_DAYS,
-    STORAGE.ROGERSBANK_TRANSACTION_RETENTION_DAYS,
-    STORAGE.ROGERSBANK_TRANSACTION_RETENTION_COUNT,
-    STORAGE.ROGERSBANK_ACCOUNTS_LIST,
-  ];
-
-  // Prefixes for dynamic keys to delete
-  const prefixesToDelete = [
-    STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX,
-    STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX,
-    STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX,
-    STORAGE.ROGERSBANK_LAST_CREDIT_LIMIT_PREFIX,
-    STORAGE.ROGERSBANK_BALANCE_CHECKPOINT_PREFIX,
-  ];
-
-  // Delete fixed keys
-  fixedKeysToDelete.forEach((key) => {
-    if (GM_getValue(key) !== undefined) {
-      GM_deleteValue(key);
-      deletedCount++;
-      debugLog(`Deleted Rogers Bank setting: ${key}`);
-    }
-  });
-
-  // Delete prefixed keys (except category mappings)
-  allKeys.forEach((key) => {
-    for (const prefix of prefixesToDelete) {
-      if (key.startsWith(prefix)) {
-        GM_deleteValue(key);
-        deletedCount++;
-        debugLog(`Deleted Rogers Bank setting: ${key}`);
-        break;
-      }
-    }
-  });
-
-  return deletedCount;
-}
-
-/**
  * Renders the Rogers Bank settings tab
  * @param {HTMLElement} container - Container element
  */
@@ -1047,28 +987,6 @@ function createSection(title, icon, description) {
   section.appendChild(header);
 
   return section;
-}
-
-/**
- * Gets stored data based on prefix
- * @deprecated Will be removed in Phase 7 cleanup
- * @param {string} prefix - Storage key prefix
- * @returns {Array} Array of [key, displayKey, value] tuples
- */
-// eslint-disable-next-line no-unused-vars
-function getStorageData(prefix) {
-  const allKeys = GM_listValues();
-  const data = [];
-
-  allKeys.forEach((key) => {
-    if (key.startsWith(prefix)) {
-      const displayKey = key.replace(prefix, '');
-      const value = GM_getValue(key, '');
-      data.push([key, displayKey, value]);
-    }
-  });
-
-  return data;
 }
 
 /**

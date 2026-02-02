@@ -189,26 +189,29 @@ Add transaction management section to all integrations with deduplication.
 - [ ] Update tests
 
 ### Phase 6: Update Cline Rules for Integration Consistency
-**Status**: ⏳ Not Started
+**Status**: ✅ Complete (v5.59.7)
 
 After achieving baseline consistency, update cline rules to maintain consistency for future work.
 
-- [ ] Create `.clinerules/12-integration-consistency.md` guideline document
-- [ ] Document the consolidated account structure pattern
-- [ ] Document required capabilities configuration for new integrations
-- [ ] Document settings UI patterns (account cards, per-account settings)
-- [ ] Document migration requirements for storage changes
-- [ ] Add checklist for adding new integrations
+- [x] Create `.clinerules/12-integration-consistency.md` guideline document
+- [x] Document the consolidated account structure pattern
+- [x] Document required capabilities configuration for new integrations
+- [x] Document settings UI patterns (account cards, per-account settings)
+- [x] Document migration requirements for storage changes
+- [x] Add checklist for adding new integrations
 
 ### Phase 7: Code Cleanup
-**Status**: ⏳ Not Started
+**Status**: ⏳ In Progress (v5.59.7)
 
 After all integrations are migrated to the unified pattern, remove deprecated code.
 
-- [ ] Remove `createAccountMappingCards()` from settingsModal.js
-- [ ] Remove `createWealthsimpleAccountCards()` (replaced by generic)
-- [ ] Remove legacy `getStorageData()` function if unused
-- [ ] Remove legacy render functions that were replaced
+- [x] Remove `clearRogersBankSettings()` from settingsModal.js (marked @deprecated)
+- [x] Remove legacy `getStorageData()` function (marked @deprecated)
+- [ ] Remove `createAccountMappingCards()` from settingsModal.js (still used in deprecated path)
+- [ ] Remove `createWealthsimpleAccountCards()` (marked @deprecated, still exported)
+- [ ] Remove `createDataTable()` (marked @deprecated)
+- [ ] Remove `createTransactionsManagementTable()` (marked @deprecated)
+- [ ] Remove `deleteSelectedTransactionRefs()` (only used by deprecated functions)
 - [ ] Clean up any duplicate helper functions
 - [ ] Remove unused imports
 - [ ] Run full test suite to verify no regressions
@@ -375,3 +378,4 @@ All integrations should use this structure:
 - **v1.0** (2026-01-27): Initial plan created
 - **v1.1** (2026-02-01): Phase 4.3 (Rogers Bank Migration) completed (v5.59.3)
 - **v1.2** (2026-02-01): Phase 3.1 fully complete - Wealthsimple tab migrated to generic pattern (v5.59.6)
+- **v1.3** (2026-02-01): Phase 6 complete - Created .clinerules/12-integration-consistency.md, started Phase 7 cleanup (v5.59.7)
