@@ -964,6 +964,207 @@ export function cleanupAllLegacyStorage(integrationId) {
   }
 }
 
+// ============================================
+// HOLDINGS MAPPING METHODS
+// Unified interface for managing security-to-holding mappings
+// Uses consistent naming: { securityId, holdingId, symbol }
+// ============================================
+
+/**
+ * Normalize holding mapping data to unified structure
+ * Converts Wealthsimple's naming (monarchSecurityId, monarchHoldingId) to unified (securityId, holdingId)
+ * @param {Object} mappingData - Raw mapping data
+ * @returns {Object} Normalized mapping data with { securityId, holdingId, symbol }
+ */
+function normalizeHoldingMapping(mappingData) {
+  if (!mappingData) return null;
+
+  return {
+    // Use securityId or monarchSecurityId (migration from Wealthsimple naming)
+    securityId: mappingData.securityId || mappingData.monarchSecurityId || null,
+    // Use holdingId or monarchHoldingId (migration from Wealthsimple naming)
+    holdingId: mappingData.holdingId || mappingData.monarchHoldingId || null,
+    // Symbol is the same in both conventions
+    symbol: mappingData.symbol || null,
+  };
+}
+
+/**
+ * Normalize all holdings mappings in an account to unified structure
+ * @param {Object} holdingsMappings - Raw holdings mappings object
+ * @returns {Object} Normalized mappings object
+ */
+function normalizeAllHoldingsMappings(holdingsMappings) {
+  if (!holdingsMappings || typeof holdingsMappings !== 'object') {
+    return {};
+  }
+
+  const normalized = {};
+  for (const [key, value] of Object.entries(holdingsMappings)) {
+    normalized[key] = normalizeHoldingMapping(value);
+  }
+  return normalized;
+}
+
+/**
+ * Get all holdings mappings for an account
+ * Automatically normalizes data to unified structure
+ * @param {string} integrationId - Integration identifier
+ * @param {string} accountId - Account ID
+ * @returns {Object} Mappings object { sourceSecurityKey: { securityId, holdingId, symbol } }
+ */
+export function getHoldingsMappings(integrationId, accountId) {
+  const accountData = getAccountData(integrationId, accountId);
+  if (!accountData || !accountData.holdingsMappings) {
+    debugLog(`[accountService.getHoldingsMappings] No holdings mappings for ${integrationId}/${accountId}`);
+    return {};
+  }
+
+  // Normalize to unified structure (handles migration from Wealthsimple naming)
+  const normalized = normalizeAllHoldingsMappings(accountData.holdingsMappings);
+
+  // Check if any mappings were normalized (had old naming convention)
+  const originalKeys = accountData.holdingsMappings;
+  let needsMigration = false;
+  for (const key of Object.keys(originalKeys)) {
+    const original = originalKeys[key];
+    if (original && (original.monarchSecurityId || original.monarchHoldingId)) {
+      needsMigration = true;
+      break;
+    }
+  }
+
+  // If data needed normalization, save the normalized version
+  if (needsMigration) {
+    debugLog(`[accountService.getHoldingsMappings] Migrating holdings mappings to unified structure for ${integrationId}/${accountId}`);
+    updateAccountInList(integrationId, accountId, { holdingsMappings: normalized });
+  }
+
+  debugLog(`[accountService.getHoldingsMappings] Loaded ${Object.keys(normalized).length} mappings for ${integrationId}/${accountId}`);
+  return normalized;
+}
+
+/**
+ * Get a specific holding mapping for a source security
+ * @param {string} integrationId - Integration identifier
+ * @param {string} accountId - Account ID
+ * @param {string} sourceSecurityKey - Source security key/ID
+ * @returns {Object|null} Mapping data { securityId, holdingId, symbol } or null
+ */
+export function getHoldingMapping(integrationId, accountId, sourceSecurityKey) {
+  const mappings = getHoldingsMappings(integrationId, accountId);
+  const mapping = mappings[sourceSecurityKey];
+  if (mapping) {
+    debugLog(`[accountService.getHoldingMapping] Found mapping for ${sourceSecurityKey}: securityId=${mapping.securityId}, holdingId=${mapping.holdingId}`);
+  }
+  return mapping || null;
+}
+
+/**
+ * Save a holding mapping for a source security
+ * Uses unified structure: { securityId, holdingId, symbol }
+ * @param {string} integrationId - Integration identifier
+ * @param {string} accountId - Account ID
+ * @param {string} sourceSecurityKey - Source security key/ID
+ * @param {Object} mappingData - Mapping data { securityId, holdingId, symbol }
+ * @returns {boolean} Success status
+ */
+export function saveHoldingMapping(integrationId, accountId, sourceSecurityKey, mappingData) {
+  try {
+    const accountData = getAccountData(integrationId, accountId);
+    if (!accountData) {
+      debugLog(`[accountService.saveHoldingMapping] Account ${accountId} not found for ${integrationId}`);
+      return false;
+    }
+
+    // Get existing mappings or initialize empty object
+    const currentMappings = accountData.holdingsMappings || {};
+
+    // Normalize the new mapping data to unified structure
+    const normalizedMapping = normalizeHoldingMapping(mappingData);
+
+    // Update mappings
+    const updatedMappings = {
+      ...currentMappings,
+      [sourceSecurityKey]: normalizedMapping,
+    };
+
+    const success = updateAccountInList(integrationId, accountId, {
+      holdingsMappings: updatedMappings,
+    });
+
+    if (success) {
+      debugLog(`[accountService.saveHoldingMapping] Saved mapping for ${normalizedMapping.symbol}: ${sourceSecurityKey} -> securityId=${normalizedMapping.securityId}, holdingId=${normalizedMapping.holdingId}`);
+    }
+
+    return success;
+  } catch (error) {
+    debugLog('[accountService.saveHoldingMapping] Error saving mapping:', error);
+    return false;
+  }
+}
+
+/**
+ * Delete a holding mapping for a source security
+ * @param {string} integrationId - Integration identifier
+ * @param {string} accountId - Account ID
+ * @param {string} sourceSecurityKey - Source security key/ID
+ * @returns {boolean} Success status
+ */
+export function deleteHoldingMapping(integrationId, accountId, sourceSecurityKey) {
+  try {
+    const accountData = getAccountData(integrationId, accountId);
+    if (!accountData) {
+      debugLog(`[accountService.deleteHoldingMapping] Account ${accountId} not found`);
+      return false;
+    }
+
+    const currentMappings = accountData.holdingsMappings || {};
+    if (!currentMappings[sourceSecurityKey]) {
+      debugLog(`[accountService.deleteHoldingMapping] Mapping ${sourceSecurityKey} not found`);
+      return false;
+    }
+
+    const { [sourceSecurityKey]: removed, ...remainingMappings } = currentMappings;
+
+    const success = updateAccountInList(integrationId, accountId, {
+      holdingsMappings: remainingMappings,
+    });
+
+    if (success) {
+      debugLog(`[accountService.deleteHoldingMapping] Deleted mapping for ${removed?.symbol || sourceSecurityKey}`);
+    }
+
+    return success;
+  } catch (error) {
+    debugLog('[accountService.deleteHoldingMapping] Error deleting mapping:', error);
+    return false;
+  }
+}
+
+/**
+ * Delete all holding mappings for an account
+ * @param {string} integrationId - Integration identifier
+ * @param {string} accountId - Account ID
+ * @returns {boolean} Success status
+ */
+export function clearHoldingsMappings(integrationId, accountId) {
+  try {
+    const success = updateAccountInList(integrationId, accountId, {
+      holdingsMappings: {},
+    });
+
+    if (success) {
+      debugLog(`[accountService.clearHoldingsMappings] Cleared all holdings mappings for ${integrationId}/${accountId}`);
+    }
+
+    return success;
+  } catch (error) {
+    debugLog('[accountService.clearHoldingsMappings] Error clearing mappings:', error);
+    return false;
+  }
+}
+
 /**
  * Clear all account data for an integration (use with caution!)
  * @param {string} integrationId - Integration identifier
@@ -1022,6 +1223,13 @@ export default {
 
   // Account mapping
   getMonarchAccountMapping,
+
+  // Holdings mapping methods (unified interface)
+  getHoldingsMappings,
+  getHoldingMapping,
+  saveHoldingMapping,
+  deleteHoldingMapping,
+  clearHoldingsMappings,
 
   // Migration helpers
   hasLegacyData,

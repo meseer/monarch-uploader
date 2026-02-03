@@ -37,6 +37,11 @@ jest.mock('../../../src/services/common/accountService', () => ({
   default: {
     getAccountData: jest.fn(),
     updateAccountInList: jest.fn(),
+    getHoldingMapping: jest.fn(),
+    getHoldingsMappings: jest.fn(),
+    saveHoldingMapping: jest.fn(),
+    deleteHoldingMapping: jest.fn(),
+    clearHoldingsMappings: jest.fn(),
   },
 }));
 
@@ -83,6 +88,9 @@ describe('Questrade Positions Service', () => {
     // Reset accountService mocks
     accountService.getAccountData.mockReturnValue(null);
     accountService.updateAccountInList.mockReturnValue(true);
+    accountService.getHoldingMapping.mockReturnValue(null);
+    accountService.getHoldingsMappings.mockReturnValue({});
+    accountService.saveHoldingMapping.mockReturnValue(true);
   });
 
   describe('PositionsError', () => {
@@ -148,16 +156,17 @@ describe('Questrade Positions Service', () => {
         security: { symbol: 'AAPL' },
       };
 
-      // Mock consolidated storage with holdings mappings
-      accountService.getAccountData.mockReturnValue({
-        holdingsMappings: {
-          UUID1: { securityId: 'SEC123', holdingId: 'HOLD123', symbol: 'AAPL' },
-        },
+      // Mock getHoldingMapping to return existing mapping
+      accountService.getHoldingMapping.mockReturnValue({
+        securityId: 'SEC123',
+        holdingId: 'HOLD123',
+        symbol: 'AAPL',
       });
 
       const result = await resolveSecurityMapping('ACC123', position);
 
       expect(result).toBe('SEC123');
+      expect(accountService.getHoldingMapping).toHaveBeenCalledWith('questrade', 'ACC123', 'UUID1');
       expect(showMonarchSecuritySelector).not.toHaveBeenCalled();
     });
 
@@ -167,17 +176,12 @@ describe('Questrade Positions Service', () => {
         security: { symbol: 'AAPL' },
       };
 
-      // Consolidated storage has no holdingsMappings
-      accountService.getAccountData.mockReturnValue({
-        questradeAccount: { id: 'ACC123' },
-        // No holdingsMappings
+      // getHoldingMapping returns mapping from legacy storage via accountService
+      accountService.getHoldingMapping.mockReturnValue({
+        securityId: 'SEC456',
+        holdingId: 'HOLD456',
+        symbol: 'AAPL',
       });
-
-      // Legacy storage has the mapping
-      const legacyMappings = {
-        UUID1: { securityId: 'SEC456', holdingId: 'HOLD456', symbol: 'AAPL' },
-      };
-      global.GM_getValue.mockReturnValue(JSON.stringify(legacyMappings));
 
       const result = await resolveSecurityMapping('ACC123', position);
 
@@ -191,14 +195,12 @@ describe('Questrade Positions Service', () => {
         security: { symbol: 'AAPL' },
       };
 
-      // No consolidated storage
-      accountService.getAccountData.mockReturnValue(null);
-
-      const mappings = {
-        UUID1: { securityId: 'SEC123', holdingId: 'HOLD123', symbol: 'AAPL' },
-      };
-
-      global.GM_getValue.mockReturnValue(JSON.stringify(mappings));
+      // getHoldingMapping returns the mapping
+      accountService.getHoldingMapping.mockReturnValue({
+        securityId: 'SEC123',
+        holdingId: 'HOLD123',
+        symbol: 'AAPL',
+      });
 
       const result = await resolveSecurityMapping('ACC123', position);
 
@@ -212,10 +214,8 @@ describe('Questrade Positions Service', () => {
         security: { symbol: 'AAPL' },
       };
 
-      // No consolidated storage
-      accountService.getAccountData.mockReturnValue(null);
-      // No legacy storage
-      global.GM_getValue.mockReturnValue(null);
+      // No mapping exists
+      accountService.getHoldingMapping.mockReturnValue(null);
 
       showMonarchSecuritySelector.mockImplementation((pos, callback) => {
         callback({ id: 'SEC456', name: 'Apple Inc' });
@@ -236,8 +236,7 @@ describe('Questrade Positions Service', () => {
         security: { symbol: 'AAPL' },
       };
 
-      accountService.getAccountData.mockReturnValue(null);
-      global.GM_getValue.mockReturnValue(null);
+      accountService.getHoldingMapping.mockReturnValue(null);
 
       showMonarchSecuritySelector.mockImplementation((pos, callback) => {
         callback(null); // User cancelled
@@ -267,16 +266,17 @@ describe('Questrade Positions Service', () => {
         security: { symbol: 'AAPL' },
       };
 
-      // Consolidated storage with symbolId key
-      accountService.getAccountData.mockReturnValue({
-        holdingsMappings: {
-          SYM123: { securityId: 'SEC789', holdingId: 'HOLD789', symbol: 'AAPL' },
-        },
+      // getHoldingMapping should be called with symbolId
+      accountService.getHoldingMapping.mockReturnValue({
+        securityId: 'SEC789',
+        holdingId: 'HOLD789',
+        symbol: 'AAPL',
       });
 
       const result = await resolveSecurityMapping('ACC123', position);
 
       expect(result).toBe('SEC789');
+      expect(accountService.getHoldingMapping).toHaveBeenCalledWith('questrade', 'ACC123', 'SYM123');
     });
   });
 
@@ -289,8 +289,7 @@ describe('Questrade Positions Service', () => {
       };
 
       // No existing mappings
-      accountService.getAccountData.mockReturnValue(null);
-      global.GM_getValue.mockReturnValue(null);
+      accountService.getHoldingMapping.mockReturnValue(null);
 
       monarchApi.createManualHolding.mockResolvedValue({ id: 'HOLD123' });
 
@@ -302,37 +301,34 @@ describe('Questrade Positions Service', () => {
         { aggregateHoldings: { edges: [] } },
       );
 
-      // Should attempt to save to consolidated storage
-      expect(accountService.updateAccountInList).toHaveBeenCalledWith(
+      // Should save via accountService.saveHoldingMapping
+      expect(accountService.saveHoldingMapping).toHaveBeenCalledWith(
         'questrade',
         'ACC123',
+        'UUID1',
         expect.objectContaining({
-          holdingsMappings: expect.objectContaining({
-            UUID1: expect.objectContaining({
-              securityId: 'SEC123',
-              holdingId: 'HOLD123',
-              symbol: 'AAPL',
-            }),
-          }),
+          securityId: 'SEC123',
+          holdingId: 'HOLD123',
+          symbol: 'AAPL',
         }),
       );
     });
 
-    test('should fall back to legacy storage when consolidated update fails', async () => {
+    test('should use existing holding from storage', async () => {
       const position = {
         securityUuid: 'UUID1',
         security: { symbol: 'AAPL' },
         openQuantity: 100,
       };
 
-      accountService.getAccountData.mockReturnValue(null);
-      global.GM_getValue.mockReturnValue(null);
-      // Consolidated update fails
-      accountService.updateAccountInList.mockReturnValue(false);
+      // Existing mapping returns holdingId
+      accountService.getHoldingMapping.mockReturnValue({
+        securityId: 'SEC123',
+        holdingId: 'HOLD123',
+        symbol: 'AAPL',
+      });
 
-      monarchApi.createManualHolding.mockResolvedValue({ id: 'HOLD123' });
-
-      await resolveOrCreateHolding(
+      const result = await resolveOrCreateHolding(
         'ACC123',
         'MON123',
         'SEC123',
@@ -340,47 +336,55 @@ describe('Questrade Positions Service', () => {
         { aggregateHoldings: { edges: [] } },
       );
 
-      // Should fall back to legacy storage
-      expect(global.GM_setValue).toHaveBeenCalledWith(
-        'questrade_holdings_ACC123',
-        expect.any(String),
-      );
+      expect(result).toBe('HOLD123');
+      // Should not create new holding
+      expect(monarchApi.createManualHolding).not.toHaveBeenCalled();
+      // Should not save since mapping already exists
+      expect(accountService.saveHoldingMapping).not.toHaveBeenCalled();
     });
 
-    test('should merge with existing holdings mappings when saving', async () => {
+    test('should find and save mapping when holding exists in Monarch', async () => {
       const position = {
         securityUuid: 'UUID2',
         security: { symbol: 'GOOGL' },
         openQuantity: 50,
       };
 
-      // Existing holdings in consolidated storage
-      accountService.getAccountData.mockReturnValue({
-        holdingsMappings: {
-          UUID1: { securityId: 'SEC1', holdingId: 'HOLD1', symbol: 'AAPL' },
+      // No existing mapping
+      accountService.getHoldingMapping.mockReturnValue(null);
+
+      // Holdings exist in Monarch
+      const holdings = {
+        aggregateHoldings: {
+          edges: [
+            {
+              node: {
+                security: { id: 'SEC2' },
+                holdings: [{ id: 'HOLD2', isManual: true }],
+              },
+            },
+          ],
         },
-      });
-      global.GM_getValue.mockReturnValue(null);
+      };
 
-      monarchApi.createManualHolding.mockResolvedValue({ id: 'HOLD2' });
-
-      await resolveOrCreateHolding(
+      const result = await resolveOrCreateHolding(
         'ACC123',
         'MON123',
         'SEC2',
         position,
-        { aggregateHoldings: { edges: [] } },
+        holdings,
       );
 
-      // Should merge new mapping with existing
-      expect(accountService.updateAccountInList).toHaveBeenCalledWith(
+      expect(result).toBe('HOLD2');
+      // Should save the mapping
+      expect(accountService.saveHoldingMapping).toHaveBeenCalledWith(
         'questrade',
         'ACC123',
+        'UUID2',
         expect.objectContaining({
-          holdingsMappings: expect.objectContaining({
-            UUID1: expect.objectContaining({ symbol: 'AAPL' }),
-            UUID2: expect.objectContaining({ symbol: 'GOOGL' }),
-          }),
+          securityId: 'SEC2',
+          holdingId: 'HOLD2',
+          symbol: 'GOOGL',
         }),
       );
     });
@@ -391,22 +395,16 @@ describe('Questrade Positions Service', () => {
         security: { symbol: 'AAPL' },
       };
 
-      // Consolidated storage has mapping
-      accountService.getAccountData.mockReturnValue({
-        holdingsMappings: {
-          UUID1: { securityId: 'CONSOLIDATED_SEC', holdingId: 'CONSOLIDATED_HOLD', symbol: 'AAPL' },
-        },
+      // getHoldingMapping returns consolidated value (accountService handles the priority)
+      accountService.getHoldingMapping.mockReturnValue({
+        securityId: 'CONSOLIDATED_SEC',
+        holdingId: 'CONSOLIDATED_HOLD',
+        symbol: 'AAPL',
       });
-
-      // Legacy storage also has mapping (different)
-      const legacyMappings = {
-        UUID1: { securityId: 'LEGACY_SEC', holdingId: 'LEGACY_HOLD', symbol: 'AAPL' },
-      };
-      global.GM_getValue.mockReturnValue(JSON.stringify(legacyMappings));
 
       const result = await resolveSecurityMapping('ACC123', position);
 
-      // Should use consolidated, not legacy
+      // Should use consolidated via accountService
       expect(result).toBe('CONSOLIDATED_SEC');
     });
   });
@@ -419,11 +417,12 @@ describe('Questrade Positions Service', () => {
     };
 
     test('should return existing holding ID from storage', async () => {
-      const mappings = {
-        UUID1: { securityId: 'SEC123', holdingId: 'HOLD123', symbol: 'AAPL' },
-      };
-
-      global.GM_getValue.mockReturnValue(JSON.stringify(mappings));
+      // Mock getHoldingMapping to return existing mapping with holdingId
+      accountService.getHoldingMapping.mockReturnValue({
+        securityId: 'SEC123',
+        holdingId: 'HOLD123',
+        symbol: 'AAPL',
+      });
 
       const result = await resolveOrCreateHolding(
         'ACC123',
@@ -438,8 +437,7 @@ describe('Questrade Positions Service', () => {
     });
 
     test('should find existing holding in Monarch data', async () => {
-      accountService.getAccountData.mockReturnValue(null);
-      global.GM_getValue.mockReturnValue(null);
+      accountService.getHoldingMapping.mockReturnValue(null);
 
       const holdings = {
         aggregateHoldings: {
@@ -463,14 +461,22 @@ describe('Questrade Positions Service', () => {
       );
 
       expect(result).toBe('HOLD456');
-      // Should attempt to save to consolidated storage first
-      expect(accountService.updateAccountInList).toHaveBeenCalled();
+      // Should save the mapping via saveHoldingMapping
+      expect(accountService.saveHoldingMapping).toHaveBeenCalledWith(
+        'questrade',
+        'ACC123',
+        'UUID1',
+        expect.objectContaining({
+          securityId: 'SEC123',
+          holdingId: 'HOLD456',
+          symbol: 'AAPL',
+        }),
+      );
       expect(monarchApi.createManualHolding).not.toHaveBeenCalled();
     });
 
     test('should create new holding when none exists', async () => {
-      accountService.getAccountData.mockReturnValue(null);
-      global.GM_getValue.mockReturnValue(null);
+      accountService.getHoldingMapping.mockReturnValue(null);
 
       monarchApi.createManualHolding.mockResolvedValue({ id: 'HOLD789' });
 
@@ -488,12 +494,21 @@ describe('Questrade Positions Service', () => {
         'SEC123',
         100,
       );
-      // Should attempt to save to consolidated storage first
-      expect(accountService.updateAccountInList).toHaveBeenCalled();
+      // Should save via saveHoldingMapping
+      expect(accountService.saveHoldingMapping).toHaveBeenCalledWith(
+        'questrade',
+        'ACC123',
+        'UUID1',
+        expect.objectContaining({
+          securityId: 'SEC123',
+          holdingId: 'HOLD789',
+          symbol: 'AAPL',
+        }),
+      );
     });
 
     test('should handle missing openQuantity', async () => {
-      global.GM_getValue.mockReturnValue(null);
+      accountService.getHoldingMapping.mockReturnValue(null);
       monarchApi.createManualHolding.mockResolvedValue({ id: 'HOLD999' });
 
       const positionWithoutQty = {
@@ -517,7 +532,7 @@ describe('Questrade Positions Service', () => {
     });
 
     test('should handle API errors', async () => {
-      global.GM_getValue.mockReturnValue(null);
+      accountService.getHoldingMapping.mockReturnValue(null);
       monarchApi.createManualHolding.mockRejectedValue(new Error('API error'));
 
       await expect(
@@ -650,7 +665,8 @@ describe('Questrade Positions Service', () => {
         },
       };
 
-      global.GM_getValue.mockReturnValue(null);
+      // No mappings exist
+      accountService.getHoldingsMappings.mockReturnValue({});
       monarchApi.getHoldings.mockResolvedValue(portfolio);
       monarchApi.deleteHolding.mockResolvedValue({});
 
@@ -682,8 +698,8 @@ describe('Questrade Positions Service', () => {
         },
       };
 
-      accountService.getAccountData.mockReturnValue(null);
-      global.GM_getValue.mockReturnValue(null);
+      // No mappings exist
+      accountService.getHoldingsMappings.mockReturnValue({});
       monarchApi.getHoldings.mockResolvedValue(portfolio);
 
       const result = await detectAndRemoveDeletedHoldings(
@@ -694,8 +710,17 @@ describe('Questrade Positions Service', () => {
 
       expect(result.autoRepaired).toBe(1);
       expect(result.deleted).toBe(0);
-      // Should attempt to save to consolidated storage first
-      expect(accountService.updateAccountInList).toHaveBeenCalled();
+      // Should save via saveHoldingMapping
+      expect(accountService.saveHoldingMapping).toHaveBeenCalledWith(
+        'questrade',
+        'ACC123',
+        'UUID1',
+        expect.objectContaining({
+          securityId: 'SEC123',
+          holdingId: 'HOLD1',
+          symbol: 'AAPL',
+        }),
+      );
     });
 
     test('should keep holdings with existing mappings', async () => {
@@ -716,11 +741,10 @@ describe('Questrade Positions Service', () => {
         },
       };
 
-      const mappings = {
+      // Mapping exists via getHoldingsMappings
+      accountService.getHoldingsMappings.mockReturnValue({
         UUID1: { securityId: 'SEC123', holdingId: 'HOLD1', symbol: 'AAPL' },
-      };
-
-      global.GM_getValue.mockReturnValue(JSON.stringify(mappings));
+      });
       monarchApi.getHoldings.mockResolvedValue(portfolio);
 
       const result = await detectAndRemoveDeletedHoldings(
@@ -759,7 +783,7 @@ describe('Questrade Positions Service', () => {
         },
       };
 
-      global.GM_getValue.mockReturnValue(null);
+      accountService.getHoldingsMappings.mockReturnValue({});
       monarchApi.getHoldings.mockResolvedValue(portfolio);
       monarchApi.deleteHolding.mockRejectedValue(new Error('Delete failed'));
 

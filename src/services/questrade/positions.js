@@ -4,7 +4,6 @@
  */
 
 import { debugLog } from '../../core/utils';
-import { STORAGE } from '../../core/config';
 import { INTEGRATIONS } from '../../core/integrationCapabilities';
 import questradeApi from '../../api/questrade';
 import monarchApi from '../../api/monarch';
@@ -22,80 +21,6 @@ export class PositionsError extends Error {
     this.accountId = accountId;
     this.position = position;
   }
-}
-
-/**
- * Storage Helper Functions for Holdings Mappings
- * Uses consolidated storage via accountService, with legacy fallback for migration
- */
-
-/**
- * Load all holdings mappings for an account
- * Reads from consolidated storage first, falls back to legacy storage for migration
- * @param {string} accountId - Questrade account ID
- * @returns {Object} Mappings object { securityUuid: { securityId, holdingId, symbol } }
- */
-function loadAccountHoldingsMappings(accountId) {
-  // Try consolidated storage first
-  const accountData = accountService.getAccountData(INTEGRATIONS.QUESTRADE, accountId);
-  if (accountData?.holdingsMappings && Object.keys(accountData.holdingsMappings).length > 0) {
-    debugLog(`Loaded ${Object.keys(accountData.holdingsMappings).length} holdings mappings from consolidated storage for ${accountId}`);
-    return accountData.holdingsMappings;
-  }
-
-  // Fall back to legacy storage for migration
-  const key = `${STORAGE.QUESTRADE_HOLDINGS_FOR_PREFIX}${accountId}`;
-  const stored = GM_getValue(key, null);
-
-  if (!stored) {
-    return {};
-  }
-
-  try {
-    const legacyMappings = JSON.parse(stored);
-    debugLog(`Loaded ${Object.keys(legacyMappings).length} holdings mappings from legacy storage for ${accountId}`);
-    return legacyMappings;
-  } catch (error) {
-    debugLog(`Error parsing legacy holdings mappings for account ${accountId}:`, error);
-    return {};
-  }
-}
-
-/**
- * Save all holdings mappings for an account
- * Saves to consolidated storage only (legacy storage is migrated and cleaned up separately)
- * @param {string} accountId - Questrade account ID
- * @param {Object} mappings - Mappings object to save
- * @returns {void}
- */
-function saveAccountHoldingsMappings(accountId, mappings) {
-  // Save to consolidated storage
-  const success = accountService.updateAccountInList(INTEGRATIONS.QUESTRADE, accountId, {
-    holdingsMappings: mappings,
-  });
-
-  if (success) {
-    debugLog(`Saved ${Object.keys(mappings).length} holdings mappings to consolidated storage for account ${accountId}`);
-  } else {
-    // If consolidated storage update fails (account not in list yet), fall back to legacy storage
-    // This can happen during initial setup before the account is fully registered
-    const key = `${STORAGE.QUESTRADE_HOLDINGS_FOR_PREFIX}${accountId}`;
-    GM_setValue(key, JSON.stringify(mappings));
-    debugLog(`Saved holdings mappings to legacy storage for account ${accountId} (account not in consolidated list yet)`);
-  }
-}
-
-/**
- * Add or update a holding mapping
- * @param {string} accountId - Questrade account ID
- * @param {string} securityUuid - Security UUID from Questrade
- * @param {Object} data - Mapping data { securityId, holdingId, symbol }
- * @returns {void}
- */
-function addHoldingMapping(accountId, securityUuid, data) {
-  const mappings = loadAccountHoldingsMappings(accountId);
-  mappings[securityUuid] = data;
-  saveAccountHoldingsMappings(accountId, mappings);
 }
 
 /**
@@ -137,11 +62,11 @@ export async function resolveSecurityMapping(accountId, position) {
       throw new PositionsError('Position missing security UUID', accountId, position);
     }
 
-    // Check for existing mapping in new storage format
-    const mappings = loadAccountHoldingsMappings(accountId);
-    if (mappings[securityUuid]?.securityId) {
-      debugLog(`Found existing security mapping for ${position.security?.symbol}: ${mappings[securityUuid].securityId}`);
-      return mappings[securityUuid].securityId;
+    // Check for existing mapping using accountService (unified structure)
+    const existingMapping = accountService.getHoldingMapping(INTEGRATIONS.QUESTRADE, accountId, securityUuid);
+    if (existingMapping?.securityId) {
+      debugLog(`Found existing security mapping for ${position.security?.symbol}: ${existingMapping.securityId}`);
+      return existingMapping.securityId;
     }
 
     debugLog(`No mapping found for ${position.security?.symbol}, showing security selector`);
@@ -213,11 +138,11 @@ export async function resolveOrCreateHolding(accountId, monarchAccountId, securi
     const securityUuid = position.securityUuid || position.symbolId;
     const symbol = position.security?.symbol || 'Unknown';
 
-    // Check for existing holding ID in new storage format
-    const mappings = loadAccountHoldingsMappings(accountId);
-    if (mappings[securityUuid]?.holdingId) {
-      debugLog(`Found stored holding ID for ${symbol}: ${mappings[securityUuid].holdingId}`);
-      return mappings[securityUuid].holdingId;
+    // Check for existing holding ID using accountService (unified structure)
+    const existingMapping = accountService.getHoldingMapping(INTEGRATIONS.QUESTRADE, accountId, securityUuid);
+    if (existingMapping?.holdingId) {
+      debugLog(`Found stored holding ID for ${symbol}: ${existingMapping.holdingId}`);
+      return existingMapping.holdingId;
     }
 
     // Check if holding exists in Monarch
@@ -225,8 +150,8 @@ export async function resolveOrCreateHolding(accountId, monarchAccountId, securi
 
     if (existingHolding) {
       debugLog(`Found existing holding in Monarch for ${symbol}: ${existingHolding.id}`);
-      // Save the mapping with both securityId and holdingId
-      addHoldingMapping(accountId, securityUuid, {
+      // Save the mapping using unified structure via accountService
+      accountService.saveHoldingMapping(INTEGRATIONS.QUESTRADE, accountId, securityUuid, {
         securityId,
         holdingId: existingHolding.id,
         symbol,
@@ -242,8 +167,8 @@ export async function resolveOrCreateHolding(accountId, monarchAccountId, securi
       position.openQuantity || 0,
     );
 
-    // Save the mapping with both securityId and holdingId
-    addHoldingMapping(accountId, securityUuid, {
+    // Save the mapping using unified structure via accountService
+    accountService.saveHoldingMapping(INTEGRATIONS.QUESTRADE, accountId, securityUuid, {
       securityId,
       holdingId: newHolding.id,
       symbol,
@@ -320,8 +245,8 @@ export async function detectAndRemoveDeletedHoldings(accountId, monarchAccountId
       return { deleted: 0, autoRepaired: 0 };
     }
 
-    // Step 2: Load stored mappings
-    const mappings = loadAccountHoldingsMappings(accountId);
+    // Step 2: Load stored mappings using accountService
+    const mappings = accountService.getHoldingsMappings(INTEGRATIONS.QUESTRADE, accountId);
 
     // Step 3: Build Questrade position lookup by symbol
     const positionsBySymbol = new Map();
@@ -371,7 +296,7 @@ export async function detectAndRemoveDeletedHoldings(accountId, monarchAccountId
           if (securityUuid && securityId) {
             debugLog(`Auto-repairing mapping for ${ticker}: securityUuid=${securityUuid}, holdingId=${holdingId}`);
 
-            addHoldingMapping(accountId, securityUuid, {
+            accountService.saveHoldingMapping(INTEGRATIONS.QUESTRADE, accountId, securityUuid, {
               securityId,
               holdingId,
               symbol: ticker,

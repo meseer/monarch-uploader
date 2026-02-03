@@ -4,11 +4,12 @@
  */
 
 import { debugLog } from '../../core/utils';
+import { INTEGRATIONS } from '../../core/integrationCapabilities';
 import wealthsimpleApi from '../../api/wealthsimple';
 import monarchApi from '../../api/monarch';
+import accountService from '../common/accountService';
 import { showMonarchSecuritySelector } from '../../ui/components/securitySelector';
 import toast from '../../ui/toast';
-import { getAccountData, updateAccountInList } from './account';
 
 /**
  * Hardcoded Monarch security IDs for cash currencies
@@ -84,29 +85,6 @@ const INVESTMENT_ACCOUNT_TYPES = new Set([
  */
 export function isInvestmentAccount(accountType) {
   return INVESTMENT_ACCOUNT_TYPES.has(accountType);
-}
-
-/**
- * Load holdings mappings for an account from consolidated account structure
- * @param {string} accountId - Wealthsimple account ID
- * @returns {Object} Mappings object { securityId: { monarchSecurityId, monarchHoldingId, symbol } }
- */
-function loadHoldingsMappings(accountId) {
-  const accountData = getAccountData(accountId);
-  return accountData?.holdingsMappings || {};
-}
-
-/**
- * Save a holding mapping to the consolidated account structure
- * @param {string} accountId - Wealthsimple account ID
- * @param {string} wsSecurityId - Wealthsimple security ID
- * @param {Object} data - Mapping data { monarchSecurityId, monarchHoldingId, symbol }
- */
-function saveHoldingMapping(accountId, wsSecurityId, data) {
-  const mappings = loadHoldingsMappings(accountId);
-  mappings[wsSecurityId] = data;
-  updateAccountInList(accountId, { holdingsMappings: mappings });
-  debugLog(`Saved holding mapping for ${data.symbol}: ${wsSecurityId} -> ${data.monarchHoldingId}`);
 }
 
 /**
@@ -292,11 +270,11 @@ export async function resolveSecurityMapping(accountId, position) {
       return monarchSecurityId;
     }
 
-    // Check for existing mapping in consolidated account structure
-    const mappings = loadHoldingsMappings(accountId);
-    if (mappings[securityKey]?.monarchSecurityId) {
-      debugLog(`Found existing security mapping for ${symbol}: ${mappings[securityKey].monarchSecurityId}`);
-      return mappings[securityKey].monarchSecurityId;
+    // Check for existing mapping using accountService (unified structure)
+    const existingMapping = accountService.getHoldingMapping(INTEGRATIONS.WEALTHSIMPLE, accountId, securityKey);
+    if (existingMapping?.securityId) {
+      debugLog(`Found existing security mapping for ${symbol}: ${existingMapping.securityId}`);
+      return existingMapping.securityId;
     }
 
     debugLog(`No mapping found for ${symbol}, showing security selector`);
@@ -375,11 +353,11 @@ export async function resolveOrCreateHolding(accountId, monarchAccountId, monarc
     const securityKey = getPositionSecurityKey(position);
     const symbol = getPositionDisplaySymbol(position);
 
-    // Check for existing holding ID in consolidated account structure
-    const mappings = loadHoldingsMappings(accountId);
-    if (mappings[securityKey]?.monarchHoldingId) {
-      debugLog(`Found stored holding ID for ${symbol}: ${mappings[securityKey].monarchHoldingId}`);
-      return mappings[securityKey].monarchHoldingId;
+    // Check for existing holding ID using accountService (unified structure)
+    const existingMapping = accountService.getHoldingMapping(INTEGRATIONS.WEALTHSIMPLE, accountId, securityKey);
+    if (existingMapping?.holdingId) {
+      debugLog(`Found stored holding ID for ${symbol}: ${existingMapping.holdingId}`);
+      return existingMapping.holdingId;
     }
 
     // Check if holding exists in Monarch
@@ -387,10 +365,10 @@ export async function resolveOrCreateHolding(accountId, monarchAccountId, monarc
 
     if (existingHolding) {
       debugLog(`Found existing holding in Monarch for ${symbol}: ${existingHolding.id}`);
-      // Save the mapping
-      saveHoldingMapping(accountId, securityKey, {
-        monarchSecurityId,
-        monarchHoldingId: existingHolding.id,
+      // Save the mapping using unified structure
+      accountService.saveHoldingMapping(INTEGRATIONS.WEALTHSIMPLE, accountId, securityKey, {
+        securityId: monarchSecurityId,
+        holdingId: existingHolding.id,
         symbol,
       });
       return existingHolding.id;
@@ -406,10 +384,10 @@ export async function resolveOrCreateHolding(accountId, monarchAccountId, monarc
       quantity,
     );
 
-    // Save the mapping
-    saveHoldingMapping(accountId, securityKey, {
-      monarchSecurityId,
-      monarchHoldingId: newHolding.id,
+    // Save the mapping using unified structure
+    accountService.saveHoldingMapping(INTEGRATIONS.WEALTHSIMPLE, accountId, securityKey, {
+      securityId: monarchSecurityId,
+      holdingId: newHolding.id,
       symbol,
     });
 
@@ -511,8 +489,8 @@ export async function detectAndRemoveDeletedHoldings(accountId, monarchAccountId
       return { deleted: 0, autoRepaired: 0 };
     }
 
-    // Load stored mappings
-    const mappings = loadHoldingsMappings(accountId);
+    // Load stored mappings using accountService
+    const mappings = accountService.getHoldingsMappings(INTEGRATIONS.WEALTHSIMPLE, accountId);
 
     // Build Wealthsimple position lookup by symbol
     const positionsBySymbol = new Map();
@@ -560,9 +538,9 @@ export async function detectAndRemoveDeletedHoldings(accountId, monarchAccountId
           if (wsSecurityId && monarchSecurityId) {
             debugLog(`Auto-repairing mapping for ${ticker}: wsSecurityId=${wsSecurityId}, holdingId=${holdingId}`);
 
-            saveHoldingMapping(accountId, wsSecurityId, {
-              monarchSecurityId,
-              monarchHoldingId: holdingId,
+            accountService.saveHoldingMapping(INTEGRATIONS.WEALTHSIMPLE, accountId, wsSecurityId, {
+              securityId: monarchSecurityId,
+              holdingId,
               symbol: ticker,
             });
 
@@ -788,11 +766,11 @@ async function resolveOrCreateCashHolding(accountId, monarchAccountId, currency,
     throw new PositionsError(`Unsupported currency for cash holding: ${currency}`, accountId);
   }
 
-  // Check for existing holding ID in consolidated account structure
-  const mappings = loadHoldingsMappings(accountId);
-  if (mappings[cashHoldingKey]?.monarchHoldingId) {
-    debugLog(`Found stored cash holding ID for ${currency}: ${mappings[cashHoldingKey].monarchHoldingId}`);
-    return mappings[cashHoldingKey].monarchHoldingId;
+  // Check for existing holding ID using accountService (unified structure)
+  const existingMapping = accountService.getHoldingMapping(INTEGRATIONS.WEALTHSIMPLE, accountId, cashHoldingKey);
+  if (existingMapping?.holdingId) {
+    debugLog(`Found stored cash holding ID for ${currency}: ${existingMapping.holdingId}`);
+    return existingMapping.holdingId;
   }
 
   // Check if holding exists in Monarch
@@ -800,10 +778,10 @@ async function resolveOrCreateCashHolding(accountId, monarchAccountId, currency,
 
   if (existingHolding) {
     debugLog(`Found existing cash holding in Monarch for ${currency}: ${existingHolding.id}`);
-    // Save the mapping
-    saveHoldingMapping(accountId, cashHoldingKey, {
-      monarchSecurityId,
-      monarchHoldingId: existingHolding.id,
+    // Save the mapping using unified structure
+    accountService.saveHoldingMapping(INTEGRATIONS.WEALTHSIMPLE, accountId, cashHoldingKey, {
+      securityId: monarchSecurityId,
+      holdingId: existingHolding.id,
       symbol,
     });
     return existingHolding.id;
@@ -818,10 +796,10 @@ async function resolveOrCreateCashHolding(accountId, monarchAccountId, currency,
     0, // Initial quantity, will be updated
   );
 
-  // Save the mapping
-  saveHoldingMapping(accountId, cashHoldingKey, {
-    monarchSecurityId,
-    monarchHoldingId: newHolding.id,
+  // Save the mapping using unified structure
+  accountService.saveHoldingMapping(INTEGRATIONS.WEALTHSIMPLE, accountId, cashHoldingKey, {
+    securityId: monarchSecurityId,
+    holdingId: newHolding.id,
     symbol,
   });
 
