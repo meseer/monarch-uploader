@@ -56,6 +56,17 @@ const LEGACY_UPLOADED_TRANSACTIONS_PREFIXES = {
 };
 
 /**
+ * Legacy holdings mappings prefix mapping
+ * For integrations with holdings/positions support
+ */
+const LEGACY_HOLDINGS_PREFIXES = {
+  [INTEGRATIONS.WEALTHSIMPLE]: null, // Stored in account object (holdingsMappings)
+  [INTEGRATIONS.QUESTRADE]: STORAGE.QUESTRADE_HOLDINGS_FOR_PREFIX,
+  [INTEGRATIONS.CANADALIFE]: null, // No holdings support
+  [INTEGRATIONS.ROGERSBANK]: null, // No holdings support
+};
+
+/**
  * Get the storage key for an integration's account list
  * @param {string} integrationId - Integration identifier
  * @returns {string|null} Storage key or null if not found
@@ -180,6 +191,52 @@ export function getAccounts(integrationId) {
 
       // Save the updated accounts if we merged any transactions
       if (needsSave) {
+        saveAccounts(integrationId, accounts);
+      }
+    }
+
+    // Check for and merge legacy holdings mappings if holdingsMappings is missing
+    // This handles accounts that were migrated before holdings migration was added
+    const holdingsPrefix = LEGACY_HOLDINGS_PREFIXES[integrationId];
+    if (holdingsPrefix && accounts.length > 0) {
+      const accountKeyName = getAccountKeyName(integrationId);
+      let needsSaveHoldings = false;
+
+      accounts = accounts.map((account) => {
+        // Skip if already has holdingsMappings
+        if (account.holdingsMappings && Object.keys(account.holdingsMappings).length > 0) {
+          return account;
+        }
+
+        const accountId = account[accountKeyName]?.id;
+        if (!accountId) {
+          return account;
+        }
+
+        // Check for legacy holdings data
+        const legacyHoldings = GM_getValue(`${holdingsPrefix}${accountId}`, null);
+        if (legacyHoldings) {
+          try {
+            const parsed = typeof legacyHoldings === 'string'
+              ? JSON.parse(legacyHoldings)
+              : legacyHoldings;
+
+            // Holdings are stored as an object { securityUuid: { securityId, holdingId, symbol } }
+            if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+              debugLog(`Merged ${Object.keys(parsed).length} legacy holdings mappings for ${accountId}`);
+              needsSaveHoldings = true;
+              return { ...account, holdingsMappings: parsed };
+            }
+          } catch (e) {
+            debugLog(`Error parsing legacy holdings for ${accountId}:`, e);
+          }
+        }
+
+        return account;
+      });
+
+      // Save the updated accounts if we merged any holdings
+      if (needsSaveHoldings) {
         saveAccounts(integrationId, accounts);
       }
     }

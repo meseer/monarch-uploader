@@ -20,6 +20,7 @@ import {
   hasSetting,
   getSettingDefault,
   getCategoryMappingsConfig,
+  hasCapability,
 } from '../../core/integrationCapabilities';
 import accountService from '../../services/common/accountService';
 import scriptInfo from '../../scriptInfo.json';
@@ -2506,6 +2507,241 @@ function renderTransactionsManagementSection(integrationId, accountEntry, accoun
 }
 
 /**
+ * Renders the holdings mappings management section
+ * Shows security-to-Monarch holding mappings with delete capability
+ * @param {string} integrationId - Integration identifier
+ * @param {Object} accountEntry - Consolidated account data object
+ * @param {string} accountId - Account ID for updates
+ * @param {Function} onRefresh - Callback to refresh after changes
+ * @returns {HTMLElement} Holdings mappings section element
+ */
+function renderHoldingsMappingsSection(integrationId, accountEntry, accountId, onRefresh) {
+  // Only render for integrations with holdings capability
+  if (!hasCapability(integrationId, 'hasHoldings')) {
+    return document.createElement('div'); // Return empty div
+  }
+
+  const sectionContainer = document.createElement('div');
+  sectionContainer.id = `holdings-section-${integrationId}-${accountId}`;
+  sectionContainer.style.cssText = 'margin-bottom: 15px;';
+
+  // Get holdings mappings from account (consolidated structure)
+  const holdingsMappings = accountEntry.holdingsMappings || {};
+  const holdingsCount = Object.keys(holdingsMappings).length;
+
+  // Section header with expand/collapse
+  const sectionHeader = document.createElement('div');
+  sectionHeader.id = `holdings-header-${integrationId}-${accountId}`;
+  sectionHeader.style.cssText = `
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background-color: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  `;
+
+  const headerLeft = document.createElement('div');
+  headerLeft.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+
+  const expandIcon = document.createElement('span');
+  expandIcon.id = `holdings-expand-icon-${integrationId}-${accountId}`;
+  expandIcon.textContent = '▼';
+  expandIcon.style.cssText = 'transition: transform 0.2s; font-size: 12px; transform: rotate(270deg);';
+  headerLeft.appendChild(expandIcon);
+
+  const headerTitle = document.createElement('h4');
+  headerTitle.textContent = 'Holdings Mappings';
+  headerTitle.style.cssText = 'margin: 0; font-size: 14px; color: #333;';
+  headerLeft.appendChild(headerTitle);
+
+  const holdingsCountSpan = document.createElement('span');
+  holdingsCountSpan.style.cssText = 'font-size: 12px; color: #666;';
+  holdingsCountSpan.textContent = `(${holdingsCount} mapping${holdingsCount !== 1 ? 's' : ''})`;
+  headerLeft.appendChild(holdingsCountSpan);
+
+  sectionHeader.appendChild(headerLeft);
+  sectionContainer.appendChild(sectionHeader);
+
+  // Expandable content
+  const expandableContent = document.createElement('div');
+  expandableContent.id = `holdings-content-${integrationId}-${accountId}`;
+  expandableContent.style.cssText = `
+    display: none;
+    padding: 12px;
+    border: 1px solid #e0e0e0;
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    background-color: #fff;
+  `;
+
+  if (holdingsCount === 0) {
+    const emptyMessage = document.createElement('p');
+    emptyMessage.textContent = 'No holdings mappings stored. Mappings will appear here after syncing positions.';
+    emptyMessage.style.cssText = 'color: #666; font-style: italic; margin: 0; font-size: 13px;';
+    expandableContent.appendChild(emptyMessage);
+  } else {
+    // Holdings list
+    const holdingsList = document.createElement('div');
+    holdingsList.id = `holdings-list-${integrationId}-${accountId}`;
+    holdingsList.style.cssText = `
+      max-height: 250px;
+      overflow-y: auto;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+    `;
+
+    // Create rows for each holding mapping
+    Object.entries(holdingsMappings).forEach(([securityUuid, mappingData], index) => {
+      const holdingRow = document.createElement('div');
+      holdingRow.id = `holding-row-${integrationId}-${accountId}-${index}`;
+      holdingRow.style.cssText = `
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 10px;
+        border-bottom: 1px solid #f0f0f0;
+        background: ${index % 2 === 0 ? '#fff' : '#fafafa'};
+      `;
+
+      const holdingInfo = document.createElement('div');
+      holdingInfo.style.cssText = 'display: flex; flex-direction: column; gap: 2px; flex: 1;';
+
+      // Symbol
+      const symbolDiv = document.createElement('div');
+      symbolDiv.style.cssText = 'font-weight: 600; font-size: 14px; color: #333;';
+      symbolDiv.textContent = mappingData.symbol || 'Unknown Symbol';
+      holdingInfo.appendChild(symbolDiv);
+
+      // IDs row
+      const idsDiv = document.createElement('div');
+      idsDiv.style.cssText = 'font-size: 11px; color: #666; font-family: monospace;';
+      idsDiv.textContent = `Security: ${mappingData.securityId || 'N/A'} | Holding: ${mappingData.holdingId || 'N/A'}`;
+      holdingInfo.appendChild(idsDiv);
+
+      holdingRow.appendChild(holdingInfo);
+
+      // Delete button
+      const deleteBtn = document.createElement('button');
+      deleteBtn.id = `holding-delete-${integrationId}-${accountId}-${index}`;
+      deleteBtn.textContent = '🗑️';
+      deleteBtn.title = 'Delete this mapping (will prompt for re-selection on next sync)';
+      deleteBtn.style.cssText = `
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        font-size: 16px;
+        padding: 4px 8px;
+        border-radius: 4px;
+        transition: background-color 0.2s;
+      `;
+      deleteBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const confirmed = await showConfirmDialog(
+          `Delete mapping for "${mappingData.symbol}"?\n\nYou will be prompted to select the Monarch security again on the next sync.`,
+        );
+        if (confirmed) {
+          // Create new mappings object without this entry
+          const updatedMappings = { ...holdingsMappings };
+          delete updatedMappings[securityUuid];
+
+          const success = accountService.updateAccountInList(integrationId, accountId, {
+            holdingsMappings: updatedMappings,
+          });
+
+          if (success) {
+            toast.show(`Deleted mapping for ${mappingData.symbol}`, 'info');
+            if (onRefresh) setTimeout(onRefresh, 300);
+          } else {
+            toast.show('Error deleting mapping', 'error');
+          }
+        }
+      });
+      deleteBtn.addEventListener('mouseover', () => {
+        deleteBtn.style.backgroundColor = '#f8d7da';
+      });
+      deleteBtn.addEventListener('mouseout', () => {
+        deleteBtn.style.backgroundColor = 'transparent';
+      });
+
+      holdingRow.appendChild(deleteBtn);
+      holdingsList.appendChild(holdingRow);
+    });
+
+    expandableContent.appendChild(holdingsList);
+
+    // Delete All button
+    const deleteAllContainer = document.createElement('div');
+    deleteAllContainer.style.cssText = 'margin-top: 12px;';
+
+    const deleteAllBtn = document.createElement('button');
+    deleteAllBtn.id = `holdings-delete-all-${integrationId}-${accountId}`;
+    deleteAllBtn.textContent = 'Delete All Mappings';
+    deleteAllBtn.style.cssText = `
+      padding: 6px 12px;
+      border: none;
+      border-radius: 4px;
+      background: #dc3545;
+      color: white;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      transition: background-color 0.2s;
+    `;
+    deleteAllBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const confirmed = await showConfirmDialog(
+        `Are you sure you want to delete ALL ${holdingsCount} holdings mapping(s)?\n\nYou will be prompted to re-select Monarch securities on the next sync.`,
+      );
+      if (confirmed) {
+        const success = accountService.updateAccountInList(integrationId, accountId, {
+          holdingsMappings: {},
+        });
+
+        if (success) {
+          toast.show(`Deleted ${holdingsCount} holdings mapping(s)`, 'info');
+          if (onRefresh) setTimeout(onRefresh, 300);
+        } else {
+          toast.show('Error clearing mappings', 'error');
+        }
+      }
+    });
+    deleteAllBtn.addEventListener('mouseover', () => {
+      deleteAllBtn.style.backgroundColor = '#c82333';
+    });
+    deleteAllBtn.addEventListener('mouseout', () => {
+      deleteAllBtn.style.backgroundColor = '#dc3545';
+    });
+
+    deleteAllContainer.appendChild(deleteAllBtn);
+    expandableContent.appendChild(deleteAllContainer);
+  }
+
+  sectionContainer.appendChild(expandableContent);
+
+  // Toggle expand/collapse
+  let isExpanded = false;
+  sectionHeader.addEventListener('click', (e) => {
+    e.stopPropagation();
+    isExpanded = !isExpanded;
+    expandableContent.style.display = isExpanded ? 'block' : 'none';
+    expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(270deg)';
+  });
+
+  sectionHeader.addEventListener('mouseover', () => {
+    sectionHeader.style.backgroundColor = '#f8f9fa';
+  });
+  sectionHeader.addEventListener('mouseout', () => {
+    sectionHeader.style.backgroundColor = '#fff';
+  });
+
+  return sectionContainer;
+}
+
+/**
  * Renders the debug JSON section with editable functionality (collapsible)
  * @param {string} integrationId - Integration identifier
  * @param {Object} accountEntry - Consolidated account data object
@@ -2966,6 +3202,10 @@ function createGenericAccountCards(integrationId, accounts, onRefresh) {
     // Transactions Management Section (for integrations with deduplication)
     const transactionsSection = renderTransactionsManagementSection(integrationId, accountEntry, accountId, onRefresh);
     expandableContent.appendChild(transactionsSection);
+
+    // Holdings Mappings Section (for integrations with holdings support)
+    const holdingsSection = renderHoldingsMappingsSection(integrationId, accountEntry, accountId, onRefresh);
+    expandableContent.appendChild(holdingsSection);
 
     // Debug JSON Section
     const debugSection = renderDebugJsonSection(integrationId, accountEntry, accountId, onRefresh);

@@ -674,6 +674,200 @@ describe('Account Service', () => {
     });
   });
 
+  describe('legacy holdings migration', () => {
+    test('should migrate legacy holdings for Questrade during getAccounts', () => {
+      // Set up consolidated data without holdingsMappings
+      const consolidatedData = [
+        {
+          questradeAccount: { id: 'qt-1', nickname: 'TFSA' },
+          monarchAccount: { id: 'monarch-1' },
+          syncEnabled: true,
+          // No holdingsMappings field
+        },
+      ];
+      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+
+      // Set up legacy holdings storage
+      const legacyHoldings = {
+        'sec-uuid-1': { securityId: 'sec-1', holdingId: 'hold-1', symbol: 'AAPL' },
+        'sec-uuid-2': { securityId: 'sec-2', holdingId: 'hold-2', symbol: 'GOOGL' },
+      };
+      GM_setValue(`${STORAGE.QUESTRADE_HOLDINGS_FOR_PREFIX}qt-1`, JSON.stringify(legacyHoldings));
+
+      // Call getAccounts - should trigger holdings migration
+      const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
+
+      expect(accounts).toHaveLength(1);
+      expect(accounts[0].holdingsMappings).toBeDefined();
+      expect(Object.keys(accounts[0].holdingsMappings)).toHaveLength(2);
+      expect(accounts[0].holdingsMappings['sec-uuid-1'].symbol).toBe('AAPL');
+      expect(accounts[0].holdingsMappings['sec-uuid-2'].symbol).toBe('GOOGL');
+    });
+
+    test('should not overwrite existing holdingsMappings', () => {
+      // Set up consolidated data WITH holdingsMappings already populated
+      const consolidatedData = [
+        {
+          questradeAccount: { id: 'qt-1', nickname: 'TFSA' },
+          monarchAccount: { id: 'monarch-1' },
+          syncEnabled: true,
+          holdingsMappings: {
+            'existing-uuid': { securityId: 'existing-sec', holdingId: 'existing-hold', symbol: 'TSLA' },
+          },
+        },
+      ];
+      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+
+      // Set up legacy holdings that should be ignored
+      const legacyHoldings = {
+        'should-not-appear': { securityId: 'bad', holdingId: 'bad', symbol: 'BAD' },
+      };
+      GM_setValue(`${STORAGE.QUESTRADE_HOLDINGS_FOR_PREFIX}qt-1`, JSON.stringify(legacyHoldings));
+
+      // Call getAccounts
+      const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
+
+      expect(accounts[0].holdingsMappings).toBeDefined();
+      expect(Object.keys(accounts[0].holdingsMappings)).toHaveLength(1);
+      expect(accounts[0].holdingsMappings['existing-uuid'].symbol).toBe('TSLA');
+      expect(accounts[0].holdingsMappings['should-not-appear']).toBeUndefined();
+    });
+
+    test('should handle JSON string format for legacy holdings', () => {
+      // Set up consolidated data
+      const consolidatedData = [
+        {
+          questradeAccount: { id: 'qt-1', nickname: 'Account' },
+          monarchAccount: { id: 'm-1' },
+          syncEnabled: true,
+        },
+      ];
+      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+
+      // Set up legacy holdings as JSON string
+      GM_setValue(
+        `${STORAGE.QUESTRADE_HOLDINGS_FOR_PREFIX}qt-1`,
+        JSON.stringify({
+          'uuid-json': { securityId: 'sec-json', holdingId: 'hold-json', symbol: 'MSFT' },
+        }),
+      );
+
+      const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
+
+      expect(accounts[0].holdingsMappings).toBeDefined();
+      expect(accounts[0].holdingsMappings['uuid-json'].symbol).toBe('MSFT');
+    });
+
+    test('should save merged accounts after holdings migration', () => {
+      // Set up consolidated data without holdings
+      const consolidatedData = [
+        {
+          questradeAccount: { id: 'qt-1', nickname: 'Account' },
+          monarchAccount: { id: 'm-1' },
+          syncEnabled: true,
+        },
+      ];
+      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+
+      // Set up legacy holdings
+      GM_setValue(
+        `${STORAGE.QUESTRADE_HOLDINGS_FOR_PREFIX}qt-1`,
+        JSON.stringify({ 'uuid-1': { securityId: 's1', holdingId: 'h1', symbol: 'AMD' } }),
+      );
+
+      // Trigger migration
+      getAccounts(INTEGRATIONS.QUESTRADE);
+
+      // Verify the consolidated storage was updated
+      const stored = JSON.parse(GM_getValue(STORAGE.ACCOUNTS_LIST, '[]'));
+      expect(stored[0].holdingsMappings).toBeDefined();
+      expect(stored[0].holdingsMappings['uuid-1'].symbol).toBe('AMD');
+    });
+
+    test('should not migrate holdings for integrations without holdings support', () => {
+      // Set up CanadaLife consolidated data
+      const consolidatedData = [
+        {
+          canadalifAccount: { id: 'cl-1', nickname: 'RRSP' },
+          monarchAccount: { id: 'monarch-cl' },
+          syncEnabled: true,
+        },
+      ];
+      GM_setValue(STORAGE.CANADALIFE_ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+
+      // CanadaLife doesn't have holdings prefix, so nothing to migrate
+      const accounts = getAccounts(INTEGRATIONS.CANADALIFE);
+
+      expect(accounts).toHaveLength(1);
+      expect(accounts[0].holdingsMappings).toBeUndefined();
+    });
+
+    test('should handle empty legacy holdings gracefully', () => {
+      // Set up consolidated data
+      const consolidatedData = [
+        {
+          questradeAccount: { id: 'qt-1', nickname: 'Account' },
+          monarchAccount: { id: 'm-1' },
+          syncEnabled: true,
+        },
+      ];
+      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+
+      // Set up empty legacy holdings
+      GM_setValue(`${STORAGE.QUESTRADE_HOLDINGS_FOR_PREFIX}qt-1`, JSON.stringify({}));
+
+      const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
+
+      // Should not add empty holdingsMappings
+      expect(accounts[0].holdingsMappings).toBeUndefined();
+    });
+
+    test('should handle invalid JSON in legacy holdings gracefully', () => {
+      // Set up consolidated data
+      const consolidatedData = [
+        {
+          questradeAccount: { id: 'qt-1', nickname: 'Account' },
+          monarchAccount: { id: 'm-1' },
+          syncEnabled: true,
+        },
+      ];
+      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+
+      // Set up invalid JSON in legacy holdings
+      GM_setValue(`${STORAGE.QUESTRADE_HOLDINGS_FOR_PREFIX}qt-1`, 'invalid json');
+
+      // Should not throw, just skip migration
+      const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
+
+      expect(accounts).toHaveLength(1);
+      expect(accounts[0].holdingsMappings).toBeUndefined();
+    });
+
+    test('should migrate holdings during full legacy migration', () => {
+      // Set up legacy mapping data
+      GM_setValue(
+        `${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}qt-new`,
+        JSON.stringify({ id: 'monarch-new', displayName: 'New TFSA' }),
+      );
+
+      // Set up legacy holdings
+      GM_setValue(
+        `${STORAGE.QUESTRADE_HOLDINGS_FOR_PREFIX}qt-new`,
+        JSON.stringify({
+          'uuid-a': { securityId: 'sa', holdingId: 'ha', symbol: 'NVDA' },
+        }),
+      );
+
+      // Call getAccounts - should trigger full migration including holdings
+      const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
+
+      expect(accounts).toHaveLength(1);
+      expect(accounts[0].questradeAccount.id).toBe('qt-new');
+      expect(accounts[0].holdingsMappings).toBeDefined();
+      expect(accounts[0].holdingsMappings['uuid-a'].symbol).toBe('NVDA');
+    });
+  });
+
   describe('auto-migration on getAccounts', () => {
     test('should auto-migrate when consolidated is empty but legacy exists', () => {
       // Set up legacy data

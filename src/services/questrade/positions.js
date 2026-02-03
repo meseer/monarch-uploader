@@ -5,8 +5,10 @@
 
 import { debugLog } from '../../core/utils';
 import { STORAGE } from '../../core/config';
+import { INTEGRATIONS } from '../../core/integrationCapabilities';
 import questradeApi from '../../api/questrade';
 import monarchApi from '../../api/monarch';
+import accountService from '../common/accountService';
 import { showMonarchSecuritySelector } from '../../ui/components/securitySelector';
 import toast from '../../ui/toast';
 
@@ -24,14 +26,24 @@ export class PositionsError extends Error {
 
 /**
  * Storage Helper Functions for Holdings Mappings
+ * Uses consolidated storage via accountService, with legacy fallback for migration
  */
 
 /**
  * Load all holdings mappings for an account
+ * Reads from consolidated storage first, falls back to legacy storage for migration
  * @param {string} accountId - Questrade account ID
  * @returns {Object} Mappings object { securityUuid: { securityId, holdingId, symbol } }
  */
 function loadAccountHoldingsMappings(accountId) {
+  // Try consolidated storage first
+  const accountData = accountService.getAccountData(INTEGRATIONS.QUESTRADE, accountId);
+  if (accountData?.holdingsMappings && Object.keys(accountData.holdingsMappings).length > 0) {
+    debugLog(`Loaded ${Object.keys(accountData.holdingsMappings).length} holdings mappings from consolidated storage for ${accountId}`);
+    return accountData.holdingsMappings;
+  }
+
+  // Fall back to legacy storage for migration
   const key = `${STORAGE.QUESTRADE_HOLDINGS_FOR_PREFIX}${accountId}`;
   const stored = GM_getValue(key, null);
 
@@ -40,23 +52,37 @@ function loadAccountHoldingsMappings(accountId) {
   }
 
   try {
-    return JSON.parse(stored);
+    const legacyMappings = JSON.parse(stored);
+    debugLog(`Loaded ${Object.keys(legacyMappings).length} holdings mappings from legacy storage for ${accountId}`);
+    return legacyMappings;
   } catch (error) {
-    debugLog(`Error parsing holdings mappings for account ${accountId}:`, error);
+    debugLog(`Error parsing legacy holdings mappings for account ${accountId}:`, error);
     return {};
   }
 }
 
 /**
  * Save all holdings mappings for an account
+ * Saves to consolidated storage only (legacy storage is migrated and cleaned up separately)
  * @param {string} accountId - Questrade account ID
  * @param {Object} mappings - Mappings object to save
  * @returns {void}
  */
 function saveAccountHoldingsMappings(accountId, mappings) {
-  const key = `${STORAGE.QUESTRADE_HOLDINGS_FOR_PREFIX}${accountId}`;
-  GM_setValue(key, JSON.stringify(mappings));
-  debugLog(`Saved holdings mappings for account ${accountId}:`, mappings);
+  // Save to consolidated storage
+  const success = accountService.updateAccountInList(INTEGRATIONS.QUESTRADE, accountId, {
+    holdingsMappings: mappings,
+  });
+
+  if (success) {
+    debugLog(`Saved ${Object.keys(mappings).length} holdings mappings to consolidated storage for account ${accountId}`);
+  } else {
+    // If consolidated storage update fails (account not in list yet), fall back to legacy storage
+    // This can happen during initial setup before the account is fully registered
+    const key = `${STORAGE.QUESTRADE_HOLDINGS_FOR_PREFIX}${accountId}`;
+    GM_setValue(key, JSON.stringify(mappings));
+    debugLog(`Saved holdings mappings to legacy storage for account ${accountId} (account not in consolidated list yet)`);
+  }
 }
 
 /**

@@ -140,6 +140,7 @@ jest.mock('../../src/core/integrationCapabilities', () => ({
     accountKeyName: `${integrationId}Account`,
     hasTransactions: true,
     hasDeduplication: true,
+    hasHoldings: integrationId === 'questrade' || integrationId === 'wealthsimple',
     hasCategorization: integrationId === 'rogersbank' || integrationId === 'wealthsimple',
     categoryMappingsStorageKey: integrationId === 'rogersbank' ? 'rogersbank_category_mappings' : (integrationId === 'wealthsimple' ? 'wealthsimple_category_mappings' : null),
     categorySourceLabel: integrationId === 'rogersbank' ? 'Bank Category' : (integrationId === 'wealthsimple' ? 'Merchant Name' : null),
@@ -151,6 +152,15 @@ jest.mock('../../src/core/integrationCapabilities', () => ({
   getFaviconUrl: jest.fn(() => 'https://www.google.com/s2/favicons?domain=example.com&sz=128'),
   hasSetting: jest.fn(() => false),
   getSettingDefault: jest.fn(() => null),
+  hasCapability: jest.fn((integrationId, capability) => {
+    if (capability === 'hasHoldings') {
+      return integrationId === 'questrade' || integrationId === 'wealthsimple';
+    }
+    if (capability === 'hasCategorization') {
+      return integrationId === 'rogersbank' || integrationId === 'wealthsimple';
+    }
+    return false;
+  }),
   getCategoryMappingsConfig: jest.fn((integrationId) => {
     if (integrationId === 'rogersbank') {
       return { storageKey: 'rogersbank_category_mappings', sourceLabel: 'Bank Category' };
