@@ -972,7 +972,6 @@ export function cleanupAllLegacyStorage(integrationId) {
 
 /**
  * Normalize holding mapping data to unified structure
- * Converts Wealthsimple's naming (monarchSecurityId, monarchHoldingId) to unified (securityId, holdingId)
  * @param {Object} mappingData - Raw mapping data
  * @returns {Object} Normalized mapping data with { securityId, holdingId, symbol }
  */
@@ -980,11 +979,8 @@ function normalizeHoldingMapping(mappingData) {
   if (!mappingData) return null;
 
   return {
-    // Use securityId or monarchSecurityId (migration from Wealthsimple naming)
-    securityId: mappingData.securityId || mappingData.monarchSecurityId || null,
-    // Use holdingId or monarchHoldingId (migration from Wealthsimple naming)
-    holdingId: mappingData.holdingId || mappingData.monarchHoldingId || null,
-    // Symbol is the same in both conventions
+    securityId: mappingData.securityId || null,
+    holdingId: mappingData.holdingId || null,
     symbol: mappingData.symbol || null,
   };
 }
@@ -1008,7 +1004,6 @@ function normalizeAllHoldingsMappings(holdingsMappings) {
 
 /**
  * Get all holdings mappings for an account
- * Automatically normalizes data to unified structure
  * @param {string} integrationId - Integration identifier
  * @param {string} accountId - Account ID
  * @returns {Object} Mappings object { sourceSecurityKey: { securityId, holdingId, symbol } }
@@ -1020,28 +1015,9 @@ export function getHoldingsMappings(integrationId, accountId) {
     return {};
   }
 
-  // Normalize to unified structure (handles migration from Wealthsimple naming)
-  const normalized = normalizeAllHoldingsMappings(accountData.holdingsMappings);
-
-  // Check if any mappings were normalized (had old naming convention)
-  const originalKeys = accountData.holdingsMappings;
-  let needsMigration = false;
-  for (const key of Object.keys(originalKeys)) {
-    const original = originalKeys[key];
-    if (original && (original.monarchSecurityId || original.monarchHoldingId)) {
-      needsMigration = true;
-      break;
-    }
-  }
-
-  // If data needed normalization, save the normalized version
-  if (needsMigration) {
-    debugLog(`[accountService.getHoldingsMappings] Migrating holdings mappings to unified structure for ${integrationId}/${accountId}`);
-    updateAccountInList(integrationId, accountId, { holdingsMappings: normalized });
-  }
-
-  debugLog(`[accountService.getHoldingsMappings] Loaded ${Object.keys(normalized).length} mappings for ${integrationId}/${accountId}`);
-  return normalized;
+  const mappings = normalizeAllHoldingsMappings(accountData.holdingsMappings);
+  debugLog(`[accountService.getHoldingsMappings] Loaded ${Object.keys(mappings).length} mappings for ${integrationId}/${accountId}`);
+  return mappings;
 }
 
 /**
