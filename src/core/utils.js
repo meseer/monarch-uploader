@@ -620,7 +620,7 @@ export async function clearTransactionUploadHistory(location = window.location) 
       toast.show('Transaction upload history cleared', 'info');
     } else {
       debugLog('No transaction upload history to clear for this institution');
-      toast.show('No transaction history to clear', 'info');
+      toast.show('No transaction history to clear', 'debug');
     }
   } catch (error) {
     debugLog('Failed to clear transaction upload history:', error);
@@ -648,7 +648,7 @@ export async function clearCategoryMappings(location = window.location) {
       break;
     default:
       debugLog('No category mappings to clear for this institution');
-      toast.show('No category mappings to clear', 'info');
+      toast.show('No category mappings to clear', 'debug');
       return;
     }
 

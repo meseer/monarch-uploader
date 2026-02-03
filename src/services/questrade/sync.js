@@ -232,7 +232,7 @@ export async function syncAllAccountsToMonarch() {
     const accounts = await questradeApi.fetchAccounts();
 
     if (!accounts || !accounts.length) {
-      toast.show('No Questrade accounts found.', 'error');
+      toast.show('No Questrade accounts found.', 'debug');
       return;
     }
 
@@ -248,7 +248,7 @@ export async function syncAllAccountsToMonarch() {
     progressDialog.onCancel(() => {
       debugLog('Sync cancellation requested');
       isCancelled = true;
-      toast.show('Sync cancelled by user', 'warning');
+      toast.show('Sync cancelled by user', 'info');
     });
 
     // Ensure progress dialog shows close button when sync completes
@@ -265,7 +265,7 @@ export async function syncAllAccountsToMonarch() {
       const mappingSuccess = await ensureAllAccountMappings(accounts, progressDialog);
       if (!mappingSuccess || isCancelled) {
         progressDialog.close();
-        toast.show('Sync cancelled: Account mapping incomplete.', 'warning');
+        toast.show('Sync cancelled: Account mapping incomplete.', 'info');
         return;
       }
 
@@ -273,7 +273,7 @@ export async function syncAllAccountsToMonarch() {
       const startDates = await getStartDatesForAllAccounts(accounts);
       if (!startDates || isCancelled) {
         progressDialog.close();
-        toast.show('Sync cancelled: Date selection cancelled.', 'warning');
+        toast.show('Sync cancelled: Date selection cancelled.', 'info');
         return;
       }
 
@@ -329,7 +329,7 @@ export async function syncAllAccountsToMonarch() {
 
       // Show appropriate completion message
       if (isCancelled) {
-        toast.show('Sync process was cancelled', 'warning');
+        toast.show('Sync process was cancelled', 'info');
       } else if (stats.success === stats.total) {
         toast.show(`Successfully synced all ${stats.total} accounts!`, 'info');
       } else if (stats.success > 0) {

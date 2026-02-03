@@ -623,7 +623,7 @@ export async function processAccountPositions(accountId, accountName, monarchAcc
 
     if (!positions || positions.length === 0) {
       debugLog(`No positions found for account ${accountId}`);
-      toast.show(`No positions found for ${accountName}`, 'info');
+      toast.show(`No positions found for ${accountName}`, 'debug');
       if (progressDialog) {
         progressDialog.updateStepStatus(accountId, 'positions', 'success', 'No positions');
       }

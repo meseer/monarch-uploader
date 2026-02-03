@@ -265,7 +265,7 @@ export async function uploadWealthsimpleAccountToMonarch(consolidatedAccount, fr
 
       if (!datePickerResult) {
         debugLog('User cancelled date selection');
-        toast.show('Sync cancelled', 'debug');
+        toast.show('Sync cancelled', 'info');
         return { success: false, cancelled: true };
       }
 
@@ -437,7 +437,7 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
     const accounts = await syncAccountListWithAPI();
 
     if (!accounts || accounts.length === 0) {
-      toast.show('No Wealthsimple accounts found', 'warning');
+      toast.show('No Wealthsimple accounts found', 'debug');
       return;
     }
 
@@ -450,7 +450,7 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
     }
 
     if (accountsToSync.length === 0) {
-      toast.show('All accounts are marked as skipped', 'warning');
+      toast.show('All accounts are marked as skipped', 'debug');
       return;
     }
 
@@ -470,7 +470,7 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
     progressDialog.onCancel(() => {
       debugLog('Upload cancellation requested');
       isCancelled = true;
-      toast.show('Upload cancelled by user', 'warning');
+      toast.show('Upload cancelled by user', 'info');
     });
 
     // Fetch all account balances upfront
@@ -570,7 +570,7 @@ export async function uploadAllWealthsimpleAccountsToMonarch() {
 
     // Show final summary toast
     if (isCancelled) {
-      toast.show('Upload process was cancelled', 'warning');
+      toast.show('Upload process was cancelled', 'info');
     } else if (totalFailed === 0 && totalSkipped === 0) {
       toast.show(`Successfully uploaded all ${stats.success} Wealthsimple account(s)`, 'info');
     } else if (stats.success > 0) {

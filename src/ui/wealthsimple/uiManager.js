@@ -222,7 +222,7 @@ function initializeUIComponents(container) {
     debugLog('Wealthsimple UI initialized successfully');
 
     // Show initialization toast
-    toast.show('Wealthsimple Balance Uploader initialized', 'trace', 2000);
+    toast.show('Wealthsimple Balance Uploader initialized', 'debug', 2000);
   } catch (error) {
     debugLog('Error initializing UI components:', error);
     toast.show('Failed to initialize Balance Uploader', 'error');

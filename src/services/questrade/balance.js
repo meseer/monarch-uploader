@@ -278,14 +278,14 @@ export async function processAndUploadBalance(accountId, accountName, fromDate, 
     stateManager.setAccount(accountId, accountName);
 
     // Step 1: Fetch balance history
-    toast.show(`Downloading ${accountName} balance history...`, 'trace');
+    toast.show(`Downloading ${accountName} balance history...`, 'debug');
     const balanceData = await fetchBalanceHistory(accountId, fromDate, toDate);
 
     // Step 2: Process the data
     const csvData = processBalanceData(balanceData, accountName);
 
     // Step 3: Upload to Monarch
-    toast.show(`Uploading ${accountName} balance history to Monarch (may take up to 2 minutes for large files)...`, 'trace');
+    toast.show(`Uploading ${accountName} balance history to Monarch (may take up to 2 minutes for large files)...`, 'debug');
     const success = await uploadBalanceToMonarch(accountId, csvData, fromDate, toDate);
 
     // Step 4: Show result notification
@@ -313,14 +313,14 @@ export async function processAndUploadBalance(accountId, accountName, fromDate, 
 export async function bulkProcessAccounts(accounts, fromDate, toDate) {
   if (!accounts || accounts.length === 0) {
     debugLog('No accounts provided for bulk processing');
-    toast.show('No accounts to process', 'warning');
+    toast.show('No accounts to process', 'debug');
     return { success: 0, failed: 0 };
   }
 
   const results = { success: 0, failed: 0 };
 
   // Show initial progress
-  toast.show(`Processing ${accounts.length} accounts...`, 'trace');
+  toast.show(`Processing ${accounts.length} accounts...`, 'debug');
 
   // Process accounts sequentially
   for (let i = 0; i < accounts.length; i += 1) {
@@ -493,7 +493,7 @@ export async function uploadAllAccountsToMonarch() {
     progressDialog.onCancel(() => {
       debugLog('Upload cancellation requested');
       isCancelled = true;
-      toast.show('Upload cancelled by user', 'warning');
+      toast.show('Upload cancelled by user', 'info');
     });
 
     // Ensure progress dialog shows close button when upload completes
@@ -510,7 +510,7 @@ export async function uploadAllAccountsToMonarch() {
       const mappingSuccess = await ensureAllAccountMappings(accounts, progressDialog);
       if (!mappingSuccess || isCancelled) {
         progressDialog.close();
-        toast.show('Upload cancelled: Account mapping incomplete.', 'warning');
+        toast.show('Upload cancelled: Account mapping incomplete.', 'info');
         return;
       }
 
@@ -518,7 +518,7 @@ export async function uploadAllAccountsToMonarch() {
       const startDates = await getStartDatesForAllAccounts(accounts);
       if (!startDates || isCancelled) {
         progressDialog.close();
-        toast.show('Upload cancelled: Date selection cancelled.', 'warning');
+        toast.show('Upload cancelled: Date selection cancelled.', 'info');
         return;
       }
 
@@ -603,7 +603,7 @@ export async function uploadAllAccountsToMonarch() {
 
       // Show appropriate completion message
       if (isCancelled) {
-        toast.show('Upload process was cancelled', 'warning');
+        toast.show('Upload process was cancelled', 'info');
       } else if (stats.success === stats.total) {
         toast.show(`Successfully uploaded balance history for all ${stats.total} accounts!`, 'info');
       } else if (stats.success > 0) {

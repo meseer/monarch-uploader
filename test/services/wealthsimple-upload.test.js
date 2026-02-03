@@ -128,7 +128,7 @@ describe('Wealthsimple Upload Service', () => {
 
       expect(toast.show).toHaveBeenCalledWith(
         'No Wealthsimple accounts found',
-        'warning',
+        'debug',
       );
     });
 
@@ -139,7 +139,7 @@ describe('Wealthsimple Upload Service', () => {
 
       expect(toast.show).toHaveBeenCalledWith(
         'No Wealthsimple accounts found',
-        'warning',
+        'debug',
       );
     });
 
@@ -252,7 +252,7 @@ describe('Wealthsimple Upload Service', () => {
 
       expect(toast.show).toHaveBeenCalledWith(
         'All accounts are marked as skipped',
-        'warning',
+        'debug',
       );
     });
 
@@ -364,7 +364,7 @@ describe('Wealthsimple Upload Service', () => {
 
       // Should only process first account (cancelled stops processing)
       expect(accountService.resolveWealthsimpleAccountMapping).toHaveBeenCalledTimes(1);
-      expect(toast.show).toHaveBeenCalledWith('Upload process was cancelled', 'warning');
+      expect(toast.show).toHaveBeenCalledWith('Upload process was cancelled', 'info');
     });
 
     it('should continue processing when user skips an account', async () => {

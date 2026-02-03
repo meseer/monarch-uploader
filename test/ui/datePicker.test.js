@@ -325,8 +325,7 @@ describe('Date Picker Component', () => {
   });
 
   describe('Date validation', () => {
-    test('should show error toast for invalid date format', () => {
-      const toast = jest.requireMock('../../src/ui/toast').default;
+    test('should show inline error for invalid date format', () => {
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
       const callback = jest.fn();
@@ -343,7 +342,10 @@ describe('Date Picker Component', () => {
       dateInput.value = 'invalid-date';
       selectBtn.click();
 
-      expect(toast.show).toHaveBeenCalledWith('Please select a valid date', 'error');
+      // Should show inline validation error
+      const errorElement = modal.querySelector('.form-validation-error');
+      expect(errorElement).toBeTruthy();
+      expect(errorElement.textContent).toBe('Please select a valid date');
       expect(callback).not.toHaveBeenCalled();
 
       // Modal should still be open
@@ -351,8 +353,7 @@ describe('Date Picker Component', () => {
       expect(stillOpenModal).toBeTruthy();
     });
 
-    test('should show error toast for empty date', () => {
-      const toast = jest.requireMock('../../src/ui/toast').default;
+    test('should show inline error for empty date', () => {
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
       const callback = jest.fn();
@@ -369,7 +370,10 @@ describe('Date Picker Component', () => {
       dateInput.value = '';
       selectBtn.click();
 
-      expect(toast.show).toHaveBeenCalledWith('Please select a valid date', 'error');
+      // Should show inline validation error
+      const errorElement = modal.querySelector('.form-validation-error');
+      expect(errorElement).toBeTruthy();
+      expect(errorElement.textContent).toBe('Please select a valid date');
       expect(callback).not.toHaveBeenCalled();
     });
 

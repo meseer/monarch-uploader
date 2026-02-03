@@ -136,7 +136,7 @@ async function uploadSingleAccountWithProgress(accountId) {
     progressDialog.onCancel(() => {
       debugLog('Upload cancellation requested');
       isCancelled = true;
-      toast.show('Upload cancelled by user', 'warning');
+      toast.show('Upload cancelled by user', 'info');
     });
 
     // Fetch balance for this specific account

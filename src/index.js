@@ -158,7 +158,7 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
       }
 
       // Show initialization toast
-      toast.show('Balance Uploader initialized', 'trace', 2000);
+      toast.show('Balance Uploader initialized', 'debug', 2000);
     } catch (error) {
       debugLog('Error initializing application:', error);
     }

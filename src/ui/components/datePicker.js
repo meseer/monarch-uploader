@@ -6,7 +6,7 @@
 
 import { debugLog } from '../../core/utils';
 import { addModalKeyboardHandlers, trapFocus } from '../keyboardNavigation';
-import toast from '../toast';
+import { validateDateFormat, clearFieldError } from './formValidation';
 
 /**
  * Show a date picker modal and return a promise with the selected date
@@ -134,11 +134,10 @@ export function showDatePicker(defaultDate, promptText, callback) {
   };
 
   const selectAction = () => {
-    const selectedDate = dateInput.value;
-    if (!selectedDate || !/^\d{4}-\d{2}-\d{2}$/.test(selectedDate)) {
-      toast.show('Please select a valid date', 'error');
+    if (!validateDateFormat(dateInput)) {
       return;
     }
+    const selectedDate = dateInput.value;
     cleanupKeyboard();
     overlay.remove();
     callback(selectedDate);
@@ -198,6 +197,11 @@ export function showDatePicker(defaultDate, promptText, callback) {
     }
   };
   dateInput.addEventListener('keydown', handleDateInputKeyDown);
+
+  // Clear validation error when user changes the date
+  dateInput.addEventListener('input', () => {
+    clearFieldError(dateInput);
+  });
 
   // Combine cleanup functions
   cleanupKeyboard = () => {
@@ -365,11 +369,10 @@ export function showDatePickerWithOptions(defaultDate, promptText, options = {},
   };
 
   const selectAction = () => {
-    const selectedDate = dateInput.value;
-    if (!selectedDate || !/^\d{4}-\d{2}-\d{2}$/.test(selectedDate)) {
-      toast.show('Please select a valid date', 'error');
+    if (!validateDateFormat(dateInput)) {
       return;
     }
+    const selectedDate = dateInput.value;
     cleanupKeyboard();
     overlay.remove();
 
@@ -437,6 +440,11 @@ export function showDatePickerWithOptions(defaultDate, promptText, options = {},
     }
   };
   dateInput.addEventListener('keydown', handleDateInputKeyDown);
+
+  // Clear validation error when user changes the date
+  dateInput.addEventListener('input', () => {
+    clearFieldError(dateInput);
+  });
 
   // Combine cleanup functions
   cleanupKeyboard = () => {

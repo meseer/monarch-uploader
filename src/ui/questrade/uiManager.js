@@ -493,7 +493,7 @@ export async function initAllAccountsUI() {
 
     if (!accounts || accounts.length === 0) {
       debugLog('No accounts found after all retry attempts');
-      toast.show('No accounts found after waiting for data to load', 'warning');
+      toast.show('No accounts found after waiting for data to load', 'debug');
       return;
     }
 

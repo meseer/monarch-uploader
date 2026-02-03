@@ -9,6 +9,7 @@ import canadalife from '../../../api/canadalife';
 import toast from '../../toast';
 import { uploadAllCanadaLifeAccountsToMonarch, uploadCanadaLifeAccountWithDateRange } from '../../../services/canadalife-upload';
 import { ensureMonarchAuthentication } from '../../components/monarchLoginLink';
+import { validateSelection, validateDateFormat, validateDateRange } from '../../components/formValidation';
 
 /**
  * Creates a styled button for CanadaLife
@@ -316,7 +317,7 @@ function updateAccountSelector(accounts) {
 
   accountsLoadingState = 'loaded';
 
-  toast.show(`Loaded ${accounts.length} Canada Life accounts`, 'trace');
+  toast.show(`Loaded ${accounts.length} Canada Life accounts`, 'debug');
 }
 
 /**
@@ -492,7 +493,7 @@ function displayHistoricalBalanceResult(historicalData) {
   historicalBalanceResultElement.innerHTML = tableHTML;
   historicalBalanceResultElement.style.display = 'block';
 
-  toast.show(`Historical balance loaded for ${account.shortName}: ${totalDays} days, ${apiCallsMade} API calls`, 'trace');
+  toast.show(`Historical balance loaded for ${account.shortName}: ${totalDays} days, ${apiCallsMade} API calls`, 'debug');
 }
 
 /**
@@ -543,7 +544,7 @@ function displayBalanceResult(balanceData) {
 
   balanceResultElement.style.display = 'block';
 
-  toast.show(`Balance loaded for ${balanceData.account.shortName}: ${formattedClosingBalance}`, 'trace');
+  toast.show(`Balance loaded for ${balanceData.account.shortName}: ${formattedClosingBalance}`, 'debug');
 }
 
 /**
@@ -687,19 +688,19 @@ export function createCanadaLifeUploadButton() {
   // Create load balance button for testing
   const loadBalanceButton = createCanadaLifeButton('Load Balance', async () => {
     try {
+      // Validate account selection
+      if (!validateSelection(accountSelectorElement, 'Please select an account')) {
+        return;
+      }
+
+      // Validate date selection
+      if (!validateDateFormat(dateSelectorElement, 'Please select a date')) {
+        return;
+      }
+
       // Get selected account and date
       const selectedAccount = getSelectedAccount();
       const selectedDate = getSelectedDate();
-
-      if (!selectedAccount) {
-        toast.show('Please select an account', 'warning');
-        return;
-      }
-
-      if (!selectedDate) {
-        toast.show('Please select a date', 'warning');
-        return;
-      }
 
       // Disable button while loading
       loadBalanceButton.disabled = true;
@@ -725,24 +726,29 @@ export function createCanadaLifeUploadButton() {
   // Create load historical balance button for testing
   const loadHistoricalBalanceButton = createCanadaLifeButton('Load Historical Balance', async () => {
     try {
+      // Validate account selection
+      if (!validateSelection(accountSelectorElement, 'Please select an account')) {
+        return;
+      }
+
+      // Validate start date
+      if (!validateDateFormat(startDateSelectorElement, 'Please select a start date')) {
+        return;
+      }
+
+      // Validate end date
+      if (!validateDateFormat(endDateSelectorElement, 'Please select an end date')) {
+        return;
+      }
+
+      // Validate date range (start before end)
+      if (!validateDateRange(startDateSelectorElement, endDateSelectorElement, 'Start date must be before end date')) {
+        return;
+      }
+
       // Get selected account and date range
       const selectedAccount = getSelectedAccount();
       const selectedDateRange = getSelectedDateRange();
-
-      if (!selectedAccount) {
-        toast.show('Please select an account', 'warning');
-        return;
-      }
-
-      if (!selectedDateRange) {
-        toast.show('Please select a date range', 'warning');
-        return;
-      }
-
-      if (new Date(selectedDateRange.startDate) > new Date(selectedDateRange.endDate)) {
-        toast.show('Start date must be before end date', 'warning');
-        return;
-      }
 
       // Disable button while loading
       loadHistoricalBalanceButton.disabled = true;

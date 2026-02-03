@@ -632,7 +632,7 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
     // Set up cancellation callback
     progressDialog.onCancel(() => {
       debugLog('Upload cancellation requested by user');
-      toast.show('Cancelling upload...', 'warning');
+      toast.show('Cancelling upload...', 'info');
       abortController.abort();
     });
 
@@ -687,7 +687,7 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
 
     // Show appropriate completion message
     if (abortController.signal.aborted) {
-      toast.show(`Upload cancelled. ${stats.success} accounts uploaded successfully before cancellation.`, 'warning');
+      toast.show(`Upload cancelled. ${stats.success} accounts uploaded successfully before cancellation.`, 'info');
     } else if (stats.success === stats.total) {
       toast.show(`Successfully uploaded balance history for all ${stats.total} Canada Life accounts!`, 'info');
     } else if (stats.success > 0) {
@@ -723,14 +723,14 @@ export async function uploadCanadaLifeAccountWithDateRange() {
     // Show account selector
     const selectedAccount = await selectCanadaLifeAccount(accounts);
     if (!selectedAccount) {
-      toast.show('Account selection cancelled', 'warning');
+      toast.show('Account selection cancelled', 'info');
       return;
     }
 
     // Show date range picker
     const dateRange = await selectDateRange();
     if (!dateRange) {
-      toast.show('Date selection cancelled', 'warning');
+      toast.show('Date selection cancelled', 'info');
       return;
     }
 

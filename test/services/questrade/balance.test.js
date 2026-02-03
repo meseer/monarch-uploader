@@ -349,7 +349,7 @@ describe('Balance Service', () => {
       // Check results
       expect(result.success).toBe(0);
       expect(result.failed).toBe(0);
-      expect(toast.show).toHaveBeenCalledWith('No accounts to process', 'warning');
+      expect(toast.show).toHaveBeenCalledWith('No accounts to process', 'debug');
     });
 
     test('should handle null accounts list', async () => {
@@ -362,7 +362,7 @@ describe('Balance Service', () => {
       // Check results
       expect(result.success).toBe(0);
       expect(result.failed).toBe(0);
-      expect(toast.show).toHaveBeenCalledWith('No accounts to process', 'warning');
+      expect(toast.show).toHaveBeenCalledWith('No accounts to process', 'debug');
     });
   });
 
@@ -546,8 +546,8 @@ describe('Balance Service', () => {
 
       expect(result).toBe(true);
       expect(stateManager.setAccount).toHaveBeenCalledWith('test-account', 'My Test Account');
-      expect(toast.show).toHaveBeenCalledWith('Downloading My Test Account balance history...', 'trace');
-      expect(toast.show).toHaveBeenCalledWith('Uploading My Test Account balance history to Monarch (may take up to 2 minutes for large files)...', 'trace');
+      expect(toast.show).toHaveBeenCalledWith('Downloading My Test Account balance history...', 'debug');
+      expect(toast.show).toHaveBeenCalledWith('Uploading My Test Account balance history to Monarch (may take up to 2 minutes for large files)...', 'debug');
       expect(toast.show).toHaveBeenCalledWith('Successfully uploaded My Test Account balance history to Monarch', 'info');
     });
 
