@@ -520,7 +520,7 @@ export async function detectAndRemoveDeletedHoldings(accountId, monarchAccountId
         }
 
         // Check if we have a mapping for this holding ID
-        const hasMapping = Object.values(mappings).some((m) => m.monarchHoldingId === holdingId);
+        const hasMapping = Object.values(mappings).some((m) => m.holdingId === holdingId);
 
         if (hasMapping) {
           debugLog(`Holding ${ticker} (${holdingId}) has mapping, keeping`);
