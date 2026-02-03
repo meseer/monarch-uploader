@@ -96,6 +96,20 @@ describe('Merchant Mapping Utilities', () => {
       expect(applyMerchantMapping('GROCERY STORE 5678 TORONTO ON')).toBe('Grocery Store Toronto on');
     });
 
+    test('should remove masked account numbers at end of string', () => {
+      // Masked card/account numbers (asterisks + digits at end)
+      expect(applyMerchantMapping('ROGERS ******7091')).toBe('Rogers');
+      expect(applyMerchantMapping('TELUS ****1234')).toBe('Telus');
+      expect(applyMerchantMapping('BELL MOBILITY **9999')).toBe('Bell Mobility');
+      expect(applyMerchantMapping('FIDO ***5678')).toBe('Fido');
+
+      // Should NOT remove if not at end of string
+      expect(applyMerchantMapping('MERCHANT **7091 VANCOUVER')).toBe('Merchant **7091 Vancouver');
+
+      // Can disable store number stripping (which includes masked account removal)
+      expect(applyMerchantMapping('ROGERS ******7091', { stripStoreNumbers: false })).toBe('Rogers ******7091');
+    });
+
     test('should handle merchant names with various prefixes', () => {
       expect(applyMerchantMapping('TST-TEST MERCHANT')).toBe('Test Merchant');
       expect(applyMerchantMapping('SQ *SQUARE MERCHANT')).toBe('Square Merchant');

@@ -94,6 +94,10 @@ function stripStoreNumbers(merchantName, enabled = true) {
   // Only if preceded by space (to avoid removing numbers that are part of name like "7-Eleven")
   transformed = transformed.replace(/\s+\d+(?=\s|$)/g, '');
 
+  // Pattern 4: Remove masked account/card numbers at end of string
+  // Matches: space + 2+ asterisks + digits at end (e.g., "ROGERS ******7091", "TELUS ****1234")
+  transformed = transformed.replace(/\s+\*{2,}\d+$/, '');
+
   return transformed.trim();
 }
 
