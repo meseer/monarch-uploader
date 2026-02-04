@@ -1369,6 +1369,95 @@ export const INVESTMENT_DEPOSIT_TRANSACTION_RULES = [
 ];
 
 /**
+ * Format a number with up to specified decimal places, removing trailing zeroes
+ * @param {number|string} value - The value to format
+ * @param {number} maxDecimals - Maximum number of decimal places (default 4)
+ * @returns {string} Formatted number string
+ */
+export function formatNumberWithPrecision(value, maxDecimals = 4) {
+  if (value === null || value === undefined) return '';
+  const num = parseFloat(value);
+  if (isNaN(num)) return '';
+  // Format with max decimals, then remove trailing zeroes
+  return num.toFixed(maxDecimals).replace(/\.?0+$/, '');
+}
+
+/**
+ * Format dividend transaction notes with enhanced details
+ * Includes holdings on record date, gross dividend rate, withholding tax, and key dates
+ *
+ * @param {Object} tx - Raw transaction from Wealthsimple API
+ * @returns {string} Formatted notes string
+ */
+export function formatDividendNotes(tx) {
+  if (!tx) return '';
+
+  const symbol = tx.assetSymbol || 'Unknown';
+  const currency = tx.currency || 'CAD';
+  const amount = formatAmount(tx.amount ?? 0);
+
+  const noteLines = [];
+
+  // Line 1: Main dividend info (different for manufactured dividends)
+  if (tx.subType === 'MANUFACTURED_DIVIDEND') {
+    noteLines.push(`Dividend on lended ${symbol} shares: ${currency}$${amount}`);
+  } else {
+    noteLines.push(`Dividend on ${symbol}: ${currency}$${amount}`);
+  }
+
+  // Line 2: Holdings on record date (if available)
+  if (tx.assetQuantity !== null && tx.assetQuantity !== undefined) {
+    const formattedQuantity = formatNumberWithPrecision(tx.assetQuantity, 4);
+    if (formattedQuantity) {
+      noteLines.push(`Holdings on record date: ${formattedQuantity} shares`);
+    }
+  }
+
+  // Line 3: Gross dividend rate (if available)
+  if (tx.grossDividendRate !== null && tx.grossDividendRate !== undefined) {
+    const formattedRate = formatNumberWithPrecision(tx.grossDividendRate, 4);
+    if (formattedRate) {
+      noteLines.push(`Gross dividend rate: ${currency}$${formattedRate} per share`);
+    }
+  }
+
+  // Line 4: Withholding tax (if available) - shown as positive
+  if (tx.withholdingTaxAmount !== null && tx.withholdingTaxAmount !== undefined) {
+    const taxAmount = Math.abs(parseFloat(tx.withholdingTaxAmount) || 0);
+    if (taxAmount > 0) {
+      const formattedTax = formatAmount(taxAmount);
+      noteLines.push(`Withholding tax: ${currency}$${formattedTax}`);
+    }
+  }
+
+  // Line 5: Announcement date (if available)
+  if (tx.announcementDate) {
+    const formattedDate = formatPrettyDate(tx.announcementDate);
+    if (formattedDate) {
+      noteLines.push(`Announcement date: ${formattedDate}`);
+    }
+  }
+
+  // Line 6: Record date (if available)
+  if (tx.recordDate) {
+    const formattedDate = formatPrettyDate(tx.recordDate);
+    if (formattedDate) {
+      noteLines.push(`Record date: ${formattedDate}`);
+    }
+  }
+
+  // Line 7: Payable date (if available)
+  if (tx.payableDate) {
+    const formattedDate = formatPrettyDate(tx.payableDate);
+    if (formattedDate) {
+      noteLines.push(`Payable date: ${formattedDate}`);
+    }
+  }
+
+  return noteLines.join('\n');
+}
+
+/**
  * Investment account dividend transaction rules
  * These rules handle dividend transactions in investment accounts
  *
@@ -1392,27 +1481,25 @@ export const INVESTMENT_DIVIDEND_TRANSACTION_RULES = [
      * - DIY_DIVIDEND: For SELF_DIRECTED accounts (regular dividends)
      * - MANUFACTURED_DIVIDEND: For SELF_DIRECTED accounts (dividends on lended shares)
      *
+     * Enhanced notes include:
+     * - Holdings on record date (assetQuantity)
+     * - Gross dividend rate (grossDividendRate)
+     * - Withholding tax amount (withholdingTaxAmount)
+     * - Announcement date (announcementDate)
+     * - Record date (recordDate)
+     * - Payable date (payableDate)
+     *
      * @param {Object} tx - Raw transaction
      * @returns {Object} Processed transaction fields
      */
     process: (tx) => {
       const symbol = tx.assetSymbol || 'Unknown';
-      const currency = tx.currency || 'CAD';
-      const amount = formatAmount(tx.amount ?? 0);
-
-      // Determine notes based on subType
-      let notes;
-      if (tx.subType === 'MANUFACTURED_DIVIDEND') {
-        notes = `Dividend on lended ${symbol} shares: ${currency}$${amount}`;
-      } else {
-        notes = `Dividend on ${symbol}: ${currency}$${amount}`;
-      }
 
       return {
         category: 'Dividends & Capital Gains',
         merchant: symbol,
         originalStatement: formatOriginalStatement(tx.type, tx.subType, symbol),
-        notes,
+        notes: formatDividendNotes(tx),
         technicalDetails: '',
       };
     },
