@@ -735,7 +735,7 @@ export const CASH_TRANSACTION_RULES = [
         debugLog(`AFT transaction auto-categorized: ${aftTransactionType} -> ${autoCategory}`);
         return {
           category: autoCategory,
-          merchant: originatorName,
+          merchant: applyMerchantMapping(originatorName),
           originalStatement: formatAftOriginalStatement(tx.type, tx.subType, aftTransactionCategory, aftTransactionType, originatorName),
           notes: '',
           technicalDetails: '',
@@ -749,7 +749,7 @@ export const CASH_TRANSACTION_RULES = [
       debugLog(`AFT transaction needs mapping: ${categoryKey}`);
       return {
         category: null,
-        merchant: originatorName,
+        merchant: applyMerchantMapping(originatorName),
         originalStatement: formatAftOriginalStatement(tx.type, tx.subType, aftTransactionCategory, aftTransactionType, originatorName),
         notes: '',
         technicalDetails: '',
@@ -795,7 +795,7 @@ export const CASH_TRANSACTION_RULES = [
 
       return {
         category: null,
-        merchant: originatorName,
+        merchant: applyMerchantMapping(originatorName),
         originalStatement: formatAftOriginalStatement(tx.type, tx.subType, aftTransactionCategory, aftTransactionType, originatorName),
         notes: '',
         technicalDetails: '',
