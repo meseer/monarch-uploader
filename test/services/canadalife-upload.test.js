@@ -413,7 +413,7 @@ describe('Canada Life Upload Service', () => {
             name: 'Another Account',
           },
         ],
-        'Uploading Canada Life Balance History to Monarch',
+        'Uploading Canada Life Balance & Transactions to Monarch',
       );
     });
 
@@ -452,8 +452,8 @@ describe('Canada Life Upload Service', () => {
 
       expect(mockProgressDialog.updateProgress).toHaveBeenCalledWith('acc123', 'processing', 'Getting start date...');
       expect(mockProgressDialog.hideCancel).toHaveBeenCalled();
-      expect(mockProgressDialog.showSummary).toHaveBeenCalledWith({ success: 1, failed: 0, total: 1 });
-      expect(toast.show).toHaveBeenCalledWith('Successfully uploaded balance history for all 1 Canada Life accounts!', 'info');
+      expect(mockProgressDialog.showSummary).toHaveBeenCalledWith(expect.objectContaining({ success: 1, failed: 0, total: 1 }));
+      expect(toast.show).toHaveBeenCalledWith(expect.stringContaining('Successfully uploaded all 1 Canada Life accounts'), 'info');
 
       // Verify internal function calls that should execute
       expect(stateManager.setAccount).toHaveBeenCalledWith('acc123', 'Test RRSP Account');
@@ -640,7 +640,7 @@ describe('Canada Life Upload Service', () => {
 
       expect(mockProgressDialog.updateProgress).toHaveBeenCalledWith('acc456', 'error', 'Date selection cancelled');
       expect(mockProgressDialog.hideCancel).toHaveBeenCalled();
-      expect(mockProgressDialog.showSummary).toHaveBeenCalledWith({ success: 0, failed: 1, total: 1 });
+      expect(mockProgressDialog.showSummary).toHaveBeenCalledWith(expect.objectContaining({ success: 0, failed: 1, total: 1 }));
 
       // Verify that date picker was called with correct parameters
       expect(showDatePickerPromise).toHaveBeenCalledWith(
@@ -729,7 +729,7 @@ describe('Canada Life Upload Service', () => {
 
       expect(mockProgressDialog.showError).toHaveBeenCalledWith('acc789', expect.any(CanadaLifeUploadError));
       expect(mockProgressDialog.hideCancel).toHaveBeenCalled();
-      expect(mockProgressDialog.showSummary).toHaveBeenCalledWith({ success: 0, failed: 1, total: 1 });
+      expect(mockProgressDialog.showSummary).toHaveBeenCalledWith(expect.objectContaining({ success: 0, failed: 1, total: 1 }));
     });
 
     test('should handle multiple accounts with mixed results', async () => {
@@ -769,8 +769,8 @@ describe('Canada Life Upload Service', () => {
 
       await uploadAllCanadaLifeAccountsToMonarch();
 
-      expect(mockProgressDialog.showSummary).toHaveBeenCalledWith({ success: 1, failed: 1, total: 2 });
-      expect(toast.show).toHaveBeenCalledWith('Uploaded 1 of 2 accounts successfully', 'warning');
+      expect(mockProgressDialog.showSummary).toHaveBeenCalledWith(expect.objectContaining({ success: 1, failed: 1, total: 2 }));
+      expect(toast.show).toHaveBeenCalledWith(expect.stringContaining('Uploaded 1 of 2 accounts'), 'warning');
     });
   });
 

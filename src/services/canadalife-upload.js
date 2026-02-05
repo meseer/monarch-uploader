@@ -415,7 +415,9 @@ function extractCanadaLifeBalanceChange(accountId, historicalData) {
 function buildCanadaLifeSteps() {
   return [
     { key: 'fetchHistory', name: 'Fetch balance history' },
-    { key: 'upload', name: 'Upload to Monarch' },
+    { key: 'uploadBalance', name: 'Upload balance to Monarch' },
+    { key: 'fetchTransactions', name: 'Fetch transactions' },
+    { key: 'uploadTransactions', name: 'Upload transactions' },
   ];
 }
 
@@ -433,18 +435,55 @@ function calculateDaysBetween(startDate, endDate) {
 }
 
 /**
- * Upload balance history for a single Canada Life account
+ * Get uploaded transaction IDs from consolidated account storage
+ * @param {string} accountId - Account ID
+ * @returns {Set<string>} Set of uploaded transaction IDs
+ */
+function getUploadedTransactionIds(accountId) {
+  const accountData = accountService.getAccountData(INTEGRATIONS.CANADALIFE, accountId);
+  const uploadedTransactions = accountData?.uploadedTransactions || [];
+  return new Set(uploadedTransactions.map((tx) => tx.id));
+}
+
+/**
+ * Save uploaded transaction IDs to consolidated account storage
+ * @param {string} accountId - Account ID
+ * @param {Array<Object>} transactions - Array of transaction objects with id
+ */
+function saveUploadedTransactionIds(accountId, transactions) {
+  const accountData = accountService.getAccountData(INTEGRATIONS.CANADALIFE, accountId);
+  const existingTransactions = accountData?.uploadedTransactions || [];
+
+  // Add new transaction IDs with today's date
+  const today = new Date().toISOString().split('T')[0];
+  const newEntries = transactions.map((tx) => ({ id: tx.id, date: today }));
+  const updatedTransactions = [...existingTransactions, ...newEntries];
+
+  accountService.updateAccountInList(INTEGRATIONS.CANADALIFE, accountId, {
+    uploadedTransactions: updatedTransactions,
+  });
+
+  debugLog(`Saved ${newEntries.length} new transaction IDs for account ${accountId}`);
+}
+
+/**
+ * Upload balance history and transactions for a single Canada Life account
  * @param {Object} canadalifAccount - Canada Life account object
  * @param {string} startDate - Start date in YYYY-MM-DD format
  * @param {string} endDate - End date in YYYY-MM-DD format
  * @param {Object} progressDialog - Optional progress dialog for updates
  * @param {boolean} isAutoUpload - Whether this is an auto upload (allows today, stores yesterday as last upload)
  * @param {AbortSignal} signal - Optional abort signal for cancellation support
- * @returns {Promise<boolean>} Success status
+ * @returns {Promise<Object>} Result with success status and transaction counts
  */
 async function uploadSingleAccount(canadalifAccount, startDate, endDate, progressDialog = null, isAutoUpload = false, signal = null) {
   const accountId = canadalifAccount.agreementId;
   const accountName = canadalifAccount.LongNameEnglish || canadalifAccount.EnglishShortName;
+  const result = {
+    success: false,
+    transactionsUploaded: 0,
+    transactionsSkipped: 0,
+  };
 
   try {
     // Set current account context
@@ -468,7 +507,12 @@ async function uploadSingleAccount(canadalifAccount, startDate, endDate, progres
     // Validate date range including account creation date (allow today for auto uploads)
     validateDateRange(startDate, endDate, isAutoUpload, canadalifAccount);
 
-    // Update progress - fetching
+    // Check for cancellation
+    if (signal?.aborted) {
+      throw new Error('Operation cancelled by user');
+    }
+
+    // ===== STEP 1: Fetch Balance History =====
     if (progressDialog) {
       const businessDays = calculateBusinessDays(startDate, endDate);
       progressDialog.updateStepStatus(
@@ -503,37 +547,116 @@ async function uploadSingleAccount(canadalifAccount, startDate, endDate, progres
     const daysCount = calculateDaysBetween(startDate, endDate);
     if (progressDialog) {
       progressDialog.updateStepStatus(accountId, 'fetchHistory', 'success', `${recordCount} records`);
-      progressDialog.updateStepStatus(accountId, 'upload', 'processing', 'Converting...');
+      progressDialog.updateStepStatus(accountId, 'uploadBalance', 'processing', 'Converting...');
     }
 
+    // Check for cancellation
+    if (signal?.aborted) {
+      throw new Error('Operation cancelled by user');
+    }
+
+    // ===== STEP 2: Upload Balance to Monarch =====
     // Convert to CSV format
     const csvData = convertCanadaLifeDataToCSV(historicalData);
 
     // Update progress - uploading
     if (progressDialog) {
-      progressDialog.updateStepStatus(accountId, 'upload', 'processing', 'Uploading balance');
+      progressDialog.updateStepStatus(accountId, 'uploadBalance', 'processing', 'Uploading balance');
     }
 
     // Upload to Monarch
-    const success = await monarchApi.uploadBalance(monarchAccount.id, csvData, startDate, endDate);
+    const balanceSuccess = await monarchApi.uploadBalance(monarchAccount.id, csvData, startDate, endDate);
 
-    if (!success) {
+    if (!balanceSuccess) {
       if (progressDialog) {
-        progressDialog.updateStepStatus(accountId, 'upload', 'error', 'Upload failed');
+        progressDialog.updateStepStatus(accountId, 'uploadBalance', 'error', 'Upload failed');
       }
-      throw new CanadaLifeUploadError('Failed to upload to Monarch', accountId);
+      throw new CanadaLifeUploadError('Failed to upload balance to Monarch', accountId);
     }
 
     // Mark upload step as complete and extract balance change BEFORE saving last upload date
     // This ensures balance change calculation uses the previous upload date, not the one we're about to save
     if (progressDialog) {
       const uploadMessage = daysCount > 1 ? `${daysCount} days uploaded` : 'Uploaded';
-      progressDialog.updateStepStatus(accountId, 'upload', 'success', uploadMessage);
+      progressDialog.updateStepStatus(accountId, 'uploadBalance', 'success', uploadMessage);
 
       // Extract and display balance change information (must happen before saveLastUploadDate)
       const balanceChange = extractCanadaLifeBalanceChange(accountId, historicalData);
       if (balanceChange) {
+        balanceChange.accountType = 'investment';
         progressDialog.updateBalanceChange(accountId, balanceChange);
+      }
+    }
+
+    // Check for cancellation
+    if (signal?.aborted) {
+      throw new Error('Operation cancelled by user');
+    }
+
+    // ===== STEP 3: Fetch Transactions =====
+    if (progressDialog) {
+      progressDialog.updateStepStatus(accountId, 'fetchTransactions', 'processing', 'Fetching...');
+    }
+
+    // Get previously uploaded transaction IDs for deduplication
+    const uploadedTransactionIds = getUploadedTransactionIds(accountId);
+
+    // Fetch and process transactions for the date range
+    const transactions = await fetchAndProcessTransactions(canadalifAccount, startDate, endDate, {
+      onProgress: progressDialog ? (msg) => {
+        progressDialog.updateStepStatus(accountId, 'fetchTransactions', 'processing', msg);
+      } : null,
+      signal,
+      uploadedTransactionIds,
+    });
+
+    // Calculate how many were skipped
+    // The transactions returned are already filtered (not in uploadedTransactionIds)
+    result.transactionsSkipped = uploadedTransactionIds.size > 0 ? uploadedTransactionIds.size : 0;
+
+    if (progressDialog) {
+      const fetchMessage = transactions.length > 0
+        ? `${transactions.length} new transactions`
+        : 'No new transactions';
+      progressDialog.updateStepStatus(accountId, 'fetchTransactions', 'success', fetchMessage);
+    }
+
+    // Check for cancellation
+    if (signal?.aborted) {
+      throw new Error('Operation cancelled by user');
+    }
+
+    // ===== STEP 4: Upload Transactions =====
+    if (transactions.length > 0) {
+      if (progressDialog) {
+        progressDialog.updateStepStatus(accountId, 'uploadTransactions', 'processing', `Uploading ${transactions.length}...`);
+      }
+
+      // Convert to CSV format
+      const transactionCsvData = convertTransactionsToCSV(transactions);
+
+      // Upload to Monarch
+      const txSuccess = await monarchApi.uploadTransactions(monarchAccount.id, transactionCsvData);
+
+      if (!txSuccess) {
+        if (progressDialog) {
+          progressDialog.updateStepStatus(accountId, 'uploadTransactions', 'error', 'Upload failed');
+        }
+        // Don't throw - balance upload succeeded, just log the transaction failure
+        debugLog(`Failed to upload transactions for ${accountName}, but balance upload succeeded`);
+      } else {
+        // Save uploaded transaction IDs for future deduplication
+        saveUploadedTransactionIds(accountId, transactions);
+        result.transactionsUploaded = transactions.length;
+
+        if (progressDialog) {
+          progressDialog.updateStepStatus(accountId, 'uploadTransactions', 'success', `${transactions.length} uploaded`);
+        }
+      }
+    } else {
+      // No new transactions to upload
+      if (progressDialog) {
+        progressDialog.updateStepStatus(accountId, 'uploadTransactions', 'skipped', 'No new transactions');
       }
     }
 
@@ -550,10 +673,11 @@ async function uploadSingleAccount(canadalifAccount, startDate, endDate, progres
       debugLog(`Cleaned up ${cleanupResult.keysDeleted} legacy storage keys for ${accountName}:`, cleanupResult.keys);
     }
 
-    debugLog(`Successfully uploaded ${accountName} balance history to Monarch`);
-    return true;
+    result.success = true;
+    debugLog(`Successfully uploaded ${accountName} balance history and ${result.transactionsUploaded} transactions to Monarch`);
+    return result;
   } catch (error) {
-    debugLog(`Error uploading ${accountName} balance history:`, error);
+    debugLog(`Error uploading ${accountName}:`, error);
 
     if (progressDialog) {
       // Update the appropriate step based on error context
@@ -592,6 +716,7 @@ function calculateBusinessDays(startDate, endDate) {
 
 /**
  * Upload all Canada Life accounts to Monarch (one-click option)
+ * Uploads both balance history and transactions for each account
  * @returns {Promise<void>}
  */
 export async function uploadAllCanadaLifeAccountsToMonarch() {
@@ -622,11 +747,17 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
 
     const progressDialog = showProgressDialog(
       accountsForDialog,
-      'Uploading Canada Life Balance History to Monarch',
+      'Uploading Canada Life Balance & Transactions to Monarch',
     );
 
     // Initialize stats and cancellation support
-    const stats = { success: 0, failed: 0, total: accounts.length };
+    const stats = {
+      success: 0,
+      failed: 0,
+      total: accounts.length,
+      transactionsUploaded: 0,
+      transactionsSkipped: 0,
+    };
     const endDate = getTodayDate(); // Include today's balance in auto uploads
     const abortController = new AbortController();
 
@@ -660,8 +791,12 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
         }
 
         // Upload the account (auto upload allows today and stores yesterday as last upload)
-        await uploadSingleAccount(account, startDate, endDate, progressDialog, true, abortController.signal);
+        const result = await uploadSingleAccount(account, startDate, endDate, progressDialog, true, abortController.signal);
         stats.success += 1;
+
+        // Aggregate transaction statistics
+        stats.transactionsUploaded += result.transactionsUploaded || 0;
+        stats.transactionsSkipped += result.transactionsSkipped || 0;
       } catch (error) {
         stats.failed += 1;
 
@@ -683,16 +818,21 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
     // Always hide cancel button and show close button when upload processing is done
     progressDialog.hideCancel();
 
-    // Show final summary
+    // Show final summary with transaction counts
     progressDialog.showSummary(stats);
+
+    // Build completion message including transaction stats
+    const txSummary = stats.transactionsUploaded > 0
+      ? ` ${stats.transactionsUploaded} transactions uploaded.`
+      : '';
 
     // Show appropriate completion message
     if (abortController.signal.aborted) {
-      toast.show(`Upload cancelled. ${stats.success} accounts uploaded successfully before cancellation.`, 'info');
+      toast.show(`Upload cancelled. ${stats.success} accounts uploaded successfully.${txSummary}`, 'info');
     } else if (stats.success === stats.total) {
-      toast.show(`Successfully uploaded balance history for all ${stats.total} Canada Life accounts!`, 'info');
+      toast.show(`Successfully uploaded all ${stats.total} Canada Life accounts!${txSummary}`, 'info');
     } else if (stats.success > 0) {
-      toast.show(`Uploaded ${stats.success} of ${stats.total} accounts successfully`, 'warning');
+      toast.show(`Uploaded ${stats.success} of ${stats.total} accounts.${txSummary}`, 'warning');
     }
   } catch (error) {
     debugLog('Error in uploadAllCanadaLifeAccountsToMonarch:', error);
@@ -702,6 +842,7 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
 
 /**
  * Upload Canada Life account with custom date range
+ * Uploads both balance history and transactions for the selected account
  * @returns {Promise<void>}
  */
 export async function uploadCanadaLifeAccountWithDateRange() {
@@ -747,20 +888,31 @@ export async function uploadCanadaLifeAccountWithDateRange() {
 
     const progressDialog = showProgressDialog(
       [accountForDialog],
-      `Uploading ${selectedAccount.EnglishShortName} Balance History to Monarch`,
+      `Uploading ${selectedAccount.EnglishShortName} Balance & Transactions to Monarch`,
     );
 
     try {
       // Upload the account with progress tracking (not auto upload, so no today allowance)
-      await uploadSingleAccount(selectedAccount, dateRange.startDate, dateRange.endDate, progressDialog, false);
+      const result = await uploadSingleAccount(selectedAccount, dateRange.startDate, dateRange.endDate, progressDialog, false);
 
       // Hide cancel button and show close button when upload completes
       progressDialog.hideCancel();
 
-      // Show success summary
-      progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
+      // Show success summary with transaction counts
+      const stats = {
+        success: 1,
+        failed: 0,
+        total: 1,
+        transactionsUploaded: result.transactionsUploaded || 0,
+        transactionsSkipped: result.transactionsSkipped || 0,
+      };
+      progressDialog.showSummary(stats);
 
-      toast.show(`Successfully uploaded ${selectedAccount.EnglishShortName} balance history to Monarch`, 'info');
+      // Build completion message including transaction stats
+      const txSummary = result.transactionsUploaded > 0
+        ? ` ${result.transactionsUploaded} transactions uploaded.`
+        : '';
+      toast.show(`Successfully uploaded ${selectedAccount.EnglishShortName}!${txSummary}`, 'info');
     } catch (error) {
       // Hide cancel button and show close button when upload fails
       progressDialog.hideCancel();
