@@ -123,21 +123,23 @@ describe('Integration Capabilities', () => {
         expect(cl.accountKeyName).toBe('canadalifAccount');
       });
 
-      test('should only support balance history', () => {
+      test('should support balance history and transactions', () => {
         expect(cl.hasBalanceHistory).toBe(true);
+        expect(cl.hasTransactions).toBe(true);
+        expect(cl.hasDeduplication).toBe(true);
       });
 
-      test('should not support transactions or deduplication', () => {
-        expect(cl.hasTransactions).toBe(false);
-        expect(cl.hasDeduplication).toBe(false);
+      test('should not support credit card or holdings features', () => {
         expect(cl.hasCreditLimit).toBe(false);
         expect(cl.hasHoldings).toBe(false);
         expect(cl.hasBalanceReconstruction).toBe(false);
       });
 
-      test('should have no settings (balance-only integration)', () => {
-        expect(cl.settings).toEqual([]);
-        expect(cl.settingDefaults).toEqual({});
+      test('should have transaction retention settings', () => {
+        expect(cl.settings).toContain(ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS);
+        expect(cl.settings).toContain(ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT);
+        expect(cl.settings).not.toContain(ACCOUNT_SETTINGS.STRIP_STORE_NUMBERS);
+        expect(cl.settings).not.toContain(ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS);
       });
     });
 
@@ -194,7 +196,7 @@ describe('Integration Capabilities', () => {
     });
 
     test('should return false for unsupported capabilities', () => {
-      expect(hasCapability(INTEGRATIONS.CANADALIFE, 'hasTransactions')).toBe(false);
+      expect(hasCapability(INTEGRATIONS.CANADALIFE, 'hasCreditLimit')).toBe(false);
       expect(hasCapability(INTEGRATIONS.QUESTRADE, 'hasCreditLimit')).toBe(false);
       expect(hasCapability(INTEGRATIONS.ROGERSBANK, 'hasHoldings')).toBe(false);
     });
@@ -251,8 +253,13 @@ describe('Integration Capabilities', () => {
       expect(defaults[ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS]).toBe(true);
     });
 
-    test('should return empty object for CanadaLife', () => {
-      expect(getDefaultSettings(INTEGRATIONS.CANADALIFE)).toEqual({});
+    test('should return transaction retention defaults for CanadaLife', () => {
+      const defaults = getDefaultSettings(INTEGRATIONS.CANADALIFE);
+      expect(defaults[ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS]).toBe(TRANSACTION_RETENTION_DEFAULTS.DAYS);
+      expect(defaults[ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT]).toBe(TRANSACTION_RETENTION_DEFAULTS.COUNT);
+      // Should NOT have Wealthsimple-specific settings
+      expect(defaults[ACCOUNT_SETTINGS.STRIP_STORE_NUMBERS]).toBeUndefined();
+      expect(defaults[ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS]).toBeUndefined();
     });
 
     test('should return empty object for invalid integration', () => {
@@ -279,7 +286,7 @@ describe('Integration Capabilities', () => {
       expect(result).toContain(INTEGRATIONS.WEALTHSIMPLE);
       expect(result).toContain(INTEGRATIONS.QUESTRADE);
       expect(result).toContain(INTEGRATIONS.ROGERSBANK);
-      expect(result).not.toContain(INTEGRATIONS.CANADALIFE);
+      expect(result).toContain(INTEGRATIONS.CANADALIFE);
     });
 
     test('should return integrations with credit limit', () => {
@@ -310,7 +317,7 @@ describe('Integration Capabilities', () => {
       expect(result).toContain(INTEGRATIONS.WEALTHSIMPLE);
       expect(result).toContain(INTEGRATIONS.QUESTRADE);
       expect(result).toContain(INTEGRATIONS.ROGERSBANK);
-      expect(result).not.toContain(INTEGRATIONS.CANADALIFE);
+      expect(result).toContain(INTEGRATIONS.CANADALIFE);
     });
 
     test('should return only Wealthsimple for strip store numbers', () => {

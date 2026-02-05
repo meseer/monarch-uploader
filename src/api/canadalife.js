@@ -550,7 +550,7 @@ export async function loadAccountBalanceHistory(account, startDate, endDate, pro
         progressCallback(0, 1, 0);
       }
 
-      const balanceData = await loadAccountBalance(account, businessDays[0]);
+      const balanceData = await loadAccountActivityReport(account, businessDays[0], businessDays[0]);
       apiCallsMade = 1;
       data.push([
         balanceData.date,
@@ -588,7 +588,7 @@ export async function loadAccountBalanceHistory(account, startDate, endDate, pro
 
           // Make API call for current date
           debugLog(`Making API call for ${currentDate}`);
-          const balanceData = await loadAccountBalance(account, currentDate, signal);
+          const balanceData = await loadAccountActivityReport(account, currentDate, currentDate, signal);
           apiCallsMade += 1;
 
           debugLog(`Received balance data for ${currentDate}:`, {
@@ -618,7 +618,7 @@ export async function loadAccountBalanceHistory(account, startDate, endDate, pro
         if (!balanceMap.has(businessDay)) {
           debugLog(`Processing missing day: ${businessDay}`);
           try {
-            const balanceData = await loadAccountBalance(account, businessDay);
+            const balanceData = await loadAccountActivityReport(account, businessDay, businessDay);
             apiCallsMade += 1;
             balanceMap.set(businessDay, balanceData.closingBalance);
             debugLog(`Added missing day balance: ${businessDay} = ${balanceData.closingBalance}`);
@@ -717,26 +717,32 @@ export async function loadAccountBalanceHistory(account, startDate, endDate, pro
 }
 
 /**
- * Load account balance for a specific Canada Life account and date
+ * Load activity report for a specific Canada Life account and date range
+ * Returns balance data (opening/closing) and activities for the date range
  * @param {Object} account - Canada Life account object
- * @param {string} date - Date in YYYY-MM-DD format
+ * @param {string} startDate - Start date in YYYY-MM-DD format
+ * @param {string} endDate - End date in YYYY-MM-DD format
  * @param {AbortSignal} signal - Optional abort signal for cancellation support
- * @returns {Promise<Object>} Balance data with opening and closing balances
+ * @returns {Promise<Object>} Balance data with opening and closing balances, plus activities
  */
-export async function loadAccountBalance(account, date, signal = null) {
+export async function loadAccountActivityReport(account, startDate, endDate, signal = null) {
   try {
-    debugLog('Loading account balance:', { account: account.EnglishShortName, date });
+    debugLog('Loading account activity report:', { account: account.EnglishShortName, startDate, endDate });
 
     // Validate inputs
     if (!account || !account.EnglishShortName || !account.agreementId) {
       throw new Error('Invalid account object provided');
     }
 
-    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      throw new Error('Date must be in YYYY-MM-DD format');
+    if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+      throw new Error('Start date must be in YYYY-MM-DD format');
     }
 
-    // Build the Aura API payload for balance request
+    if (!endDate || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+      throw new Error('End date must be in YYYY-MM-DD format');
+    }
+
+    // Build the Aura API payload for activity report request
     const payload = {
       actions: [{
         id: '184;a',
@@ -748,8 +754,8 @@ export async function loadAccountBalance(account, date, signal = null) {
           method: 'GenericInvoke2NoCont',
           params: {
             input: JSON.stringify({
-              startDate: date,
-              endDate: date,
+              startDate,
+              endDate,
               planCode: account.EnglishShortName,
               grsAgreementId: account.agreementId,
             }),
@@ -763,7 +769,7 @@ export async function loadAccountBalance(account, date, signal = null) {
       }],
     };
 
-    debugLog('Balance API payload:', payload);
+    debugLog('Activity report API payload:', payload);
 
     // Make the API call with automatic nested response extraction and signal support
     const responseData = await makeAuraApiCall(payload, {
@@ -812,20 +818,29 @@ export async function loadAccountBalance(account, date, signal = null) {
       throw new Error('Could not extract opening balance from API response');
     }
 
+    // Extract activities if present
+    const activities = responseData.IPResult.Activities || [];
+
     const balanceData = {
       account: {
         name: account.LongNameEnglish || account.EnglishShortName,
         shortName: account.EnglishShortName,
         agreementId: account.agreementId,
       },
-      date,
+      date: endDate, // Use endDate as the primary date reference
+      startDate,
+      endDate,
       openingBalance,
       closingBalance,
       change: closingBalance - openingBalance,
+      activities, // Include activities for transaction processing
       rawResponse: responseData, // Include raw response for debugging
     };
 
-    debugLog('Successfully loaded account balance:', balanceData);
+    debugLog('Successfully loaded account balance:', {
+      ...balanceData,
+      activityCount: activities.length,
+    });
     return balanceData;
   } catch (error) {
     debugLog('Error loading account balance:', error);
@@ -932,7 +947,7 @@ export default {
   extractCookies,
   makeAuraApiCall,
   loadCanadaLifeAccounts,
-  loadAccountBalance,
+  loadAccountActivityReport,
   loadAccountBalanceHistory,
   // Export error classes for external use
   CanadaLifeTokenExpiredError,

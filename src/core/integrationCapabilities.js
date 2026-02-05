@@ -122,17 +122,23 @@ export const INTEGRATION_CAPABILITIES = {
     id: INTEGRATIONS.CANADALIFE,
     displayName: 'Canada Life',
     accountKeyName: 'canadalifAccount',
-    hasTransactions: false, // Balance only
-    hasDeduplication: false,
+    hasTransactions: true, // Supports activity/transaction upload
+    hasDeduplication: true, // Uses hash-based transaction IDs for deduplication
     hasBalanceHistory: true,
     hasCreditLimit: false,
     hasHoldings: false, // Private mutual funds - no positions API
     hasBalanceReconstruction: false,
-    hasCategorization: false,
+    hasCategorization: false, // Activity types map directly to Buy/Sell categories
     categoryMappingsStorageKey: null,
     categorySourceLabel: null,
-    settings: [], // No transaction settings needed
-    settingDefaults: {},
+    settings: [
+      ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS,
+      ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT,
+    ],
+    settingDefaults: {
+      [ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS]: TRANSACTION_RETENTION_DEFAULTS.DAYS,
+      [ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT]: TRANSACTION_RETENTION_DEFAULTS.COUNT,
+    },
   },
 
   [INTEGRATIONS.ROGERSBANK]: {

@@ -1,3 +1,45 @@
+// Mock for TextEncoder (used by Web Crypto API)
+const { TextEncoder } = require('util');
+
+global.TextEncoder = TextEncoder;
+
+// Mock for Web Crypto API (crypto.subtle)
+// JSDOM has a crypto object but without subtle, so we need to add it
+const mockDigest = jest.fn(async (algorithm, data) => {
+  // Create a deterministic hash based on the input data
+  // This allows consistent hashing in tests
+  const dataArray = new Uint8Array(data);
+  const hash = new ArrayBuffer(32);
+  const hashView = new Uint8Array(hash);
+
+  // Simple deterministic hash for testing (not cryptographically secure)
+  let sum = 0;
+  for (let i = 0; i < dataArray.length; i++) {
+    sum = (sum * 31 + dataArray[i]) >>> 0;
+  }
+
+  // Fill hash buffer with deterministic values
+  for (let i = 0; i < 32; i++) {
+    hashView[i] = (sum >> (i % 4) * 8) & 0xff;
+    sum = (sum * 31 + i) >>> 0;
+  }
+
+  return hash;
+});
+
+// Define subtle on the existing crypto object or create new one
+if (typeof crypto !== 'undefined') {
+  Object.defineProperty(crypto, 'subtle', {
+    value: { digest: mockDigest },
+    writable: true,
+    configurable: true,
+  });
+} else {
+  global.crypto = {
+    subtle: { digest: mockDigest },
+  };
+}
+
 // Mock for Tampermonkey GM functions
 global.GM_addElement = jest.fn();
 global.GM_deleteValue = jest.fn(() => Promise.resolve());

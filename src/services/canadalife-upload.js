@@ -18,6 +18,7 @@ import { showMonarchAccountSelectorWithCreate } from '../ui/components/accountSe
 import { ensureMonarchAuthentication } from '../ui/components/monarchLoginLink';
 import accountService from './common/accountService';
 import { INTEGRATIONS } from '../core/integrationCapabilities';
+import { fetchAndProcessTransactions, convertTransactionsToCSV } from './canadalife/transactions';
 
 /**
  * Custom Canada Life upload error class
@@ -1016,9 +1017,81 @@ async function selectDateRange() {
   });
 }
 
+/**
+ * Upload transaction history for a Canada Life account
+ * This is a testing/development feature for uploading historical transactions
+ * @param {Object} canadalifAccount - Canada Life account object
+ * @param {string} startDate - Start date in YYYY-MM-DD format
+ * @param {string} endDate - End date in YYYY-MM-DD format
+ * @param {Object} options - Upload options
+ * @param {Function} options.onProgress - Progress callback
+ * @param {AbortSignal} options.signal - Abort signal
+ * @returns {Promise<Object>} Upload result with transaction count
+ */
+export async function uploadTransactionHistory(canadalifAccount, startDate, endDate, options = {}) {
+  const { onProgress, signal } = options;
+  const accountId = canadalifAccount.agreementId;
+  const accountName = canadalifAccount.LongNameEnglish || canadalifAccount.EnglishShortName;
+
+  try {
+    debugLog(`Uploading transaction history for ${accountName} from ${startDate} to ${endDate}`);
+
+    // Set current account context
+    stateManager.setAccount(accountId, accountName);
+
+    // Get or create Monarch account mapping
+    if (onProgress) onProgress('Getting account mapping...');
+    const monarchAccount = await getOrCreateMonarchAccountMapping(canadalifAccount);
+    if (!monarchAccount) {
+      throw new CanadaLifeUploadError('Account mapping cancelled by user', accountId);
+    }
+
+    // Validate date range
+    validateDateRange(startDate, endDate, true, canadalifAccount);
+
+    // Fetch and process transactions
+    if (onProgress) onProgress('Fetching transactions...');
+    const transactions = await fetchAndProcessTransactions(canadalifAccount, startDate, endDate, {
+      onProgress,
+      signal,
+      uploadedTransactionIds: new Set(), // No deduplication for historical upload
+    });
+
+    if (transactions.length === 0) {
+      toast.show(`No transactions found for ${accountName} in the date range`, 'info');
+      return { success: true, transactionCount: 0 };
+    }
+
+    // Convert to CSV format
+    if (onProgress) onProgress(`Converting ${transactions.length} transactions...`);
+    const csvData = convertTransactionsToCSV(transactions);
+
+    // Upload to Monarch
+    if (onProgress) onProgress(`Uploading ${transactions.length} transactions...`);
+    const success = await monarchApi.uploadTransactions(monarchAccount.id, csvData);
+
+    if (!success) {
+      throw new CanadaLifeUploadError('Failed to upload transactions to Monarch', accountId);
+    }
+
+    debugLog(`Successfully uploaded ${transactions.length} transactions for ${accountName}`);
+    toast.show(`Uploaded ${transactions.length} transactions for ${accountName}`, 'info');
+
+    return { success: true, transactionCount: transactions.length };
+  } catch (error) {
+    debugLog(`Error uploading transaction history for ${accountName}:`, error);
+
+    if (error instanceof CanadaLifeUploadError) {
+      throw error;
+    }
+    throw new CanadaLifeUploadError(`Failed to upload transactions: ${error.message}`, accountId);
+  }
+}
+
 export default {
   uploadAllCanadaLifeAccountsToMonarch,
   uploadCanadaLifeAccountWithDateRange,
+  uploadTransactionHistory,
   convertCanadaLifeDataToCSV,
   CanadaLifeUploadError,
 };

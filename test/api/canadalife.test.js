@@ -10,7 +10,7 @@ import {
   extractCookies,
   makeAuraApiCall,
   loadAccountBalanceHistory,
-  loadAccountBalance,
+  loadAccountActivityReport,
   loadCanadaLifeAccounts,
   CanadaLifeTokenExpiredError,
   CanadaLifeApiError,
@@ -619,8 +619,8 @@ describe('Canada Life API - Account Functions', () => {
     });
   });
 
-  describe('loadAccountBalance', () => {
-    test('should load account balance successfully', async () => {
+  describe('loadAccountActivityReport', () => {
+    test('should load account activity report successfully', async () => {
       const mockApiResponse = {
         IPResult: {
           Summary: {
@@ -651,7 +651,7 @@ describe('Canada Life API - Account Functions', () => {
         })}\n*/`),
       });
 
-      const result = await loadAccountBalance(mockAccount, '2024-01-15');
+      const result = await loadAccountActivityReport(mockAccount, '2024-01-15', '2024-01-15');
 
       expect(result).toEqual({
         account: {
@@ -660,18 +660,23 @@ describe('Canada Life API - Account Functions', () => {
           agreementId: 'test-agreement-123',
         },
         date: '2024-01-15',
+        startDate: '2024-01-15',
+        endDate: '2024-01-15',
         openingBalance: 10000,
         closingBalance: 10100,
         change: 100,
+        activities: [],
         rawResponse: mockApiResponse,
       });
     });
 
     test('should validate input parameters', async () => {
-      await expect(loadAccountBalance(null, '2024-01-15')).rejects.toThrow();
-      await expect(loadAccountBalance({}, '2024-01-15')).rejects.toThrow();
-      await expect(loadAccountBalance(mockAccount, 'invalid-date')).rejects.toThrow();
-      await expect(loadAccountBalance(mockAccount, null)).rejects.toThrow();
+      await expect(loadAccountActivityReport(null, '2024-01-15', '2024-01-15')).rejects.toThrow();
+      await expect(loadAccountActivityReport({}, '2024-01-15', '2024-01-15')).rejects.toThrow();
+      await expect(loadAccountActivityReport(mockAccount, 'invalid-date', '2024-01-15')).rejects.toThrow();
+      await expect(loadAccountActivityReport(mockAccount, null, '2024-01-15')).rejects.toThrow();
+      await expect(loadAccountActivityReport(mockAccount, '2024-01-15', null)).rejects.toThrow();
+      await expect(loadAccountActivityReport(mockAccount, '2024-01-15', 'invalid-date')).rejects.toThrow();
     });
 
     test('should handle missing IPResult', async () => {
@@ -691,7 +696,7 @@ describe('Canada Life API - Account Functions', () => {
         })}\n*/`),
       });
 
-      await expect(loadAccountBalance(mockAccount, '2024-01-15')).rejects.toThrow('No IPResult found in balance API response');
+      await expect(loadAccountActivityReport(mockAccount, '2024-01-15', '2024-01-15')).rejects.toThrow('No IPResult found in balance API response');
     });
 
     test('should handle fallback to first Details entry for opening balance', async () => {
@@ -725,7 +730,7 @@ describe('Canada Life API - Account Functions', () => {
         })}\n*/`),
       });
 
-      const result = await loadAccountBalance(mockAccount, '2024-01-15');
+      const result = await loadAccountActivityReport(mockAccount, '2024-01-15', '2024-01-15');
 
       expect(result.openingBalance).toBe(10000);
       expect(debugLog).toHaveBeenCalledWith('Using first Details entry as opening balance (pattern match failed)');

@@ -7,7 +7,7 @@ import { debugLog, getTodayLocal, formatDaysAgoLocal } from '../../../core/utils
 import { COLORS, STORAGE } from '../../../core/config';
 import canadalife from '../../../api/canadalife';
 import toast from '../../toast';
-import { uploadAllCanadaLifeAccountsToMonarch, uploadCanadaLifeAccountWithDateRange } from '../../../services/canadalife-upload';
+import { uploadAllCanadaLifeAccountsToMonarch, uploadCanadaLifeAccountWithDateRange, uploadTransactionHistory } from '../../../services/canadalife-upload';
 import { ensureMonarchAuthentication } from '../../components/monarchLoginLink';
 import { validateSelection, validateDateFormat, validateDateRange } from '../../components/formValidation';
 
@@ -77,8 +77,11 @@ let accountSelectorElement = null;
 let dateSelectorElement = null;
 let startDateSelectorElement = null;
 let endDateSelectorElement = null;
+let txStartDateSelectorElement = null;
+let txEndDateSelectorElement = null;
 let balanceResultElement = null;
 let historicalBalanceResultElement = null;
+let transactionResultElement = null;
 let accountsLoadingState = 'idle'; // 'idle', 'loading', 'loaded', 'error'
 let loadAccountsRetryCount = 0;
 const MAX_RETRY_COUNT = 3;
@@ -239,6 +242,161 @@ function createDateRangeSelector() {
   endDateSelectorElement = endDateInput;
 
   return container;
+}
+
+/**
+ * Creates a date range selector for transaction history upload
+ * @returns {HTMLElement} Transaction date range selector container
+ */
+function createTransactionDateRangeSelector() {
+  const container = document.createElement('div');
+  container.id = 'canadalife-tx-date-range-container';
+  container.style.cssText = 'margin: 8px 0;';
+
+  const label = document.createElement('label');
+  label.id = 'canadalife-tx-date-range-label';
+  label.textContent = 'Transaction Date Range:';
+  label.style.cssText = `
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 4px;
+    color: #333;
+  `;
+
+  const dateContainer = document.createElement('div');
+  dateContainer.id = 'canadalife-tx-date-inputs-container';
+  dateContainer.style.cssText = 'display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center;';
+
+  // Start date input
+  const startDateInput = document.createElement('input');
+  startDateInput.type = 'date';
+  startDateInput.id = 'canadalife-tx-start-date-selector';
+  startDateInput.style.cssText = `
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+  `;
+
+  // Default to 365 days ago (API limit is 1 year)
+  startDateInput.value = formatDaysAgoLocal(365);
+
+  // "to" text
+  const toText = document.createElement('span');
+  toText.id = 'canadalife-tx-date-to-text';
+  toText.textContent = 'to';
+  toText.style.cssText = 'font-size: 13px; color: #666; text-align: center;';
+
+  // End date input
+  const endDateInput = document.createElement('input');
+  endDateInput.type = 'date';
+  endDateInput.id = 'canadalife-tx-end-date-selector';
+  endDateInput.style.cssText = `
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+  `;
+
+  // Default to today
+  endDateInput.value = getTodayLocal();
+
+  dateContainer.appendChild(startDateInput);
+  dateContainer.appendChild(toText);
+  dateContainer.appendChild(endDateInput);
+
+  container.appendChild(label);
+  container.appendChild(dateContainer);
+
+  // Store references for later use
+  txStartDateSelectorElement = startDateInput;
+  txEndDateSelectorElement = endDateInput;
+
+  return container;
+}
+
+/**
+ * Creates a transaction result display area
+ * @returns {HTMLElement} Transaction result container
+ */
+function createTransactionResultDisplay() {
+  const container = document.createElement('div');
+  container.id = 'canadalife-transaction-result';
+  container.style.cssText = `
+    margin: 8px 0;
+    padding: 12px;
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 4px;
+    display: none;
+  `;
+
+  // Store reference for later updates
+  transactionResultElement = container;
+
+  return container;
+}
+
+/**
+ * Gets the transaction date range
+ * @returns {Object|null} Object with startDate and endDate or null
+ */
+function getTransactionDateRange() {
+  if (!txStartDateSelectorElement || !txEndDateSelectorElement) return null;
+
+  const startDate = txStartDateSelectorElement.value;
+  const endDate = txEndDateSelectorElement.value;
+
+  if (!startDate || !endDate) return null;
+
+  return { startDate, endDate };
+}
+
+/**
+ * Updates the transaction date range start date based on selected account's enrollment date
+ * @param {Object} account - Selected Canada Life account
+ */
+function updateTransactionStartDateFromAccount(account) {
+  if (!txStartDateSelectorElement || !account) return;
+
+  if (account.EnrollmentDate) {
+    // Parse the enrollment date and format to YYYY-MM-DD
+    const enrollmentDate = new Date(account.EnrollmentDate);
+    if (!Number.isNaN(enrollmentDate.getTime())) {
+      const year = enrollmentDate.getFullYear();
+      const month = String(enrollmentDate.getMonth() + 1).padStart(2, '0');
+      const day = String(enrollmentDate.getDate()).padStart(2, '0');
+      txStartDateSelectorElement.value = `${year}-${month}-${day}`;
+      debugLog(`Set transaction start date to enrollment date: ${txStartDateSelectorElement.value}`);
+    }
+  }
+}
+
+/**
+ * Displays the transaction upload result
+ * @param {Object} result - Transaction upload result
+ */
+function displayTransactionResult(result) {
+  if (!transactionResultElement) return;
+
+  const { transactionCount, accountName, dateRange } = result;
+
+  transactionResultElement.innerHTML = `
+    <h4 style="margin: 0 0 8px 0; color: #333;">Transaction Upload Result</h4>
+    <div style="margin-bottom: 8px;">
+      <strong>Account:</strong> ${accountName}
+    </div>
+    <div style="margin-bottom: 8px;">
+      <strong>Date Range:</strong> ${dateRange.startDate} to ${dateRange.endDate}
+    </div>
+    <div style="padding: 8px; background-color: #d4edda; border-radius: 4px;">
+      <div style="font-size: 13px; color: #666;">Transactions Uploaded</div>
+      <div style="font-size: 18px; font-weight: 600; color: #28a745;">${transactionCount}</div>
+    </div>
+  `;
+
+  transactionResultElement.style.display = 'block';
 }
 
 /**
@@ -708,8 +866,8 @@ export function createCanadaLifeUploadButton() {
 
       debugLog('Loading account balance...', { account: selectedAccount.EnglishShortName, date: selectedDate });
 
-      // Load balance from Canada Life API
-      const balanceData = await canadalife.loadAccountBalance(selectedAccount, selectedDate);
+      // Load balance from Canada Life API (use same date for both start and end for single-day query)
+      const balanceData = await canadalife.loadAccountActivityReport(selectedAccount, selectedDate, selectedDate);
 
       // Display the balance result
       displayBalanceResult(balanceData);
@@ -722,6 +880,78 @@ export function createCanadaLifeUploadButton() {
       loadBalanceButton.textContent = 'Load Balance';
     }
   });
+
+  // Create upload transaction history button for testing
+  const uploadTransactionHistoryButton = createCanadaLifeButton('Upload Transaction History', async () => {
+    try {
+      // Validate account selection
+      if (!validateSelection(accountSelectorElement, 'Please select an account')) {
+        return;
+      }
+
+      // Validate start date
+      if (!validateDateFormat(txStartDateSelectorElement, 'Please select a start date')) {
+        return;
+      }
+
+      // Validate end date
+      if (!validateDateFormat(txEndDateSelectorElement, 'Please select an end date')) {
+        return;
+      }
+
+      // Validate date range (start before end)
+      if (!validateDateRange(txStartDateSelectorElement, txEndDateSelectorElement, 'Start date must be before end date')) {
+        return;
+      }
+
+      // Check Monarch authentication before proceeding
+      const authenticated = await ensureMonarchAuthentication(null, 'upload Canada Life transactions');
+      if (!authenticated) {
+        return; // User cancelled authentication
+      }
+
+      // Get selected account and date range
+      const selectedAccount = getSelectedAccount();
+      const txDateRange = getTransactionDateRange();
+
+      // Disable button while uploading
+      uploadTransactionHistoryButton.disabled = true;
+      uploadTransactionHistoryButton.textContent = 'Uploading...';
+
+      debugLog('Uploading transaction history...', {
+        account: selectedAccount.EnglishShortName,
+        startDate: txDateRange.startDate,
+        endDate: txDateRange.endDate,
+      });
+
+      // Create progress callback
+      const progressCallback = (message) => {
+        uploadTransactionHistoryButton.textContent = message;
+      };
+
+      // Upload transaction history
+      const result = await uploadTransactionHistory(
+        selectedAccount,
+        txDateRange.startDate,
+        txDateRange.endDate,
+        { onProgress: progressCallback },
+      );
+
+      // Display the result
+      displayTransactionResult({
+        ...result,
+        accountName: selectedAccount.LongNameEnglish || selectedAccount.EnglishShortName,
+        dateRange: txDateRange,
+      });
+    } catch (error) {
+      debugLog('Error uploading transaction history:', error);
+      toast.show(`Failed to upload transactions: ${error.message}`, 'error');
+    } finally {
+      // Re-enable button
+      uploadTransactionHistoryButton.disabled = false;
+      uploadTransactionHistoryButton.textContent = 'Upload Transaction History';
+    }
+  }, { color: '#6c757d' }); // Gray color to distinguish from balance operations
 
   // Create load historical balance button for testing
   const loadHistoricalBalanceButton = createCanadaLifeButton('Load Historical Balance', async () => {
@@ -787,6 +1017,17 @@ export function createCanadaLifeUploadButton() {
 
   // Create account selector for testing
   const accountSelector = createAccountSelector();
+
+  // Add change listener to update transaction start date when account is selected
+  if (accountSelectorElement) {
+    accountSelectorElement.addEventListener('change', () => {
+      const selectedAccount = getSelectedAccount();
+      if (selectedAccount) {
+        updateTransactionStartDateFromAccount(selectedAccount);
+      }
+    });
+  }
+
   testingContent.appendChild(accountSelector);
 
   // Create date selector with load balance button for testing
@@ -806,6 +1047,15 @@ export function createCanadaLifeUploadButton() {
   // Create historical balance result display area inside testing section
   const historicalBalanceResult = createHistoricalBalanceResultDisplay();
   testingContent.appendChild(historicalBalanceResult);
+
+  // Create transaction date range selector with upload button for testing
+  const txDateRangeSelector = createTransactionDateRangeSelector();
+  txDateRangeSelector.appendChild(uploadTransactionHistoryButton);
+  testingContent.appendChild(txDateRangeSelector);
+
+  // Create transaction result display area inside testing section
+  const transactionResult = createTransactionResultDisplay();
+  testingContent.appendChild(transactionResult);
 
   // Add toggle functionality
   testingHeader.addEventListener('click', () => {
