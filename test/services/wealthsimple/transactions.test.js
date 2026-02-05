@@ -2542,7 +2542,8 @@ describe('Wealthsimple Transaction Service', () => {
       );
 
       expect(result).toHaveLength(1);
-      expect(result[0].notes).toBe('Transfer of CAD$500\nMonthly contribution');
+      // Notes contain only the annotation (no transfer amount prefix per transactionRules.js implementation)
+      expect(result[0].notes).toBe('Monthly contribution');
     });
 
     it('should process unknown transaction types via manual categorization', async () => {

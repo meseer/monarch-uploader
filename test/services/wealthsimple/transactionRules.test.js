@@ -1583,7 +1583,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
     });
 
     describe('DESTINATION transactions (money coming in)', () => {
-      it('should process DESTINATION transfer with correct format and currency/amount notes', () => {
+      it('should process DESTINATION transfer with correct format (notes are empty without annotation)', () => {
         const transaction = {
           externalCanonicalId: 'transfer-dest-123',
           type: 'INTERNAL_TRANSFER',
@@ -1600,9 +1600,10 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         expect(result).not.toBeNull();
         expect(result.ruleId).toBe('internal-transfer');
         expect(result.category).toBe('Transfer');
+        // Format: Transfer In: Destination ← Source
         expect(result.merchant).toBe('Transfer In: Wealthsimple TFSA (5678) ← Wealthsimple Cash (1234)');
         expect(result.originalStatement).toBe('INTERNAL_TRANSFER:DESTINATION:Transfer In: Wealthsimple TFSA (5678) ← Wealthsimple Cash (1234)');
-        expect(result.notes).toBe('Transfer of CAD$500');
+        expect(result.notes).toBe(''); // Notes only contain annotation (no transfer amount)
         expect(result.technicalDetails).toBe('');
       });
 
@@ -1625,7 +1626,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
     });
 
     describe('SOURCE transactions (money going out)', () => {
-      it('should process SOURCE transfer with correct format and currency/amount notes', () => {
+      it('should process SOURCE transfer with correct format (notes are empty without annotation)', () => {
         const transaction = {
           externalCanonicalId: 'transfer-src-123',
           type: 'INTERNAL_TRANSFER',
@@ -1645,7 +1646,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
         // Format: Transfer Out: Current → Opposing
         expect(result.merchant).toBe('Transfer Out: Wealthsimple Cash (1234) → Wealthsimple TFSA (5678)');
         expect(result.originalStatement).toBe('INTERNAL_TRANSFER:SOURCE:Transfer Out: Wealthsimple Cash (1234) → Wealthsimple TFSA (5678)');
-        expect(result.notes).toBe('Transfer of CAD$500');
+        expect(result.notes).toBe(''); // Notes only contain annotation (no transfer amount)
         expect(result.technicalDetails).toBe('');
       });
 
@@ -2400,7 +2401,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       ]);
     });
 
-    it('should include annotation appended to transfer notes when internalTransferMap is provided', () => {
+    it('should include annotation as notes when internalTransferMap is provided', () => {
       const transaction = {
         externalCanonicalId: 'funding_intent-abc123',
         type: 'INTERNAL_TRANSFER',
@@ -2422,7 +2423,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       const result = applyTransactionRule(transaction, internalTransferMap);
 
       expect(result).not.toBeNull();
-      expect(result.notes).toBe('Transfer of CAD$500\nadditional payment landed in wrong account');
+      expect(result.notes).toBe('additional payment landed in wrong account');
       expect(result.technicalDetails).toBe('');
     });
 
@@ -2447,10 +2448,10 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       const result = applyTransactionRule(transaction, internalTransferMap);
 
       expect(result).not.toBeNull();
-      expect(result.notes).toBe('Transfer of USD$300\nmoving funds to TFSA');
+      expect(result.notes).toBe('moving funds to TFSA');
     });
 
-    it('should return transfer notes only when internalTransferMap is null', () => {
+    it('should return empty notes when internalTransferMap is null', () => {
       const transaction = {
         externalCanonicalId: 'funding_intent-abc123',
         type: 'INTERNAL_TRANSFER',
@@ -2464,10 +2465,10 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       const result = applyTransactionRule(transaction, null);
 
       expect(result).not.toBeNull();
-      expect(result.notes).toBe('Transfer of CAD$250');
+      expect(result.notes).toBe('');
     });
 
-    it('should return transfer notes only when transaction ID not in internalTransferMap', () => {
+    it('should return empty notes when transaction ID not in internalTransferMap', () => {
       const transaction = {
         externalCanonicalId: 'funding_intent-notfound',
         type: 'INTERNAL_TRANSFER',
@@ -2487,10 +2488,10 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       const result = applyTransactionRule(transaction, internalTransferMap);
 
       expect(result).not.toBeNull();
-      expect(result.notes).toBe('Transfer of CAD$100');
+      expect(result.notes).toBe('');
     });
 
-    it('should return transfer notes only when internal transfer has no annotation', () => {
+    it('should return empty notes when internal transfer has no annotation', () => {
       const transaction = {
         externalCanonicalId: 'funding_intent-no-annotation',
         type: 'INTERNAL_TRANSFER',
@@ -2511,10 +2512,10 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       const result = applyTransactionRule(transaction, internalTransferMap);
 
       expect(result).not.toBeNull();
-      expect(result.notes).toBe('Transfer of USD$750');
+      expect(result.notes).toBe('');
     });
 
-    it('should return transfer notes only when externalCanonicalId is missing', () => {
+    it('should return empty notes when externalCanonicalId is missing', () => {
       const transaction = {
         externalCanonicalId: null,
         type: 'INTERNAL_TRANSFER',
@@ -2534,10 +2535,10 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       const result = applyTransactionRule(transaction, internalTransferMap);
 
       expect(result).not.toBeNull();
-      expect(result.notes).toBe('Transfer of CAD$200');
+      expect(result.notes).toBe('');
     });
 
-    it('should handle empty internalTransferMap with transfer notes only', () => {
+    it('should return empty notes when internalTransferMap is empty', () => {
       const transaction = {
         externalCanonicalId: 'funding_intent-abc123',
         type: 'INTERNAL_TRANSFER',
@@ -2553,7 +2554,7 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       const result = applyTransactionRule(transaction, internalTransferMap);
 
       expect(result).not.toBeNull();
-      expect(result.notes).toBe('Transfer of CAD$1000');
+      expect(result.notes).toBe('');
     });
   });
 

@@ -860,8 +860,8 @@ export const CASH_TRANSACTION_RULES = [
         }
       }
 
-      // Format notes with currency/amount and optional annotation
-      const notes = formatTransferNotes(tx, annotation);
+      // Use only the annotation as notes (no transfer amount)
+      const notes = annotation;
 
       return {
         category: 'Transfer',
