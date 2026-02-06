@@ -7,7 +7,6 @@ import { API } from '../core/config';
 import { debugLog } from '../core/utils';
 import stateManager from '../core/state';
 import authService from '../services/auth';
-import { showMonarchAccountSelectorWithCreate } from '../ui/components/accountSelectorWithCreate';
 
 /**
  * Construct GraphQL request options
@@ -148,96 +147,6 @@ export async function listMonarchAccounts(accountType = 'brokerage') {
   return accounts.filter((acc) => acc.type.name === accountType
     && acc.isHidden === false
     && acc.hideFromList === false);
-}
-
-/**
- * Get institution settings and account data from Monarch
- * @returns {Promise<Object>} Institution settings and account data
- */
-export async function getMonarchInstitutionSettings() {
-  const query = `query Web_GetInstitutionSettings {
-    credentials {
-      id
-      ...CredentialSettingsCardFields
-      __typename
-    }
-    accounts(filters: {includeDeleted: true}) {
-      id
-      displayName
-      subtype {
-        display
-        __typename
-      }
-      mask
-      credential {
-        id
-        __typename
-      }
-      deletedAt
-      __typename
-    }
-    subscription {
-      isOnFreeTrial
-      hasPremiumEntitlement
-      __typename
-    }
-  }
-  
-  fragment InstitutionLogoWithStatusFields on Credential {
-    dataProvider
-    updateRequired
-    institution {
-      hasIssuesReported
-      logo
-      status
-      balanceStatus
-      transactionsStatus
-      __typename
-    }
-    __typename
-  }
-  
-  fragment InstitutionInfoFields on Credential {
-    id
-    displayLastUpdatedAt
-    dataProvider
-    updateRequired
-    disconnectedFromDataProviderAt
-    syncDisabledAt
-    syncDisabledReason
-    ...InstitutionLogoWithStatusFields
-    institution {
-      id
-      name
-      newConnectionsDisabled
-      hasIssuesReported
-      hasIssuesReportedMessage
-      __typename
-    }
-    __typename
-  }
-  
-  fragment CredentialSettingsCardFields on Credential {
-    id
-    updateRequired
-    disconnectedFromDataProviderAt
-    syncDisabledAt
-    syncDisabledReason
-    ...InstitutionInfoFields
-    institution {
-      id
-      name
-      logo
-      url
-      newConnectionsDisabled
-      __typename
-    }
-    __typename
-  }`;
-
-  const variables = {};
-  const data = await callMonarchGraphQL('Web_GetInstitutionSettings', query, variables);
-  return data;
 }
 
 /**
@@ -581,65 +490,6 @@ export async function uploadTransactionsToMonarch(
     throw new Error(timeoutMsg);
   } catch (error) {
     debugLog('Monarch transaction upload failed:', error);
-    throw error;
-  }
-}
-
-/**
- * Resolve Monarch account mapping for an institution account
- * @param {string} institutionAccountId - The institution's account ID (Questrade, Rogers, etc.)
- * @param {string} storagePrefix - Storage prefix for the mapping (e.g., STORAGE.ACCOUNT_MAPPING_PREFIX)
- * @param {string} accountType - Account type ('brokerage', 'credit', etc.)
- * @returns {Promise<Object|null>} Monarch account object, or null if cancelled
- */
-export async function resolveMonarchAccountMapping(institutionAccountId, storagePrefix, accountType = 'brokerage') {
-  try {
-    debugLog(`Resolving Monarch account mapping for ${institutionAccountId} with type ${accountType}`);
-
-    // Check for existing mapping
-    const existingMapping = GM_getValue(`${storagePrefix}${institutionAccountId}`, null);
-    if (existingMapping) {
-      try {
-        const monarchAccount = JSON.parse(existingMapping);
-        debugLog(`Found existing mapping: ${institutionAccountId} -> ${monarchAccount.displayName}`);
-        return monarchAccount;
-      } catch (error) {
-        debugLog('Error parsing existing account mapping, will prompt for new one:', error);
-        // Fall through to create new mapping
-      }
-    }
-
-    debugLog('No existing mapping found, showing account selector');
-
-    // Fetch Monarch accounts of the specified type
-    const monarchAccounts = await listMonarchAccounts(accountType);
-    if (!monarchAccounts || monarchAccounts.length === 0) {
-      const accountTypeDisplay = accountType === 'credit' ? 'credit card' : accountType;
-      throw new Error(`No ${accountTypeDisplay} accounts found in Monarch. Please ensure you have ${accountTypeDisplay} accounts in Monarch.`);
-    }
-
-    // Show account selector and wait for user selection
-    const monarchAccount = await new Promise((resolve) => {
-      showMonarchAccountSelectorWithCreate(monarchAccounts, resolve, null, accountType, {});
-    });
-
-    if (!monarchAccount) {
-      // User cancelled selection
-      debugLog('User cancelled account mapping selection');
-      return null;
-    }
-
-    // Save the mapping for future use
-    GM_setValue(`${storagePrefix}${institutionAccountId}`, JSON.stringify(monarchAccount));
-
-    const { currentAccount } = stateManager.getState();
-    const institutionAccountName = currentAccount.nickname || currentAccount.name || 'Account';
-
-    debugLog(`Saved account mapping: ${institutionAccountName} (${institutionAccountId}) -> ${monarchAccount.displayName} (${monarchAccount.id})`);
-
-    return monarchAccount;
-  } catch (error) {
-    debugLog('Error resolving Monarch account mapping:', error);
     throw error;
   }
 }
@@ -2954,11 +2804,9 @@ export default {
   callGraphQLOperation: callMonarchGraphQL,
   setupTokenCapture: setupMonarchTokenCapture,
   listAccounts: listMonarchAccounts,
-  getInstitutionSettings: getMonarchInstitutionSettings,
   uploadBalance: uploadBalanceToMonarch,
   uploadTransactions: uploadTransactionsToMonarch,
   getCategoriesAndGroups: getMonarchCategoriesAndGroups,
-  resolveAccountMapping: resolveMonarchAccountMapping,
   searchSecurities,
   createManualHolding,
   updateHolding,

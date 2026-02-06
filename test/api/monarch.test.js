@@ -9,10 +9,8 @@ import {
   callMonarchGraphQL,
   setupMonarchTokenCapture,
   listMonarchAccounts,
-  getMonarchInstitutionSettings,
   uploadBalanceToMonarch,
   uploadTransactionsToMonarch,
-  resolveMonarchAccountMapping,
   getMonarchCategoriesAndGroups,
   searchSecurities,
   createManualHolding,
@@ -303,34 +301,6 @@ describe('Monarch API', () => {
     });
   });
 
-  describe('getMonarchInstitutionSettings', () => {
-    test('retrieves institution settings successfully', async () => {
-      const mockData = {
-        credentials: [{ id: 'cred1', institution: { name: 'Test Bank' } }],
-        accounts: [{ id: 'account1', displayName: 'Test Account' }],
-        subscription: { isOnFreeTrial: false },
-      };
-
-      mockGMXmlHttpRequest.mockImplementation((options) => {
-        setTimeout(() => options.onload({
-          status: 200,
-          responseText: JSON.stringify({ data: mockData }),
-        }), 0);
-      });
-
-      const result = await getMonarchInstitutionSettings();
-
-      expect(result).toEqual(mockData);
-      expect(mockGMXmlHttpRequest).toHaveBeenCalledWith(
-        expect.objectContaining({
-          method: 'POST',
-          headers: expect.objectContaining({
-            Authorization: 'Token test-token-123',
-          }),
-        }),
-      );
-    });
-  });
 
   describe('uploadBalanceToMonarch', () => {
     const mockUploadResponse = {
@@ -599,143 +569,6 @@ describe('Monarch API', () => {
     });
   });
 
-  describe('resolveMonarchAccountMapping', () => {
-    test('returns existing mapping when found', async () => {
-      const existingMapping = { id: 'monarch123', displayName: 'Existing Account' };
-      mockGMGetValue.mockReturnValue(JSON.stringify(existingMapping));
-
-      const result = await resolveMonarchAccountMapping('inst123', 'prefix_', 'brokerage');
-
-      expect(result).toEqual(existingMapping);
-      expect(debugLog).toHaveBeenCalledWith(
-        'Found existing mapping: inst123 -> Existing Account',
-      );
-      expect(mockGMSetValue).not.toHaveBeenCalled();
-    });
-
-    test('creates new mapping when none exists', async () => {
-      mockGMGetValue.mockReturnValue(null);
-
-      // Mock successful accounts list
-      mockGMXmlHttpRequest.mockImplementation((options) => {
-        setTimeout(() => options.onload({
-          status: 200,
-          responseText: JSON.stringify({
-            data: {
-              accounts: [{
-                id: 'monarch123',
-                displayName: 'New Account',
-                type: { name: 'brokerage' },
-                isHidden: false,
-                hideFromList: false,
-              }],
-            },
-          }),
-        }), 0);
-      });
-
-      const selectedAccount = { id: 'monarch123', displayName: 'Selected Account' };
-      const showMonarchAccountSelectorWithCreate = jest.requireMock('../../src/ui/components/accountSelectorWithCreate').showMonarchAccountSelectorWithCreate;
-      showMonarchAccountSelectorWithCreate.mockImplementation((accounts, callback) => {
-        callback(selectedAccount);
-      });
-
-      const result = await resolveMonarchAccountMapping('inst123', 'prefix_', 'brokerage');
-
-      expect(result).toEqual(selectedAccount);
-      expect(mockGMSetValue).toHaveBeenCalledWith(
-        'prefix_inst123',
-        JSON.stringify(selectedAccount),
-      );
-      expect(showMonarchAccountSelectorWithCreate).toHaveBeenCalled();
-    });
-
-    test('returns null when user cancels selection', async () => {
-      mockGMGetValue.mockReturnValue(null);
-
-      // Mock successful accounts list
-      mockGMXmlHttpRequest.mockImplementation((options) => {
-        setTimeout(() => options.onload({
-          status: 200,
-          responseText: JSON.stringify({
-            data: {
-              accounts: [{
-                id: 'monarch123',
-                displayName: 'Account',
-                type: { name: 'brokerage' },
-                isHidden: false,
-                hideFromList: false,
-              }],
-            },
-          }),
-        }), 0);
-      });
-
-      const showMonarchAccountSelectorWithCreate = jest.requireMock('../../src/ui/components/accountSelectorWithCreate').showMonarchAccountSelectorWithCreate;
-      showMonarchAccountSelectorWithCreate.mockImplementation((accounts, callback) => {
-        callback(null); // User cancelled
-      });
-
-      const result = await resolveMonarchAccountMapping('inst123', 'prefix_', 'brokerage');
-
-      expect(result).toBeNull();
-      expect(debugLog).toHaveBeenCalledWith('User cancelled account mapping selection');
-    });
-
-    test('handles error when no accounts found', async () => {
-      mockGMGetValue.mockReturnValue(null);
-
-      // Mock empty accounts list
-      mockGMXmlHttpRequest.mockImplementation((options) => {
-        setTimeout(() => options.onload({
-          status: 200,
-          responseText: JSON.stringify({
-            data: { accounts: [] },
-          }),
-        }), 0);
-      });
-
-      await expect(resolveMonarchAccountMapping('inst123', 'prefix_', 'credit'))
-        .rejects
-        .toThrow('No credit card accounts found in Monarch');
-    });
-
-    test('handles JSON parsing error for existing mapping', async () => {
-      mockGMGetValue.mockReturnValue('invalid-json');
-
-      // Mock successful accounts list
-      mockGMXmlHttpRequest.mockImplementation((options) => {
-        setTimeout(() => options.onload({
-          status: 200,
-          responseText: JSON.stringify({
-            data: {
-              accounts: [{
-                id: 'monarch123',
-                displayName: 'Account',
-                type: { name: 'brokerage' },
-                isHidden: false,
-                hideFromList: false,
-              }],
-            },
-          }),
-        }), 0);
-      });
-
-      const selectedAccount = { id: 'monarch123', displayName: 'Selected Account' };
-      const showMonarchAccountSelectorWithCreate = jest.requireMock('../../src/ui/components/accountSelectorWithCreate').showMonarchAccountSelectorWithCreate;
-      showMonarchAccountSelectorWithCreate.mockImplementation((accounts, callback) => {
-        callback(selectedAccount);
-      });
-
-      const result = await resolveMonarchAccountMapping('inst123', 'prefix_', 'brokerage');
-
-      expect(debugLog).toHaveBeenCalledWith(
-        'Error parsing existing account mapping, will prompt for new one:',
-        expect.any(Error),
-      );
-      expect(result).toEqual(selectedAccount);
-    });
-  });
 
   describe('getMonarchCategoriesAndGroups', () => {
     test('retrieves categories and groups successfully', async () => {

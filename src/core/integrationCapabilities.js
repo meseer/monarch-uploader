@@ -121,7 +121,7 @@ export const INTEGRATION_CAPABILITIES = {
   [INTEGRATIONS.CANADALIFE]: {
     id: INTEGRATIONS.CANADALIFE,
     displayName: 'Canada Life',
-    accountKeyName: 'canadalifAccount',
+    accountKeyName: 'canadalifeAccount',
     hasTransactions: true, // Supports activity/transaction upload
     hasDeduplication: true, // Uses hash-based transaction IDs for deduplication
     hasBalanceHistory: true,

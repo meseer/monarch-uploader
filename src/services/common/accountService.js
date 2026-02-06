@@ -241,6 +241,41 @@ export function getAccounts(integrationId) {
       }
     }
 
+    // Repair Canada Life accounts missing agreementId field
+    // This fixes accounts that were migrated before agreementId was added to migration logic
+    if (integrationId === INTEGRATIONS.CANADALIFE && accounts.length > 0) {
+      const accountKeyName = getAccountKeyName(integrationId);
+      let needsRepair = false;
+
+      accounts = accounts.map((account) => {
+        const sourceAccount = account[accountKeyName];
+        if (!sourceAccount) {
+          return account;
+        }
+
+        // Check if agreementId is missing
+        if (sourceAccount.id && !sourceAccount.agreementId) {
+          debugLog(`Repairing Canada Life account ${sourceAccount.id}: adding agreementId`);
+          needsRepair = true;
+          return {
+            ...account,
+            [accountKeyName]: {
+              ...sourceAccount,
+              agreementId: sourceAccount.id,
+            },
+          };
+        }
+
+        return account;
+      });
+
+      // Save the repaired accounts
+      if (needsRepair) {
+        debugLog(`Repaired ${accounts.length} Canada Life accounts with missing agreementId`);
+        saveAccounts(integrationId, accounts);
+      }
+    }
+
     return accounts;
   } catch (error) {
     debugLog(`Error getting accounts for ${integrationId}:`, error);
@@ -521,8 +556,8 @@ function isSourceAccountData(data, integrationId) {
 
   // CanadaLife accounts have 'id' and usually 'nickname' but no 'displayName' at root
   if (integrationId === INTEGRATIONS.CANADALIFE) {
-    // If it has canadalifAccount nested, it's already in consolidated format
-    if (data.canadalifAccount) {
+    // If it has canadalifeAccount nested, it's already in consolidated format
+    if (data.canadalifeAccount) {
       return false;
     }
     // If it has displayName at root, it's likely a Monarch mapping
@@ -647,12 +682,19 @@ export function migrateFromLegacyStorage(integrationId) {
           // This is the original expected format
           debugLog(`Detected Monarch mapping data for ${accountId} in ${integrationId}`);
 
+          const sourceAccount = {
+            id: accountId,
+            nickname: storedData.displayName || accountId,
+          };
+
+          // For Canada Life, preserve agreementId (same as id for lookup purposes)
+          if (integrationId === INTEGRATIONS.CANADALIFE) {
+            sourceAccount.agreementId = accountId;
+          }
+
           consolidatedAccount = {
             // Source account (minimal info from legacy - just ID)
-            [accountKeyName]: {
-              id: accountId,
-              nickname: storedData.displayName || accountId,
-            },
+            [accountKeyName]: sourceAccount,
             // Monarch mapping
             monarchAccount: storedData,
             // Sync state

@@ -120,7 +120,7 @@ describe('Integration Capabilities', () => {
 
       test('should have correct display name and account key', () => {
         expect(cl.displayName).toBe('Canada Life');
-        expect(cl.accountKeyName).toBe('canadalifAccount');
+        expect(cl.accountKeyName).toBe('canadalifeAccount');
       });
 
       test('should support balance history and transactions', () => {
@@ -271,7 +271,7 @@ describe('Integration Capabilities', () => {
     test('should return correct key names', () => {
       expect(getAccountKeyName(INTEGRATIONS.WEALTHSIMPLE)).toBe('wealthsimpleAccount');
       expect(getAccountKeyName(INTEGRATIONS.QUESTRADE)).toBe('questradeAccount');
-      expect(getAccountKeyName(INTEGRATIONS.CANADALIFE)).toBe('canadalifAccount');
+      expect(getAccountKeyName(INTEGRATIONS.CANADALIFE)).toBe('canadalifeAccount');
       expect(getAccountKeyName(INTEGRATIONS.ROGERSBANK)).toBe('rogersbankAccount');
     });
 

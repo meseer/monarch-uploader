@@ -26,7 +26,6 @@ jest.mock('../../../src/api/questrade', () => ({
 
 jest.mock('../../../src/api/monarch', () => ({
   uploadBalance: jest.fn(),
-  resolveAccountMapping: jest.fn(),
   listAccounts: jest.fn(),
 }));
 

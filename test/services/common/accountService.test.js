@@ -80,7 +80,7 @@ describe('Account Service', () => {
     test('should return stored accounts', () => {
       const testAccounts = [
         {
-          canadalifAccount: { id: 'acc-1', nickname: 'RRSP' },
+          canadalifeAccount: { id: 'acc-1', nickname: 'RRSP' },
           monarchAccount: { id: 'monarch-1', displayName: 'CL RRSP' },
           syncEnabled: true,
         },
@@ -89,7 +89,7 @@ describe('Account Service', () => {
 
       const accounts = getAccounts(INTEGRATIONS.CANADALIFE);
       expect(accounts).toHaveLength(1);
-      expect(accounts[0].canadalifAccount.id).toBe('acc-1');
+      expect(accounts[0].canadalifeAccount.id).toBe('acc-1');
     });
 
     test('should return empty array for invalid JSON', () => {
@@ -108,12 +108,12 @@ describe('Account Service', () => {
     beforeEach(() => {
       const testAccounts = [
         {
-          canadalifAccount: { id: 'acc-1', nickname: 'RRSP' },
+          canadalifeAccount: { id: 'acc-1', nickname: 'RRSP' },
           monarchAccount: { id: 'monarch-1' },
           syncEnabled: true,
         },
         {
-          canadalifAccount: { id: 'acc-2', nickname: 'TFSA' },
+          canadalifeAccount: { id: 'acc-2', nickname: 'TFSA' },
           monarchAccount: { id: 'monarch-2' },
           syncEnabled: false,
         },
@@ -124,7 +124,7 @@ describe('Account Service', () => {
     test('should return account data by ID', () => {
       const account = getAccountData(INTEGRATIONS.CANADALIFE, 'acc-1');
       expect(account).not.toBeNull();
-      expect(account.canadalifAccount.nickname).toBe('RRSP');
+      expect(account.canadalifeAccount.nickname).toBe('RRSP');
     });
 
     test('should return null for non-existent account', () => {
@@ -142,7 +142,7 @@ describe('Account Service', () => {
     test('should save accounts to storage', () => {
       const testAccounts = [
         {
-          canadalifAccount: { id: 'acc-1' },
+          canadalifeAccount: { id: 'acc-1' },
           monarchAccount: { id: 'monarch-1' },
         },
       ];
@@ -164,7 +164,7 @@ describe('Account Service', () => {
     beforeEach(() => {
       const testAccounts = [
         {
-          canadalifAccount: { id: 'acc-1', nickname: 'RRSP' },
+          canadalifeAccount: { id: 'acc-1', nickname: 'RRSP' },
           monarchAccount: { id: 'monarch-1' },
           syncEnabled: true,
           lastSyncDate: null,
@@ -185,7 +185,7 @@ describe('Account Service', () => {
       expect(account.lastSyncDate).toBe('2024-01-15');
       expect(account.syncEnabled).toBe(false);
       // Original data should be preserved
-      expect(account.canadalifAccount.nickname).toBe('RRSP');
+      expect(account.canadalifeAccount.nickname).toBe('RRSP');
     });
 
     test('should return false for non-existent account', () => {
@@ -270,7 +270,7 @@ describe('Account Service', () => {
     beforeEach(() => {
       const testAccounts = [
         {
-          canadalifAccount: { id: 'acc-1' },
+          canadalifeAccount: { id: 'acc-1' },
           monarchAccount: { id: 'monarch-1' },
           syncEnabled: true,
         },
@@ -589,7 +589,7 @@ describe('Account Service', () => {
     test('should work for CanadaLife integration', () => {
       // Set up consolidated storage with CanadaLife mapping
       const consolidatedData = [{
-        canadalifAccount: { id: 'cl-1', nickname: 'RRSP' },
+        canadalifeAccount: { id: 'cl-1', nickname: 'RRSP' },
         monarchAccount: { id: 'monarch-cl', displayName: 'CL RRSP' },
         syncEnabled: true,
       }];
@@ -880,7 +880,7 @@ describe('Account Service', () => {
       const accounts = getAccounts(INTEGRATIONS.CANADALIFE);
 
       expect(accounts).toHaveLength(1);
-      expect(accounts[0].canadalifAccount.id).toBe('cl-1');
+      expect(accounts[0].canadalifeAccount.id).toBe('cl-1');
 
       // Verify consolidated storage was populated
       const stored = JSON.parse(GM_getValue(STORAGE.CANADALIFE_ACCOUNTS_LIST, '[]'));
@@ -892,7 +892,7 @@ describe('Account Service', () => {
       GM_setValue(
         STORAGE.CANADALIFE_ACCOUNTS_LIST,
         JSON.stringify([{
-          canadalifAccount: { id: 'cl-existing', nickname: 'Existing' },
+          canadalifeAccount: { id: 'cl-existing', nickname: 'Existing' },
           monarchAccount: { id: 'monarch-existing' },
         }]),
       );
@@ -905,7 +905,7 @@ describe('Account Service', () => {
 
       // Should return existing consolidated data, not migrate legacy
       expect(accounts).toHaveLength(1);
-      expect(accounts[0].canadalifAccount.id).toBe('cl-existing');
+      expect(accounts[0].canadalifeAccount.id).toBe('cl-existing');
     });
   });
 
@@ -966,15 +966,15 @@ describe('Account Service', () => {
     test('should not affect other integrations with similar data shape', () => {
       // CanadaLife might have data with 'key' field, but shouldn't be affected
       // by Questrade-specific stale cache detection
-      const canadalifData = [
-        { canadalifAccount: { id: 'cl-1', nickname: 'RRSP' }, monarchAccount: { id: 'm-1' } },
+      const canadalifeData = [
+        { canadalifeAccount: { id: 'cl-1', nickname: 'RRSP' }, monarchAccount: { id: 'm-1' } },
       ];
-      GM_setValue(STORAGE.CANADALIFE_ACCOUNTS_LIST, JSON.stringify(canadalifData));
+      GM_setValue(STORAGE.CANADALIFE_ACCOUNTS_LIST, JSON.stringify(canadalifeData));
 
       const accounts = getAccounts(INTEGRATIONS.CANADALIFE);
 
       expect(accounts).toHaveLength(1);
-      expect(accounts[0].canadalifAccount.id).toBe('cl-1');
+      expect(accounts[0].canadalifeAccount.id).toBe('cl-1');
     });
 
     test('should handle stale cache with no legacy data to migrate', () => {
@@ -1114,7 +1114,7 @@ describe('Account Service', () => {
       // Set up consolidated data for CanadaLife
       const consolidatedData = [
         {
-          canadalifAccount: { id: 'cl-1', nickname: 'RRSP' },
+          canadalifeAccount: { id: 'cl-1', nickname: 'RRSP' },
           monarchAccount: { id: 'monarch-cl' },
           syncEnabled: true,
         },

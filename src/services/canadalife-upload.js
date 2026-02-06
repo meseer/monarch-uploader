@@ -236,12 +236,12 @@ async function getStartDateForAccount(accountId) {
 /**
  * Get or create Monarch account mapping for a Canada Life account
  * Uses unified accountService for storage (with backward compatibility)
- * @param {Object} canadalifAccount - Canada Life account object
+ * @param {Object} canadalifeAccount - Canada Life account object
  * @returns {Promise<Object|null>} Monarch account object, or null if cancelled
  */
-async function getOrCreateMonarchAccountMapping(canadalifAccount) {
-  const accountId = canadalifAccount.agreementId;
-  const accountName = canadalifAccount.LongNameEnglish || canadalifAccount.EnglishShortName;
+async function getOrCreateMonarchAccountMapping(canadalifeAccount) {
+  const accountId = canadalifeAccount.agreementId;
+  const accountName = canadalifeAccount.LongNameEnglish || canadalifeAccount.EnglishShortName;
   let accountWarningMessage = null;
 
   // Check consolidated storage first, then fall back to legacy (migration path)
@@ -320,13 +320,13 @@ async function getOrCreateMonarchAccountMapping(canadalifAccount) {
 
   // Save the mapping using unified accountService (upsert creates or updates)
   accountService.upsertAccount(INTEGRATIONS.CANADALIFE, {
-    canadalifAccount: {
+    canadalifeAccount: {
       id: accountId,
       nickname: accountName,
-      agreementId: canadalifAccount.agreementId,
-      EnglishShortName: canadalifAccount.EnglishShortName,
-      LongNameEnglish: canadalifAccount.LongNameEnglish,
-      EnrollmentDate: canadalifAccount.EnrollmentDate,
+      agreementId: canadalifeAccount.agreementId,
+      EnglishShortName: canadalifeAccount.EnglishShortName,
+      LongNameEnglish: canadalifeAccount.LongNameEnglish,
+      EnrollmentDate: canadalifeAccount.EnrollmentDate,
     },
     monarchAccount,
     syncEnabled: true,
@@ -468,7 +468,7 @@ function saveUploadedTransactionIds(accountId, transactions) {
 
 /**
  * Upload balance history and transactions for a single Canada Life account
- * @param {Object} canadalifAccount - Canada Life account object
+ * @param {Object} canadalifeAccount - Canada Life account object
  * @param {string} startDate - Start date in YYYY-MM-DD format
  * @param {string} endDate - End date in YYYY-MM-DD format
  * @param {Object} progressDialog - Optional progress dialog for updates
@@ -476,9 +476,9 @@ function saveUploadedTransactionIds(accountId, transactions) {
  * @param {AbortSignal} signal - Optional abort signal for cancellation support
  * @returns {Promise<Object>} Result with success status and transaction counts
  */
-async function uploadSingleAccount(canadalifAccount, startDate, endDate, progressDialog = null, isAutoUpload = false, signal = null) {
-  const accountId = canadalifAccount.agreementId;
-  const accountName = canadalifAccount.LongNameEnglish || canadalifAccount.EnglishShortName;
+async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progressDialog = null, isAutoUpload = false, signal = null) {
+  const accountId = canadalifeAccount.agreementId;
+  const accountName = canadalifeAccount.LongNameEnglish || canadalifeAccount.EnglishShortName;
   const result = {
     success: false,
     transactionsUploaded: 0,
@@ -496,7 +496,7 @@ async function uploadSingleAccount(canadalifAccount, startDate, endDate, progres
     }
 
     // Get Monarch account mapping
-    const monarchAccount = await getOrCreateMonarchAccountMapping(canadalifAccount);
+    const monarchAccount = await getOrCreateMonarchAccountMapping(canadalifeAccount);
     if (!monarchAccount) {
       if (progressDialog) {
         progressDialog.updateStepStatus(accountId, 'fetchHistory', 'error', 'Mapping cancelled');
@@ -505,7 +505,7 @@ async function uploadSingleAccount(canadalifAccount, startDate, endDate, progres
     }
 
     // Validate date range including account creation date (allow today for auto uploads)
-    validateDateRange(startDate, endDate, isAutoUpload, canadalifAccount);
+    validateDateRange(startDate, endDate, isAutoUpload, canadalifeAccount);
 
     // Check for cancellation
     if (signal?.aborted) {
@@ -535,7 +535,7 @@ async function uploadSingleAccount(canadalifAccount, startDate, endDate, progres
 
     // Load balance history from Canada Life with progress tracking and cancellation support
     const historicalData = await canadalife.loadAccountBalanceHistory(
-      canadalifAccount,
+      canadalifeAccount,
       startDate,
       endDate,
       historyProgressCallback,
@@ -602,7 +602,7 @@ async function uploadSingleAccount(canadalifAccount, startDate, endDate, progres
     const uploadedTransactionIds = getUploadedTransactionIds(accountId);
 
     // Fetch and process transactions for the date range
-    const transactions = await fetchAndProcessTransactions(canadalifAccount, startDate, endDate, {
+    const transactions = await fetchAndProcessTransactions(canadalifeAccount, startDate, endDate, {
       onProgress: progressDialog ? (msg) => {
         progressDialog.updateStepStatus(accountId, 'fetchTransactions', 'processing', msg);
       } : null,
@@ -1172,7 +1172,7 @@ async function selectDateRange() {
 /**
  * Upload transaction history for a Canada Life account
  * This is a testing/development feature for uploading historical transactions
- * @param {Object} canadalifAccount - Canada Life account object
+ * @param {Object} canadalifeAccount - Canada Life account object
  * @param {string} startDate - Start date in YYYY-MM-DD format
  * @param {string} endDate - End date in YYYY-MM-DD format
  * @param {Object} options - Upload options
@@ -1180,10 +1180,10 @@ async function selectDateRange() {
  * @param {AbortSignal} options.signal - Abort signal
  * @returns {Promise<Object>} Upload result with transaction count
  */
-export async function uploadTransactionHistory(canadalifAccount, startDate, endDate, options = {}) {
+export async function uploadTransactionHistory(canadalifeAccount, startDate, endDate, options = {}) {
   const { onProgress, signal } = options;
-  const accountId = canadalifAccount.agreementId;
-  const accountName = canadalifAccount.LongNameEnglish || canadalifAccount.EnglishShortName;
+  const accountId = canadalifeAccount.agreementId;
+  const accountName = canadalifeAccount.LongNameEnglish || canadalifeAccount.EnglishShortName;
 
   try {
     debugLog(`Uploading transaction history for ${accountName} from ${startDate} to ${endDate}`);
@@ -1193,17 +1193,17 @@ export async function uploadTransactionHistory(canadalifAccount, startDate, endD
 
     // Get or create Monarch account mapping
     if (onProgress) onProgress('Getting account mapping...');
-    const monarchAccount = await getOrCreateMonarchAccountMapping(canadalifAccount);
+    const monarchAccount = await getOrCreateMonarchAccountMapping(canadalifeAccount);
     if (!monarchAccount) {
       throw new CanadaLifeUploadError('Account mapping cancelled by user', accountId);
     }
 
     // Validate date range
-    validateDateRange(startDate, endDate, true, canadalifAccount);
+    validateDateRange(startDate, endDate, true, canadalifeAccount);
 
     // Fetch and process transactions
     if (onProgress) onProgress('Fetching transactions...');
-    const transactions = await fetchAndProcessTransactions(canadalifAccount, startDate, endDate, {
+    const transactions = await fetchAndProcessTransactions(canadalifeAccount, startDate, endDate, {
       onProgress,
       signal,
       uploadedTransactionIds: new Set(), // No deduplication for historical upload
