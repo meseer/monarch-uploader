@@ -13,9 +13,10 @@ import { showConfirmationDialog } from './confirmationDialog';
 
 /**
  * Show Monarch account selector with create option
- * @param {Array} accounts - List of available Monarch accounts
+ * Uses getAccountsByType() to fetch accounts grouped by type, then aggregates by credential
+ * @param {Array} accounts - List of available Monarch accounts (legacy param, may be empty)
  * @param {Function} callback - Callback function to receive selected or created account
- * @param {Array} originalAccounts - Original full accounts list for navigation
+ * @param {Array} originalAccounts - Original full accounts list for navigation (legacy param)
  * @param {string} accountType - Account type filter ('brokerage', 'credit', etc.)
  * @param {Object} createDefaults - Default values for account creation
  * @param {string} createDefaults.defaultName - Default account name
@@ -28,76 +29,131 @@ import { showConfirmationDialog } from './confirmationDialog';
 export async function showMonarchAccountSelectorWithCreate(
   accounts,
   callback,
-  originalAccounts = null,
+  _originalAccounts = null,
   accountType = null,
   createDefaults = {},
 ) {
-  const allAccounts = originalAccounts || accounts;
-  const effectiveAccountType = accountType || (accounts.length > 0 && accounts[0].type?.name) || 'brokerage';
+  const effectiveAccountType = accountType || 'brokerage';
 
   debugLog('Starting account selector with create option', {
-    accountsCount: accounts.length,
     accountType: effectiveAccountType,
     createDefaults,
   });
 
   try {
-    // Fetch institution data
-    debugLog('Fetching institution data for account selector');
-    const institutionData = await monarchApi.getInstitutionSettings();
+    // Fetch accounts grouped by type using new API
+    debugLog('Fetching accounts by type for account selector');
+    const accountsData = await monarchApi.getAccountsByType();
 
     // Get current domain for matching
     const currentDomain = extractDomain(window.location.href);
 
-    // Create a map of credentials and accounts
-    const credentials = institutionData.credentials || [];
-    const monarchAccounts = institutionData.accounts || [];
+    // Filter accounts by requested type if specified
+    let accountsToProcess = [];
+    if (effectiveAccountType) {
+      const typeSummary = accountsData.accountTypeSummaries.find(
+        (s) => s.type.name === effectiveAccountType,
+      );
+      accountsToProcess = typeSummary?.accounts || [];
+    } else {
+      // No type filter - include all accounts from all summaries
+      accountsToProcess = accountsData.accountTypeSummaries.flatMap((s) => s.accounts);
+    }
 
-    // Create a map of credential ID to accounts
-    const credentialAccounts = {};
-    monarchAccounts.forEach((account) => {
-      if (account.credential && account.credential.id) {
-        if (!credentialAccounts[account.credential.id]) {
-          credentialAccounts[account.credential.id] = [];
-        }
+    debugLog(`Found ${accountsToProcess.length} accounts of type ${effectiveAccountType}`);
 
-        credentialAccounts[account.credential.id].push({
-          ...account,
-          details: allAccounts.find((acc) => acc.id === account.id),
+    // Aggregate accounts by credential.id (manual accounts have null credential)
+    const connectionMap = new Map();
+
+    accountsToProcess.forEach((account) => {
+      // Skip hidden or deleted accounts
+      if (account.isHidden || account.dataProviderDeactivatedAt) {
+        return;
+      }
+
+      const credId = account.credential?.id || 'manual';
+
+      if (!connectionMap.has(credId)) {
+        connectionMap.set(credId, {
+          credential: account.credential,
+          institution: account.institution || account.credential?.institution,
+          accounts: [],
+          isManual: credId === 'manual',
         });
       }
+
+      connectionMap.get(credId).accounts.push({
+        ...account,
+        // Create details object for compatibility with existing UI
+        details: {
+          id: account.id,
+          displayName: account.displayName,
+          currentBalance: account.displayBalance,
+          signedBalance: account.signedBalance,
+          logoUrl: account.logoUrl,
+          type: account.type,
+          subtype: account.subtype,
+          isManual: account.credential === null,
+          icon: account.icon,
+          limit: account.limit,
+        },
+      });
     });
 
-    // Create credential list with account info
-    const institutionList = credentials.map((cred) => {
-      const credAccounts = credentialAccounts[cred.id] || [];
-      const hasMatchingAccounts = credAccounts.some((acc) => acc.details && !acc.deletedAt);
-      const institutionDomain = extractDomain(cred.institution?.url);
+    // Build institution list from connection map
+    const institutionList = Array.from(connectionMap.values()).map((conn) => {
+      const institutionDomain = extractDomain(conn.institution?.url);
       const domainMatchScore = institutionDomain && currentDomain && institutionDomain === currentDomain ? 1 : 0;
 
       return {
-        credential: cred,
-        accounts: credAccounts.filter((acc) => acc.details && !acc.deletedAt),
-        hasMatchingAccounts,
+        credential: conn.credential || {
+          // Fake credential for manual accounts
+          id: 'manual',
+          institution: { name: 'Manual Accounts', logo: null },
+          dataProvider: 'Manual',
+        },
+        institution: conn.institution,
+        accounts: conn.accounts,
+        hasMatchingAccounts: conn.accounts.length > 0,
         domainMatchScore,
+        isManual: conn.isManual,
       };
     });
 
-    // Filter and sort institutions
+    // Filter to only institutions with accounts and sort
     const validInstitutions = institutionList.filter((inst) => inst.hasMatchingAccounts);
+
+    // Sort: Manual accounts first, then by domain match, then alphabetically
     validInstitutions.sort((a, b) => {
+      // Manual accounts always first
+      if (a.isManual && !b.isManual) return -1;
+      if (!a.isManual && b.isManual) return 1;
+
+      // Then by domain match
       if (b.domainMatchScore !== a.domainMatchScore) {
         return b.domainMatchScore - a.domainMatchScore;
       }
-      return a.credential.institution?.name?.localeCompare(b.credential.institution?.name || '');
+
+      // Then alphabetically
+      const nameA = a.credential?.institution?.name || a.institution?.name || '';
+      const nameB = b.credential?.institution?.name || b.institution?.name || '';
+      return nameA.localeCompare(nameB);
+    });
+
+    debugLog(`Grouped into ${validInstitutions.length} connections`, {
+      connections: validInstitutions.map((i) => ({
+        name: i.credential?.institution?.name || i.institution?.name || 'Manual',
+        accountCount: i.accounts.length,
+        isManual: i.isManual,
+      })),
     });
 
     // Show institution selector with create option
     showInstitutionSelectorWithCreate(validInstitutions, callback, effectiveAccountType, createDefaults);
   } catch (error) {
-    debugLog('Failed to get institution data:', error);
-    // Fall back to flat selector with create option
-    showFlatAccountSelectorWithCreate(accounts, callback, createDefaults);
+    debugLog('Failed to get accounts by type:', error);
+    // Fall back to flat selector with create option using legacy accounts param
+    showFlatAccountSelectorWithCreate(accounts || [], callback, createDefaults);
   }
 }
 
@@ -1042,6 +1098,66 @@ function addInstitutionLogo(container, cred, accounts = null) {
 }
 
 /**
+ * Add account logo to container with fallback chain: account.logoUrl → institution logo → letter
+ * @param {HTMLElement} container - Container to add logo to
+ * @param {Object} account - Account object with details
+ * @param {Object} cred - Credential object with institution info (for fallback)
+ * @returns {boolean} Whether logo was successfully added
+ */
+function addAccountLogo(container, account, cred) {
+  let logoHandled = false;
+  const accountLogoUrl = account.details?.logoUrl || account.logoUrl;
+
+  // Priority 1: Account's own logo URL
+  if (accountLogoUrl && !logoHandled) {
+    try {
+      GM_addElement(container, 'img', {
+        src: accountLogoUrl,
+        style: 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;',
+      });
+      logoHandled = true;
+    } catch (e) {
+      debugLog('Error loading account logo:', e);
+    }
+  }
+
+  // Priority 2: Institution logo from credential (base64 or URL)
+  if (!logoHandled && cred.institution?.logo) {
+    try {
+      const isUrl = typeof cred.institution.logo === 'string'
+                   && (cred.institution.logo.trim().toLowerCase().startsWith('http')
+                    || cred.institution.logo.trim().toLowerCase().startsWith('//'));
+
+      if (isUrl) {
+        GM_addElement(container, 'img', {
+          src: cred.institution.logo,
+          style: 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;',
+        });
+        logoHandled = true;
+      } else {
+        // It's base64 data
+        const logoImg = document.createElement('img');
+        logoImg.src = `data:image/png;base64,${cred.institution.logo}`;
+        logoImg.style.cssText = 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;';
+        container.appendChild(logoImg);
+        logoHandled = true;
+      }
+    } catch (e) {
+      debugLog('Error processing institution logo:', e);
+    }
+  }
+
+  // Priority 3: Letter-based fallback (use account name, not institution)
+  if (!logoHandled) {
+    const accountName = account.details?.displayName || account.displayName || 'Unknown';
+    addLogoFallback(container, accountName);
+    logoHandled = true;
+  }
+
+  return logoHandled;
+}
+
+/**
  * Create institution item element
  * @param {Object} inst - Institution object
  * @returns {HTMLElement} Institution item element
@@ -1064,8 +1180,13 @@ function createInstitutionItem(inst) {
   const logoContainer = document.createElement('div');
   logoContainer.style.cssText = 'margin-right: 15px; flex-shrink: 0;';
 
-  // Add logo using shared helper
-  addInstitutionLogo(logoContainer, cred, inst.accounts);
+  // For manual accounts group, always show letter fallback
+  if (inst.isManual) {
+    addLogoFallback(logoContainer, 'Manual Accounts');
+  } else {
+    // Add logo using shared helper for connected accounts
+    addInstitutionLogo(logoContainer, cred, inst.accounts);
+  }
   item.appendChild(logoContainer);
 
   const infoDiv = document.createElement('div');
@@ -1149,8 +1270,8 @@ function createAccountItem(account, cred, index) {
   const logoContainer = document.createElement('div');
   logoContainer.style.cssText = 'margin-right: 15px; flex-shrink: 0;';
 
-  // Add logo using shared helper (pass null for accounts since we're already in account view)
-  addInstitutionLogo(logoContainer, cred, null);
+  // Add account logo with fallback chain: account.logoUrl → institution logo → letter
+  addAccountLogo(logoContainer, account, cred);
   item.appendChild(logoContainer);
 
   const textContainer = document.createElement('div');
@@ -1168,6 +1289,7 @@ function createAccountItem(account, cred, index) {
     textContainer.appendChild(balanceDiv);
   }
 
+  // Show subtype only (e.g., "Credit Card")
   if (account.subtype?.display) {
     const subtypeDiv = document.createElement('div');
     subtypeDiv.style.cssText = 'font-size: 0.85em; color: #666;';

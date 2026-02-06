@@ -2517,6 +2517,286 @@ export async function deleteTransaction(transactionId) {
 }
 
 /**
+ * @typedef {Object} AccountTypeInfo
+ * @property {string} name - Type name (e.g., 'credit', 'depository', 'brokerage', 'loan')
+ * @property {string} display - Display name (e.g., 'Credit Cards', 'Cash', 'Investments', 'Loans')
+ * @property {string} group - Group classification ('asset' or 'liability')
+ */
+
+/**
+ * @typedef {Object} AccountCredentialInfo
+ * @property {string} id - Credential ID
+ * @property {Object} institution - Institution details
+ * @property {string} institution.id - Institution ID
+ * @property {string} institution.name - Institution name
+ * @property {boolean} updateRequired - Whether credential needs update
+ * @property {string} dataProvider - Data provider (e.g., 'PLAID', 'MX', 'FINICITY')
+ * @property {string|null} disconnectedFromDataProviderAt - Disconnection timestamp
+ * @property {string|null} syncDisabledAt - Sync disabled timestamp
+ * @property {string|null} syncDisabledReason - Reason for sync being disabled
+ */
+
+/**
+ * @typedef {Object} AccountConnectionStatus
+ * @property {string} connectionStatusCode - Status code (e.g., 'MFA_REQUIRED', 'USER_NEEDS_REAUTH')
+ * @property {string} copyTitle - Title for the status message
+ * @property {string} inAppSmallCopy - Short in-app message
+ * @property {string} inAppCopy - Full in-app message
+ * @property {string} helpCenterUrl - Help center URL for this status
+ */
+
+/**
+ * @typedef {Object} AccountInstitutionInfo
+ * @property {string} id - Institution ID
+ * @property {string} logo - Institution logo URL
+ * @property {string} name - Institution name
+ * @property {string|null} status - Institution status
+ * @property {Object|null} plaidStatus - Plaid status details
+ * @property {boolean} newConnectionsDisabled - Whether new connections are disabled
+ * @property {boolean} hasIssuesReported - Whether issues are reported
+ * @property {string} url - Institution website URL
+ * @property {string} hasIssuesReportedMessage - Issues reported message
+ * @property {string|null} transactionsStatus - Transactions sync status
+ * @property {string|null} balanceStatus - Balance sync status
+ */
+
+/**
+ * @typedef {Object} AccountByType
+ * @property {string} id - Account ID
+ * @property {AccountCredentialInfo|null} credential - Credential info (null for manual accounts)
+ * @property {AccountConnectionStatus|null} connectionStatus - Connection status info
+ * @property {boolean} syncDisabled - Whether sync is disabled
+ * @property {boolean} isHidden - Whether account is hidden
+ * @property {boolean} isAsset - Whether account is an asset
+ * @property {boolean} includeInNetWorth - Include in net worth calculations
+ * @property {number} order - Display order
+ * @property {Object} type - Account type info
+ * @property {string} type.name - Type name
+ * @property {string} type.display - Type display name
+ * @property {string} displayName - Account display name
+ * @property {number} displayBalance - Current display balance (positive value)
+ * @property {number} signedBalance - Signed balance (negative for liabilities)
+ * @property {string} updatedAt - Last update timestamp
+ * @property {string|null} dataProviderDeactivatedAt - Deactivation timestamp
+ * @property {string} icon - Account icon identifier
+ * @property {string|null} logoUrl - Account logo URL
+ * @property {boolean} includeBalanceInNetWorth - Include balance in net worth
+ * @property {string} displayLastUpdatedAt - Last updated display timestamp
+ * @property {number|null} limit - Credit limit (for credit accounts)
+ * @property {string|null} mask - Account mask (last 4 digits)
+ * @property {Object} subtype - Account subtype
+ * @property {string} subtype.display - Subtype display name
+ * @property {AccountInstitutionInfo|null} institution - Institution info
+ * @property {Object|null} ownedByUser - Owner info if shared
+ * @property {Object|null} businessEntity - Business entity info
+ */
+
+/**
+ * @typedef {Object} AccountTypeSummary
+ * @property {AccountTypeInfo} type - Account type information
+ * @property {AccountByType[]} accounts - Array of accounts of this type
+ * @property {boolean} isAsset - Whether this type is an asset
+ * @property {number} totalDisplayBalance - Total balance for this type
+ */
+
+/**
+ * @typedef {Object} HouseholdPreferences
+ * @property {string} id - Preferences ID
+ * @property {string[]} accountGroupOrder - Order of account groups
+ * @property {boolean} collaborationToolsEnabled - Whether collaboration is enabled
+ */
+
+/**
+ * @typedef {Object} GetAccountsByTypeResult
+ * @property {boolean} hasAccounts - Whether user has any accounts
+ * @property {AccountTypeSummary[]} accountTypeSummaries - Accounts grouped by type
+ * @property {HouseholdPreferences} householdPreferences - Household preferences
+ */
+
+/**
+ * Get all accounts grouped by type
+ * Returns accounts organized by type (Cash, Credit Cards, Investments, Loans, Vehicles, etc.)
+ * with summaries per type including total balances. Manual accounts have null credential.
+ * @param {Object} filters - Optional account filters
+ * @returns {Promise<GetAccountsByTypeResult>} Accounts grouped by type with summaries
+ * @example
+ * // Get all accounts grouped by type
+ * const result = await getAccountsByType();
+ * console.log(`Has accounts: ${result.hasAccounts}`);
+ * console.log(`Account groups: ${result.accountTypeSummaries.length}`);
+ *
+ * // Find all credit card accounts
+ * const creditCards = result.accountTypeSummaries.find(s => s.type.name === 'credit');
+ * console.log(`Credit cards total: $${creditCards.totalDisplayBalance}`);
+ *
+ * // Find manual accounts (no credential)
+ * const allAccounts = result.accountTypeSummaries.flatMap(s => s.accounts);
+ * const manualAccounts = allAccounts.filter(a => a.credential === null);
+ * console.log(`Manual accounts: ${manualAccounts.length}`);
+ */
+export async function getAccountsByType(filters = {}) {
+  const query = `query Web_GetAccountsPage($filters: AccountFilters) {
+  hasAccounts
+  accountTypeSummaries(filters: $filters) {
+    type {
+      name
+      display
+      group
+      __typename
+    }
+    accounts {
+      id
+      credential {
+        id
+        institution {
+          id
+          name
+          __typename
+        }
+        __typename
+      }
+      connectionStatus {
+        connectionStatusCode
+        copyTitle
+        inAppSmallCopy
+        inAppCopy
+        helpCenterUrl
+        __typename
+      }
+      ...AccountsListFields
+      __typename
+    }
+    isAsset
+    totalDisplayBalance
+    __typename
+  }
+  householdPreferences {
+    id
+    accountGroupOrder
+    collaborationToolsEnabled
+    __typename
+  }
+}
+
+fragment AccountMaskFields on Account {
+  id
+  mask
+  subtype {
+    display
+    __typename
+  }
+  __typename
+}
+
+fragment InstitutionStatusTooltipFields on Institution {
+  id
+  logo
+  name
+  status
+  plaidStatus
+  newConnectionsDisabled
+  hasIssuesReported
+  url
+  hasIssuesReportedMessage
+  transactionsStatus
+  balanceStatus
+  __typename
+}
+
+fragment AccountListItemFields on Account {
+  id
+  displayName
+  displayBalance
+  signedBalance
+  updatedAt
+  syncDisabled
+  dataProviderDeactivatedAt
+  icon
+  logoUrl
+  isHidden
+  isAsset
+  includeInNetWorth
+  includeBalanceInNetWorth
+  displayLastUpdatedAt
+  limit
+  type {
+    name
+    __typename
+  }
+  ...AccountMaskFields
+  credential {
+    id
+    updateRequired
+    dataProvider
+    disconnectedFromDataProviderAt
+    syncDisabledAt
+    syncDisabledReason
+    __typename
+  }
+  connectionStatus {
+    connectionStatusCode
+    copyTitle
+    inAppSmallCopy
+    inAppCopy
+    helpCenterUrl
+    __typename
+  }
+  institution {
+    id
+    ...InstitutionStatusTooltipFields
+    __typename
+  }
+  ownedByUser {
+    id
+    displayName
+    profilePictureUrl
+    __typename
+  }
+  businessEntity {
+    id
+    name
+    logoUrl
+    color
+    __typename
+  }
+  __typename
+}
+
+fragment AccountsListFields on Account {
+  id
+  syncDisabled
+  isHidden
+  isAsset
+  includeInNetWorth
+  order
+  type {
+    name
+    display
+    __typename
+  }
+  ...AccountListItemFields
+  __typename
+}`;
+
+  debugLog('Getting accounts by type with filters:', filters);
+
+  const data = await callMonarchGraphQL('Web_GetAccountsPage', query, { filters });
+
+  const totalAccounts = data.accountTypeSummaries.reduce(
+    (sum, summary) => sum + summary.accounts.length,
+    0,
+  );
+
+  debugLog(`Retrieved ${totalAccounts} accounts across ${data.accountTypeSummaries.length} types`);
+
+  return {
+    hasAccounts: data.hasAccounts,
+    accountTypeSummaries: data.accountTypeSummaries,
+    householdPreferences: data.householdPreferences,
+  };
+}
+
+/**
  * Validate and refresh a Monarch account mapping
  * Checks if the mapped Monarch account still exists and refreshes stored data
  * @param {string} monarchAccountId - The stored Monarch account ID
@@ -2694,6 +2974,7 @@ export default {
   createManualInvestmentsAccount,
   setAccountLogo,
   getFilteredAccounts,
+  getAccountsByType,
   updateAccount,
   updateTransaction,
   setTransactionTags,

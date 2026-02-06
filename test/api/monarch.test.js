@@ -25,6 +25,7 @@ import {
   getToken,
   setAccountLogo,
   getFilteredAccounts,
+  getAccountsByType,
   updateAccount,
   updateTransaction,
   setTransactionTags,
@@ -3238,6 +3239,261 @@ describe('Monarch API', () => {
       await expect(deleteTransaction('232663379465502547'))
         .rejects
         .toThrow();
+    });
+  });
+
+  describe('getAccountsByType', () => {
+    const mockAccountsByTypeResponse = {
+      hasAccounts: true,
+      accountTypeSummaries: [
+        {
+          type: { name: 'depository', display: 'Cash', group: 'asset', __typename: 'AccountType' },
+          accounts: [
+            {
+              id: '225927715198893500',
+              displayName: 'Tangerine Savings',
+              displayBalance: 1500.0,
+              signedBalance: 1500.0,
+              credential: { id: 'cred123', institution: { id: 'inst1', name: 'Tangerine', __typename: 'Institution' }, __typename: 'Credential' },
+              connectionStatus: null,
+              syncDisabled: false,
+              isHidden: false,
+              isAsset: true,
+              includeInNetWorth: true,
+              order: 1,
+              type: { name: 'depository', display: 'Cash', __typename: 'AccountType' },
+              icon: 'dollar-sign',
+              logoUrl: 'https://example.com/tangerine.png',
+              limit: null,
+              mask: '1234',
+              subtype: { display: 'Savings', __typename: 'AccountSubtype' },
+              institution: { id: 'inst1', name: 'Tangerine', logo: 'logo.png', status: 'HEALTHY', __typename: 'Institution' },
+              ownedByUser: null,
+              businessEntity: null,
+              __typename: 'Account',
+            },
+          ],
+          isAsset: true,
+          totalDisplayBalance: 1500.0,
+          __typename: 'AccountTypeSummary',
+        },
+        {
+          type: { name: 'credit', display: 'Credit Cards', group: 'liability', __typename: 'AccountType' },
+          accounts: [
+            {
+              id: '231996536253873225',
+              displayName: 'Wealthsimple CC',
+              displayBalance: 500.0,
+              signedBalance: -500.0,
+              credential: null, // Manual account
+              connectionStatus: null,
+              syncDisabled: false,
+              isHidden: false,
+              isAsset: false,
+              includeInNetWorth: true,
+              order: 2,
+              type: { name: 'credit', display: 'Credit Cards', __typename: 'AccountType' },
+              icon: 'credit-card',
+              logoUrl: null,
+              limit: 17000,
+              mask: null,
+              subtype: { display: 'Credit Card', __typename: 'AccountSubtype' },
+              institution: null,
+              ownedByUser: null,
+              businessEntity: null,
+              __typename: 'Account',
+            },
+          ],
+          isAsset: false,
+          totalDisplayBalance: 500.0,
+          __typename: 'AccountTypeSummary',
+        },
+      ],
+      householdPreferences: {
+        id: 'pref123',
+        accountGroupOrder: ['depository', 'credit', 'brokerage', 'loan'],
+        collaborationToolsEnabled: false,
+        __typename: 'HouseholdPreferences',
+      },
+    };
+
+    test('retrieves accounts grouped by type with default empty filters', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.operationName).toBe('Web_GetAccountsPage');
+        expect(data.variables.filters).toEqual({});
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockAccountsByTypeResponse }),
+        }), 0);
+      });
+
+      const result = await getAccountsByType({});
+
+      expect(result.hasAccounts).toBe(true);
+      expect(result.accountTypeSummaries).toHaveLength(2);
+      expect(result.householdPreferences.id).toBe('pref123');
+    });
+
+    test('returns proper structure with accountTypeSummaries containing accounts', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockAccountsByTypeResponse }),
+        }), 0);
+      });
+
+      const result = await getAccountsByType();
+
+      // Check depository (Cash) summary
+      const cashSummary = result.accountTypeSummaries.find((s) => s.type.name === 'depository');
+      expect(cashSummary).toBeDefined();
+      expect(cashSummary.type.display).toBe('Cash');
+      expect(cashSummary.isAsset).toBe(true);
+      expect(cashSummary.totalDisplayBalance).toBe(1500.0);
+      expect(cashSummary.accounts).toHaveLength(1);
+      expect(cashSummary.accounts[0].displayName).toBe('Tangerine Savings');
+
+      // Check credit (Credit Cards) summary
+      const creditSummary = result.accountTypeSummaries.find((s) => s.type.name === 'credit');
+      expect(creditSummary).toBeDefined();
+      expect(creditSummary.type.display).toBe('Credit Cards');
+      expect(creditSummary.isAsset).toBe(false);
+      expect(creditSummary.totalDisplayBalance).toBe(500.0);
+      expect(creditSummary.accounts).toHaveLength(1);
+      expect(creditSummary.accounts[0].displayName).toBe('Wealthsimple CC');
+    });
+
+    test('identifies manual accounts by null credential', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockAccountsByTypeResponse }),
+        }), 0);
+      });
+
+      const result = await getAccountsByType();
+
+      // Find all accounts across all types
+      const allAccounts = result.accountTypeSummaries.flatMap((s) => s.accounts);
+
+      // Connected account has credential
+      const connectedAccount = allAccounts.find((a) => a.id === '225927715198893500');
+      expect(connectedAccount.credential).not.toBeNull();
+      expect(connectedAccount.credential.institution.name).toBe('Tangerine');
+
+      // Manual account has null credential
+      const manualAccount = allAccounts.find((a) => a.id === '231996536253873225');
+      expect(manualAccount.credential).toBeNull();
+    });
+
+    test('returns householdPreferences with accountGroupOrder', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockAccountsByTypeResponse }),
+        }), 0);
+      });
+
+      const result = await getAccountsByType();
+
+      expect(result.householdPreferences).toBeDefined();
+      expect(result.householdPreferences.accountGroupOrder).toEqual(['depository', 'credit', 'brokerage', 'loan']);
+      expect(result.householdPreferences.collaborationToolsEnabled).toBe(false);
+    });
+
+    test('logs debug information about retrieved accounts', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockAccountsByTypeResponse }),
+        }), 0);
+      });
+
+      await getAccountsByType();
+
+      expect(debugLog).toHaveBeenCalledWith('Getting accounts by type with filters:', {});
+      expect(debugLog).toHaveBeenCalledWith('Retrieved 2 accounts across 2 types');
+    });
+
+    test('handles empty account response', async () => {
+      const emptyResponse = {
+        hasAccounts: false,
+        accountTypeSummaries: [],
+        householdPreferences: {
+          id: 'pref123',
+          accountGroupOrder: [],
+          collaborationToolsEnabled: false,
+          __typename: 'HouseholdPreferences',
+        },
+      };
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: emptyResponse }),
+        }), 0);
+      });
+
+      const result = await getAccountsByType();
+
+      expect(result.hasAccounts).toBe(false);
+      expect(result.accountTypeSummaries).toEqual([]);
+    });
+
+    test('handles authentication errors', async () => {
+      authService.checkMonarchAuth.mockReturnValue({
+        authenticated: false,
+        token: null,
+      });
+
+      await expect(getAccountsByType())
+        .rejects
+        .toThrow('Monarch token not found.');
+    });
+
+    test('handles network errors', async () => {
+      const mockError = new Error('Network error');
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onerror(mockError), 0);
+      });
+
+      await expect(getAccountsByType())
+        .rejects
+        .toThrow('Network error');
+    });
+
+    test('handles 401 authentication error', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 401,
+        }), 0);
+      });
+
+      await expect(getAccountsByType())
+        .rejects
+        .toThrow('Monarch Auth Error (401): Token was invalid or expired.');
+
+      expect(authService.saveMonarchToken).toHaveBeenCalledWith(null);
+      expect(stateManager.setMonarchAuth).toHaveBeenCalledWith(null);
+    });
+
+    test('uses provided filters in request', async () => {
+      const customFilters = { includeDeleted: true };
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        expect(data.variables.filters).toEqual(customFilters);
+
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockAccountsByTypeResponse }),
+        }), 0);
+      });
+
+      await getAccountsByType(customFilters);
     });
   });
 
