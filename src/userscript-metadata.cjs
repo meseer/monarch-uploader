@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Monarch Uploader
 // @namespace    http://tampermonkey.net/
-// @version      5.71.3
+// @version      5.71.5
 // @description  Upload Questrade, CanadaLife, Rogers Bank, and Wealthsimple balance and transactions to Monarch.
 // @author       Mykhailo Delegan
 // @match        https://myportal.questrade.com/*

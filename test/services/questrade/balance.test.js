@@ -191,7 +191,7 @@ describe('Balance Service', () => {
       storeDateRange('12345', '2025-01-31');
 
       // Should now call saveLastUploadDate instead of direct GM_setValue
-      expect(utils.saveLastUploadDate).toHaveBeenCalledWith('12345', 'questrade', '2025-01-31');
+      expect(utils.saveLastUploadDate).toHaveBeenCalledWith('12345', '2025-01-31', 'questrade');
     });
   });
 
@@ -559,7 +559,7 @@ describe('Balance Service', () => {
       expect(utils.saveLastUploadDate).not.toHaveBeenCalled();
 
       storeDateRange('account123', '2024-12-31');
-      expect(utils.saveLastUploadDate).toHaveBeenCalledWith('account123', 'questrade', '2024-12-31');
+      expect(utils.saveLastUploadDate).toHaveBeenCalledWith('account123', '2024-12-31', 'questrade');
     });
 
     test('should handle saveLastUploadDate errors gracefully', () => {

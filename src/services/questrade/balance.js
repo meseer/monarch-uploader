@@ -169,7 +169,7 @@ export function storeDateRange(accountId, toDate) {
 
   try {
     // Use the unified saveLastUploadDate function which handles both storages
-    saveLastUploadDate(accountId, 'questrade', toDate);
+    saveLastUploadDate(accountId, toDate, 'questrade');
     debugLog(`Stored last used date ${toDate} for Questrade account ${accountId}`);
   } catch (error) {
     debugLog('Error storing date range:', error);

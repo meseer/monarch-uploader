@@ -1,25 +1,17 @@
 /**
  * Tests for Transaction Storage Utilities
+ * Tests pure logic functions for transaction ID management
  */
 
 import {
-  getTransactionRetentionSettings,
   migrateLegacyTransactions,
   applyRetentionLimits,
-  saveUploadedTransactions,
-  getUploadedTransactionIds,
   getRetentionSettingsFromAccount,
   getTransactionIdsFromArray,
   mergeAndRetainTransactions,
 } from '../../src/utils/transactionStorage';
-import { STORAGE, TRANSACTION_RETENTION_DEFAULTS } from '../../src/core/config';
+import { TRANSACTION_RETENTION_DEFAULTS } from '../../src/core/config';
 import * as utils from '../../src/core/utils';
-
-// Mock GM functions
-global.GM_getValue = jest.fn();
-global.GM_setValue = jest.fn();
-global.GM_listValues = jest.fn();
-global.GM_deleteValue = jest.fn();
 
 // Mock date utilities to use a fixed date for consistent tests
 jest.spyOn(utils, 'getTodayLocal').mockReturnValue('2025-10-24');
@@ -28,49 +20,6 @@ jest.spyOn(utils, 'parseLocalDate').mockImplementation((dateString) => new Date(
 describe('Transaction Storage Utilities', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-  });
-
-  describe('getTransactionRetentionSettings', () => {
-    test('returns default settings for questrade', () => {
-      GM_getValue.mockImplementation((key, defaultValue) => defaultValue);
-
-      const settings = getTransactionRetentionSettings('questrade');
-
-      expect(settings).toEqual({
-        days: TRANSACTION_RETENTION_DEFAULTS.DAYS,
-        count: TRANSACTION_RETENTION_DEFAULTS.COUNT,
-      });
-    });
-
-    test('returns default settings for rogersbank', () => {
-      GM_getValue.mockImplementation((key, defaultValue) => defaultValue);
-
-      const settings = getTransactionRetentionSettings('rogersbank');
-
-      expect(settings).toEqual({
-        days: TRANSACTION_RETENTION_DEFAULTS.DAYS,
-        count: TRANSACTION_RETENTION_DEFAULTS.COUNT,
-      });
-    });
-
-    test('returns custom settings when configured', () => {
-      GM_getValue
-        .mockReturnValueOnce(60) // days
-        .mockReturnValueOnce(750); // count
-
-      const settings = getTransactionRetentionSettings('questrade');
-
-      expect(settings).toEqual({
-        days: 60,
-        count: 750,
-      });
-    });
-
-    test('throws error for wealthsimple (uses consolidated account structure)', () => {
-      expect(() => getTransactionRetentionSettings('wealthsimple')).toThrow(
-        'Unknown institution type: wealthsimple. Wealthsimple uses consolidated account structure.',
-      );
-    });
   });
 
   describe('getRetentionSettingsFromAccount', () => {
@@ -105,6 +54,28 @@ describe('Transaction Storage Utilities', () => {
         count: TRANSACTION_RETENTION_DEFAULTS.COUNT,
       });
     });
+
+    test('handles undefined account data', () => {
+      const settings = getRetentionSettingsFromAccount(undefined);
+
+      expect(settings).toEqual({
+        days: TRANSACTION_RETENTION_DEFAULTS.DAYS,
+        count: TRANSACTION_RETENTION_DEFAULTS.COUNT,
+      });
+    });
+
+    test('uses defaults for missing individual settings', () => {
+      const accountData = {
+        transactionRetentionDays: 45,
+        // transactionRetentionCount is missing
+      };
+      const settings = getRetentionSettingsFromAccount(accountData);
+
+      expect(settings).toEqual({
+        days: 45,
+        count: TRANSACTION_RETENTION_DEFAULTS.COUNT,
+      });
+    });
   });
 
   describe('migrateLegacyTransactions', () => {
@@ -133,9 +104,22 @@ describe('Transaction Storage Utilities', () => {
       expect(migrateLegacyTransactions([])).toEqual([]);
     });
 
-    test('handles non-array input', () => {
+    test('handles null input', () => {
       expect(migrateLegacyTransactions(null)).toEqual([]);
+    });
+
+    test('handles undefined input', () => {
       expect(migrateLegacyTransactions(undefined)).toEqual([]);
+    });
+
+    test('converts non-string IDs to strings', () => {
+      const legacy = [123, 456];
+      const migrated = migrateLegacyTransactions(legacy);
+
+      expect(migrated).toEqual([
+        { id: '123', date: null },
+        { id: '456', date: null },
+      ]);
     });
   });
 
@@ -172,6 +156,11 @@ describe('Transaction Storage Utilities', () => {
       expect(result).toEqual([]);
     });
 
+    test('handles null input', () => {
+      const result = applyRetentionLimits(null, { days: 90, count: 500 });
+      expect(result).toEqual([]);
+    });
+
     test('keeps undated transactions when no dated transactions are old', () => {
       const transactions = [
         { id: 'dated1', date: '2025-10-20' },
@@ -185,122 +174,38 @@ describe('Transaction Storage Utilities', () => {
       expect(result.length).toBe(3);
       expect(result.some((t) => t.id === 'undated1')).toBe(true);
     });
-  });
 
-  describe('getUploadedTransactionIds', () => {
-    test('returns Set of transaction IDs with correct parameter order', () => {
-      const accountId = '12345';
-      const institutionType = 'rogersbank';
-      const expectedKey = `${STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX}${accountId}`;
-
-      GM_getValue.mockImplementation((key, defaultValue) => {
-        if (key === expectedKey) {
-          return [
-            { id: 'tx1', date: '2025-10-20' },
-            { id: 'tx2', date: '2025-10-21' },
-          ];
-        }
-        return defaultValue;
-      });
-
-      const result = getUploadedTransactionIds(accountId, institutionType);
-
-      expect(GM_getValue).toHaveBeenCalledWith(expectedKey, []);
-      expect(result).toBeInstanceOf(Set);
-      expect(result.size).toBe(2);
-      expect(result.has('tx1')).toBe(true);
-      expect(result.has('tx2')).toBe(true);
-    });
-
-    test('throws error for questrade (now uses consolidated storage)', () => {
-      // Questrade now uses consolidated account storage via accountService
-      // instead of per-key storage via transactionStorage
-      expect(() => getUploadedTransactionIds('67890', 'questrade')).toThrow(
-        'Use consolidated account structure for Questrade and Wealthsimple',
-      );
-    });
-
-    test('returns empty Set when no transactions stored', () => {
-      GM_getValue.mockReturnValue([]);
-
-      const result = getUploadedTransactionIds('account123', 'rogersbank');
-
-      expect(result).toBeInstanceOf(Set);
-      expect(result.size).toBe(0);
-    });
-  });
-
-  describe('saveUploadedTransactions', () => {
-    test('saves transactions with correct parameter order for rogersbank', () => {
-      const accountId = '12345';
-      const newTransactions = ['tx1', 'tx2', 'tx3'];
-      const institutionType = 'rogersbank';
-      const transactionDate = '2025-10-24';
-      const expectedKey = `${STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX}${accountId}`;
-
-      GM_getValue.mockImplementation((key, defaultValue) => {
-        if (key === expectedKey) return [];
-        return defaultValue;
-      });
-
-      // New parameter order: (institutionType, accountId, newTransactions, transactionDate)
-      saveUploadedTransactions(institutionType, accountId, newTransactions, transactionDate);
-
-      expect(GM_getValue).toHaveBeenCalledWith(expectedKey, []);
-      expect(GM_setValue).toHaveBeenCalled();
-
-      const savedData = GM_setValue.mock.calls[0][1];
-      expect(savedData).toHaveLength(3);
-      expect(savedData[0]).toEqual({ id: 'tx1', date: transactionDate });
-    });
-
-    test('throws error for questrade (now uses consolidated storage)', () => {
-      // Questrade now uses consolidated account storage via accountService
-      // instead of per-key storage via transactionStorage
-      expect(() => saveUploadedTransactions('questrade', '67890', ['order1'], '2025-10-24')).toThrow(
-        'Use consolidated account structure for Questrade and Wealthsimple',
-      );
-    });
-
-    test('does not duplicate existing transactions', () => {
-      const accountId = '12345';
-      const existingTransactions = [
-        { id: 'tx1', date: '2025-10-20' },
+    test('removes undated transactions when dated transactions are old', () => {
+      const transactions = [
+        { id: 'old', date: '2025-08-01' }, // Older than 30 days
+        { id: 'recent', date: '2025-10-20' },
+        { id: 'undated', date: null },
       ];
-      const newTransactions = ['tx1', 'tx2']; // tx1 already exists
-      const expectedKey = `${STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX}${accountId}`;
+      const settings = { days: 30, count: 1000 };
 
-      GM_getValue.mockImplementation((key, defaultValue) => {
-        if (key === expectedKey) return existingTransactions;
-        return defaultValue;
-      });
+      const result = applyRetentionLimits(transactions, settings);
 
-      // New parameter order: (institutionType, accountId, newTransactions, transactionDate)
-      saveUploadedTransactions('rogersbank', accountId, newTransactions, '2025-10-24');
-
-      const savedData = GM_setValue.mock.calls[0][1];
-      expect(savedData).toHaveLength(2); // Only tx1 and tx2
-      expect(savedData.filter((t) => t.id === 'tx1')).toHaveLength(1);
+      // Old dated transaction is removed, undated should also be removed
+      expect(result.some((t) => t.id === 'undated')).toBe(false);
+      expect(result.some((t) => t.id === 'recent')).toBe(true);
+      expect(result.some((t) => t.id === 'old')).toBe(false);
     });
 
-    test('applies retention limits after saving', () => {
-      const accountId = '12345';
-      const existingTransactions = Array.from({ length: 500 }, (_, i) => ({
-        id: `old${i}`,
-        date: '2025-10-20',
-      }));
-      const newTransactions = Array.from({ length: 10 }, (_, i) => `new${i}`);
+    test('sorts by date with undated at end when applying count limit', () => {
+      const transactions = [
+        { id: 'undated1', date: null },
+        { id: 'recent', date: '2025-10-23' },
+        { id: 'older', date: '2025-10-20' },
+        { id: 'undated2', date: null },
+      ];
+      const settings = { days: 90, count: 2 };
 
-      GM_getValue
-        .mockReturnValueOnce(existingTransactions)
-        .mockReturnValue(90); // retention days/count
+      const result = applyRetentionLimits(transactions, settings);
 
-      // New parameter order: (institutionType, accountId, newTransactions, transactionDate)
-      saveUploadedTransactions('rogersbank', accountId, newTransactions, '2025-10-24');
-
-      const savedData = GM_setValue.mock.calls[0][1];
-      // Should be limited by retention count (default 500)
-      expect(savedData.length).toBeLessThanOrEqual(500);
+      expect(result.length).toBe(2);
+      // Most recent dated transactions should be kept
+      expect(result[0].id).toBe('recent');
+      expect(result[1].id).toBe('older');
     });
   });
 
@@ -338,6 +243,13 @@ describe('Transaction Storage Utilities', () => {
 
     test('returns empty Set for undefined input', () => {
       const result = getTransactionIdsFromArray(undefined);
+
+      expect(result).toBeInstanceOf(Set);
+      expect(result.size).toBe(0);
+    });
+
+    test('returns empty Set for empty array', () => {
+      const result = getTransactionIdsFromArray([]);
 
       expect(result).toBeInstanceOf(Set);
       expect(result.size).toBe(0);
@@ -399,6 +311,16 @@ describe('Transaction Storage Utilities', () => {
       expect(result.every((t) => t.date === defaultDate)).toBe(true);
     });
 
+    test('uses today as default date when not provided', () => {
+      const existing = [];
+      const newTransactions = ['tx1'];
+      const settings = { days: 90, count: 1000 };
+
+      const result = mergeAndRetainTransactions(existing, newTransactions, settings);
+
+      expect(result[0].date).toBe('2025-10-24'); // Mocked today
+    });
+
     test('handles legacy existing format', () => {
       const existing = ['tx1', 'tx2']; // Legacy string format
       const newTransactions = ['tx3'];
@@ -424,70 +346,46 @@ describe('Transaction Storage Utilities', () => {
 
       expect(result.length).toBe(5);
     });
-  });
 
-  describe('Parameter Order Regression Tests', () => {
-    test('getUploadedTransactionIds uses correct storage key with (accountId, institutionType)', () => {
-      const accountId = '00000645148';
-      const institutionType = 'rogersbank';
-      const correctKey = `${STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX}${accountId}`;
-      const wrongKey = `${STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX}${institutionType}`;
-
-      GM_getValue.mockReturnValue([{ id: 'tx1', date: '2025-10-20' }]);
-
-      getUploadedTransactionIds(accountId, institutionType);
-
-      // Should call with correct key
-      expect(GM_getValue).toHaveBeenCalledWith(correctKey, []);
-      // Should NOT call with swapped key
-      expect(GM_getValue).not.toHaveBeenCalledWith(wrongKey, []);
-    });
-
-    test('saveUploadedTransactions uses correct storage key with (institutionType, accountId, newTransactions, transactionDate)', () => {
-      const accountId = '00000645148';
+    test('handles empty existing array', () => {
+      const existing = [];
       const newTransactions = ['tx1', 'tx2'];
-      const institutionType = 'rogersbank';
-      const correctKey = `${STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX}${accountId}`;
+      const settings = { days: 90, count: 1000 };
 
-      GM_getValue.mockReturnValue([]);
+      const result = mergeAndRetainTransactions(existing, newTransactions, settings, '2025-10-24');
 
-      // New parameter order: (institutionType, accountId, newTransactions, transactionDate)
-      saveUploadedTransactions(institutionType, accountId, newTransactions, '2025-10-24');
-
-      // Should save to correct key
-      expect(GM_setValue).toHaveBeenCalledWith(
-        correctKey,
-        expect.any(Array),
-      );
+      expect(result.length).toBe(2);
     });
 
-    test('demonstrates the bug when parameters are swapped', () => {
-      const accountId = '00000645148';
-      const institutionType = 'rogersbank';
+    test('handles empty new transactions array', () => {
+      const existing = [
+        { id: 'tx1', date: '2025-10-20' },
+      ];
+      const newTransactions = [];
+      const settings = { days: 90, count: 1000 };
 
-      // This is what the bug would do (calling with swapped parameters)
-      const wrongKey = `${STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX}${institutionType}`;
+      const result = mergeAndRetainTransactions(existing, newTransactions, settings, '2025-10-24');
 
-      GM_getValue.mockReturnValue([]);
-
-      // Simulate the bug by manually calling with wrong key
-      const buggedResult = GM_getValue(wrongKey, []);
-
-      // With the bug, we'd look in the wrong place and find nothing
-      expect(buggedResult).toEqual([]);
-
-      // But the correct call should use accountId in the key
-      const correctKey = `${STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX}${accountId}`;
-      expect(correctKey).not.toBe(wrongKey);
-      expect(correctKey).toBe('rogersbank_uploaded_refs_00000645148');
-      expect(wrongKey).toBe('rogersbank_uploaded_refs_rogersbank');
+      expect(result.length).toBe(1);
+      expect(result[0].id).toBe('tx1');
     });
 
-    test('questrade now uses consolidated storage and throws error for per-key storage', () => {
-      // Questrade no longer uses per-key storage - it uses consolidated account structure
-      // via accountService with uploadedTransactions field in questrade_accounts_list
-      expect(() => getUploadedTransactionIds('12345', 'questrade')).toThrow();
-      expect(() => saveUploadedTransactions('questrade', '12345', ['tx1'], '2025-10-24')).toThrow();
+    test('handles mixed format new transactions', () => {
+      const existing = [];
+      const newTransactions = [
+        'stringId',
+        { id: 'objectId', date: '2025-10-22' },
+        { id: 'objectWithoutDate' },
+      ];
+      const settings = { days: 90, count: 1000 };
+      const defaultDate = '2025-10-24';
+
+      const result = mergeAndRetainTransactions(existing, newTransactions, settings, defaultDate);
+
+      expect(result.length).toBe(3);
+      expect(result.find((t) => t.id === 'stringId').date).toBe(defaultDate);
+      expect(result.find((t) => t.id === 'objectId').date).toBe('2025-10-22');
+      expect(result.find((t) => t.id === 'objectWithoutDate').date).toBe(defaultDate);
     });
   });
 });
