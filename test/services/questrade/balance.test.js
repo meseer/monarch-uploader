@@ -725,7 +725,7 @@ describe('Balance Service', () => {
       const emptyData = {
         currentBalance: {
           totalEquity: {
-            combined: [], // Empty array
+            combined: [], // Empty array - no CAD balance
           },
         },
         history: {
@@ -735,8 +735,8 @@ describe('Balance Service', () => {
 
       const result = processBalanceData(emptyData, 'Empty Account');
 
-      // Should still generate valid CSV with just header
-      expect(result).toBe('"Date","Total Equity","Account Name"\n');
+      // Should return null when there's no data to upload (prevents empty file uploads)
+      expect(result).toBeNull();
     });
 
     test('should handle malformed currentBalance structure', () => {

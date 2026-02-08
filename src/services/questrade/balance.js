@@ -225,7 +225,7 @@ export async function fetchBalanceHistory(accountId, fromDate, toDate) {
  * Process balance data into CSV format
  * @param {Object} rawData - Raw balance data from API
  * @param {string} accountName - Account name for CSV output
- * @returns {string} CSV formatted data
+ * @returns {string|null} CSV formatted data, or null if no data available
  */
 export function processBalanceData(rawData, accountName) {
   try {
@@ -238,6 +238,7 @@ export function processBalanceData(rawData, accountName) {
 
     // Initialize CSV with header
     let csvContent = '"Date","Total Equity","Account Name"\n';
+    let dataRowCount = 0;
 
     // Add historical data
     if (rawData.history.data && Array.isArray(rawData.history.data)) {
@@ -245,6 +246,7 @@ export function processBalanceData(rawData, accountName) {
         const date = item.date ?? '';
         const totalEquity = item.totalEquity ?? '';
         csvContent += `"${date}","${totalEquity}","${accountName}"\n`;
+        dataRowCount += 1;
       });
     }
 
@@ -252,6 +254,13 @@ export function processBalanceData(rawData, accountName) {
     if (currentBalance) {
       const todayFormatted = getTodayLocal();
       csvContent += `"${todayFormatted}","${currentBalance}","${accountName}"\n`;
+      dataRowCount += 1;
+    }
+
+    // Return null if no data rows (only header) - prevents uploading empty files
+    if (dataRowCount === 0) {
+      debugLog(`No balance data to upload for ${accountName} - empty result`);
+      return null;
     }
 
     return csvContent;
@@ -429,6 +438,13 @@ export async function processAndUploadBalance(accountId, accountName, fromDate, 
 
     // Step 2: Process the data
     const csvData = processBalanceData(balanceData, accountName);
+
+    // Check if we have data to upload
+    if (!csvData) {
+      debugLog(`No balance data available for ${accountName}, skipping upload`);
+      toast.show(`No new balance data to upload for ${accountName}`, 'debug');
+      return true; // Return success - nothing to upload is not an error
+    }
 
     // Step 3: Upload to Monarch
     toast.show(`Uploading ${accountName} balance history to Monarch (may take up to 2 minutes for large files)...`, 'debug');
@@ -726,6 +742,21 @@ export async function uploadAllAccountsToMonarch() {
 
           // Process balance data to CSV
           const csvData = processBalanceData(balanceData, accountName);
+
+          // Check if we have any data to upload
+          if (!csvData) {
+            // No balance data available (likely closed account with no recent history)
+            stats.skipped += 1;
+            progressDialog.updateProgress(account.key, 'skipped', 'No balance data available');
+            debugLog(`Skipped account ${account.key} - no balance data available`);
+
+            // Still mark pending_close accounts as closed even without data
+            if (account.status === 'pending_close') {
+              markAccountAsClosed(account.key);
+              debugLog(`Marked pending_close account ${account.key} as closed (no data to upload)`);
+            }
+            continue;
+          }
 
           // Check cancellation before upload
           if (isCancelled) break;
@@ -1036,6 +1067,21 @@ export async function uploadFullBalanceHistoryForAllAccounts() {
 
           // Process balance data to CSV
           const csvData = processBalanceData(balanceData, accountName);
+
+          // Check if we have any data to upload
+          if (!csvData) {
+            // No balance data available (likely closed account with no recent history)
+            stats.skipped += 1;
+            progressDialog.updateProgress(account.key, 'skipped', 'No balance data available');
+            debugLog(`Skipped account ${account.key} - no balance data available`);
+
+            // Still mark pending_close accounts as closed even without data
+            if (account.status === 'pending_close') {
+              markAccountAsClosed(account.key);
+              debugLog(`Marked pending_close account ${account.key} as closed (no data to upload)`);
+            }
+            continue;
+          }
 
           // Check cancellation before upload
           if (isCancelled) break;
