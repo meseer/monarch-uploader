@@ -26,31 +26,34 @@ const ACCOUNT_LIST_STORAGE_KEYS = {
 
 /**
  * Legacy storage prefix mapping for each integration
+ * Note: Questrade and CanadaLife migration disabled - already migrated, no need to check legacy storage
  */
 const LEGACY_MAPPING_PREFIXES = {
   [INTEGRATIONS.WEALTHSIMPLE]: null, // Wealthsimple already uses consolidated
-  [INTEGRATIONS.QUESTRADE]: STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX,
-  [INTEGRATIONS.CANADALIFE]: STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX,
+  [INTEGRATIONS.QUESTRADE]: null, // Migration disabled - already migrated
+  [INTEGRATIONS.CANADALIFE]: null, // Migration disabled - already migrated
   [INTEGRATIONS.ROGERSBANK]: STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX,
 };
 
 /**
  * Legacy last upload date prefix mapping
+ * Note: Questrade and CanadaLife migration disabled - already migrated
  */
 const LEGACY_LAST_UPLOAD_PREFIXES = {
   [INTEGRATIONS.WEALTHSIMPLE]: null, // Stored in account object
-  [INTEGRATIONS.QUESTRADE]: STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX,
-  [INTEGRATIONS.CANADALIFE]: STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX,
+  [INTEGRATIONS.QUESTRADE]: null, // Migration disabled - already migrated
+  [INTEGRATIONS.CANADALIFE]: null, // Migration disabled - already migrated
   [INTEGRATIONS.ROGERSBANK]: STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX,
 };
 
 /**
  * Legacy uploaded transactions/orders prefix mapping
  * For integrations with deduplication, this is where transaction IDs are stored
+ * Note: Questrade migration disabled - already migrated
  */
 const LEGACY_UPLOADED_TRANSACTIONS_PREFIXES = {
   [INTEGRATIONS.WEALTHSIMPLE]: null, // Stored in account object (uploadedTransactions)
-  [INTEGRATIONS.QUESTRADE]: STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX,
+  [INTEGRATIONS.QUESTRADE]: null, // Migration disabled - already migrated
   [INTEGRATIONS.CANADALIFE]: null, // CanadaLife doesn't have deduplication
   [INTEGRATIONS.ROGERSBANK]: STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX,
 };
@@ -58,10 +61,11 @@ const LEGACY_UPLOADED_TRANSACTIONS_PREFIXES = {
 /**
  * Legacy holdings mappings prefix mapping
  * For integrations with holdings/positions support
+ * Note: Questrade migration disabled - already migrated
  */
 const LEGACY_HOLDINGS_PREFIXES = {
   [INTEGRATIONS.WEALTHSIMPLE]: null, // Stored in account object (holdingsMappings)
-  [INTEGRATIONS.QUESTRADE]: STORAGE.QUESTRADE_HOLDINGS_FOR_PREFIX,
+  [INTEGRATIONS.QUESTRADE]: null, // Migration disabled - already migrated
   [INTEGRATIONS.CANADALIFE]: null, // No holdings support
   [INTEGRATIONS.ROGERSBANK]: null, // No holdings support
 };

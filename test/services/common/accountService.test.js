@@ -358,38 +358,50 @@ describe('Account Service', () => {
   });
 
   describe('hasLegacyData', () => {
-    test('should return true when legacy data exists', () => {
-      GM_setValue(`${STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX}acc-1`, '{"id": "monarch-1"}');
+    test('should return true when legacy data exists for Rogers Bank', () => {
+      GM_setValue(`${STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX}acc-1`, '{"id": "monarch-1"}');
 
-      expect(hasLegacyData(INTEGRATIONS.CANADALIFE)).toBe(true);
+      expect(hasLegacyData(INTEGRATIONS.ROGERSBANK)).toBe(true);
     });
 
     test('should return false when no legacy data', () => {
-      expect(hasLegacyData(INTEGRATIONS.CANADALIFE)).toBe(false);
+      expect(hasLegacyData(INTEGRATIONS.ROGERSBANK)).toBe(false);
     });
 
     test('should return false for Wealthsimple (already consolidated)', () => {
       expect(hasLegacyData(INTEGRATIONS.WEALTHSIMPLE)).toBe(false);
     });
+
+    test('should return false for Questrade (migration disabled)', () => {
+      // Even with legacy data present, should return false since migration is disabled
+      GM_setValue(`${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}qt-1`, '{"id": "monarch-1"}');
+      expect(hasLegacyData(INTEGRATIONS.QUESTRADE)).toBe(false);
+    });
+
+    test('should return false for CanadaLife (migration disabled)', () => {
+      // Even with legacy data present, should return false since migration is disabled
+      GM_setValue(`${STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX}cl-1`, '{"id": "monarch-1"}');
+      expect(hasLegacyData(INTEGRATIONS.CANADALIFE)).toBe(false);
+    });
   });
 
   describe('migrateFromLegacyStorage', () => {
-    test('should migrate legacy accounts to consolidated structure', () => {
-      // Set up legacy data
+    test('should migrate legacy accounts to consolidated structure for Rogers Bank', () => {
+      // Set up legacy data for Rogers Bank (which still has migration enabled)
       GM_setValue(
-        `${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}qt-123`,
-        JSON.stringify({ id: 'monarch-1', displayName: 'My TFSA' }),
+        `${STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX}rb-123`,
+        JSON.stringify({ id: 'monarch-1', displayName: 'My CC' }),
       );
       GM_setValue(
-        `${STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX}qt-123`,
+        `${STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX}rb-123`,
         '2024-01-10',
       );
 
-      const migrated = migrateFromLegacyStorage(INTEGRATIONS.QUESTRADE);
+      const migrated = migrateFromLegacyStorage(INTEGRATIONS.ROGERSBANK);
 
       expect(migrated).toHaveLength(1);
-      expect(migrated[0].questradeAccount.id).toBe('qt-123');
-      expect(migrated[0].questradeAccount.nickname).toBe('My TFSA');
+      expect(migrated[0].rogersbankAccount.id).toBe('rb-123');
+      expect(migrated[0].rogersbankAccount.nickname).toBe('My CC');
       expect(migrated[0].monarchAccount.id).toBe('monarch-1');
       expect(migrated[0].lastSyncDate).toBe('2024-01-10');
       expect(migrated[0].syncEnabled).toBe(true);
@@ -397,20 +409,30 @@ describe('Account Service', () => {
     });
 
     test('should not migrate if no legacy data', () => {
+      const migrated = migrateFromLegacyStorage(INTEGRATIONS.ROGERSBANK);
+      expect(migrated).toEqual([]);
+    });
+
+    test('should return empty array for Questrade (migration disabled)', () => {
+      // Even with legacy data present, should not migrate
+      GM_setValue(
+        `${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}qt-1`,
+        JSON.stringify({ id: 'monarch-1', displayName: 'TFSA' }),
+      );
+
       const migrated = migrateFromLegacyStorage(INTEGRATIONS.QUESTRADE);
       expect(migrated).toEqual([]);
     });
 
-    test('should save migrated accounts to consolidated storage', () => {
+    test('should return empty array for CanadaLife (migration disabled)', () => {
+      // Even with legacy data present, should not migrate
       GM_setValue(
         `${STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX}cl-1`,
         JSON.stringify({ id: 'monarch-1', displayName: 'RRSP' }),
       );
 
-      migrateFromLegacyStorage(INTEGRATIONS.CANADALIFE);
-
-      const stored = JSON.parse(GM_getValue(STORAGE.CANADALIFE_ACCOUNTS_LIST, '[]'));
-      expect(stored).toHaveLength(1);
+      const migrated = migrateFromLegacyStorage(INTEGRATIONS.CANADALIFE);
+      expect(migrated).toEqual([]);
     });
 
     test('should return empty array for Wealthsimple', () => {
@@ -461,38 +483,41 @@ describe('Account Service', () => {
   });
 
   describe('clearAllAccounts', () => {
+    // Note: Tests use Rogers Bank since it still has legacy migration enabled
+    // Questrade and CanadaLife have migration disabled
+
     beforeEach(() => {
-      // Set up both consolidated and legacy data
+      // Set up both consolidated and legacy data for Rogers Bank
       GM_setValue(
-        STORAGE.QUESTRADE_ACCOUNTS_LIST,
-        JSON.stringify([{ questradeAccount: { id: 'qt-1' } }]),
+        STORAGE.ROGERSBANK_ACCOUNTS_LIST,
+        JSON.stringify([{ rogersbankAccount: { id: 'rb-1' } }]),
       );
       GM_setValue(
-        `${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}qt-1`,
+        `${STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX}rb-1`,
         JSON.stringify({ id: 'monarch-1' }),
       );
-      GM_setValue(`${STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX}qt-1`, '2024-01-10');
+      GM_setValue(`${STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX}rb-1`, '2024-01-10');
     });
 
     test('should clear consolidated storage', () => {
-      clearAllAccounts(INTEGRATIONS.QUESTRADE, false);
+      clearAllAccounts(INTEGRATIONS.ROGERSBANK, false);
 
-      const accounts = JSON.parse(GM_getValue(STORAGE.ACCOUNTS_LIST, '[]'));
+      const accounts = JSON.parse(GM_getValue(STORAGE.ROGERSBANK_ACCOUNTS_LIST, '[]'));
       expect(accounts).toEqual([]);
 
       // Legacy should remain
-      expect(GM_getValue(`${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}qt-1`, null)).not.toBeNull();
+      expect(GM_getValue(`${STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX}rb-1`, null)).not.toBeNull();
     });
 
     test('should clear both consolidated and legacy when includeLegacy=true', () => {
-      clearAllAccounts(INTEGRATIONS.QUESTRADE, true);
+      clearAllAccounts(INTEGRATIONS.ROGERSBANK, true);
 
-      const accounts = JSON.parse(GM_getValue(STORAGE.ACCOUNTS_LIST, '[]'));
+      const accounts = JSON.parse(GM_getValue(STORAGE.ROGERSBANK_ACCOUNTS_LIST, '[]'));
       expect(accounts).toEqual([]);
 
       // Legacy should be cleared
-      expect(GM_getValue(`${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}qt-1`, null)).toBeNull();
-      expect(GM_getValue(`${STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX}qt-1`, null)).toBeNull();
+      expect(GM_getValue(`${STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX}rb-1`, null)).toBeNull();
+      expect(GM_getValue(`${STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX}rb-1`, null)).toBeNull();
     });
   });
 
@@ -515,7 +540,30 @@ describe('Account Service', () => {
       expect(mapping.displayName).toBe('My TFSA');
     });
 
-    test('should fall back to legacy storage when consolidated has no mapping', () => {
+    test('should fall back to legacy storage when consolidated has no mapping for Rogers Bank', () => {
+      // Consolidated storage exists but without monarchAccount
+      // Use Rogers Bank which still has migration enabled
+      const consolidatedData = [{
+        rogersbankAccount: { id: 'rb-1', nickname: 'Rogers CC' },
+        syncEnabled: true,
+        // No monarchAccount
+      }];
+      GM_setValue(STORAGE.ROGERSBANK_ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+
+      // Legacy storage has the mapping
+      GM_setValue(
+        `${STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX}rb-1`,
+        JSON.stringify({ id: 'legacy-monarch', displayName: 'Legacy Account' }),
+      );
+
+      const mapping = getMonarchAccountMapping(INTEGRATIONS.ROGERSBANK, 'rb-1');
+
+      expect(mapping).not.toBeNull();
+      expect(mapping.id).toBe('legacy-monarch');
+      expect(mapping.displayName).toBe('Legacy Account');
+    });
+
+    test('should NOT fall back to legacy storage for Questrade (migration disabled)', () => {
       // Consolidated storage exists but without monarchAccount
       const consolidatedData = [{
         questradeAccount: { id: 'qt-1', nickname: 'TFSA' },
@@ -524,7 +572,7 @@ describe('Account Service', () => {
       }];
       GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
 
-      // Legacy storage has the mapping
+      // Legacy storage has the mapping - but should NOT be used since migration is disabled
       GM_setValue(
         `${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}qt-1`,
         JSON.stringify({ id: 'legacy-monarch', displayName: 'Legacy Account' }),
@@ -532,22 +580,21 @@ describe('Account Service', () => {
 
       const mapping = getMonarchAccountMapping(INTEGRATIONS.QUESTRADE, 'qt-1');
 
-      expect(mapping).not.toBeNull();
-      expect(mapping.id).toBe('legacy-monarch');
-      expect(mapping.displayName).toBe('Legacy Account');
+      // Should return null since migration is disabled and consolidated has no monarchAccount
+      expect(mapping).toBeNull();
     });
 
-    test('should fall back to legacy storage when account not in consolidated', () => {
+    test('should fall back to legacy storage when account not in consolidated for Rogers Bank', () => {
       // Consolidated storage is empty or has different accounts
-      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify([]));
+      GM_setValue(STORAGE.ROGERSBANK_ACCOUNTS_LIST, JSON.stringify([]));
 
-      // Legacy storage has the mapping
+      // Legacy storage has the mapping - Rogers Bank still supports migration
       GM_setValue(
-        `${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}qt-old`,
+        `${STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX}rb-old`,
         JSON.stringify({ id: 'legacy-old', displayName: 'Old Legacy Account' }),
       );
 
-      const mapping = getMonarchAccountMapping(INTEGRATIONS.QUESTRADE, 'qt-old');
+      const mapping = getMonarchAccountMapping(INTEGRATIONS.ROGERSBANK, 'rb-old');
 
       expect(mapping).not.toBeNull();
       expect(mapping.id).toBe('legacy-old');
@@ -618,11 +665,11 @@ describe('Account Service', () => {
       expect(mapping.displayName).toBe('Rogers CC');
     });
 
-    test('should handle legacy CanadaLife fallback', () => {
+    test('should NOT use legacy CanadaLife fallback (migration disabled)', () => {
       // No consolidated storage
       GM_setValue(STORAGE.CANADALIFE_ACCOUNTS_LIST, JSON.stringify([]));
 
-      // Legacy storage has the mapping
+      // Legacy storage has the mapping - but should NOT be used since migration is disabled
       GM_setValue(
         `${STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX}cl-legacy`,
         JSON.stringify({ id: 'monarch-legacy-cl', displayName: 'Legacy CL Account' }),
@@ -630,8 +677,8 @@ describe('Account Service', () => {
 
       const mapping = getMonarchAccountMapping(INTEGRATIONS.CANADALIFE, 'cl-legacy');
 
-      expect(mapping).not.toBeNull();
-      expect(mapping.id).toBe('monarch-legacy-cl');
+      // Should return null since migration is disabled for CanadaLife
+      expect(mapping).toBeNull();
     });
 
     test('should handle invalid JSON in legacy storage gracefully', () => {
@@ -674,37 +721,36 @@ describe('Account Service', () => {
     });
   });
 
-  describe('legacy holdings migration', () => {
-    test('should migrate legacy holdings for Questrade during getAccounts', () => {
+  describe('legacy holdings migration (disabled for Questrade)', () => {
+    // Note: Legacy holdings migration is now disabled for Questrade (LEGACY_HOLDINGS_PREFIXES[QUESTRADE] = null)
+    // These tests verify that legacy holdings are NOT migrated from prefix-based storage
+
+    test('should NOT migrate legacy holdings for Questrade (migration disabled)', () => {
       // Set up consolidated data without holdingsMappings
       const consolidatedData = [
         {
           questradeAccount: { id: 'qt-1', nickname: 'TFSA' },
           monarchAccount: { id: 'monarch-1' },
           syncEnabled: true,
-          // No holdingsMappings field
         },
       ];
       GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
 
-      // Set up legacy holdings storage
+      // Set up legacy holdings storage that should NOT be migrated
       const legacyHoldings = {
         'sec-uuid-1': { securityId: 'sec-1', holdingId: 'hold-1', symbol: 'AAPL' },
-        'sec-uuid-2': { securityId: 'sec-2', holdingId: 'hold-2', symbol: 'GOOGL' },
       };
       GM_setValue(`${STORAGE.QUESTRADE_HOLDINGS_FOR_PREFIX}qt-1`, JSON.stringify(legacyHoldings));
 
-      // Call getAccounts - should trigger holdings migration
+      // Call getAccounts - should NOT trigger holdings migration
       const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
 
       expect(accounts).toHaveLength(1);
-      expect(accounts[0].holdingsMappings).toBeDefined();
-      expect(Object.keys(accounts[0].holdingsMappings)).toHaveLength(2);
-      expect(accounts[0].holdingsMappings['sec-uuid-1'].symbol).toBe('AAPL');
-      expect(accounts[0].holdingsMappings['sec-uuid-2'].symbol).toBe('GOOGL');
+      // Holdings should NOT be migrated since LEGACY_HOLDINGS_PREFIXES[QUESTRADE] is null
+      expect(accounts[0].holdingsMappings).toBeUndefined();
     });
 
-    test('should not overwrite existing holdingsMappings', () => {
+    test('should preserve existing holdingsMappings in consolidated storage', () => {
       // Set up consolidated data WITH holdingsMappings already populated
       const consolidatedData = [
         {
@@ -718,194 +764,98 @@ describe('Account Service', () => {
       ];
       GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
 
-      // Set up legacy holdings that should be ignored
-      const legacyHoldings = {
-        'should-not-appear': { securityId: 'bad', holdingId: 'bad', symbol: 'BAD' },
-      };
-      GM_setValue(`${STORAGE.QUESTRADE_HOLDINGS_FOR_PREFIX}qt-1`, JSON.stringify(legacyHoldings));
-
       // Call getAccounts
       const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
 
+      // Existing holdings should be preserved
       expect(accounts[0].holdingsMappings).toBeDefined();
       expect(Object.keys(accounts[0].holdingsMappings)).toHaveLength(1);
       expect(accounts[0].holdingsMappings['existing-uuid'].symbol).toBe('TSLA');
-      expect(accounts[0].holdingsMappings['should-not-appear']).toBeUndefined();
-    });
-
-    test('should handle JSON string format for legacy holdings', () => {
-      // Set up consolidated data
-      const consolidatedData = [
-        {
-          questradeAccount: { id: 'qt-1', nickname: 'Account' },
-          monarchAccount: { id: 'm-1' },
-          syncEnabled: true,
-        },
-      ];
-      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
-
-      // Set up legacy holdings as JSON string
-      GM_setValue(
-        `${STORAGE.QUESTRADE_HOLDINGS_FOR_PREFIX}qt-1`,
-        JSON.stringify({
-          'uuid-json': { securityId: 'sec-json', holdingId: 'hold-json', symbol: 'MSFT' },
-        }),
-      );
-
-      const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
-
-      expect(accounts[0].holdingsMappings).toBeDefined();
-      expect(accounts[0].holdingsMappings['uuid-json'].symbol).toBe('MSFT');
-    });
-
-    test('should save merged accounts after holdings migration', () => {
-      // Set up consolidated data without holdings
-      const consolidatedData = [
-        {
-          questradeAccount: { id: 'qt-1', nickname: 'Account' },
-          monarchAccount: { id: 'm-1' },
-          syncEnabled: true,
-        },
-      ];
-      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
-
-      // Set up legacy holdings
-      GM_setValue(
-        `${STORAGE.QUESTRADE_HOLDINGS_FOR_PREFIX}qt-1`,
-        JSON.stringify({ 'uuid-1': { securityId: 's1', holdingId: 'h1', symbol: 'AMD' } }),
-      );
-
-      // Trigger migration
-      getAccounts(INTEGRATIONS.QUESTRADE);
-
-      // Verify the consolidated storage was updated
-      const stored = JSON.parse(GM_getValue(STORAGE.ACCOUNTS_LIST, '[]'));
-      expect(stored[0].holdingsMappings).toBeDefined();
-      expect(stored[0].holdingsMappings['uuid-1'].symbol).toBe('AMD');
     });
 
     test('should not migrate holdings for integrations without holdings support', () => {
       // Set up CanadaLife consolidated data
       const consolidatedData = [
         {
-          canadalifAccount: { id: 'cl-1', nickname: 'RRSP' },
+          canadalifeAccount: { id: 'cl-1', nickname: 'RRSP' },
           monarchAccount: { id: 'monarch-cl' },
           syncEnabled: true,
         },
       ];
       GM_setValue(STORAGE.CANADALIFE_ACCOUNTS_LIST, JSON.stringify(consolidatedData));
 
-      // CanadaLife doesn't have holdings prefix, so nothing to migrate
+      // CanadaLife doesn't have holdings support
       const accounts = getAccounts(INTEGRATIONS.CANADALIFE);
 
       expect(accounts).toHaveLength(1);
       expect(accounts[0].holdingsMappings).toBeUndefined();
     });
-
-    test('should handle empty legacy holdings gracefully', () => {
-      // Set up consolidated data
-      const consolidatedData = [
-        {
-          questradeAccount: { id: 'qt-1', nickname: 'Account' },
-          monarchAccount: { id: 'm-1' },
-          syncEnabled: true,
-        },
-      ];
-      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
-
-      // Set up empty legacy holdings
-      GM_setValue(`${STORAGE.QUESTRADE_HOLDINGS_FOR_PREFIX}qt-1`, JSON.stringify({}));
-
-      const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
-
-      // Should not add empty holdingsMappings
-      expect(accounts[0].holdingsMappings).toBeUndefined();
-    });
-
-    test('should handle invalid JSON in legacy holdings gracefully', () => {
-      // Set up consolidated data
-      const consolidatedData = [
-        {
-          questradeAccount: { id: 'qt-1', nickname: 'Account' },
-          monarchAccount: { id: 'm-1' },
-          syncEnabled: true,
-        },
-      ];
-      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
-
-      // Set up invalid JSON in legacy holdings
-      GM_setValue(`${STORAGE.QUESTRADE_HOLDINGS_FOR_PREFIX}qt-1`, 'invalid json');
-
-      // Should not throw, just skip migration
-      const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
-
-      expect(accounts).toHaveLength(1);
-      expect(accounts[0].holdingsMappings).toBeUndefined();
-    });
-
-    test('should migrate holdings during full legacy migration', () => {
-      // Set up legacy mapping data
-      GM_setValue(
-        `${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}qt-new`,
-        JSON.stringify({ id: 'monarch-new', displayName: 'New TFSA' }),
-      );
-
-      // Set up legacy holdings
-      GM_setValue(
-        `${STORAGE.QUESTRADE_HOLDINGS_FOR_PREFIX}qt-new`,
-        JSON.stringify({
-          'uuid-a': { securityId: 'sa', holdingId: 'ha', symbol: 'NVDA' },
-        }),
-      );
-
-      // Call getAccounts - should trigger full migration including holdings
-      const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
-
-      expect(accounts).toHaveLength(1);
-      expect(accounts[0].questradeAccount.id).toBe('qt-new');
-      expect(accounts[0].holdingsMappings).toBeDefined();
-      expect(accounts[0].holdingsMappings['uuid-a'].symbol).toBe('NVDA');
-    });
   });
 
   describe('auto-migration on getAccounts', () => {
-    test('should auto-migrate when consolidated is empty but legacy exists', () => {
-      // Set up legacy data
+    test('should auto-migrate when consolidated is empty but legacy exists for Rogers Bank', () => {
+      // Set up legacy data for Rogers Bank (which still has migration enabled)
+      GM_setValue(
+        `${STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX}rb-1`,
+        JSON.stringify({ id: 'monarch-1', displayName: 'Rogers CC' }),
+      );
+
+      // Call getAccounts - should trigger migration
+      const accounts = getAccounts(INTEGRATIONS.ROGERSBANK);
+
+      expect(accounts).toHaveLength(1);
+      expect(accounts[0].rogersbankAccount.id).toBe('rb-1');
+
+      // Verify consolidated storage was populated
+      const stored = JSON.parse(GM_getValue(STORAGE.ROGERSBANK_ACCOUNTS_LIST, '[]'));
+      expect(stored).toHaveLength(1);
+    });
+
+    test('should not re-migrate if consolidated already has data', () => {
+      // Set up both for Rogers Bank
+      GM_setValue(
+        STORAGE.ROGERSBANK_ACCOUNTS_LIST,
+        JSON.stringify([{
+          rogersbankAccount: { id: 'rb-existing', nickname: 'Existing' },
+          monarchAccount: { id: 'monarch-existing' },
+        }]),
+      );
+      GM_setValue(
+        `${STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX}rb-legacy`,
+        JSON.stringify({ id: 'monarch-legacy' }),
+      );
+
+      const accounts = getAccounts(INTEGRATIONS.ROGERSBANK);
+
+      // Should return existing consolidated data, not migrate legacy
+      expect(accounts).toHaveLength(1);
+      expect(accounts[0].rogersbankAccount.id).toBe('rb-existing');
+    });
+
+    test('should NOT auto-migrate for Questrade (migration disabled)', () => {
+      // Set up legacy data that should NOT be migrated
+      GM_setValue(
+        `${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}qt-1`,
+        JSON.stringify({ id: 'monarch-1', displayName: 'TFSA' }),
+      );
+
+      // Call getAccounts - should NOT trigger migration
+      const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
+
+      expect(accounts).toHaveLength(0);
+    });
+
+    test('should NOT auto-migrate for CanadaLife (migration disabled)', () => {
+      // Set up legacy data that should NOT be migrated
       GM_setValue(
         `${STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX}cl-1`,
         JSON.stringify({ id: 'monarch-1', displayName: 'RRSP' }),
       );
 
-      // Call getAccounts - should trigger migration
+      // Call getAccounts - should NOT trigger migration
       const accounts = getAccounts(INTEGRATIONS.CANADALIFE);
 
-      expect(accounts).toHaveLength(1);
-      expect(accounts[0].canadalifeAccount.id).toBe('cl-1');
-
-      // Verify consolidated storage was populated
-      const stored = JSON.parse(GM_getValue(STORAGE.CANADALIFE_ACCOUNTS_LIST, '[]'));
-      expect(stored).toHaveLength(1);
-    });
-
-    test('should not re-migrate if consolidated already has data', () => {
-      // Set up both
-      GM_setValue(
-        STORAGE.CANADALIFE_ACCOUNTS_LIST,
-        JSON.stringify([{
-          canadalifeAccount: { id: 'cl-existing', nickname: 'Existing' },
-          monarchAccount: { id: 'monarch-existing' },
-        }]),
-      );
-      GM_setValue(
-        `${STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX}cl-legacy`,
-        JSON.stringify({ id: 'monarch-legacy' }),
-      );
-
-      const accounts = getAccounts(INTEGRATIONS.CANADALIFE);
-
-      // Should return existing consolidated data, not migrate legacy
-      expect(accounts).toHaveLength(1);
-      expect(accounts[0].canadalifeAccount.id).toBe('cl-existing');
+      expect(accounts).toHaveLength(0);
     });
   });
 
@@ -922,26 +872,23 @@ describe('Account Service', () => {
       ];
       GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(staleRawCache));
 
-      // Also set up legacy mapping data that should be migrated
+      // Also set up legacy mapping data - but since Questrade migration is disabled,
+      // this will NOT be migrated after stale cache is cleared
       GM_setValue(
         `${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}qt-uuid-1`,
         JSON.stringify({ id: 'monarch-1', displayName: 'Margin Account' }),
       );
 
-      // Call getAccounts - should detect stale cache, clear it, and migrate legacy
+      // Call getAccounts - should detect stale cache and clear it
+      // But since Questrade migration is disabled, legacy data won't be migrated
       const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
 
-      // Should have migrated from legacy, not returned stale cache
-      expect(accounts).toHaveLength(1);
-      expect(accounts[0].questradeAccount.id).toBe('qt-uuid-1');
-      expect(accounts[0].monarchAccount.id).toBe('monarch-1');
+      // Should return empty since migration is disabled and stale cache was cleared
+      expect(accounts).toHaveLength(0);
 
       // Verify the stale cache was cleared
       const stored = JSON.parse(GM_getValue(STORAGE.ACCOUNTS_LIST, '[]'));
-      expect(stored).toHaveLength(1);
-      // Should be consolidated format, not raw cache
-      expect(stored[0].questradeAccount).toBeDefined();
-      expect(stored[0].key).toBeUndefined();
+      expect(stored).toHaveLength(0);
     });
 
     test('should not clear valid consolidated data for Questrade', () => {
@@ -1017,29 +964,77 @@ describe('Account Service', () => {
   });
 
   describe('legacy uploaded transactions migration', () => {
-    test('should migrate legacy uploaded orders for Questrade during full migration', () => {
-      // Set up legacy mapping data
+    // Note: Questrade transaction migration is now disabled (LEGACY_UPLOADED_TRANSACTIONS_PREFIXES[QUESTRADE] = null)
+    // Tests use Rogers Bank which still has migration enabled
+
+    test('should migrate legacy uploaded refs for Rogers Bank during full migration', () => {
+      // Set up legacy mapping data for Rogers Bank (which still has migration enabled)
+      GM_setValue(
+        `${STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX}rb-uuid-1`,
+        JSON.stringify({ id: 'monarch-1', displayName: 'Rogers CC' }),
+      );
+      // Set up legacy uploaded refs (array of strings)
+      GM_setValue(
+        `${STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX}rb-uuid-1`,
+        ['ref-1', 'ref-2', 'ref-3'],
+      );
+
+      // Call getAccounts - should trigger migration including transactions
+      const accounts = getAccounts(INTEGRATIONS.ROGERSBANK);
+
+      expect(accounts).toHaveLength(1);
+      expect(accounts[0].uploadedTransactions).toHaveLength(3);
+      expect(accounts[0].uploadedTransactions[0]).toEqual({ id: 'ref-1', date: null });
+      expect(accounts[0].uploadedTransactions[1]).toEqual({ id: 'ref-2', date: null });
+      expect(accounts[0].uploadedTransactions[2]).toEqual({ id: 'ref-3', date: null });
+    });
+
+    test('should NOT migrate legacy transactions for Questrade (migration disabled)', () => {
+      // Set up legacy mapping data that should NOT be migrated
       GM_setValue(
         `${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}qt-uuid-1`,
         JSON.stringify({ id: 'monarch-1', displayName: 'TFSA' }),
       );
-      // Set up legacy uploaded orders (array of strings)
+      // Set up legacy uploaded orders that should NOT be migrated
       GM_setValue(
         `${STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX}qt-uuid-1`,
         ['order-1', 'order-2', 'order-3'],
       );
 
-      // Call getAccounts - should trigger migration including transactions
+      // Call getAccounts - should NOT trigger migration
       const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
 
-      expect(accounts).toHaveLength(1);
-      expect(accounts[0].uploadedTransactions).toHaveLength(3);
-      expect(accounts[0].uploadedTransactions[0]).toEqual({ id: 'order-1', date: null });
-      expect(accounts[0].uploadedTransactions[1]).toEqual({ id: 'order-2', date: null });
-      expect(accounts[0].uploadedTransactions[2]).toEqual({ id: 'order-3', date: null });
+      // Should return empty because migration is disabled for Questrade
+      expect(accounts).toHaveLength(0);
     });
 
-    test('should merge legacy transactions into already-migrated accounts', () => {
+    test('should merge legacy transactions into already-migrated accounts for Rogers Bank', () => {
+      // Set up already-migrated consolidated data WITHOUT uploadedTransactions
+      const consolidatedData = [
+        {
+          rogersbankAccount: { id: 'rb-uuid-1', nickname: 'Rogers CC' },
+          monarchAccount: { id: 'monarch-1' },
+          syncEnabled: true,
+          // Note: no uploadedTransactions field
+        },
+      ];
+      GM_setValue(STORAGE.ROGERSBANK_ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+
+      // Set up legacy uploaded refs that need to be merged
+      GM_setValue(
+        `${STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX}rb-uuid-1`,
+        ['ref-a', 'ref-b'],
+      );
+
+      // Call getAccounts - should merge legacy transactions
+      const accounts = getAccounts(INTEGRATIONS.ROGERSBANK);
+
+      expect(accounts).toHaveLength(1);
+      expect(accounts[0].uploadedTransactions).toHaveLength(2);
+      expect(accounts[0].uploadedTransactions[0].id).toBe('ref-a');
+    });
+
+    test('should NOT merge legacy transactions for Questrade (migration disabled)', () => {
       // Set up already-migrated consolidated data WITHOUT uploadedTransactions
       const consolidatedData = [
         {
@@ -1051,40 +1046,40 @@ describe('Account Service', () => {
       ];
       GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
 
-      // Set up legacy uploaded orders that need to be merged
+      // Set up legacy uploaded orders that should NOT be merged (migration disabled)
       GM_setValue(
         `${STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX}qt-uuid-1`,
         ['order-a', 'order-b'],
       );
 
-      // Call getAccounts - should merge legacy transactions
+      // Call getAccounts - should NOT merge legacy transactions
       const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
 
       expect(accounts).toHaveLength(1);
-      expect(accounts[0].uploadedTransactions).toHaveLength(2);
-      expect(accounts[0].uploadedTransactions[0].id).toBe('order-a');
+      // uploadedTransactions should be undefined since migration is disabled
+      expect(accounts[0].uploadedTransactions).toBeUndefined();
     });
 
     test('should not overwrite existing uploadedTransactions', () => {
       // Set up consolidated data WITH uploadedTransactions already populated
       const consolidatedData = [
         {
-          questradeAccount: { id: 'qt-uuid-1', nickname: 'TFSA' },
+          rogersbankAccount: { id: 'rb-uuid-1', nickname: 'Rogers CC' },
           monarchAccount: { id: 'monarch-1' },
           syncEnabled: true,
           uploadedTransactions: [{ id: 'existing-1', date: '2024-01-10' }],
         },
       ];
-      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+      GM_setValue(STORAGE.ROGERSBANK_ACCOUNTS_LIST, JSON.stringify(consolidatedData));
 
       // Set up legacy data that should be ignored
       GM_setValue(
-        `${STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX}qt-uuid-1`,
+        `${STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX}rb-uuid-1`,
         ['should-not-appear'],
       );
 
       // Call getAccounts - should NOT overwrite existing transactions
-      const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
+      const accounts = getAccounts(INTEGRATIONS.ROGERSBANK);
 
       expect(accounts[0].uploadedTransactions).toHaveLength(1);
       expect(accounts[0].uploadedTransactions[0].id).toBe('existing-1');
@@ -1128,73 +1123,73 @@ describe('Account Service', () => {
       expect(accounts[0].uploadedTransactions).toBeUndefined();
     });
 
-    test('should save merged accounts after migration', () => {
-      // Set up consolidated data without transactions
+    test('should save merged accounts after migration for Rogers Bank', () => {
+      // Set up consolidated data without transactions for Rogers Bank
       const consolidatedData = [
         {
-          questradeAccount: { id: 'qt-1', nickname: 'Account' },
+          rogersbankAccount: { id: 'rb-1', nickname: 'Rogers CC' },
           monarchAccount: { id: 'm-1' },
           syncEnabled: true,
         },
       ];
-      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+      GM_setValue(STORAGE.ROGERSBANK_ACCOUNTS_LIST, JSON.stringify(consolidatedData));
 
       // Set up legacy transactions
-      GM_setValue(`${STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX}qt-1`, ['tx-1']);
+      GM_setValue(`${STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX}rb-1`, ['tx-1']);
 
       // Trigger merge
-      getAccounts(INTEGRATIONS.QUESTRADE);
+      getAccounts(INTEGRATIONS.ROGERSBANK);
 
       // Verify the consolidated storage was updated
-      const stored = JSON.parse(GM_getValue(STORAGE.ACCOUNTS_LIST, '[]'));
+      const stored = JSON.parse(GM_getValue(STORAGE.ROGERSBANK_ACCOUNTS_LIST, '[]'));
       expect(stored[0].uploadedTransactions).toHaveLength(1);
       expect(stored[0].uploadedTransactions[0].id).toBe('tx-1');
     });
 
     test('should handle JSON string format for legacy transactions', () => {
-      // Set up consolidated data
+      // Set up consolidated data for Rogers Bank
       const consolidatedData = [
         {
-          questradeAccount: { id: 'qt-1', nickname: 'Account' },
+          rogersbankAccount: { id: 'rb-1', nickname: 'Rogers CC' },
           monarchAccount: { id: 'm-1' },
           syncEnabled: true,
         },
       ];
-      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+      GM_setValue(STORAGE.ROGERSBANK_ACCOUNTS_LIST, JSON.stringify(consolidatedData));
 
       // Set up legacy transactions as JSON string instead of direct array
       GM_setValue(
-        `${STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX}qt-1`,
+        `${STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX}rb-1`,
         JSON.stringify(['tx-json-1', 'tx-json-2']),
       );
 
-      const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
+      const accounts = getAccounts(INTEGRATIONS.ROGERSBANK);
 
       expect(accounts[0].uploadedTransactions).toHaveLength(2);
       expect(accounts[0].uploadedTransactions[0].id).toBe('tx-json-1');
     });
 
     test('should handle object format for legacy transactions', () => {
-      // Set up consolidated data
+      // Set up consolidated data for Rogers Bank
       const consolidatedData = [
         {
-          questradeAccount: { id: 'qt-1', nickname: 'Account' },
+          rogersbankAccount: { id: 'rb-1', nickname: 'Rogers CC' },
           monarchAccount: { id: 'm-1' },
           syncEnabled: true,
         },
       ];
-      GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
+      GM_setValue(STORAGE.ROGERSBANK_ACCOUNTS_LIST, JSON.stringify(consolidatedData));
 
       // Set up legacy transactions already in object format
       GM_setValue(
-        `${STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX}qt-1`,
+        `${STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX}rb-1`,
         [
           { id: 'tx-obj-1', date: '2024-01-15' },
           { id: 'tx-obj-2', date: '2024-01-16' },
         ],
       );
 
-      const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
+      const accounts = getAccounts(INTEGRATIONS.ROGERSBANK);
 
       expect(accounts[0].uploadedTransactions).toHaveLength(2);
       expect(accounts[0].uploadedTransactions[0]).toEqual({ id: 'tx-obj-1', date: '2024-01-15' });
