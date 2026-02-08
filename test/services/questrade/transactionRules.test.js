@@ -139,7 +139,7 @@ describe('Questrade Transaction Rules', () => {
   });
 
   describe('formatTransactionNotes', () => {
-    test('formats notes with all fields (normalized data)', () => {
+    test('formats notes with description and settlement date (normalized data)', () => {
       const normalized = {
         description: 'Dividend payment',
         transactionDate: '2025-01-15',
@@ -147,7 +147,7 @@ describe('Questrade Transaction Rules', () => {
       };
       const notes = formatTransactionNotes(normalized);
       expect(notes).toContain('Dividend payment');
-      expect(notes).toContain('Transaction Date: 2025-01-15');
+      expect(notes).not.toContain('Transaction Date');
       expect(notes).toContain('Settlement Date: 2025-01-17');
     });
 
@@ -159,7 +159,7 @@ describe('Questrade Transaction Rules', () => {
       };
       const notes = formatTransactionNotes(normalized);
       expect(notes).toContain('Test');
-      expect(notes).toContain('Transaction Date: 2025-01-15');
+      expect(notes).not.toContain('Transaction Date');
       expect(notes).not.toContain('Settlement Date');
     });
 
@@ -170,7 +170,7 @@ describe('Questrade Transaction Rules', () => {
       };
       const notes = formatTransactionNotes(normalized);
       expect(notes).toContain('From transaction');
-      expect(notes).toContain('Transaction Date: 2025-01-10');
+      expect(notes).not.toContain('Transaction Date');
     });
   });
 
@@ -193,7 +193,7 @@ describe('Questrade Transaction Rules', () => {
       expect(notes).toContain('Exchange Rate: 1.35');
       expect(notes).toContain('From: 100 USD');
       expect(notes).toContain('To: 135 CAD');
-      expect(notes).toContain('Transaction Date: 2025-01-15');
+      expect(notes).not.toContain('Transaction Date');
       expect(notes).toContain('Settlement Date: 2025-01-17');
     });
 
@@ -205,6 +205,7 @@ describe('Questrade Transaction Rules', () => {
       const notes = formatFxNotes(normalized);
       expect(notes).toContain('Test');
       expect(notes).not.toContain('Exchange Rate');
+      expect(notes).not.toContain('Transaction Date');
     });
   });
 

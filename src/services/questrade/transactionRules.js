@@ -139,7 +139,7 @@ export function formatOriginalStatement(transactionType, action, symbol = null) 
 }
 
 /**
- * Format transaction notes with description and dates
+ * Format transaction notes with description and settlement date
  * Settlement date is only included if it differs from transaction date
  *
  * @param {Object} normalized - Normalized transaction data
@@ -153,12 +153,7 @@ export function formatTransactionNotes(normalized) {
     lines.push(normalized.description);
   }
 
-  // Line 2: Transaction Date
-  if (normalized.transactionDate) {
-    lines.push(`Transaction Date: ${normalized.transactionDate}`);
-  }
-
-  // Line 3: Settlement Date - only if different from transaction date
+  // Line 2: Settlement Date - only if different from transaction date
   if (normalized.settlementDate && normalized.settlementDate !== normalized.transactionDate) {
     lines.push(`Settlement Date: ${normalized.settlementDate}`);
   }
@@ -168,7 +163,7 @@ export function formatTransactionNotes(normalized) {
 
 /**
  * Format notes for dividend transactions
- * Includes description, dividend per share, and dates (settlement only if different)
+ * Includes description, dividend per share, and settlement date (only if different from transaction date)
  *
  * @param {Object} normalized - Normalized transaction data
  * @returns {string} Formatted notes string
@@ -190,12 +185,7 @@ export function formatDividendNotes(normalized) {
     }
   }
 
-  // Line 3: Transaction Date
-  if (normalized.transactionDate) {
-    lines.push(`Transaction Date: ${normalized.transactionDate}`);
-  }
-
-  // Line 4: Settlement Date - only if different from transaction date
+  // Line 3: Settlement Date - only if different from transaction date
   if (normalized.settlementDate && normalized.settlementDate !== normalized.transactionDate) {
     lines.push(`Settlement Date: ${normalized.settlementDate}`);
   }
@@ -205,7 +195,7 @@ export function formatDividendNotes(normalized) {
 
 /**
  * Format notes for dividend reinvestment (DRIP) transactions
- * Includes description, quantity, price per share, and dates (settlement only if different)
+ * Includes description, quantity, price per share, and settlement date (only if different from transaction date)
  *
  * @param {Object} normalized - Normalized transaction data
  * @returns {string} Formatted notes string
@@ -235,12 +225,7 @@ export function formatDividendReinvestmentNotes(normalized) {
     }
   }
 
-  // Line 4: Transaction Date
-  if (normalized.transactionDate) {
-    lines.push(`Transaction Date: ${normalized.transactionDate}`);
-  }
-
-  // Line 5: Settlement Date - only if different from transaction date
+  // Line 4: Settlement Date - only if different from transaction date
   if (normalized.settlementDate && normalized.settlementDate !== normalized.transactionDate) {
     lines.push(`Settlement Date: ${normalized.settlementDate}`);
   }
@@ -250,7 +235,7 @@ export function formatDividendReinvestmentNotes(normalized) {
 
 /**
  * Format notes for transactions with quantity (transfers, splits, journalling)
- * Includes description, quantity, and dates (settlement only if different)
+ * Includes description, quantity, price, and settlement date (only if different from transaction date)
  *
  * @param {Object} normalized - Normalized transaction data
  * @returns {string} Formatted notes string
@@ -280,12 +265,7 @@ export function formatQuantityNotes(normalized) {
     }
   }
 
-  // Line 4: Transaction Date
-  if (normalized.transactionDate) {
-    lines.push(`Transaction Date: ${normalized.transactionDate}`);
-  }
-
-  // Line 5: Settlement Date - only if different from transaction date
+  // Line 4: Settlement Date - only if different from transaction date
   if (normalized.settlementDate && normalized.settlementDate !== normalized.transactionDate) {
     lines.push(`Settlement Date: ${normalized.settlementDate}`);
   }
@@ -325,11 +305,6 @@ export function formatFxNotes(normalized) {
     if (fxToAmount && fxToCurrency) {
       lines.push(`To: ${fxToAmount} ${fxToCurrency}`);
     }
-  }
-
-  // Transaction date
-  if (normalized.transactionDate) {
-    lines.push(`Transaction Date: ${normalized.transactionDate}`);
   }
 
   // Settlement date - only if different from transaction date
