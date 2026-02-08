@@ -8,7 +8,7 @@ import { STORAGE } from '../../core/config';
 import stateManager from '../../core/state';
 import questradeApi from '../../api/questrade';
 import toast from '../toast';
-import uploadButton from './components/uploadButton';
+import uploadButton, { createTestingSection } from './components/uploadButton';
 import { showSettingsModal } from '../components/settingsModal';
 import { createMonarchLoginLink } from '../components/monarchLoginLink';
 
@@ -565,6 +565,12 @@ export async function initAllAccountsUI() {
     const bulkBtn = uploadButton.createBulkUploadButton(accounts);
     container.appendChild(bulkBtn);
 
+    // Add testing section (only visible in Development Mode)
+    const testingSection = createTestingSection();
+    if (testingSection) {
+      container.appendChild(testingSection);
+    }
+
     debugLog('All accounts UI initialized');
   } catch (error) {
     debugLog('Error initializing all accounts UI:', error);
@@ -590,8 +596,41 @@ export async function initUI() {
   }
 }
 
+/**
+ * Refreshes the Questrade UI by re-initializing the testing section
+ * Call this when Development Mode is toggled to apply changes immediately
+ */
+export function refreshQuestradeUI() {
+  try {
+    const container = document.getElementById('balance-uploader-container');
+    if (!container) {
+      debugLog('Questrade container not found, cannot refresh');
+      return false;
+    }
+
+    // Find and remove the existing testing section
+    const existingTestingSection = container.querySelector('#questrade-testing-section');
+    if (existingTestingSection) {
+      existingTestingSection.remove();
+    }
+
+    // Re-create the testing section (which will now reflect the current Development Mode state)
+    const testingSection = createTestingSection();
+    if (testingSection) {
+      container.appendChild(testingSection);
+    }
+
+    debugLog('Questrade UI refreshed');
+    return true;
+  } catch (error) {
+    debugLog('Error refreshing Questrade UI:', error);
+    return false;
+  }
+}
+
 export default {
   initUI,
   createButtonContainer,
   updateStatusIndicators,
+  refreshQuestradeUI,
 };

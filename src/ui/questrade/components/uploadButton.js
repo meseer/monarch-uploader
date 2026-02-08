@@ -4,11 +4,13 @@
  */
 
 import { debugLog } from '../../../core/utils';
+import { STORAGE } from '../../../core/config';
 import stateManager from '../../../core/state';
 import toast from '../../toast';
 import { getDateRange, processAccountBalanceHistory } from '../../../services/questrade/account';
 import { ensureMonarchAuthentication } from '../../components/monarchLoginLink';
 import { syncAllAccountsToMonarch } from '../../../services/questrade/sync';
+import { uploadAllAccountsActivityToMonarch } from '../../../services/questrade/transactions';
 
 /**
  * Creates a styled button
@@ -229,10 +231,132 @@ export function createBulkUploadButton(accounts) {
   }, { color: '#17a2b8' });
 }
 
+/**
+ * Creates a testing section with development-only features
+ * Only visible when Development Mode is enabled
+ * @returns {HTMLElement|null} Testing section container or null if not in development mode
+ */
+export function createTestingSection() {
+  // Only show testing section when Development Mode is enabled
+  const isDevelopmentMode = GM_getValue(STORAGE.DEVELOPMENT_MODE, false);
+  if (!isDevelopmentMode) {
+    return null;
+  }
+
+  // Create collapsible testing section
+  const testingSection = document.createElement('div');
+  testingSection.id = 'questrade-testing-section';
+  testingSection.style.cssText = `
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    margin: 10px 0;
+    background-color: #fafafa;
+  `;
+
+  // Create toggle header for testing section
+  const testingHeader = document.createElement('div');
+  testingHeader.id = 'questrade-testing-header';
+  testingHeader.style.cssText = `
+    padding: 8px 12px;
+    background-color: #f0f0f0;
+    border-bottom: 1px solid #ddd;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    font-weight: 500;
+    color: #666;
+  `;
+
+  const testingTitle = document.createElement('span');
+  testingTitle.id = 'questrade-testing-title';
+  testingTitle.textContent = '🧪 Testing (for development only)';
+
+  const testingToggle = document.createElement('span');
+  testingToggle.id = 'questrade-testing-toggle';
+  testingToggle.textContent = '▼';
+  testingToggle.style.cssText = 'transition: transform 0.2s ease; font-size: 12px; transform: rotate(-90deg);';
+
+  testingHeader.appendChild(testingTitle);
+  testingHeader.appendChild(testingToggle);
+
+  // Create collapsible content container
+  const testingContent = document.createElement('div');
+  testingContent.id = 'questrade-testing-content';
+  testingContent.style.cssText = `
+    padding: 12px;
+    display: none;
+  `;
+
+  // Create description
+  const description = document.createElement('div');
+  description.id = 'questrade-testing-description';
+  description.style.cssText = `
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 12px;
+    padding: 8px;
+    background-color: #fff3cd;
+    border: 1px solid #ffeaa7;
+    border-radius: 4px;
+  `;
+  description.textContent = 'Upload all activity transactions (dividends, fees, deposits, etc.) for all Questrade accounts. This fetches the complete history and may take several minutes.';
+  testingContent.appendChild(description);
+
+  // Create Upload All Activity button
+  const uploadAllActivityButton = createButton('Upload All Activity', async () => {
+    // Check Monarch authentication before proceeding
+    const authenticated = await ensureMonarchAuthentication(null, 'upload all activity');
+    if (!authenticated) {
+      return; // User cancelled authentication
+    }
+
+    try {
+      // Disable button while uploading
+      uploadAllActivityButton.disabled = true;
+      uploadAllActivityButton.textContent = 'Uploading...';
+      uploadAllActivityButton.style.opacity = '0.6';
+      uploadAllActivityButton.style.cursor = 'not-allowed';
+
+      debugLog('Starting upload all activity for all Questrade accounts...');
+
+      // Call the comprehensive upload function
+      await uploadAllAccountsActivityToMonarch();
+    } catch (error) {
+      debugLog('Error in upload all activity:', error);
+      toast.show(`Upload failed: ${error.message}`, 'error');
+    } finally {
+      // Re-enable button
+      uploadAllActivityButton.disabled = false;
+      uploadAllActivityButton.textContent = 'Upload All Activity';
+      uploadAllActivityButton.style.opacity = '1';
+      uploadAllActivityButton.style.cursor = 'pointer';
+    }
+  }, { color: '#6c757d', id: 'questrade-upload-all-activity-btn' }); // Gray color to distinguish from primary actions
+
+  testingContent.appendChild(uploadAllActivityButton);
+
+  // Add toggle functionality
+  testingHeader.addEventListener('click', () => {
+    const isCollapsed = testingContent.style.display === 'none';
+    testingContent.style.display = isCollapsed ? 'block' : 'none';
+    testingToggle.style.transform = isCollapsed ? 'rotate(0deg)' : 'rotate(-90deg)';
+  });
+
+  // Assemble testing section
+  testingSection.appendChild(testingHeader);
+  testingSection.appendChild(testingContent);
+
+  return testingSection;
+}
+
 export default {
   createButton,
   createDatePicker,
   createButtonGroup,
   createSingleAccountUploadButton,
   createBulkUploadButton,
+  createTestingSection,
 };

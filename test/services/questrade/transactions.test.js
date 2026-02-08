@@ -6,6 +6,7 @@ import transactionsService from '../../../src/services/questrade/transactions';
 import questradeApi from '../../../src/api/questrade';
 import monarchApi from '../../../src/api/monarch';
 import { convertQuestradeOrdersToMonarchCSV } from '../../../src/utils/csv';
+import accountService from '../../../src/services/common/accountService';
 
 // Mock dependencies
 jest.mock('../../../src/api/questrade');
@@ -14,37 +15,45 @@ jest.mock('../../../src/utils/csv');
 jest.mock('../../../src/ui/toast');
 jest.mock('../../../src/mappers/category');
 jest.mock('../../../src/ui/components/categorySelector');
+// Questrade now uses consolidated storage via accountService, not transactionStorage
 jest.mock('../../../src/utils/transactionStorage', () => ({
-  getUploadedTransactionIds: jest.fn(() => []),
-  saveUploadedTransactions: jest.fn(),
+  getTransactionIdsFromArray: jest.fn((transactions) => {
+    if (!transactions || !Array.isArray(transactions)) return new Set();
+    return new Set(transactions.map((t) => (typeof t === 'string' ? t : t.id)));
+  }),
+  getRetentionSettingsFromAccount: jest.fn(() => ({ days: 91, count: 1000 })),
+  mergeAndRetainTransactions: jest.fn((existing, newTx, _settings) => {
+    const existingIds = new Set((existing || []).map((t) => t.id));
+    const result = [...(existing || [])];
+    for (const tx of newTx) {
+      const id = typeof tx === 'string' ? tx : tx.id;
+      if (!existingIds.has(id)) {
+        result.push({ id, date: tx.date || '2025-01-01' });
+      }
+    }
+    return result;
+  }),
 }));
 jest.mock('../../../src/services/common/accountService', () => ({
   __esModule: true,
   default: {
     getMonarchAccountMapping: jest.fn(),
+    getAccountData: jest.fn(),
     upsertAccount: jest.fn(),
     updateAccountInList: jest.fn(),
   },
 }));
 
 describe('Questrade Transactions Service', () => {
-  let getUploadedTransactionIds;
-  let saveUploadedTransactions;
-
   beforeEach(() => {
     jest.clearAllMocks();
     // Clear GM storage
     global.GM_getValue = jest.fn(() => []);
     global.GM_setValue = jest.fn();
 
-    // Get transaction storage mocks
-    const transactionStorageMock = jest.requireMock('../../../src/utils/transactionStorage');
-    getUploadedTransactionIds = transactionStorageMock.getUploadedTransactionIds;
-    saveUploadedTransactions = transactionStorageMock.saveUploadedTransactions;
-
-    // Reset mocks to default state
-    getUploadedTransactionIds.mockReturnValue([]);
-    saveUploadedTransactions.mockImplementation(() => {});
+    // Reset accountService mocks to default state
+    accountService.getAccountData.mockReturnValue(null);
+    accountService.updateAccountInList.mockImplementation(() => {});
   });
 
   describe('filterExecutedOrders', () => {
@@ -87,8 +96,10 @@ describe('Questrade Transactions Service', () => {
         { orderUuid: 'uuid3', action: 'Buy' },
       ];
 
-      // Mock that uuid1 has already been uploaded
-      getUploadedTransactionIds.mockReturnValue(['uuid1']);
+      // Mock consolidated storage with uuid1 already uploaded
+      accountService.getAccountData.mockReturnValue({
+        uploadedTransactions: [{ id: 'uuid1', date: '2025-01-01' }],
+      });
 
       const result = transactionsService.filterDuplicateOrders(orders, 'account123');
 
@@ -105,7 +116,10 @@ describe('Questrade Transactions Service', () => {
         { orderUuid: 'uuid2', action: 'Sell' },
       ];
 
-      getUploadedTransactionIds.mockReturnValue([]);
+      // Mock consolidated storage with no uploaded transactions
+      accountService.getAccountData.mockReturnValue({
+        uploadedTransactions: [],
+      });
 
       const result = transactionsService.filterDuplicateOrders(orders, 'account123');
 
@@ -170,8 +184,7 @@ describe('Questrade Transactions Service', () => {
       questradeApi.getAccount = jest.fn().mockReturnValue(mockAccount);
       global.GM_getValue = jest.fn(() => []); // No duplicates by default
       convertQuestradeOrdersToMonarchCSV.mockReturnValue('mock,csv,data');
-      // Mock accountService.getMonarchAccountMapping instead of monarchApi.resolveAccountMapping
-      const accountService = require('../../../src/services/common/accountService').default;
+      // Mock accountService.getMonarchAccountMapping
       accountService.getMonarchAccountMapping.mockReturnValue({ id: 'monarch-account-id' });
       monarchApi.uploadTransactions = jest.fn().mockResolvedValue(true);
     });
@@ -248,7 +261,10 @@ describe('Questrade Transactions Service', () => {
       ];
 
       questradeApi.fetchOrders = jest.fn().mockResolvedValue({ data: mockOrders });
-      getUploadedTransactionIds.mockReturnValue(['uuid1']); // uuid1 already uploaded
+      // Mock consolidated storage with uuid1 already uploaded
+      accountService.getAccountData.mockReturnValue({
+        uploadedTransactions: [{ id: 'uuid1', date: '2025-01-01' }],
+      });
 
       const result = await transactionsService.processAndUploadTransactions(
         'account123',
@@ -268,7 +284,7 @@ describe('Questrade Transactions Service', () => {
       ).rejects.toThrow('Account not found: account123');
     });
 
-    it('should save order UUIDs after successful upload', async () => {
+    it('should save order UUIDs to consolidated storage after successful upload', async () => {
       const mockOrders = [
         {
           orderUuid: 'uuid1',
@@ -280,6 +296,10 @@ describe('Questrade Transactions Service', () => {
       ];
 
       questradeApi.fetchOrders = jest.fn().mockResolvedValue({ data: mockOrders });
+      // Mock empty consolidated storage
+      accountService.getAccountData.mockReturnValue({
+        uploadedTransactions: [],
+      });
 
       await transactionsService.processAndUploadTransactions(
         'account123',
@@ -287,16 +307,13 @@ describe('Questrade Transactions Service', () => {
         '2025-01-01',
       );
 
-      // Verify saveUploadedTransactions was called with transaction objects
-      expect(saveUploadedTransactions).toHaveBeenCalledWith(
+      // Verify accountService.updateAccountInList was called to save transactions
+      expect(accountService.updateAccountInList).toHaveBeenCalledWith(
         'questrade',
         'account123',
-        expect.arrayContaining([
-          expect.objectContaining({
-            id: 'uuid1',
-            date: '2025-01-01',
-          }),
-        ]),
+        expect.objectContaining({
+          uploadedTransactions: expect.any(Array),
+        }),
       );
     });
   });

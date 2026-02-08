@@ -16,6 +16,66 @@
 import { STORAGE, TRANSACTION_RETENTION_DEFAULTS } from '../core/config';
 import { debugLog, getTodayLocal, parseLocalDate } from '../core/utils';
 
+// =============================================================================
+// Generic Storage Functions (Institution-Agnostic)
+// These functions take storage keys directly and can be used by any institution
+// =============================================================================
+
+/**
+ * Get stored transactions using a specific storage key (generic version)
+ * @param {string} storageKey - Full storage key (e.g., 'questrade_uploaded_activity_123')
+ * @param {Object} retentionSettings - Object with days and count limits
+ * @returns {Array} Array of transaction objects with id and date
+ */
+export function getStoredTransactionsGeneric(storageKey, retentionSettings) {
+  try {
+    const storedData = GM_getValue(storageKey, []);
+    const migrated = migrateLegacyTransactions(storedData);
+    return applyRetentionLimits(migrated, retentionSettings);
+  } catch (error) {
+    debugLog('Error getting stored transactions:', error);
+    return [];
+  }
+}
+
+/**
+ * Save transactions to a specific storage key (generic version)
+ * @param {string} storageKey - Full storage key
+ * @param {Array} existingTransactions - Current transactions in storage
+ * @param {Array} newTransactions - New transactions to add
+ * @param {Object} retentionSettings - Retention settings with days and count
+ * @param {string} transactionDate - Date of the transactions (YYYY-MM-DD format)
+ */
+export function saveUploadedTransactionsGeneric(storageKey, existingTransactions, newTransactions, retentionSettings, transactionDate = null) {
+  try {
+    const retained = mergeAndRetainTransactions(existingTransactions, newTransactions, retentionSettings, transactionDate);
+    GM_setValue(storageKey, retained);
+
+    const addedCount = retained.length - existingTransactions.length;
+    debugLog(`Saved ${addedCount} new transactions to ${storageKey}, total stored: ${retained.length}`);
+    return retained;
+  } catch (error) {
+    debugLog('Error saving uploaded transactions:', error);
+    return existingTransactions;
+  }
+}
+
+/**
+ * Get uploaded transaction IDs as a Set from a storage key (generic version)
+ * @param {string} storageKey - Full storage key
+ * @param {Object} retentionSettings - Retention settings with days and count
+ * @returns {Set<string>} Set of transaction IDs
+ */
+export function getUploadedTransactionIdsGeneric(storageKey, retentionSettings) {
+  const transactions = getStoredTransactionsGeneric(storageKey, retentionSettings);
+  return new Set(transactions.map((tx) => tx.id));
+}
+
+// =============================================================================
+// Institution-Specific Wrapper Functions (Backward Compatibility)
+// These provide the original API for existing callers
+// =============================================================================
+
 /**
  * Get transaction retention settings for an institution
  * Uses per-key storage for Questrade and Rogers Bank.
@@ -23,7 +83,7 @@ import { debugLog, getTodayLocal, parseLocalDate } from '../core/utils';
  * NOTE: Wealthsimple stores retention settings in the consolidated account structure,
  * not in global storage keys. Use getRetentionSettingsFromAccount() for Wealthsimple.
  *
- * @param {string} institutionType - 'questrade' or 'rogersbank'
+ * @param {string} institutionType - 'questrade', 'questrade_activity', or 'rogersbank'
  * @returns {Object} Object with days and count limits
  */
 export function getTransactionRetentionSettings(institutionType) {
@@ -32,6 +92,7 @@ export function getTransactionRetentionSettings(institutionType) {
 
   switch (institutionType) {
   case 'questrade':
+  case 'questrade_activity': // Activity uses same retention settings as orders
     daysKey = STORAGE.QUESTRADE_TRANSACTION_RETENTION_DAYS;
     countKey = STORAGE.QUESTRADE_TRANSACTION_RETENTION_COUNT;
     break;
@@ -47,6 +108,22 @@ export function getTransactionRetentionSettings(institutionType) {
     days: GM_getValue(daysKey, TRANSACTION_RETENTION_DEFAULTS.DAYS),
     count: GM_getValue(countKey, TRANSACTION_RETENTION_DEFAULTS.COUNT),
   };
+}
+
+/**
+ * Get the storage key prefix for an institution type
+ * NOTE: Questrade now uses consolidated storage via accountService. Use the questrade_accounts_list
+ * uploadedTransactions field instead of per-key storage.
+ * @param {string} institutionType - Institution type
+ * @returns {string} Storage key prefix
+ */
+function getStoragePrefix(institutionType) {
+  switch (institutionType) {
+  case 'rogersbank':
+    return STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX;
+  default:
+    throw new Error(`Unknown institution type: ${institutionType}. Use consolidated account structure for Questrade and Wealthsimple.`);
+  }
 }
 
 /**
@@ -158,32 +235,15 @@ export function applyRetentionLimits(transactions, settings) {
  * uploadedTransactions property directly instead of this function.
  *
  * @param {string} accountId - Account ID
- * @param {string} institutionType - 'questrade' or 'rogersbank'
+ * @param {string} institutionType - 'questrade', 'questrade_activity', or 'rogersbank'
  * @returns {Array} Array of transaction objects with id and date
  */
 export function getStoredTransactions(accountId, institutionType) {
-  let storageKey;
+  const storagePrefix = getStoragePrefix(institutionType);
+  const storageKey = `${storagePrefix}${accountId}`;
+  const settings = getTransactionRetentionSettings(institutionType);
 
-  switch (institutionType) {
-  case 'questrade':
-    storageKey = `${STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX}${accountId}`;
-    break;
-  case 'rogersbank':
-    storageKey = `${STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX}${accountId}`;
-    break;
-  default:
-    throw new Error(`Unknown institution type: ${institutionType}. Wealthsimple uses consolidated account structure.`);
-  }
-
-  try {
-    const storedData = GM_getValue(storageKey, []);
-    const migrated = migrateLegacyTransactions(storedData);
-    const settings = getTransactionRetentionSettings(institutionType);
-    return applyRetentionLimits(migrated, settings);
-  } catch (error) {
-    debugLog('Error getting stored transactions:', error);
-    return [];
-  }
+  return getStoredTransactionsGeneric(storageKey, settings);
 }
 
 /**
@@ -193,41 +253,20 @@ export function getStoredTransactions(accountId, institutionType) {
  * mergeAndRetainTransactions() to prepare the data, then save it
  * directly to the account's uploadedTransactions property.
  *
+ * @param {string} institutionType - 'questrade', 'questrade_activity', or 'rogersbank'
  * @param {string} accountId - Account ID
  * @param {Array} newTransactions - Array of transaction objects to add
- * @param {string} institutionType - 'questrade' or 'rogersbank'
  * @param {string} transactionDate - Date of the transactions (YYYY-MM-DD format)
  */
-export function saveUploadedTransactions(accountId, newTransactions, institutionType, transactionDate = null) {
-  let storageKey;
+export function saveUploadedTransactions(institutionType, accountId, newTransactions, transactionDate = null) {
+  const storagePrefix = getStoragePrefix(institutionType);
+  const storageKey = `${storagePrefix}${accountId}`;
+  const settings = getTransactionRetentionSettings(institutionType);
 
-  switch (institutionType) {
-  case 'questrade':
-    storageKey = `${STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX}${accountId}`;
-    break;
-  case 'rogersbank':
-    storageKey = `${STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX}${accountId}`;
-    break;
-  default:
-    throw new Error(`Unknown institution type: ${institutionType}. Wealthsimple uses consolidated account structure.`);
-  }
+  // Get existing transactions
+  const existingTransactions = getStoredTransactions(accountId, institutionType);
 
-  try {
-    // Get existing transactions
-    const existingTransactions = getStoredTransactions(accountId, institutionType);
-
-    // Prepare and merge transactions
-    const settings = getTransactionRetentionSettings(institutionType);
-    const retained = mergeAndRetainTransactions(existingTransactions, newTransactions, settings, transactionDate);
-
-    // Save
-    GM_setValue(storageKey, retained);
-
-    const addedCount = retained.length - existingTransactions.length;
-    debugLog(`Saved ${addedCount} new transactions for ${institutionType} account ${accountId}, total stored: ${retained.length}`);
-  } catch (error) {
-    debugLog('Error saving uploaded transactions:', error);
-  }
+  saveUploadedTransactionsGeneric(storageKey, existingTransactions, newTransactions, settings, transactionDate);
 }
 
 /**
@@ -279,12 +318,24 @@ export function mergeAndRetainTransactions(existingTransactions, newTransactions
  * getTransactionIdsFromArray() with the account's uploadedTransactions.
  *
  * @param {string} accountId - Account ID
- * @param {string} institutionType - 'questrade' or 'rogersbank'
+ * @param {string} institutionType - 'questrade', 'questrade_activity', or 'rogersbank'
  * @returns {Set<string>} Set of transaction IDs
  */
 export function getUploadedTransactionIds(accountId, institutionType) {
   const transactions = getStoredTransactions(accountId, institutionType);
   return new Set(transactions.map((tx) => tx.id));
+}
+
+/**
+ * Get uploaded transaction IDs as an array of strings (for backward compatibility)
+ *
+ * @param {string} accountId - Account ID
+ * @param {string} institutionType - 'questrade', 'questrade_activity', or 'rogersbank'
+ * @returns {Array<string>} Array of transaction IDs
+ */
+export function getUploadedTransactionIdsArray(accountId, institutionType) {
+  const transactions = getStoredTransactions(accountId, institutionType);
+  return transactions.map((tx) => tx.id);
 }
 
 /**
@@ -305,21 +356,10 @@ export function getTransactionIdsFromArray(transactions) {
  * NOTE: Wealthsimple uses consolidated account structure. To clear transactions,
  * update each account's uploadedTransactions property directly.
  *
- * @param {string} institutionType - 'questrade' or 'rogersbank'
+ * @param {string} institutionType - 'questrade', 'questrade_activity', or 'rogersbank'
  */
 export async function clearTransactionHistory(institutionType) {
-  let prefix;
-
-  switch (institutionType) {
-  case 'questrade':
-    prefix = STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX;
-    break;
-  case 'rogersbank':
-    prefix = STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX;
-    break;
-  default:
-    throw new Error(`Unknown institution type: ${institutionType}. Wealthsimple uses consolidated account structure.`);
-  }
+  const prefix = getStoragePrefix(institutionType);
 
   const keys = await GM_listValues();
   const keysToDelete = keys.filter((key) => key.startsWith(prefix));
@@ -332,11 +372,16 @@ export async function clearTransactionHistory(institutionType) {
 
 // Export all functions
 export default {
-  // Per-key storage functions (for Questrade, Rogers Bank)
+  // Generic storage functions (institution-agnostic)
+  getStoredTransactionsGeneric,
+  saveUploadedTransactionsGeneric,
+  getUploadedTransactionIdsGeneric,
+  // Per-key storage functions (for Questrade, Rogers Bank - backward compatible)
   getTransactionRetentionSettings,
   getStoredTransactions,
   saveUploadedTransactions,
   getUploadedTransactionIds,
+  getUploadedTransactionIdsArray,
   clearTransactionHistory,
   // Consolidated account functions (for Wealthsimple and future migrations)
   getRetentionSettingsFromAccount,

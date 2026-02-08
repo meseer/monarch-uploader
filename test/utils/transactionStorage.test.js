@@ -212,24 +212,12 @@ describe('Transaction Storage Utilities', () => {
       expect(result.has('tx2')).toBe(true);
     });
 
-    test('works correctly for questrade institution', () => {
-      const accountId = '67890';
-      const institutionType = 'questrade';
-      const expectedKey = `${STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX}${accountId}`;
-
-      GM_getValue.mockImplementation((key, defaultValue) => {
-        if (key === expectedKey) {
-          return [
-            { id: 'order1', date: '2025-10-20' },
-          ];
-        }
-        return defaultValue;
-      });
-
-      const result = getUploadedTransactionIds(accountId, institutionType);
-
-      expect(GM_getValue).toHaveBeenCalledWith(expectedKey, []);
-      expect(result.has('order1')).toBe(true);
+    test('throws error for questrade (now uses consolidated storage)', () => {
+      // Questrade now uses consolidated account storage via accountService
+      // instead of per-key storage via transactionStorage
+      expect(() => getUploadedTransactionIds('67890', 'questrade')).toThrow(
+        'Use consolidated account structure for Questrade and Wealthsimple',
+      );
     });
 
     test('returns empty Set when no transactions stored', () => {
@@ -255,7 +243,8 @@ describe('Transaction Storage Utilities', () => {
         return defaultValue;
       });
 
-      saveUploadedTransactions(accountId, newTransactions, institutionType, transactionDate);
+      // New parameter order: (institutionType, accountId, newTransactions, transactionDate)
+      saveUploadedTransactions(institutionType, accountId, newTransactions, transactionDate);
 
       expect(GM_getValue).toHaveBeenCalledWith(expectedKey, []);
       expect(GM_setValue).toHaveBeenCalled();
@@ -265,27 +254,11 @@ describe('Transaction Storage Utilities', () => {
       expect(savedData[0]).toEqual({ id: 'tx1', date: transactionDate });
     });
 
-    test('saves transactions with correct parameter order for questrade', () => {
-      const accountId = '67890';
-      const newTransactions = ['order1', 'order2'];
-      const institutionType = 'questrade';
-      const transactionDate = '2025-10-24';
-      const expectedKey = `${STORAGE.QUESTRADE_UPLOADED_ORDERS_PREFIX}${accountId}`;
-
-      GM_getValue.mockImplementation((key, defaultValue) => {
-        if (key === expectedKey) return [];
-        return defaultValue;
-      });
-
-      saveUploadedTransactions(accountId, newTransactions, institutionType, transactionDate);
-
-      expect(GM_getValue).toHaveBeenCalledWith(expectedKey, []);
-      expect(GM_setValue).toHaveBeenCalledWith(
-        expectedKey,
-        expect.arrayContaining([
-          { id: 'order1', date: transactionDate },
-          { id: 'order2', date: transactionDate },
-        ]),
+    test('throws error for questrade (now uses consolidated storage)', () => {
+      // Questrade now uses consolidated account storage via accountService
+      // instead of per-key storage via transactionStorage
+      expect(() => saveUploadedTransactions('questrade', '67890', ['order1'], '2025-10-24')).toThrow(
+        'Use consolidated account structure for Questrade and Wealthsimple',
       );
     });
 
@@ -302,7 +275,8 @@ describe('Transaction Storage Utilities', () => {
         return defaultValue;
       });
 
-      saveUploadedTransactions(accountId, newTransactions, 'rogersbank', '2025-10-24');
+      // New parameter order: (institutionType, accountId, newTransactions, transactionDate)
+      saveUploadedTransactions('rogersbank', accountId, newTransactions, '2025-10-24');
 
       const savedData = GM_setValue.mock.calls[0][1];
       expect(savedData).toHaveLength(2); // Only tx1 and tx2
@@ -321,7 +295,8 @@ describe('Transaction Storage Utilities', () => {
         .mockReturnValueOnce(existingTransactions)
         .mockReturnValue(90); // retention days/count
 
-      saveUploadedTransactions(accountId, newTransactions, 'rogersbank', '2025-10-24');
+      // New parameter order: (institutionType, accountId, newTransactions, transactionDate)
+      saveUploadedTransactions('rogersbank', accountId, newTransactions, '2025-10-24');
 
       const savedData = GM_setValue.mock.calls[0][1];
       // Should be limited by retention count (default 500)
@@ -468,7 +443,7 @@ describe('Transaction Storage Utilities', () => {
       expect(GM_getValue).not.toHaveBeenCalledWith(wrongKey, []);
     });
 
-    test('saveUploadedTransactions uses correct storage key with (accountId, newTransactions, institutionType)', () => {
+    test('saveUploadedTransactions uses correct storage key with (institutionType, accountId, newTransactions, transactionDate)', () => {
       const accountId = '00000645148';
       const newTransactions = ['tx1', 'tx2'];
       const institutionType = 'rogersbank';
@@ -476,7 +451,8 @@ describe('Transaction Storage Utilities', () => {
 
       GM_getValue.mockReturnValue([]);
 
-      saveUploadedTransactions(accountId, newTransactions, institutionType, '2025-10-24');
+      // New parameter order: (institutionType, accountId, newTransactions, transactionDate)
+      saveUploadedTransactions(institutionType, accountId, newTransactions, '2025-10-24');
 
       // Should save to correct key
       expect(GM_setValue).toHaveBeenCalledWith(
@@ -505,6 +481,13 @@ describe('Transaction Storage Utilities', () => {
       expect(correctKey).not.toBe(wrongKey);
       expect(correctKey).toBe('rogersbank_uploaded_refs_00000645148');
       expect(wrongKey).toBe('rogersbank_uploaded_refs_rogersbank');
+    });
+
+    test('questrade now uses consolidated storage and throws error for per-key storage', () => {
+      // Questrade no longer uses per-key storage - it uses consolidated account structure
+      // via accountService with uploadedTransactions field in questrade_accounts_list
+      expect(() => getUploadedTransactionIds('12345', 'questrade')).toThrow();
+      expect(() => saveUploadedTransactions('questrade', '12345', ['tx1'], '2025-10-24')).toThrow();
     });
   });
 });
