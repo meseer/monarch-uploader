@@ -9,9 +9,8 @@ import { STORAGE, LOGO_CLOUDINARY_IDS } from '../../core/config';
 import { INTEGRATIONS } from '../../core/integrationCapabilities';
 import stateManager from '../../core/state';
 import monarchApi from '../../api/monarch';
-import questradeApi from '../../api/questrade';
 import accountService from '../common/accountService';
-import balanceService, { fetchBalanceHistory, extractBalanceChange } from './balance';
+import balanceService, { fetchBalanceHistory, extractBalanceChange, getAccountsForSync, markAccountAsClosed } from './balance';
 import positionsService from './positions';
 import transactionsService from './transactions';
 import toast from '../../ui/toast';
@@ -286,6 +285,7 @@ function calculateDaysBetween(fromDate, toDate) {
 /**
  * Sync all Questrade accounts to Monarch
  * Based on uploadAllAccountsToMonarch but extended for full sync
+ * Includes closed accounts (pending_close) for final sync before marking them closed
  * @returns {Promise<void>}
  */
 export async function syncAllAccountsToMonarch() {
@@ -296,15 +296,16 @@ export async function syncAllAccountsToMonarch() {
       return; // User cancelled authentication
     }
 
-    // Get all Questrade accounts
-    const accounts = await questradeApi.fetchAccounts();
+    // Get all Questrade accounts (merged API + storage for closed accounts)
+    // Excludes accounts already marked as 'closed', includes 'pending_close' accounts
+    const accounts = await getAccountsForSync({ includeClosed: false });
 
     if (!accounts || !accounts.length) {
       toast.show('No Questrade accounts found.', 'debug');
       return;
     }
 
-    // Create progress dialog
+    // Create progress dialog (pass accounts which may include status for closed account styling)
     const progressDialog = showProgressDialog(accounts, 'Syncing All Accounts to Monarch');
 
     // Initialize stats and cancellation state
@@ -371,11 +372,18 @@ export async function syncAllAccountsToMonarch() {
           // Check cancellation before sync
           if (isCancelled) break;
 
-          // Sync account (balance + positions)
+          // Sync account (balance + positions + transactions)
           await syncAccountToMonarch(account.key, accountName, fromDate, toDate, progressDialog);
 
           // Update success stats
           stats.success += 1;
+
+          // If this was a pending_close account (in storage but not in API, not yet marked closed),
+          // mark it as closed after successful sync - this is the final sync for this account
+          if (account.status === 'pending_close') {
+            markAccountAsClosed(account.key);
+            debugLog(`Marked pending_close account ${account.key} as closed after successful sync`);
+          }
         } catch (error) {
           // Update failed stats and progress
           stats.failed += 1;
