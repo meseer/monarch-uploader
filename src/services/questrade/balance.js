@@ -751,6 +751,214 @@ async function getStartDatesForAllAccounts(accounts) {
   return startDates;
 }
 
+/**
+ * Get account creation date from cached account data
+ * @param {string} accountId - Account ID
+ * @returns {string|null} Creation date in YYYY-MM-DD format or null
+ */
+export function getAccountCreationDate(accountId) {
+  const account = questradeApi.getAccount(accountId);
+  if (!account || !account.createdOn) {
+    debugLog(`No createdOn found for account ${accountId}`);
+    return null;
+  }
+
+  // createdOn is in ISO format, extract just the date part
+  const createdOnDate = account.createdOn.split('T')[0];
+  debugLog(`Account ${accountId} was created on ${createdOnDate}`);
+  return createdOnDate;
+}
+
+/**
+ * Upload full balance history for a single account from a specified date
+ * @param {string} accountId - Account ID
+ * @param {string} accountName - Account name
+ * @param {string} fromDate - Start date (typically account creation date)
+ * @returns {Promise<boolean>} Success status
+ */
+export async function uploadFullBalanceHistoryForAccount(accountId, accountName, fromDate) {
+  const toDate = getTodayLocal();
+  debugLog(`Uploading full balance history for ${accountName} from ${fromDate} to ${toDate}`);
+
+  return processAndUploadBalance(accountId, accountName, fromDate, toDate);
+}
+
+/**
+ * Upload full balance history for all Questrade accounts from their creation dates
+ * Shows a progress dialog and handles the bulk upload process
+ * @returns {Promise<void>}
+ */
+export async function uploadFullBalanceHistoryForAllAccounts() {
+  try {
+    // Check Monarch authentication before proceeding
+    const authenticated = await ensureMonarchAuthentication(null, 'upload full balance history');
+    if (!authenticated) {
+      return; // User cancelled authentication
+    }
+
+    // Get all Questrade accounts
+    const accounts = await questradeApi.fetchAccounts();
+    if (!accounts || !accounts.length) {
+      toast.show('No Questrade accounts found.', 'error');
+      return;
+    }
+
+    // Find earliest creation date among all accounts for date picker default
+    let earliestCreationDate = null;
+    for (const account of accounts) {
+      const createdOn = account.createdOn ? account.createdOn.split('T')[0] : null;
+      if (createdOn && (!earliestCreationDate || createdOn < earliestCreationDate)) {
+        earliestCreationDate = createdOn;
+      }
+    }
+
+    // Default to 1 year ago if no creation dates found
+    if (!earliestCreationDate) {
+      const oneYearAgo = new Date();
+      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+      earliestCreationDate = formatDate(oneYearAgo);
+    }
+
+    // Show date picker with earliest creation date as default
+    const selectedDate = await showDatePickerPromise(
+      earliestCreationDate,
+      'Select start date for full balance history upload',
+    );
+
+    if (!selectedDate) {
+      toast.show('Upload cancelled.', 'info');
+      return;
+    }
+
+    // Create progress dialog
+    const progressDialog = showProgressDialog(accounts, 'Uploading Full Balance History');
+
+    // Initialize stats and cancellation state
+    const stats = { success: 0, failed: 0, total: accounts.length };
+    let isCancelled = false;
+    let isUploadComplete = false;
+
+    // Set up cancel callback
+    progressDialog.onCancel(() => {
+      debugLog('Full balance upload cancellation requested');
+      isCancelled = true;
+      toast.show('Upload cancelled by user', 'info');
+    });
+
+    // Ensure progress dialog shows close button when upload completes
+    const completeUpload = () => {
+      if (!isUploadComplete) {
+        isUploadComplete = true;
+        progressDialog.hideCancel();
+        debugLog('Full balance upload process completed, showing close button');
+      }
+    };
+
+    try {
+      // Ensure all account mappings before starting
+      const mappingSuccess = await ensureAllAccountMappings(accounts, progressDialog);
+      if (!mappingSuccess || isCancelled) {
+        progressDialog.close();
+        toast.show('Upload cancelled: Account mapping incomplete.', 'info');
+        return;
+      }
+
+      // Process each account
+      const processedAccounts = [];
+      for (const account of accounts) {
+        // Check for cancellation before processing each account
+        if (isCancelled) {
+          debugLog('Upload cancelled, stopping account processing');
+          break;
+        }
+
+        // Skip accounts we've already processed (prevent duplicates)
+        if (processedAccounts.includes(account.key)) {
+          continue;
+        }
+        processedAccounts.push(account.key);
+
+        try {
+          // Update progress
+          progressDialog.updateProgress(account.key, 'processing', 'Fetching balance history...');
+
+          // Set current account for UI updates
+          const accountName = account.nickname || account.name || 'Account';
+          stateManager.setAccount(account.key, accountName);
+
+          const toDate = getTodayLocal();
+
+          // Check cancellation before fetch
+          if (isCancelled) break;
+
+          // Fetch balance history
+          progressDialog.updateProgress(account.key, 'processing', 'Fetching balance data...');
+          const balanceData = await fetchBalanceHistory(account.key, selectedDate, toDate);
+
+          if (!balanceData) {
+            throw new Error('Failed to fetch balance history.');
+          }
+
+          // Extract and display balance change information
+          const balanceChange = extractBalanceChange(account.key, balanceData);
+          if (balanceChange) {
+            progressDialog.updateBalanceChange(account.key, balanceChange);
+          }
+
+          // Process balance data to CSV
+          const csvData = processBalanceData(balanceData, accountName);
+
+          // Check cancellation before upload
+          if (isCancelled) break;
+
+          // Upload to Monarch
+          progressDialog.updateProgress(account.key, 'processing', 'Uploading to Monarch...');
+          const uploadSuccess = await uploadBalanceToMonarch(account.key, csvData, selectedDate, toDate);
+
+          if (uploadSuccess) {
+            // Update success stats and progress
+            stats.success += 1;
+            progressDialog.updateProgress(account.key, 'success', 'Upload complete');
+          } else {
+            throw new Error('Upload failed without specific error message');
+          }
+        } catch (error) {
+          // Update failed stats and progress
+          stats.failed += 1;
+          progressDialog.updateProgress(account.key, 'error', error.message);
+
+          // Show error and wait for acknowledgment
+          await progressDialog.showError(account.key, error);
+
+          // Stop processing remaining accounts
+          break;
+        }
+      }
+
+      // Show final summary
+      progressDialog.showSummary(stats);
+
+      // Complete the upload process
+      completeUpload();
+
+      // Show appropriate completion message
+      if (isCancelled) {
+        toast.show('Upload process was cancelled', 'info');
+      } else if (stats.success === stats.total) {
+        toast.show(`Successfully uploaded full balance history for all ${stats.total} accounts!`, 'info');
+      } else if (stats.success > 0) {
+        toast.show(`Upload completed: ${stats.success} successful, ${stats.failed} failed`, 'warning');
+      }
+    } catch (error) {
+      // Ensure we complete the upload process even on error
+      completeUpload();
+      throw error;
+    }
+  } catch (error) {
+    toast.show(`Failed to start upload process: ${error.message}`, 'error');
+  }
+}
+
 // Default export with all methods
 export default {
   fetchBalanceHistory,
@@ -762,5 +970,8 @@ export default {
   bulkProcessAccounts,
   uploadAllAccountsToMonarch,
   extractBalanceChange,
+  getAccountCreationDate,
+  uploadFullBalanceHistoryForAccount,
+  uploadFullBalanceHistoryForAllAccounts,
   BalanceError,
 };

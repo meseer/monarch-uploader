@@ -11,6 +11,12 @@ import { getDateRange, processAccountBalanceHistory } from '../../../services/qu
 import { ensureMonarchAuthentication } from '../../components/monarchLoginLink';
 import { syncAllAccountsToMonarch } from '../../../services/questrade/sync';
 import { uploadAllAccountsActivityToMonarch, uploadSingleAccountActivityToMonarch } from '../../../services/questrade/transactions';
+import {
+  getAccountCreationDate,
+  uploadFullBalanceHistoryForAccount,
+  uploadFullBalanceHistoryForAllAccounts,
+} from '../../../services/questrade/balance';
+import { showDatePickerPromise } from '../../components/datePicker';
 
 /**
  * Creates a styled button
@@ -307,9 +313,69 @@ export function createTestingSection(accountContext = null) {
   `;
 
   if (accountContext) {
-    // Single account page - show single account upload button
-    description.textContent = 'Upload all activity transactions (dividends, fees, deposits, etc.) for this account. This fetches the complete history and may take several minutes.';
+    // Single account page - show single account buttons
+    description.textContent = 'Development testing options for this account. Upload complete balance history or activity transactions.';
     testingContent.appendChild(description);
+
+    // Create button container for better layout
+    const buttonContainer = document.createElement('div');
+    buttonContainer.id = 'questrade-testing-button-container';
+    buttonContainer.style.cssText = 'display: flex; flex-wrap: wrap; gap: 8px;';
+
+    // Create Upload All Balance History button for single account
+    const uploadFullBalanceButton = createButton('Upload All Balance History', async () => {
+      // Check Monarch authentication before proceeding
+      const authenticated = await ensureMonarchAuthentication(null, 'upload full balance history');
+      if (!authenticated) {
+        return; // User cancelled authentication
+      }
+
+      // Get current account info from state (may have been updated since page load)
+      const currentState = stateManager.getState();
+      const currentAccountId = currentState.currentAccount.id || accountContext.accountId;
+      const currentAccountName = currentState.currentAccount.nickname !== 'unknown'
+        ? currentState.currentAccount.nickname
+        : accountContext.accountName;
+
+      try {
+        // Get account creation date for default
+        const creationDate = getAccountCreationDate(currentAccountId);
+        const defaultDate = creationDate || '2020-01-01';
+
+        // Show date picker with creation date as default
+        const selectedDate = await showDatePickerPromise(
+          defaultDate,
+          `Select start date for ${currentAccountName} balance history`,
+        );
+
+        if (!selectedDate) {
+          toast.show('Upload cancelled.', 'info');
+          return;
+        }
+
+        // Disable button while uploading
+        uploadFullBalanceButton.disabled = true;
+        uploadFullBalanceButton.textContent = 'Uploading...';
+        uploadFullBalanceButton.style.opacity = '0.6';
+        uploadFullBalanceButton.style.cursor = 'not-allowed';
+
+        debugLog(`Starting full balance history upload for ${currentAccountName} from ${selectedDate}...`);
+
+        // Call the single account upload function
+        await uploadFullBalanceHistoryForAccount(currentAccountId, currentAccountName, selectedDate);
+      } catch (error) {
+        debugLog('Error in upload full balance history:', error);
+        toast.show(`Upload failed: ${error.message}`, 'error');
+      } finally {
+        // Re-enable button
+        uploadFullBalanceButton.disabled = false;
+        uploadFullBalanceButton.textContent = 'Upload All Balance History';
+        uploadFullBalanceButton.style.opacity = '1';
+        uploadFullBalanceButton.style.cursor = 'pointer';
+      }
+    }, { color: '#5a6268', id: 'questrade-upload-full-balance-btn' });
+
+    buttonContainer.appendChild(uploadFullBalanceButton);
 
     // Create Upload Activity button for single account
     const uploadActivityButton = createButton('Upload Activity', async () => {
@@ -349,11 +415,50 @@ export function createTestingSection(accountContext = null) {
       }
     }, { color: '#6c757d', id: 'questrade-upload-activity-btn' });
 
-    testingContent.appendChild(uploadActivityButton);
+    buttonContainer.appendChild(uploadActivityButton);
+    testingContent.appendChild(buttonContainer);
   } else {
-    // All accounts page - show all accounts upload button
-    description.textContent = 'Upload all activity transactions (dividends, fees, deposits, etc.) for all Questrade accounts. This fetches the complete history and may take several minutes.';
+    // All accounts page - show all accounts buttons
+    description.textContent = 'Development testing options for all accounts. Upload complete balance history or activity transactions.';
     testingContent.appendChild(description);
+
+    // Create button container for better layout
+    const buttonContainer = document.createElement('div');
+    buttonContainer.id = 'questrade-testing-all-button-container';
+    buttonContainer.style.cssText = 'display: flex; flex-wrap: wrap; gap: 8px;';
+
+    // Create Upload All Balance History button for all accounts
+    const uploadAllFullBalanceButton = createButton('Upload All Balance History', async () => {
+      // Check Monarch authentication before proceeding
+      const authenticated = await ensureMonarchAuthentication(null, 'upload full balance history');
+      if (!authenticated) {
+        return; // User cancelled authentication
+      }
+
+      try {
+        // Disable button while uploading
+        uploadAllFullBalanceButton.disabled = true;
+        uploadAllFullBalanceButton.textContent = 'Uploading...';
+        uploadAllFullBalanceButton.style.opacity = '0.6';
+        uploadAllFullBalanceButton.style.cursor = 'not-allowed';
+
+        debugLog('Starting full balance history upload for all Questrade accounts...');
+
+        // Call the all accounts upload function (it handles date picker internally)
+        await uploadFullBalanceHistoryForAllAccounts();
+      } catch (error) {
+        debugLog('Error in upload all full balance history:', error);
+        toast.show(`Upload failed: ${error.message}`, 'error');
+      } finally {
+        // Re-enable button
+        uploadAllFullBalanceButton.disabled = false;
+        uploadAllFullBalanceButton.textContent = 'Upload All Balance History';
+        uploadAllFullBalanceButton.style.opacity = '1';
+        uploadAllFullBalanceButton.style.cursor = 'pointer';
+      }
+    }, { color: '#5a6268', id: 'questrade-upload-all-full-balance-btn' });
+
+    buttonContainer.appendChild(uploadAllFullBalanceButton);
 
     // Create Upload All Activity button
     const uploadAllActivityButton = createButton('Upload All Activity', async () => {
@@ -386,7 +491,8 @@ export function createTestingSection(accountContext = null) {
       }
     }, { color: '#6c757d', id: 'questrade-upload-all-activity-btn' });
 
-    testingContent.appendChild(uploadAllActivityButton);
+    buttonContainer.appendChild(uploadAllActivityButton);
+    testingContent.appendChild(buttonContainer);
   }
 
   // Add toggle functionality

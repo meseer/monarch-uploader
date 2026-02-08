@@ -11,6 +11,8 @@ import {
   uploadBalanceToMonarch,
   processAndUploadBalance,
   bulkProcessAccounts,
+  getAccountCreationDate,
+  uploadFullBalanceHistoryForAccount,
 } from '../../../src/services/questrade/balance';
 import questradeApi from '../../../src/api/questrade';
 import monarchApi from '../../../src/api/monarch';
@@ -570,6 +572,102 @@ describe('Balance Service', () => {
 
       // Should not crash when storage fails
       expect(() => storeDateRange('account123', '2024-12-31')).not.toThrow();
+    });
+  });
+
+  describe('getAccountCreationDate', () => {
+    beforeEach(() => {
+      // Need to mock questradeApi.getAccount for this test
+      questradeApi.getAccount = jest.fn();
+    });
+
+    test('should return creation date from account data', () => {
+      questradeApi.getAccount.mockReturnValue({
+        key: 'account-123',
+        nickname: 'My RRSP',
+        createdOn: '2020-05-15T12:00:00Z',
+      });
+
+      const result = getAccountCreationDate('account-123');
+
+      expect(result).toBe('2020-05-15');
+      expect(questradeApi.getAccount).toHaveBeenCalledWith('account-123');
+    });
+
+    test('should return null when account not found', () => {
+      questradeApi.getAccount.mockReturnValue(null);
+
+      const result = getAccountCreationDate('non-existent-account');
+
+      expect(result).toBeNull();
+    });
+
+    test('should return null when createdOn is missing', () => {
+      questradeApi.getAccount.mockReturnValue({
+        key: 'account-123',
+        nickname: 'My RRSP',
+      });
+
+      const result = getAccountCreationDate('account-123');
+
+      expect(result).toBeNull();
+    });
+
+    test('should handle various date formats', () => {
+      // Test with full ISO format
+      questradeApi.getAccount.mockReturnValue({
+        key: 'account-123',
+        createdOn: '2019-01-01T00:00:00.000Z',
+      });
+
+      expect(getAccountCreationDate('account-123')).toBe('2019-01-01');
+
+      // Test with date only (edge case)
+      questradeApi.getAccount.mockReturnValue({
+        key: 'account-456',
+        createdOn: '2018-12-31',
+      });
+
+      expect(getAccountCreationDate('account-456')).toBe('2018-12-31');
+    });
+  });
+
+  describe('uploadFullBalanceHistoryForAccount', () => {
+    test('should upload balance history from specified date to today', async () => {
+      // Mock successful flow
+      accountService.getMonarchAccountMapping.mockReturnValue({ id: 'monarch-123', displayName: 'My Account' });
+      questradeApi.makeApiCall
+        .mockResolvedValueOnce({ totalEquity: { combined: [{ currencyCode: 'CAD', amount: 15000 }] } })
+        .mockResolvedValueOnce({ data: [{ date: '2020-05-15', totalEquity: 5000 }] });
+      monarchApi.uploadBalance.mockResolvedValue(true);
+
+      const result = await uploadFullBalanceHistoryForAccount(
+        'account-123',
+        'My RRSP',
+        '2020-05-15',
+      );
+
+      expect(result).toBe(true);
+      expect(stateManager.setAccount).toHaveBeenCalledWith('account-123', 'My RRSP');
+      expect(questradeApi.makeApiCall).toHaveBeenCalledTimes(2);
+      expect(monarchApi.uploadBalance).toHaveBeenCalled();
+    });
+
+    test('should handle errors gracefully', async () => {
+      // Mock API failure
+      questradeApi.makeApiCall.mockRejectedValue(new Error('Network error'));
+
+      const result = await uploadFullBalanceHistoryForAccount(
+        'account-123',
+        'My RRSP',
+        '2020-01-01',
+      );
+
+      expect(result).toBe(false);
+      expect(toast.show).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to fetch balance history'),
+        'error',
+      );
     });
   });
 

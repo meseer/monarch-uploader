@@ -16,7 +16,6 @@ import positionsService from './positions';
 import transactionsService from './transactions';
 import toast from '../../ui/toast';
 import { showProgressDialog } from '../../ui/components/progressDialog';
-import { showDatePickerPromise } from '../../ui/components/datePicker';
 import { showMonarchAccountSelectorWithCreate } from '../../ui/components/accountSelectorWithCreate';
 import { ensureMonarchAuthentication } from '../../ui/components/monarchLoginLink';
 
@@ -536,42 +535,31 @@ async function ensureAllAccountMappings(accounts, progressDialog) {
 /**
  * Get start dates for all accounts
  * Uses consolidated storage first, then falls back to legacy storage
+ * For accounts without lastUsedDate (first sync), automatically uses account's createdOn date
  * @param {Array} accounts - List of accounts
  * @returns {Promise<Object|null>} Object mapping account keys to start dates, or null if cancelled
  */
 async function getStartDatesForAllAccounts(accounts) {
   const startDates = {};
-  let needsDatePicker = false;
-  let oldestDate = null;
 
   // Check each account for lastUsedDate - use unified getLastUpdateDate which checks both storages
+  // For accounts without lastUsedDate, use their createdOn date (first sync)
   for (const account of accounts) {
     const lastDate = getLastUpdateDate(account.key, 'questrade');
     if (lastDate && /^\d{4}-\d{2}-\d{2}$/.test(lastDate)) {
       startDates[account.key] = lastDate;
-      // Track oldest date among accounts that have one
-      if (!oldestDate || lastDate < oldestDate) {
-        oldestDate = lastDate;
-      }
     } else {
-      needsDatePicker = true;
-    }
-  }
-
-  // If any account is missing lastUsedDate, show date picker once
-  if (needsDatePicker) {
-    const defaultDate = oldestDate || formatDate(new Date(Date.now() - 12096e5)); // 2 weeks ago
-    const selectedDate = await showDatePickerPromise(
-      defaultDate,
-      'Select start date for accounts without history',
-    );
-
-    if (!selectedDate) return null; // User cancelled
-
-    // Use selected date for accounts without lastUsedDate
-    for (const account of accounts) {
-      if (!startDates[account.key]) {
-        startDates[account.key] = selectedDate;
+      // No last upload date - this is a first sync
+      // Use account's creation date if available
+      const createdOn = account.createdOn ? account.createdOn.split('T')[0] : null;
+      if (createdOn && /^\d{4}-\d{2}-\d{2}$/.test(createdOn)) {
+        debugLog(`Account ${account.key} first sync - using creation date: ${createdOn}`);
+        startDates[account.key] = createdOn;
+      } else {
+        // Fallback to 2 weeks ago if no creation date available
+        const twoWeeksAgo = formatDate(new Date(Date.now() - 12096e5));
+        debugLog(`Account ${account.key} first sync - no creation date, using fallback: ${twoWeeksAgo}`);
+        startDates[account.key] = twoWeeksAgo;
       }
     }
   }
