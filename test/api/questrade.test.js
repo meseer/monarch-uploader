@@ -356,7 +356,7 @@ describe('Questrade API', () => {
       expect(globalThis.GM_deleteValue).toHaveBeenCalledWith('questrade_accounts_cache');
     });
 
-    test('should preserve orphaned accounts (accounts no longer in API) with full questradeAccount data', async () => {
+    test('should preserve orphaned accounts in storage but NOT return them (only return API accounts)', async () => {
       // Simulate existing accounts where one (acc2) has a Monarch mapping but is no longer in API
       const existingAccounts = [
         {
@@ -398,8 +398,8 @@ describe('Questrade API', () => {
 
       const result = await fetchAndCacheQuestradeAccounts();
 
-      // Should have 2 accounts: one active, one orphaned
-      expect(result).toHaveLength(2);
+      // Should return ONLY the active API account (orphans not returned)
+      expect(result).toHaveLength(1);
 
       // First account (from API) should have updated questradeAccount
       expect(result[0].questradeAccount).not.toBeNull();
@@ -407,21 +407,26 @@ describe('Questrade API', () => {
       expect(result[0].questradeAccount.nickname).toBe('Margin Account Updated');
       expect(result[0].monarchAccount).toEqual({ id: 'monarch-1', displayName: 'Monarch Margin' });
 
-      // Second account (orphaned) should preserve full questradeAccount data for historical reference
-      expect(result[1].questradeAccount).not.toBeNull();
-      expect(result[1].questradeAccount.id).toBe('acc2');
-      expect(result[1].questradeAccount.type).toBe('TFSA');
-      expect(result[1].questradeAccount.nickname).toBe('Closed TFSA');
-      expect(result[1].monarchAccount).toEqual({ id: 'monarch-2', displayName: 'Monarch TFSA' });
-      expect(result[1].syncEnabled).toBe(false);
-      expect(result[1].lastSyncDate).toBe('2025-12-15');
-      expect(result[1].uploadedTransactions).toHaveLength(1);
-
-      // Verify saved data includes both accounts with their full questradeAccount data
+      // Verify storage includes BOTH accounts (active + orphaned with isOrphanedFromApi marker)
       expect(globalThis.GM_setValue).toHaveBeenCalledWith(
         'questrade_accounts_list',
-        expect.stringContaining('"questradeAccount":{"id":"acc2"'),
+        expect.any(String),
       );
+
+      // Parse the saved data to verify both accounts are in storage
+      const savedCall = globalThis.GM_setValue.mock.calls.find((call) => call[0] === 'questrade_accounts_list');
+      const savedAccounts = JSON.parse(savedCall[1]);
+      expect(savedAccounts).toHaveLength(2);
+
+      // Orphaned account should be in storage with isOrphanedFromApi marker
+      const orphanedAccount = savedAccounts.find((acc) => acc.questradeAccount?.id === 'acc2');
+      expect(orphanedAccount).toBeDefined();
+      expect(orphanedAccount.isOrphanedFromApi).toBe(true);
+      expect(orphanedAccount.questradeAccount.type).toBe('TFSA');
+      expect(orphanedAccount.questradeAccount.nickname).toBe('Closed TFSA');
+      expect(orphanedAccount.monarchAccount).toEqual({ id: 'monarch-2', displayName: 'Monarch TFSA' });
+      expect(orphanedAccount.syncEnabled).toBe(false);
+      expect(orphanedAccount.lastSyncDate).toBe('2025-12-15');
     });
 
     test('should not duplicate orphaned accounts that are already orphaned', async () => {

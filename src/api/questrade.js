@@ -153,12 +153,16 @@ export async function fetchAndCacheQuestradeAccounts() {
       const existingId = existing.questradeAccount?.id || existing.questradeAccount?.key;
       if (existingId && !apiAccountIds.has(existingId)) {
         // This account is no longer in the API - preserve it completely (including questradeAccount)
+        // Mark it as orphan so getAccountsForSync() can correctly identify it as pending_close
         debugLog(`Preserving orphaned account: ${existingId} (${existing.questradeAccount?.nickname || 'Unknown'})`);
-        mergedAccounts.push(existing);
+        mergedAccounts.push({
+          ...existing,
+          isOrphanedFromApi: true, // Marker for getAccountsForSync() to identify accounts not in API
+        });
       }
     });
 
-    // Save merged list with consolidated structure
+    // Save merged list with consolidated structure (including orphans for storage preservation)
     GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(mergedAccounts));
     debugLog(`Cached ${mergedAccounts.length} Questrade accounts with consolidated structure`);
 
@@ -169,7 +173,12 @@ export async function fetchAndCacheQuestradeAccounts() {
       GM_deleteValue(STORAGE.QUESTRADE_ACCOUNTS_CACHE);
     }
 
-    return mergedAccounts;
+    // Return ONLY actual API accounts (not orphans)
+    // Orphans are saved to storage but shouldn't be returned as "API accounts"
+    // getAccountsForSync() will find orphans by comparing storage with the returned API accounts
+    const apiOnlyAccounts = mergedAccounts.filter((acc) => !acc.isOrphanedFromApi);
+    debugLog(`Returning ${apiOnlyAccounts.length} active API accounts (${mergedAccounts.length - apiOnlyAccounts.length} orphans saved to storage only)`);
+    return apiOnlyAccounts;
   } catch (error) {
     debugLog('Failed to fetch or cache Questrade accounts:', error);
     throw error;

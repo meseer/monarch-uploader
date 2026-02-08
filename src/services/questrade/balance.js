@@ -60,8 +60,11 @@ export async function getAccountsForSync(options = { includeClosed: false }) {
 
     // Create a set of API account IDs for quick lookup
     // Note: fetchAccounts returns consolidated structure with questradeAccount nested object
+    // IMPORTANT: Exclude accounts marked as isOrphanedFromApi (these are preserved from storage, not from API)
     const apiAccountIds = new Set(
-      apiAccounts.map((acc) => acc.questradeAccount?.id || acc.questradeAccount?.key),
+      apiAccounts
+        .filter((acc) => !acc.isOrphanedFromApi) // Exclude orphaned accounts
+        .map((acc) => acc.questradeAccount?.id || acc.questradeAccount?.key),
     );
 
     // Get accounts from consolidated storage (same structure as apiAccounts)
