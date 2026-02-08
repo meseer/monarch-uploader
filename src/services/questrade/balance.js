@@ -34,11 +34,15 @@ export class BalanceError extends Error {
  * Get accounts for sync by merging API accounts with consolidated storage accounts.
  * This handles closed accounts that are no longer returned by the API but exist in storage.
  *
+ * Behavior for accounts "in storage but not in API":
+ * - If already marked as status='closed' in storage: excluded from regular sync, included for full history
+ * - If NOT yet marked as closed: included in regular sync (will be marked closed after successful sync)
+ *
  * @param {Object} options - Options for account retrieval
- * @param {boolean} options.includeClosed - Whether to include closed accounts (for full history sync)
+ * @param {boolean} options.includeClosed - Whether to include accounts already marked as 'closed' (for full history sync)
  * @returns {Promise<Array>} Array of account objects with status field:
  *   - account: The account object (from API or storage)
- *   - status: 'active' | 'closed'
+ *   - status: 'active' | 'closed' | 'pending_close' (not yet marked closed but not in API)
  *   - source: 'api' | 'storage' (where the account came from)
  */
 export async function getAccountsForSync(options = { includeClosed: false }) {
@@ -72,7 +76,7 @@ export async function getAccountsForSync(options = { includeClosed: false }) {
       });
     }
 
-    // Then, check storage accounts for closed accounts (not in API)
+    // Then, check storage accounts for accounts not in API
     for (const storedAccount of storedAccounts) {
       const accountId = storedAccount.questradeAccount?.id;
       if (!accountId) continue;
@@ -82,32 +86,42 @@ export async function getAccountsForSync(options = { includeClosed: false }) {
         continue;
       }
 
-      // Account is in storage but not in API - this is a closed account
-      // Check if it's already marked as closed in storage
-      const existingStatus = storedAccount.status || ACCOUNT_STATUS.CLOSED;
+      // Account is in storage but not in API
+      // Check if it's ALREADY marked as closed in storage
+      const isAlreadyMarkedClosed = storedAccount.status === ACCOUNT_STATUS.CLOSED;
 
       // Build account object from storage data
-      const closedAccount = {
+      const storageAccount = {
         key: accountId,
         nickname: storedAccount.questradeAccount?.nickname || accountId,
         name: storedAccount.questradeAccount?.name || storedAccount.questradeAccount?.nickname || accountId,
         // Copy other fields from stored questradeAccount if available
         ...storedAccount.questradeAccount,
-        status: existingStatus,
+        status: isAlreadyMarkedClosed ? ACCOUNT_STATUS.CLOSED : 'pending_close',
         source: 'storage',
         closedDate: storedAccount.closedDate || null,
       };
 
-      // Only include closed accounts if requested
-      if (includeClosed) {
-        mergedAccounts.push(closedAccount);
-        debugLog(`Including closed account from storage: ${accountId} (${closedAccount.nickname})`);
+      if (isAlreadyMarkedClosed) {
+        // Account was previously marked as closed
+        // Only include if includeClosed is true (for full history sync)
+        if (includeClosed) {
+          mergedAccounts.push(storageAccount);
+          debugLog(`Including already-closed account: ${accountId} (${storageAccount.nickname})`);
+        } else {
+          debugLog(`Skipping already-closed account: ${accountId} (${storageAccount.nickname})`);
+        }
       } else {
-        debugLog(`Skipping closed account: ${accountId} (${closedAccount.nickname})`);
+        // Account is in storage but not in API, and NOT yet marked as closed
+        // Include it for one more sync - it will be marked closed after successful sync
+        mergedAccounts.push(storageAccount);
+        debugLog(`Including pending-close account (needs final sync): ${accountId} (${storageAccount.nickname})`);
       }
     }
 
-    debugLog(`getAccountsForSync: ${mergedAccounts.length} accounts (API: ${apiAccounts.length}, Storage closed: ${storedAccounts.length - apiAccountKeys.size})`);
+    const pendingCloseCount = mergedAccounts.filter((a) => a.status === 'pending_close').length;
+    const closedCount = mergedAccounts.filter((a) => a.status === ACCOUNT_STATUS.CLOSED).length;
+    debugLog(`getAccountsForSync: ${mergedAccounts.length} total (API: ${apiAccounts.length}, pending_close: ${pendingCloseCount}, closed: ${closedCount})`);
 
     return mergedAccounts;
   } catch (error) {
@@ -591,8 +605,9 @@ export async function uploadAllAccountsToMonarch() {
       return; // User cancelled authentication
     }
 
-    // Get all Questrade accounts
-    const accounts = await questradeApi.fetchAccounts();
+    // Get all Questrade accounts (merged API + storage for closed accounts)
+    // Excludes accounts already marked as 'closed', includes 'pending_close' accounts
+    const accounts = await getAccountsForSync({ includeClosed: false });
     if (!accounts || !accounts.length) {
       toast.show('No Questrade accounts found.', 'error');
       return;
@@ -696,6 +711,13 @@ export async function uploadAllAccountsToMonarch() {
             // Update success stats and progress
             stats.success += 1;
             progressDialog.updateProgress(account.key, 'success', 'Upload complete');
+
+            // If this was a pending_close account (in storage but not in API, not yet marked closed),
+            // mark it as closed after successful sync - this is the final sync for this account
+            if (account.status === 'pending_close') {
+              markAccountAsClosed(account.key);
+              debugLog(`Marked pending_close account ${account.key} as closed after successful sync`);
+            }
           } else {
             throw new Error('Upload failed without specific error message');
           }
@@ -1038,10 +1060,12 @@ export async function uploadFullBalanceHistoryForAllAccounts() {
             stats.success += 1;
             progressDialog.updateProgress(account.key, 'success', 'Upload complete');
 
-            // If this was a closed account (from storage), mark it as closed after successful full sync
-            if (account.source === 'storage' && account.status === ACCOUNT_STATUS.CLOSED) {
+            // If this was a pending_close account (in storage but not in API, not yet marked closed),
+            // mark it as closed after successful full sync - this is the final sync for this account
+            // Note: Already-closed accounts don't need to be re-marked
+            if (account.status === 'pending_close') {
               markAccountAsClosed(account.key);
-              debugLog(`Marked account ${account.key} as closed after successful full sync`);
+              debugLog(`Marked pending_close account ${account.key} as closed after successful full sync`);
             }
           } else {
             throw new Error('Upload failed without specific error message');

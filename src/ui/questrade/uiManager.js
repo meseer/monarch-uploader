@@ -11,6 +11,7 @@ import toast from '../toast';
 import uploadButton, { createTestingSection } from './components/uploadButton';
 import { showSettingsModal } from '../components/settingsModal';
 import { createMonarchLoginLink } from '../components/monarchLoginLink';
+import { getAccountsForSync } from '../../services/questrade/balance';
 
 /**
  * Creates and appends status indicators to the provided container
@@ -467,18 +468,21 @@ export async function initAllAccountsUI() {
     }
 
     // Now that we know the SPA has loaded (sidebar exists), fetch accounts with retries
+    // Use getAccountsForSync to merge API accounts with storage accounts (for closed accounts)
     let accounts = [];
     const maxRetries = 10;
     const retryDelay = 1000; // Check every 1 second for better responsiveness
 
-    debugLog('Starting to fetch accounts with retries...');
+    debugLog('Starting to fetch accounts with retries (using getAccountsForSync)...');
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        accounts = await questradeApi.fetchAccounts();
+        // Use getAccountsForSync to get merged list (API + storage accounts)
+        // excludes accounts already marked as 'closed', includes 'pending_close' accounts
+        accounts = await getAccountsForSync({ includeClosed: false });
 
         if (accounts && accounts.length > 0) {
-          debugLog(`Successfully fetched ${accounts.length} accounts on attempt ${attempt}`);
+          debugLog(`Successfully fetched ${accounts.length} accounts on attempt ${attempt} (merged API + storage)`);
           break;
         }
 
