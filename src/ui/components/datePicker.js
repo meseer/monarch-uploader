@@ -12,13 +12,15 @@ import { validateDateFormat, clearFieldError } from './formValidation';
  * Show a date picker modal and return a promise with the selected date
  * @param {string} defaultDate - Default date in YYYY-MM-DD format
  * @param {string} promptText - Text to display in the modal
+ * @param {Object} options - Additional options
+ * @param {string} options.cancelButtonText - Text for the cancel button (default: 'Cancel')
  * @returns {Promise<string|null>} Promise that resolves to selected date or null if cancelled
  */
-export function showDatePickerPromise(defaultDate, promptText) {
+export function showDatePickerPromise(defaultDate, promptText, options = {}) {
   return new Promise((resolve) => {
     showDatePicker(defaultDate, promptText, (selectedDate) => {
       resolve(selectedDate);
-    });
+    }, options);
   });
 }
 
@@ -44,9 +46,12 @@ export function showDatePickerWithOptionsPromise(defaultDate, promptText, option
  * @param {string} defaultDate - Default date in YYYY-MM-DD format
  * @param {string} promptText - Text to display in the modal
  * @param {Function} callback - Callback function to receive selected date
+ * @param {Object} options - Additional options
+ * @param {string} options.cancelButtonText - Text for the cancel button (default: 'Cancel')
  */
-export function showDatePicker(defaultDate, promptText, callback) {
-  debugLog('Showing date picker with default date:', defaultDate);
+export function showDatePicker(defaultDate, promptText, callback, options = {}) {
+  const { cancelButtonText = 'Cancel' } = options;
+  debugLog('Showing date picker with default date:', defaultDate, 'cancelButtonText:', cancelButtonText);
 
   // Create the overlay
   const overlay = document.createElement('div');
@@ -145,7 +150,7 @@ export function showDatePicker(defaultDate, promptText, callback) {
 
   // Cancel button
   const cancelBtn = document.createElement('button');
-  cancelBtn.textContent = 'Cancel';
+  cancelBtn.textContent = cancelButtonText;
   cancelBtn.style.cssText = `
     padding: 8px 16px;
     border: 1px solid #ddd;

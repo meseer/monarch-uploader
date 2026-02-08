@@ -158,10 +158,10 @@ describe('Questrade API', () => {
   });
 
   describe('fetchAndCacheQuestradeAccounts', () => {
-    test('should fetch and cache accounts from API response array', async () => {
-      const mockAccounts = [
-        { key: 'acc1', type: 'Margin' },
-        { key: 'acc2', type: 'TFSA' },
+    test('should fetch and cache accounts with consolidated structure from API response array', async () => {
+      const mockApiAccounts = [
+        { key: 'acc1', type: 'Margin', nickname: 'Margin Account' },
+        { key: 'acc2', type: 'TFSA', nickname: 'TFSA Account' },
       ];
 
       globalThis.GM_xmlhttpRequest.mockImplementation((options) => {
@@ -169,26 +169,34 @@ describe('Questrade API', () => {
         setTimeout(() => {
           options.onload({
             status: 200,
-            responseText: JSON.stringify(mockAccounts),
+            responseText: JSON.stringify(mockApiAccounts),
           });
         }, 0);
       });
 
       const result = await fetchAndCacheQuestradeAccounts();
 
-      expect(result).toEqual(mockAccounts);
+      // Should return consolidated structure
+      expect(result).toHaveLength(2);
+      expect(result[0].questradeAccount.id).toBe('acc1');
+      expect(result[0].questradeAccount.key).toBe('acc1');
+      expect(result[0].questradeAccount.type).toBe('Margin');
+      expect(result[0].syncEnabled).toBe(true);
+      expect(result[0].monarchAccount).toBeNull();
+
+      // Should save to consolidated storage (questrade_accounts_list)
       expect(globalThis.GM_setValue).toHaveBeenCalledWith(
-        'questrade_accounts_cache',
-        JSON.stringify(mockAccounts),
+        'questrade_accounts_list',
+        expect.any(String),
       );
     });
 
     test('should handle API response with accounts property', async () => {
-      const mockAccounts = [
+      const mockApiAccounts = [
         { key: 'acc1', type: 'Margin' },
         { key: 'acc2', type: 'TFSA' },
       ];
-      const mockResponse = { accounts: mockAccounts };
+      const mockResponse = { accounts: mockApiAccounts };
 
       globalThis.GM_xmlhttpRequest.mockImplementation((options) => {
         expect(options.url).toBe('https://api.questrade.com/v2/brokerage-accounts');
@@ -202,19 +210,24 @@ describe('Questrade API', () => {
 
       const result = await fetchAndCacheQuestradeAccounts();
 
-      expect(result).toEqual(mockAccounts);
+      // Should return consolidated structure
+      expect(result).toHaveLength(2);
+      expect(result[0].questradeAccount.id).toBe('acc1');
+      expect(result[1].questradeAccount.id).toBe('acc2');
+
+      // Should save to consolidated storage
       expect(globalThis.GM_setValue).toHaveBeenCalledWith(
-        'questrade_accounts_cache',
-        JSON.stringify(mockAccounts),
+        'questrade_accounts_list',
+        expect.any(String),
       );
     });
 
     test('should handle API response with data property', async () => {
-      const mockAccounts = [
+      const mockApiAccounts = [
         { key: 'acc1', type: 'Margin' },
         { key: 'acc2', type: 'TFSA' },
       ];
-      const mockResponse = { data: mockAccounts };
+      const mockResponse = { data: mockApiAccounts };
 
       globalThis.GM_xmlhttpRequest.mockImplementation((options) => {
         expect(options.url).toBe('https://api.questrade.com/v2/brokerage-accounts');
@@ -228,10 +241,14 @@ describe('Questrade API', () => {
 
       const result = await fetchAndCacheQuestradeAccounts();
 
-      expect(result).toEqual(mockAccounts);
+      // Should return consolidated structure
+      expect(result).toHaveLength(2);
+      expect(result[0].questradeAccount.id).toBe('acc1');
+
+      // Should save to consolidated storage
       expect(globalThis.GM_setValue).toHaveBeenCalledWith(
-        'questrade_accounts_cache',
-        JSON.stringify(mockAccounts),
+        'questrade_accounts_list',
+        expect.any(String),
       );
     });
 
@@ -267,6 +284,190 @@ describe('Questrade API', () => {
 
       expect(result).toEqual([]);
       expect(globalThis.GM_setValue).not.toHaveBeenCalled();
+    });
+
+    test('should preserve existing monarchAccount and settings when refreshing', async () => {
+      const existingAccounts = [
+        {
+          questradeAccount: { id: 'acc1', key: 'acc1', type: 'Margin' },
+          monarchAccount: { id: 'monarch-123', displayName: 'My Monarch Account' },
+          syncEnabled: false,
+          lastSyncDate: '2026-01-01',
+          uploadedTransactions: [{ id: 'tx-1', date: '2026-01-01' }],
+        },
+      ];
+      globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
+        if (key === 'questrade_accounts_list') {
+          return JSON.stringify(existingAccounts);
+        }
+        return defaultVal;
+      });
+
+      const mockApiAccounts = [
+        { key: 'acc1', type: 'Margin', nickname: 'Updated Name' },
+        { key: 'acc2', type: 'TFSA', nickname: 'New Account' },
+      ];
+
+      globalThis.GM_xmlhttpRequest.mockImplementation((options) => {
+        setTimeout(() => {
+          options.onload({
+            status: 200,
+            responseText: JSON.stringify(mockApiAccounts),
+          });
+        }, 0);
+      });
+
+      const result = await fetchAndCacheQuestradeAccounts();
+
+      // Should preserve existing settings for acc1
+      expect(result[0].monarchAccount).toEqual({ id: 'monarch-123', displayName: 'My Monarch Account' });
+      expect(result[0].syncEnabled).toBe(false);
+      expect(result[0].lastSyncDate).toBe('2026-01-01');
+      expect(result[0].uploadedTransactions).toHaveLength(1);
+
+      // acc2 should have defaults
+      expect(result[1].monarchAccount).toBeNull();
+      expect(result[1].syncEnabled).toBe(true);
+    });
+
+    test('should clean up legacy cache if it exists', async () => {
+      globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
+        if (key === 'questrade_accounts_cache') {
+          return '[{"key": "old-acc"}]';
+        }
+        return defaultVal;
+      });
+      globalThis.GM_deleteValue = jest.fn();
+
+      const mockApiAccounts = [{ key: 'acc1', type: 'Margin' }];
+
+      globalThis.GM_xmlhttpRequest.mockImplementation((options) => {
+        setTimeout(() => {
+          options.onload({
+            status: 200,
+            responseText: JSON.stringify(mockApiAccounts),
+          });
+        }, 0);
+      });
+
+      await fetchAndCacheQuestradeAccounts();
+
+      // Should clean up legacy cache
+      expect(globalThis.GM_deleteValue).toHaveBeenCalledWith('questrade_accounts_cache');
+    });
+
+    test('should preserve orphaned accounts (accounts no longer in API) with full questradeAccount data', async () => {
+      // Simulate existing accounts where one (acc2) has a Monarch mapping but is no longer in API
+      const existingAccounts = [
+        {
+          questradeAccount: { id: 'acc1', key: 'acc1', type: 'Margin', nickname: 'Margin Account' },
+          monarchAccount: { id: 'monarch-1', displayName: 'Monarch Margin' },
+          syncEnabled: true,
+          lastSyncDate: '2026-01-01',
+          uploadedTransactions: [{ id: 'tx-1', date: '2026-01-01' }],
+        },
+        {
+          questradeAccount: { id: 'acc2', key: 'acc2', type: 'TFSA', nickname: 'Closed TFSA' },
+          monarchAccount: { id: 'monarch-2', displayName: 'Monarch TFSA' },
+          syncEnabled: false,
+          lastSyncDate: '2025-12-15',
+          uploadedTransactions: [{ id: 'tx-2', date: '2025-12-15' }],
+        },
+      ];
+
+      globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
+        if (key === 'questrade_accounts_list') {
+          return JSON.stringify(existingAccounts);
+        }
+        return defaultVal;
+      });
+
+      // API only returns acc1 (acc2 has been closed/transferred)
+      const mockApiAccounts = [
+        { key: 'acc1', type: 'Margin', nickname: 'Margin Account Updated' },
+      ];
+
+      globalThis.GM_xmlhttpRequest.mockImplementation((options) => {
+        setTimeout(() => {
+          options.onload({
+            status: 200,
+            responseText: JSON.stringify(mockApiAccounts),
+          });
+        }, 0);
+      });
+
+      const result = await fetchAndCacheQuestradeAccounts();
+
+      // Should have 2 accounts: one active, one orphaned
+      expect(result).toHaveLength(2);
+
+      // First account (from API) should have updated questradeAccount
+      expect(result[0].questradeAccount).not.toBeNull();
+      expect(result[0].questradeAccount.id).toBe('acc1');
+      expect(result[0].questradeAccount.nickname).toBe('Margin Account Updated');
+      expect(result[0].monarchAccount).toEqual({ id: 'monarch-1', displayName: 'Monarch Margin' });
+
+      // Second account (orphaned) should preserve full questradeAccount data for historical reference
+      expect(result[1].questradeAccount).not.toBeNull();
+      expect(result[1].questradeAccount.id).toBe('acc2');
+      expect(result[1].questradeAccount.type).toBe('TFSA');
+      expect(result[1].questradeAccount.nickname).toBe('Closed TFSA');
+      expect(result[1].monarchAccount).toEqual({ id: 'monarch-2', displayName: 'Monarch TFSA' });
+      expect(result[1].syncEnabled).toBe(false);
+      expect(result[1].lastSyncDate).toBe('2025-12-15');
+      expect(result[1].uploadedTransactions).toHaveLength(1);
+
+      // Verify saved data includes both accounts with their full questradeAccount data
+      expect(globalThis.GM_setValue).toHaveBeenCalledWith(
+        'questrade_accounts_list',
+        expect.stringContaining('"questradeAccount":{"id":"acc2"'),
+      );
+    });
+
+    test('should not duplicate orphaned accounts that are already orphaned', async () => {
+      // Simulate existing accounts where acc2 is already orphaned (questradeAccount: null)
+      const existingAccounts = [
+        {
+          questradeAccount: { id: 'acc1', key: 'acc1', type: 'Margin' },
+          monarchAccount: { id: 'monarch-1', displayName: 'Monarch Margin' },
+          syncEnabled: true,
+        },
+        {
+          questradeAccount: null, // Already orphaned
+          monarchAccount: { id: 'monarch-2', displayName: 'Monarch TFSA (closed)' },
+          syncEnabled: false,
+          lastSyncDate: '2025-12-15',
+        },
+      ];
+
+      globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
+        if (key === 'questrade_accounts_list') {
+          return JSON.stringify(existingAccounts);
+        }
+        return defaultVal;
+      });
+
+      // API only returns acc1
+      const mockApiAccounts = [
+        { key: 'acc1', type: 'Margin', nickname: 'Margin Account' },
+      ];
+
+      globalThis.GM_xmlhttpRequest.mockImplementation((options) => {
+        setTimeout(() => {
+          options.onload({
+            status: 200,
+            responseText: JSON.stringify(mockApiAccounts),
+          });
+        }, 0);
+      });
+
+      const result = await fetchAndCacheQuestradeAccounts();
+
+      // Should still have 2 accounts, not duplicate the orphaned one
+      // Note: The current implementation requires questradeAccount.id or questradeAccount.key to add to orphan list
+      // so already-orphaned accounts (with null questradeAccount) won't be duplicated
+      expect(result).toHaveLength(1);
+      expect(result[0].questradeAccount.id).toBe('acc1');
     });
 
     test('should handle API errors', async () => {
@@ -815,7 +1016,7 @@ describe('Questrade API', () => {
 
   describe('Integration Tests', () => {
     test('should handle complete workflow from auth check to account fetch', async () => {
-      const mockAccounts = [
+      const mockApiAccounts = [
         { key: 'acc1', type: 'Margin', name: 'Test Account' },
       ];
 
@@ -831,18 +1032,25 @@ describe('Questrade API', () => {
         setTimeout(() => {
           options.onload({
             status: 200,
-            responseText: JSON.stringify(mockAccounts),
+            responseText: JSON.stringify(mockApiAccounts),
           });
         }, 0);
       });
 
       const result = await fetchAndCacheQuestradeAccounts();
-      expect(result).toEqual(mockAccounts);
 
-      // Test getting account by ID
-      globalThis.GM_getValue.mockReturnValue(JSON.stringify(mockAccounts));
+      // Should return consolidated structure
+      expect(result).toHaveLength(1);
+      expect(result[0].questradeAccount.id).toBe('acc1');
+      expect(result[0].questradeAccount.key).toBe('acc1');
+      expect(result[0].questradeAccount.type).toBe('Margin');
+      expect(result[0].monarchAccount).toBeNull();
+      expect(result[0].syncEnabled).toBe(true);
+
+      // Test getting account by ID (legacy getQuestradeAccount still uses cache)
+      globalThis.GM_getValue.mockReturnValue(JSON.stringify(mockApiAccounts));
       const account = getQuestradeAccount('acc1');
-      expect(account).toEqual(mockAccounts[0]);
+      expect(account).toEqual(mockApiAccounts[0]);
     });
 
     test('should handle auth failure in workflow', async () => {

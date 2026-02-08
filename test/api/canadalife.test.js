@@ -738,23 +738,48 @@ describe('Canada Life API - Account Functions', () => {
   });
 
   describe('loadCanadaLifeAccounts', () => {
-    test('should load accounts from cache when available', async () => {
-      const cachedAccounts = [
-        { EnglishShortName: 'RRSP', LongNameEnglish: 'RRSP Account', agreementId: '123' },
-        { EnglishShortName: 'TFSA', LongNameEnglish: 'TFSA Account', agreementId: '456' },
+    test('should load accounts from consolidated cache when available', async () => {
+      const cachedConsolidatedAccounts = [
+        {
+          canadalifeAccount: {
+            id: '123',
+            agreementId: '123',
+            EnglishShortName: 'RRSP',
+            LongNameEnglish: 'RRSP Account',
+            nickname: 'RRSP',
+          },
+          monarchAccount: null,
+          syncEnabled: true,
+        },
+        {
+          canadalifeAccount: {
+            id: '456',
+            agreementId: '456',
+            EnglishShortName: 'TFSA',
+            LongNameEnglish: 'TFSA Account',
+            nickname: 'TFSA',
+          },
+          monarchAccount: null,
+          syncEnabled: true,
+        },
       ];
 
-      global.GM_getValue.mockReturnValue(JSON.stringify(cachedAccounts));
+      global.GM_getValue.mockImplementation((key, defaultVal) => {
+        if (key === 'canadalife_accounts_list') {
+          return JSON.stringify(cachedConsolidatedAccounts);
+        }
+        return defaultVal;
+      });
 
       const result = await loadCanadaLifeAccounts();
 
-      expect(result).toEqual(cachedAccounts);
-      expect(debugLog).toHaveBeenCalledWith('Loaded 2 Canada Life accounts from cache');
+      expect(result).toEqual(cachedConsolidatedAccounts);
+      expect(debugLog).toHaveBeenCalledWith('Loaded 2 Canada Life accounts from consolidated storage');
       expect(global.fetch).not.toHaveBeenCalled();
     });
 
-    test('should load accounts from API when cache empty', async () => {
-      global.GM_getValue.mockReturnValue(null);
+    test('should load accounts from API when cache empty and return consolidated structure', async () => {
+      global.GM_getValue.mockReturnValue('[]');
 
       const apiAccounts = [
         { EnglishShortName: 'RRSP', LongNameEnglish: 'RRSP Account', agreementId: '123' },
@@ -784,20 +809,40 @@ describe('Canada Life API - Account Functions', () => {
 
       const result = await loadCanadaLifeAccounts();
 
-      expect(result).toEqual(apiAccounts);
-      expect(global.GM_setValue).toHaveBeenCalledWith('canadalife_accounts', JSON.stringify(apiAccounts));
+      // Should return consolidated structure
+      expect(result).toHaveLength(1);
+      expect(result[0].canadalifeAccount.id).toBe('123');
+      expect(result[0].canadalifeAccount.agreementId).toBe('123');
+      expect(result[0].canadalifeAccount.EnglishShortName).toBe('RRSP');
+      expect(result[0].syncEnabled).toBe(true);
+      expect(result[0].monarchAccount).toBeNull();
+
+      // Should save to consolidated storage
+      expect(global.GM_setValue).toHaveBeenCalledWith(
+        'canadalife_accounts_list',
+        expect.any(String),
+      );
       expect(toast.show).toHaveBeenCalledWith('Loading Canada Life accounts...', 'debug');
       expect(toast.show).toHaveBeenCalledWith('Loaded Canada Life accounts: RRSP', 'debug');
     });
 
-    test('should force refresh from API when requested', async () => {
-      const cachedAccounts = [{ EnglishShortName: 'OLD' }];
-      global.GM_getValue.mockReturnValue(JSON.stringify(cachedAccounts));
+    test('should force refresh from API when requested and return consolidated structure', async () => {
+      const cachedAccounts = [{
+        canadalifeAccount: { id: '123', agreementId: '123', EnglishShortName: 'OLD', nickname: 'OLD' },
+        monarchAccount: { id: 'monarch-123', displayName: 'Mapped Account' },
+        syncEnabled: false,
+      }];
+      global.GM_getValue.mockImplementation((key, defaultVal) => {
+        if (key === 'canadalife_accounts_list') {
+          return JSON.stringify(cachedAccounts);
+        }
+        return defaultVal;
+      });
 
-      const freshAccounts = [{ EnglishShortName: 'NEW', LongNameEnglish: 'New Account', agreementId: '999' }];
+      const freshApiAccounts = [{ EnglishShortName: 'NEW', LongNameEnglish: 'New Account', agreementId: '999' }];
       const mockApiResponse = {
         IPResult: {
-          MemberPlans: freshAccounts,
+          MemberPlans: freshApiAccounts,
         },
       };
 
@@ -819,12 +864,260 @@ describe('Canada Life API - Account Functions', () => {
 
       const result = await loadCanadaLifeAccounts(true);
 
-      expect(result).toEqual(freshAccounts);
+      // Should return 2 accounts: 1 from API + 1 orphaned (account 123 no longer in API)
+      expect(result).toHaveLength(2);
+      expect(result[0].canadalifeAccount.id).toBe('999');
+      expect(result[0].canadalifeAccount.EnglishShortName).toBe('NEW');
+      // Orphaned account should preserve full canadalifeAccount data for historical reference
+      expect(result[1].canadalifeAccount).not.toBeNull();
+      expect(result[1].canadalifeAccount.id).toBe('123');
+      expect(result[1].canadalifeAccount.EnglishShortName).toBe('OLD');
+      expect(result[1].monarchAccount).toEqual({ id: 'monarch-123', displayName: 'Mapped Account' });
       expect(global.fetch).toHaveBeenCalled();
     });
 
+    test('should preserve existing monarchAccount and settings when refreshing', async () => {
+      const existingAccounts = [
+        {
+          canadalifeAccount: { id: '123', agreementId: '123', EnglishShortName: 'RRSP' },
+          monarchAccount: { id: 'monarch-123', displayName: 'My Monarch Account' },
+          syncEnabled: false,
+          lastSyncDate: '2026-01-01',
+          uploadedTransactions: [{ id: 'tx-1', date: '2026-01-01' }],
+        },
+      ];
+      global.GM_getValue.mockImplementation((key, defaultVal) => {
+        if (key === 'canadalife_accounts_list') {
+          return JSON.stringify(existingAccounts);
+        }
+        return defaultVal;
+      });
+
+      const freshApiAccounts = [
+        { EnglishShortName: 'RRSP-UPDATED', LongNameEnglish: 'Updated RRSP Account', agreementId: '123' },
+        { EnglishShortName: 'TFSA', LongNameEnglish: 'New TFSA Account', agreementId: '456' },
+      ];
+
+      const mockApiResponse = {
+        IPResult: {
+          MemberPlans: freshApiAccounts,
+        },
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: {
+          get: () => 'application/json',
+          entries: () => [['content-type', 'application/json']],
+        },
+        text: () => Promise.resolve(JSON.stringify({
+          actions: [{
+            returnValue: {
+              returnValue: JSON.stringify(mockApiResponse),
+            },
+          }],
+        })),
+      });
+
+      const result = await loadCanadaLifeAccounts(true);
+
+      // Should preserve existing settings for account 123
+      const account123 = result.find((acc) => acc.canadalifeAccount.id === '123');
+      expect(account123.monarchAccount).toEqual({ id: 'monarch-123', displayName: 'My Monarch Account' });
+      expect(account123.syncEnabled).toBe(false);
+      expect(account123.lastSyncDate).toBe('2026-01-01');
+      expect(account123.uploadedTransactions).toHaveLength(1);
+
+      // New account 456 should have defaults
+      const account456 = result.find((acc) => acc.canadalifeAccount.id === '456');
+      expect(account456.monarchAccount).toBeNull();
+      expect(account456.syncEnabled).toBe(true);
+    });
+
+    test('should clean up legacy cache if it exists', async () => {
+      global.GM_getValue.mockImplementation((key, defaultVal) => {
+        if (key === 'canadalife_accounts') {
+          return '[{"EnglishShortName": "OLD-LEGACY"}]';
+        }
+        if (key === 'canadalife_accounts_list') {
+          return '[]';
+        }
+        return defaultVal;
+      });
+      global.GM_deleteValue = jest.fn();
+
+      const freshApiAccounts = [{ EnglishShortName: 'NEW', agreementId: '123' }];
+      const mockApiResponse = {
+        IPResult: {
+          MemberPlans: freshApiAccounts,
+        },
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: {
+          get: () => 'application/json',
+          entries: () => [['content-type', 'application/json']],
+        },
+        text: () => Promise.resolve(JSON.stringify({
+          actions: [{
+            returnValue: {
+              returnValue: JSON.stringify(mockApiResponse),
+            },
+          }],
+        })),
+      });
+
+      await loadCanadaLifeAccounts();
+
+      // Should clean up legacy cache
+      expect(global.GM_deleteValue).toHaveBeenCalledWith('canadalife_accounts');
+    });
+
+    test('should preserve orphaned accounts (accounts no longer in API) with full canadalifeAccount data', async () => {
+      // Simulate existing accounts where one (456) has a Monarch mapping but is no longer in API
+      const existingAccounts = [
+        {
+          canadalifeAccount: { id: '123', agreementId: '123', EnglishShortName: 'RRSP', nickname: 'RRSP' },
+          monarchAccount: { id: 'monarch-1', displayName: 'Monarch RRSP' },
+          syncEnabled: true,
+          lastSyncDate: '2026-01-01',
+          uploadedTransactions: [{ id: 'tx-1', date: '2026-01-01' }],
+        },
+        {
+          canadalifeAccount: { id: '456', agreementId: '456', EnglishShortName: 'CLOSED-TFSA', nickname: 'Closed TFSA' },
+          monarchAccount: { id: 'monarch-2', displayName: 'Monarch TFSA' },
+          syncEnabled: false,
+          lastSyncDate: '2025-12-15',
+          uploadedTransactions: [{ id: 'tx-2', date: '2025-12-15' }],
+        },
+      ];
+
+      global.GM_getValue.mockImplementation((key, defaultVal) => {
+        if (key === 'canadalife_accounts_list') {
+          return JSON.stringify(existingAccounts);
+        }
+        return defaultVal;
+      });
+
+      // API only returns account 123 (account 456 has been closed/transferred)
+      const freshApiAccounts = [
+        { EnglishShortName: 'RRSP-UPDATED', LongNameEnglish: 'Updated RRSP', agreementId: '123' },
+      ];
+
+      const mockApiResponse = {
+        IPResult: {
+          MemberPlans: freshApiAccounts,
+        },
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: {
+          get: () => 'application/json',
+          entries: () => [['content-type', 'application/json']],
+        },
+        text: () => Promise.resolve(JSON.stringify({
+          actions: [{
+            returnValue: {
+              returnValue: JSON.stringify(mockApiResponse),
+            },
+          }],
+        })),
+      });
+
+      const result = await loadCanadaLifeAccounts(true); // Force refresh
+
+      // Should have 2 accounts: one active, one orphaned
+      expect(result).toHaveLength(2);
+
+      // First account (from API) should have updated canadalifeAccount
+      expect(result[0].canadalifeAccount).not.toBeNull();
+      expect(result[0].canadalifeAccount.id).toBe('123');
+      expect(result[0].canadalifeAccount.EnglishShortName).toBe('RRSP-UPDATED');
+      expect(result[0].monarchAccount).toEqual({ id: 'monarch-1', displayName: 'Monarch RRSP' });
+
+      // Second account (orphaned) should preserve full canadalifeAccount data for historical reference
+      expect(result[1].canadalifeAccount).not.toBeNull();
+      expect(result[1].canadalifeAccount.id).toBe('456');
+      expect(result[1].canadalifeAccount.EnglishShortName).toBe('CLOSED-TFSA');
+      expect(result[1].canadalifeAccount.nickname).toBe('Closed TFSA');
+      expect(result[1].monarchAccount).toEqual({ id: 'monarch-2', displayName: 'Monarch TFSA' });
+      expect(result[1].syncEnabled).toBe(false);
+      expect(result[1].lastSyncDate).toBe('2025-12-15');
+      expect(result[1].uploadedTransactions).toHaveLength(1);
+
+      // Verify saved data includes both accounts with their full canadalifeAccount data
+      expect(global.GM_setValue).toHaveBeenCalledWith(
+        'canadalife_accounts_list',
+        expect.stringContaining('"canadalifeAccount":{"id":"456"'),
+      );
+    });
+
+    test('should not duplicate orphaned accounts that are already orphaned', async () => {
+      // Simulate existing accounts where 456 is already orphaned (canadalifeAccount: null)
+      const existingAccounts = [
+        {
+          canadalifeAccount: { id: '123', agreementId: '123', EnglishShortName: 'RRSP' },
+          monarchAccount: { id: 'monarch-1', displayName: 'Monarch RRSP' },
+          syncEnabled: true,
+        },
+        {
+          canadalifeAccount: null, // Already orphaned
+          monarchAccount: { id: 'monarch-2', displayName: 'Monarch TFSA (closed)' },
+          syncEnabled: false,
+          lastSyncDate: '2025-12-15',
+        },
+      ];
+
+      global.GM_getValue.mockImplementation((key, defaultVal) => {
+        if (key === 'canadalife_accounts_list') {
+          return JSON.stringify(existingAccounts);
+        }
+        return defaultVal;
+      });
+
+      // API only returns account 123
+      const freshApiAccounts = [
+        { EnglishShortName: 'RRSP', LongNameEnglish: 'RRSP Account', agreementId: '123' },
+      ];
+
+      const mockApiResponse = {
+        IPResult: {
+          MemberPlans: freshApiAccounts,
+        },
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: {
+          get: () => 'application/json',
+          entries: () => [['content-type', 'application/json']],
+        },
+        text: () => Promise.resolve(JSON.stringify({
+          actions: [{
+            returnValue: {
+              returnValue: JSON.stringify(mockApiResponse),
+            },
+          }],
+        })),
+      });
+
+      const result = await loadCanadaLifeAccounts(true); // Force refresh
+
+      // Should still have only 1 account (the one from API), not duplicate the orphaned one
+      // Note: The current implementation requires canadalifeAccount.id or canadalifeAccount.agreementId to add to orphan list
+      // so already-orphaned accounts (with null canadalifeAccount) won't be duplicated
+      expect(result).toHaveLength(1);
+      expect(result[0].canadalifeAccount.id).toBe('123');
+    });
+
     test('should handle API errors gracefully', async () => {
-      global.GM_getValue.mockReturnValue(null);
+      global.GM_getValue.mockReturnValue('[]');
       global.fetch.mockRejectedValue(new Error('Network error'));
 
       await expect(loadCanadaLifeAccounts()).rejects.toThrow('Network error');

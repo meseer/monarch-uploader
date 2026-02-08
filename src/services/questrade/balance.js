@@ -617,7 +617,7 @@ export async function uploadAllAccountsToMonarch() {
     const progressDialog = showProgressDialog(accounts);
 
     // Initialize stats and cancellation state
-    const stats = { success: 0, failed: 0, total: accounts.length };
+    const stats = { success: 0, failed: 0, skipped: 0, total: accounts.length };
     let isCancelled = false;
     let isUploadComplete = false;
 
@@ -669,19 +669,21 @@ export async function uploadAllAccountsToMonarch() {
           // Get start date for this account - ask user if not stored
           let fromDate = getLastUpdateDate(account.key, 'questrade');
           if (!fromDate) {
-            // Show date picker for this specific account
+            // Show date picker for this specific account with "Skip" button
             progressDialog.updateProgress(account.key, 'processing', 'Waiting for date selection...');
             const defaultDate = formatDaysAgoLocal(14); // 2 weeks ago as default
             fromDate = await showDatePickerPromise(
               defaultDate,
               `Select start date for ${accountName}`,
+              { cancelButtonText: 'Skip' },
             );
 
             if (!fromDate) {
-              // User cancelled - cancel entire upload operation
-              progressDialog.close();
-              toast.show('Upload cancelled: Date selection cancelled.', 'info');
-              return;
+              // User clicked Skip - skip this account and continue with others
+              stats.skipped += 1;
+              progressDialog.updateProgress(account.key, 'skipped', 'Skipped by user');
+              debugLog(`Skipped account ${account.key} - user clicked Skip on date picker`);
+              continue;
             }
           }
 
@@ -756,7 +758,12 @@ export async function uploadAllAccountsToMonarch() {
       } else if (stats.success === stats.total) {
         toast.show(`Successfully uploaded balance history for all ${stats.total} accounts!`, 'info');
       } else if (stats.success > 0) {
-        toast.show(`Upload completed: ${stats.success} successful, ${stats.failed} failed`, 'warning');
+        const parts = [`${stats.success} successful`];
+        if (stats.skipped > 0) parts.push(`${stats.skipped} skipped`);
+        if (stats.failed > 0) parts.push(`${stats.failed} failed`);
+        toast.show(`Upload completed: ${parts.join(', ')}`, stats.failed > 0 ? 'warning' : 'info');
+      } else if (stats.skipped === stats.total) {
+        toast.show('All accounts were skipped', 'info');
       }
     } catch (error) {
       // Ensure we complete the upload process even on error
@@ -913,7 +920,7 @@ export async function uploadFullBalanceHistoryForAllAccounts() {
     const progressDialog = showProgressDialog(accounts, 'Uploading Full Balance History');
 
     // Initialize stats and cancellation state
-    const stats = { success: 0, failed: 0, total: accounts.length };
+    const stats = { success: 0, failed: 0, skipped: 0, total: accounts.length };
     let isCancelled = false;
     let isUploadComplete = false;
 
@@ -974,18 +981,20 @@ export async function uploadFullBalanceHistoryForAllAccounts() {
             defaultFromDate = formatDate(oneYearAgo);
           }
 
-          // Show date picker for this specific account
+          // Show date picker for this specific account with "Skip" button
           progressDialog.updateProgress(account.key, 'processing', 'Waiting for date selection...');
           const fromDate = await showDatePickerPromise(
             defaultFromDate,
             `Select start date for ${accountName} (full history)`,
+            { cancelButtonText: 'Skip' },
           );
 
           if (!fromDate) {
-            // User cancelled - cancel entire upload operation
-            progressDialog.close();
-            toast.show('Upload cancelled: Date selection cancelled.', 'info');
-            return;
+            // User clicked Skip - skip this account and continue with others
+            stats.skipped += 1;
+            progressDialog.updateProgress(account.key, 'skipped', 'Skipped by user');
+            debugLog(`Skipped account ${account.key} - user clicked Skip on date picker`);
+            continue;
           }
 
           const toDate = getTodayLocal();
@@ -1060,7 +1069,12 @@ export async function uploadFullBalanceHistoryForAllAccounts() {
       } else if (stats.success === stats.total) {
         toast.show(`Successfully uploaded full balance history for all ${stats.total} accounts!`, 'info');
       } else if (stats.success > 0) {
-        toast.show(`Upload completed: ${stats.success} successful, ${stats.failed} failed`, 'warning');
+        const parts = [`${stats.success} successful`];
+        if (stats.skipped > 0) parts.push(`${stats.skipped} skipped`);
+        if (stats.failed > 0) parts.push(`${stats.failed} failed`);
+        toast.show(`Upload completed: ${parts.join(', ')}`, stats.failed > 0 ? 'warning' : 'info');
+      } else if (stats.skipped === stats.total) {
+        toast.show('All accounts were skipped', 'info');
       }
     } catch (error) {
       // Ensure we complete the upload process even on error

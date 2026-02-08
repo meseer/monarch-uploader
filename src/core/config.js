@@ -29,10 +29,6 @@ export const API = {
 };
 
 // Storage keys
-// TODO: Future migration - Questrade, Rogers Bank, and CanadaLife should migrate
-// to a consolidated account structure like Wealthsimple uses (wealthsimple_accounts_list).
-// This will allow storing all account-specific settings (retention, mappings, etc.)
-// in a single unified structure per institution instead of scattered storage keys.
 export const STORAGE = {
   // Global settings
   DEVELOPMENT_MODE: 'development_mode', // Global development mode toggle
@@ -43,7 +39,7 @@ export const STORAGE = {
   ROGERSBANK_ACCOUNTS_LIST: 'rogersbank_accounts_list',
   CANADALIFE_ACCOUNTS_LIST: 'canadalife_accounts_list',
   // Questrade specific storage keys
-  QUESTRADE_ACCOUNTS_CACHE: 'questrade_accounts_cache', // Raw API cache (separate from consolidated ACCOUNTS_LIST)
+  QUESTRADE_ACCOUNTS_CACHE: 'questrade_accounts_cache', // DEPRECATED - legacy cache, cleaned up after first API fetch
   QUESTRADE_LAST_UPLOAD_DATE_PREFIX: 'questrade_last_upload_date_',
   QUESTRADE_ACCOUNT_MAPPING_PREFIX: 'questrade_monarch_account_for_',
   QUESTRADE_HOLDINGS_FOR_PREFIX: 'questrade_holdings_for_',

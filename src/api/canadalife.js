@@ -849,22 +849,27 @@ export async function loadAccountActivityReport(account, startDate, endDate, sig
 }
 
 /**
- * Load Canada Life accounts using the Aura API
+ * Load and cache Canada Life accounts with consolidated structure.
+ * Follows the same pattern as Wealthsimple's fetchAndCacheWealthsimpleAccounts():
+ * - Fetches fresh accounts from API
+ * - Merges with existing consolidated storage (preserving monarchAccount, syncEnabled, lastSyncDate, uploadedTransactions, etc.)
+ * - Stores the full API account object in .canadalifeAccount
+ * - Returns consolidated account array
+ *
  * @param {boolean} forceRefresh - Whether to force refresh from API (ignore cache)
- * @returns {Promise<Array>} Array of Canada Life accounts
+ * @returns {Promise<Array>} Array of consolidated account objects
  */
 export async function loadCanadaLifeAccounts(forceRefresh = false) {
-  const cacheKey = 'canadalife_accounts';
+  const legacyCacheKey = 'canadalife_accounts';
 
   try {
-    // Check cache first (unless force refresh)
-    if (!forceRefresh) {
-      const cachedAccounts = GM_getValue(cacheKey, null);
-      if (cachedAccounts) {
-        const accounts = JSON.parse(cachedAccounts);
-        debugLog(`Loaded ${accounts.length} Canada Life accounts from cache`);
-        return accounts;
-      }
+    // Get existing consolidated accounts
+    const existingAccounts = JSON.parse(GM_getValue(STORAGE.CANADALIFE_ACCOUNTS_LIST, '[]'));
+
+    // Check consolidated cache first (unless force refresh)
+    if (!forceRefresh && existingAccounts.length > 0) {
+      debugLog(`Loaded ${existingAccounts.length} Canada Life accounts from consolidated storage`);
+      return existingAccounts;
     }
 
     debugLog('Loading Canada Life accounts from API...');
@@ -910,27 +915,93 @@ export async function loadCanadaLifeAccounts(forceRefresh = false) {
       throw new Error('No MemberPlans found in Canada Life API response');
     }
 
-    const accounts = nestedData.IPResult.MemberPlans;
+    const apiAccounts = nestedData.IPResult.MemberPlans;
 
     // Log account information for verification
-    debugLog(`Loaded ${accounts.length} Canada Life accounts:`);
-    accounts.forEach((account) => {
-      debugLog(`Account: ${account.LongNameEnglish} (${account.EnglishShortName})`, {
-        agreementId: account.agreementId,
-        enrollmentDate: account.EnrollmentDate,
-        longName: account.LongNameEnglish,
-        shortName: account.EnglishShortName,
-      });
+    debugLog(`Loaded ${apiAccounts.length} Canada Life accounts from API`);
+
+    // Create a map of existing accounts by Canada Life account ID (agreementId)
+    const existingMap = new Map();
+    existingAccounts.forEach((acc) => {
+      if (acc.canadalifeAccount?.id || acc.canadalifeAccount?.agreementId) {
+        const accountId = acc.canadalifeAccount.id || acc.canadalifeAccount.agreementId;
+        existingMap.set(accountId, acc);
+      }
     });
 
-    // Cache the accounts permanently
-    GM_setValue(cacheKey, JSON.stringify(accounts));
+    // Step 1: Merge API data with existing settings for accounts that exist in API
+    const mergedAccounts = apiAccounts.map((apiAccount) => {
+      // Canada Life uses agreementId as the account ID
+      const accountId = apiAccount.agreementId;
+      const existing = existingMap.get(accountId);
 
-    // Show success notification
-    const accountNames = accounts.map((acc) => acc.EnglishShortName).join(', ');
+      debugLog(`Account: ${apiAccount.LongNameEnglish} (${apiAccount.EnglishShortName})`, {
+        agreementId: apiAccount.agreementId,
+        enrollmentDate: apiAccount.EnrollmentDate,
+        longName: apiAccount.LongNameEnglish,
+        shortName: apiAccount.EnglishShortName,
+      });
+
+      return {
+        // Canada Life account definition (always fresh from API, use 'id' as canonical field)
+        canadalifeAccount: {
+          id: apiAccount.agreementId, // Canonical ID field (matches other integrations)
+          agreementId: apiAccount.agreementId, // Keep original for backward compatibility
+          nickname: apiAccount.EnglishShortName || apiAccount.LongNameEnglish || accountId,
+          // Full account data from API
+          EnglishShortName: apiAccount.EnglishShortName,
+          LongNameEnglish: apiAccount.LongNameEnglish,
+          EnrollmentDate: apiAccount.EnrollmentDate,
+          // Preserve any other fields from API
+          ...apiAccount,
+        },
+
+        // Monarch account mapping (preserve from cache)
+        monarchAccount: existing?.monarchAccount || null,
+
+        // Sync enabled status (preserve from cache, default to true for new accounts)
+        syncEnabled: existing?.syncEnabled ?? true,
+
+        // Last sync date (preserve from cache)
+        lastSyncDate: existing?.lastSyncDate || null,
+
+        // Uploaded transactions for deduplication (preserve from cache)
+        uploadedTransactions: existing?.uploadedTransactions || [],
+
+        // Successful sync count for legacy cleanup (preserve from cache)
+        successfulSyncCount: existing?.successfulSyncCount || 0,
+      };
+    });
+
+    // Step 2: Find and preserve orphaned accounts (accounts that existed before but aren't in API anymore)
+    // This preserves Monarch mappings, settings, AND the canadalifeAccount data for closed/transferred accounts
+    const apiAccountIds = new Set(apiAccounts.map((a) => a.agreementId));
+    existingAccounts.forEach((existing) => {
+      const existingId = existing.canadalifeAccount?.id || existing.canadalifeAccount?.agreementId;
+      if (existingId && !apiAccountIds.has(existingId)) {
+        // This account is no longer in the API - preserve it completely (including canadalifeAccount)
+        debugLog(`Preserving orphaned account: ${existingId} (${existing.canadalifeAccount?.nickname || 'Unknown'})`);
+        mergedAccounts.push(existing);
+      }
+    });
+
+    // Save merged list with consolidated structure
+    GM_setValue(STORAGE.CANADALIFE_ACCOUNTS_LIST, JSON.stringify(mergedAccounts));
+    debugLog(`Cached ${mergedAccounts.length} Canada Life accounts with consolidated structure`);
+
+    // Clean up legacy cache if it exists (one-time cleanup)
+    const legacyCache = GM_getValue(legacyCacheKey, null);
+    if (legacyCache) {
+      debugLog('Removing legacy canadalife_accounts cache (migrated to consolidated storage)');
+      GM_deleteValue(legacyCacheKey);
+    }
+
+    // Show success notification (only for active accounts)
+    const activeAccounts = mergedAccounts.filter((acc) => acc.canadalifeAccount !== null);
+    const accountNames = activeAccounts.map((acc) => acc.canadalifeAccount.EnglishShortName).join(', ');
     toast.show(`Loaded Canada Life accounts: ${accountNames}`, 'debug');
 
-    return accounts;
+    return mergedAccounts;
   } catch (error) {
     debugLog('Error loading Canada Life accounts:', error);
     toast.show(`Failed to load Canada Life accounts: ${error.message}`, 'error');

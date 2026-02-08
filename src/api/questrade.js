@@ -3,7 +3,7 @@
  * Handles all communication with Questrade's API endpoints
  */
 
-import { API, STORAGE } from '../core/config';
+import { API, STORAGE, TRANSACTION_RETENTION_DEFAULTS } from '../core/config';
 import { debugLog } from '../core/utils';
 import stateManager from '../core/state';
 import authService from '../services/questrade/auth';
@@ -54,8 +54,14 @@ export async function makeQuestradeApiCall(endpoint, requiredPermissions = [
 }
 
 /**
- * Fetch and cache the list of Questrade accounts
- * @returns {Promise<Array>} List of accounts
+ * Fetch and cache Questrade accounts list with consolidated structure.
+ * Follows the same pattern as Wealthsimple's fetchAndCacheWealthsimpleAccounts():
+ * - Fetches fresh accounts from API
+ * - Merges with existing consolidated storage (preserving monarchAccount, syncEnabled, lastSyncDate, uploadedTransactions, etc.)
+ * - Stores the full API account object in .questradeAccount
+ * - Returns consolidated account array
+ *
+ * @returns {Promise<Array>} Array of consolidated account objects
  */
 export async function fetchAndCacheQuestradeAccounts() {
   try {
@@ -63,23 +69,107 @@ export async function fetchAndCacheQuestradeAccounts() {
     const response = await makeQuestradeApiCall('/v2/brokerage-accounts');
 
     // Check if accounts is in the expected format (either direct array or in a property)
-    let accounts = [];
+    let apiAccounts = [];
     if (response && Array.isArray(response)) {
-      accounts = response;
+      apiAccounts = response;
     } else if (response && response.accounts && Array.isArray(response.accounts)) {
-      accounts = response.accounts;
+      apiAccounts = response.accounts;
     } else if (response && Array.isArray(response.data)) {
-      accounts = response.data;
+      apiAccounts = response.data;
     }
 
-    if (accounts && accounts.length > 0) {
-      GM_setValue(STORAGE.QUESTRADE_ACCOUNTS_CACHE, JSON.stringify(accounts));
-      debugLog(`Successfully fetched and cached ${accounts.length} accounts.`);
-      return accounts;
+    if (!apiAccounts || apiAccounts.length === 0) {
+      debugLog('No accounts found in API response:', response);
+      return [];
     }
 
-    debugLog('No accounts found in response:', response);
-    return [];
+    debugLog(`Fetched ${apiAccounts.length} accounts from Questrade API`);
+
+    // Get existing cached accounts (consolidated structure)
+    const existingAccounts = JSON.parse(GM_getValue(STORAGE.ACCOUNTS_LIST, '[]'));
+
+    // Create a map of existing accounts by Questrade account ID (key)
+    const existingMap = new Map();
+    existingAccounts.forEach((acc) => {
+      if (acc.questradeAccount?.id || acc.questradeAccount?.key) {
+        const accountId = acc.questradeAccount.id || acc.questradeAccount.key;
+        existingMap.set(accountId, acc);
+      }
+    });
+
+    // Step 1: Merge API data with existing settings for accounts that exist in API
+    const mergedAccounts = apiAccounts.map((apiAccount) => {
+      // Questrade API uses 'key' as the account ID
+      const accountId = apiAccount.key;
+      const existing = existingMap.get(accountId);
+
+      return {
+        // Questrade account definition (always fresh from API, use 'id' as canonical field)
+        questradeAccount: {
+          id: apiAccount.key, // Canonical ID field (matches other integrations)
+          key: apiAccount.key, // Keep original key for backward compatibility
+          nickname: apiAccount.nickname || apiAccount.name || accountId,
+          number: apiAccount.number,
+          type: apiAccount.type,
+          accountDetailType: apiAccount.accountDetailType,
+          accountType: apiAccount.accountType,
+          productType: apiAccount.productType,
+          accountStatus: apiAccount.accountStatus,
+          // Preserve any other fields from API
+          ...apiAccount,
+        },
+
+        // Monarch account mapping (preserve from cache)
+        monarchAccount: existing?.monarchAccount || null,
+
+        // Sync enabled status (preserve from cache, default to true for new accounts)
+        syncEnabled: existing?.syncEnabled ?? true,
+
+        // Last sync date (preserve from cache)
+        lastSyncDate: existing?.lastSyncDate || null,
+
+        // Uploaded transactions for deduplication (preserve from cache)
+        uploadedTransactions: existing?.uploadedTransactions || [],
+
+        // Holdings mappings for investment accounts (preserve from cache)
+        holdingsMappings: existing?.holdingsMappings || {},
+
+        // Transaction retention settings (preserve from cache)
+        transactionRetentionDays: existing?.transactionRetentionDays ?? TRANSACTION_RETENTION_DEFAULTS.DAYS,
+        transactionRetentionCount: existing?.transactionRetentionCount ?? TRANSACTION_RETENTION_DEFAULTS.COUNT,
+
+        // Store transaction details in notes setting (preserve from cache)
+        storeTransactionDetailsInNotes: existing?.storeTransactionDetailsInNotes ?? false,
+
+        // Successful sync count for legacy cleanup (preserve from cache)
+        successfulSyncCount: existing?.successfulSyncCount || 0,
+      };
+    });
+
+    // Step 2: Find and preserve orphaned accounts (accounts that existed before but aren't in API anymore)
+    // This preserves Monarch mappings, settings, AND the questradeAccount data for closed/transferred accounts
+    const apiAccountIds = new Set(apiAccounts.map((a) => a.key));
+    existingAccounts.forEach((existing) => {
+      const existingId = existing.questradeAccount?.id || existing.questradeAccount?.key;
+      if (existingId && !apiAccountIds.has(existingId)) {
+        // This account is no longer in the API - preserve it completely (including questradeAccount)
+        debugLog(`Preserving orphaned account: ${existingId} (${existing.questradeAccount?.nickname || 'Unknown'})`);
+        mergedAccounts.push(existing);
+      }
+    });
+
+    // Save merged list with consolidated structure
+    GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(mergedAccounts));
+    debugLog(`Cached ${mergedAccounts.length} Questrade accounts with consolidated structure`);
+
+    // Clean up legacy cache if it exists (one-time cleanup)
+    const legacyCache = GM_getValue(STORAGE.QUESTRADE_ACCOUNTS_CACHE, null);
+    if (legacyCache) {
+      debugLog('Removing legacy questrade_accounts_cache (migrated to consolidated storage)');
+      GM_deleteValue(STORAGE.QUESTRADE_ACCOUNTS_CACHE);
+    }
+
+    return mergedAccounts;
   } catch (error) {
     debugLog('Failed to fetch or cache Questrade accounts:', error);
     throw error;
@@ -87,13 +177,24 @@ export async function fetchAndCacheQuestradeAccounts() {
 }
 
 /**
- * Get account by ID
- * @param {string} accountId - Account ID to find
- * @returns {Object|undefined} Account object or undefined if not found
+ * Get account by ID from consolidated storage
+ * @param {string} accountId - Account ID (key) to find
+ * @returns {Object|undefined} Full questradeAccount object or undefined if not found
+ * @deprecated Use accountService.getAccountData(INTEGRATIONS.QUESTRADE, accountId).questradeAccount instead
  */
 export function getQuestradeAccount(accountId) {
-  const accounts = JSON.parse(GM_getValue(STORAGE.QUESTRADE_ACCOUNTS_CACHE, '[]'));
-  return accounts.find((acc) => acc.key === accountId);
+  // First try consolidated storage (new approach)
+  const consolidatedAccounts = JSON.parse(GM_getValue(STORAGE.ACCOUNTS_LIST, '[]'));
+  const consolidated = consolidatedAccounts.find(
+    (acc) => acc.questradeAccount?.id === accountId || acc.questradeAccount?.key === accountId,
+  );
+  if (consolidated?.questradeAccount) {
+    return consolidated.questradeAccount;
+  }
+
+  // Fall back to legacy cache for backward compatibility during transition
+  const legacyAccounts = JSON.parse(GM_getValue(STORAGE.QUESTRADE_ACCOUNTS_CACHE, '[]'));
+  return legacyAccounts.find((acc) => acc.key === accountId);
 }
 
 /**

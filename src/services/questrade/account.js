@@ -37,18 +37,23 @@ export async function loadCurrentAccountInfo() {
     const accountId = matches[1];
     debugLog(`Detected account ID in URL: ${accountId}`);
 
-    // Fetch accounts if not already cached
-    let accounts = JSON.parse(GM_getValue(STORAGE.QUESTRADE_ACCOUNTS_CACHE, '[]'));
-    if (accounts.length === 0) {
-      accounts = await questradeApi.fetchAccounts();
+    // Fetch accounts from consolidated storage or API
+    let consolidatedAccounts = accountService.getAccounts(INTEGRATIONS.QUESTRADE);
+    if (consolidatedAccounts.length === 0) {
+      consolidatedAccounts = await questradeApi.fetchAccounts();
     }
 
-    // Find the account in the list
-    const account = accounts.find((acc) => acc.key === accountId);
-    if (!account) {
+    // Find the account in the consolidated list
+    const consolidatedAccount = consolidatedAccounts.find(
+      (acc) => acc.questradeAccount?.id === accountId || acc.questradeAccount?.key === accountId,
+    );
+
+    if (!consolidatedAccount?.questradeAccount) {
       debugLog(`Account ${accountId} not found in accounts list`);
       return null;
     }
+
+    const account = consolidatedAccount.questradeAccount;
 
     // Update state with current account
     const accountNickname = account.nickname || account.name;
@@ -65,7 +70,7 @@ export async function loadCurrentAccountInfo() {
 /**
  * Get detailed information for an account by ID
  * @param {string} accountId - Account ID to fetch
- * @returns {Promise<Object>} Account details
+ * @returns {Promise<Object>} Account details (questradeAccount object)
  */
 export async function getAccountDetails(accountId) {
   try {
@@ -79,21 +84,21 @@ export async function getAccountDetails(accountId) {
       throw new AccountError('Not authenticated with Questrade', accountId);
     }
 
-    // Fetch account details
-    const account = questradeApi.getAccount(accountId);
-    if (!account) {
-      // Try to fetch fresh accounts list
-      await questradeApi.fetchAccounts();
-      const refreshedAccount = questradeApi.getAccount(accountId);
-
-      if (!refreshedAccount) {
-        throw new AccountError(`Account ${accountId} not found`, accountId);
-      }
-
-      return refreshedAccount;
+    // Fetch account details from consolidated storage
+    const accountData = accountService.getAccountData(INTEGRATIONS.QUESTRADE, accountId);
+    if (accountData?.questradeAccount) {
+      return accountData.questradeAccount;
     }
 
-    return account;
+    // Try to fetch fresh accounts list from API
+    await questradeApi.fetchAccounts();
+    const refreshedAccountData = accountService.getAccountData(INTEGRATIONS.QUESTRADE, accountId);
+
+    if (!refreshedAccountData?.questradeAccount) {
+      throw new AccountError(`Account ${accountId} not found`, accountId);
+    }
+
+    return refreshedAccountData.questradeAccount;
   } catch (error) {
     debugLog(`Error fetching account details for ${accountId}:`, error);
     if (error instanceof AccountError) {
@@ -106,7 +111,7 @@ export async function getAccountDetails(accountId) {
 /**
  * Get all available accounts
  * @param {boolean} refresh - Force refresh from API
- * @returns {Promise<Array>} List of accounts
+ * @returns {Promise<Array>} List of consolidated account objects
  */
 export async function getAllAccounts(refresh = false) {
   try {
@@ -117,17 +122,17 @@ export async function getAllAccounts(refresh = false) {
     }
 
     if (refresh) {
-      // Force fetch from API
+      // Force fetch from API (returns consolidated structure)
       return await questradeApi.fetchAccounts();
     }
 
-    // Try to get from cache first
-    const accounts = JSON.parse(GM_getValue(STORAGE.QUESTRADE_ACCOUNTS_CACHE, '[]'));
+    // Try to get from consolidated storage first
+    const accounts = accountService.getAccounts(INTEGRATIONS.QUESTRADE);
     if (accounts.length > 0) {
       return accounts;
     }
 
-    // Fetch if cache is empty
+    // Fetch if storage is empty (returns consolidated structure)
     return await questradeApi.fetchAccounts();
   } catch (error) {
     debugLog('Error fetching all accounts:', error);

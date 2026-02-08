@@ -918,6 +918,9 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
       } else if (status === 'error') {
         el.row.style.backgroundColor = '#ffebee';
         el.status.style.color = '#c62828';
+      } else if (status === 'skipped') {
+        el.row.style.backgroundColor = '#f5f5f5';
+        el.status.style.color = '#888';
       } else {
         el.row.style.backgroundColor = 'transparent';
         el.status.style.color = '#888';

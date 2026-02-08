@@ -715,6 +715,21 @@ function calculateBusinessDays(startDate, endDate) {
 }
 
 /**
+ * Extract the source Canada Life account from consolidated or raw account object
+ * Handles both consolidated structure (with .canadalifeAccount) and raw API response
+ * @param {Object} account - Account object (consolidated or raw)
+ * @returns {Object} Source Canada Life account object
+ */
+function extractSourceAccount(account) {
+  // If this is a consolidated account with canadalifeAccount property, extract it
+  if (account.canadalifeAccount) {
+    return account.canadalifeAccount;
+  }
+  // Otherwise, assume it's already a raw API account
+  return account;
+}
+
+/**
  * Upload all Canada Life accounts to Monarch (one-click option)
  * Uploads both balance history and transactions for each account
  * @returns {Promise<void>}
@@ -727,23 +742,26 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
       return; // User cancelled authentication
     }
 
-    // Load Canada Life accounts
+    // Load Canada Life accounts (returns consolidated structure)
     toast.show('Loading Canada Life accounts...', 'info');
-    const accounts = await canadalife.loadCanadaLifeAccounts();
+    const consolidatedAccounts = await canadalife.loadCanadaLifeAccounts();
 
-    if (!accounts || accounts.length === 0) {
+    if (!consolidatedAccounts || consolidatedAccounts.length === 0) {
       toast.show('No Canada Life accounts found', 'error');
       return;
     }
 
-    debugLog(`Found ${accounts.length} Canada Life accounts for upload`);
+    debugLog(`Found ${consolidatedAccounts.length} Canada Life accounts for upload`);
 
-    // Create progress dialog
-    const accountsForDialog = accounts.map((acc) => ({
-      key: acc.agreementId,
-      nickname: acc.LongNameEnglish || acc.EnglishShortName,
-      name: acc.EnglishShortName,
-    }));
+    // Create progress dialog - extract source account for display
+    const accountsForDialog = consolidatedAccounts.map((consolidated) => {
+      const sourceAccount = extractSourceAccount(consolidated);
+      return {
+        key: sourceAccount.agreementId,
+        nickname: sourceAccount.LongNameEnglish || sourceAccount.EnglishShortName,
+        name: sourceAccount.EnglishShortName,
+      };
+    });
 
     const progressDialog = showProgressDialog(
       accountsForDialog,
@@ -754,7 +772,7 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
     const stats = {
       success: 0,
       failed: 0,
-      total: accounts.length,
+      total: consolidatedAccounts.length,
       transactionsUploaded: 0,
       transactionsSkipped: 0,
     };
@@ -768,14 +786,17 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
       abortController.abort();
     });
 
-    // Process each account
-    for (const account of accounts) {
+    // Process each consolidated account
+    for (const consolidated of consolidatedAccounts) {
       // Check for cancellation before processing each account
       if (abortController.signal.aborted) {
         debugLog('Upload cancelled, stopping account processing');
         break;
       }
-      const accountId = account.agreementId;
+
+      // Extract the source Canada Life account for processing
+      const sourceAccount = extractSourceAccount(consolidated);
+      const accountId = sourceAccount.agreementId;
 
       try {
         // Update progress
@@ -791,7 +812,7 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
         }
 
         // Upload the account (auto upload allows today and stores yesterday as last upload)
-        const result = await uploadSingleAccount(account, startDate, endDate, progressDialog, true, abortController.signal);
+        const result = await uploadSingleAccount(sourceAccount, startDate, endDate, progressDialog, true, abortController.signal);
         stats.success += 1;
 
         // Aggregate transaction statistics
@@ -853,21 +874,24 @@ export async function uploadCanadaLifeAccountWithDateRange() {
       return; // User cancelled authentication
     }
 
-    // Load Canada Life accounts
+    // Load Canada Life accounts (returns consolidated structure)
     toast.show('Loading Canada Life accounts...', 'info');
-    const accounts = await canadalife.loadCanadaLifeAccounts();
+    const consolidatedAccounts = await canadalife.loadCanadaLifeAccounts();
 
-    if (!accounts || accounts.length === 0) {
+    if (!consolidatedAccounts || consolidatedAccounts.length === 0) {
       toast.show('No Canada Life accounts found', 'error');
       return;
     }
 
-    // Show account selector
-    const selectedAccount = await selectCanadaLifeAccount(accounts);
-    if (!selectedAccount) {
+    // Show account selector - pass consolidated accounts, selector will handle extraction
+    const selectedConsolidated = await selectCanadaLifeAccount(consolidatedAccounts);
+    if (!selectedConsolidated) {
       toast.show('Account selection cancelled', 'info');
       return;
     }
+
+    // Extract the source Canada Life account
+    const selectedAccount = extractSourceAccount(selectedConsolidated);
 
     // Show date range picker
     const dateRange = await selectDateRange();
@@ -931,10 +955,10 @@ export async function uploadCanadaLifeAccountWithDateRange() {
 
 /**
  * Show account selector for Canada Life accounts
- * @param {Array} accounts - Array of Canada Life accounts
- * @returns {Promise<Object|null>} Selected account or null if cancelled
+ * @param {Array} consolidatedAccounts - Array of consolidated Canada Life accounts
+ * @returns {Promise<Object|null>} Selected consolidated account or null if cancelled
  */
-async function selectCanadaLifeAccount(accounts) {
+async function selectCanadaLifeAccount(consolidatedAccounts) {
   return new Promise((resolve) => {
     // Create modal overlay
     const overlay = document.createElement('div');
@@ -970,7 +994,10 @@ async function selectCanadaLifeAccount(accounts) {
     modal.appendChild(title);
 
     // Add account list
-    accounts.forEach((account) => {
+    consolidatedAccounts.forEach((consolidated) => {
+      // Extract source account for display
+      const account = extractSourceAccount(consolidated);
+
       const item = document.createElement('div');
       item.style.cssText = `
         padding: 15px;
@@ -1001,7 +1028,7 @@ async function selectCanadaLifeAccount(accounts) {
 
       item.addEventListener('click', () => {
         overlay.remove();
-        resolve(account);
+        resolve(consolidated); // Return the full consolidated account
       });
 
       modal.appendChild(item);

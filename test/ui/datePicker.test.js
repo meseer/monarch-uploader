@@ -629,7 +629,7 @@ describe('Date Picker Component', () => {
 
       showDatePicker(defaultDate, promptText, callback);
 
-      expect(debugLog).toHaveBeenCalledWith('Showing date picker with default date:', defaultDate);
+      expect(debugLog).toHaveBeenCalledWith('Showing date picker with default date:', defaultDate, 'cancelButtonText:', 'Cancel');
       expect(debugLog).toHaveBeenCalledWith('Date picker modal displayed with keyboard navigation');
     });
   });
