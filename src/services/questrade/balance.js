@@ -7,7 +7,7 @@ import {
   debugLog, formatDate, getLocalToday, getTodayLocal, formatDaysAgoLocal, parseLocalDate,
   getLastUpdateDate, saveLastUploadDate,
 } from '../../core/utils';
-import { STORAGE, ACCOUNT_STATUS } from '../../core/config';
+import { ACCOUNT_STATUS } from '../../core/config';
 import stateManager from '../../core/state';
 import questradeApi from '../../api/questrade';
 import monarchApi from '../../api/monarch';
@@ -646,14 +646,6 @@ export async function uploadAllAccountsToMonarch() {
         return;
       }
 
-      // Get start dates for all accounts
-      const startDates = await getStartDatesForAllAccounts(accounts);
-      if (!startDates || isCancelled) {
-        progressDialog.close();
-        toast.show('Upload cancelled: Date selection cancelled.', 'info');
-        return;
-      }
-
       // Process each account
       const processedAccounts = [];
       for (const account of accounts) {
@@ -670,15 +662,33 @@ export async function uploadAllAccountsToMonarch() {
         processedAccounts.push(account.key);
 
         try {
-          // Update progress
-          progressDialog.updateProgress(account.key, 'processing', 'Fetching balance history...');
-
           // Set current account for UI updates
           const accountName = account.nickname || account.name || 'Account';
           stateManager.setAccount(account.key, accountName);
 
-          const fromDate = startDates[account.key];
+          // Get start date for this account - ask user if not stored
+          let fromDate = getLastUpdateDate(account.key, 'questrade');
+          if (!fromDate) {
+            // Show date picker for this specific account
+            progressDialog.updateProgress(account.key, 'processing', 'Waiting for date selection...');
+            const defaultDate = formatDaysAgoLocal(14); // 2 weeks ago as default
+            fromDate = await showDatePickerPromise(
+              defaultDate,
+              `Select start date for ${accountName}`,
+            );
+
+            if (!fromDate) {
+              // User cancelled - cancel entire upload operation
+              progressDialog.close();
+              toast.show('Upload cancelled: Date selection cancelled.', 'info');
+              return;
+            }
+          }
+
           const toDate = getTodayLocal();
+
+          // Update progress
+          progressDialog.updateProgress(account.key, 'processing', 'Fetching balance history...');
 
           // Check cancellation before fetch
           if (isCancelled) break;
@@ -846,51 +856,6 @@ async function ensureAllAccountMappings(accounts, progressDialog) {
 }
 
 /**
- * Get start dates for all accounts
- * @param {Array} accounts - List of accounts
- * @returns {Promise<Object|null>} Object mapping account keys to start dates, or null if cancelled
- */
-async function getStartDatesForAllAccounts(accounts) {
-  const startDates = {};
-  let needsDatePicker = false;
-  let oldestDate = null;
-
-  // Check each account for lastUsedDate
-  for (const account of accounts) {
-    const lastDate = GM_getValue(`${STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX}${account.key}`, null);
-    if (lastDate && /^\d{4}-\d{2}-\d{2}$/.test(lastDate)) {
-      startDates[account.key] = lastDate;
-      // Track oldest date among accounts that have one
-      if (!oldestDate || lastDate < oldestDate) {
-        oldestDate = lastDate;
-      }
-    } else {
-      needsDatePicker = true;
-    }
-  }
-
-  // If any account is missing lastUsedDate, show date picker once
-  if (needsDatePicker) {
-    const defaultDate = oldestDate || formatDate(new Date(Date.now() - 12096e5)); // 2 weeks ago
-    const selectedDate = await showDatePickerPromise(
-      defaultDate,
-      'Select start date for accounts without history',
-    );
-
-    if (!selectedDate) return null; // User cancelled
-
-    // Use selected date for accounts without lastUsedDate
-    for (const account of accounts) {
-      if (!startDates[account.key]) {
-        startDates[account.key] = selectedDate;
-      }
-    }
-  }
-
-  return startDates;
-}
-
-/**
  * Get account creation date from cached account data
  * @param {string} accountId - Account ID
  * @returns {string|null} Creation date in YYYY-MM-DD format or null
@@ -926,6 +891,7 @@ export async function uploadFullBalanceHistoryForAccount(accountId, accountName,
  * Upload full balance history for all Questrade accounts from their creation dates
  * Shows a progress dialog and handles the bulk upload process
  * Includes closed accounts (accounts in storage but not in API)
+ * Each account is prompted for its start date individually
  * @returns {Promise<void>}
  */
 export async function uploadFullBalanceHistoryForAllAccounts() {
@@ -940,33 +906,6 @@ export async function uploadFullBalanceHistoryForAllAccounts() {
     const accounts = await getAccountsForSync({ includeClosed: true });
     if (!accounts || !accounts.length) {
       toast.show('No Questrade accounts found.', 'error');
-      return;
-    }
-
-    // Find earliest creation date among all accounts for date picker default
-    let earliestCreationDate = null;
-    for (const account of accounts) {
-      const createdOn = account.createdOn ? account.createdOn.split('T')[0] : null;
-      if (createdOn && (!earliestCreationDate || createdOn < earliestCreationDate)) {
-        earliestCreationDate = createdOn;
-      }
-    }
-
-    // Default to 1 year ago if no creation dates found
-    if (!earliestCreationDate) {
-      const oneYearAgo = new Date();
-      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-      earliestCreationDate = formatDate(oneYearAgo);
-    }
-
-    // Show date picker with earliest creation date as default
-    const selectedDate = await showDatePickerPromise(
-      earliestCreationDate,
-      'Select start date for full balance history upload',
-    );
-
-    if (!selectedDate) {
-      toast.show('Upload cancelled.', 'info');
       return;
     }
 
@@ -1019,21 +958,47 @@ export async function uploadFullBalanceHistoryForAllAccounts() {
         processedAccounts.push(account.key);
 
         try {
-          // Update progress
-          progressDialog.updateProgress(account.key, 'processing', 'Fetching balance history...');
-
           // Set current account for UI updates
           const accountName = account.nickname || account.name || 'Account';
           stateManager.setAccount(account.key, accountName);
 
+          // Determine default start date for this account
+          // Use account creation date if available, otherwise 1 year ago
+          let defaultFromDate;
+          const createdOn = account.createdOn ? account.createdOn.split('T')[0] : null;
+          if (createdOn) {
+            defaultFromDate = createdOn;
+          } else {
+            const oneYearAgo = new Date();
+            oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+            defaultFromDate = formatDate(oneYearAgo);
+          }
+
+          // Show date picker for this specific account
+          progressDialog.updateProgress(account.key, 'processing', 'Waiting for date selection...');
+          const fromDate = await showDatePickerPromise(
+            defaultFromDate,
+            `Select start date for ${accountName} (full history)`,
+          );
+
+          if (!fromDate) {
+            // User cancelled - cancel entire upload operation
+            progressDialog.close();
+            toast.show('Upload cancelled: Date selection cancelled.', 'info');
+            return;
+          }
+
           const toDate = getTodayLocal();
+
+          // Update progress
+          progressDialog.updateProgress(account.key, 'processing', 'Fetching balance history...');
 
           // Check cancellation before fetch
           if (isCancelled) break;
 
           // Fetch balance history
           progressDialog.updateProgress(account.key, 'processing', 'Fetching balance data...');
-          const balanceData = await fetchBalanceHistory(account.key, selectedDate, toDate);
+          const balanceData = await fetchBalanceHistory(account.key, fromDate, toDate);
 
           if (!balanceData) {
             throw new Error('Failed to fetch balance history.');
@@ -1053,7 +1018,7 @@ export async function uploadFullBalanceHistoryForAllAccounts() {
 
           // Upload to Monarch
           progressDialog.updateProgress(account.key, 'processing', 'Uploading to Monarch...');
-          const uploadSuccess = await uploadBalanceToMonarch(account.key, csvData, selectedDate, toDate);
+          const uploadSuccess = await uploadBalanceToMonarch(account.key, csvData, fromDate, toDate);
 
           if (uploadSuccess) {
             // Update success stats and progress
