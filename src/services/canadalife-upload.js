@@ -461,15 +461,14 @@ function getUploadedTransactionIds(accountId) {
 /**
  * Save uploaded transaction IDs to consolidated account storage
  * @param {string} accountId - Account ID
- * @param {Array<Object>} transactions - Array of transaction objects with id
+ * @param {Array<Object>} transactions - Array of transaction objects with id and date
  */
 function saveUploadedTransactionIds(accountId, transactions) {
   const accountData = accountService.getAccountData(INTEGRATIONS.CANADALIFE, accountId);
   const existingTransactions = accountData?.uploadedTransactions || [];
 
-  // Add new transaction IDs with today's date
-  const today = new Date().toISOString().split('T')[0];
-  const newEntries = transactions.map((tx) => ({ id: tx.id, date: today }));
+  // Add new transaction IDs with their actual transaction dates (not sync date)
+  const newEntries = transactions.map((tx) => ({ id: tx.id, date: tx.date }));
   const updatedTransactions = [...existingTransactions, ...newEntries];
 
   accountService.updateAccountInList(INTEGRATIONS.CANADALIFE, accountId, {
@@ -526,13 +525,13 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
     }
 
     // ===== STEP 1: Fetch Balance History =====
+    const businessDaysCount = calculateBusinessDays(startDate, endDate);
     if (progressDialog) {
-      const businessDays = calculateBusinessDays(startDate, endDate);
       progressDialog.updateStepStatus(
         accountId,
         'fetchHistory',
         'processing',
-        `Fetching ${businessDays} business days...`,
+        `Fetching ${businessDaysCount} business days...`,
       );
     }
 
@@ -558,10 +557,6 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
     // Mark fetch step as complete
     const recordCount = historicalData.data.length - 1; // Exclude header
     const daysCount = calculateDaysBetween(startDate, endDate);
-    if (progressDialog) {
-      progressDialog.updateStepStatus(accountId, 'fetchHistory', 'success', `${recordCount} records`);
-      progressDialog.updateStepStatus(accountId, 'uploadBalance', 'processing', 'Converting...');
-    }
 
     // Check for cancellation
     if (signal?.aborted) {
@@ -569,35 +564,52 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
     }
 
     // ===== STEP 2: Upload Balance to Monarch =====
-    // Convert to CSV format
-    const csvData = convertCanadaLifeDataToCSV(historicalData);
-
-    // Update progress - uploading
-    if (progressDialog) {
-      progressDialog.updateStepStatus(accountId, 'uploadBalance', 'processing', 'Uploading balance');
-    }
-
-    // Upload to Monarch
-    const balanceSuccess = await monarchApi.uploadBalance(monarchAccount.id, csvData, startDate, endDate);
-
-    if (!balanceSuccess) {
+    // Only upload balance if there are actual records (not just the header)
+    // This handles the weekend-only date range case where no business days exist
+    if (recordCount > 0) {
       if (progressDialog) {
-        progressDialog.updateStepStatus(accountId, 'uploadBalance', 'error', 'Upload failed');
+        progressDialog.updateStepStatus(accountId, 'fetchHistory', 'success', `${recordCount} records`);
+        progressDialog.updateStepStatus(accountId, 'uploadBalance', 'processing', 'Converting...');
       }
-      throw new CanadaLifeUploadError('Failed to upload balance to Monarch', accountId);
-    }
 
-    // Mark upload step as complete and extract balance change BEFORE saving last upload date
-    // This ensures balance change calculation uses the previous upload date, not the one we're about to save
-    if (progressDialog) {
-      const uploadMessage = daysCount > 1 ? `${daysCount} days uploaded` : 'Uploaded';
-      progressDialog.updateStepStatus(accountId, 'uploadBalance', 'success', uploadMessage);
+      // Convert to CSV format
+      const csvData = convertCanadaLifeDataToCSV(historicalData);
 
-      // Extract and display balance change information (must happen before saveLastUploadDate)
-      const balanceChange = extractCanadaLifeBalanceChange(accountId, historicalData);
-      if (balanceChange) {
-        balanceChange.accountType = 'investment';
-        progressDialog.updateBalanceChange(accountId, balanceChange);
+      // Update progress - uploading
+      if (progressDialog) {
+        progressDialog.updateStepStatus(accountId, 'uploadBalance', 'processing', 'Uploading balance');
+      }
+
+      // Upload to Monarch
+      const balanceSuccess = await monarchApi.uploadBalance(monarchAccount.id, csvData, startDate, endDate);
+
+      if (!balanceSuccess) {
+        if (progressDialog) {
+          progressDialog.updateStepStatus(accountId, 'uploadBalance', 'error', 'Upload failed');
+        }
+        throw new CanadaLifeUploadError('Failed to upload balance to Monarch', accountId);
+      }
+
+      // Mark upload step as complete and extract balance change BEFORE saving last upload date
+      // This ensures balance change calculation uses the previous upload date, not the one we're about to save
+      if (progressDialog) {
+        const uploadMessage = daysCount > 1 ? `${daysCount} days uploaded` : 'Uploaded';
+        progressDialog.updateStepStatus(accountId, 'uploadBalance', 'success', uploadMessage);
+
+        // Extract and display balance change information (must happen before saveLastUploadDate)
+        const balanceChange = extractCanadaLifeBalanceChange(accountId, historicalData);
+        if (balanceChange) {
+          balanceChange.accountType = 'investment';
+          progressDialog.updateBalanceChange(accountId, balanceChange);
+        }
+      }
+    } else {
+      // No business days in date range (e.g., weekend-only sync)
+      // Skip balance upload but continue with transaction sync
+      debugLog(`No business days in date range ${startDate} to ${endDate}, skipping balance upload`);
+      if (progressDialog) {
+        progressDialog.updateStepStatus(accountId, 'fetchHistory', 'skipped', 'No business days');
+        progressDialog.updateStepStatus(accountId, 'uploadBalance', 'skipped', 'No balance data');
       }
     }
 

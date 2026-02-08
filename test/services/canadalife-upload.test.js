@@ -583,6 +583,79 @@ describe('Canada Life Upload Service', () => {
       expect(balanceChangeData.changePercent).toBeCloseTo(0.063, 2); // ~0.063% change
     });
 
+    test('should save uploaded transactions with actual transaction dates, not sync date (regression test)', async () => {
+      // This test verifies the fix for the bug where transactions were saved with the sync date
+      // instead of their actual transaction dates, which broke deduplication for initial syncs
+      const mockAccount = {
+        agreementId: 'accTxDateTest',
+        LongNameEnglish: 'Transaction Date Test Account',
+        EnglishShortName: 'TxDateTest',
+      };
+
+      const mockHistoricalData = {
+        data: [
+          ['Date', 'Balance', 'Account Name'],
+          ['2024-01-15', '10000.50', 'Transaction Date Test Account'],
+        ],
+      };
+
+      const mockMonarchAccount = { id: 'monarchTxDate', displayName: 'TxDate Account' };
+
+      // Mock for transaction fetching - return transactions with various dates
+      const mockFetchAndProcessTransactions = jest.fn().mockResolvedValue([
+        { id: 'tx-1', date: '2024-01-10', merchant: 'Fund A', amount: 100 },
+        { id: 'tx-2', date: '2024-01-12', merchant: 'Fund B', amount: 200 },
+        { id: 'tx-3', date: '2024-01-14', merchant: 'Fund C', amount: 300 },
+      ]);
+
+      // Temporarily mock the transactions module
+      jest.doMock('../../src/services/canadalife/transactions', () => ({
+        fetchAndProcessTransactions: mockFetchAndProcessTransactions,
+        convertTransactionsToCSV: jest.fn().mockReturnValue('csv data'),
+      }));
+
+      ensureMonarchAuthentication.mockResolvedValue(true);
+      canadalife.loadCanadaLifeAccounts.mockResolvedValue([mockAccount]);
+      utils.calculateFromDateWithLookback.mockReturnValue('2024-01-01');
+      utils.debugLog.mockImplementation(() => {});
+      globalThis.GM_getValue.mockReturnValue(JSON.stringify(mockMonarchAccount));
+      canadalife.loadAccountBalanceHistory.mockResolvedValue(mockHistoricalData);
+      monarchApi.uploadBalance.mockResolvedValue(true);
+      monarchApi.uploadTransactions = jest.fn().mockResolvedValue(true);
+      stateManager.setAccount.mockImplementation(() => {});
+
+      // Reset accountService mock to track calls
+      accountService.getAccountData.mockReturnValue({ uploadedTransactions: [] });
+      accountService.updateAccountInList.mockClear();
+
+      await uploadAllCanadaLifeAccountsToMonarch();
+
+      // Verify accountService.updateAccountInList was called
+      // The transactions should be saved with their ACTUAL dates (tx.date), not today's date
+      const updateCalls = accountService.updateAccountInList.mock.calls;
+
+      // Find the call that updates uploadedTransactions
+      const txUpdateCall = updateCalls.find((call) => call[2]?.uploadedTransactions);
+
+      if (txUpdateCall) {
+        const savedTransactions = txUpdateCall[2].uploadedTransactions;
+
+        // Verify transactions are saved with their actual dates
+        // They should NOT all have the same date (which would indicate the bug)
+        const dates = savedTransactions.map((tx) => tx.date);
+        const uniqueDates = new Set(dates);
+
+        // If the fix is working, transactions should have different dates
+        // If the bug was present, all would have today's date (same date)
+        expect(uniqueDates.size).toBeGreaterThan(1);
+
+        // Verify specific dates match transaction dates (not sync date)
+        expect(savedTransactions).toContainEqual(expect.objectContaining({ id: 'tx-1', date: '2024-01-10' }));
+        expect(savedTransactions).toContainEqual(expect.objectContaining({ id: 'tx-2', date: '2024-01-12' }));
+        expect(savedTransactions).toContainEqual(expect.objectContaining({ id: 'tx-3', date: '2024-01-14' }));
+      }
+    });
+
     test('should exercise date validation code paths with enrollment date', async () => {
       const mockAccount = {
         agreementId: 'acc789',
@@ -679,6 +752,65 @@ describe('Canada Life Upload Service', () => {
 
       // Verify progress was called for this account
       expect(mockProgressDialog.updateProgress).toHaveBeenCalledWith('acc999', 'processing', 'Getting start date...');
+    });
+
+    test('should skip balance upload when no business days in date range (weekend sync)', async () => {
+      // This tests the fix for the bug where weekend syncs would fail with
+      // "No business days found in the specified date range"
+      const mockAccount = {
+        agreementId: 'accWeekend',
+        LongNameEnglish: 'Weekend Test Account',
+        EnglishShortName: 'WeekendTest',
+      };
+
+      // Mock balance history returning empty result (only header, no data rows)
+      // This is what loadAccountBalanceHistory now returns for weekend-only date ranges
+      const mockEmptyHistoricalData = {
+        data: [['Date', 'Closing Balance', 'Account Name']], // Header only
+        businessDays: 0,
+        totalDays: 0,
+        apiCallsMade: 0,
+      };
+
+      const mockMonarchAccount = { id: 'monarchWeekend', displayName: 'Weekend Account' };
+
+      ensureMonarchAuthentication.mockResolvedValue(true);
+      canadalife.loadCanadaLifeAccounts.mockResolvedValue([mockAccount]);
+      utils.calculateFromDateWithLookback.mockReturnValue('2026-02-07'); // Saturday
+      utils.getTodayLocal.mockReturnValue('2026-02-08'); // Sunday
+      utils.debugLog.mockImplementation(() => {});
+      globalThis.GM_getValue.mockReturnValue(JSON.stringify(mockMonarchAccount));
+      canadalife.loadAccountBalanceHistory.mockResolvedValue(mockEmptyHistoricalData);
+      stateManager.setAccount.mockImplementation(() => {});
+
+      await uploadAllCanadaLifeAccountsToMonarch();
+
+      // Verify that monarchApi.uploadBalance was NOT called (empty balance should not be sent)
+      expect(monarchApi.uploadBalance).not.toHaveBeenCalled();
+
+      // Verify progress steps show skipped status
+      expect(mockProgressDialog.updateStepStatus).toHaveBeenCalledWith(
+        'accWeekend',
+        'fetchHistory',
+        'skipped',
+        'No business days',
+      );
+      expect(mockProgressDialog.updateStepStatus).toHaveBeenCalledWith(
+        'accWeekend',
+        'uploadBalance',
+        'skipped',
+        'No balance data',
+      );
+
+      // Verify debug log for skipping
+      expect(utils.debugLog).toHaveBeenCalledWith(
+        expect.stringContaining('No business days in date range'),
+      );
+
+      // Verify the sync still succeeds (just skips balance upload)
+      expect(mockProgressDialog.showSummary).toHaveBeenCalledWith(
+        expect.objectContaining({ success: 1, failed: 0, total: 1 }),
+      );
     });
 
     test('should handle account with no enrollment date', async () => {

@@ -534,11 +534,28 @@ export async function loadAccountBalanceHistory(account, startDate, endDate, pro
     // Generate business days only
     const businessDays = generateBusinessDays(startDate, endDate);
 
-    if (businessDays.length === 0) {
-      throw new Error('No business days found in the specified date range');
-    }
-
     debugLog(`Generated ${businessDays.length} business days to process`);
+
+    // Handle case where there are no business days (e.g., weekend-only range)
+    // Return empty result with just header - caller should skip balance upload
+    if (businessDays.length === 0) {
+      debugLog('No business days in date range, returning empty result');
+      return {
+        data: [['Date', 'Closing Balance', 'Account Name']], // Header only, no data rows
+        account: {
+          shortName: account.EnglishShortName,
+          name: account.LongNameEnglish || account.EnglishShortName,
+          agreementId: account.agreementId,
+        },
+        dateRange: {
+          startDate,
+          endDate,
+        },
+        totalDays: 0,
+        businessDays: 0,
+        apiCallsMade: 0,
+      };
+    }
 
     // Initialize result array with header row
     const data = [['Date', 'Closing Balance', 'Account Name']];

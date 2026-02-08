@@ -1126,6 +1126,69 @@ describe('Canada Life API - Account Functions', () => {
   });
 });
 
+describe('Canada Life API - Weekend Date Range Handling', () => {
+  const mockAccount = {
+    agreementId: 'test-agreement-123',
+    EnglishShortName: 'TEST-RRSP',
+    LongNameEnglish: 'Test RRSP Account',
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    stateManager.getState.mockReturnValue({
+      auth: {
+        canadalife: {
+          token: 'valid-aura-token',
+        },
+      },
+    });
+  });
+
+  describe('loadAccountBalanceHistory - No Business Days', () => {
+    test('should return empty result with just header when date range is weekend-only', async () => {
+      // Saturday and Sunday - no business days
+      const result = await loadAccountBalanceHistory(mockAccount, '2026-02-07', '2026-02-08');
+
+      // Should return header only, no data rows
+      expect(result.data).toEqual([['Date', 'Closing Balance', 'Account Name']]);
+      expect(result.businessDays).toBe(0);
+      expect(result.totalDays).toBe(0);
+      expect(result.apiCallsMade).toBe(0);
+      expect(result.dateRange).toEqual({
+        startDate: '2026-02-07',
+        endDate: '2026-02-08',
+      });
+
+      // No API calls should have been made
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    test('should return empty result for single Saturday', async () => {
+      const result = await loadAccountBalanceHistory(mockAccount, '2026-02-07', '2026-02-07');
+
+      expect(result.data).toEqual([['Date', 'Closing Balance', 'Account Name']]);
+      expect(result.businessDays).toBe(0);
+      expect(result.apiCallsMade).toBe(0);
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    test('should return empty result for single Sunday', async () => {
+      const result = await loadAccountBalanceHistory(mockAccount, '2026-02-08', '2026-02-08');
+
+      expect(result.data).toEqual([['Date', 'Closing Balance', 'Account Name']]);
+      expect(result.businessDays).toBe(0);
+      expect(result.apiCallsMade).toBe(0);
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    test('should not throw error for weekend-only date range', async () => {
+      // This should not throw - it should return empty result
+      await expect(loadAccountBalanceHistory(mockAccount, '2026-02-07', '2026-02-08'))
+        .resolves.not.toThrow();
+    });
+  });
+});
+
 describe('Canada Life API - Last Day Processing Bug', () => {
   const mockAccount = {
     agreementId: 'test-agreement-123',
