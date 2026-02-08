@@ -951,6 +951,87 @@ async function uploadActivityForAccount(accountId, accountName, monarchAccountId
 }
 
 /**
+ * Upload all activity transactions for a single Questrade account to Monarch
+ * This is a testing/development function for uploading all activity history for one account
+ * @param {string} accountId - Questrade account ID
+ * @param {string} accountName - Account name for display
+ * @returns {Promise<Object>} Upload result
+ */
+export async function uploadSingleAccountActivityToMonarch(accountId, accountName) {
+  try {
+    debugLog(`Starting single account activity upload for ${accountName} (${accountId})`);
+
+    // Show loading toast
+    toast.show(`Loading activity for ${accountName}...`, 'debug');
+
+    // Get Monarch account mapping
+    const monarchAccount = accountService.getMonarchAccountMapping(INTEGRATIONS.QUESTRADE, accountId);
+
+    if (!monarchAccount) {
+      toast.show(`No Monarch mapping for ${accountName}`, 'error');
+      return {
+        success: false,
+        message: 'No Monarch account mapping found',
+        accountId,
+        accountName,
+      };
+    }
+
+    // Create progress dialog for single account
+    const progressDialog = showProgressDialog(
+      [{ key: accountId, nickname: accountName }],
+      `Uploading Activity for ${accountName}`,
+    );
+
+    try {
+      // Upload activity for this account
+      const result = await uploadActivityForAccount(accountId, accountName, monarchAccount.id, progressDialog);
+
+      progressDialog.updateProgress(accountId, result.success ? 'success' : 'error', result.message);
+
+      // Show final toast
+      if (result.success) {
+        if (result.transactionsProcessed > 0) {
+          const skipMsg = result.skippedDuplicates > 0
+            ? ` (${result.skippedDuplicates} duplicates skipped)`
+            : '';
+          toast.show(`Uploaded ${result.transactionsProcessed} transactions${skipMsg}`, 'info');
+        } else {
+          toast.show(result.message, 'info');
+        }
+      } else {
+        toast.show(`Upload failed: ${result.message}`, 'error');
+      }
+
+      return {
+        ...result,
+        accountId,
+        accountName,
+      };
+    } catch (error) {
+      debugLog(`Error uploading activity for ${accountId}:`, error);
+      progressDialog.updateProgress(accountId, 'error', `Error: ${error.message}`);
+      toast.show(`Upload failed: ${error.message}`, 'error');
+      return {
+        success: false,
+        message: error.message,
+        accountId,
+        accountName,
+      };
+    }
+  } catch (error) {
+    debugLog('Error in uploadSingleAccountActivityToMonarch:', error);
+    toast.show(`Upload failed: ${error.message}`, 'error');
+    return {
+      success: false,
+      message: error.message,
+      accountId,
+      accountName,
+    };
+  }
+}
+
+/**
  * Upload all activity transactions for ALL Questrade accounts to Monarch
  * This is a testing/development function for bulk uploading all activity history
  * @returns {Promise<Object>} Combined results for all accounts
@@ -1059,6 +1140,7 @@ export default {
   processAndUploadOrders,
   processAndUploadActivityTransactions,
   uploadAllAccountsActivityToMonarch,
+  uploadSingleAccountActivityToMonarch,
   fetchQuestradeOrders,
   fetchAndProcessActivityTransactions,
   fetchAndProcessAllActivityTransactions,

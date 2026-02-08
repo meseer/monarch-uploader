@@ -420,6 +420,12 @@ export async function initSingleAccountUI() {
       updateStatusIndicators(indicators);
     });
 
+    // Add testing section (only visible in Development Mode)
+    const testingSection = createTestingSection({ accountId, accountName });
+    if (testingSection) {
+      container.appendChild(testingSection);
+    }
+
     debugLog(`Single account UI initialized for account: ${accountId}`);
   } catch (error) {
     debugLog('Error initializing single account UI:', error);

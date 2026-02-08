@@ -10,7 +10,7 @@ import toast from '../../toast';
 import { getDateRange, processAccountBalanceHistory } from '../../../services/questrade/account';
 import { ensureMonarchAuthentication } from '../../components/monarchLoginLink';
 import { syncAllAccountsToMonarch } from '../../../services/questrade/sync';
-import { uploadAllAccountsActivityToMonarch } from '../../../services/questrade/transactions';
+import { uploadAllAccountsActivityToMonarch, uploadSingleAccountActivityToMonarch } from '../../../services/questrade/transactions';
 
 /**
  * Creates a styled button
@@ -234,9 +234,12 @@ export function createBulkUploadButton(accounts) {
 /**
  * Creates a testing section with development-only features
  * Only visible when Development Mode is enabled
+ * @param {Object|null} accountContext - Optional account context for single account page
+ * @param {string} accountContext.accountId - The account ID
+ * @param {string} accountContext.accountName - The account name
  * @returns {HTMLElement|null} Testing section container or null if not in development mode
  */
-export function createTestingSection() {
+export function createTestingSection(accountContext = null) {
   // Only show testing section when Development Mode is enabled
   const isDevelopmentMode = GM_getValue(STORAGE.DEVELOPMENT_MODE, false);
   if (!isDevelopmentMode) {
@@ -290,7 +293,7 @@ export function createTestingSection() {
     display: none;
   `;
 
-  // Create description
+  // Create description based on context (single account vs all accounts)
   const description = document.createElement('div');
   description.id = 'questrade-testing-description';
   description.style.cssText = `
@@ -302,41 +305,89 @@ export function createTestingSection() {
     border: 1px solid #ffeaa7;
     border-radius: 4px;
   `;
-  description.textContent = 'Upload all activity transactions (dividends, fees, deposits, etc.) for all Questrade accounts. This fetches the complete history and may take several minutes.';
-  testingContent.appendChild(description);
 
-  // Create Upload All Activity button
-  const uploadAllActivityButton = createButton('Upload All Activity', async () => {
-    // Check Monarch authentication before proceeding
-    const authenticated = await ensureMonarchAuthentication(null, 'upload all activity');
-    if (!authenticated) {
-      return; // User cancelled authentication
-    }
+  if (accountContext) {
+    // Single account page - show single account upload button
+    description.textContent = 'Upload all activity transactions (dividends, fees, deposits, etc.) for this account. This fetches the complete history and may take several minutes.';
+    testingContent.appendChild(description);
 
-    try {
-      // Disable button while uploading
-      uploadAllActivityButton.disabled = true;
-      uploadAllActivityButton.textContent = 'Uploading...';
-      uploadAllActivityButton.style.opacity = '0.6';
-      uploadAllActivityButton.style.cursor = 'not-allowed';
+    // Create Upload Activity button for single account
+    const uploadActivityButton = createButton('Upload Activity', async () => {
+      // Check Monarch authentication before proceeding
+      const authenticated = await ensureMonarchAuthentication(null, 'upload activity');
+      if (!authenticated) {
+        return; // User cancelled authentication
+      }
 
-      debugLog('Starting upload all activity for all Questrade accounts...');
+      // Get current account info from state (may have been updated since page load)
+      const currentState = stateManager.getState();
+      const currentAccountId = currentState.currentAccount.id || accountContext.accountId;
+      const currentAccountName = currentState.currentAccount.nickname !== 'unknown'
+        ? currentState.currentAccount.nickname
+        : accountContext.accountName;
 
-      // Call the comprehensive upload function
-      await uploadAllAccountsActivityToMonarch();
-    } catch (error) {
-      debugLog('Error in upload all activity:', error);
-      toast.show(`Upload failed: ${error.message}`, 'error');
-    } finally {
-      // Re-enable button
-      uploadAllActivityButton.disabled = false;
-      uploadAllActivityButton.textContent = 'Upload All Activity';
-      uploadAllActivityButton.style.opacity = '1';
-      uploadAllActivityButton.style.cursor = 'pointer';
-    }
-  }, { color: '#6c757d', id: 'questrade-upload-all-activity-btn' }); // Gray color to distinguish from primary actions
+      try {
+        // Disable button while uploading
+        uploadActivityButton.disabled = true;
+        uploadActivityButton.textContent = 'Uploading...';
+        uploadActivityButton.style.opacity = '0.6';
+        uploadActivityButton.style.cursor = 'not-allowed';
 
-  testingContent.appendChild(uploadAllActivityButton);
+        debugLog(`Starting upload activity for account ${currentAccountName} (${currentAccountId})...`);
+
+        // Call the single account upload function
+        await uploadSingleAccountActivityToMonarch(currentAccountId, currentAccountName);
+      } catch (error) {
+        debugLog('Error in upload activity:', error);
+        toast.show(`Upload failed: ${error.message}`, 'error');
+      } finally {
+        // Re-enable button
+        uploadActivityButton.disabled = false;
+        uploadActivityButton.textContent = 'Upload Activity';
+        uploadActivityButton.style.opacity = '1';
+        uploadActivityButton.style.cursor = 'pointer';
+      }
+    }, { color: '#6c757d', id: 'questrade-upload-activity-btn' });
+
+    testingContent.appendChild(uploadActivityButton);
+  } else {
+    // All accounts page - show all accounts upload button
+    description.textContent = 'Upload all activity transactions (dividends, fees, deposits, etc.) for all Questrade accounts. This fetches the complete history and may take several minutes.';
+    testingContent.appendChild(description);
+
+    // Create Upload All Activity button
+    const uploadAllActivityButton = createButton('Upload All Activity', async () => {
+      // Check Monarch authentication before proceeding
+      const authenticated = await ensureMonarchAuthentication(null, 'upload all activity');
+      if (!authenticated) {
+        return; // User cancelled authentication
+      }
+
+      try {
+        // Disable button while uploading
+        uploadAllActivityButton.disabled = true;
+        uploadAllActivityButton.textContent = 'Uploading...';
+        uploadAllActivityButton.style.opacity = '0.6';
+        uploadAllActivityButton.style.cursor = 'not-allowed';
+
+        debugLog('Starting upload all activity for all Questrade accounts...');
+
+        // Call the comprehensive upload function
+        await uploadAllAccountsActivityToMonarch();
+      } catch (error) {
+        debugLog('Error in upload all activity:', error);
+        toast.show(`Upload failed: ${error.message}`, 'error');
+      } finally {
+        // Re-enable button
+        uploadAllActivityButton.disabled = false;
+        uploadAllActivityButton.textContent = 'Upload All Activity';
+        uploadAllActivityButton.style.opacity = '1';
+        uploadAllActivityButton.style.cursor = 'pointer';
+      }
+    }, { color: '#6c757d', id: 'questrade-upload-all-activity-btn' });
+
+    testingContent.appendChild(uploadAllActivityButton);
+  }
 
   // Add toggle functionality
   testingHeader.addEventListener('click', () => {
