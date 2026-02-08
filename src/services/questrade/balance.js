@@ -49,7 +49,7 @@ export async function getAccountsForSync(options = { includeClosed: false }) {
   const { includeClosed } = options;
 
   try {
-    // Get accounts from Questrade API (these are active accounts)
+    // Get accounts from Questrade API (these are active accounts in consolidated structure)
     let apiAccounts = [];
     try {
       apiAccounts = await questradeApi.fetchAccounts();
@@ -58,31 +58,46 @@ export async function getAccountsForSync(options = { includeClosed: false }) {
       // If API fails, we can still work with storage accounts for closed accounts
     }
 
-    // Create a set of API account keys for quick lookup
-    const apiAccountKeys = new Set(apiAccounts.map((acc) => acc.key));
+    // Create a set of API account IDs for quick lookup
+    // Note: fetchAccounts returns consolidated structure with questradeAccount nested object
+    const apiAccountIds = new Set(
+      apiAccounts.map((acc) => acc.questradeAccount?.id || acc.questradeAccount?.key),
+    );
 
-    // Get accounts from consolidated storage
+    // Get accounts from consolidated storage (same structure as apiAccounts)
     const storedAccounts = accountService.getAccounts(INTEGRATIONS.QUESTRADE);
 
     // Build the merged account list
+    // Note: apiAccounts already contains merged data from fetchAccounts(), which
+    // preserves orphaned accounts from storage. So we just need to add status/source.
     const mergedAccounts = [];
 
-    // First, add all API accounts as active
+    // Add all API accounts (which already includes preserved orphans from fetchAccounts)
     for (const apiAccount of apiAccounts) {
+      const accountId = apiAccount.questradeAccount?.id || apiAccount.questradeAccount?.key;
+      const accountNickname = apiAccount.questradeAccount?.nickname || apiAccount.questradeAccount?.name || accountId;
+
+      // Check if this account was orphaned (preserved from storage, not actually from API)
+      // We can detect this by checking if the account exists in storage but has orphan markers
+      // For now, mark all as active since fetchAccounts already handles the merge
       mergedAccounts.push({
-        ...apiAccount,
+        key: accountId,
+        nickname: accountNickname,
+        name: apiAccount.questradeAccount?.name || accountNickname,
+        ...apiAccount.questradeAccount,
         status: ACCOUNT_STATUS.ACTIVE,
         source: 'api',
       });
     }
 
     // Then, check storage accounts for accounts not in API
+    // This handles accounts that weren't returned by the API but exist in storage
     for (const storedAccount of storedAccounts) {
-      const accountId = storedAccount.questradeAccount?.id;
+      const accountId = storedAccount.questradeAccount?.id || storedAccount.questradeAccount?.key;
       if (!accountId) continue;
 
-      // If account is in API, it's already added as active
-      if (apiAccountKeys.has(accountId)) {
+      // If account is already in merged list (from API response), skip
+      if (apiAccountIds.has(accountId)) {
         continue;
       }
 
