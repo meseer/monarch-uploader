@@ -125,57 +125,58 @@ describe('Questrade Transaction Rules', () => {
       expect(formatOriginalStatement('Dividends', 'DIV', 'AAPL')).toBe('Dividends:DIV:AAPL');
     });
 
-    test('formats without symbol', () => {
-      expect(formatOriginalStatement('Interest', '')).toBe('Interest:');
+    test('formats without symbol - always includes 3 segments', () => {
+      expect(formatOriginalStatement('Interest', '')).toBe('Interest::');
     });
 
-    test('handles null values', () => {
-      expect(formatOriginalStatement(null, null, null)).toBe(':');
+    test('handles null values - always includes 3 segments', () => {
+      expect(formatOriginalStatement(null, null, null)).toBe('::');
     });
 
-    test('handles null symbol', () => {
-      expect(formatOriginalStatement('Deposits', 'DEP', null)).toBe('Deposits:DEP');
+    test('handles null symbol - always includes 3 segments', () => {
+      expect(formatOriginalStatement('Deposits', 'DEP', null)).toBe('Deposits:DEP:');
     });
   });
 
   describe('formatTransactionNotes', () => {
-    test('formats notes with all fields', () => {
-      const tx = {};
-      const details = {
+    test('formats notes with all fields (normalized data)', () => {
+      const normalized = {
         description: 'Dividend payment',
         transactionDate: '2025-01-15',
         settlementDate: '2025-01-17',
       };
-      const notes = formatTransactionNotes(tx, details);
+      const notes = formatTransactionNotes(normalized);
       expect(notes).toContain('Dividend payment');
       expect(notes).toContain('Transaction Date: 2025-01-15');
       expect(notes).toContain('Settlement Date: 2025-01-17');
     });
 
-    test('omits empty fields', () => {
-      const tx = {};
-      const details = {
+    test('omits settlement date when same as transaction date', () => {
+      const normalized = {
         description: 'Test',
+        transactionDate: '2025-01-15',
+        settlementDate: '2025-01-15',
       };
-      const notes = formatTransactionNotes(tx, details);
-      expect(notes).toBe('Test');
+      const notes = formatTransactionNotes(normalized);
+      expect(notes).toContain('Test');
+      expect(notes).toContain('Transaction Date: 2025-01-15');
+      expect(notes).not.toContain('Settlement Date');
     });
 
-    test('uses transaction data when details missing', () => {
-      const tx = {
+    test('handles minimal normalized data', () => {
+      const normalized = {
         description: 'From transaction',
         transactionDate: '2025-01-10',
       };
-      const notes = formatTransactionNotes(tx, null);
+      const notes = formatTransactionNotes(normalized);
       expect(notes).toContain('From transaction');
       expect(notes).toContain('Transaction Date: 2025-01-10');
     });
   });
 
   describe('formatFxNotes', () => {
-    test('formats FX notes with exchange details', () => {
-      const tx = {};
-      const details = {
+    test('formats FX notes with exchange details (normalized data)', () => {
+      const normalized = {
         description: 'Currency conversion',
         fx: {
           rate: 1.35,
@@ -185,21 +186,23 @@ describe('Questrade Transaction Rules', () => {
           toCurrency: 'CAD',
         },
         transactionDate: '2025-01-15',
+        settlementDate: '2025-01-17',
       };
-      const notes = formatFxNotes(tx, details);
+      const notes = formatFxNotes(normalized);
       expect(notes).toContain('Currency conversion');
       expect(notes).toContain('Exchange Rate: 1.35');
       expect(notes).toContain('From: 100 USD');
       expect(notes).toContain('To: 135 CAD');
+      expect(notes).toContain('Transaction Date: 2025-01-15');
+      expect(notes).toContain('Settlement Date: 2025-01-17');
     });
 
-    test('handles missing fx data', () => {
-      const tx = {};
-      const details = {
+    test('handles missing fx data (normalized data)', () => {
+      const normalized = {
         description: 'Test',
         transactionDate: '2025-01-15',
       };
-      const notes = formatFxNotes(tx, details);
+      const notes = formatFxNotes(normalized);
       expect(notes).toContain('Test');
       expect(notes).not.toContain('Exchange Rate');
     });

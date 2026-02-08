@@ -11,8 +11,9 @@
  *
  * Transaction data flow:
  * 1. Basic transaction from activity API (includes transactionType, action, symbol, etc.)
- * 2. Full details from transactionUrl (includes .net.amount, .fx fields, etc.)
- * 3. Combined data passed to rules for processing
+ * 2. Full details from transactionUrl (includes .net.amount, .fx fields, symbol, price, quantity, etc.)
+ * 3. Data is normalized (cleaned/trimmed) before rule matching
+ * 4. Rules process normalized data and generate formatted output
  */
 
 import { debugLog } from '../../core/utils';
@@ -27,6 +28,45 @@ export function cleanString(value) {
     return '';
   }
   return String(value).trim();
+}
+
+/**
+ * Normalize transaction data for rule matching
+ * Prefers details data over activity API data, and cleans all string values.
+ * This ensures that whitespace-only values (like action: "   ") are normalized to empty strings.
+ *
+ * @param {Object} transaction - Basic transaction from activity API
+ * @param {Object} details - Full details from transactionUrl (optional)
+ * @returns {Object} Normalized transaction data for rule matching
+ */
+export function normalizeTransactionData(transaction, details) {
+  // Prefer details over transaction for all fields
+  const source = details || transaction || {};
+  const txFallback = transaction || {};
+
+  return {
+    // Core fields - cleaned for matching
+    transactionType: cleanString(source.transactionType || txFallback.transactionType),
+    action: cleanString(source.action || txFallback.action),
+    symbol: cleanString(source.symbol || txFallback.symbol),
+
+    // Date fields
+    transactionDate: cleanString(source.transactionDate || txFallback.transactionDate),
+    settlementDate: cleanString(source.settlementDate || txFallback.settlementDate),
+
+    // Description
+    description: cleanString(source.description || txFallback.description),
+
+    // Numeric/Object fields - preserve as-is from details
+    price: details?.price || null,
+    quantity: details?.quantity ?? txFallback.quantity ?? null,
+    net: details?.net || null,
+    fx: details?.fx || null,
+
+    // Pass through original objects for any edge cases
+    _transaction: transaction,
+    _details: details,
+  };
 }
 
 /**
@@ -83,51 +123,171 @@ export function getTransactionId(transaction) {
 
 /**
  * Format original statement as TransactionType:Action:Symbol
+ * Always includes all 3 segments, even if symbol is empty
  * @param {string|null} transactionType - Transaction type
  * @param {string|null} action - Action code
  * @param {string|null} symbol - Security symbol (optional)
- * @returns {string} Formatted original statement
+ * @returns {string} Formatted original statement (e.g., "Dividends::AAPL" or "Dividends:DIV:")
  */
 export function formatOriginalStatement(transactionType, action, symbol = null) {
   const type = cleanString(transactionType);
   const act = cleanString(action);
   const sym = cleanString(symbol);
 
-  if (sym) {
-    return `${type}:${act}:${sym}`;
-  }
-  return `${type}:${act}`;
+  // Always include 3 segments: TransactionType:Action:Symbol
+  return `${type}:${act}:${sym}`;
 }
 
 /**
- * Format transaction notes with 3 lines (omit empty lines)
- * Line 1: description
- * Line 2: Transaction Date: {transactionDate}
- * Line 3: Settlement Date: {settlementDate}
+ * Format transaction notes with description and dates
+ * Settlement date is only included if it differs from transaction date
  *
- * @param {Object} transaction - Transaction object
- * @param {Object} details - Transaction details from transactionUrl
+ * @param {Object} normalized - Normalized transaction data
  * @returns {string} Formatted notes string
  */
-export function formatTransactionNotes(transaction, details) {
+export function formatTransactionNotes(normalized) {
   const lines = [];
 
-  // Line 1: Description (from details or transaction)
-  const description = cleanString(details?.description || transaction?.description);
-  if (description) {
-    lines.push(description);
+  // Line 1: Description
+  if (normalized.description) {
+    lines.push(normalized.description);
   }
 
   // Line 2: Transaction Date
-  const transactionDate = cleanString(details?.transactionDate || transaction?.transactionDate);
-  if (transactionDate) {
-    lines.push(`Transaction Date: ${transactionDate}`);
+  if (normalized.transactionDate) {
+    lines.push(`Transaction Date: ${normalized.transactionDate}`);
   }
 
-  // Line 3: Settlement Date
-  const settlementDate = cleanString(details?.settlementDate || transaction?.settlementDate);
-  if (settlementDate) {
-    lines.push(`Settlement Date: ${settlementDate}`);
+  // Line 3: Settlement Date - only if different from transaction date
+  if (normalized.settlementDate && normalized.settlementDate !== normalized.transactionDate) {
+    lines.push(`Settlement Date: ${normalized.settlementDate}`);
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Format notes for dividend transactions
+ * Includes description, dividend per share, and dates (settlement only if different)
+ *
+ * @param {Object} normalized - Normalized transaction data
+ * @returns {string} Formatted notes string
+ */
+export function formatDividendNotes(normalized) {
+  const lines = [];
+
+  // Line 1: Description
+  if (normalized.description) {
+    lines.push(normalized.description);
+  }
+
+  // Line 2: Dividend per share (from price object)
+  if (normalized.price && normalized.price.amount !== undefined && normalized.price.amount !== null) {
+    const amount = formatNumber(normalized.price.amount);
+    const currency = cleanString(normalized.price.currency) || 'CAD';
+    if (amount) {
+      lines.push(`Dividend per share: ${amount} ${currency}`);
+    }
+  }
+
+  // Line 3: Transaction Date
+  if (normalized.transactionDate) {
+    lines.push(`Transaction Date: ${normalized.transactionDate}`);
+  }
+
+  // Line 4: Settlement Date - only if different from transaction date
+  if (normalized.settlementDate && normalized.settlementDate !== normalized.transactionDate) {
+    lines.push(`Settlement Date: ${normalized.settlementDate}`);
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Format notes for dividend reinvestment (DRIP) transactions
+ * Includes description, quantity, price per share, and dates (settlement only if different)
+ *
+ * @param {Object} normalized - Normalized transaction data
+ * @returns {string} Formatted notes string
+ */
+export function formatDividendReinvestmentNotes(normalized) {
+  const lines = [];
+
+  // Line 1: Description
+  if (normalized.description) {
+    lines.push(normalized.description);
+  }
+
+  // Line 2: Quantity (number of shares purchased)
+  if (normalized.quantity !== undefined && normalized.quantity !== null) {
+    const qty = formatNumber(normalized.quantity);
+    if (qty) {
+      lines.push(`Quantity: ${qty} shares`);
+    }
+  }
+
+  // Line 3: Price per share
+  if (normalized.price && normalized.price.amount !== undefined && normalized.price.amount !== null) {
+    const amount = formatNumber(normalized.price.amount);
+    const currency = cleanString(normalized.price.currency) || 'CAD';
+    if (amount) {
+      lines.push(`Price: ${amount} ${currency} per share`);
+    }
+  }
+
+  // Line 4: Transaction Date
+  if (normalized.transactionDate) {
+    lines.push(`Transaction Date: ${normalized.transactionDate}`);
+  }
+
+  // Line 5: Settlement Date - only if different from transaction date
+  if (normalized.settlementDate && normalized.settlementDate !== normalized.transactionDate) {
+    lines.push(`Settlement Date: ${normalized.settlementDate}`);
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Format notes for transactions with quantity (transfers, splits, journalling)
+ * Includes description, quantity, and dates (settlement only if different)
+ *
+ * @param {Object} normalized - Normalized transaction data
+ * @returns {string} Formatted notes string
+ */
+export function formatQuantityNotes(normalized) {
+  const lines = [];
+
+  // Line 1: Description
+  if (normalized.description) {
+    lines.push(normalized.description);
+  }
+
+  // Line 2: Quantity (number of shares/units)
+  if (normalized.quantity !== undefined && normalized.quantity !== null) {
+    const qty = formatNumber(normalized.quantity);
+    if (qty) {
+      lines.push(`Quantity: ${qty}`);
+    }
+  }
+
+  // Line 3: Price per share (if available)
+  if (normalized.price && normalized.price.amount !== undefined && normalized.price.amount !== null) {
+    const amount = formatNumber(normalized.price.amount);
+    const currency = cleanString(normalized.price.currency) || 'CAD';
+    if (amount) {
+      lines.push(`Price: ${amount} ${currency}`);
+    }
+  }
+
+  // Line 4: Transaction Date
+  if (normalized.transactionDate) {
+    lines.push(`Transaction Date: ${normalized.transactionDate}`);
+  }
+
+  // Line 5: Settlement Date - only if different from transaction date
+  if (normalized.settlementDate && normalized.settlementDate !== normalized.transactionDate) {
+    lines.push(`Settlement Date: ${normalized.settlementDate}`);
   }
 
   return lines.join('\n');
@@ -135,26 +295,26 @@ export function formatTransactionNotes(transaction, details) {
 
 /**
  * Format FX conversion notes with exchange rate details
- * @param {Object} transaction - Transaction object
- * @param {Object} details - Transaction details with fx fields
+ * Settlement date is only included if it differs from transaction date
+ *
+ * @param {Object} normalized - Normalized transaction data
  * @returns {string} Formatted FX notes
  */
-export function formatFxNotes(transaction, details) {
+export function formatFxNotes(normalized) {
   const lines = [];
 
   // Description
-  const description = cleanString(details?.description || transaction?.description);
-  if (description) {
-    lines.push(description);
+  if (normalized.description) {
+    lines.push(normalized.description);
   }
 
-  // FX details from the details object
-  if (details?.fx) {
-    const fxRate = formatNumber(details.fx.rate);
-    const fxFromAmount = formatNumber(details.fx.fromAmount);
-    const fxToAmount = formatNumber(details.fx.toAmount);
-    const fxFromCurrency = cleanString(details.fx.fromCurrency);
-    const fxToCurrency = cleanString(details.fx.toCurrency);
+  // FX details from the normalized object
+  if (normalized.fx) {
+    const fxRate = formatNumber(normalized.fx.rate);
+    const fxFromAmount = formatNumber(normalized.fx.fromAmount);
+    const fxToAmount = formatNumber(normalized.fx.toAmount);
+    const fxFromCurrency = cleanString(normalized.fx.fromCurrency);
+    const fxToCurrency = cleanString(normalized.fx.toCurrency);
 
     if (fxRate) {
       lines.push(`Exchange Rate: ${fxRate}`);
@@ -167,61 +327,49 @@ export function formatFxNotes(transaction, details) {
     }
   }
 
-  // Transaction and settlement dates
-  const transactionDate = cleanString(details?.transactionDate || transaction?.transactionDate);
-  if (transactionDate) {
-    lines.push(`Transaction Date: ${transactionDate}`);
+  // Transaction date
+  if (normalized.transactionDate) {
+    lines.push(`Transaction Date: ${normalized.transactionDate}`);
   }
 
-  const settlementDate = cleanString(details?.settlementDate || transaction?.settlementDate);
-  if (settlementDate) {
-    lines.push(`Settlement Date: ${settlementDate}`);
+  // Settlement date - only if different from transaction date
+  if (normalized.settlementDate && normalized.settlementDate !== normalized.transactionDate) {
+    lines.push(`Settlement Date: ${normalized.settlementDate}`);
   }
 
   return lines.join('\n');
 }
 
 /**
- * Determine category for interest transaction based on amount
+ * Determine category for interest transaction based on amount (using normalized data)
  * Positive = Interest income, Negative = Margin interest (Financial Fees)
- * @param {Object} details - Transaction details with net.amount
+ * @param {Object} normalized - Normalized transaction data with net.amount
  * @returns {string} Category name
  */
-function getInterestCategory(details) {
-  const amount = parseFloat(details?.net?.amount) || 0;
+function getInterestCategoryFromNormalized(normalized) {
+  const amount = parseFloat(normalized?.net?.amount) || 0;
   return amount < 0 ? 'Financial Fees' : 'Interest';
 }
 
 /**
- * Determine merchant for interest transaction based on amount
+ * Determine merchant for interest transaction based on amount (using normalized data)
  * Positive = Interest, Negative = Margin Interest
- * @param {Object} details - Transaction details with net.amount
+ * @param {Object} normalized - Normalized transaction data with net.amount
  * @returns {string} Merchant name
  */
-function getInterestMerchant(details) {
-  const amount = parseFloat(details?.net?.amount) || 0;
+function getInterestMerchantFromNormalized(normalized) {
+  const amount = parseFloat(normalized?.net?.amount) || 0;
   return amount < 0 ? 'Margin Interest' : 'Interest';
 }
 
 /**
- * Determine category for fee/rebate based on amount
- * Both fees and rebates fall under Financial Fees category
- * @param {Object} _details - Transaction details (unused, category is always Financial Fees)
- * @returns {string} Category name
- */
-function getFeeCategory(_details) {
-  // Even rebates (positive) still fall under Financial Fees as a category
-  return 'Financial Fees';
-}
-
-/**
- * Determine merchant for fee/rebate transaction
+ * Determine merchant for fee/rebate transaction (using normalized data)
  * Positive amount = Rebate, Negative = Fee
- * @param {Object} details - Transaction details with net.amount
+ * @param {Object} normalized - Normalized transaction data with net.amount
  * @returns {string} Merchant name
  */
-function getFeeMerchant(details) {
-  const amount = parseFloat(details?.net?.amount) || 0;
+function getFeeMerchantFromNormalized(normalized) {
+  const amount = parseFloat(normalized?.net?.amount) || 0;
   return amount > 0 ? 'Fee Rebate' : 'Fee';
 }
 
@@ -230,14 +378,19 @@ function getFeeMerchant(details) {
  * Each rule has:
  * - id: Unique identifier for the rule
  * - description: Human-readable description
- * - match: Function (transaction) => boolean - returns true if rule applies
- * - process: Function (transaction, details) => Object - returns processed fields
+ * - match: Function (normalized) => boolean - returns true if rule applies (normalized data)
+ * - process: Function (normalized) => Object - returns processed fields (normalized data)
  *
  * Processed fields include:
  * - category: Monarch category name
- * - merchant: Merchant name for display
+ * - merchant: Merchant name for display (symbol when available)
  * - originalStatement: Original statement text (TransactionType:Action:Symbol)
- * - notes: Transaction notes
+ * - notes: Transaction notes with relevant details
+ *
+ * NOTE: All rules receive NORMALIZED data where:
+ * - String fields are trimmed (whitespace-only values like "   " become "")
+ * - Data is merged from details and transaction (details preferred)
+ * - All string comparisons use cleaned values
  */
 export const QUESTRADE_TRANSACTION_RULES = [
   // ============================================
@@ -246,34 +399,34 @@ export const QUESTRADE_TRANSACTION_RULES = [
   {
     id: 'corporate-actions-cil',
     description: 'Corporate Actions - Cash in Lieu',
-    match: (tx) => tx.transactionType === 'Corporate actions' && tx.action === 'CIL',
-    process: (tx, details) => ({
+    match: (n) => n.transactionType === 'Corporate actions' && n.action === 'CIL',
+    process: (n) => ({
       category: 'Sell',
-      merchant: cleanString(tx.symbol) || 'Cash in Lieu',
-      originalStatement: formatOriginalStatement(tx.transactionType, tx.action, tx.symbol),
-      notes: formatTransactionNotes(tx, details),
+      merchant: n.symbol || 'Cash in Lieu',
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatQuantityNotes(n),
     }),
   },
   {
     id: 'corporate-actions-nac',
     description: 'Corporate Actions - Name Change',
-    match: (tx) => tx.transactionType === 'Corporate actions' && tx.action === 'NAC',
-    process: (tx, details) => ({
+    match: (n) => n.transactionType === 'Corporate actions' && n.action === 'NAC',
+    process: (n) => ({
       category: 'Investment',
-      merchant: cleanString(tx.symbol) || 'Name Change',
-      originalStatement: formatOriginalStatement(tx.transactionType, tx.action, tx.symbol),
-      notes: formatTransactionNotes(tx, details),
+      merchant: n.symbol || 'Name Change',
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatQuantityNotes(n),
     }),
   },
   {
     id: 'corporate-actions-rev',
     description: 'Corporate Actions - Reverse Split',
-    match: (tx) => tx.transactionType === 'Corporate actions' && tx.action === 'REV',
-    process: (tx, details) => ({
+    match: (n) => n.transactionType === 'Corporate actions' && n.action === 'REV',
+    process: (n) => ({
       category: 'Investment',
-      merchant: cleanString(tx.symbol) || 'Reverse Split',
-      originalStatement: formatOriginalStatement(tx.transactionType, tx.action, tx.symbol),
-      notes: formatTransactionNotes(tx, details),
+      merchant: n.symbol || 'Reverse Split',
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatQuantityNotes(n),
     }),
   },
 
@@ -283,23 +436,23 @@ export const QUESTRADE_TRANSACTION_RULES = [
   {
     id: 'deposits-con',
     description: 'Deposits - Contribution (internal transfer to registered account)',
-    match: (tx) => tx.transactionType === 'Deposits' && tx.action === 'CON',
-    process: (tx, details) => ({
+    match: (n) => n.transactionType === 'Deposits' && n.action === 'CON',
+    process: (n) => ({
       category: 'Transfer',
       merchant: 'Transfer In',
-      originalStatement: formatOriginalStatement(tx.transactionType, tx.action, tx.symbol),
-      notes: formatTransactionNotes(tx, details),
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatTransactionNotes(n),
     }),
   },
   {
     id: 'deposits-dep',
     description: 'Deposits - Deposit (WIRE/PAD/Interac etc.)',
-    match: (tx) => tx.transactionType === 'Deposits' && tx.action === 'DEP',
-    process: (tx, details) => ({
+    match: (n) => n.transactionType === 'Deposits' && n.action === 'DEP',
+    process: (n) => ({
       category: 'Transfer',
       merchant: 'Deposit',
-      originalStatement: formatOriginalStatement(tx.transactionType, tx.action, tx.symbol),
-      notes: formatTransactionNotes(tx, details),
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatTransactionNotes(n),
     }),
   },
 
@@ -309,12 +462,12 @@ export const QUESTRADE_TRANSACTION_RULES = [
   {
     id: 'dividend-reinvestment-rei',
     description: 'Dividend Reinvestment - Purchase via dividend reinvestment',
-    match: (tx) => tx.transactionType === 'Dividend reinvestment' && tx.action === 'REI',
-    process: (tx, details) => ({
+    match: (n) => n.transactionType === 'Dividend reinvestment' && n.action === 'REI',
+    process: (n) => ({
       category: 'Buy',
-      merchant: cleanString(tx.symbol) || 'DRIP',
-      originalStatement: formatOriginalStatement(tx.transactionType, tx.action, tx.symbol),
-      notes: formatTransactionNotes(tx, details),
+      merchant: n.symbol || 'DRIP',
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatDividendReinvestmentNotes(n),
     }),
   },
 
@@ -324,34 +477,34 @@ export const QUESTRADE_TRANSACTION_RULES = [
   {
     id: 'dividends-blank',
     description: 'Dividends - Distribution (blank action)',
-    match: (tx) => tx.transactionType === 'Dividends' && (!tx.action || tx.action === ''),
-    process: (tx, details) => ({
+    match: (n) => n.transactionType === 'Dividends' && n.action === '',
+    process: (n) => ({
       category: 'Dividends & Capital Gains',
-      merchant: cleanString(tx.symbol) || 'Distribution',
-      originalStatement: formatOriginalStatement(tx.transactionType, tx.action, tx.symbol),
-      notes: formatTransactionNotes(tx, details),
+      merchant: n.symbol || 'Distribution',
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatDividendNotes(n),
     }),
   },
   {
     id: 'dividends-dis',
     description: 'Dividends - Stock Split (actually DIS action)',
-    match: (tx) => tx.transactionType === 'Dividends' && tx.action === 'DIS',
-    process: (tx, details) => ({
+    match: (n) => n.transactionType === 'Dividends' && n.action === 'DIS',
+    process: (n) => ({
       category: 'Investment',
-      merchant: cleanString(tx.symbol) || 'Stock Split',
-      originalStatement: formatOriginalStatement(tx.transactionType, tx.action, tx.symbol),
-      notes: formatTransactionNotes(tx, details),
+      merchant: n.symbol || 'Stock Split',
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatQuantityNotes(n),
     }),
   },
   {
     id: 'dividends-div',
     description: 'Dividends - Regular Dividends',
-    match: (tx) => tx.transactionType === 'Dividends' && tx.action === 'DIV',
-    process: (tx, details) => ({
+    match: (n) => n.transactionType === 'Dividends' && n.action === 'DIV',
+    process: (n) => ({
       category: 'Dividends & Capital Gains',
-      merchant: cleanString(tx.symbol) || 'Dividend',
-      originalStatement: formatOriginalStatement(tx.transactionType, tx.action, tx.symbol),
-      notes: formatTransactionNotes(tx, details),
+      merchant: n.symbol || 'Dividend',
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatDividendNotes(n),
     }),
   },
 
@@ -361,12 +514,12 @@ export const QUESTRADE_TRANSACTION_RULES = [
   {
     id: 'fx-conversion-fxt',
     description: 'FX Conversion - Currency Exchange',
-    match: (tx) => tx.transactionType === 'FX conversion' && tx.action === 'FXT',
-    process: (tx, details) => ({
+    match: (n) => n.transactionType === 'FX conversion' && n.action === 'FXT',
+    process: (n) => ({
       category: 'Transfer',
       merchant: 'Currency Exchange',
-      originalStatement: formatOriginalStatement(tx.transactionType, tx.action, tx.symbol),
-      notes: formatFxNotes(tx, details),
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatFxNotes(n),
     }),
   },
 
@@ -376,23 +529,23 @@ export const QUESTRADE_TRANSACTION_RULES = [
   {
     id: 'fees-rebates-fch',
     description: 'Fees and Rebates - Fee/Charge',
-    match: (tx) => tx.transactionType === 'Fees and rebates' && tx.action === 'FCH',
-    process: (tx, details) => ({
-      category: getFeeCategory(details),
-      merchant: getFeeMerchant(details),
-      originalStatement: formatOriginalStatement(tx.transactionType, tx.action, tx.symbol),
-      notes: formatTransactionNotes(tx, details),
+    match: (n) => n.transactionType === 'Fees and rebates' && n.action === 'FCH',
+    process: (n) => ({
+      category: 'Financial Fees',
+      merchant: getFeeMerchantFromNormalized(n),
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatTransactionNotes(n),
     }),
   },
   {
     id: 'fees-rebates-lfj',
     description: 'Fees and Rebates - Stock Lending Income',
-    match: (tx) => tx.transactionType === 'Fees and rebates' && tx.action === 'LFJ',
-    process: (tx, details) => ({
+    match: (n) => n.transactionType === 'Fees and rebates' && n.action === 'LFJ',
+    process: (n) => ({
       category: 'Stock Lending',
-      merchant: 'Stock Lending Income',
-      originalStatement: formatOriginalStatement(tx.transactionType, tx.action, tx.symbol),
-      notes: formatTransactionNotes(tx, details),
+      merchant: n.symbol || 'Stock Lending Income',
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatTransactionNotes(n),
     }),
   },
 
@@ -402,12 +555,12 @@ export const QUESTRADE_TRANSACTION_RULES = [
   {
     id: 'interest-blank',
     description: 'Interest - Interest income or Margin interest (based on amount)',
-    match: (tx) => tx.transactionType === 'Interest' && (!tx.action || tx.action === ''),
-    process: (tx, details) => ({
-      category: getInterestCategory(details),
-      merchant: getInterestMerchant(details),
-      originalStatement: formatOriginalStatement(tx.transactionType, tx.action, tx.symbol),
-      notes: formatTransactionNotes(tx, details),
+    match: (n) => n.transactionType === 'Interest' && n.action === '',
+    process: (n) => ({
+      category: getInterestCategoryFromNormalized(n),
+      merchant: getInterestMerchantFromNormalized(n),
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatTransactionNotes(n),
     }),
   },
 
@@ -417,34 +570,34 @@ export const QUESTRADE_TRANSACTION_RULES = [
   {
     id: 'other-brw',
     description: 'Other - Journalling (transfer between accounts)',
-    match: (tx) => tx.transactionType === 'Other' && tx.action === 'BRW',
-    process: (tx, details) => ({
+    match: (n) => n.transactionType === 'Other' && n.action === 'BRW',
+    process: (n) => ({
       category: 'Investment',
-      merchant: cleanString(tx.symbol) || 'Journal Entry',
-      originalStatement: formatOriginalStatement(tx.transactionType, tx.action, tx.symbol),
-      notes: formatTransactionNotes(tx, details),
+      merchant: n.symbol || 'Journal Entry',
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatQuantityNotes(n),
     }),
   },
   {
     id: 'other-gst',
     description: 'Other - GST on fees',
-    match: (tx) => tx.transactionType === 'Other' && tx.action === 'GST',
-    process: (tx, details) => ({
+    match: (n) => n.transactionType === 'Other' && n.action === 'GST',
+    process: (n) => ({
       category: 'Financial Fees',
       merchant: 'GST',
-      originalStatement: formatOriginalStatement(tx.transactionType, tx.action, tx.symbol),
-      notes: formatTransactionNotes(tx, details),
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatTransactionNotes(n),
     }),
   },
   {
     id: 'other-lfj',
     description: 'Other - Stock Lending Income',
-    match: (tx) => tx.transactionType === 'Other' && tx.action === 'LFJ',
-    process: (tx, details) => ({
+    match: (n) => n.transactionType === 'Other' && n.action === 'LFJ',
+    process: (n) => ({
       category: 'Stock Lending',
-      merchant: 'Stock Lending Income',
-      originalStatement: formatOriginalStatement(tx.transactionType, tx.action, tx.symbol),
-      notes: formatTransactionNotes(tx, details),
+      merchant: n.symbol || 'Stock Lending Income',
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatTransactionNotes(n),
     }),
   },
 
@@ -454,45 +607,45 @@ export const QUESTRADE_TRANSACTION_RULES = [
   {
     id: 'transfers-tf6',
     description: 'Transfers - Transfer In (TF6)',
-    match: (tx) => tx.transactionType === 'Transfers' && tx.action === 'TF6',
-    process: (tx, details) => ({
+    match: (n) => n.transactionType === 'Transfers' && n.action === 'TF6',
+    process: (n) => ({
       category: 'Transfer',
-      merchant: cleanString(tx.symbol) || 'Transfer In',
-      originalStatement: formatOriginalStatement(tx.transactionType, tx.action, tx.symbol),
-      notes: formatTransactionNotes(tx, details),
+      merchant: n.symbol || 'Transfer In',
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatQuantityNotes(n),
     }),
   },
   {
     id: 'transfers-tfi',
     description: 'Transfers - Transfer In (TFI)',
-    match: (tx) => tx.transactionType === 'Transfers' && tx.action === 'TFI',
-    process: (tx, details) => ({
+    match: (n) => n.transactionType === 'Transfers' && n.action === 'TFI',
+    process: (n) => ({
       category: 'Transfer',
-      merchant: cleanString(tx.symbol) || 'Transfer In',
-      originalStatement: formatOriginalStatement(tx.transactionType, tx.action, tx.symbol),
-      notes: formatTransactionNotes(tx, details),
+      merchant: n.symbol || 'Transfer In',
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatQuantityNotes(n),
     }),
   },
   {
     id: 'transfers-tfo',
     description: 'Transfers - Transfer Out',
-    match: (tx) => tx.transactionType === 'Transfers' && tx.action === 'TFO',
-    process: (tx, details) => ({
+    match: (n) => n.transactionType === 'Transfers' && n.action === 'TFO',
+    process: (n) => ({
       category: 'Transfer',
-      merchant: cleanString(tx.symbol) || 'Transfer Out',
-      originalStatement: formatOriginalStatement(tx.transactionType, tx.action, tx.symbol),
-      notes: formatTransactionNotes(tx, details),
+      merchant: n.symbol || 'Transfer Out',
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatQuantityNotes(n),
     }),
   },
   {
     id: 'transfers-tsf',
     description: 'Transfers - Internal Transfer (between accounts)',
-    match: (tx) => tx.transactionType === 'Transfers' && tx.action === 'TSF',
-    process: (tx, details) => ({
+    match: (n) => n.transactionType === 'Transfers' && n.action === 'TSF',
+    process: (n) => ({
       category: 'Transfer',
-      merchant: 'Internal Transfer',
-      originalStatement: formatOriginalStatement(tx.transactionType, tx.action, tx.symbol),
-      notes: formatTransactionNotes(tx, details),
+      merchant: n.symbol || 'Internal Transfer',
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatQuantityNotes(n),
     }),
   },
 
@@ -502,23 +655,23 @@ export const QUESTRADE_TRANSACTION_RULES = [
   {
     id: 'withdrawals-con',
     description: 'Withdrawals - Contribution withdrawal from registered account',
-    match: (tx) => tx.transactionType === 'Withdrawals' && tx.action === 'CON',
-    process: (tx, details) => ({
+    match: (n) => n.transactionType === 'Withdrawals' && n.action === 'CON',
+    process: (n) => ({
       category: 'Transfer',
       merchant: 'Transfer Out',
-      originalStatement: formatOriginalStatement(tx.transactionType, tx.action, tx.symbol),
-      notes: formatTransactionNotes(tx, details),
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatTransactionNotes(n),
     }),
   },
   {
     id: 'withdrawals-eft',
     description: 'Withdrawals - EFT Withdrawal',
-    match: (tx) => tx.transactionType === 'Withdrawals' && tx.action === 'EFT',
-    process: (tx, details) => ({
+    match: (n) => n.transactionType === 'Withdrawals' && n.action === 'EFT',
+    process: (n) => ({
       category: 'Transfer',
       merchant: 'Withdrawal',
-      originalStatement: formatOriginalStatement(tx.transactionType, tx.action, tx.symbol),
-      notes: formatTransactionNotes(tx, details),
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatTransactionNotes(n),
     }),
   },
 
@@ -529,22 +682,19 @@ export const QUESTRADE_TRANSACTION_RULES = [
     id: 'unknown-fallback',
     description: 'Fallback for unknown transaction type/action combinations',
     match: () => true, // Always matches as last resort
-    process: (tx, details) => {
-      const type = cleanString(tx.transactionType) || 'Unknown';
-      const action = cleanString(tx.action) || 'Unknown';
-
-      return {
-        category: 'Uncategorized',
-        merchant: `${type} - ${action}`,
-        originalStatement: formatOriginalStatement(tx.transactionType, tx.action, tx.symbol),
-        notes: formatTransactionNotes(tx, details),
-      };
-    },
+    process: (n) => ({
+      category: 'Uncategorized',
+      merchant: n.symbol || `${n.transactionType || 'Unknown'} - ${n.action || 'Unknown'}`,
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatQuantityNotes(n),
+    }),
   },
 ];
 
 /**
  * Find and apply the matching rule for a transaction
+ * Normalizes data before matching to ensure consistent string comparisons
+ *
  * @param {Object} transaction - Transaction object from activity API
  * @param {Object} details - Full transaction details from transactionUrl (optional)
  * @returns {Object} Processed rule result
@@ -552,10 +702,13 @@ export const QUESTRADE_TRANSACTION_RULES = [
 export function applyTransactionRule(transaction, details = null) {
   const transactionId = getTransactionId(transaction);
 
+  // Normalize the transaction data - cleans whitespace and merges details
+  const normalized = normalizeTransactionData(transaction, details);
+
   for (const rule of QUESTRADE_TRANSACTION_RULES) {
-    if (rule.match(transaction)) {
+    if (rule.match(normalized)) {
       debugLog(`Transaction ${transactionId} matched rule: ${rule.id}`);
-      const result = rule.process(transaction, details);
+      const result = rule.process(normalized);
       return {
         ...result,
         ruleId: rule.id,
@@ -563,18 +716,18 @@ export function applyTransactionRule(transaction, details = null) {
     }
   }
 
-  // This should never happen since we have a fallback rule
-  debugLog(`No rule matched for transaction ${transactionId}`, {
-    transactionType: transaction.transactionType,
-    action: transaction.action,
-  });
-
+  // This should never happen since fallback rule always matches
+  debugLog(`Transaction ${transactionId} - no matching rule found (unexpected)`);
   return {
     category: 'Uncategorized',
-    merchant: 'Unknown Transaction',
-    originalStatement: formatOriginalStatement(transaction.transactionType, transaction.action, transaction.symbol),
-    notes: formatTransactionNotes(transaction, details),
-    ruleId: 'error-no-match',
+    merchant: 'Unknown',
+    originalStatement: formatOriginalStatement(
+      normalized.transactionType,
+      normalized.action,
+      normalized.symbol,
+    ),
+    notes: formatQuantityNotes(normalized),
+    ruleId: 'no-match',
   };
 }
 
@@ -653,4 +806,8 @@ export default {
   formatNumber,
   formatAmount,
   cleanString,
+  normalizeTransactionData,
+  formatDividendNotes,
+  formatDividendReinvestmentNotes,
+  formatQuantityNotes,
 };
