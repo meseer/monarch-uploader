@@ -446,8 +446,24 @@ function createBalanceResultDisplay() {
 }
 
 /**
+ * Extract the source Canada Life account from consolidated or raw account object
+ * Handles both consolidated structure (with .canadalifeAccount) and raw API response
+ * @param {Object} account - Account object (consolidated or raw)
+ * @returns {Object} Source Canada Life account object
+ */
+function extractSourceAccount(account) {
+  // If this is a consolidated account with canadalifeAccount property, extract it
+  if (account.canadalifeAccount) {
+    return account.canadalifeAccount;
+  }
+  // Otherwise, assume it's already a raw API account
+  return account;
+}
+
+/**
  * Updates the account selector with loaded accounts
- * @param {Array} accounts - Array of CanadaLife accounts
+ * Handles both consolidated and raw account formats
+ * @param {Array} accounts - Array of CanadaLife accounts (consolidated or raw)
  */
 function updateAccountSelector(accounts) {
   if (!accountSelectorElement) return;
@@ -465,11 +481,12 @@ function updateAccountSelector(accounts) {
   defaultOption.selected = true;
   accountSelectorElement.appendChild(defaultOption);
 
-  // Add account options
+  // Add account options - extract source account from consolidated structure
   accounts.forEach((account, index) => {
+    const sourceAccount = extractSourceAccount(account);
     const option = document.createElement('option');
     option.value = index.toString();
-    option.textContent = `${account.EnglishShortName} - ${account.LongNameEnglish}`;
+    option.textContent = `${sourceAccount.EnglishShortName} - ${sourceAccount.LongNameEnglish}`;
     accountSelectorElement.appendChild(option);
   });
 
@@ -543,8 +560,9 @@ async function autoLoadAccounts() {
 }
 
 /**
- * Gets the currently selected account
- * @returns {Object|null} Selected account object or null
+ * Gets the currently selected account (source Canada Life account)
+ * Returns the extracted source account, not the consolidated object
+ * @returns {Object|null} Selected source Canada Life account object or null
  */
 function getSelectedAccount() {
   if (!accountSelectorElement || !cachedAccounts.length) return null;
@@ -552,7 +570,8 @@ function getSelectedAccount() {
   const selectedIndex = accountSelectorElement.value;
   if (!selectedIndex || selectedIndex === '') return null;
 
-  return cachedAccounts[parseInt(selectedIndex, 10)];
+  const consolidated = cachedAccounts[parseInt(selectedIndex, 10)];
+  return extractSourceAccount(consolidated);
 }
 
 /**

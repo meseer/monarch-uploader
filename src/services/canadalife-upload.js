@@ -209,20 +209,34 @@ function validateDateRange(startDate, endDate, allowToday = false, account = nul
 }
 
 /**
- * Get or prompt for start date for a Canada Life account
+ * Get the start date for a Canada Life account
+ * For initial sync, automatically uses the account's EnrollmentDate
  * @param {string} accountId - Canada Life account ID (agreementId)
+ * @param {Object} account - Canada Life account object with EnrollmentDate
  * @returns {Promise<string|null>} Start date in YYYY-MM-DD format, or null if cancelled
  */
-async function getStartDateForAccount(accountId) {
+async function getStartDateForAccount(accountId, account = null) {
   // Use unified date calculation with configurable lookback
   const fromDate = calculateFromDateWithLookback('canadalife', accountId);
   if (fromDate) {
     return fromDate;
   }
 
-  // No previous upload date - prompt user for initial start date
-  const account = stateManager.getState().currentAccount;
-  const accountName = account.nickname || account.name || 'Account';
+  // No previous upload date - this is initial sync
+  // Use the account's EnrollmentDate (account creation date) for full history upload
+  if (account && account.EnrollmentDate) {
+    const enrollmentDate = parseFlexibleDate(account.EnrollmentDate);
+    if (!Number.isNaN(enrollmentDate.getTime())) {
+      const formattedDate = formatDate(enrollmentDate);
+      const accountName = account.LongNameEnglish || account.EnglishShortName || 'Account';
+      debugLog(`Initial sync for ${accountName}: Using EnrollmentDate ${formattedDate}`);
+      return formattedDate;
+    }
+  }
+
+  // Fallback: If no EnrollmentDate available, prompt user for initial start date
+  const stateAccount = stateManager.getState().currentAccount;
+  const accountName = stateAccount?.nickname || stateAccount?.name || account?.EnglishShortName || 'Account';
 
   const defaultDate = formatDaysAgoLocal(90); // 90 days ago
   const selectedDate = await showDatePickerPromise(
@@ -794,8 +808,8 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
         // Update progress
         progressDialog.updateProgress(accountId, 'processing', 'Getting start date...');
 
-        // Get start date (either from last upload or prompt user)
-        const startDate = await getStartDateForAccount(accountId);
+        // Get start date (either from last upload or use EnrollmentDate for initial sync)
+        const startDate = await getStartDateForAccount(accountId, sourceAccount);
         if (!startDate) {
           // User cancelled date selection
           progressDialog.updateProgress(accountId, 'error', 'Date selection cancelled');
