@@ -20,7 +20,7 @@ import navigationManager from './core/navigation';
 // Import API clients
 import { checkTokenStatus } from './api/questrade';
 import monarchApi from './api/monarch';
-import { setupTokenMonitoring, checkTokenStatus as checkCanadaLifeTokenStatus } from './api/canadalife';
+import { setupTokenMonitoring, checkTokenStatus as checkCanadaLifeTokenStatus, loadCanadaLifeAccounts } from './api/canadalife';
 import { setupCredentialInterception } from './api/rogersbank';
 import { setupTokenMonitoring as setupWealthsimpleTokenMonitoring, checkAuth as checkWealthsimpleAuth } from './api/wealthsimple';
 
@@ -176,6 +176,18 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
 
       // Check auth status immediately
       checkCanadaLifeStatus();
+
+      // Pre-load accounts from API to refresh cache with full account details
+      // This ensures cached accounts have all required fields (EnglishShortName, agreementId, etc.)
+      // and triggers migration from old minimal storage to full API data structure
+      loadCanadaLifeAccounts(true) // forceRefresh=true
+        .then((accounts) => {
+          debugLog(`Pre-loaded ${accounts.length} Canada Life accounts with full details`);
+        })
+        .catch((err) => {
+          // Non-fatal - accounts will be loaded when sync is triggered
+          debugLog('Error pre-loading Canada Life accounts:', err);
+        });
 
       // Initialize CanadaLife UI
       initCanadaLifeUI()
