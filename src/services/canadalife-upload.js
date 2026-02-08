@@ -416,7 +416,6 @@ function buildCanadaLifeSteps() {
   return [
     { key: 'fetchHistory', name: 'Fetch balance history' },
     { key: 'uploadBalance', name: 'Upload balance to Monarch' },
-    { key: 'fetchTransactions', name: 'Fetch transactions' },
     { key: 'uploadTransactions', name: 'Upload transactions' },
   ];
 }
@@ -593,9 +592,9 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
       throw new Error('Operation cancelled by user');
     }
 
-    // ===== STEP 3: Fetch Transactions =====
+    // ===== STEP 3: Upload Transactions =====
     if (progressDialog) {
-      progressDialog.updateStepStatus(accountId, 'fetchTransactions', 'processing', 'Fetching...');
+      progressDialog.updateStepStatus(accountId, 'uploadTransactions', 'processing', 'Fetching...');
     }
 
     // Get previously uploaded transaction IDs for deduplication
@@ -604,7 +603,7 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
     // Fetch and process transactions for the date range
     const transactions = await fetchAndProcessTransactions(canadalifeAccount, startDate, endDate, {
       onProgress: progressDialog ? (msg) => {
-        progressDialog.updateStepStatus(accountId, 'fetchTransactions', 'processing', msg);
+        progressDialog.updateStepStatus(accountId, 'uploadTransactions', 'processing', msg);
       } : null,
       signal,
       uploadedTransactionIds,
@@ -614,19 +613,12 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
     // The transactions returned are already filtered (not in uploadedTransactionIds)
     result.transactionsSkipped = uploadedTransactionIds.size > 0 ? uploadedTransactionIds.size : 0;
 
-    if (progressDialog) {
-      const fetchMessage = transactions.length > 0
-        ? `${transactions.length} new transactions`
-        : 'No new transactions';
-      progressDialog.updateStepStatus(accountId, 'fetchTransactions', 'success', fetchMessage);
-    }
-
     // Check for cancellation
     if (signal?.aborted) {
       throw new Error('Operation cancelled by user');
     }
 
-    // ===== STEP 4: Upload Transactions =====
+    // Upload transactions if any found
     if (transactions.length > 0) {
       if (progressDialog) {
         progressDialog.updateStepStatus(accountId, 'uploadTransactions', 'processing', `Uploading ${transactions.length}...`);
