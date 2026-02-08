@@ -372,6 +372,84 @@ export function convertQuestradeOrdersToMonarchCSV(orders, accountName) {
 }
 
 /**
+ * Convert Questrade activity transactions to Monarch CSV format
+ * Uses the transaction rules engine for categorization and formatting
+ *
+ * @param {Array} transactions - Array of processed Questrade transaction objects
+ *   Each object should have:
+ *   - transaction: Original transaction from activity API
+ *   - details: Full details from transactionUrl
+ *   - ruleResult: Result from applyTransactionRule
+ * @param {string} accountName - Questrade account name for the Account column
+ * @returns {string} CSV string formatted for Monarch
+ */
+export function convertQuestradeTransactionsToMonarchCSV(transactions, accountName) {
+  if (!transactions || transactions.length === 0) {
+    return '';
+  }
+
+  // Define Monarch CSV columns
+  const columns = [
+    'Date',
+    'Merchant',
+    'Category',
+    'Account',
+    'Original Statement',
+    'Notes',
+    'Amount',
+    'Tags',
+  ];
+
+  // Transform transactions to Monarch format
+  const monarchRows = transactions.map((item) => {
+    const { transaction, details, ruleResult } = item;
+
+    // Get amount from details (.net.amount)
+    let amount = 0;
+    if (details?.net?.amount !== undefined && details?.net?.amount !== null) {
+      amount = parseFloat(details.net.amount) || 0;
+    }
+
+    // Get date from transaction
+    let date = '';
+    const rawDate = details?.transactionDate || transaction?.transactionDate;
+    if (rawDate) {
+      // If date includes time, extract just the date part
+      if (rawDate.includes('T')) {
+        date = rawDate.split('T')[0];
+      } else {
+        date = rawDate;
+      }
+    }
+
+    // Get currency tag if not CAD
+    let tags = '';
+    if (details?.net?.currency && details.net.currency !== 'CAD') {
+      tags = details.net.currency;
+    }
+
+    return {
+      Date: date,
+      Merchant: ruleResult?.merchant || 'Unknown',
+      Category: ruleResult?.category || 'Uncategorized',
+      Account: accountName,
+      'Original Statement': ruleResult?.originalStatement || '',
+      Notes: ruleResult?.notes || '',
+      Amount: amount,
+      Tags: tags,
+    };
+  });
+
+  debugLog('Transformed Questrade transactions for CSV:', {
+    originalCount: transactions.length,
+    transformedCount: monarchRows.length,
+    sample: monarchRows[0], // Log first row as sample
+  });
+
+  return convertToCSV(monarchRows, columns);
+}
+
+/**
  * Parse CSV string to array of objects
  * @param {string} csvString - CSV string to parse
  * @param {boolean} hasHeader - Whether the first row is a header

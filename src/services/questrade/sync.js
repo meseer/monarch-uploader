@@ -147,9 +147,9 @@ export async function syncAccountToMonarch(accountId, accountName, fromDate, toD
       }
     }
 
-    // Step 3: Sync transactions (gracefully handle failures)
+    // Step 3: Sync transactions (orders + activity) - gracefully handle failures
     if (progressDialog) {
-      progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Syncing orders');
+      progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Syncing transactions...');
     }
 
     try {
@@ -162,13 +162,26 @@ export async function syncAccountToMonarch(accountId, accountName, fromDate, toD
 
       if (transactionsResult.success) {
         const ordersCount = transactionsResult.ordersProcessed || 0;
-        const transactionsMessage = ordersCount > 0 ? `${ordersCount} orders` : 'No new orders';
+        const activityCount = transactionsResult.transactionsProcessed || 0;
+        const totalCount = ordersCount + activityCount;
+
+        // Build detailed message
+        let transactionsMessage;
+        if (totalCount === 0) {
+          transactionsMessage = 'No new transactions';
+        } else {
+          const parts = [];
+          if (ordersCount > 0) parts.push(`${ordersCount} orders`);
+          if (activityCount > 0) parts.push(`${activityCount} activity`);
+          transactionsMessage = parts.join(', ');
+        }
+
         if (progressDialog) {
           progressDialog.updateStepStatus(accountId, 'transactions', 'success', transactionsMessage);
         }
-        debugLog(`Transactions sync completed: ${ordersCount} processed`);
+        debugLog(`Transactions sync completed: ${ordersCount} orders, ${activityCount} activity transactions`);
         if (transactionsResult.skippedDuplicates) {
-          debugLog(`Skipped ${transactionsResult.skippedDuplicates} duplicate orders`);
+          debugLog(`Skipped ${transactionsResult.skippedDuplicates} duplicate transactions`);
         }
       } else {
         if (progressDialog) {

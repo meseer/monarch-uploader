@@ -151,6 +151,155 @@ export function getToken() {
   return authService.getQuestradeToken();
 }
 
+/**
+ * Fetch a single page of account transactions (activity)
+ * @param {string} accountId - Account ID (key/UUID)
+ * @param {Object} options - Pagination options
+ * @param {number} [options.limit=100] - Number of transactions per page (max 1000)
+ * @param {string} [options.nextLink=null] - Next page link from previous response
+ * @returns {Promise<Object>} Response with data array and metadata
+ */
+export async function fetchAccountTransactionsPage(accountId, options = {}) {
+  if (!accountId) {
+    throw new Error('Account ID is required');
+  }
+
+  const { limit = 100, nextLink = null } = options;
+
+  let endpoint;
+  if (nextLink) {
+    // Use the nextLink directly (it's a relative path)
+    endpoint = nextLink;
+  } else {
+    // Build the initial endpoint
+    endpoint = `/v3/brokerage-accounts-transactions/${accountId}/transactions?fields=AccountDetailType&fields=Action&limit=${limit}&orderBy=%2BTradeDate`;
+  }
+
+  debugLog(`Fetching transactions page for account: ${accountId}`);
+  return makeQuestradeApiCall(endpoint, ['brokerage.accounts.all']);
+}
+
+/**
+ * Fetch full details for a single transaction
+ * @param {string} transactionUrl - The transactionUrl from a transaction object
+ * @returns {Promise<Object>} Full transaction details
+ */
+export async function fetchTransactionDetails(transactionUrl) {
+  if (!transactionUrl) {
+    throw new Error('Transaction URL is required');
+  }
+
+  debugLog(`Fetching transaction details: ${transactionUrl}`);
+  return makeQuestradeApiCall(transactionUrl, ['brokerage.accounts.all']);
+}
+
+/**
+ * Fetch all transactions for an account since a given date
+ * Uses pagination and stops when reaching transactions older than sinceDate
+ * @param {string} accountId - Account ID (key/UUID)
+ * @param {string} sinceDate - Date string in YYYY-MM-DD format
+ * @param {number} [pageSize=100] - Number of transactions per page
+ * @returns {Promise<Array>} Array of transactions with transactionDate >= sinceDate
+ */
+export async function fetchAccountTransactionsSinceDate(accountId, sinceDate, pageSize = 100) {
+  if (!accountId) {
+    throw new Error('Account ID is required');
+  }
+
+  if (!sinceDate) {
+    throw new Error('Since date is required');
+  }
+
+  debugLog(`Fetching transactions for account ${accountId} since ${sinceDate}`);
+
+  const allTransactions = [];
+  let nextLink = null;
+  let hasMore = true;
+
+  while (hasMore) {
+    const response = await fetchAccountTransactionsPage(accountId, {
+      limit: pageSize,
+      nextLink,
+    });
+
+    if (!response || !response.data) {
+      debugLog('Invalid API response:', response);
+      break;
+    }
+
+    const { data, metadata } = response;
+
+    // Filter transactions that are >= sinceDate
+    let foundOlderTransaction = false;
+    for (const transaction of data) {
+      const txDate = transaction.transactionDate;
+      if (txDate && txDate >= sinceDate) {
+        allTransactions.push(transaction);
+      } else if (txDate && txDate < sinceDate) {
+        // Found a transaction older than our cutoff
+        foundOlderTransaction = true;
+        break;
+      }
+    }
+
+    // Stop if we found an older transaction or there's no next page
+    if (foundOlderTransaction || !metadata?.nextLink) {
+      hasMore = false;
+    } else {
+      nextLink = metadata.nextLink;
+    }
+  }
+
+  debugLog(`Fetched ${allTransactions.length} transactions since ${sinceDate}`);
+  return allTransactions;
+}
+
+/**
+ * Fetch ALL transactions for an account (for initial/full sync)
+ * @param {string} accountId - Account ID (key/UUID)
+ * @param {number} [pageSize=1000] - Number of transactions per page (max 1000)
+ * @returns {Promise<Array>} Complete array of all transactions
+ */
+export async function fetchAllAccountTransactions(accountId, pageSize = 1000) {
+  if (!accountId) {
+    throw new Error('Account ID is required');
+  }
+
+  debugLog(`Fetching all transactions for account ${accountId}`);
+
+  const allTransactions = [];
+  let nextLink = null;
+  let hasMore = true;
+  let pageCount = 0;
+
+  while (hasMore) {
+    pageCount += 1;
+    const response = await fetchAccountTransactionsPage(accountId, {
+      limit: pageSize,
+      nextLink,
+    });
+
+    if (!response || !response.data) {
+      debugLog('Invalid API response:', response);
+      break;
+    }
+
+    const { data, metadata } = response;
+    allTransactions.push(...data);
+
+    debugLog(`Fetched page ${pageCount}: ${data.length} transactions (total: ${allTransactions.length})`);
+
+    if (metadata?.nextLink) {
+      nextLink = metadata.nextLink;
+    } else {
+      hasMore = false;
+    }
+  }
+
+  debugLog(`Fetched ${allTransactions.length} total transactions across ${pageCount} pages`);
+  return allTransactions;
+}
+
 // Export as default object
 export default {
   makeApiCall: makeQuestradeApiCall,
@@ -158,6 +307,10 @@ export default {
   getAccount: getQuestradeAccount,
   fetchPositions: fetchAccountPositions,
   fetchOrders: fetchAccountOrders,
+  fetchTransactionsPage: fetchAccountTransactionsPage,
+  fetchTransactionDetails,
+  fetchTransactionsSinceDate: fetchAccountTransactionsSinceDate,
+  fetchAllTransactions: fetchAllAccountTransactions,
   checkTokenStatus,
   getToken,
 };

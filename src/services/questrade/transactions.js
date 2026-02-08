@@ -1,6 +1,10 @@
 /**
  * Questrade Transactions Service
- * Handles fetching orders from Questrade and uploading them as transactions to Monarch
+ * Handles fetching orders and activity transactions from Questrade and uploading them to Monarch
+ *
+ * This service uses TWO data sources:
+ * 1. Orders API (v1) - For trade orders (buy/sell securities)
+ * 2. Activity API (v3) - For non-trade transactions (dividends, fees, deposits, etc.)
  */
 
 import { debugLog, getTodayLocal, saveLastUploadDate } from '../../core/utils';
@@ -9,10 +13,15 @@ import questradeApi from '../../api/questrade';
 import monarchApi from '../../api/monarch';
 import accountService from '../common/accountService';
 import toast from '../../ui/toast';
-import { convertQuestradeOrdersToMonarchCSV } from '../../utils/csv';
+import { convertQuestradeOrdersToMonarchCSV, convertQuestradeTransactionsToMonarchCSV } from '../../utils/csv';
 import { applyCategoryMapping, saveUserCategorySelection, calculateAllCategorySimilarities } from '../../mappers/category';
 import { showMonarchCategorySelector } from '../../ui/components/categorySelector';
 import { getUploadedTransactionIds, saveUploadedTransactions } from '../../utils/transactionStorage';
+import {
+  applyTransactionRule,
+  shouldFilterTransaction,
+  getTransactionId,
+} from './transactionRules';
 
 /**
  * Filter out already uploaded orders
@@ -44,6 +53,36 @@ function filterDuplicateOrders(orders, accountId) {
 }
 
 /**
+ * Filter out already uploaded transactions (from activity API)
+ * @param {Array} transactions - Array of transactions
+ * @param {string} accountId - Questrade account ID
+ * @returns {Object} Filtered transactions and statistics
+ */
+function filterDuplicateTransactions(transactions, accountId) {
+  // Use transaction storage utility - key prefix for activity transactions
+  const uploadedIds = getUploadedTransactionIds(accountId, 'questrade_activity');
+  const uploadedUUIDs = new Set(uploadedIds);
+  const originalCount = transactions.length;
+
+  const newTransactions = transactions.filter((tx) => {
+    const txId = getTransactionId(tx);
+    return !uploadedUUIDs.has(txId);
+  });
+
+  const duplicateCount = originalCount - newTransactions.length;
+
+  if (duplicateCount > 0) {
+    debugLog(`Filtered out ${duplicateCount} duplicate transactions`);
+  }
+
+  return {
+    transactions: newTransactions,
+    duplicateCount,
+    originalCount,
+  };
+}
+
+/**
  * Filter orders to only include executed ones
  * @param {Array} orders - Array of orders
  * @returns {Array} Filtered orders with status="Executed"
@@ -56,6 +95,27 @@ function filterExecutedOrders(orders) {
   const executedOrders = orders.filter((order) => order.status === 'Executed');
   debugLog(`Filtered ${executedOrders.length} executed orders from ${orders.length} total`);
   return executedOrders;
+}
+
+/**
+ * Filter transactions to exclude trades (handled by orders API)
+ * @param {Array} transactions - Array of transactions from activity API
+ * @returns {Array} Filtered transactions without trades
+ */
+function filterNonTradeTransactions(transactions) {
+  if (!transactions || !Array.isArray(transactions)) {
+    return [];
+  }
+
+  const nonTradeTransactions = transactions.filter((tx) => !shouldFilterTransaction(tx));
+  const filteredCount = transactions.length - nonTradeTransactions.length;
+
+  if (filteredCount > 0) {
+    debugLog(`Filtered out ${filteredCount} trade transactions (handled by orders API)`);
+  }
+
+  debugLog(`Kept ${nonTradeTransactions.length} non-trade transactions`);
+  return nonTradeTransactions;
 }
 
 /**
@@ -219,7 +279,334 @@ async function fetchQuestradeOrders(accountId, fromDate) {
 }
 
 /**
- * Process and upload transactions for a Questrade account
+ * Fetch activity transactions and their details for an account
+ * @param {string} accountId - Questrade account ID
+ * @param {string} fromDate - Start date in YYYY-MM-DD format
+ * @param {Object} progressDialog - Optional progress dialog
+ * @returns {Promise<Array>} Array of processed transactions with details
+ */
+async function fetchAndProcessActivityTransactions(accountId, fromDate, progressDialog = null) {
+  try {
+    debugLog(`Fetching activity transactions for account ${accountId} from ${fromDate}`);
+
+    if (progressDialog) {
+      progressDialog.updateProgress(accountId, 'processing', 'Loading transactions from Questrade...');
+    }
+
+    // Fetch all transactions since the date
+    const transactions = await questradeApi.fetchTransactionsSinceDate(accountId, fromDate);
+
+    if (!transactions || transactions.length === 0) {
+      debugLog('No activity transactions found');
+      return [];
+    }
+
+    debugLog(`Fetched ${transactions.length} activity transactions`);
+
+    // Filter out trades (handled by orders API)
+    const nonTradeTransactions = filterNonTradeTransactions(transactions);
+
+    if (nonTradeTransactions.length === 0) {
+      debugLog('No non-trade transactions to process');
+      return [];
+    }
+
+    if (progressDialog) {
+      progressDialog.updateProgress(
+        accountId,
+        'processing',
+        `Loading transaction details (0/${nonTradeTransactions.length})...`,
+      );
+    }
+
+    // Fetch details for each transaction
+    const processedTransactions = [];
+    for (let i = 0; i < nonTradeTransactions.length; i += 1) {
+      const tx = nonTradeTransactions[i];
+
+      if (progressDialog && i % 5 === 0) {
+        progressDialog.updateProgress(
+          accountId,
+          'processing',
+          `Loading transaction details (${i + 1}/${nonTradeTransactions.length})...`,
+        );
+      }
+
+      // Fetch full details using transactionUrl
+      let details = null;
+      if (tx.transactionUrl) {
+        try {
+          details = await questradeApi.fetchTransactionDetails(tx.transactionUrl);
+        } catch (detailError) {
+          debugLog(`Failed to fetch details for transaction ${getTransactionId(tx)}:`, detailError);
+          // Continue without details - rules can still process with basic info
+        }
+      }
+
+      // Apply transaction rules
+      const ruleResult = applyTransactionRule(tx, details);
+
+      processedTransactions.push({
+        transaction: tx,
+        details,
+        ruleResult,
+      });
+    }
+
+    debugLog(`Processed ${processedTransactions.length} transactions with details`);
+    return processedTransactions;
+  } catch (error) {
+    debugLog('Error fetching activity transactions:', error);
+    throw error;
+  }
+}
+
+/**
+ * Process and upload activity transactions for a Questrade account
+ * @param {string} accountId - Questrade account ID
+ * @param {string} accountName - Account name for display
+ * @param {string} fromDate - Start date for transactions
+ * @param {string} monarchAccountId - Monarch account ID to upload to
+ * @param {Object} progressDialog - Optional progress dialog
+ * @returns {Promise<Object>} Upload result
+ */
+async function processAndUploadActivityTransactions(accountId, accountName, fromDate, monarchAccountId, progressDialog = null) {
+  try {
+    debugLog(`Processing activity transactions for account ${accountName} (${accountId})`);
+
+    // Fetch and process activity transactions
+    const processedTransactions = await fetchAndProcessActivityTransactions(accountId, fromDate, progressDialog);
+
+    if (processedTransactions.length === 0) {
+      debugLog('No activity transactions to upload');
+      return {
+        success: true,
+        message: 'No activity transactions found',
+        transactionsProcessed: 0,
+      };
+    }
+
+    // Filter out duplicates
+    const transactionsForDedup = processedTransactions.map((pt) => pt.transaction);
+    const filterResult = filterDuplicateTransactions(transactionsForDedup, accountId);
+
+    // Create a set of IDs to keep
+    const idsToKeep = new Set(filterResult.transactions.map((tx) => getTransactionId(tx)));
+
+    // Filter the processed transactions
+    const newProcessedTransactions = processedTransactions.filter((pt) => idsToKeep.has(getTransactionId(pt.transaction)));
+
+    if (newProcessedTransactions.length === 0) {
+      const message = filterResult.duplicateCount > 0
+        ? `All ${filterResult.duplicateCount} activity transactions have already been uploaded`
+        : 'No new activity transactions to upload';
+      debugLog(message);
+      return {
+        success: true,
+        message,
+        transactionsProcessed: 0,
+        skippedDuplicates: filterResult.duplicateCount,
+      };
+    }
+
+    if (progressDialog) {
+      const dupMsg = filterResult.duplicateCount > 0
+        ? ` (${filterResult.duplicateCount} duplicates skipped)`
+        : '';
+      progressDialog.updateProgress(
+        accountId,
+        'processing',
+        `Converting ${newProcessedTransactions.length} transactions to CSV${dupMsg}...`,
+      );
+    }
+
+    // Convert to Monarch CSV format
+    const csvData = convertQuestradeTransactionsToMonarchCSV(newProcessedTransactions, accountName);
+
+    if (!csvData) {
+      throw new Error('Failed to convert transactions to CSV');
+    }
+
+    // Upload to Monarch
+    const toDate = getTodayLocal();
+    const filename = `questrade_activity_${accountId}_${fromDate}_to_${toDate}.csv`;
+
+    if (progressDialog) {
+      progressDialog.updateProgress(accountId, 'processing', `Uploading ${newProcessedTransactions.length} activity transactions...`);
+    }
+
+    const uploadSuccess = await monarchApi.uploadTransactions(
+      monarchAccountId,
+      csvData,
+      filename,
+      false, // shouldUpdateBalance
+      false, // skipCheckForDuplicates
+    );
+
+    if (uploadSuccess) {
+      // Save transaction IDs for deduplication
+      const transactionsWithDates = newProcessedTransactions.map((pt) => {
+        const txId = getTransactionId(pt.transaction);
+        const date = pt.details?.transactionDate || pt.transaction?.transactionDate || toDate;
+        return {
+          id: txId,
+          date: date.includes('T') ? date.split('T')[0] : date,
+        };
+      });
+
+      saveUploadedTransactions('questrade_activity', accountId, transactionsWithDates);
+
+      const successMessage = filterResult.duplicateCount > 0
+        ? `Successfully uploaded ${newProcessedTransactions.length} activity transactions (${filterResult.duplicateCount} duplicates skipped)`
+        : `Successfully uploaded ${newProcessedTransactions.length} activity transactions`;
+
+      debugLog(successMessage);
+      return {
+        success: true,
+        message: successMessage,
+        transactionsProcessed: newProcessedTransactions.length,
+        skippedDuplicates: filterResult.duplicateCount,
+      };
+    }
+
+    throw new Error('Upload to Monarch failed');
+  } catch (error) {
+    debugLog(`Error processing activity transactions for account ${accountId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Process and upload orders (trades) for a Questrade account
+ * @param {string} accountId - Questrade account ID (key)
+ * @param {string} accountName - Account name for display
+ * @param {string} fromDate - Start date for transactions
+ * @param {string} monarchAccountId - Monarch account ID to upload to
+ * @param {Object} progressDialog - Optional progress dialog
+ * @returns {Promise<Object>} Upload result
+ */
+async function processAndUploadOrders(accountId, accountName, fromDate, monarchAccountId, progressDialog = null) {
+  try {
+    debugLog(`Processing orders for account ${accountName} (${accountId})`);
+
+    if (progressDialog) {
+      progressDialog.updateProgress(accountId, 'processing', 'Loading orders from Questrade...');
+    }
+
+    // Fetch orders
+    const allOrders = await fetchQuestradeOrders(accountId, fromDate);
+
+    if (!allOrders || allOrders.length === 0) {
+      debugLog('No orders found for the specified date range');
+      return {
+        success: true,
+        message: 'No orders found',
+        ordersProcessed: 0,
+      };
+    }
+
+    // Filter to only executed orders
+    const executedOrders = filterExecutedOrders(allOrders);
+
+    if (executedOrders.length === 0) {
+      debugLog('No executed orders found');
+      return {
+        success: true,
+        message: 'No executed orders found',
+        ordersProcessed: 0,
+      };
+    }
+
+    // Filter out duplicate orders
+    const filterResult = filterDuplicateOrders(executedOrders, accountId);
+    const ordersToUpload = filterResult.orders;
+
+    if (ordersToUpload.length === 0) {
+      const message = filterResult.duplicateCount > 0
+        ? `All ${filterResult.duplicateCount} orders have already been uploaded`
+        : 'No new orders to upload';
+      debugLog(message);
+      return {
+        success: true,
+        message,
+        ordersProcessed: 0,
+        skippedDuplicates: filterResult.duplicateCount,
+      };
+    }
+
+    if (progressDialog) {
+      progressDialog.updateProgress(accountId, 'processing', 'Resolving order categories...');
+    }
+
+    // Resolve categories for all orders
+    const ordersWithResolvedCategories = await resolveCategoriesForOrders(ordersToUpload);
+
+    // Convert orders to Monarch CSV format
+    if (progressDialog) {
+      progressDialog.updateProgress(accountId, 'processing', `Converting ${ordersToUpload.length} orders to CSV...`);
+    }
+
+    const csvData = convertQuestradeOrdersToMonarchCSV(ordersWithResolvedCategories, accountName);
+
+    if (!csvData) {
+      throw new Error('Failed to convert orders to CSV');
+    }
+
+    // Upload to Monarch
+    const toDate = getTodayLocal();
+    const filename = `questrade_orders_${accountId}_${fromDate}_to_${toDate}.csv`;
+
+    if (progressDialog) {
+      progressDialog.updateProgress(accountId, 'processing', `Uploading ${ordersToUpload.length} orders...`);
+    }
+
+    const uploadSuccess = await monarchApi.uploadTransactions(
+      monarchAccountId,
+      csvData,
+      filename,
+      false, // shouldUpdateBalance
+      false, // skipCheckForDuplicates
+    );
+
+    if (uploadSuccess) {
+      // Save order UUIDs with dates for successful uploads
+      const transactionsWithDates = ordersToUpload.map((order) => {
+        let date = toDate;
+        if (order.updatedDateTime) {
+          const orderDate = new Date(order.updatedDateTime);
+          date = orderDate.toISOString().split('T')[0];
+        }
+        return {
+          id: order.orderUuid,
+          date,
+        };
+      }).filter((t) => t.id);
+
+      saveUploadedTransactions('questrade', accountId, transactionsWithDates);
+      saveLastUploadDate(accountId, toDate, 'questrade');
+
+      const successMessage = filterResult.duplicateCount > 0
+        ? `Successfully uploaded ${ordersToUpload.length} orders (${filterResult.duplicateCount} duplicates skipped)`
+        : `Successfully uploaded ${ordersToUpload.length} orders`;
+
+      debugLog(successMessage);
+      return {
+        success: true,
+        message: successMessage,
+        ordersProcessed: ordersToUpload.length,
+        skippedDuplicates: filterResult.duplicateCount,
+      };
+    }
+
+    throw new Error('Upload to Monarch failed');
+  } catch (error) {
+    debugLog(`Error processing orders for account ${accountId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Process and upload all transactions (both orders and activity) for a Questrade account
  * @param {string} accountId - Questrade account ID (key)
  * @param {string} accountName - Account name for display
  * @param {string} fromDate - Start date for transactions
@@ -236,167 +623,87 @@ export async function processAndUploadTransactions(accountId, accountName, fromD
       throw new Error(`Account not found: ${accountId}`);
     }
 
-    if (progressDialog) {
-      progressDialog.updateProgress(accountId, 'processing', 'Fetching orders from Questrade...');
-    }
-
-    // Fetch orders
-    const allOrders = await fetchQuestradeOrders(accountId, fromDate);
-
-    if (!allOrders || allOrders.length === 0) {
-      debugLog('No orders found for the specified date range');
-      if (progressDialog) {
-        progressDialog.updateProgress(accountId, 'success', 'No orders found to upload');
-      }
-      return {
-        success: true,
-        message: 'No orders found',
-        ordersProcessed: 0,
-      };
-    }
-
-    if (progressDialog) {
-      progressDialog.updateProgress(accountId, 'processing', `Processing ${allOrders.length} orders...`);
-    }
-
-    // Filter to only executed orders
-    const executedOrders = filterExecutedOrders(allOrders);
-
-    if (executedOrders.length === 0) {
-      debugLog('No executed orders found');
-      if (progressDialog) {
-        progressDialog.updateProgress(accountId, 'success', 'No executed orders found to upload');
-      }
-      return {
-        success: true,
-        message: 'No executed orders found',
-        ordersProcessed: 0,
-      };
-    }
-
-    // Filter out duplicate orders
-    if (progressDialog) {
-      progressDialog.updateProgress(accountId, 'processing', `Checking for duplicate orders among ${executedOrders.length} executed orders...`);
-    }
-
-    const filterResult = filterDuplicateOrders(executedOrders, accountId);
-    const ordersToUpload = filterResult.orders;
-
-    if (ordersToUpload.length === 0) {
-      const message = filterResult.duplicateCount > 0
-        ? `All ${filterResult.duplicateCount} orders have already been uploaded`
-        : 'No new orders to upload';
-      debugLog(message);
-      if (progressDialog) {
-        progressDialog.updateProgress(accountId, 'success', message);
-      }
-      return {
-        success: true,
-        message,
-        ordersProcessed: 0,
-        skippedDuplicates: filterResult.duplicateCount,
-      };
-    }
-
-    // Show info about duplicates if any
-    if (filterResult.duplicateCount > 0) {
-      debugLog(`Processing ${ordersToUpload.length} new orders (skipped ${filterResult.duplicateCount} duplicates)`);
-      if (progressDialog) {
-        progressDialog.updateProgress(accountId, 'processing', `Found ${ordersToUpload.length} new orders (${filterResult.duplicateCount} duplicates skipped)`);
-      }
-    } else if (progressDialog) {
-      progressDialog.updateProgress(accountId, 'processing', `Found ${ordersToUpload.length} new orders to upload`);
-    }
-
-    // Resolve categories for all orders
-    if (progressDialog) {
-      progressDialog.updateProgress(accountId, 'processing', 'Resolving order categories...');
-    }
-
-    const ordersWithResolvedCategories = await resolveCategoriesForOrders(ordersToUpload);
-
-    // Convert orders to Monarch CSV format
-    if (progressDialog) {
-      progressDialog.updateProgress(accountId, 'processing', `Converting ${ordersToUpload.length} orders to CSV format...`);
-    }
-
-    const csvData = convertQuestradeOrdersToMonarchCSV(ordersWithResolvedCategories, accountName);
-
-    if (!csvData) {
-      throw new Error('Failed to convert orders to CSV');
-    }
-
-    // Get Monarch account mapping from consolidated storage (or legacy fallback)
+    // Get Monarch account mapping
     const monarchAccount = accountService.getMonarchAccountMapping(INTEGRATIONS.QUESTRADE, accountId);
 
     if (!monarchAccount) {
       throw new Error('Account mapping cancelled or not found');
     }
 
-    // Upload to Monarch
-    const uploadMessage = filterResult.duplicateCount > 0
-      ? `Uploading ${ordersToUpload.length} new orders to Monarch (${filterResult.duplicateCount} duplicates skipped)...`
-      : `Uploading ${ordersToUpload.length} orders to Monarch...`;
+    const results = {
+      orders: null,
+      activity: null,
+    };
 
-    if (progressDialog) {
-      progressDialog.updateProgress(accountId, 'processing', uploadMessage);
-    }
-
-    const toDate = getTodayLocal();
-    const filename = `questrade_orders_${accountId}_${fromDate}_to_${toDate}.csv`;
-    const uploadSuccess = await monarchApi.uploadTransactions(
-      monarchAccount.id,
-      csvData,
-      filename,
-      false, // shouldUpdateBalance = false (balance is handled separately)
-      false, // skipCheckForDuplicates = false
-    );
-
-    if (uploadSuccess) {
-      // Save order UUIDs with dates for successful uploads
-      const orderUUIDs = ordersToUpload
-        .map((order) => order.orderUuid)
-        .filter((uuid) => uuid);
-
-      if (orderUUIDs.length > 0) {
-        // Extract dates for each order
-        const transactionsWithDates = ordersToUpload.map((order) => {
-          let date = toDate; // Default to today
-          if (order.updatedDateTime) {
-            const orderDate = new Date(order.updatedDateTime);
-            date = orderDate.toISOString().split('T')[0];
-          }
-          return {
-            id: order.orderUuid,
-            date,
-          };
-        }).filter((t) => t.id); // Filter out any without IDs
-
-        // Use new transaction storage utility with dates
-        saveUploadedTransactions('questrade', accountId, transactionsWithDates);
-      }
-
-      // Save last upload date
-      saveLastUploadDate(accountId, toDate, 'questrade');
-
-      const successMessage = filterResult.duplicateCount > 0
-        ? `Successfully uploaded ${ordersToUpload.length} new orders (${filterResult.duplicateCount} duplicates skipped)`
-        : `Successfully uploaded ${ordersToUpload.length} orders`;
-
-      debugLog(successMessage);
-      if (progressDialog) {
-        progressDialog.updateProgress(accountId, 'success', successMessage);
-      }
-
-      return {
-        success: true,
-        message: successMessage,
-        ordersProcessed: ordersToUpload.length,
-        skippedDuplicates: filterResult.duplicateCount,
+    // Process orders (trades)
+    try {
+      results.orders = await processAndUploadOrders(accountId, accountName, fromDate, monarchAccount.id, progressDialog);
+    } catch (orderError) {
+      debugLog('Error processing orders:', orderError);
+      results.orders = {
+        success: false,
+        message: `Orders failed: ${orderError.message}`,
+        ordersProcessed: 0,
       };
     }
 
-    throw new Error('Upload to Monarch failed');
+    // Process activity transactions (non-trades)
+    try {
+      results.activity = await processAndUploadActivityTransactions(accountId, accountName, fromDate, monarchAccount.id, progressDialog);
+    } catch (activityError) {
+      debugLog('Error processing activity transactions:', activityError);
+      results.activity = {
+        success: false,
+        message: `Activity transactions failed: ${activityError.message}`,
+        transactionsProcessed: 0,
+      };
+    }
+
+    // Combine results
+    const totalProcessed = (results.orders?.ordersProcessed || 0) + (results.activity?.transactionsProcessed || 0);
+    const totalDuplicates = (results.orders?.skippedDuplicates || 0) + (results.activity?.skippedDuplicates || 0);
+
+    const overallSuccess = (results.orders?.success ?? true) && (results.activity?.success ?? true);
+
+    // Build summary message
+    const messageParts = [];
+    if (results.orders?.ordersProcessed > 0) {
+      messageParts.push(`${results.orders.ordersProcessed} orders`);
+    }
+    if (results.activity?.transactionsProcessed > 0) {
+      messageParts.push(`${results.activity.transactionsProcessed} activity transactions`);
+    }
+
+    let summaryMessage;
+    if (totalProcessed === 0) {
+      if (totalDuplicates > 0) {
+        summaryMessage = `No new transactions (${totalDuplicates} duplicates skipped)`;
+      } else {
+        summaryMessage = 'No transactions found to upload';
+      }
+    } else {
+      summaryMessage = `Uploaded ${messageParts.join(' and ')}`;
+      if (totalDuplicates > 0) {
+        summaryMessage += ` (${totalDuplicates} duplicates skipped)`;
+      }
+    }
+
+    if (progressDialog) {
+      progressDialog.updateProgress(
+        accountId,
+        overallSuccess ? 'success' : 'error',
+        summaryMessage,
+      );
+    }
+
+    return {
+      success: overallSuccess,
+      message: summaryMessage,
+      ordersProcessed: results.orders?.ordersProcessed || 0,
+      transactionsProcessed: results.activity?.transactionsProcessed || 0,
+      skippedDuplicates: totalDuplicates,
+      results,
+    };
   } catch (error) {
     debugLog(`Error processing transactions for account ${accountId}:`, error);
     if (progressDialog) {
@@ -409,7 +716,12 @@ export async function processAndUploadTransactions(accountId, accountName, fromD
 // Export default object
 export default {
   processAndUploadTransactions,
+  processAndUploadOrders,
+  processAndUploadActivityTransactions,
   fetchQuestradeOrders,
+  fetchAndProcessActivityTransactions,
   filterExecutedOrders,
   filterDuplicateOrders,
+  filterDuplicateTransactions,
+  filterNonTradeTransactions,
 };

@@ -206,6 +206,8 @@ describe('Questrade Transactions Service', () => {
 
     it('should return success with message when no orders found', async () => {
       questradeApi.fetchOrders = jest.fn().mockResolvedValue({ data: [] });
+      // Mock activity API to also return empty (no transactions from either source)
+      questradeApi.fetchAccountTransactionsSinceDate = jest.fn().mockResolvedValue([]);
 
       const result = await transactionsService.processAndUploadTransactions(
         'account123',
@@ -214,7 +216,7 @@ describe('Questrade Transactions Service', () => {
       );
 
       expect(result.success).toBe(true);
-      expect(result.message).toBe('No orders found');
+      expect(result.message).toBe('No transactions found to upload');
       expect(result.ordersProcessed).toBe(0);
     });
 
@@ -225,6 +227,8 @@ describe('Questrade Transactions Service', () => {
       ];
 
       questradeApi.fetchOrders = jest.fn().mockResolvedValue({ data: mockOrders });
+      // Mock activity API to also return empty (no transactions from either source)
+      questradeApi.fetchAccountTransactionsSinceDate = jest.fn().mockResolvedValue([]);
 
       const result = await transactionsService.processAndUploadTransactions(
         'account123',
@@ -233,7 +237,7 @@ describe('Questrade Transactions Service', () => {
       );
 
       expect(result.success).toBe(true);
-      expect(result.message).toBe('No executed orders found');
+      expect(result.message).toBe('No transactions found to upload');
       expect(result.ordersProcessed).toBe(0);
     });
 
