@@ -375,6 +375,10 @@ export function convertQuestradeOrdersToMonarchCSV(orders, accountName) {
  * Convert Questrade activity transactions to Monarch CSV format
  * Uses the transaction rules engine for categorization and formatting
  *
+ * Supports rule-level overrides for special transaction types (like FX conversions):
+ * - ruleResult.amountOverride: Use this amount instead of details.net.amount
+ * - ruleResult.currencyOverride: Use this currency tag instead of details.net.currencyCode
+ *
  * @param {Array} transactions - Array of processed Questrade transaction objects
  *   Each object should have:
  *   - transaction: Original transaction from activity API
@@ -404,9 +408,13 @@ export function convertQuestradeTransactionsToMonarchCSV(transactions, accountNa
   const monarchRows = transactions.map((item) => {
     const { transaction, details, ruleResult } = item;
 
-    // Get amount from details (.net.amount)
+    // Get amount - check for rule override first (for FX conversions, etc.)
     let amount = 0;
-    if (details?.net?.amount !== undefined && details?.net?.amount !== null) {
+    if (ruleResult?.amountOverride !== undefined && ruleResult?.amountOverride !== null) {
+      // Rule specified an override (e.g., FX conversion using .fx.baseCurrency.amount)
+      amount = parseFloat(ruleResult.amountOverride) || 0;
+    } else if (details?.net?.amount !== undefined && details?.net?.amount !== null) {
+      // Standard amount from .net.amount
       amount = parseFloat(details.net.amount) || 0;
     }
 
@@ -422,10 +430,14 @@ export function convertQuestradeTransactionsToMonarchCSV(transactions, accountNa
       }
     }
 
-    // Get currency tag if not CAD
+    // Get currency tag - check for rule override first (for FX conversions, etc.)
     let tags = '';
-    if (details?.net?.currency && details.net.currency !== 'CAD') {
-      tags = details.net.currency;
+    if (ruleResult?.currencyOverride) {
+      // Rule specified a currency override
+      tags = ruleResult.currencyOverride;
+    } else if (details?.net?.currencyCode && details.net.currencyCode !== 'CAD') {
+      // Standard currency tag from .net.currencyCode (if not CAD)
+      tags = details.net.currencyCode;
     }
 
     return {

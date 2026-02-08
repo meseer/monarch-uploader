@@ -35,6 +35,11 @@ export function cleanString(value) {
  * Prefers details data over activity API data, and cleans all string values.
  * This ensures that whitespace-only values (like action: "   ") are normalized to empty strings.
  *
+ * API structure reference:
+ * - net: { currencyCode: "CAD", amount: 0.00 }
+ * - fx: { baseCurrency: { currencyCode: "CAD", amount: 14.96 }, averageRate: 0.79... }
+ * - price: { currencyCode: "CAD", amount: 1.23 }
+ *
  * @param {Object} transaction - Basic transaction from activity API
  * @param {Object} details - Full details from transactionUrl (optional)
  * @returns {Object} Normalized transaction data for rule matching
@@ -58,6 +63,9 @@ export function normalizeTransactionData(transaction, details) {
     description: cleanString(source.description || txFallback.description),
 
     // Numeric/Object fields - preserve as-is from details
+    // net: { currencyCode: "CAD", amount: 0.00 }
+    // price: { currencyCode: "CAD", amount: 1.23 }
+    // fx: { baseCurrency: { currencyCode: "CAD", amount: 14.96 }, averageRate: 0.79... }
     price: details?.price || null,
     quantity: details?.quantity ?? txFallback.quantity ?? null,
     net: details?.net || null,
@@ -164,6 +172,7 @@ export function formatTransactionNotes(normalized) {
 /**
  * Format notes for dividend transactions
  * Includes description, dividend per share, and settlement date (only if different from transaction date)
+ * Uses price.currencyCode per API structure: { currencyCode: "CAD", amount: 1.23 }
  *
  * @param {Object} normalized - Normalized transaction data
  * @returns {string} Formatted notes string
@@ -176,10 +185,10 @@ export function formatDividendNotes(normalized) {
     lines.push(normalized.description);
   }
 
-  // Line 2: Dividend per share (from price object)
+  // Line 2: Dividend per share (from price object: { currencyCode, amount })
   if (normalized.price && normalized.price.amount !== undefined && normalized.price.amount !== null) {
     const amount = formatNumber(normalized.price.amount);
-    const currency = cleanString(normalized.price.currency) || 'CAD';
+    const currency = cleanString(normalized.price.currencyCode) || 'CAD';
     if (amount) {
       lines.push(`Dividend per share: ${amount} ${currency}`);
     }
@@ -196,6 +205,7 @@ export function formatDividendNotes(normalized) {
 /**
  * Format notes for dividend reinvestment (DRIP) transactions
  * Includes description, quantity, price per share, and settlement date (only if different from transaction date)
+ * Uses price.currencyCode per API structure: { currencyCode: "CAD", amount: 1.23 }
  *
  * @param {Object} normalized - Normalized transaction data
  * @returns {string} Formatted notes string
@@ -216,10 +226,10 @@ export function formatDividendReinvestmentNotes(normalized) {
     }
   }
 
-  // Line 3: Price per share
+  // Line 3: Price per share (from price object: { currencyCode, amount })
   if (normalized.price && normalized.price.amount !== undefined && normalized.price.amount !== null) {
     const amount = formatNumber(normalized.price.amount);
-    const currency = cleanString(normalized.price.currency) || 'CAD';
+    const currency = cleanString(normalized.price.currencyCode) || 'CAD';
     if (amount) {
       lines.push(`Price: ${amount} ${currency} per share`);
     }
@@ -236,6 +246,7 @@ export function formatDividendReinvestmentNotes(normalized) {
 /**
  * Format notes for transactions with quantity (transfers, splits, journalling)
  * Includes description, quantity, price, and settlement date (only if different from transaction date)
+ * Uses price.currencyCode per API structure: { currencyCode: "CAD", amount: 1.23 }
  *
  * @param {Object} normalized - Normalized transaction data
  * @returns {string} Formatted notes string
@@ -256,10 +267,10 @@ export function formatQuantityNotes(normalized) {
     }
   }
 
-  // Line 3: Price per share (if available)
+  // Line 3: Price per share (if available, from price object: { currencyCode, amount })
   if (normalized.price && normalized.price.amount !== undefined && normalized.price.amount !== null) {
     const amount = formatNumber(normalized.price.amount);
-    const currency = cleanString(normalized.price.currency) || 'CAD';
+    const currency = cleanString(normalized.price.currencyCode) || 'CAD';
     if (amount) {
       lines.push(`Price: ${amount} ${currency}`);
     }
@@ -275,36 +286,34 @@ export function formatQuantityNotes(normalized) {
 
 /**
  * Format FX conversion notes with exchange rate details
+ * Uses correct API structure:
+ * - net: { currencyCode: "USD", amount: 100.00 }
+ * - fx: { baseCurrency: { currencyCode: "CAD", amount: 14.96 }, averageRate: 0.79... }
+ *
+ * Format: "Bought/Sold {.net.amount} {.net.currencyCode} @ {.fx.averageRate}"
  * Settlement date is only included if it differs from transaction date
  *
  * @param {Object} normalized - Normalized transaction data
+ * @param {string} action - 'Bought' or 'Sold' based on .net.amount sign
  * @returns {string} Formatted FX notes
  */
-export function formatFxNotes(normalized) {
+export function formatFxConversionNotes(normalized, action) {
   const lines = [];
 
-  // Description
+  // Description first
   if (normalized.description) {
     lines.push(normalized.description);
   }
 
-  // FX details from the normalized object
-  if (normalized.fx) {
-    const fxRate = formatNumber(normalized.fx.rate);
-    const fxFromAmount = formatNumber(normalized.fx.fromAmount);
-    const fxToAmount = formatNumber(normalized.fx.toAmount);
-    const fxFromCurrency = cleanString(normalized.fx.fromCurrency);
-    const fxToCurrency = cleanString(normalized.fx.toCurrency);
+  // FX conversion details: "Bought/Sold {amount} {currency} @ {rate}"
+  const netAmount = Math.abs(parseFloat(normalized?.net?.amount) || 0);
+  const netCurrency = cleanString(normalized?.net?.currencyCode);
+  const fxRate = normalized?.fx?.averageRate;
 
-    if (fxRate) {
-      lines.push(`Exchange Rate: ${fxRate}`);
-    }
-    if (fxFromAmount && fxFromCurrency) {
-      lines.push(`From: ${fxFromAmount} ${fxFromCurrency}`);
-    }
-    if (fxToAmount && fxToCurrency) {
-      lines.push(`To: ${fxToAmount} ${fxToCurrency}`);
-    }
+  if (netAmount && netCurrency && fxRate) {
+    const formattedRate = formatNumber(fxRate);
+    const formattedAmount = formatNumber(netAmount);
+    lines.push(`${action} ${formattedAmount} ${netCurrency} @ ${formattedRate}`);
   }
 
   // Settlement date - only if different from transaction date
@@ -313,6 +322,21 @@ export function formatFxNotes(normalized) {
   }
 
   return lines.join('\n');
+}
+
+/**
+ * Format FX conversion notes with exchange rate details (legacy function for backwards compatibility)
+ * Settlement date is only included if it differs from transaction date
+ *
+ * @param {Object} normalized - Normalized transaction data
+ * @returns {string} Formatted FX notes
+ * @deprecated Use formatFxConversionNotes instead with explicit action
+ */
+export function formatFxNotes(normalized) {
+  // Determine action based on net amount
+  const netAmount = parseFloat(normalized?.net?.amount) || 0;
+  const action = netAmount > 0 ? 'Bought' : 'Sold';
+  return formatFxConversionNotes(normalized, action);
 }
 
 /**
@@ -490,12 +514,34 @@ export const QUESTRADE_TRANSACTION_RULES = [
     id: 'fx-conversion-fxt',
     description: 'FX Conversion - Currency Exchange',
     match: (n) => n.transactionType === 'FX conversion' && n.action === 'FXT',
-    process: (n) => ({
-      category: 'Transfer',
-      merchant: 'Currency Exchange',
-      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
-      notes: formatFxNotes(n),
-    }),
+    process: (n) => {
+      // Determine if this is a Buy (positive) or Sell (negative) based on .net.amount
+      const netAmount = parseFloat(n?.net?.amount) || 0;
+      const isBuy = netAmount > 0;
+      const category = isBuy ? 'Buy' : 'Sell';
+      const action = isBuy ? 'Bought' : 'Sold';
+
+      // Merchant is the non-CAD currency from .net.currencyCode
+      const netCurrency = cleanString(n?.net?.currencyCode);
+      const merchant = netCurrency && netCurrency !== 'CAD' ? netCurrency : 'Currency Exchange';
+
+      // Amount should be from .fx.baseCurrency.amount
+      const fxBaseAmount = n?.fx?.baseCurrency?.amount;
+
+      // Currency tag is non-CAD currency from .net.currencyCode
+      const currencyTag = netCurrency && netCurrency !== 'CAD' ? netCurrency : '';
+
+      return {
+        category,
+        merchant,
+        originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+        notes: formatFxConversionNotes(n, action),
+        // Override amount with .fx.baseCurrency.amount
+        amountOverride: fxBaseAmount !== undefined && fxBaseAmount !== null ? fxBaseAmount : undefined,
+        // Override currency tag with non-CAD currency
+        currencyOverride: currencyTag,
+      };
+    },
   },
 
   // ============================================
@@ -547,7 +593,7 @@ export const QUESTRADE_TRANSACTION_RULES = [
     description: 'Other - Journalling (transfer between accounts)',
     match: (n) => n.transactionType === 'Other' && n.action === 'BRW',
     process: (n) => ({
-      category: 'Investment',
+      category: 'Transfer',
       merchant: n.symbol || 'Journal Entry',
       originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
       notes: formatQuantityNotes(n),
@@ -737,15 +783,16 @@ export function getTransactionAmount(details) {
 
 /**
  * Get the currency tag for transaction (if not CAD)
+ * Uses .net.currencyCode from the API
  * @param {Object} details - Transaction details from transactionUrl
  * @returns {string} Currency code as tag if not CAD, empty string otherwise
  */
 export function getCurrencyTag(details) {
-  if (!details || !details.net || !details.net.currency) {
+  if (!details || !details.net || !details.net.currencyCode) {
     return '';
   }
 
-  const currency = cleanString(details.net.currency);
+  const currency = cleanString(details.net.currencyCode);
   return currency && currency !== 'CAD' ? currency : '';
 }
 

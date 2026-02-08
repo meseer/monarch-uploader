@@ -175,26 +175,49 @@ describe('Questrade Transaction Rules', () => {
   });
 
   describe('formatFxNotes', () => {
-    test('formats FX notes with exchange details (normalized data)', () => {
+    test('formats FX notes with new API structure (Bought - positive amount)', () => {
       const normalized = {
         description: 'Currency conversion',
+        net: {
+          currencyCode: 'USD',
+          amount: 100.00,
+        },
         fx: {
-          rate: 1.35,
-          fromAmount: 100,
-          toAmount: 135,
-          fromCurrency: 'USD',
-          toCurrency: 'CAD',
+          baseCurrency: {
+            currencyCode: 'CAD',
+            amount: 135.00,
+          },
+          averageRate: 0.7407407407,
         },
         transactionDate: '2025-01-15',
         settlementDate: '2025-01-17',
       };
       const notes = formatFxNotes(normalized);
       expect(notes).toContain('Currency conversion');
-      expect(notes).toContain('Exchange Rate: 1.35');
-      expect(notes).toContain('From: 100 USD');
-      expect(notes).toContain('To: 135 CAD');
+      expect(notes).toContain('Bought 100 USD @');
       expect(notes).not.toContain('Transaction Date');
       expect(notes).toContain('Settlement Date: 2025-01-17');
+    });
+
+    test('formats FX notes with Sold when negative amount', () => {
+      const normalized = {
+        description: 'Currency conversion',
+        net: {
+          currencyCode: 'USD',
+          amount: -100.00,
+        },
+        fx: {
+          baseCurrency: {
+            currencyCode: 'CAD',
+            amount: -135.00,
+          },
+          averageRate: 0.7407407407,
+        },
+        transactionDate: '2025-01-15',
+      };
+      const notes = formatFxNotes(normalized);
+      expect(notes).toContain('Currency conversion');
+      expect(notes).toContain('Sold 100 USD @');
     });
 
     test('handles missing fx data (normalized data)', () => {
@@ -204,7 +227,8 @@ describe('Questrade Transaction Rules', () => {
       };
       const notes = formatFxNotes(normalized);
       expect(notes).toContain('Test');
-      expect(notes).not.toContain('Exchange Rate');
+      expect(notes).not.toContain('Bought');
+      expect(notes).not.toContain('Sold');
       expect(notes).not.toContain('Transaction Date');
     });
   });
@@ -252,12 +276,12 @@ describe('Questrade Transaction Rules', () => {
 
   describe('getCurrencyTag', () => {
     test('returns empty string for CAD', () => {
-      const details = { net: { currency: 'CAD' } };
+      const details = { net: { currencyCode: 'CAD' } };
       expect(getCurrencyTag(details)).toBe('');
     });
 
     test('returns USD for USD transactions', () => {
-      const details = { net: { currency: 'USD' } };
+      const details = { net: { currencyCode: 'USD' } };
       expect(getCurrencyTag(details)).toBe('USD');
     });
 
@@ -265,7 +289,7 @@ describe('Questrade Transaction Rules', () => {
       expect(getCurrencyTag(null)).toBe('');
     });
 
-    test('returns empty string for missing currency', () => {
+    test('returns empty string for missing currencyCode', () => {
       expect(getCurrencyTag({ net: {} })).toBe('');
     });
   });
@@ -374,10 +398,66 @@ describe('Questrade Transaction Rules', () => {
     });
 
     describe('FX Conversion', () => {
-      test('FXT - Currency Exchange', () => {
+      test('FXT - Buying USD (positive amount)', () => {
+        const tx = { transactionType: 'FX conversion', action: 'FXT' };
+        const details = {
+          transactionType: 'FX conversion',
+          action: 'FXT',
+          net: { currencyCode: 'USD', amount: 100.00 },
+          fx: {
+            baseCurrency: { currencyCode: 'CAD', amount: 135.00 },
+            averageRate: 0.7407407407,
+          },
+        };
+        const result = applyTransactionRule(tx, details);
+        expect(result.category).toBe('Buy');
+        expect(result.merchant).toBe('USD'); // non-CAD currency
+        expect(result.amountOverride).toBe(135.00); // fx.baseCurrency.amount
+        expect(result.currencyOverride).toBe('USD');
+        expect(result.ruleId).toBe('fx-conversion-fxt');
+      });
+
+      test('FXT - Selling USD (negative amount)', () => {
+        const tx = { transactionType: 'FX conversion', action: 'FXT' };
+        const details = {
+          transactionType: 'FX conversion',
+          action: 'FXT',
+          net: { currencyCode: 'USD', amount: -100.00 },
+          fx: {
+            baseCurrency: { currencyCode: 'CAD', amount: -135.00 },
+            averageRate: 0.7407407407,
+          },
+        };
+        const result = applyTransactionRule(tx, details);
+        expect(result.category).toBe('Sell');
+        expect(result.merchant).toBe('USD'); // non-CAD currency
+        expect(result.amountOverride).toBe(-135.00); // fx.baseCurrency.amount
+        expect(result.currencyOverride).toBe('USD');
+        expect(result.ruleId).toBe('fx-conversion-fxt');
+      });
+
+      test('FXT - CAD currency defaults merchant to Currency Exchange', () => {
+        const tx = { transactionType: 'FX conversion', action: 'FXT' };
+        const details = {
+          transactionType: 'FX conversion',
+          action: 'FXT',
+          net: { currencyCode: 'CAD', amount: 100.00 },
+          fx: {
+            baseCurrency: { currencyCode: 'CAD', amount: 135.00 },
+            averageRate: 0.7407407407,
+          },
+        };
+        const result = applyTransactionRule(tx, details);
+        expect(result.category).toBe('Buy');
+        expect(result.merchant).toBe('Currency Exchange'); // fallback when CAD
+        expect(result.currencyOverride).toBe(''); // empty when CAD
+        expect(result.ruleId).toBe('fx-conversion-fxt');
+      });
+
+      test('FXT - No details uses fallback merchant', () => {
         const tx = { transactionType: 'FX conversion', action: 'FXT' };
         const result = applyTransactionRule(tx, null);
-        expect(result.category).toBe('Transfer');
+        expect(result.category).toBe('Sell'); // 0 is not > 0, so Sell
         expect(result.merchant).toBe('Currency Exchange');
         expect(result.ruleId).toBe('fx-conversion-fxt');
       });
@@ -432,11 +512,30 @@ describe('Questrade Transaction Rules', () => {
     });
 
     describe('Other', () => {
-      test('BRW - Journalling', () => {
+      test('BRW - Journalling (Transfer category)', () => {
         const tx = { transactionType: 'Other', action: 'BRW', symbol: 'VFV' };
         const result = applyTransactionRule(tx, null);
-        expect(result.category).toBe('Investment');
+        expect(result.category).toBe('Transfer');
         expect(result.merchant).toBe('VFV');
+        expect(result.ruleId).toBe('other-brw');
+      });
+
+      test('BRW - Journalling with details includes quantity/price', () => {
+        const tx = { transactionType: 'Other', action: 'BRW', symbol: 'VFV' };
+        const details = {
+          transactionType: 'Other',
+          action: 'BRW',
+          symbol: 'VFV',
+          description: 'Transfer between accounts',
+          quantity: 100,
+          price: { currencyCode: 'CAD', amount: 50.25 },
+        };
+        const result = applyTransactionRule(tx, details);
+        expect(result.category).toBe('Transfer');
+        expect(result.merchant).toBe('VFV');
+        expect(result.notes).toContain('Transfer between accounts');
+        expect(result.notes).toContain('Quantity: 100');
+        expect(result.notes).toContain('Price: 50.25 CAD');
         expect(result.ruleId).toBe('other-brw');
       });
 
