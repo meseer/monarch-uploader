@@ -7,7 +7,7 @@ import {
   debugLog, formatDate, getLocalToday, getTodayLocal, formatDaysAgoLocal, parseLocalDate,
   getLastUpdateDate, saveLastUploadDate,
 } from '../../core/utils';
-import { STORAGE } from '../../core/config';
+import { STORAGE, ACCOUNT_STATUS } from '../../core/config';
 import stateManager from '../../core/state';
 import questradeApi from '../../api/questrade';
 import monarchApi from '../../api/monarch';
@@ -28,6 +28,123 @@ export class BalanceError extends Error {
     this.name = 'BalanceError';
     this.accountId = accountId;
   }
+}
+
+/**
+ * Get accounts for sync by merging API accounts with consolidated storage accounts.
+ * This handles closed accounts that are no longer returned by the API but exist in storage.
+ *
+ * @param {Object} options - Options for account retrieval
+ * @param {boolean} options.includeClosed - Whether to include closed accounts (for full history sync)
+ * @returns {Promise<Array>} Array of account objects with status field:
+ *   - account: The account object (from API or storage)
+ *   - status: 'active' | 'closed'
+ *   - source: 'api' | 'storage' (where the account came from)
+ */
+export async function getAccountsForSync(options = { includeClosed: false }) {
+  const { includeClosed } = options;
+
+  try {
+    // Get accounts from Questrade API (these are active accounts)
+    let apiAccounts = [];
+    try {
+      apiAccounts = await questradeApi.fetchAccounts();
+    } catch (error) {
+      debugLog('Error fetching accounts from API:', error);
+      // If API fails, we can still work with storage accounts for closed accounts
+    }
+
+    // Create a set of API account keys for quick lookup
+    const apiAccountKeys = new Set(apiAccounts.map((acc) => acc.key));
+
+    // Get accounts from consolidated storage
+    const storedAccounts = accountService.getAccounts(INTEGRATIONS.QUESTRADE);
+
+    // Build the merged account list
+    const mergedAccounts = [];
+
+    // First, add all API accounts as active
+    for (const apiAccount of apiAccounts) {
+      mergedAccounts.push({
+        ...apiAccount,
+        status: ACCOUNT_STATUS.ACTIVE,
+        source: 'api',
+      });
+    }
+
+    // Then, check storage accounts for closed accounts (not in API)
+    for (const storedAccount of storedAccounts) {
+      const accountId = storedAccount.questradeAccount?.id;
+      if (!accountId) continue;
+
+      // If account is in API, it's already added as active
+      if (apiAccountKeys.has(accountId)) {
+        continue;
+      }
+
+      // Account is in storage but not in API - this is a closed account
+      // Check if it's already marked as closed in storage
+      const existingStatus = storedAccount.status || ACCOUNT_STATUS.CLOSED;
+
+      // Build account object from storage data
+      const closedAccount = {
+        key: accountId,
+        nickname: storedAccount.questradeAccount?.nickname || accountId,
+        name: storedAccount.questradeAccount?.name || storedAccount.questradeAccount?.nickname || accountId,
+        // Copy other fields from stored questradeAccount if available
+        ...storedAccount.questradeAccount,
+        status: existingStatus,
+        source: 'storage',
+        closedDate: storedAccount.closedDate || null,
+      };
+
+      // Only include closed accounts if requested
+      if (includeClosed) {
+        mergedAccounts.push(closedAccount);
+        debugLog(`Including closed account from storage: ${accountId} (${closedAccount.nickname})`);
+      } else {
+        debugLog(`Skipping closed account: ${accountId} (${closedAccount.nickname})`);
+      }
+    }
+
+    debugLog(`getAccountsForSync: ${mergedAccounts.length} accounts (API: ${apiAccounts.length}, Storage closed: ${storedAccounts.length - apiAccountKeys.size})`);
+
+    return mergedAccounts;
+  } catch (error) {
+    debugLog('Error in getAccountsForSync:', error);
+    throw error;
+  }
+}
+
+/**
+ * Mark an account as closed in consolidated storage
+ * @param {string} accountId - Account ID to mark as closed
+ * @returns {boolean} Success status
+ */
+export function markAccountAsClosed(accountId) {
+  const today = getTodayLocal();
+
+  const success = accountService.updateAccountInList(INTEGRATIONS.QUESTRADE, accountId, {
+    status: ACCOUNT_STATUS.CLOSED,
+    closedDate: today,
+  });
+
+  if (success) {
+    debugLog(`Marked account ${accountId} as closed on ${today}`);
+  } else {
+    debugLog(`Failed to mark account ${accountId} as closed`);
+  }
+
+  return success;
+}
+
+/**
+ * Get count of active accounts for sync (excludes closed accounts)
+ * @returns {Promise<number>} Count of active accounts
+ */
+export async function getActiveAccountCount() {
+  const accounts = await getAccountsForSync({ includeClosed: false });
+  return accounts.length;
 }
 
 /**
@@ -786,6 +903,7 @@ export async function uploadFullBalanceHistoryForAccount(accountId, accountName,
 /**
  * Upload full balance history for all Questrade accounts from their creation dates
  * Shows a progress dialog and handles the bulk upload process
+ * Includes closed accounts (accounts in storage but not in API)
  * @returns {Promise<void>}
  */
 export async function uploadFullBalanceHistoryForAllAccounts() {
@@ -796,8 +914,8 @@ export async function uploadFullBalanceHistoryForAllAccounts() {
       return; // User cancelled authentication
     }
 
-    // Get all Questrade accounts
-    const accounts = await questradeApi.fetchAccounts();
+    // Get all Questrade accounts including closed ones (for full history sync)
+    const accounts = await getAccountsForSync({ includeClosed: true });
     if (!accounts || !accounts.length) {
       toast.show('No Questrade accounts found.', 'error');
       return;
@@ -830,7 +948,7 @@ export async function uploadFullBalanceHistoryForAllAccounts() {
       return;
     }
 
-    // Create progress dialog
+    // Create progress dialog (pass account status for closed account styling)
     const progressDialog = showProgressDialog(accounts, 'Uploading Full Balance History');
 
     // Initialize stats and cancellation state
@@ -919,6 +1037,12 @@ export async function uploadFullBalanceHistoryForAllAccounts() {
             // Update success stats and progress
             stats.success += 1;
             progressDialog.updateProgress(account.key, 'success', 'Upload complete');
+
+            // If this was a closed account (from storage), mark it as closed after successful full sync
+            if (account.source === 'storage' && account.status === ACCOUNT_STATUS.CLOSED) {
+              markAccountAsClosed(account.key);
+              debugLog(`Marked account ${account.key} as closed after successful full sync`);
+            }
           } else {
             throw new Error('Upload failed without specific error message');
           }
@@ -973,5 +1097,8 @@ export default {
   getAccountCreationDate,
   uploadFullBalanceHistoryForAccount,
   uploadFullBalanceHistoryForAllAccounts,
+  getAccountsForSync,
+  getActiveAccountCount,
+  markAccountAsClosed,
   BalanceError,
 };

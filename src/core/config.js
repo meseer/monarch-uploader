@@ -126,6 +126,12 @@ export const WEALTHSIMPLE_BALANCE_RECONSTRUCTION_TYPES = new Set([
   'PORTFOLIO_LINE_OF_CREDIT',
 ]);
 
+// Account status constants
+export const ACCOUNT_STATUS = {
+  ACTIVE: 'active', // Account is active and returned by API
+  CLOSED: 'closed', // Account is closed (in storage but not in API)
+};
+
 // Brand colors
 export const COLORS = {
   CANADALIFE_BRAND: '#A20A29',
@@ -176,6 +182,7 @@ export default {
   API,
   STORAGE,
   TRANSACTION_RETENTION_DEFAULTS,
+  ACCOUNT_STATUS,
   COLORS,
   LOGO_CLOUDINARY_IDS,
   UI,

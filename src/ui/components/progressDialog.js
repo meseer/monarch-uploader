@@ -393,11 +393,44 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
       gap: 2px;
     `;
 
+    // Account name row (includes name and optional badges)
+    const accountNameRow = document.createElement('div');
+    accountNameRow.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    `;
+
     // Account name
     const accountName = document.createElement('div');
     accountName.style.cssText = 'font-weight: 500;';
     accountName.textContent = account.nickname || account.name || 'Account';
-    accountNameContainer.appendChild(accountName);
+    accountNameRow.appendChild(accountName);
+
+    // Closed badge (if account is closed)
+    const isClosed = account.status === 'closed';
+    if (isClosed) {
+      const closedBadge = document.createElement('span');
+      closedBadge.id = `balance-uploader-closed-badge-${accountKey}`;
+      closedBadge.style.cssText = `
+        background: #9e9e9e;
+        color: white;
+        font-size: 0.7em;
+        padding: 2px 6px;
+        border-radius: 10px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      `;
+      closedBadge.textContent = 'Closed';
+      accountNameRow.appendChild(closedBadge);
+
+      // Apply greyed-out styling to the entire row
+      accountRow.style.opacity = '0.7';
+      accountRow.style.backgroundColor = '#f5f5f5';
+    }
+
+    accountNameContainer.appendChild(accountNameRow);
 
     // Account ID
     const accountIdDiv = document.createElement('div');
