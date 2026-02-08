@@ -28,7 +28,8 @@ function buildQuestradeSteps() {
   return [
     { key: 'balance', name: 'Balance history' },
     { key: 'positions', name: 'Positions sync' },
-    { key: 'transactions', name: 'Transactions sync' },
+    { key: 'orders', name: 'Orders (trades)' },
+    { key: 'activity', name: 'Activity (contributions, dividends etc.)' },
   ];
 }
 
@@ -147,51 +148,106 @@ export async function syncAccountToMonarch(accountId, accountName, fromDate, toD
       }
     }
 
-    // Step 3: Sync transactions (orders + activity) - gracefully handle failures
+    // Get Monarch account mapping for transaction uploads
+    const monarchAccountForTx = accountService.getMonarchAccountMapping(INTEGRATIONS.QUESTRADE, accountId);
+
+    // Step 3: Sync orders (trades) - gracefully handle failures
     if (progressDialog) {
-      progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Syncing transactions...');
+      progressDialog.updateStepStatus(accountId, 'orders', 'processing', 'Syncing orders...');
     }
 
     try {
-      const transactionsResult = await transactionsService.processAndUploadTransactions(
-        accountId,
-        accountName,
-        fromDate,
-        progressDialog,
-      );
-
-      if (transactionsResult.success) {
-        const ordersCount = transactionsResult.ordersProcessed || 0;
-        const activityCount = transactionsResult.transactionsProcessed || 0;
-        const totalCount = ordersCount + activityCount;
-
-        // Build detailed message
-        let transactionsMessage;
-        if (totalCount === 0) {
-          transactionsMessage = 'No new transactions';
-        } else {
-          const parts = [];
-          if (ordersCount > 0) parts.push(`${ordersCount} orders`);
-          if (activityCount > 0) parts.push(`${activityCount} activity`);
-          transactionsMessage = parts.join(', ');
-        }
-
+      if (!monarchAccountForTx) {
+        debugLog(`No Monarch account mapping for ${accountId}, skipping orders sync`);
         if (progressDialog) {
-          progressDialog.updateStepStatus(accountId, 'transactions', 'success', transactionsMessage);
-        }
-        debugLog(`Transactions sync completed: ${ordersCount} orders, ${activityCount} activity transactions`);
-        if (transactionsResult.skippedDuplicates) {
-          debugLog(`Skipped ${transactionsResult.skippedDuplicates} duplicate transactions`);
+          progressDialog.updateStepStatus(accountId, 'orders', 'skipped', 'No account mapping');
         }
       } else {
-        if (progressDialog) {
-          progressDialog.updateStepStatus(accountId, 'transactions', 'error', 'Sync failed');
+        const ordersResult = await transactionsService.processAndUploadOrders(
+          accountId,
+          accountName,
+          fromDate,
+          monarchAccountForTx.id,
+          null, // Don't pass progressDialog to avoid double-updates
+        );
+
+        if (ordersResult.success) {
+          const ordersCount = ordersResult.ordersProcessed || 0;
+          let ordersMessage;
+          if (ordersCount === 0) {
+            ordersMessage = ordersResult.skippedDuplicates > 0
+              ? `No new (${ordersResult.skippedDuplicates} skipped)`
+              : 'No orders found';
+          } else {
+            ordersMessage = ordersResult.skippedDuplicates > 0
+              ? `${ordersCount} uploaded (${ordersResult.skippedDuplicates} skipped)`
+              : `${ordersCount} uploaded`;
+          }
+
+          if (progressDialog) {
+            progressDialog.updateStepStatus(accountId, 'orders', 'success', ordersMessage);
+          }
+          debugLog(`Orders sync completed: ${ordersCount} processed, ${ordersResult.skippedDuplicates || 0} skipped`);
+        } else {
+          if (progressDialog) {
+            progressDialog.updateStepStatus(accountId, 'orders', 'error', ordersResult.message || 'Sync failed');
+          }
         }
       }
-    } catch (transactionsError) {
-      debugLog('Error syncing transactions (non-fatal):', transactionsError);
+    } catch (ordersError) {
+      debugLog('Error syncing orders (non-fatal):', ordersError);
       if (progressDialog) {
-        progressDialog.updateStepStatus(accountId, 'transactions', 'error', transactionsError.message);
+        progressDialog.updateStepStatus(accountId, 'orders', 'error', ordersError.message);
+      }
+    }
+
+    // Step 4: Sync activity (contributions, dividends, fees, etc.) - gracefully handle failures
+    if (progressDialog) {
+      progressDialog.updateStepStatus(accountId, 'activity', 'processing', 'Syncing activity...');
+    }
+
+    try {
+      if (!monarchAccountForTx) {
+        debugLog(`No Monarch account mapping for ${accountId}, skipping activity sync`);
+        if (progressDialog) {
+          progressDialog.updateStepStatus(accountId, 'activity', 'skipped', 'No account mapping');
+        }
+      } else {
+        const activityResult = await transactionsService.processAndUploadActivityTransactions(
+          accountId,
+          accountName,
+          fromDate,
+          monarchAccountForTx.id,
+          null, // Don't pass progressDialog to avoid double-updates
+        );
+
+        if (activityResult.success) {
+          const activityCount = activityResult.transactionsProcessed || 0;
+          let activityMessage;
+          if (activityCount === 0) {
+            activityMessage = activityResult.skippedDuplicates > 0
+              ? `No new (${activityResult.skippedDuplicates} skipped)`
+              : 'No activity found';
+          } else {
+            activityMessage = activityResult.skippedDuplicates > 0
+              ? `${activityCount} uploaded (${activityResult.skippedDuplicates} skipped)`
+              : `${activityCount} uploaded`;
+          }
+
+          if (progressDialog) {
+            progressDialog.updateStepStatus(accountId, 'activity', 'success', activityMessage);
+          }
+          debugLog(`Activity sync completed: ${activityCount} processed, ${activityResult.skippedDuplicates || 0} skipped`);
+        } else {
+          if (progressDialog) {
+            progressDialog.updateStepStatus(accountId, 'activity', 'error', activityResult.message || 'Sync failed');
+          }
+        }
+      }
+    } catch (activityError) {
+      debugLog('Error syncing activity (non-fatal):', activityError);
+      if (progressDialog) {
+        progressDialog.updateStepStatus(accountId, 'activity', 'error', activityError.message);
       }
     }
 
