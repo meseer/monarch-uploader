@@ -7,7 +7,7 @@ import {
   debugLog, formatDate, getTodayLocal, getYesterdayLocal, formatDaysAgoLocal, parseLocalDate,
   calculateFromDateWithLookback, saveLastUploadDate, getLastUpdateDate,
 } from '../core/utils';
-import { STORAGE, LOGO_CLOUDINARY_IDS } from '../core/config';
+import { LOGO_CLOUDINARY_IDS } from '../core/config';
 import stateManager from '../core/state';
 import canadalife from '../api/canadalife';
 import monarchApi from '../api/monarch';
@@ -345,9 +345,6 @@ async function getOrCreateMonarchAccountMapping(canadalifeAccount) {
     monarchAccount,
     syncEnabled: true,
   });
-
-  // Also save to legacy storage for backward compatibility during migration period
-  GM_setValue(`${STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX}${accountId}`, JSON.stringify(monarchAccount));
 
   debugLog(`Saved Canada Life account mapping: ${accountName} -> ${monarchAccount.displayName}`);
   toast.show(`Mapped ${accountName} to ${monarchAccount.displayName} in Monarch`, 'info');

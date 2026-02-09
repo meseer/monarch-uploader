@@ -19,23 +19,22 @@ describe('Canada Life Lookback Bug', () => {
     jest.clearAllMocks();
   });
 
-  test('DEMONSTRATES BUG: Auto upload at 1 PM creates gap in next upload', () => {
+  test('Canada Life uses consolidated storage only - no legacy keys written', () => {
     const accountId = 'test-account-123';
     const yesterday = '2024-10-10'; // Thursday
 
-    // Step 1: User uploads at 1 PM today, system stores yesterday as last upload
-    // This simulates the behavior in uploadSingleAccount when isAutoUpload = true
+    // Canada Life has completed migration to consolidated storage
+    // saveLastUploadDate should NOT write to legacy keys for canadalife
     saveLastUploadDate(accountId, yesterday, 'canadalife');
-    expect(GM_setValue).toHaveBeenCalledWith(
-      'canadalife_last_upload_date_test-account-123',
-      yesterday,
-    );
 
-    // Step 2: Next time user uploads, system calculates start date
-    // Mock GM_getValue to return the stored date for the last upload date lookup
+    // Verify that NO legacy key was written (uses consolidated storage via accountService)
+    expect(GM_setValue).not.toHaveBeenCalled();
+
+    // The actual storage is handled by accountService.updateAccountInList() which is mocked
+    // Legacy reading still works for backward compatibility during migration period
     GM_getValue.mockImplementation((key, defaultValue) => {
       if (key === 'canadalife_last_upload_date_test-account-123') {
-        return yesterday;
+        return yesterday; // Legacy read still works
       }
       if (key === 'canadalife_lookback_days') {
         return 1; // Default lookback for Canada Life
@@ -45,18 +44,9 @@ describe('Canada Life Lookback Bug', () => {
 
     const fromDate = calculateFromDateWithLookback('canadalife', accountId);
 
-    // Step 3: The bug - this creates a gap!
-    // Expected behavior: Should start from today (2024-10-11) to include today's balance
-    // Actual buggy behavior: Starts from day before yesterday, excluding today
-    const expectedBuggyFromDate = '2024-10-09'; // yesterday - 1 day lookback = day before yesterday
-
-    // This assertion shows the current buggy behavior
-    expect(fromDate).toBe(expectedBuggyFromDate);
-
-    // Demonstrate the gap: if uploading "from 2024-10-09 to today",
-    // the range would be 2024-10-09, 2024-10-10, 2024-10-11
-    // But we already uploaded 2024-10-10, and we want to include today (2024-10-11)
-    // So we're missing today's data and including old data we already have!
+    // With 1 day lookback: yesterday - 1 = day before yesterday
+    const expectedFromDate = '2024-10-09';
+    expect(fromDate).toBe(expectedFromDate);
   });
 
   test('Shows the correct behavior should be', () => {

@@ -303,18 +303,20 @@ export function saveLastUploadDate(accountId, uploadDate, institutionType) {
   }
 
   // Also save to legacy keys for backward compatibility (will be cleaned up after successful sync)
+  // Note: Canada Life has completed migration to consolidated storage and no longer uses legacy keys
   let storageKey;
 
   switch (institutionType) {
   case 'questrade':
     storageKey = STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX + accountId;
     break;
-  case 'canadalife':
-    storageKey = STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX + accountId;
-    break;
   case 'rogersbank':
     storageKey = STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX + accountId;
     break;
+  case 'canadalife':
+    // Canada Life uses consolidated storage only - no legacy key needed
+    debugLog('saveLastUploadDate: Canada Life uses consolidated storage only');
+    return;
   default:
     debugLog(`Unknown institution type: ${institutionType}, cannot save last upload date`);
     return;

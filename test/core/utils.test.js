@@ -480,18 +480,24 @@ describe('Utility Functions', () => {
   });
 
   describe('saveLastUploadDate', () => {
-    it('should save date for valid institutions', () => {
+    it('should save date for questrade and rogersbank (legacy storage)', () => {
       saveLastUploadDate('account123', '2024-01-15', 'questrade');
       expect(global.GM_setValue).toHaveBeenCalledWith('questrade_last_upload_date_account123', '2024-01-15');
 
-      saveLastUploadDate('account456', '2024-01-16', 'canadalife');
-      expect(global.GM_setValue).toHaveBeenCalledWith('canadalife_last_upload_date_account456', '2024-01-16');
-
+      global.GM_setValue.mockClear();
       saveLastUploadDate('account789', '2024-01-17', 'rogersbank');
       expect(global.GM_setValue).toHaveBeenCalledWith('rogersbank_last_upload_date_account789', '2024-01-17');
     });
 
+    it('should NOT save to legacy storage for canadalife (uses consolidated storage only)', () => {
+      global.GM_setValue.mockClear();
+      saveLastUploadDate('account456', '2024-01-16', 'canadalife');
+      // Canada Life has completed migration - no legacy key should be written
+      expect(global.GM_setValue).not.toHaveBeenCalled();
+    });
+
     it('should not save for unknown institution', () => {
+      global.GM_setValue.mockClear();
       saveLastUploadDate('account123', '2024-01-15', 'unknown');
       expect(global.GM_setValue).not.toHaveBeenCalled();
     });
