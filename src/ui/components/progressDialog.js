@@ -856,15 +856,28 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
 
           debugLog(`Auto-scrolled to account ${accountId}, scrollTop: ${targetScrollTop}`);
         } else if (allDone && el.isExpanded()) {
-          // Account has completed all steps - collapse the details
-          isProgrammaticAction = true;
-          el.setExpanded(false);
+          // Account has completed all steps - check if this is the last account
+          // If all accounts are now done, keep it expanded so user can see final results
+          const allAccountsDone = Object.values(accountElements).every((acctEl) => {
+            // Accounts without initialized steps are considered done (pending/not started)
+            if (!acctEl.steps || acctEl.steps.length === 0) return true;
+            return acctEl.steps.every((s) =>
+              s.status === 'success' || s.status === 'error' || s.status === 'skipped');
+          });
 
-          setTimeout(() => {
-            isProgrammaticAction = false;
-          }, 150);
+          if (!allAccountsDone) {
+            // More accounts to process - collapse to make room for the next one
+            isProgrammaticAction = true;
+            el.setExpanded(false);
 
-          debugLog(`Auto-collapsed completed account ${accountId}`);
+            setTimeout(() => {
+              isProgrammaticAction = false;
+            }, 150);
+
+            debugLog(`Auto-collapsed completed account ${accountId}`);
+          } else {
+            debugLog(`Kept last completed account ${accountId} expanded`);
+          }
         }
       }
 

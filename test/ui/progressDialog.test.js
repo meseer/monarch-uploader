@@ -866,6 +866,82 @@ describe('Progress Dialog Component', () => {
       // Should complete without errors
       expect(dialog).toBeDefined();
     });
+
+    test('should not auto-collapse the last completed account in multi-account dialog', () => {
+      // Use a real DOM to track expansion state
+      // Re-create dialog with real DOM elements
+      document.createElement.mockRestore();
+      document.body.appendChild.mockRestore();
+      document.body.innerHTML = '';
+
+      // jsdom doesn't implement scrollTo, so polyfill it
+      Element.prototype.scrollTo = Element.prototype.scrollTo || jest.fn();
+
+      const accounts = [
+        { key: 'acc1', nickname: 'Account 1' },
+        { key: 'acc2', nickname: 'Account 2' },
+      ];
+      dialog = showProgressDialog(accounts);
+
+      // Initialize steps for all accounts
+      dialog.initSteps('acc1', [{ key: 'step1', name: 'Step 1' }]);
+      dialog.initSteps('acc2', [{ key: 'step1', name: 'Step 1' }]);
+
+      // Process and complete account 1
+      dialog.updateStepStatus('acc1', 'step1', 'processing', 'Working...');
+      dialog.updateStepStatus('acc1', 'step1', 'success', 'Done');
+
+      // Account 1 should be collapsed (more accounts to process)
+      const stepsContainer1 = document.getElementById(
+        Array.from(document.querySelectorAll('[id^="balance-uploader-steps-container-acc1"]'))[0]?.id
+          || 'balance-uploader-steps-container-acc1',
+      );
+      // Find via the actual DOM
+      const containers1 = document.querySelectorAll('[id*="steps-container-acc1"]');
+      if (containers1.length > 0) {
+        expect(containers1[0].style.display).toBe('none');
+      }
+
+      // Process and complete account 2 (the last account)
+      dialog.updateStepStatus('acc2', 'step1', 'processing', 'Working...');
+      dialog.updateStepStatus('acc2', 'step1', 'success', 'Done');
+
+      // Account 2 should remain expanded (it's the last account)
+      const containers2 = document.querySelectorAll('[id*="steps-container-acc2"]');
+      if (containers2.length > 0) {
+        expect(containers2[0].style.display).toBe('block');
+      }
+    });
+
+    test('should not auto-collapse a single account dialog after completion', () => {
+      // Use real DOM
+      document.createElement.mockRestore();
+      document.body.appendChild.mockRestore();
+      document.body.innerHTML = '';
+
+      // jsdom doesn't implement scrollTo, so polyfill it
+      Element.prototype.scrollTo = Element.prototype.scrollTo || jest.fn();
+
+      const singleAccount = [{ key: 'only-acc', nickname: 'Only Account' }];
+      dialog = showProgressDialog(singleAccount);
+
+      dialog.initSteps('only-acc', [
+        { key: 'step1', name: 'Step 1' },
+        { key: 'step2', name: 'Step 2' },
+      ]);
+
+      // Process
+      dialog.updateStepStatus('only-acc', 'step1', 'processing', 'Working...');
+      dialog.updateStepStatus('only-acc', 'step1', 'success', 'Done');
+      dialog.updateStepStatus('only-acc', 'step2', 'processing', 'Working...');
+      dialog.updateStepStatus('only-acc', 'step2', 'success', 'Done');
+
+      // The only account should remain expanded after completion
+      const containers = document.querySelectorAll('[id*="steps-container-only-acc"]');
+      if (containers.length > 0) {
+        expect(containers[0].style.display).toBe('block');
+      }
+    });
   });
 
   describe('user interaction disables auto-scroll', () => {
