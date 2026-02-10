@@ -165,37 +165,89 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
   }
 
   /**
+     * Check if the current Canada Life page is a valid app page (under /s/*)
+     * Login and loading pages (e.g., /sign-in, /secur/frontdoor.jsp) should be skipped
+     * @returns {boolean} True if on a valid app page
+     */
+  function isCanadaLifeAppPage() {
+    return window.location.pathname.startsWith('/s/');
+  }
+
+  /**
      * Initialize CanadaLife application components
      */
   function initializeCanadaLifeApp() {
     try {
       debugLog('Initializing CanadaLife application components...');
 
-      // Set up token monitoring
+      // Set up token monitoring (always runs, even on login pages)
       setupTokenMonitoring();
 
-      // Check auth status immediately
+      // Check auth status immediately (always runs)
       checkCanadaLifeStatus();
 
-      // Pre-load accounts from API to refresh cache with full account details
-      // This ensures cached accounts have all required fields (EnglishShortName, agreementId, etc.)
-      // and triggers migration from old minimal storage to full API data structure
-      loadCanadaLifeAccounts(true) // forceRefresh=true
-        .then((accounts) => {
-          debugLog(`Pre-loaded ${accounts.length} Canada Life accounts with full details`);
-        })
-        .catch((err) => {
-          // Non-fatal - accounts will be loaded when sync is triggered
-          debugLog('Error pre-loading Canada Life accounts:', err);
-        });
-
-      // Initialize CanadaLife UI
-      initCanadaLifeUI()
-        .then(() => debugLog('CanadaLife UI initialized successfully'))
-        .catch((err) => debugLog('Error initializing CanadaLife UI:', err));
+      // Only load accounts and initialize UI on valid app pages (under /s/*)
+      // Login pages (/sign-in) and loading pages (/secur/frontdoor.jsp) don't have
+      // the auth token or navigation elements yet
+      if (isCanadaLifeAppPage()) {
+        debugLog('On Canada Life app page, initializing fully');
+        initializeCanadaLifeAppPage();
+      } else {
+        debugLog('On Canada Life login/loading page, deferring initialization until navigation to /s/*');
+        waitForCanadaLifeAppPage();
+      }
     } catch (error) {
       debugLog('Error initializing CanadaLife application:', error);
     }
+  }
+
+  /**
+     * Initialize Canada Life account loading and UI (only on /s/* pages)
+     */
+  function initializeCanadaLifeAppPage() {
+    // Pre-load accounts from API to refresh cache with full account details
+    // This ensures cached accounts have all required fields (EnglishShortName, agreementId, etc.)
+    // and triggers migration from old minimal storage to full API data structure
+    loadCanadaLifeAccounts(true) // forceRefresh=true
+      .then((accounts) => {
+        debugLog(`Pre-loaded ${accounts.length} Canada Life accounts with full details`);
+      })
+      .catch((err) => {
+        // Non-fatal - accounts will be loaded when sync is triggered
+        debugLog('Error pre-loading Canada Life accounts:', err);
+      });
+
+    // Initialize CanadaLife UI
+    initCanadaLifeUI()
+      .then(() => debugLog('CanadaLife UI initialized successfully'))
+      .catch((err) => debugLog('Error initializing CanadaLife UI:', err));
+  }
+
+  /**
+     * Poll for navigation from login/loading page to a valid /s/* app page.
+     * Once detected, runs full initialization and stops polling.
+     */
+  function waitForCanadaLifeAppPage() {
+    let hasInitialized = false;
+
+    const pollInterval = setInterval(() => {
+      if (hasInitialized) return;
+
+      if (isCanadaLifeAppPage()) {
+        hasInitialized = true;
+        clearInterval(pollInterval);
+        debugLog('Canada Life navigated to app page, initializing now');
+        initializeCanadaLifeAppPage();
+      }
+    }, 1000); // Check every 1 second
+
+    // Safety timeout: stop polling after 5 minutes
+    setTimeout(() => {
+      if (!hasInitialized) {
+        clearInterval(pollInterval);
+        debugLog('Timeout waiting for Canada Life app page navigation (5 min)');
+      }
+    }, 300000);
   }
 
   /**
