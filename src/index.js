@@ -25,6 +25,7 @@ import { setupCredentialInterception } from './api/rogersbank';
 import { setupTokenMonitoring as setupWealthsimpleTokenMonitoring, checkAuth as checkWealthsimpleAuth } from './api/wealthsimple';
 
 // Import UI components
+import { initTheme } from './ui/theme';
 import toast from './ui/toast';
 import { initUI, updateStatusIndicators } from './ui/questrade/uiManager';
 import { initCanadaLifeUI } from './ui/canadalife/uiManager';
@@ -69,6 +70,10 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
      * Main application initialization
      */
   function initApp() {
+    // Initialize theme system early (before any UI renders)
+    // This injects CSS custom properties that all components rely on
+    initTheme();
+
     // Check which site we're on and take appropriate action
     if (window.location.hostname.includes('monarch.com')) {
       debugLog('Running on Monarch site');

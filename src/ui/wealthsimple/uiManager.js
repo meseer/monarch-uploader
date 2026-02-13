@@ -112,12 +112,12 @@ async function createUIContainer(injectionPoint = null, targetInfo = null) {
   container.style.cssText = `
     position: relative;
     padding: 16px;
-    background-color: #ffffff;
-    border: 1px solid #e5e5e5;
+    background-color: var(--mu-bg-primary, #ffffff);
+    border: 1px solid var(--mu-border, #e5e5e5);
     border-radius: 8px;
     font-family: "Wealthsimple Sans", sans-serif;
     font-size: 14px;
-    color: ${COLORS.WEALTHSIMPLE_BRAND};
+    color: var(--mu-text-primary, ${COLORS.WEALTHSIMPLE_BRAND});
   `;
 
   // Create header
@@ -159,12 +159,12 @@ async function createUIContainer(injectionPoint = null, targetInfo = null) {
     cursor: pointer;
     padding: 4px 6px;
     border-radius: 4px;
-    color: #666;
+    color: var(--mu-text-secondary, #666);
     transition: background-color 0.2s;
   `;
   settingsButton.addEventListener('click', showSettingsModal);
   settingsButton.addEventListener('mouseover', () => {
-    settingsButton.style.backgroundColor = '#f0f0f0';
+    settingsButton.style.backgroundColor = 'var(--mu-hover-bg, #f0f0f0)';
   });
   settingsButton.addEventListener('mouseout', () => {
     settingsButton.style.backgroundColor = 'transparent';
@@ -176,7 +176,7 @@ async function createUIContainer(injectionPoint = null, targetInfo = null) {
   const subtitle = document.createElement('div');
   subtitle.id = 'wealthsimple-uploader-subtitle';
   subtitle.textContent = 'Wealthsimple → Monarch Money';
-  subtitle.style.cssText = 'font-size: 12px; color: #666; font-weight: 500;';
+  subtitle.style.cssText = 'font-size: 12px; color: var(--mu-text-secondary, #666); font-weight: 500;';
   titleSection.appendChild(subtitle);
 
   header.appendChild(titleSection);

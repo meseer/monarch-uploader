@@ -267,7 +267,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0,0,0,0.7);
+    background: var(--mu-overlay-bg, rgba(0,0,0,0.7));
     display: flex;
     align-items: center;
     justify-content: center;
@@ -278,7 +278,8 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
   const modal = document.createElement('div');
   modal.id = `balance-uploader-modal-${timestamp}`;
   modal.style.cssText = `
-    background: white;
+    background: var(--mu-bg-primary, white);
+    color: var(--mu-text-primary, #333);
     padding: 25px;
     border-radius: 8px;
     width: 90%;
@@ -342,7 +343,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     const accountContainer = document.createElement('div');
     accountContainer.id = `balance-uploader-account-container-${accountKey}`;
     accountContainer.style.cssText = `
-      border: 1px solid #eee;
+      border: 1px solid var(--mu-border-light, #eee);
       border-radius: 6px;
       margin-bottom: 8px;
       overflow: hidden;
@@ -365,7 +366,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     expandIcon.style.cssText = `
       margin-right: 8px;
       font-size: 0.8em;
-      color: #666;
+      color: var(--mu-text-secondary, #666);
       transition: transform 0.2s;
       display: inline-block;
     `;
@@ -413,7 +414,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
       const closedBadge = document.createElement('span');
       closedBadge.id = `balance-uploader-closed-badge-${accountKey}`;
       closedBadge.style.cssText = `
-        background: #9e9e9e;
+        background: var(--mu-closed-badge-bg, #9e9e9e);
         color: white;
         font-size: 0.7em;
         padding: 2px 6px;
@@ -427,7 +428,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
 
       // Apply greyed-out styling to the entire row
       accountRow.style.opacity = '0.7';
-      accountRow.style.backgroundColor = '#f5f5f5';
+      accountRow.style.backgroundColor = 'var(--mu-bg-tertiary, #f5f5f5)';
     }
 
     accountNameContainer.appendChild(accountNameRow);
@@ -436,7 +437,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     const accountIdDiv = document.createElement('div');
     accountIdDiv.style.cssText = `
       font-size: 0.85em;
-      color: #888;
+      color: var(--mu-text-muted, #888);
       font-weight: normal;
     `;
     accountIdDiv.textContent = accountKey;
@@ -449,7 +450,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     statusText.id = `balance-uploader-account-status-${accountKey}`;
     statusText.style.cssText = `
       margin-left: 10px;
-      color: #888;
+      color: var(--mu-text-muted, #888);
       min-width: 120px;
       max-width: 180px;
       word-wrap: break-word;
@@ -466,8 +467,8 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     stepsContainer.id = `balance-uploader-steps-container-${accountKey}`;
     stepsContainer.style.cssText = `
       display: none;
-      background: #f9f9f9;
-      border-top: 1px solid #eee;
+      background: var(--mu-bg-secondary, #f9f9f9);
+      border-top: 1px solid var(--mu-border-light, #eee);
       padding: 0;
     `;
     accountContainer.appendChild(stepsContainer);
@@ -504,18 +505,18 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     // Hover effect
     accountRow.addEventListener('mouseenter', () => {
       if (accountRow.style.backgroundColor === '' || accountRow.style.backgroundColor === 'transparent') {
-        accountRow.style.backgroundColor = '#f5f5f5';
+        accountRow.style.backgroundColor = 'var(--mu-hover-bg, #f5f5f5)';
       }
     });
     accountRow.addEventListener('mouseleave', () => {
       // Restore the status-based background color
       const currentStatus = statusIcon.dataset.status;
       if (currentStatus === 'processing') {
-        accountRow.style.backgroundColor = '#e3f2fd';
+        accountRow.style.backgroundColor = 'var(--mu-status-processing-bg, #e3f2fd)';
       } else if (currentStatus === 'success') {
-        accountRow.style.backgroundColor = '#e8f5e9';
+        accountRow.style.backgroundColor = 'var(--mu-status-success-bg, #e8f5e9)';
       } else if (currentStatus === 'error') {
-        accountRow.style.backgroundColor = '#ffebee';
+        accountRow.style.backgroundColor = 'var(--mu-status-error-bg, #ffebee)';
       } else {
         accountRow.style.backgroundColor = 'transparent';
       }
@@ -546,11 +547,12 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
   const errorContainer = document.createElement('div');
   errorContainer.id = `balance-uploader-error-container-${timestamp}`;
   errorContainer.style.cssText = `
-    border: 1px solid #f44336;
+    border: 1px solid var(--mu-error-border, #f44336);
     border-radius: 5px;
     padding: 15px;
     margin-bottom: 20px;
     display: none;
+    background: var(--mu-bg-primary, white);
   `;
   modal.appendChild(errorContainer);
 
@@ -581,8 +583,8 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     padding: 8px 16px;
     border: none;
     border-radius: 4px;
-    background: #dc3545;
-    color: white;
+    background: var(--mu-danger-bg, #dc3545);
+    color: var(--mu-danger-text, white);
     cursor: pointer;
     margin-right: 10px;
   `;
@@ -595,7 +597,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     padding: 8px 16px;
     border: none;
     border-radius: 4px;
-    background: #6c757d;
+    background: var(--mu-close-btn-bg, #6c757d);
     color: white;
     cursor: pointer;
     display: none;
@@ -653,7 +655,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
       display: flex;
       align-items: flex-start;
       padding: 8px 12px 8px 36px;
-      border-bottom: 1px solid #eee;
+      border-bottom: 1px solid var(--mu-border-light, #eee);
       font-size: 0.9em;
     `;
 
@@ -672,7 +674,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     stepNameSpan.id = `balance-uploader-step-name-${accountId}-${step.key}`;
     stepNameSpan.style.cssText = `
       flex-grow: 1;
-      color: #333;
+      color: var(--mu-text-primary, #333);
     `;
     stepNameSpan.textContent = step.name;
     stepDiv.appendChild(stepNameSpan);
@@ -804,11 +806,11 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
 
       // Update row background
       if (accountStatus === 'processing') {
-        el.row.style.backgroundColor = '#e3f2fd';
+        el.row.style.backgroundColor = 'var(--mu-status-processing-bg, #e3f2fd)';
       } else if (accountStatus === 'success') {
-        el.row.style.backgroundColor = '#e8f5e9';
+        el.row.style.backgroundColor = 'var(--mu-status-success-bg, #e8f5e9)';
       } else if (accountStatus === 'error') {
-        el.row.style.backgroundColor = '#ffebee';
+        el.row.style.backgroundColor = 'var(--mu-status-error-bg, #ffebee)';
       } else {
         el.row.style.backgroundColor = 'transparent';
       }
@@ -923,20 +925,20 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
 
       // Update colors
       if (status === 'processing') {
-        el.row.style.backgroundColor = '#e3f2fd';
-        el.status.style.color = '#1565c0';
+        el.row.style.backgroundColor = 'var(--mu-status-processing-bg, #e3f2fd)';
+        el.status.style.color = 'var(--mu-status-processing-text, #1565c0)';
       } else if (status === 'success') {
-        el.row.style.backgroundColor = '#e8f5e9';
-        el.status.style.color = '#2e7d32';
+        el.row.style.backgroundColor = 'var(--mu-status-success-bg, #e8f5e9)';
+        el.status.style.color = 'var(--mu-status-success-text, #2e7d32)';
       } else if (status === 'error') {
-        el.row.style.backgroundColor = '#ffebee';
-        el.status.style.color = '#c62828';
+        el.row.style.backgroundColor = 'var(--mu-status-error-bg, #ffebee)';
+        el.status.style.color = 'var(--mu-status-error-text, #c62828)';
       } else if (status === 'skipped') {
-        el.row.style.backgroundColor = '#f5f5f5';
-        el.status.style.color = '#888';
+        el.row.style.backgroundColor = 'var(--mu-status-skipped-bg, #f5f5f5)';
+        el.status.style.color = 'var(--mu-text-muted, #888)';
       } else {
         el.row.style.backgroundColor = 'transparent';
-        el.status.style.color = '#888';
+        el.status.style.color = 'var(--mu-text-muted, #888)';
       }
 
       el.icon.style.color = el.status.style.color;
@@ -1046,19 +1048,19 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
 
           if (effectiveChangePercent === 0) {
             // Zero change - neutral gray
-            backgroundColor = '#f5f5f5';
-            textColor = '#666';
+            backgroundColor = 'var(--mu-balance-neutral-bg, #f5f5f5)';
+            textColor = 'var(--mu-balance-neutral-text, #666)';
           } else if (isPositiveChange) {
-            backgroundColor = '#e8f5e9';
-            textColor = '#2e7d32';
+            backgroundColor = 'var(--mu-status-success-bg, #e8f5e9)';
+            textColor = 'var(--mu-status-success-text, #2e7d32)';
           } else {
-            backgroundColor = '#ffebee';
-            textColor = '#c62828';
+            backgroundColor = 'var(--mu-status-error-bg, #ffebee)';
+            textColor = 'var(--mu-status-error-text, #c62828)';
           }
         } else {
           // Neutral color when no change data
-          backgroundColor = '#e3f2fd';
-          textColor = '#1565c0';
+          backgroundColor = 'var(--mu-balance-info-bg, #e3f2fd)';
+          textColor = 'var(--mu-balance-info-text, #1565c0)';
         }
 
         el.balanceChange.style.backgroundColor = backgroundColor;
@@ -1090,10 +1092,10 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
 
       errorContainer.style.display = 'block';
       errorContainer.innerHTML = `
-        <div style="margin-bottom: 10px; font-weight: bold; color: #f44336;">
+        <div style="margin-bottom: 10px; font-weight: bold; color: var(--mu-error-text, #f44336);">
           Error uploading account ${accountId}:
         </div>
-        <div style="margin-bottom: 15px; white-space: pre-wrap; word-wrap: break-word;">
+        <div style="margin-bottom: 15px; white-space: pre-wrap; word-wrap: break-word; color: var(--mu-text-primary, #333);">
           ${error.message || error.toString()}
         </div>
         <div style="display: flex; gap: 10px; justify-content: flex-end;">
@@ -1101,7 +1103,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
             padding: 8px 16px;
             border: none;
             border-radius: 4px;
-            background: #6c757d;
+            background: var(--mu-close-btn-bg, #6c757d);
             color: white;
             cursor: pointer;
           ">Close</button>
@@ -1109,7 +1111,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
             padding: 8px 16px;
             border: none;
             border-radius: 4px;
-            background: #f44336;
+            background: var(--mu-error-border, #f44336);
             color: white;
             cursor: pointer;
           ">Continue</button>

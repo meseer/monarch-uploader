@@ -260,7 +260,7 @@ describe('Settings Modal Component', () => {
 
       const modalContent = modal.querySelector('.settings-modal-content');
       expect(modalContent).toBeTruthy();
-      expect(modalContent.style.backgroundColor).toBe('white');
+      expect(modalContent.style.backgroundColor).toBe('var(--mu-bg-primary, white)');
       expect(modalContent.style.borderRadius).toBe('8px');
     });
 
@@ -305,7 +305,7 @@ describe('Settings Modal Component', () => {
     test('should show General tab as active by default', () => {
       modal = createSettingsModal();
 
-      const activeTab = modal.querySelector('.settings-tab-button[style*="border-left-color: rgb(0, 115, 177)"]');
+      const activeTab = modal.querySelector('.settings-tab-button[style*="border-left-color: var(--mu-tab-active-border"]');
       expect(activeTab).toBeTruthy();
       expect(activeTab.textContent).toContain('General');
     });
@@ -320,8 +320,8 @@ describe('Settings Modal Component', () => {
 
       questradeTab.click();
 
-      expect(questradeTab.style.borderLeftColor).toBe('rgb(0, 115, 177)');
-      expect(questradeTab.style.backgroundColor).toBe('white');
+      expect(questradeTab.style.borderLeftColor).toBe('var(--mu-tab-active-border, #0073b1)');
+      expect(questradeTab.style.backgroundColor).toBe('var(--mu-tab-active-bg, white)');
     });
 
     test('should update tab content when switching tabs', () => {
@@ -348,7 +348,7 @@ describe('Settings Modal Component', () => {
       const mouseoverEvent = new Event('mouseover');
       questradeTab.dispatchEvent(mouseoverEvent);
 
-      expect(questradeTab.style.backgroundColor).toBe('rgb(240, 240, 240)');
+      expect(questradeTab.style.backgroundColor).toBe('var(--mu-tab-hover-bg, #f0f0f0)');
 
       // Simulate mouseout
       const mouseoutEvent = new Event('mouseout');
@@ -756,13 +756,13 @@ describe('Settings Modal Component', () => {
       const mouseoverEvent = new Event('mouseover');
       resetButton.dispatchEvent(mouseoverEvent);
 
-      expect(resetButton.style.backgroundColor).toBe('rgb(248, 249, 250)');
+      expect(resetButton.style.backgroundColor).toBe('var(--mu-bg-secondary, #f8f9fa)');
 
       // Simulate mouseout
       const mouseoutEvent = new Event('mouseout');
       resetButton.dispatchEvent(mouseoutEvent);
 
-      expect(resetButton.style.backgroundColor).toBe('white');
+      expect(resetButton.style.backgroundColor).toBe('var(--mu-bg-primary, white)');
     });
   });
 
@@ -1149,7 +1149,7 @@ describe('Settings Modal Component', () => {
       const closeButton = modal.querySelector('button');
 
       closeButton.dispatchEvent(new Event('mouseover'));
-      expect(closeButton.style.backgroundColor).toBe('rgb(240, 240, 240)');
+      expect(closeButton.style.backgroundColor).toBe('var(--mu-hover-bg, #f0f0f0)');
 
       closeButton.dispatchEvent(new Event('mouseout'));
       expect(closeButton.style.backgroundColor).toBe('transparent');
@@ -1429,17 +1429,17 @@ describe('Settings Modal Component', () => {
       const versionLink = modal.querySelector('#settings-version-link');
 
       // Initial state
-      expect(versionLink.style.color).toBe('rgb(102, 102, 102)');
+      expect(versionLink.style.color).toBe('var(--mu-text-secondary, #666)');
       expect(versionLink.style.textDecoration).toBe('none');
 
       // Simulate mouseover
       versionLink.dispatchEvent(new Event('mouseover'));
-      expect(versionLink.style.color).toBe('rgb(0, 115, 177)');
+      expect(versionLink.style.color).toBe('var(--mu-link-color, #0073b1)');
       expect(versionLink.style.textDecoration).toBe('underline');
 
       // Simulate mouseout
       versionLink.dispatchEvent(new Event('mouseout'));
-      expect(versionLink.style.color).toBe('rgb(102, 102, 102)');
+      expect(versionLink.style.color).toBe('var(--mu-text-secondary, #666)');
       expect(versionLink.style.textDecoration).toBe('none');
     });
 

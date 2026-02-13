@@ -31,7 +31,7 @@ function createStatusIndicators(container) {
     margin: 10px 0;
     padding: 10px;
     border-radius: 4px;
-    background-color: #f5f5f5;
+    background-color: var(--mu-bg-tertiary, #f5f5f5);
     font-size: 14px;
   `;
 
@@ -45,7 +45,7 @@ function createStatusIndicators(container) {
   // Create Questrade expiry indicator
   const questradeExpiry = document.createElement('div');
   questradeExpiry.className = 'questrade-expiry-indicator';
-  questradeExpiry.style.cssText = 'display: flex; align-items: center; gap: 5px; font-size: 12px; color: #666;';
+  questradeExpiry.style.cssText = 'display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--mu-text-secondary, #666);';
   wrapper.appendChild(questradeExpiry);
 
   // Create Monarch status indicator
@@ -58,7 +58,7 @@ function createStatusIndicators(container) {
   // Create last downloaded note
   const lastDownloaded = document.createElement('div');
   lastDownloaded.className = 'last-downloaded-note';
-  lastDownloaded.style.cssText = 'display: flex; align-items: center; gap: 5px; font-size: 12px; color: #666;';
+  lastDownloaded.style.cssText = 'display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--mu-text-secondary, #666);';
   wrapper.appendChild(lastDownloaded);
 
   // Append wrapper to container
@@ -166,7 +166,8 @@ export function createButtonContainer() {
     position: relative;
     margin: 15px 0;
     padding: 15px;
-    background-color: white;
+    background-color: var(--mu-bg-primary, white);
+    color: var(--mu-text-primary, #333);
     border-radius: 8px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
   `;
@@ -357,7 +358,7 @@ export async function initSingleAccountUI() {
       `;
       settingsButton.addEventListener('click', showSettingsModal);
       settingsButton.addEventListener('mouseover', () => {
-        settingsButton.style.backgroundColor = '#f0f0f0';
+        settingsButton.style.backgroundColor = 'var(--mu-hover-bg, #f0f0f0)';
       });
       settingsButton.addEventListener('mouseout', () => {
         settingsButton.style.backgroundColor = 'transparent';
@@ -368,7 +369,7 @@ export async function initSingleAccountUI() {
 
       const subtitle = document.createElement('div');
       subtitle.textContent = 'Questrade → Monarch Money';
-      subtitle.style.cssText = 'font-size: 14px; color: #666;';
+      subtitle.style.cssText = 'font-size: 14px; color: var(--mu-text-secondary, #666);';
       titleSection.appendChild(subtitle);
 
       header.appendChild(titleSection);
@@ -542,7 +543,7 @@ export async function initAllAccountsUI() {
       `;
       settingsButton.addEventListener('click', showSettingsModal);
       settingsButton.addEventListener('mouseover', () => {
-        settingsButton.style.backgroundColor = '#f0f0f0';
+        settingsButton.style.backgroundColor = 'var(--mu-hover-bg, #f0f0f0)';
       });
       settingsButton.addEventListener('mouseout', () => {
         settingsButton.style.backgroundColor = 'transparent';
@@ -553,7 +554,7 @@ export async function initAllAccountsUI() {
 
       const subtitle = document.createElement('div');
       subtitle.textContent = 'Questrade → Monarch Money';
-      subtitle.style.cssText = 'font-size: 14px; color: #666;';
+      subtitle.style.cssText = 'font-size: 14px; color: var(--mu-text-secondary, #666);';
       titleSection.appendChild(subtitle);
 
       header.appendChild(titleSection);

@@ -69,7 +69,7 @@ export function createSettingsModal() {
     left: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
+    background-color: var(--mu-overlay-bg, rgba(0, 0, 0, 0.5));
     display: flex;
     justify-content: center;
     align-items: center;
@@ -80,7 +80,8 @@ export function createSettingsModal() {
   const modalContent = document.createElement('div');
   modalContent.className = 'settings-modal-content';
   modalContent.style.cssText = `
-    background-color: white;
+    background-color: var(--mu-bg-primary, white);
+    color: var(--mu-text-primary, #333);
     border-radius: 8px;
     width: 900px;
     max-width: 95%;
@@ -96,13 +97,13 @@ export function createSettingsModal() {
     justify-content: space-between;
     align-items: center;
     padding: 20px;
-    border-bottom: 1px solid #e0e0e0;
-    background-color: #f8f9fa;
+    border-bottom: 1px solid var(--mu-border, #e0e0e0);
+    background-color: var(--mu-bg-secondary, #f8f9fa);
   `;
 
   const title = document.createElement('h2');
   title.textContent = 'Settings';
-  title.style.cssText = 'margin: 0; font-size: 20px; font-weight: bold; color: #333;';
+  title.style.cssText = 'margin: 0; font-size: 20px; font-weight: bold; color: var(--mu-text-primary, #333);';
   header.appendChild(title);
 
   const closeButton = document.createElement('button');
@@ -119,11 +120,11 @@ export function createSettingsModal() {
     align-items: center;
     justify-content: center;
     border-radius: 4px;
-    color: #666;
+    color: var(--mu-text-secondary, #666);
   `;
   closeButton.addEventListener('click', () => modal.remove());
   closeButton.addEventListener('mouseover', () => {
-    closeButton.style.backgroundColor = '#f0f0f0';
+    closeButton.style.backgroundColor = 'var(--mu-hover-bg, #f0f0f0)';
   });
   closeButton.addEventListener('mouseout', () => {
     closeButton.style.backgroundColor = 'transparent';
@@ -146,8 +147,8 @@ export function createSettingsModal() {
     display: flex;
     flex-direction: column;
     width: 250px;
-    background-color: #f8f9fa;
-    border-right: 1px solid #e0e0e0;
+    background-color: var(--mu-bg-secondary, #f8f9fa);
+    border-right: 1px solid var(--mu-border, #e0e0e0);
     padding: 10px 0;
   `;
 
@@ -317,8 +318,8 @@ export function createSettingsModal() {
     `;
 
     if (tab.id === activeTab) {
-      tabButton.style.borderLeftColor = '#0073b1';
-      tabButton.style.backgroundColor = 'white';
+      tabButton.style.borderLeftColor = 'var(--mu-tab-active-border, #0073b1)';
+      tabButton.style.backgroundColor = 'var(--mu-tab-active-bg, white)';
       tabButton.style.fontWeight = 'bold';
     }
 
@@ -333,8 +334,8 @@ export function createSettingsModal() {
         btn.style.fontWeight = 'normal';
       });
 
-      tabButton.style.borderLeftColor = '#0073b1';
-      tabButton.style.backgroundColor = 'white';
+      tabButton.style.borderLeftColor = 'var(--mu-tab-active-border, #0073b1)';
+      tabButton.style.backgroundColor = 'var(--mu-tab-active-bg, white)';
       tabButton.style.fontWeight = 'bold';
 
       // Update tab content
@@ -343,7 +344,7 @@ export function createSettingsModal() {
 
     tabButton.addEventListener('mouseover', () => {
       if (tab.id !== activeTab) {
-        tabButton.style.backgroundColor = '#f0f0f0';
+        tabButton.style.backgroundColor = 'var(--mu-tab-hover-bg, #f0f0f0)';
       }
     });
 
@@ -362,7 +363,7 @@ export function createSettingsModal() {
   versionContainer.style.cssText = `
     margin-top: auto;
     padding: 15px 20px;
-    border-top: 1px solid #e0e0e0;
+    border-top: 1px solid var(--mu-border, #e0e0e0);
   `;
 
   const versionLink = document.createElement('a');
@@ -373,17 +374,17 @@ export function createSettingsModal() {
   versionLink.textContent = `v${scriptInfo.version}`;
   versionLink.style.cssText = `
     font-size: 12px;
-    color: #666;
+    color: var(--mu-text-secondary, #666);
     text-decoration: none;
     display: inline-block;
     transition: color 0.2s;
   `;
   versionLink.addEventListener('mouseover', () => {
-    versionLink.style.color = '#0073b1';
+    versionLink.style.color = 'var(--mu-link-color, #0073b1)';
     versionLink.style.textDecoration = 'underline';
   });
   versionLink.addEventListener('mouseout', () => {
-    versionLink.style.color = '#666';
+    versionLink.style.color = 'var(--mu-text-secondary, #666)';
     versionLink.style.textDecoration = 'none';
   });
 
@@ -469,10 +470,12 @@ function renderGeneralTab(container) {
   select.id = 'settings-log-level-select';
   select.style.cssText = `
     padding: 8px 12px;
-    border: 1px solid #ccc;
+    border: 1px solid var(--mu-input-border, #ccc);
     border-radius: 4px;
     font-size: 14px;
     min-width: 150px;
+    background: var(--mu-input-bg, white);
+    color: var(--mu-text-primary, #333);
   `;
 
   const logLevels = [
@@ -509,7 +512,7 @@ function renderGeneralTab(container) {
 
   const devModeContainer = document.createElement('div');
   devModeContainer.id = 'settings-dev-mode-container';
-  devModeContainer.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 12px 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e0e0e0;';
+  devModeContainer.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 12px 15px; background: var(--mu-bg-secondary, #f8f9fa); border-radius: 8px; border: 1px solid var(--mu-border, #e0e0e0);';
 
   const devModeLabel = document.createElement('div');
   devModeLabel.innerHTML = `
@@ -579,10 +582,12 @@ function createLookbackPeriodSection(institutionType) {
   input.step = '1';
   input.style.cssText = `
     padding: 8px 12px;
-    border: 1px solid #ccc;
+    border: 1px solid var(--mu-input-border, #ccc);
     border-radius: 4px;
     font-size: 14px;
     width: 80px;
+    background: var(--mu-input-bg, white);
+    color: var(--mu-text-primary, #333);
   `;
 
   // Get storage key based on institution type
@@ -617,15 +622,16 @@ function createLookbackPeriodSection(institutionType) {
 
   const daysLabel = document.createElement('span');
   daysLabel.textContent = 'days';
-  daysLabel.style.cssText = 'color: #666; font-size: 14px;';
+  daysLabel.style.cssText = 'color: var(--mu-text-secondary, #666); font-size: 14px;';
 
   const resetButton = document.createElement('button');
   resetButton.textContent = 'Reset to Default';
   resetButton.style.cssText = `
     padding: 6px 12px;
-    border: 1px solid #ccc;
+    border: 1px solid var(--mu-input-border, #ccc);
     border-radius: 4px;
-    background: white;
+    background: var(--mu-bg-primary, white);
+    color: var(--mu-text-primary, #333);
     cursor: pointer;
     font-size: 12px;
     margin-left: 10px;
@@ -637,7 +643,7 @@ function createLookbackPeriodSection(institutionType) {
 
   // Description
   const description = document.createElement('div');
-  description.style.cssText = 'font-size: 13px; color: #666; margin-top: 8px; line-height: 1.4;';
+  description.style.cssText = 'font-size: 13px; color: var(--mu-text-secondary, #666); margin-top: 8px; line-height: 1.4;';
   description.innerHTML = `
     <strong>How it works:</strong><br>
     • When uploading transactions after a previous upload exists, the system calculates the "from date" as: <code>Last Upload Date - Lookback Days</code><br>
@@ -694,10 +700,10 @@ function createLookbackPeriodSection(institutionType) {
   });
 
   resetButton.addEventListener('mouseover', () => {
-    resetButton.style.backgroundColor = '#f8f9fa';
+    resetButton.style.backgroundColor = 'var(--mu-bg-secondary, #f8f9fa)';
   });
   resetButton.addEventListener('mouseout', () => {
-    resetButton.style.backgroundColor = 'white';
+    resetButton.style.backgroundColor = 'var(--mu-bg-primary, white)';
   });
 
   configContainer.appendChild(label);
@@ -1011,11 +1017,11 @@ function createSection(title, icon, description) {
 
   const titleElement = document.createElement('h3');
   titleElement.innerHTML = `${icon} ${title}`;
-  titleElement.style.cssText = 'margin: 0 0 5px 0; font-size: 16px; font-weight: bold; color: #333;';
+  titleElement.style.cssText = 'margin: 0 0 5px 0; font-size: 16px; font-weight: bold; color: var(--mu-text-primary, #333);';
 
   const descElement = document.createElement('p');
   descElement.textContent = description;
-  descElement.style.cssText = 'margin: 0; font-size: 14px; color: #666;';
+  descElement.style.cssText = 'margin: 0; font-size: 14px; color: var(--mu-text-secondary, #666);';
 
   header.appendChild(titleElement);
   header.appendChild(descElement);
@@ -1038,7 +1044,7 @@ function showConfirmDialog(message) {
       left: 0;
       width: 100%;
       height: 100%;
-      background-color: rgba(0, 0, 0, 0.5);
+      background-color: var(--mu-overlay-bg, rgba(0, 0, 0, 0.5));
       display: flex;
       justify-content: center;
       align-items: center;
@@ -1047,7 +1053,8 @@ function showConfirmDialog(message) {
 
     const dialog = document.createElement('div');
     dialog.style.cssText = `
-      background-color: white;
+      background-color: var(--mu-bg-primary, white);
+      color: var(--mu-text-primary, #333);
       padding: 20px;
       border-radius: 8px;
       max-width: 400px;
@@ -1065,9 +1072,10 @@ function showConfirmDialog(message) {
     cancelBtn.textContent = 'Cancel';
     cancelBtn.style.cssText = `
       padding: 8px 16px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--mu-input-border, #ccc);
       border-radius: 4px;
-      background: white;
+      background: var(--mu-cancel-btn-bg, white);
+      color: var(--mu-cancel-btn-text, #333);
       cursor: pointer;
     `;
 
@@ -1113,12 +1121,12 @@ function addAccountLogoFallback(container, institutionName) {
     width: 40px;
     height: 40px;
     border-radius: 5px;
-    background-color: #e0e0e0;
+    background-color: var(--mu-bg-tertiary, #e0e0e0);
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 18px;
-    color: #666;
+    color: var(--mu-text-secondary, #666);
     font-weight: bold;
   `;
   const firstChar = institutionName ? institutionName.charAt(0).toUpperCase() : '?';
@@ -1370,10 +1378,12 @@ function renderCategoryMappingsSection(integrationId, storageKey, sourceColumnLa
     sourceFilterInput.style.cssText = `
       width: 100%;
       padding: 8px 12px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--mu-input-border, #ccc);
       border-radius: 4px;
       font-size: 13px;
       box-sizing: border-box;
+      background: var(--mu-input-bg, white);
+      color: var(--mu-text-primary, #333);
     `;
     sourceFilterWrapper.appendChild(sourceFilterInput);
     filterContainer.appendChild(sourceFilterWrapper);
@@ -1400,11 +1410,13 @@ function renderCategoryMappingsSection(integrationId, storageKey, sourceColumnLa
       width: 100%;
       padding: 8px 12px;
       padding-right: 30px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--mu-input-border, #ccc);
       border-radius: 4px;
       font-size: 13px;
       box-sizing: border-box;
       cursor: pointer;
+      background: var(--mu-input-bg, white);
+      color: var(--mu-text-primary, #333);
     `;
 
     // Dropdown arrow
@@ -1431,8 +1443,8 @@ function renderCategoryMappingsSection(integrationId, storageKey, sourceColumnLa
       right: 0;
       max-height: 200px;
       overflow-y: auto;
-      background: white;
-      border: 1px solid #ccc;
+      background: var(--mu-bg-primary, white);
+      border: 1px solid var(--mu-input-border, #ccc);
       border-top: none;
       border-radius: 0 0 4px 4px;
       z-index: 100;
@@ -1534,9 +1546,10 @@ function renderCategoryMappingsSection(integrationId, storageKey, sourceColumnLa
     clearFiltersBtn.textContent = 'Clear Filters';
     clearFiltersBtn.style.cssText = `
       padding: 8px 12px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--mu-input-border, #ccc);
       border-radius: 4px;
-      background: white;
+      background: var(--mu-bg-primary, white);
+      color: var(--mu-text-primary, #333);
       cursor: pointer;
       font-size: 12px;
       white-space: nowrap;
@@ -1550,10 +1563,10 @@ function renderCategoryMappingsSection(integrationId, storageKey, sourceColumnLa
       applyFiltersCallback();
     });
     clearFiltersBtn.addEventListener('mouseover', () => {
-      clearFiltersBtn.style.backgroundColor = '#f8f9fa';
+      clearFiltersBtn.style.backgroundColor = 'var(--mu-bg-secondary, #f8f9fa)';
     });
     clearFiltersBtn.addEventListener('mouseout', () => {
-      clearFiltersBtn.style.backgroundColor = 'white';
+      clearFiltersBtn.style.backgroundColor = 'var(--mu-bg-primary, white)';
     });
     filterContainer.appendChild(clearFiltersBtn);
 

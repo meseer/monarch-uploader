@@ -60,7 +60,8 @@ export async function showMonarchSecuritySelector(position, callback) {
   const modal = document.createElement('div');
   modal.id = 'security-selector-modal';
   modal.style.cssText = `
-    background: white;
+    background: var(--mu-bg-primary, white);
+    color: var(--mu-text-primary, #333);
     padding: 25px;
     border-radius: 8px;
     width: 90%;
@@ -80,33 +81,33 @@ export async function showMonarchSecuritySelector(position, callback) {
   const securityDetails = document.createElement('div');
   securityDetails.id = 'security-selector-details';
   securityDetails.style.cssText = `
-    background: #f8f9fa;
-    border: 1px solid #dee2e6;
+    background: var(--mu-bg-secondary, #f8f9fa);
+    border: 1px solid var(--mu-border, #dee2e6);
     border-radius: 6px;
     padding: 12px;
     margin-bottom: 15px;
   `;
 
-  let detailsHtml = '<div style="font-weight: bold; margin-bottom: 8px; color: #333;">Questrade Position:</div>';
+  let detailsHtml = '<div style="font-weight: bold; margin-bottom: 8px; color: var(--mu-text-primary, #333);">Questrade Position:</div>';
 
   if (symbol) {
     detailsHtml += `<div style="margin-bottom: 4px;">
-      <span style="color: #666;">Symbol:</span> 
-      <span style="font-weight: 500; color: #333;">${symbol}</span>
+      <span style="color: var(--mu-text-secondary, #666);">Symbol:</span> 
+      <span style="font-weight: 500; color: var(--mu-text-primary, #333);">${symbol}</span>
     </div>`;
   }
 
   if (exchange) {
     detailsHtml += `<div style="margin-bottom: 4px;">
-      <span style="color: #666;">Exchange:</span> 
-      <span style="font-weight: 500; color: #333;">${exchange}</span>
+      <span style="color: var(--mu-text-secondary, #666);">Exchange:</span> 
+      <span style="font-weight: 500; color: var(--mu-text-primary, #333);">${exchange}</span>
     </div>`;
   }
 
   if (description) {
     detailsHtml += `<div style="margin-bottom: 4px;">
-      <span style="color: #666;">Description:</span> 
-      <span style="font-weight: 500; color: #333;">${toCamelCase(description)}</span>
+      <span style="color: var(--mu-text-secondary, #666);">Description:</span> 
+      <span style="font-weight: 500; color: var(--mu-text-primary, #333);">${toCamelCase(description)}</span>
     </div>`;
   }
 
@@ -130,10 +131,12 @@ export async function showMonarchSecuritySelector(position, callback) {
   searchInput.style.cssText = `
     width: 100%;
     padding: 10px 12px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--mu-input-border, #ddd);
     border-radius: 6px;
     font-size: 14px;
     box-sizing: border-box;
+    background: var(--mu-input-bg, white);
+    color: var(--mu-input-text, #333);
   `;
   searchContainer.appendChild(searchInput);
   modal.appendChild(searchContainer);
@@ -144,7 +147,7 @@ export async function showMonarchSecuritySelector(position, callback) {
   loadingIndicator.style.cssText = `
     text-align: center;
     padding: 20px;
-    color: #666;
+    color: var(--mu-text-secondary, #666);
     display: none;
   `;
   loadingIndicator.textContent = 'Searching...';
@@ -264,8 +267,8 @@ export async function showMonarchSecuritySelector(position, callback) {
   cancelBtn.textContent = 'Cancel';
   cancelBtn.style.cssText = `
     padding: 8px 16px;
-    background-color: #f5f5f5;
-    color: #333;
+    background-color: var(--mu-bg-tertiary, #f5f5f5);
+    color: var(--mu-text-primary, #333);
     border: none;
     border-radius: 4px;
     cursor: pointer;
@@ -308,7 +311,7 @@ function createSecurityItem(security, onClick) {
     border-radius: 6px;
     cursor: pointer;
     margin-bottom: 8px;
-    border: 1px solid #eee;
+    border: 1px solid var(--mu-border-light, #eee);
     transition: all 0.2s;
   `;
 
@@ -344,14 +347,14 @@ function createSecurityItem(security, onClick) {
   // Security name
   const nameDiv = document.createElement('div');
   nameDiv.id = `security-name-${security.id}`;
-  nameDiv.style.cssText = 'font-weight: 600; color: #333; margin-bottom: 2px;';
+  nameDiv.style.cssText = 'font-weight: 600; color: var(--mu-text-primary, #333); margin-bottom: 2px;';
   nameDiv.textContent = security.name || 'Unknown Security';
   infoContainer.appendChild(nameDiv);
 
   // Ticker and type
   const detailsDiv = document.createElement('div');
   detailsDiv.id = `security-details-${security.id}`;
-  detailsDiv.style.cssText = 'font-size: 0.9em; color: #666; margin-bottom: 2px;';
+  detailsDiv.style.cssText = 'font-size: 0.9em; color: var(--mu-text-secondary, #666); margin-bottom: 2px;';
   const tickerText = security.ticker ? `${security.ticker}` : '';
   const typeText = security.typeDisplay ? ` • ${security.typeDisplay}` : '';
   detailsDiv.textContent = tickerText + typeText;
@@ -367,7 +370,7 @@ function createSecurityItem(security, onClick) {
 
     const priceDiv = document.createElement('div');
     priceDiv.id = `security-price-${security.id}`;
-    priceDiv.style.cssText = 'font-weight: 600; color: #333;';
+    priceDiv.style.cssText = 'font-weight: 600; color: var(--mu-text-primary, #333);';
     priceDiv.textContent = `$${parseFloat(security.currentPrice).toFixed(2)}`;
     priceContainer.appendChild(priceDiv);
 
@@ -388,12 +391,12 @@ function createSecurityItem(security, onClick) {
 
   // Hover effects
   item.onmouseover = () => {
-    item.style.backgroundColor = '#f5f5f5';
-    item.style.borderColor = '#ddd';
+    item.style.backgroundColor = 'var(--mu-hover-bg, #f5f5f5)';
+    item.style.borderColor = 'var(--mu-input-border, #ddd)';
   };
   item.onmouseout = () => {
     item.style.backgroundColor = '';
-    item.style.borderColor = '#eee';
+    item.style.borderColor = 'var(--mu-border-light, #eee)';
   };
 
   item.onclick = onClick;
@@ -428,8 +431,8 @@ function addLogoFallback(container, text, securityId) {
   fallback.style.cssText = `
     width: 40px;
     height: 40px;
-    background-color: #e0e0e0;
-    color: #666;
+    background-color: var(--mu-bg-tertiary, #e0e0e0);
+    color: var(--mu-text-secondary, #666);
     border-radius: 4px;
     display: flex;
     align-items: center;
@@ -457,7 +460,7 @@ function createModalOverlay(onClickOutside) {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0,0,0,0.7);
+    background: var(--mu-overlay-bg, rgba(0,0,0,0.7));
     display: flex;
     align-items: center;
     justify-content: center;

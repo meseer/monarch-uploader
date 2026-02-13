@@ -28,7 +28,7 @@ export async function showConfirmationDialog(
       left: 0;
       width: 100%;
       height: 100%;
-      background-color: rgba(0, 0, 0, 0.5);
+      background-color: var(--mu-overlay-bg, rgba(0, 0, 0, 0.5));
       display: flex;
       justify-content: center;
       align-items: center;
@@ -38,7 +38,8 @@ export async function showConfirmationDialog(
     const modal = document.createElement('div');
     modal.id = 'confirmation-dialog-modal';
     modal.style.cssText = `
-      background: white;
+      background: var(--mu-bg-primary, white);
+      color: var(--mu-text-primary, #333);
       padding: 25px;
       border-radius: 8px;
       width: 90%;
@@ -53,7 +54,7 @@ export async function showConfirmationDialog(
       margin-bottom: 25px;
       font-size: 1em;
       line-height: 1.5;
-      color: #333;
+      color: var(--mu-text-primary, #333);
     `;
     messageDiv.textContent = message;
     modal.appendChild(messageDiv);
@@ -74,8 +75,8 @@ export async function showConfirmationDialog(
     cancelBtn.textContent = cancelText;
     cancelBtn.style.cssText = `
       padding: 10px 20px;
-      background-color: #f5f5f5;
-      color: #333;
+      background-color: var(--mu-bg-tertiary, #f5f5f5);
+      color: var(--mu-text-primary, #333);
       border: none;
       border-radius: 4px;
       cursor: pointer;
@@ -83,10 +84,10 @@ export async function showConfirmationDialog(
       transition: background-color 0.2s;
     `;
     cancelBtn.onmouseover = () => {
-      cancelBtn.style.backgroundColor = '#e0e0e0';
+      cancelBtn.style.backgroundColor = 'var(--mu-hover-bg, #e0e0e0)';
     };
     cancelBtn.onmouseout = () => {
-      cancelBtn.style.backgroundColor = '#f5f5f5';
+      cancelBtn.style.backgroundColor = 'var(--mu-bg-tertiary, #f5f5f5)';
     };
     cancelBtn.onclick = () => {
       cleanupKeyboard();

@@ -61,7 +61,7 @@ export function showDatePicker(defaultDate, promptText, callback, options = {}) 
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0,0,0,0.7);
+    background: var(--mu-overlay-bg, rgba(0,0,0,0.7));
     display: flex;
     align-items: center;
     justify-content: center;
@@ -79,7 +79,8 @@ export function showDatePicker(defaultDate, promptText, callback, options = {}) 
   // Create the modal
   const modal = document.createElement('div');
   modal.style.cssText = `
-    background: white;
+    background: var(--mu-bg-primary, white);
+    color: var(--mu-text-primary, #333);
     padding: 25px;
     border-radius: 8px;
     width: 90%;
@@ -100,7 +101,7 @@ export function showDatePicker(defaultDate, promptText, callback, options = {}) 
   const description = document.createElement('p');
   description.style.cssText = `
     margin-bottom: 20px;
-    color: #555;
+    color: var(--mu-text-secondary, #555);
   `;
   description.textContent = promptText;
   modal.appendChild(description);
@@ -112,11 +113,13 @@ export function showDatePicker(defaultDate, promptText, callback, options = {}) 
   dateInput.style.cssText = `
     width: 100%;
     padding: 10px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--mu-input-border, #ddd);
     border-radius: 4px;
     font-size: 16px;
     margin-bottom: 20px;
     box-sizing: border-box;
+    background: var(--mu-input-bg, white);
+    color: var(--mu-input-text, #333);
   `;
   modal.appendChild(dateInput);
 
@@ -153,9 +156,10 @@ export function showDatePicker(defaultDate, promptText, callback, options = {}) 
   cancelBtn.textContent = cancelButtonText;
   cancelBtn.style.cssText = `
     padding: 8px 16px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--mu-input-border, #ddd);
     border-radius: 4px;
-    background: white;
+    background: var(--mu-bg-primary, white);
+    color: var(--mu-text-primary, #333);
     cursor: pointer;
   `;
   cancelBtn.onclick = cancelAction;
@@ -244,7 +248,7 @@ export function showDatePickerWithOptions(defaultDate, promptText, options = {},
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0,0,0,0.7);
+    background: var(--mu-overlay-bg, rgba(0,0,0,0.7));
     display: flex;
     align-items: center;
     justify-content: center;
@@ -263,7 +267,8 @@ export function showDatePickerWithOptions(defaultDate, promptText, options = {},
   const modal = document.createElement('div');
   modal.id = 'date-picker-modal';
   modal.style.cssText = `
-    background: white;
+    background: var(--mu-bg-primary, white);
+    color: var(--mu-text-primary, #333);
     padding: 25px;
     border-radius: 8px;
     width: 90%;
@@ -286,7 +291,7 @@ export function showDatePickerWithOptions(defaultDate, promptText, options = {},
   description.id = 'date-picker-description';
   description.style.cssText = `
     margin-bottom: 20px;
-    color: #555;
+    color: var(--mu-text-secondary, #555);
   `;
   description.textContent = promptText;
   modal.appendChild(description);
@@ -299,11 +304,13 @@ export function showDatePickerWithOptions(defaultDate, promptText, options = {},
   dateInput.style.cssText = `
     width: 100%;
     padding: 10px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--mu-input-border, #ddd);
     border-radius: 4px;
     font-size: 16px;
     margin-bottom: 20px;
     box-sizing: border-box;
+    background: var(--mu-input-bg, white);
+    color: var(--mu-input-text, #333);
   `;
   modal.appendChild(dateInput);
 
@@ -318,9 +325,9 @@ export function showDatePickerWithOptions(defaultDate, promptText, options = {},
       gap: 10px;
       margin-bottom: 20px;
       padding: 12px;
-      background: #f8f9fa;
+      background: var(--mu-bg-secondary, #f8f9fa);
       border-radius: 4px;
-      border: 1px solid #e9ecef;
+      border: 1px solid var(--mu-border, #e9ecef);
     `;
 
     reconstructCheckbox = document.createElement('input');
@@ -338,12 +345,12 @@ export function showDatePickerWithOptions(defaultDate, promptText, options = {},
     checkboxLabel.style.cssText = `
       cursor: pointer;
       font-size: 14px;
-      color: #333;
+      color: var(--mu-text-primary, #333);
       line-height: 1.4;
     `;
     checkboxLabel.innerHTML = `
       <strong>Reconstruct balance from transactions</strong><br>
-      <span style="color: #666; font-size: 12px;">
+      <span style="color: var(--mu-text-secondary, #666); font-size: 12px;">
         Build historical balance by calculating daily balances from your transaction history.
         Recommended for first-time sync.
       </span>
@@ -395,9 +402,10 @@ export function showDatePickerWithOptions(defaultDate, promptText, options = {},
   cancelBtn.textContent = 'Cancel';
   cancelBtn.style.cssText = `
     padding: 8px 16px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--mu-input-border, #ddd);
     border-radius: 4px;
-    background: white;
+    background: var(--mu-bg-primary, white);
+    color: var(--mu-text-primary, #333);
     cursor: pointer;
   `;
   cancelBtn.onclick = cancelAction;

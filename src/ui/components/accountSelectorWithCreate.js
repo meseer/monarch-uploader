@@ -182,7 +182,8 @@ function showInstitutionSelectorWithCreate(institutions, callback, accountType, 
   const modal = document.createElement('div');
   modal.id = 'institution-selector-modal';
   modal.style.cssText = `
-    background: white;
+    background: var(--mu-bg-primary, white);
+    color: var(--mu-text-primary, #333);
     padding: 25px;
     border-radius: 8px;
     width: 90%;
@@ -206,7 +207,7 @@ function showInstitutionSelectorWithCreate(institutions, callback, accountType, 
   const accountBanner = document.createElement('div');
   accountBanner.id = 'institution-selector-account-banner';
   accountBanner.style.cssText = `
-    background: #e3f2fd;
+    background: var(--mu-status-processing-bg, #e3f2fd);
     padding: 12px 15px;
     border-radius: 6px;
     margin-bottom: 20px;
@@ -215,7 +216,7 @@ function showInstitutionSelectorWithCreate(institutions, callback, accountType, 
 
   const accountNameDiv = document.createElement('div');
   accountNameDiv.id = 'institution-selector-account-name';
-  accountNameDiv.style.cssText = 'font-size: 1.1em; font-weight: bold; color: #1565c0;';
+  accountNameDiv.style.cssText = 'font-size: 1.1em; font-weight: bold; color: var(--mu-status-processing-text, #1565c0);';
   accountNameDiv.textContent = `Mapping: ${currentAccountName}`;
   accountBanner.appendChild(accountNameDiv);
 
@@ -223,7 +224,7 @@ function showInstitutionSelectorWithCreate(institutions, callback, accountType, 
   if (createDefaults.currentBalance) {
     const balanceDiv = document.createElement('div');
     balanceDiv.id = 'institution-selector-account-balance';
-    balanceDiv.style.cssText = 'font-size: 0.85em; color: #666; margin-top: 4px;';
+    balanceDiv.style.cssText = 'font-size: 0.85em; color: var(--mu-text-secondary, #666); margin-top: 4px;';
     balanceDiv.textContent = `Balance: ${formatBalance(createDefaults.currentBalance)}`;
     accountBanner.appendChild(balanceDiv);
   }
@@ -232,7 +233,7 @@ function showInstitutionSelectorWithCreate(institutions, callback, accountType, 
   if (createDefaults.accountType) {
     const accountTypeDiv = document.createElement('div');
     accountTypeDiv.id = 'institution-selector-account-type';
-    accountTypeDiv.style.cssText = 'font-size: 0.85em; color: #666; margin-top: 4px;';
+    accountTypeDiv.style.cssText = 'font-size: 0.85em; color: var(--mu-text-secondary, #666); margin-top: 4px;';
     accountTypeDiv.textContent = 'Account Type: ';
     const typeCode = document.createElement('code');
     typeCode.style.cssText = 'background-color: #f0f0f0; padding: 2px 4px; border-radius: 3px; font-family: monospace; font-size: 0.95em;';
@@ -244,7 +245,7 @@ function showInstitutionSelectorWithCreate(institutions, callback, accountType, 
   if (currentAccountId) {
     const accountIdDiv = document.createElement('div');
     accountIdDiv.id = 'institution-selector-account-id';
-    accountIdDiv.style.cssText = 'font-size: 0.85em; color: #666; margin-top: 4px;';
+    accountIdDiv.style.cssText = 'font-size: 0.85em; color: var(--mu-text-secondary, #666); margin-top: 4px;';
     accountIdDiv.textContent = `Account ID: ${currentAccountId}`;
     accountBanner.appendChild(accountIdDiv);
   }
@@ -256,12 +257,12 @@ function showInstitutionSelectorWithCreate(institutions, callback, accountType, 
     const warningBanner = document.createElement('div');
     warningBanner.id = 'institution-selector-warning-banner';
     warningBanner.style.cssText = `
-      background: #fff3cd;
+      background: var(--mu-warning-bg, #fff3cd);
       padding: 12px 15px;
       border-radius: 6px;
       margin-bottom: 15px;
       border-left: 4px solid #ffc107;
-      color: #856404;
+      color: var(--mu-warning-text, #856404);
       font-size: 0.95em;
       line-height: 1.4;
     `;
@@ -434,7 +435,7 @@ function showInstitutionSelectorWithCreate(institutions, callback, accountType, 
   divider.style.cssText = `
     text-align: center;
     margin: 20px 0;
-    color: #666;
+    color: var(--mu-text-secondary, #666);
     font-size: 0.9em;
   `;
   divider.textContent = 'Or select existing account:';
@@ -445,7 +446,7 @@ function showInstitutionSelectorWithCreate(institutions, callback, accountType, 
     const noInst = document.createElement('div');
     const accountTypeDisplay = accountType === 'credit' ? 'credit card' : accountType === 'brokerage' ? 'investment' : accountType;
     noInst.textContent = `No institutions found with ${accountTypeDisplay} accounts.`;
-    noInst.style.cssText = 'color: #666; padding: 20px 0;';
+    noInst.style.cssText = 'color: var(--mu-text-secondary, #666); padding: 20px 0;';
     modal.appendChild(noInst);
   }
 
@@ -472,8 +473,8 @@ function showInstitutionSelectorWithCreate(institutions, callback, accountType, 
   cancelBtn.textContent = 'Cancel';
   cancelBtn.style.cssText = `
     padding: 8px 16px;
-    background-color: #f5f5f5;
-    color: #333;
+    background-color: var(--mu-bg-tertiary, #f5f5f5);
+    color: var(--mu-text-primary, #333);
     border: none;
     border-radius: 4px;
     cursor: pointer;
@@ -571,7 +572,8 @@ function showAccountSelectorWithCreate(institution, callback, allInstitutions, a
   const modal = document.createElement('div');
   modal.id = 'account-selector-modal';
   modal.style.cssText = `
-    background: white;
+    background: var(--mu-bg-primary, white);
+    color: var(--mu-text-primary, #333);
     padding: 25px;
     border-radius: 8px;
     width: 90%;
@@ -587,7 +589,7 @@ function showAccountSelectorWithCreate(institution, callback, allInstitutions, a
     display: flex;
     align-items: center;
     font-size: 0.9em;
-    color: #0066cc;
+    color: var(--mu-link-color, #0066cc);
     cursor: pointer;
     margin-bottom: 20px;
   `;
@@ -615,7 +617,7 @@ function showAccountSelectorWithCreate(institution, callback, allInstitutions, a
   const accountBanner = document.createElement('div');
   accountBanner.id = 'account-selector-account-banner';
   accountBanner.style.cssText = `
-    background: #e3f2fd;
+    background: var(--mu-status-processing-bg, #e3f2fd);
     padding: 12px 15px;
     border-radius: 6px;
     margin-bottom: 20px;
@@ -624,7 +626,7 @@ function showAccountSelectorWithCreate(institution, callback, allInstitutions, a
 
   const accountNameDiv = document.createElement('div');
   accountNameDiv.id = 'account-selector-account-name';
-  accountNameDiv.style.cssText = 'font-size: 1.1em; font-weight: bold; color: #1565c0;';
+  accountNameDiv.style.cssText = 'font-size: 1.1em; font-weight: bold; color: var(--mu-status-processing-text, #1565c0);';
   accountNameDiv.textContent = `Mapping: ${currentAccountName}`;
   accountBanner.appendChild(accountNameDiv);
 
@@ -632,7 +634,7 @@ function showAccountSelectorWithCreate(institution, callback, allInstitutions, a
   if (createDefaults.currentBalance) {
     const balanceDiv = document.createElement('div');
     balanceDiv.id = 'account-selector-account-balance';
-    balanceDiv.style.cssText = 'font-size: 0.85em; color: #666; margin-top: 4px;';
+    balanceDiv.style.cssText = 'font-size: 0.85em; color: var(--mu-text-secondary, #666); margin-top: 4px;';
     balanceDiv.textContent = `Balance: ${formatBalance(createDefaults.currentBalance)}`;
     accountBanner.appendChild(balanceDiv);
   }
@@ -641,10 +643,10 @@ function showAccountSelectorWithCreate(institution, callback, allInstitutions, a
   if (createDefaults.accountType) {
     const accountTypeDiv = document.createElement('div');
     accountTypeDiv.id = 'account-selector-account-type';
-    accountTypeDiv.style.cssText = 'font-size: 0.85em; color: #666; margin-top: 4px;';
+    accountTypeDiv.style.cssText = 'font-size: 0.85em; color: var(--mu-text-secondary, #666); margin-top: 4px;';
     accountTypeDiv.textContent = 'Account Type: ';
     const typeCode = document.createElement('code');
-    typeCode.style.cssText = 'background-color: #f0f0f0; padding: 2px 4px; border-radius: 3px; font-family: monospace; font-size: 0.95em;';
+    typeCode.style.cssText = 'background-color: var(--mu-bg-tertiary, #f0f0f0); padding: 2px 4px; border-radius: 3px; font-family: monospace; font-size: 0.95em; color: var(--mu-text-primary, #333);';
     typeCode.textContent = createDefaults.accountType;
     accountTypeDiv.appendChild(typeCode);
     accountBanner.appendChild(accountTypeDiv);
@@ -653,7 +655,7 @@ function showAccountSelectorWithCreate(institution, callback, allInstitutions, a
   if (currentAccountId) {
     const accountIdDiv = document.createElement('div');
     accountIdDiv.id = 'account-selector-account-id';
-    accountIdDiv.style.cssText = 'font-size: 0.85em; color: #666; margin-top: 4px;';
+    accountIdDiv.style.cssText = 'font-size: 0.85em; color: var(--mu-text-secondary, #666); margin-top: 4px;';
     accountIdDiv.textContent = `Account ID: ${currentAccountId}`;
     accountBanner.appendChild(accountIdDiv);
   }
@@ -737,7 +739,7 @@ function showAccountSelectorWithCreate(institution, callback, allInstitutions, a
   divider.style.cssText = `
     text-align: center;
     margin: 15px 0;
-    color: #666;
+    color: var(--mu-text-secondary, #666);
     font-size: 0.85em;
   `;
   divider.textContent = 'Or select existing:';
@@ -763,8 +765,8 @@ function showAccountSelectorWithCreate(institution, callback, allInstitutions, a
   cancelBtn.textContent = 'Cancel';
   cancelBtn.style.cssText = `
     padding: 8px 16px;
-    background-color: #f5f5f5;
-    color: #333;
+    background-color: var(--mu-cancel-btn-bg, #f5f5f5);
+    color: var(--mu-cancel-btn-text, #333);
     border: none;
     border-radius: 4px;
     cursor: pointer;
@@ -826,7 +828,8 @@ function showFlatAccountSelectorWithCreate(accounts, callback, createDefaults) {
   const modal = document.createElement('div');
   modal.id = 'flat-account-selector-modal';
   modal.style.cssText = `
-    background: white;
+    background: var(--mu-bg-primary, white);
+    color: var(--mu-text-primary, #333);
     padding: 25px;
     border-radius: 8px;
     width: 90%;
@@ -849,7 +852,7 @@ function showFlatAccountSelectorWithCreate(accounts, callback, createDefaults) {
   const accountBanner = document.createElement('div');
   accountBanner.id = 'flat-account-selector-account-banner';
   accountBanner.style.cssText = `
-    background: #e3f2fd;
+    background: var(--mu-status-processing-bg, #e3f2fd);
     padding: 12px 15px;
     border-radius: 6px;
     margin-bottom: 20px;
@@ -858,7 +861,7 @@ function showFlatAccountSelectorWithCreate(accounts, callback, createDefaults) {
 
   const accountNameDiv = document.createElement('div');
   accountNameDiv.id = 'flat-account-selector-account-name';
-  accountNameDiv.style.cssText = 'font-size: 1.1em; font-weight: bold; color: #1565c0;';
+  accountNameDiv.style.cssText = 'font-size: 1.1em; font-weight: bold; color: var(--mu-status-processing-text, #1565c0);';
   accountNameDiv.textContent = `Mapping: ${currentAccountName}`;
   accountBanner.appendChild(accountNameDiv);
 
@@ -866,7 +869,7 @@ function showFlatAccountSelectorWithCreate(accounts, callback, createDefaults) {
   if (createDefaults.currentBalance) {
     const balanceDiv = document.createElement('div');
     balanceDiv.id = 'flat-account-selector-account-balance';
-    balanceDiv.style.cssText = 'font-size: 0.85em; color: #666; margin-top: 4px;';
+    balanceDiv.style.cssText = 'font-size: 0.85em; color: var(--mu-text-secondary, #666); margin-top: 4px;';
     balanceDiv.textContent = `Balance: ${formatBalance(createDefaults.currentBalance)}`;
     accountBanner.appendChild(balanceDiv);
   }
@@ -875,10 +878,10 @@ function showFlatAccountSelectorWithCreate(accounts, callback, createDefaults) {
   if (createDefaults.accountType) {
     const accountTypeDiv = document.createElement('div');
     accountTypeDiv.id = 'flat-account-selector-account-type';
-    accountTypeDiv.style.cssText = 'font-size: 0.85em; color: #666; margin-top: 4px;';
+    accountTypeDiv.style.cssText = 'font-size: 0.85em; color: var(--mu-text-secondary, #666); margin-top: 4px;';
     accountTypeDiv.textContent = 'Account Type: ';
     const typeCode = document.createElement('code');
-    typeCode.style.cssText = 'background-color: #f0f0f0; padding: 2px 4px; border-radius: 3px; font-family: monospace; font-size: 0.95em;';
+    typeCode.style.cssText = 'background-color: var(--mu-bg-tertiary, #f0f0f0); padding: 2px 4px; border-radius: 3px; font-family: monospace; font-size: 0.95em; color: var(--mu-text-primary, #333);';
     typeCode.textContent = createDefaults.accountType;
     accountTypeDiv.appendChild(typeCode);
     accountBanner.appendChild(accountTypeDiv);
@@ -887,7 +890,7 @@ function showFlatAccountSelectorWithCreate(accounts, callback, createDefaults) {
   if (currentAccountId) {
     const accountIdDiv = document.createElement('div');
     accountIdDiv.id = 'flat-account-selector-account-id';
-    accountIdDiv.style.cssText = 'font-size: 0.85em; color: #666; margin-top: 4px;';
+    accountIdDiv.style.cssText = 'font-size: 0.85em; color: var(--mu-text-secondary, #666); margin-top: 4px;';
     accountIdDiv.textContent = `Account ID: ${currentAccountId}`;
     accountBanner.appendChild(accountIdDiv);
   }
@@ -930,7 +933,7 @@ function showFlatAccountSelectorWithCreate(accounts, callback, createDefaults) {
   divider.style.cssText = `
     text-align: center;
     margin: 15px 0;
-    color: #666;
+    color: var(--mu-text-secondary, #666);
     font-size: 0.85em;
   `;
   divider.textContent = 'Or select existing:';
@@ -946,7 +949,7 @@ function showFlatAccountSelectorWithCreate(accounts, callback, createDefaults) {
       border-radius: 5px;
       cursor: pointer;
       margin-bottom: 10px;
-      border: 1px solid #eee;
+      border: 1px solid var(--mu-border-light, #eee);
     `;
 
     if (acc.logoUrl) {
@@ -966,7 +969,7 @@ function showFlatAccountSelectorWithCreate(accounts, callback, createDefaults) {
 
     if (acc.currentBalance !== undefined) {
       const balanceDiv = document.createElement('div');
-      balanceDiv.style.cssText = 'font-size: 0.9em; color: #555;';
+      balanceDiv.style.cssText = 'font-size: 0.9em; color: var(--mu-text-secondary, #555);';
       balanceDiv.textContent = `Balance: ${new Intl.NumberFormat().format(acc.currentBalance)}`;
       infoDiv.appendChild(balanceDiv);
     }
@@ -974,12 +977,12 @@ function showFlatAccountSelectorWithCreate(accounts, callback, createDefaults) {
     item.appendChild(infoDiv);
 
     item.onmouseover = () => {
-      item.style.backgroundColor = '#f5f5f5';
-      item.style.borderColor = '#ddd';
+      item.style.backgroundColor = 'var(--mu-bg-tertiary, #f5f5f5)';
+      item.style.borderColor = 'var(--mu-border-color, #ddd)';
     };
     item.onmouseout = () => {
       item.style.backgroundColor = '';
-      item.style.borderColor = '#eee';
+      item.style.borderColor = 'var(--mu-border-light, #eee)';
     };
 
     item.onclick = () => {
@@ -995,8 +998,8 @@ function showFlatAccountSelectorWithCreate(accounts, callback, createDefaults) {
   cancelBtn.textContent = 'Cancel';
   cancelBtn.style.cssText = `
     padding: 8px 16px;
-    background-color: #f5f5f5;
-    color: #333;
+    background-color: var(--mu-cancel-btn-bg, #f5f5f5);
+    color: var(--mu-cancel-btn-text, #333);
     border: none;
     border-radius: 4px;
     cursor: pointer;
@@ -1022,8 +1025,8 @@ function addLogoFallback(container, name) {
   fallback.style.cssText = `
     width: 40px;
     height: 40px;
-    background-color: #ddd;
-    color: #666;
+    background-color: var(--mu-bg-tertiary, #ddd);
+    color: var(--mu-text-secondary, #666);
     border-radius: 5px;
     display: flex;
     align-items: center;
@@ -1172,7 +1175,7 @@ function createInstitutionItem(inst) {
     border-radius: 8px;
     cursor: pointer;
     margin-bottom: 15px;
-    border: 1px solid #eee;
+    border: 1px solid var(--mu-border-light, #eee);
     transition: all 0.2s;
     position: relative;
   `;
@@ -1198,7 +1201,7 @@ function createInstitutionItem(inst) {
   infoDiv.appendChild(nameDiv);
 
   const providerDiv = document.createElement('div');
-  providerDiv.style.cssText = 'font-size: 0.9em; color: #666;';
+  providerDiv.style.cssText = 'font-size: 0.9em; color: var(--mu-text-secondary, #666);';
   providerDiv.textContent = cred.dataProvider || '';
   infoDiv.appendChild(providerDiv);
 
@@ -1210,8 +1213,8 @@ function createInstitutionItem(inst) {
       position: absolute;
       top: 8px;
       right: 8px;
-      background-color: #e3f2fd;
-      color: #1565c0;
+      background-color: var(--mu-status-processing-bg, #e3f2fd);
+      color: var(--mu-status-processing-text, #1565c0);
       font-size: 0.75em;
       padding: 2px 6px;
       border-radius: 4px;
@@ -1224,18 +1227,18 @@ function createInstitutionItem(inst) {
   arrowContainer.style.cssText = `
     margin-left: 15px;
     font-size: 1.5em;
-    color: #aaa;
+    color: var(--mu-text-secondary, #aaa);
   `;
   arrowContainer.innerHTML = '&rsaquo;';
   item.appendChild(arrowContainer);
 
   item.onmouseover = () => {
-    item.style.backgroundColor = '#f5f5f5';
-    item.style.borderColor = '#ddd';
+    item.style.backgroundColor = 'var(--mu-bg-tertiary, #f5f5f5)';
+    item.style.borderColor = 'var(--mu-border-color, #ddd)';
   };
   item.onmouseout = () => {
     item.style.backgroundColor = '';
-    item.style.borderColor = '#eee';
+    item.style.borderColor = 'var(--mu-border-light, #eee)';
   };
 
   return item;
@@ -1257,14 +1260,14 @@ function createAccountItem(account, cred, index) {
     border-radius: 8px;
     cursor: pointer;
     margin-bottom: 15px;
-    border: 1px solid #eee;
+    border: 1px solid var(--mu-border-light, #eee);
     transition: all 0.2s;
     position: relative;
   `;
 
   if (index === 0) {
-    item.style.backgroundColor = '#f5f8ff';
-    item.style.borderColor = '#d0d9e6';
+    item.style.backgroundColor = 'var(--mu-item-recommended-bg, #f5f8ff)';
+    item.style.borderColor = 'var(--mu-item-recommended-border, #d0d9e6)';
   }
 
   const logoContainer = document.createElement('div');
@@ -1284,7 +1287,7 @@ function createAccountItem(account, cred, index) {
 
   if (account.details?.currentBalance !== undefined) {
     const balanceDiv = document.createElement('div');
-    balanceDiv.style.cssText = 'font-size: 0.9em; color: #555;';
+    balanceDiv.style.cssText = 'font-size: 0.9em; color: var(--mu-text-secondary, #555);';
     balanceDiv.textContent = `Balance: ${new Intl.NumberFormat().format(account.details.currentBalance)}`;
     textContainer.appendChild(balanceDiv);
   }
@@ -1292,7 +1295,7 @@ function createAccountItem(account, cred, index) {
   // Show subtype only (e.g., "Credit Card")
   if (account.subtype?.display) {
     const subtypeDiv = document.createElement('div');
-    subtypeDiv.style.cssText = 'font-size: 0.85em; color: #666;';
+    subtypeDiv.style.cssText = 'font-size: 0.85em; color: var(--mu-text-secondary, #666);';
     subtypeDiv.textContent = account.subtype.display;
     textContainer.appendChild(subtypeDiv);
   }
@@ -1303,8 +1306,8 @@ function createAccountItem(account, cred, index) {
       position: absolute;
       top: 8px;
       right: 8px;
-      background-color: #e8f5e9;
-      color: #2e7d32;
+      background-color: var(--mu-status-success-bg, #e8f5e9);
+      color: var(--mu-status-success-text, #2e7d32);
       font-size: 0.75em;
       padding: 2px 6px;
       border-radius: 4px;
@@ -1317,18 +1320,18 @@ function createAccountItem(account, cred, index) {
 
   item.onmouseover = () => {
     if (index !== 0) {
-      item.style.backgroundColor = '#f5f5f5';
+      item.style.backgroundColor = 'var(--mu-bg-tertiary, #f5f5f5)';
     } else {
-      item.style.backgroundColor = '#eef2fd';
+      item.style.backgroundColor = 'var(--mu-item-recommended-hover-bg, #eef2fd)';
     }
-    item.style.borderColor = '#ddd';
+    item.style.borderColor = 'var(--mu-border-color, #ddd)';
   };
   item.onmouseout = () => {
     if (index !== 0) {
       item.style.backgroundColor = '';
     } else {
-      item.style.backgroundColor = '#f5f8ff';
-      item.style.borderColor = '#d0d9e6';
+      item.style.backgroundColor = 'var(--mu-item-recommended-bg, #f5f8ff)';
+      item.style.borderColor = 'var(--mu-item-recommended-border, #d0d9e6)';
     }
   };
 
@@ -1348,7 +1351,7 @@ function createModalOverlay(onClose) {
     left: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
+    background-color: var(--mu-overlay-bg, rgba(0, 0, 0, 0.5));
     display: flex;
     justify-content: center;
     align-items: center;

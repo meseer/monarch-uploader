@@ -522,7 +522,7 @@ describe('Date Picker Component', () => {
         (btn) => btn.textContent === 'Cancel',
       );
 
-      expect(cancelBtn.style.background).toBe('white');
+      expect(cancelBtn.style.background).toBe('var(--mu-bg-primary, white)');
       expect(cancelBtn.style.border).toContain('1px solid');
       expect(cancelBtn.style.cursor).toBe('pointer');
     });
@@ -593,7 +593,7 @@ describe('Date Picker Component', () => {
       const overlay = document.querySelector('[style*="position: fixed"]');
       const modal = overlay.querySelector('div');
 
-      expect(modal.style.background).toBe('white');
+      expect(modal.style.background).toBe('var(--mu-bg-primary, white)');
       expect(modal.style.padding).toBe('25px');
       expect(modal.style.borderRadius).toBe('8px');
       expect(modal.style.width).toBe('90%');

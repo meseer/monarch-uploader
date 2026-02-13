@@ -78,8 +78,8 @@ export function createConnectionStatus() {
     gap: 4px;
     margin: 8px 0;
     padding: 8px;
-    background-color: #ffffff;
-    border: 1px solid #e5e5e5;
+    background-color: var(--mu-bg-primary, #ffffff);
+    border: 1px solid var(--mu-border, #e5e5e5);
     border-radius: 4px;
     font-size: 13px;
     font-family: "Wealthsimple Sans", sans-serif;
@@ -92,7 +92,7 @@ export function createConnectionStatus() {
   wealthsimpleStatus.textContent = 'Wealthsimple: Checking...';
   wealthsimpleStatus.style.cssText = `
     font-weight: 500;
-    color: #666;
+    color: var(--mu-text-secondary, #666);
   `;
 
   container.appendChild(wealthsimpleStatus);
@@ -104,7 +104,7 @@ export function createConnectionStatus() {
   monarchStatus.textContent = 'Monarch: Checking...';
   monarchStatus.style.cssText = `
     font-weight: 500;
-    color: #666;
+    color: var(--mu-text-secondary, #666);
   `;
 
   container.appendChild(monarchStatus);

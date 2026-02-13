@@ -228,9 +228,9 @@ export function createWealthsimpleUploadButton() {
     message.textContent = 'Please log in to Wealthsimple to enable sync functionality';
     message.style.cssText = `
       padding: 10px 12px;
-      background-color: #fff3cd;
-      color: #856404;
-      border: 1px solid #ffeaa7;
+      background-color: var(--mu-warning-bg, #fff3cd);
+      color: var(--mu-warning-text, #856404);
+      border: 1px solid var(--mu-warning-border, #ffeaa7);
       border-radius: 4px;
       font-size: 13px;
       margin: 5px 0;

@@ -66,7 +66,8 @@ export async function showAccountCreationDialog(options = {}) {
     const modal = document.createElement('div');
     modal.id = 'account-creation-modal';
     modal.style.cssText = `
-      background: white;
+      background: var(--mu-bg-primary, white);
+      color: var(--mu-text-primary, #333);
       padding: 25px;
       border-radius: 8px;
       width: 90%;
@@ -192,8 +193,8 @@ export async function showAccountCreationDialog(options = {}) {
     cancelButton.textContent = 'Cancel';
     cancelButton.style.cssText = `
       padding: 10px 20px;
-      background-color: #f5f5f5;
-      color: #333;
+      background-color: var(--mu-cancel-btn-bg, #f5f5f5);
+      color: var(--mu-cancel-btn-text, #333);
       border: none;
       border-radius: 4px;
       cursor: pointer;
@@ -395,9 +396,11 @@ function createFormGroup(id, label, type, defaultValue, placeholder, required = 
   input.required = required;
   input.style.cssText = `
     padding: 8px;
-    border: 1px solid #ccc;
+    border: 1px solid var(--mu-input-border, #ccc);
     border-radius: 4px;
     font-size: 1em;
+    background: var(--mu-input-bg, white);
+    color: var(--mu-text-primary, #333);
   `;
 
   container.appendChild(labelEl);
@@ -460,9 +463,11 @@ function createTypeDropdown(id, label, accountTypeOptions, defaultValue) {
   select.required = true;
   select.style.cssText = `
     padding: 8px;
-    border: 1px solid #ccc;
+    border: 1px solid var(--mu-input-border, #ccc);
     border-radius: 4px;
     font-size: 1em;
+    background: var(--mu-input-bg, white);
+    color: var(--mu-text-primary, #333);
   `;
 
   // Add placeholder option
@@ -517,9 +522,11 @@ function createSubtypeDropdown(id, label, _subtypes, _defaultValue) {
   select.required = true;
   select.style.cssText = `
     padding: 8px;
-    border: 1px solid #ccc;
+    border: 1px solid var(--mu-input-border, #ccc);
     border-radius: 4px;
     font-size: 1em;
+    background: var(--mu-input-bg, white);
+    color: var(--mu-text-primary, #333);
   `;
 
   // Add placeholder
@@ -592,7 +599,7 @@ function createModalOverlay(onClose) {
     left: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
+    background-color: var(--mu-overlay-bg, rgba(0, 0, 0, 0.5));
     display: flex;
     justify-content: center;
     align-items: center;
