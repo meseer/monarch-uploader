@@ -189,10 +189,12 @@ function createSearchInput(placeholder, onSearch) {
   searchInput.style.cssText = `
     width: 100%;
     padding: 10px 12px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--mu-input-border, #ddd);
     border-radius: 6px;
     font-size: 14px;
     box-sizing: border-box;
+    background: var(--mu-input-bg, white);
+    color: var(--mu-input-text, #333);
   `;
 
   searchInput.addEventListener('input', (e) => {
@@ -222,7 +224,7 @@ function createSplitSkipButton(onSkipThis, onSkipAll) {
   skipBtn.title = 'Skip categorization for this transaction';
   skipBtn.style.cssText = `
     padding: 10px 18px;
-    background-color: #6c757d;
+    background-color: var(--mu-close-btn-bg, #6c757d);
     color: white;
     border: none;
     border-right: 1px solid rgba(255,255,255,0.3);
@@ -231,8 +233,8 @@ function createSplitSkipButton(onSkipThis, onSkipAll) {
     font-size: 14px;
     line-height: 1;
   `;
-  skipBtn.onmouseover = () => { skipBtn.style.backgroundColor = '#5a6268'; };
-  skipBtn.onmouseout = () => { skipBtn.style.backgroundColor = '#6c757d'; };
+  skipBtn.onmouseover = () => { skipBtn.style.filter = 'brightness(0.85)'; };
+  skipBtn.onmouseout = () => { skipBtn.style.filter = ''; };
   skipBtn.onclick = (e) => { e.stopPropagation(); onSkipThis(); };
 
   const dropdownBtn = document.createElement('button');
@@ -241,7 +243,7 @@ function createSplitSkipButton(onSkipThis, onSkipAll) {
   dropdownBtn.title = 'More skip options';
   dropdownBtn.style.cssText = `
     padding: 10px 10px;
-    background-color: #6c757d;
+    background-color: var(--mu-close-btn-bg, #6c757d);
     color: white;
     border: none;
     border-radius: 0 4px 4px 0;
@@ -249,8 +251,8 @@ function createSplitSkipButton(onSkipThis, onSkipAll) {
     font-size: 14px;
     line-height: 1;
   `;
-  dropdownBtn.onmouseover = () => { dropdownBtn.style.backgroundColor = '#5a6268'; };
-  dropdownBtn.onmouseout = () => { dropdownBtn.style.backgroundColor = '#6c757d'; };
+  dropdownBtn.onmouseover = () => { dropdownBtn.style.filter = 'brightness(0.85)'; };
+  dropdownBtn.onmouseout = () => { dropdownBtn.style.filter = ''; };
 
   const dropdownMenu = document.createElement('div');
   dropdownMenu.id = 'category-selector-skip-dropdown-menu';
@@ -258,10 +260,9 @@ function createSplitSkipButton(onSkipThis, onSkipAll) {
     display: none;
     position: absolute;
     top: 100%;
-    left: 0;
     right: 0;
     margin-top: 0;
-    background: #6c757d;
+    background: var(--mu-close-btn-bg, #6c757d);
     border: none;
     border-radius: 0 0 4px 4px;
     z-index: 10001;
@@ -276,9 +277,9 @@ function createSplitSkipButton(onSkipThis, onSkipAll) {
     color: white;
     white-space: nowrap;
   `;
-  skipAllOption.onmouseover = () => { skipAllOption.style.backgroundColor = '#5a6268'; };
-  skipAllOption.onmouseout = () => { skipAllOption.style.backgroundColor = 'transparent'; };
-  skipAllOption.textContent = 'Skip All Remaining';
+  skipAllOption.onmouseover = () => { skipAllOption.style.filter = 'brightness(0.85)'; };
+  skipAllOption.onmouseout = () => { skipAllOption.style.filter = ''; };
+  skipAllOption.textContent = 'Skip All';
 
   skipAllOption.onclick = (e) => { e.stopPropagation(); dropdownMenu.style.display = 'none'; onSkipAll(); };
   dropdownMenu.appendChild(skipAllOption);
@@ -332,15 +333,15 @@ function createTopActionBar(onSkipThis, onSkipAll, onCancel) {
   cancelBtn.style.cssText = `
     padding: 10px 18px;
     background-color: transparent;
-    color: #dc3545;
-    border: 1px solid #dc3545;
+    color: var(--mu-danger-bg, #dc3545);
+    border: 1px solid var(--mu-danger-bg, #dc3545);
     border-radius: 4px;
     cursor: pointer;
     font-size: 14px;
     line-height: 1;
   `;
-  cancelBtn.onmouseover = () => { cancelBtn.style.backgroundColor = '#dc3545'; cancelBtn.style.color = 'white'; };
-  cancelBtn.onmouseout = () => { cancelBtn.style.backgroundColor = 'transparent'; cancelBtn.style.color = '#dc3545'; };
+  cancelBtn.onmouseover = () => { cancelBtn.style.backgroundColor = 'var(--mu-danger-bg, #dc3545)'; cancelBtn.style.color = 'var(--mu-danger-text, white)'; };
+  cancelBtn.onmouseout = () => { cancelBtn.style.backgroundColor = 'transparent'; cancelBtn.style.color = 'var(--mu-danger-bg, #dc3545)'; };
   cancelBtn.onclick = onCancel;
   actionBar.appendChild(cancelBtn);
 
@@ -381,7 +382,8 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
   // Create modal content
   const modal = document.createElement('div');
   modal.style.cssText = `
-    background: white;
+    background: var(--mu-bg-primary, white);
+    color: var(--mu-text-primary, #333);
     padding: 25px;
     border-radius: 8px;
     width: 90%;
@@ -392,7 +394,7 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
 
   // Add header
   const header = document.createElement('h2');
-  header.style.cssText = 'margin-top:0; margin-bottom: 20px; font-size: 1.2em;';
+  header.style.cssText = 'margin-top:0; margin-bottom: 20px; font-size: 1.2em; color: var(--mu-text-primary, #333);';
   header.textContent = 'Select Category Group';
   modal.appendChild(header);
 
@@ -409,20 +411,20 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
   if (transactionDetails) {
     const transactionInfo = document.createElement('div');
     transactionInfo.style.cssText = `
-      background: #f8f9fa;
-      border: 1px solid #dee2e6;
+      background: var(--mu-bg-secondary, #f8f9fa);
+      border: 1px solid var(--mu-border, #dee2e6);
       border-radius: 6px;
       padding: 12px;
       margin-bottom: 15px;
     `;
 
-    let transactionHtml = '<div style="font-weight: bold; margin-bottom: 8px; color: #333;">Transaction Details:</div>';
+    let transactionHtml = '<div style="font-weight: bold; margin-bottom: 8px; color: var(--mu-text-primary, #333);">Transaction Details:</div>';
 
     // Add merchant name if available
     if (transactionDetails.merchant) {
       transactionHtml += `<div style="margin-bottom: 4px;">
-        <span style="color: #666;">Merchant:</span> 
-        <span style="font-weight: 500; color: #333;">${transactionDetails.merchant}</span>
+        <span style="color: var(--mu-text-secondary, #666);">Merchant:</span> 
+        <span style="font-weight: 500; color: var(--mu-text-primary, #333);">${transactionDetails.merchant}</span>
       </div>`;
     }
 
@@ -465,8 +467,8 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
     // Add date if available
     if (transactionDetails.date) {
       transactionHtml += `<div style="margin-bottom: 4px;">
-        <span style="color: #666;">Date:</span> 
-        <span style="font-weight: 500; color: #333;">${transactionDetails.date}</span>
+        <span style="color: var(--mu-text-secondary, #666);">Date:</span> 
+        <span style="font-weight: 500; color: var(--mu-text-primary, #333);">${transactionDetails.date}</span>
       </div>`;
     }
 
@@ -528,7 +530,7 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
 
   // Add bank category reference with similarity score if available
   const bankCategoryRef = document.createElement('div');
-  bankCategoryRef.style.cssText = 'margin-bottom: 15px; font-size: 0.95em; color: #666;';
+  bankCategoryRef.style.cssText = 'margin-bottom: 15px; font-size: 0.95em; color: var(--mu-text-secondary, #666);';
   let bankCategoryHtml = `Selecting Monarch category for bank category: <b>${bankCategory}</b>`;
 
   // Add similarity score if provided
@@ -596,7 +598,7 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
         border-radius: 8px;
         cursor: pointer;
         margin-bottom: 15px;
-        border: 1px solid #eee;
+        border: 1px solid var(--mu-border-light, #eee);
         transition: all 0.2s;
         position: relative;
       `;
@@ -627,12 +629,12 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
     infoDiv.style.cssText = 'flex-grow: 1;';
 
     const nameDiv = document.createElement('div');
-    nameDiv.style.cssText = 'font-weight: bold; font-size: 1.1em;';
+    nameDiv.style.cssText = 'font-weight: bold; font-size: 1.1em; color: var(--mu-text-primary, #333);';
     nameDiv.textContent = group.name;
     infoDiv.appendChild(nameDiv);
 
     const countDiv = document.createElement('div');
-    countDiv.style.cssText = 'font-size: 0.9em; color: #666;';
+    countDiv.style.cssText = 'font-size: 0.9em; color: var(--mu-text-secondary, #666);';
     countDiv.textContent = `${group.categoryCount} categories`;
     infoDiv.appendChild(countDiv);
 
@@ -659,7 +661,7 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
     arrowContainer.style.cssText = `
         margin-left: 15px;
         font-size: 1.5em;
-        color: #aaa;
+        color: var(--mu-text-muted, #aaa);
         position: relative;
         z-index: 1;
       `;
@@ -668,12 +670,12 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
 
     // Add hover effect
     item.onmouseover = () => {
-      item.style.backgroundColor = '#f5f5f5';
-      item.style.borderColor = '#ddd';
+      item.style.backgroundColor = 'var(--mu-hover-bg, #f5f5f5)';
+      item.style.borderColor = 'var(--mu-border-color, #ddd)';
     };
     item.onmouseout = () => {
       item.style.backgroundColor = '';
-      item.style.borderColor = '#eee';
+      item.style.borderColor = 'var(--mu-border-light, #eee)';
     };
 
     item.onclick = onClick;
@@ -690,10 +692,10 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
         border-radius: 8px;
         cursor: pointer;
         margin-bottom: 10px;
-        border: 2px solid ${isSelected ? '#007bff' : '#eee'};
+        border: 2px solid ${isSelected ? '#007bff' : 'var(--mu-border-light, #eee)'};
         transition: all 0.2s;
         position: relative;
-        background-color: ${isSelected ? '#e7f1ff' : 'white'};
+        background-color: ${isSelected ? '#e7f1ff' : 'var(--mu-bg-primary, white)'};
       `;
 
     // Create icon container
@@ -728,7 +730,7 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
     // Show group name
     if (category.groupName) {
       const groupDiv = document.createElement('div');
-      groupDiv.style.cssText = 'font-size: 0.85em; color: #666;';
+      groupDiv.style.cssText = 'font-size: 0.85em; color: var(--mu-text-secondary, #666);';
       groupDiv.textContent = category.groupName;
       textContainer.appendChild(groupDiv);
     }
@@ -767,14 +769,14 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
     // Hover effects (only if not selected)
     item.onmouseover = () => {
       if (!isSelected) {
-        item.style.backgroundColor = '#f5f5f5';
-        item.style.borderColor = '#ddd';
+        item.style.backgroundColor = 'var(--mu-hover-bg, #f5f5f5)';
+        item.style.borderColor = 'var(--mu-border-color, #ddd)';
       }
     };
     item.onmouseout = () => {
       if (!isSelected) {
-        item.style.backgroundColor = 'white';
-        item.style.borderColor = '#eee';
+        item.style.backgroundColor = 'var(--mu-bg-primary, white)';
+        item.style.borderColor = 'var(--mu-border-light, #eee)';
       }
     };
 
@@ -788,13 +790,13 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
   selectionSection.style.cssText = `
     margin-top: 15px;
     padding: 12px;
-    background: #f8f9fa;
-    border: 1px solid #ddd;
+    background: var(--mu-bg-secondary, #f8f9fa);
+    border: 1px solid var(--mu-border, #ddd);
     border-radius: 6px;
   `;
 
   const selectionLabel = document.createElement('div');
-  selectionLabel.style.cssText = 'font-size: 0.85em; color: #666; margin-bottom: 5px;';
+  selectionLabel.style.cssText = 'font-size: 0.85em; color: var(--mu-text-secondary, #666); margin-bottom: 5px;';
   selectionLabel.textContent = 'Selected Category:';
   selectionSection.appendChild(selectionLabel);
 
@@ -802,14 +804,14 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
   selectionDisplay.id = 'category-selector-selection-display';
   selectionDisplay.style.cssText = `
     padding: 10px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--mu-border, #ddd);
     border-radius: 4px;
-    background: #f8f9fa;
+    background: var(--mu-bg-secondary, #f8f9fa);
   `;
 
   const selectionText = document.createElement('span');
   selectionText.id = 'category-selector-selection-text';
-  selectionText.style.cssText = 'color: #888;';
+  selectionText.style.cssText = 'color: var(--mu-text-muted, #888);';
   selectionText.textContent = 'No category selected';
   selectionDisplay.appendChild(selectionText);
   selectionSection.appendChild(selectionDisplay);
@@ -1113,7 +1115,8 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
   // Create the modal
   const modal = document.createElement('div');
   modal.style.cssText = `
-    background: white;
+    background: var(--mu-bg-primary, white);
+    color: var(--mu-text-primary, #333);
     padding: 25px;
     border-radius: 8px;
     width: 90%;
@@ -1128,7 +1131,7 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
     display: flex;
     align-items: center;
     font-size: 0.9em;
-    color: #0066cc;
+    color: var(--mu-link-color, #0066cc);
     cursor: pointer;
     margin-bottom: 20px;
   `;
@@ -1138,7 +1141,7 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
 
   // Add header with group name
   const header = document.createElement('h2');
-  header.style.cssText = 'margin-top:0; margin-bottom: 20px; font-size: 1.2em;';
+  header.style.cssText = 'margin-top:0; margin-bottom: 20px; font-size: 1.2em; color: var(--mu-text-primary, #333);';
   header.textContent = categoryGroup.name;
   modal.appendChild(header);
 
@@ -1153,20 +1156,20 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
   if (transactionDetails) {
     const transactionInfo = document.createElement('div');
     transactionInfo.style.cssText = `
-      background: #f8f9fa;
-      border: 1px solid #dee2e6;
+      background: var(--mu-bg-secondary, #f8f9fa);
+      border: 1px solid var(--mu-border, #dee2e6);
       border-radius: 6px;
       padding: 12px;
       margin-bottom: 15px;
     `;
 
-    let transactionHtml = '<div style="font-weight: bold; margin-bottom: 8px; color: #333;">Transaction Details:</div>';
+    let transactionHtml = '<div style="font-weight: bold; margin-bottom: 8px; color: var(--mu-text-primary, #333);">Transaction Details:</div>';
 
     // Add merchant name if available
     if (transactionDetails.merchant) {
       transactionHtml += `<div style="margin-bottom: 4px;">
-        <span style="color: #666;">Merchant:</span>
-        <span style="font-weight: 500; color: #333;">${transactionDetails.merchant}</span>
+        <span style="color: var(--mu-text-secondary, #666);">Merchant:</span>
+        <span style="font-weight: 500; color: var(--mu-text-primary, #333);">${transactionDetails.merchant}</span>
       </div>`;
     }
 
@@ -1199,8 +1202,8 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
     // Add date if available
     if (transactionDetails.date) {
       transactionHtml += `<div style="margin-bottom: 4px;">
-        <span style="color: #666;">Date:</span>
-        <span style="font-weight: 500; color: #333;">${transactionDetails.date}</span>
+        <span style="color: var(--mu-text-secondary, #666);">Date:</span>
+        <span style="font-weight: 500; color: var(--mu-text-primary, #333);">${transactionDetails.date}</span>
       </div>`;
     }
 
@@ -1210,7 +1213,7 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
 
   // Add bank category reference
   const bankCategoryRef = document.createElement('div');
-  bankCategoryRef.style.cssText = 'margin-bottom: 15px; font-size: 0.95em;';
+  bankCategoryRef.style.cssText = 'margin-bottom: 15px; font-size: 0.95em; color: var(--mu-text-secondary, #666);';
   bankCategoryRef.innerHTML = `Selecting Monarch category for bank category: <b>${bankCategory}</b>`;
   modal.appendChild(bankCategoryRef);
 
@@ -1288,7 +1291,7 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
           border-radius: 8px;
           cursor: pointer;
           margin-bottom: 10px;
-          border: 1px solid #eee;
+          border: 1px solid var(--mu-border-light, #eee);
           transition: all 0.2s;
           position: relative;
         `;
@@ -1303,12 +1306,12 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
           width: 32px;
           height: 32px;
           border-radius: 4px;
-          background-color: #f0f0f0;
+          background-color: var(--mu-bg-tertiary, #f0f0f0);
           display: flex;
           align-items: center;
           justify-content: center;
           font-size: 14px;
-          color: #666;
+          color: var(--mu-text-secondary, #666);
         `;
         iconDiv.textContent = category.icon || '📁';
         iconContainer.appendChild(iconDiv);
@@ -1352,12 +1355,12 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
 
         // Hover effects
         item.onmouseover = () => {
-          item.style.backgroundColor = '#f5f5f5';
-          item.style.borderColor = '#ddd';
+          item.style.backgroundColor = 'var(--mu-hover-bg, #f5f5f5)';
+          item.style.borderColor = 'var(--mu-border-color, #ddd)';
         };
         item.onmouseout = () => {
           item.style.backgroundColor = '';
-          item.style.borderColor = '#eee';
+          item.style.borderColor = 'var(--mu-border-light, #eee)';
         };
 
         // Click handler
@@ -1460,7 +1463,7 @@ function createModalOverlay(onClickOutside) {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0,0,0,0.7);
+    background: var(--mu-overlay-bg, rgba(0,0,0,0.7));
     display: flex;
     align-items: center;
     justify-content: center;

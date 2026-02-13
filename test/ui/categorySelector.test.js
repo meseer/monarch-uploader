@@ -549,7 +549,7 @@ describe('Category Selector Component', () => {
       expect(overlay).toBeTruthy();
       expect(overlay.style.cssText).toContain('position: fixed');
       expect(overlay.style.cssText).toContain('z-index: 10000');
-      expect(overlay.style.cssText).toMatch(/background: rgba\(0,\s*0,\s*0,\s*0\.7\)/);
+      expect(overlay.style.cssText).toContain('--mu-overlay-bg');
 
       // Test click outside to close
       overlay.click();
@@ -604,7 +604,7 @@ describe('Category Selector Component', () => {
 
       await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', callback, null, transactionDetails);
 
-      const modal = document.querySelector('div[style*="background: white"]');
+      const modal = document.querySelector('div[style*="--mu-bg-primary"]');
       expect(modal).toBeTruthy();
 
       // Should contain transaction details
@@ -625,7 +625,7 @@ describe('Category Selector Component', () => {
 
       await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', callback, null, transactionDetails1);
 
-      let modal = document.querySelector('div[style*="background: white"]');
+      let modal = document.querySelector('div[style*="--mu-bg-primary"]');
       expect(modal.innerHTML).toContain('$15.75');
 
       // Clean up
@@ -639,7 +639,7 @@ describe('Category Selector Component', () => {
 
       await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', callback, null, transactionDetails2);
 
-      modal = document.querySelector('div[style*="background: white"]');
+      modal = document.querySelector('div[style*="--mu-bg-primary"]');
       expect(modal.innerHTML).toContain('$20.00 CAD');
     });
 
@@ -658,7 +658,7 @@ describe('Category Selector Component', () => {
 
       await categorySelector.showMonarchCategorySelector('DINING', callback, similarityInfo);
 
-      const modal = document.querySelector('div[style*="background: white"]');
+      const modal = document.querySelector('div[style*="--mu-bg-primary"]');
       expect(modal.innerHTML).toContain('Best match:');
       expect(modal.innerHTML).toContain('Restaurants');
       expect(modal.innerHTML).toContain('85.0% similarity');
@@ -701,7 +701,7 @@ describe('Category Selector Component', () => {
       // Check the Skip All option exists in the dropdown
       const skipAllOption = document.getElementById('category-selector-skip-all-option');
       expect(skipAllOption).toBeTruthy();
-      expect(skipAllOption.textContent).toContain('Skip All Remaining');
+      expect(skipAllOption.textContent).toContain('Skip All');
     });
 
     test('should resolve with skipped sentinel when Skip button is clicked', async () => {
@@ -767,7 +767,7 @@ describe('Category Selector Component', () => {
 
       await categorySelector.showMonarchCategorySelector('TEST', callback);
 
-      const modal = document.querySelector('div[style*="background: white"]');
+      const modal = document.querySelector('div[style*="--mu-bg-primary"]');
 
       // Check that different colored icons are present (income = green, expense = red, etc.)
       const iconDivs = modal.querySelectorAll('div[style*="background-color"]');
@@ -798,7 +798,7 @@ describe('Category Selector Component', () => {
 
       await categorySelector.showMonarchCategorySelector('TEST', callback);
 
-      const modal = document.querySelector('div[style*="background: white"]');
+      const modal = document.querySelector('div[style*="--mu-bg-primary"]');
 
       // Check that icons are present in the modal
       expect(modal.innerHTML).toContain('💰'); // Income icon
