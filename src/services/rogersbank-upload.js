@@ -122,9 +122,12 @@ function filterDuplicateTransactions(transactions, accountId) {
 /**
  * Resolve categories for transactions
  * @param {Array} transactions - Array of transactions to process
+ * @param {Object} options - Options for category resolution
+ * @param {boolean} options.skipCategorization - Skip manual category prompts, use empty category (optional)
  * @returns {Promise<Array>} Transactions with resolved Monarch categories
  */
-async function resolveCategoriesForTransactions(transactions) {
+async function resolveCategoriesForTransactions(transactions, options = {}) {
+  const { skipCategorization = false } = options;
   if (!transactions || transactions.length === 0) {
     return transactions;
   }
@@ -139,8 +142,22 @@ async function resolveCategoriesForTransactions(transactions) {
     debugLog('Failed to fetch categories from Monarch:', error);
   }
 
+  // If skip categorization is enabled, set empty category for all transactions
+  // and return immediately (no manual prompts)
+  if (skipCategorization) {
+    debugLog('Skip categorization enabled - setting empty category for all Rogers Bank transactions');
+    return transactions.map((transaction) => {
+      const bankCategory = transaction.merchant?.categoryDescription
+        || transaction.merchant?.category
+        || 'Uncategorized';
+      return { ...transaction, resolvedMonarchCategory: '', originalBankCategory: bankCategory };
+    });
+  }
+
   const uniqueBankCategories = new Map();
   const categoriesToResolve = [];
+  // Track categories that have been resolved via "Skip All" to apply empty category
+  let skipAllTriggered = false;
 
   transactions.forEach((transaction) => {
     const bankCategory = transaction.merchant?.categoryDescription
@@ -184,6 +201,13 @@ async function resolveCategoriesForTransactions(transactions) {
         throw new Error(`Category selection cancelled for "${categoryToResolve.bankCategory}".`);
       }
 
+      // Handle "Skip All (this sync)" response
+      if (selectedCategory.skipAll === true) {
+        debugLog('User chose "Skip All" - setting empty category for all remaining Rogers Bank transactions');
+        skipAllTriggered = true;
+        break;
+      }
+
       saveUserCategorySelection(categoryToResolve.bankCategory, selectedCategory.name);
     }
   }
@@ -193,6 +217,12 @@ async function resolveCategoriesForTransactions(transactions) {
       || transaction.merchant?.category
       || 'Uncategorized';
     const mappingResult = applyCategoryMapping(bankCategory, availableCategories);
+
+    // If skip all was triggered, unresolved categories get empty string
+    if (skipAllTriggered && typeof mappingResult !== 'string') {
+      return { ...transaction, resolvedMonarchCategory: '', originalBankCategory: bankCategory };
+    }
+
     const resolvedCategory = typeof mappingResult === 'string' ? mappingResult : 'Uncategorized';
 
     return { ...transaction, resolvedMonarchCategory: resolvedCategory, originalBankCategory: bankCategory };
@@ -813,7 +843,9 @@ export async function uploadRogersBankToMonarch() {
       }
 
       progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Resolving categories...');
-      const resolvedTx = await resolveCategoriesForTransactions(filterResult.transactions);
+      const accountDataForSkip = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, rogersAccountId);
+      const skipCategorization = accountDataForSkip?.skipCategorization === true;
+      const resolvedTx = await resolveCategoriesForTransactions(filterResult.transactions, { skipCategorization });
 
       progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Converting...');
       // Use per-account setting from consolidated storage, fall back to global setting, then default to false

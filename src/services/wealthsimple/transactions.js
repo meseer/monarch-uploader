@@ -144,10 +144,11 @@ function getAutoMappingForSubType(subType) {
  * @param {Array} transactions - Array of processed transactions
  * @param {Object} options - Options for category resolution
  * @param {Function} options.onProgress - Callback for progress updates (optional)
+ * @param {boolean} options.skipCategorization - Skip manual category prompts, use empty category (optional)
  * @returns {Promise<Array>} Transactions with resolved Monarch categories
  */
 async function resolveCategoriesForTransactions(transactions, options = {}) {
-  const { onProgress } = options;
+  const { onProgress, skipCategorization = false } = options;
   if (!transactions || transactions.length === 0) {
     return transactions;
   }
@@ -180,6 +181,21 @@ async function resolveCategoriesForTransactions(transactions, options = {}) {
       transaction.resolvedMonarchCategory = autoMapping.category;
     }
   });
+
+  // If skip categorization is enabled, set all unresolved transactions to empty category
+  // and return immediately (no manual prompts)
+  if (skipCategorization) {
+    debugLog('Skip categorization enabled - setting empty category for all unresolved transactions');
+    return transactions.map((transaction) => {
+      if (transaction.resolvedMonarchCategory) {
+        return transaction; // Keep auto-categorized
+      }
+      return {
+        ...transaction,
+        resolvedMonarchCategory: '', // Empty = let Monarch apply its own rules
+      };
+    });
+  }
 
   // Get list of categories that need resolution (not auto-categorized)
   // Build a map of categoryKey -> transactions that need this category
@@ -286,6 +302,37 @@ async function resolveCategoriesForTransactions(transactions, options = {}) {
 
       if (!selectedCategory) {
         throw new Error(`Category selection cancelled for "${categoryToResolve.bankCategory}". Upload aborted.`);
+      }
+
+      // Handle "Skip All (this sync)" response
+      if (selectedCategory.skipAll === true) {
+        debugLog('User chose "Skip All" - setting empty category for all remaining transactions');
+        // Clear remaining categories and set all unresolved to empty
+        categoriesToResolve.length = 0;
+        return transactions.map((transaction) => {
+          if (transaction.resolvedMonarchCategory) {
+            return transaction; // Keep already-resolved
+          }
+          // Check one-time assignments already made
+          if (oneTimeAssignments.has(transaction.id)) {
+            return {
+              ...transaction,
+              resolvedMonarchCategory: oneTimeAssignments.get(transaction.id),
+            };
+          }
+          // Check session mappings already made
+          const upperKey = transaction.categoryKey ? transaction.categoryKey.toUpperCase() : '';
+          if (sessionMappings.has(upperKey)) {
+            return {
+              ...transaction,
+              resolvedMonarchCategory: sessionMappings.get(upperKey),
+            };
+          }
+          return {
+            ...transaction,
+            resolvedMonarchCategory: '', // Empty = let Monarch apply its own rules
+          };
+        });
       }
 
       const upperBankCategory = categoryToResolve.bankCategory.toUpperCase();
@@ -454,7 +501,8 @@ export async function fetchAndProcessCreditCardTransactions(consolidatedAccount,
     debugLog(`Processed ${processedTransactions.length} credit card transactions`);
 
     // Step 6: Resolve categories (will prompt user for unknown merchants)
-    const transactionsWithCategories = await resolveCategoriesForTransactions(processedTransactions);
+    const skipCategorization = consolidatedAccount.skipCategorization === true;
+    const transactionsWithCategories = await resolveCategoriesForTransactions(processedTransactions, { skipCategorization });
 
     debugLog(`Category resolution complete, returning ${transactionsWithCategories.length} transactions (${uploadedSkipCount} already uploaded)`);
 
@@ -925,65 +973,99 @@ export async function fetchAndProcessCashTransactions(consolidatedAccount, fromD
 
     debugLog(`Processed ${processedTransactions.length} transactions with rules`);
 
+    // Read skip categorization setting
+    const skipCategorization = consolidatedAccount.skipCategorization === true;
+
     // Step 7: Handle transactions without rules - show manual categorization UI
     if (transactionsWithoutRules.length > 0) {
-      debugLog(`Processing ${transactionsWithoutRules.length} transactions that need manual categorization`);
-      toast.show(`${transactionsWithoutRules.length} transaction(s) need manual categorization...`, 'info');
+      if (skipCategorization) {
+        // Skip manual categorization - assign empty merchant/category for Monarch auto-rules
+        debugLog(`Skip categorization enabled - auto-assigning ${transactionsWithoutRules.length} transactions without rules`);
+        for (const rawTransaction of transactionsWithoutRules) {
+          const isNegative = rawTransaction.amountSign === 'negative';
+          const finalAmount = isNegative ? -Math.abs(rawTransaction.amount) : Math.abs(rawTransaction.amount);
+          const isPending = rawTransaction.unifiedStatus === 'IN_PROGRESS' || rawTransaction.unifiedStatus === 'PENDING';
 
-      for (let i = 0; i < transactionsWithoutRules.length; i++) {
-        const rawTransaction = transactionsWithoutRules[i];
-        const progressNum = i + 1;
+          const skippedTransaction = {
+            id: rawTransaction.externalCanonicalId,
+            date: convertToLocalDate(rawTransaction.occurredAt),
+            merchant: formatOriginalStatement(rawTransaction.type, rawTransaction.subType, rawTransaction.spendMerchant || 'Unknown'),
+            originalMerchant: formatOriginalStatement(rawTransaction.type, rawTransaction.subType, rawTransaction.spendMerchant || 'Unknown'),
+            amount: finalAmount,
+            type: rawTransaction.type,
+            subType: rawTransaction.subType,
+            status: rawTransaction.status,
+            unifiedStatus: rawTransaction.unifiedStatus,
+            isPending,
+            resolvedMonarchCategory: '', // Empty = let Monarch apply its own rules
+            ruleId: 'skip-categorization',
+            notes: '',
+            technicalDetails: '',
+            needsCategoryMapping: false,
+            categoryKey: '',
+          };
 
-        debugLog(`Showing manual categorization for transaction ${progressNum}/${transactionsWithoutRules.length}`, {
-          id: rawTransaction.externalCanonicalId,
-          type: rawTransaction.type,
-          subType: rawTransaction.subType,
-        });
+          processedTransactions.push(skippedTransaction);
+        }
+      } else {
+        debugLog(`Processing ${transactionsWithoutRules.length} transactions that need manual categorization`);
+        toast.show(`${transactionsWithoutRules.length} transaction(s) need manual categorization...`, 'info');
 
-        toast.show(`Manual categorization ${progressNum}/${transactionsWithoutRules.length}`, 'debug');
+        for (let i = 0; i < transactionsWithoutRules.length; i++) {
+          const rawTransaction = transactionsWithoutRules[i];
+          const progressNum = i + 1;
 
-        // Show the manual categorization dialog
-        const manualResult = await new Promise((resolve) => {
-          showManualTransactionCategorization(rawTransaction, resolve);
-        });
+          debugLog(`Showing manual categorization for transaction ${progressNum}/${transactionsWithoutRules.length}`, {
+            id: rawTransaction.externalCanonicalId,
+            type: rawTransaction.type,
+            subType: rawTransaction.subType,
+          });
 
-        if (!manualResult) {
-          // User cancelled - abort the upload
-          throw new Error(`Manual categorization cancelled for transaction ${rawTransaction.externalCanonicalId}. Upload aborted.`);
+          toast.show(`Manual categorization ${progressNum}/${transactionsWithoutRules.length}`, 'debug');
+
+          // Show the manual categorization dialog
+          const manualResult = await new Promise((resolve) => {
+            showManualTransactionCategorization(rawTransaction, resolve);
+          });
+
+          if (!manualResult) {
+            // User cancelled - abort the upload
+            throw new Error(`Manual categorization cancelled for transaction ${rawTransaction.externalCanonicalId}. Upload aborted.`);
+          }
+
+          // Determine amount sign
+          const isNegative = rawTransaction.amountSign === 'negative';
+          const finalAmount = isNegative ? -Math.abs(rawTransaction.amount) : Math.abs(rawTransaction.amount);
+
+          // Determine pending status
+          const isPending = rawTransaction.unifiedStatus === 'IN_PROGRESS' || rawTransaction.unifiedStatus === 'PENDING';
+
+          // Create processed transaction with user-provided data
+          const manuallyProcessed = {
+            id: rawTransaction.externalCanonicalId,
+            date: convertToLocalDate(rawTransaction.occurredAt),
+            merchant: manualResult.merchant,
+            originalMerchant: formatOriginalStatement(rawTransaction.type, rawTransaction.subType, manualResult.merchant),
+            amount: finalAmount,
+            type: rawTransaction.type,
+            subType: rawTransaction.subType,
+            status: rawTransaction.status,
+            unifiedStatus: rawTransaction.unifiedStatus,
+            isPending,
+            resolvedMonarchCategory: manualResult.category.name,
+            ruleId: 'manual', // Indicate it was manually categorized
+            notes: '',
+            technicalDetails: '',
+            needsCategoryMapping: false,
+            categoryKey: manualResult.merchant,
+          };
+
+          processedTransactions.push(manuallyProcessed);
+          debugLog(`Manually categorized transaction: ${manualResult.merchant} -> ${manualResult.category.name}`);
         }
 
-        // Determine amount sign
-        const isNegative = rawTransaction.amountSign === 'negative';
-        const finalAmount = isNegative ? -Math.abs(rawTransaction.amount) : Math.abs(rawTransaction.amount);
-
-        // Determine pending status
-        const isPending = rawTransaction.unifiedStatus === 'IN_PROGRESS' || rawTransaction.unifiedStatus === 'PENDING';
-
-        // Create processed transaction with user-provided data
-        const manuallyProcessed = {
-          id: rawTransaction.externalCanonicalId,
-          date: convertToLocalDate(rawTransaction.occurredAt),
-          merchant: manualResult.merchant,
-          originalMerchant: formatOriginalStatement(rawTransaction.type, rawTransaction.subType, manualResult.merchant),
-          amount: finalAmount,
-          type: rawTransaction.type,
-          subType: rawTransaction.subType,
-          status: rawTransaction.status,
-          unifiedStatus: rawTransaction.unifiedStatus,
-          isPending,
-          resolvedMonarchCategory: manualResult.category.name,
-          ruleId: 'manual', // Indicate it was manually categorized
-          notes: '',
-          technicalDetails: '',
-          needsCategoryMapping: false,
-          categoryKey: manualResult.merchant,
-        };
-
-        processedTransactions.push(manuallyProcessed);
-        debugLog(`Manually categorized transaction: ${manualResult.merchant} -> ${manualResult.category.name}`);
+        toast.show(`Completed manual categorization for ${transactionsWithoutRules.length} transaction(s)`, 'info');
       }
-
-      toast.show(`Completed manual categorization for ${transactionsWithoutRules.length} transaction(s)`, 'info');
     }
 
     debugLog(`Processed ${processedTransactions.length} total CASH transactions (${uploadedSkipCount} already uploaded)`);
@@ -994,7 +1076,7 @@ export async function fetchAndProcessCashTransactions(consolidatedAccount, fromD
     if (transactionsNeedingCategoryMapping.length > 0) {
       debugLog(`${transactionsNeedingCategoryMapping.length} transactions need category mapping (SPEND/PREPAID)`);
       // Run category resolution for transactions that need it
-      const resolvedTransactions = await resolveCategoriesForTransactions(processedTransactions);
+      const resolvedTransactions = await resolveCategoriesForTransactions(processedTransactions, { skipCategorization });
       return resolvedTransactions;
     }
 
@@ -1195,64 +1277,97 @@ export async function fetchAndProcessLineOfCreditTransactions(consolidatedAccoun
       debugLog(`Auto-categorized LOC transaction: ${ruleResult.merchant} -> ${ruleResult.category}`);
     }
 
+    // Read skip categorization setting
+    const skipCategorization = consolidatedAccount.skipCategorization === true;
+
     // Step 6: Handle transactions without rules - show manual categorization UI
     if (transactionsWithoutRules.length > 0) {
-      debugLog(`Processing ${transactionsWithoutRules.length} transactions that need manual categorization`);
-      toast.show(`${transactionsWithoutRules.length} Line of Credit transaction(s) need manual categorization...`, 'info');
+      if (skipCategorization) {
+        // Skip manual categorization - assign empty merchant/category for Monarch auto-rules
+        debugLog(`Skip categorization enabled - auto-assigning ${transactionsWithoutRules.length} LOC transactions without rules`);
+        for (const rawTransaction of transactionsWithoutRules) {
+          const isNegative = rawTransaction.amountSign === 'negative';
+          const finalAmount = isNegative ? -Math.abs(rawTransaction.amount) : Math.abs(rawTransaction.amount);
+          const isPending = rawTransaction.status === 'authorized';
 
-      for (let i = 0; i < transactionsWithoutRules.length; i++) {
-        const rawTransaction = transactionsWithoutRules[i];
-        const progressNum = i + 1;
+          const skippedTransaction = {
+            id: rawTransaction.externalCanonicalId,
+            date: convertToLocalDate(rawTransaction.occurredAt),
+            merchant: formatOriginalStatement(rawTransaction.type, rawTransaction.subType, 'Unknown'),
+            originalMerchant: formatOriginalStatement(rawTransaction.type, rawTransaction.subType, 'Unknown'),
+            amount: finalAmount,
+            type: rawTransaction.type,
+            subType: rawTransaction.subType,
+            status: rawTransaction.status,
+            isPending,
+            resolvedMonarchCategory: '', // Empty = let Monarch apply its own rules
+            ruleId: 'skip-categorization',
+            notes: '',
+            technicalDetails: '',
+            needsCategoryMapping: false,
+            categoryKey: '',
+          };
 
-        debugLog(`Showing manual categorization for transaction ${progressNum}/${transactionsWithoutRules.length}`, {
-          id: rawTransaction.externalCanonicalId,
-          type: rawTransaction.type,
-          subType: rawTransaction.subType,
-        });
+          processedTransactions.push(skippedTransaction);
+        }
+      } else {
+        debugLog(`Processing ${transactionsWithoutRules.length} transactions that need manual categorization`);
+        toast.show(`${transactionsWithoutRules.length} Line of Credit transaction(s) need manual categorization...`, 'info');
 
-        toast.show(`Manual categorization ${progressNum}/${transactionsWithoutRules.length}`, 'debug');
+        for (let i = 0; i < transactionsWithoutRules.length; i++) {
+          const rawTransaction = transactionsWithoutRules[i];
+          const progressNum = i + 1;
 
-        // Show the manual categorization dialog
-        const manualResult = await new Promise((resolve) => {
-          showManualTransactionCategorization(rawTransaction, resolve);
-        });
+          debugLog(`Showing manual categorization for transaction ${progressNum}/${transactionsWithoutRules.length}`, {
+            id: rawTransaction.externalCanonicalId,
+            type: rawTransaction.type,
+            subType: rawTransaction.subType,
+          });
 
-        if (!manualResult) {
-          // User cancelled - abort the upload
-          throw new Error(`Manual categorization cancelled for transaction ${rawTransaction.externalCanonicalId}. Upload aborted.`);
+          toast.show(`Manual categorization ${progressNum}/${transactionsWithoutRules.length}`, 'debug');
+
+          // Show the manual categorization dialog
+          const manualResult = await new Promise((resolve) => {
+            showManualTransactionCategorization(rawTransaction, resolve);
+          });
+
+          if (!manualResult) {
+            // User cancelled - abort the upload
+            throw new Error(`Manual categorization cancelled for transaction ${rawTransaction.externalCanonicalId}. Upload aborted.`);
+          }
+
+          // Determine amount sign
+          const isNegative = rawTransaction.amountSign === 'negative';
+          const finalAmount = isNegative ? -Math.abs(rawTransaction.amount) : Math.abs(rawTransaction.amount);
+
+          // Determine pending status
+          const isPending = rawTransaction.status === 'authorized';
+
+          // Create processed transaction with user-provided data
+          const manuallyProcessed = {
+            id: rawTransaction.externalCanonicalId,
+            date: convertToLocalDate(rawTransaction.occurredAt),
+            merchant: manualResult.merchant,
+            originalMerchant: formatOriginalStatement(rawTransaction.type, rawTransaction.subType, manualResult.merchant),
+            amount: finalAmount,
+            type: rawTransaction.type,
+            subType: rawTransaction.subType,
+            status: rawTransaction.status,
+            isPending,
+            resolvedMonarchCategory: manualResult.category.name,
+            ruleId: 'manual',
+            notes: '',
+            technicalDetails: '',
+            needsCategoryMapping: false,
+            categoryKey: manualResult.merchant,
+          };
+
+          processedTransactions.push(manuallyProcessed);
+          debugLog(`Manually categorized transaction: ${manualResult.merchant} -> ${manualResult.category.name}`);
         }
 
-        // Determine amount sign
-        const isNegative = rawTransaction.amountSign === 'negative';
-        const finalAmount = isNegative ? -Math.abs(rawTransaction.amount) : Math.abs(rawTransaction.amount);
-
-        // Determine pending status
-        const isPending = rawTransaction.status === 'authorized';
-
-        // Create processed transaction with user-provided data
-        const manuallyProcessed = {
-          id: rawTransaction.externalCanonicalId,
-          date: convertToLocalDate(rawTransaction.occurredAt),
-          merchant: manualResult.merchant,
-          originalMerchant: formatOriginalStatement(rawTransaction.type, rawTransaction.subType, manualResult.merchant),
-          amount: finalAmount,
-          type: rawTransaction.type,
-          subType: rawTransaction.subType,
-          status: rawTransaction.status,
-          isPending,
-          resolvedMonarchCategory: manualResult.category.name,
-          ruleId: 'manual',
-          notes: '',
-          technicalDetails: '',
-          needsCategoryMapping: false,
-          categoryKey: manualResult.merchant,
-        };
-
-        processedTransactions.push(manuallyProcessed);
-        debugLog(`Manually categorized transaction: ${manualResult.merchant} -> ${manualResult.category.name}`);
+        toast.show(`Completed manual categorization for ${transactionsWithoutRules.length} transaction(s)`, 'info');
       }
-
-      toast.show(`Completed manual categorization for ${transactionsWithoutRules.length} transaction(s)`, 'info');
     }
 
     debugLog(`Processed ${processedTransactions.length} total Line of Credit transactions (${uploadedSkipCount} already uploaded)`);
@@ -1862,75 +1977,118 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
 
     debugLog(`Processed ${processedTransactions.length} transactions with rules`);
 
+    // Read skip categorization setting
+    const skipCategorization = consolidatedAccount.skipCategorization === true;
+
     // Step 7: Handle transactions without rules - show manual categorization UI
     if (transactionsWithoutRules.length > 0) {
-      debugLog(`Processing ${transactionsWithoutRules.length} transactions that need manual categorization`);
-      toast.show(`${transactionsWithoutRules.length} investment transaction(s) need manual categorization...`, 'info');
+      if (skipCategorization) {
+        // Skip manual categorization - assign empty merchant/category for Monarch auto-rules
+        debugLog(`Skip categorization enabled - auto-assigning ${transactionsWithoutRules.length} investment transactions without rules`);
+        for (const rawTransaction of transactionsWithoutRules) {
+          const isNegative = rawTransaction.amountSign === 'negative';
+          const finalAmount = isNegative ? -Math.abs(rawTransaction.amount) : Math.abs(rawTransaction.amount);
 
-      for (let i = 0; i < transactionsWithoutRules.length; i++) {
-        const rawTransaction = transactionsWithoutRules[i];
-        const progressNum = i + 1;
+          let isPending;
+          if (isInvestmentBuySellTransaction(rawTransaction)) {
+            isPending = rawTransaction.unifiedStatus === 'IN_PROGRESS' || rawTransaction.unifiedStatus === 'PENDING';
+          } else {
+            isPending = rawTransaction.status === 'authorized';
+          }
 
-        debugLog(`Showing manual categorization for transaction ${progressNum}/${transactionsWithoutRules.length}`, {
-          id: rawTransaction.externalCanonicalId,
-          type: rawTransaction.type,
-          subType: rawTransaction.subType,
-        });
+          const transactionId = getTransactionId(rawTransaction);
 
-        toast.show(`Manual categorization ${progressNum}/${transactionsWithoutRules.length}`, 'debug');
+          const skippedTransaction = {
+            id: transactionId,
+            date: convertToLocalDate(rawTransaction.occurredAt),
+            merchant: formatOriginalStatement(rawTransaction.type, rawTransaction.subType, rawTransaction.assetSymbol || 'Unknown'),
+            originalMerchant: formatOriginalStatement(rawTransaction.type, rawTransaction.subType, rawTransaction.assetSymbol || 'Unknown'),
+            amount: finalAmount,
+            type: rawTransaction.type,
+            subType: rawTransaction.subType,
+            status: rawTransaction.status,
+            unifiedStatus: rawTransaction.unifiedStatus,
+            isPending,
+            resolvedMonarchCategory: '', // Empty = let Monarch apply its own rules
+            ruleId: 'skip-categorization',
+            notes: '',
+            technicalDetails: '',
+            needsCategoryMapping: false,
+            categoryKey: '',
+            assetSymbol: rawTransaction.assetSymbol || null,
+          };
 
-        // Show the manual categorization dialog
-        const manualResult = await new Promise((resolve) => {
-          showManualTransactionCategorization(rawTransaction, resolve);
-        });
+          processedTransactions.push(skippedTransaction);
+        }
+      } else {
+        debugLog(`Processing ${transactionsWithoutRules.length} transactions that need manual categorization`);
+        toast.show(`${transactionsWithoutRules.length} investment transaction(s) need manual categorization...`, 'info');
 
-        if (!manualResult) {
-          // User cancelled - abort the upload
-          throw new Error(`Manual categorization cancelled for transaction ${rawTransaction.externalCanonicalId}. Upload aborted.`);
+        for (let i = 0; i < transactionsWithoutRules.length; i++) {
+          const rawTransaction = transactionsWithoutRules[i];
+          const progressNum = i + 1;
+
+          debugLog(`Showing manual categorization for transaction ${progressNum}/${transactionsWithoutRules.length}`, {
+            id: rawTransaction.externalCanonicalId,
+            type: rawTransaction.type,
+            subType: rawTransaction.subType,
+          });
+
+          toast.show(`Manual categorization ${progressNum}/${transactionsWithoutRules.length}`, 'debug');
+
+          // Show the manual categorization dialog
+          const manualResult = await new Promise((resolve) => {
+            showManualTransactionCategorization(rawTransaction, resolve);
+          });
+
+          if (!manualResult) {
+            // User cancelled - abort the upload
+            throw new Error(`Manual categorization cancelled for transaction ${rawTransaction.externalCanonicalId}. Upload aborted.`);
+          }
+
+          // Determine amount sign
+          const isNegative = rawTransaction.amountSign === 'negative';
+          const finalAmount = isNegative ? -Math.abs(rawTransaction.amount) : Math.abs(rawTransaction.amount);
+
+          // Determine pending status based on transaction type
+          let isPending;
+          if (isInvestmentBuySellTransaction(rawTransaction)) {
+            isPending = rawTransaction.unifiedStatus === 'IN_PROGRESS' || rawTransaction.unifiedStatus === 'PENDING';
+          } else {
+            isPending = rawTransaction.status === 'authorized';
+          }
+
+          // Get transaction ID (handles null externalCanonicalId)
+          const transactionId = getTransactionId(rawTransaction);
+
+          // Create processed transaction with user-provided data
+          const manuallyProcessed = {
+            id: transactionId,
+            date: convertToLocalDate(rawTransaction.occurredAt),
+            merchant: manualResult.merchant,
+            originalMerchant: formatOriginalStatement(rawTransaction.type, rawTransaction.subType, manualResult.merchant),
+            amount: finalAmount,
+            type: rawTransaction.type,
+            subType: rawTransaction.subType,
+            status: rawTransaction.status,
+            unifiedStatus: rawTransaction.unifiedStatus,
+            isPending,
+            resolvedMonarchCategory: manualResult.category.name,
+            ruleId: 'manual',
+            notes: '',
+            technicalDetails: '',
+            needsCategoryMapping: false,
+            categoryKey: manualResult.merchant,
+            // Include asset symbol for investment context
+            assetSymbol: rawTransaction.assetSymbol || null,
+          };
+
+          processedTransactions.push(manuallyProcessed);
+          debugLog(`Manually categorized transaction: ${manualResult.merchant} -> ${manualResult.category.name}`);
         }
 
-        // Determine amount sign
-        const isNegative = rawTransaction.amountSign === 'negative';
-        const finalAmount = isNegative ? -Math.abs(rawTransaction.amount) : Math.abs(rawTransaction.amount);
-
-        // Determine pending status based on transaction type
-        let isPending;
-        if (isInvestmentBuySellTransaction(rawTransaction)) {
-          isPending = rawTransaction.unifiedStatus === 'IN_PROGRESS' || rawTransaction.unifiedStatus === 'PENDING';
-        } else {
-          isPending = rawTransaction.status === 'authorized';
-        }
-
-        // Get transaction ID (handles null externalCanonicalId)
-        const transactionId = getTransactionId(rawTransaction);
-
-        // Create processed transaction with user-provided data
-        const manuallyProcessed = {
-          id: transactionId,
-          date: convertToLocalDate(rawTransaction.occurredAt),
-          merchant: manualResult.merchant,
-          originalMerchant: formatOriginalStatement(rawTransaction.type, rawTransaction.subType, manualResult.merchant),
-          amount: finalAmount,
-          type: rawTransaction.type,
-          subType: rawTransaction.subType,
-          status: rawTransaction.status,
-          unifiedStatus: rawTransaction.unifiedStatus,
-          isPending,
-          resolvedMonarchCategory: manualResult.category.name,
-          ruleId: 'manual',
-          notes: '',
-          technicalDetails: '',
-          needsCategoryMapping: false,
-          categoryKey: manualResult.merchant,
-          // Include asset symbol for investment context
-          assetSymbol: rawTransaction.assetSymbol || null,
-        };
-
-        processedTransactions.push(manuallyProcessed);
-        debugLog(`Manually categorized transaction: ${manualResult.merchant} -> ${manualResult.category.name}`);
+        toast.show(`Completed manual categorization for ${transactionsWithoutRules.length} transaction(s)`, 'info');
       }
-
-      toast.show(`Completed manual categorization for ${transactionsWithoutRules.length} transaction(s)`, 'info');
     }
 
     debugLog(`Processed ${processedTransactions.length} total investment transactions (${uploadedSkipCount} already uploaded)`);

@@ -41,6 +41,7 @@ describe('Integration Capabilities', () => {
       expect(ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT).toBe('transactionRetentionCount');
       expect(ACCOUNT_SETTINGS.STRIP_STORE_NUMBERS).toBe('stripStoreNumbers');
       expect(ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS).toBe('includePendingTransactions');
+      expect(ACCOUNT_SETTINGS.SKIP_CATEGORIZATION).toBe('skipCategorization');
     });
   });
 
@@ -75,6 +76,7 @@ describe('Integration Capabilities', () => {
         expect(ws.settings).toContain(ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT);
         expect(ws.settings).toContain(ACCOUNT_SETTINGS.STRIP_STORE_NUMBERS);
         expect(ws.settings).toContain(ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS);
+        expect(ws.settings).toContain(ACCOUNT_SETTINGS.SKIP_CATEGORIZATION);
       });
 
       test('should have correct default values', () => {
@@ -83,6 +85,7 @@ describe('Integration Capabilities', () => {
         expect(ws.settingDefaults[ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT]).toBe(TRANSACTION_RETENTION_DEFAULTS.COUNT);
         expect(ws.settingDefaults[ACCOUNT_SETTINGS.STRIP_STORE_NUMBERS]).toBe(true);
         expect(ws.settingDefaults[ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS]).toBe(true);
+        expect(ws.settingDefaults[ACCOUNT_SETTINGS.SKIP_CATEGORIZATION]).toBe(false);
       });
     });
 
@@ -110,8 +113,13 @@ describe('Integration Capabilities', () => {
         expect(qt.settings).toContain(ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES);
         expect(qt.settings).toContain(ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS);
         expect(qt.settings).toContain(ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT);
+        expect(qt.settings).toContain(ACCOUNT_SETTINGS.SKIP_CATEGORIZATION);
         expect(qt.settings).not.toContain(ACCOUNT_SETTINGS.STRIP_STORE_NUMBERS);
         expect(qt.settings).not.toContain(ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS);
+      });
+
+      test('should have correct default for skipCategorization', () => {
+        expect(qt.settingDefaults[ACCOUNT_SETTINGS.SKIP_CATEGORIZATION]).toBe(false);
       });
     });
 
@@ -140,6 +148,7 @@ describe('Integration Capabilities', () => {
         expect(cl.settings).toContain(ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT);
         expect(cl.settings).not.toContain(ACCOUNT_SETTINGS.STRIP_STORE_NUMBERS);
         expect(cl.settings).not.toContain(ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS);
+        expect(cl.settings).not.toContain(ACCOUNT_SETTINGS.SKIP_CATEGORIZATION);
       });
     });
 
@@ -167,8 +176,13 @@ describe('Integration Capabilities', () => {
         expect(rb.settings).toContain(ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES);
         expect(rb.settings).toContain(ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS);
         expect(rb.settings).toContain(ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT);
+        expect(rb.settings).toContain(ACCOUNT_SETTINGS.SKIP_CATEGORIZATION);
         expect(rb.settings).not.toContain(ACCOUNT_SETTINGS.STRIP_STORE_NUMBERS);
         expect(rb.settings).not.toContain(ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS);
+      });
+
+      test('should have correct default for skipCategorization', () => {
+        expect(rb.settingDefaults[ACCOUNT_SETTINGS.SKIP_CATEGORIZATION]).toBe(false);
       });
     });
   });

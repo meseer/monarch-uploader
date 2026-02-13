@@ -1997,6 +1997,39 @@ function renderAccountSettingsSection(integrationId, accountEntry, accountId, on
     settingsSection.appendChild(invertBalanceSetting);
   }
 
+  // Skip categorization toggle
+  if (hasSetting(integrationId, ACCOUNT_SETTINGS.SKIP_CATEGORIZATION)) {
+    const skipCategorizationSetting = document.createElement('div');
+    skipCategorizationSetting.id = `setting-skip-categorization-${accountId}`;
+    skipCategorizationSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--mu-bg-primary, white); border-radius: 6px; margin-bottom: 8px;';
+
+    const skipCategorizationLabel = document.createElement('div');
+    skipCategorizationLabel.innerHTML = `
+      <div style="font-weight: 500; font-size: 13px;">Skip manual categorization</div>
+      <div style="font-size: 11px; color: var(--mu-text-secondary, #666);">When enabled, transactions sync without category prompts. Monarch will apply its own categorization rules.</div>
+    `;
+
+    const currentValue = accountEntry.skipCategorization ?? getSettingDefault(integrationId, ACCOUNT_SETTINGS.SKIP_CATEGORIZATION);
+    const skipCategorizationToggle = createToggleSwitch(
+      currentValue,
+      (isEnabled) => {
+        const success = accountService.updateAccountInList(integrationId, accountId, { skipCategorization: isEnabled });
+        if (success) {
+          toast.show(`Manual categorization ${isEnabled ? 'disabled' : 'enabled'}`, 'info');
+          if (onUpdate) onUpdate();
+        } else {
+          toast.show('Failed to update setting', 'error');
+        }
+      },
+      false,
+    );
+
+    skipCategorizationSetting.appendChild(skipCategorizationLabel);
+    skipCategorizationSetting.appendChild(skipCategorizationToggle);
+    skipCategorizationSetting.addEventListener('click', (e) => e.stopPropagation());
+    settingsSection.appendChild(skipCategorizationSetting);
+  }
+
   // Transaction retention count (for deduplication-enabled integrations)
   if (hasSetting(integrationId, ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT)) {
     const retentionCountSetting = document.createElement('div');

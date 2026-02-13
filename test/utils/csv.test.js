@@ -276,6 +276,27 @@ describe('CSV Conversion Utilities', () => {
       expect(result).toContain(' / '); // Empty activityType and referenceNumber should still create separator
     });
 
+    test('should pass through empty string category when resolvedMonarchCategory is empty (skip categorization)', () => {
+      const transactions = [
+        {
+          date: '2024-01-15',
+          merchant: { name: 'STARBUCKS' },
+          amount: { value: 5.50 },
+          resolvedMonarchCategory: '',
+          activityType: 'PURCHASE',
+          referenceNumber: 'REF123',
+        },
+      ];
+
+      const result = convertTransactionsToMonarchCSV(transactions, 'Test Account');
+      // Empty category should produce empty field between commas (not 'Uncategorized')
+      const lines = result.split('\n');
+      const dataRow = lines[1];
+      // CSV format: Date,Merchant,Category,Account,...
+      // With empty category: ...STARBUCKS,,Test Account...
+      expect(dataRow).toContain('STARBUCKS,,Test Account');
+    });
+
     test('should handle category mapping fallback', () => {
       const { applyCategoryMapping } = jest.requireMock('../../src/mappers/category');
       applyCategoryMapping.mockReturnValue({ id: 'cat123', name: 'Test Category' });
@@ -566,6 +587,26 @@ describe('CSV Conversion Utilities', () => {
       const result = convertQuestradeOrdersToMonarchCSV(orders, 'Test Account');
       expect(result).toContain('Uncategorized');
     });
+
+    test('should pass through empty string category when resolvedMonarchCategory is empty (skip categorization)', () => {
+      const orders = [
+        {
+          action: 'Buy',
+          security: { displayName: 'Test Security' },
+          updatedDateTime: '2024-01-15T10:00:00.000Z',
+          filledQuantity: 10,
+          averageFilledPrice: 50,
+          resolvedMonarchCategory: '',
+        },
+      ];
+
+      const result = convertQuestradeOrdersToMonarchCSV(orders, 'Test Account');
+      // Empty category should produce empty field (not 'Uncategorized')
+      const lines = result.split('\n');
+      const dataRow = lines[1];
+      // CSV: Date,Merchant,Category,Account,...
+      expect(dataRow).toContain('Test Security,,Test Account');
+    });
   });
 
   describe('convertWealthsimpleTransactionsToMonarchCSV', () => {
@@ -745,6 +786,27 @@ describe('CSV Conversion Utilities', () => {
 
       const result = convertWealthsimpleTransactionsToMonarchCSV(transactions, 'Test Account');
       expect(result).toContain('Uncategorized');
+    });
+
+    test('should pass through empty string category when resolvedMonarchCategory is empty (skip categorization)', () => {
+      const transactions = [
+        {
+          id: 'tx-skip',
+          date: '2024-01-15',
+          merchant: 'STARBUCKS',
+          originalMerchant: 'STARBUCKS #1234',
+          amount: -5.50,
+          subType: 'PURCHASE',
+          resolvedMonarchCategory: '',
+        },
+      ];
+
+      const result = convertWealthsimpleTransactionsToMonarchCSV(transactions, 'Test Account');
+      // Empty category should produce empty field (not 'Uncategorized')
+      const lines = result.split('\n');
+      const dataRow = lines[1];
+      // CSV: Date,Merchant,Category,Account,...
+      expect(dataRow).toContain('STARBUCKS,,Test Account');
     });
 
     test('should preserve original merchant in Original Statement field', () => {

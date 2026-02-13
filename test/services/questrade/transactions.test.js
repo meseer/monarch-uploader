@@ -284,6 +284,103 @@ describe('Questrade Transactions Service', () => {
       ).rejects.toThrow('Account not found: account123');
     });
 
+    it('should skip manual category prompts when skipCategorization is enabled', async () => {
+      const mockOrders = [
+        {
+          orderUuid: 'uuid1',
+          status: 'Executed',
+          action: 'Buy',
+          security: { displayName: 'AAPL' },
+          dollarValue: 1000,
+        },
+        {
+          orderUuid: 'uuid2',
+          status: 'Executed',
+          action: 'Sell',
+          security: { displayName: 'MSFT' },
+          dollarValue: 500,
+        },
+      ];
+
+      questradeApi.fetchOrders = jest.fn().mockResolvedValue({ data: mockOrders });
+
+      // Enable skipCategorization in account data
+      accountService.getAccountData.mockReturnValue({
+        skipCategorization: true,
+        uploadedTransactions: [],
+      });
+
+      const { applyCategoryMapping } = require('../../../src/mappers/category');
+      // applyCategoryMapping should NOT be called when skipCategorization is true
+      applyCategoryMapping.mockReturnValue('Investment');
+
+      const result = await transactionsService.processAndUploadTransactions(
+        'account123',
+        'Test Account',
+        '2025-01-01',
+      );
+
+      expect(result.success).toBe(true);
+      // Category selector should not have been shown
+      const { showMonarchCategorySelector } = require('../../../src/ui/components/categorySelector');
+      expect(showMonarchCategorySelector).not.toHaveBeenCalled();
+      // Orders should have empty resolved category
+      expect(convertQuestradeOrdersToMonarchCSV).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ orderUuid: 'uuid1', resolvedMonarchCategory: '' }),
+          expect.objectContaining({ orderUuid: 'uuid2', resolvedMonarchCategory: '' }),
+        ]),
+        expect.any(String),
+      );
+    });
+
+    it('should handle skipAll from category selector for remaining orders', async () => {
+      const mockOrders = [
+        {
+          orderUuid: 'uuid1',
+          status: 'Executed',
+          action: 'Buy',
+          security: { displayName: 'AAPL' },
+          dollarValue: 1000,
+        },
+      ];
+
+      questradeApi.fetchOrders = jest.fn().mockResolvedValue({ data: mockOrders });
+
+      // skipCategorization is false (manual prompts appear)
+      accountService.getAccountData.mockReturnValue({
+        skipCategorization: false,
+        uploadedTransactions: [],
+      });
+
+      const { applyCategoryMapping } = require('../../../src/mappers/category');
+      applyCategoryMapping.mockReturnValue({
+        needsManualSelection: true,
+        bankCategory: 'Buy',
+      });
+
+      const { showMonarchCategorySelector } = require('../../../src/ui/components/categorySelector');
+      // User clicks "Skip All" on category selector
+      showMonarchCategorySelector.mockImplementation((bankCategory, callback) => {
+        callback({ skipAll: true });
+      });
+
+      const result = await transactionsService.processAndUploadTransactions(
+        'account123',
+        'Test Account',
+        '2025-01-01',
+      );
+
+      expect(result.success).toBe(true);
+      // Orders should have empty resolved category after skipAll
+      expect(convertQuestradeOrdersToMonarchCSV).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ resolvedMonarchCategory: '' }),
+        ]),
+        expect.any(String),
+      );
+    });
+
     it('should save order UUIDs to consolidated storage after successful upload', async () => {
       const mockOrders = [
         {

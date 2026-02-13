@@ -159,9 +159,12 @@ function filterNonTradeTransactions(transactions) {
 /**
  * Resolve categories for orders, handling both automatic mapping and manual selection
  * @param {Array} orders - Array of orders to process
+ * @param {Object} options - Options for category resolution
+ * @param {boolean} options.skipCategorization - Skip manual category prompts, use empty category (optional)
  * @returns {Promise<Array>} Orders with resolved Monarch categories
  */
-async function resolveCategoriesForOrders(orders) {
+async function resolveCategoriesForOrders(orders, options = {}) {
+  const { skipCategorization = false } = options;
   if (!orders || orders.length === 0) {
     return orders;
   }
@@ -177,6 +180,17 @@ async function resolveCategoriesForOrders(orders) {
     debugLog(`Fetched ${availableCategories.length} categories from Monarch`);
   } catch (error) {
     debugLog('Failed to fetch categories from Monarch, will use manual selection for all:', error);
+  }
+
+  // If skip categorization is enabled, set empty category for all orders
+  // and return immediately (no manual prompts)
+  if (skipCategorization) {
+    debugLog('Skip categorization enabled - setting empty category for all Questrade orders');
+    return orders.map((order) => ({
+      ...order,
+      resolvedMonarchCategory: '', // Empty = let Monarch apply its own rules
+      originalAction: order.action || 'Unknown',
+    }));
   }
 
   // Find all unique order actions that need resolution
@@ -252,6 +266,22 @@ async function resolveCategoriesForOrders(orders) {
       if (!selectedCategory) {
         // User cancelled - this will abort the upload
         throw new Error(`Category selection cancelled for "${actionToResolve.bankCategory}". Upload aborted.`);
+      }
+
+      // Handle "Skip All (this sync)" response
+      if (selectedCategory.skipAll === true) {
+        debugLog('User chose "Skip All" - setting empty category for all remaining Questrade orders');
+        return orders.map((order) => {
+          const action = order.action || 'Unknown';
+          const mappingResult = applyCategoryMapping(action, availableCategories);
+          // Already-resolved categories keep their mapping, unresolved get empty
+          const resolvedCategory = typeof mappingResult === 'string' ? mappingResult : '';
+          return {
+            ...order,
+            resolvedMonarchCategory: resolvedCategory,
+            originalAction: action,
+          };
+        });
       }
 
       // Save the user's selection for future use
@@ -578,7 +608,9 @@ async function processAndUploadOrders(accountId, accountName, fromDate, monarchA
     }
 
     // Resolve categories for all orders
-    const ordersWithResolvedCategories = await resolveCategoriesForOrders(ordersToUpload);
+    const accountData = accountService.getAccountData(INTEGRATIONS.QUESTRADE, accountId);
+    const skipCategorization = accountData?.skipCategorization === true;
+    const ordersWithResolvedCategories = await resolveCategoriesForOrders(ordersToUpload, { skipCategorization });
 
     // Convert orders to Monarch CSV format
     if (progressDialog) {

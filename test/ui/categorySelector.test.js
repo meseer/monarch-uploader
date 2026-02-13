@@ -677,6 +677,25 @@ describe('Category Selector Component', () => {
       cancelButton.click();
       expect(callback).toHaveBeenCalledWith(null);
     });
+
+    test('should display "Skip All (this sync)" button that resolves with skipAll sentinel', async () => {
+      const callback = jest.fn();
+
+      await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', callback);
+
+      // Find all buttons in the modal
+      const buttons = document.querySelectorAll('button');
+      const skipAllButton = Array.from(buttons).find((btn) => btn.textContent.includes('Skip All'));
+
+      expect(skipAllButton).toBeTruthy();
+      expect(skipAllButton.textContent).toContain('Skip All');
+
+      // Click the Skip All button
+      skipAllButton.click();
+
+      // Should resolve with { skipAll: true } sentinel
+      expect(callback).toHaveBeenCalledWith({ skipAll: true });
+    });
   });
 
   describe('Group Color and Icon Functions', () => {

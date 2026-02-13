@@ -2115,6 +2115,243 @@ describe('Rogers Bank Upload Service', () => {
     });
   });
 
+  describe('uploadRogersBankToMonarch - Skip Categorization', () => {
+    test('should skip manual category prompts when skipCategorization setting is enabled', async () => {
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+
+      calculateFromDateWithLookback.mockReturnValue('2024-01-01');
+      globalThis.GM_getValue.mockImplementation((key) => {
+        if (key.includes('rogersbank_last_upload_date_')) return '2024-01-01';
+        return null;
+      });
+
+      // Enable skipCategorization in account data
+      accountServiceMock.getAccountData.mockReturnValue({
+        skipCategorization: true,
+        uploadedTransactions: [],
+      });
+
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
+      monarchApi.uploadBalance.mockResolvedValue(true);
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          activitySummary: {
+            totalCount: 2,
+            activities: [
+              {
+                referenceNumber: 'REF1',
+                activityStatus: 'APPROVED',
+                transactionAmount: -25.00,
+                description: 'Restaurant Purchase',
+                activityDate: '2024-01-10',
+                merchant: { categoryDescription: 'Restaurants' },
+              },
+              {
+                referenceNumber: 'REF2',
+                activityStatus: 'APPROVED',
+                transactionAmount: -50.00,
+                description: 'Unknown Store',
+                activityDate: '2024-01-11',
+                merchant: { categoryDescription: 'Unknown Category' },
+              },
+            ],
+          },
+        }),
+      });
+
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [{ name: 'Dining' }] });
+      convertTransactionsToMonarchCSV.mockReturnValue('csv,data');
+      monarchApi.uploadTransactions.mockResolvedValue(true);
+
+      const result = await uploadRogersBankToMonarch();
+
+      expect(result.success).toBe(true);
+      // Should NOT show manual category selector
+      expect(showMonarchCategorySelector).not.toHaveBeenCalled();
+      // All transactions should have empty resolved category
+      expect(convertTransactionsToMonarchCSV).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ resolvedMonarchCategory: '', originalBankCategory: 'Restaurants' }),
+          expect.objectContaining({ resolvedMonarchCategory: '', originalBankCategory: 'Unknown Category' }),
+        ]),
+        expect.any(String),
+        expect.any(Object),
+      );
+    });
+
+    test('should show manual category prompts when skipCategorization is false', async () => {
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+
+      calculateFromDateWithLookback.mockReturnValue('2024-01-01');
+      globalThis.GM_getValue.mockReturnValue(
+        JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
+      );
+
+      // skipCategorization is false
+      accountServiceMock.getAccountData.mockReturnValue({
+        skipCategorization: false,
+        uploadedTransactions: [],
+      });
+
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
+      monarchApi.uploadBalance.mockResolvedValue(true);
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          activitySummary: {
+            totalCount: 1,
+            activities: [
+              {
+                referenceNumber: 'REF1',
+                activityStatus: 'APPROVED',
+                transactionAmount: -25.00,
+                description: 'Unknown Store',
+                activityDate: '2024-01-10',
+                merchant: { categoryDescription: 'Unknown Category' },
+              },
+            ],
+          },
+        }),
+      });
+
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [{ name: 'Shopping' }] });
+      applyCategoryMapping.mockReturnValue({
+        needsManualSelection: true,
+        bankCategory: 'Unknown Category',
+      });
+
+      const calculateAllCategorySimilarities = jest.requireMock('../../src/mappers/category').calculateAllCategorySimilarities;
+      calculateAllCategorySimilarities.mockReturnValue({
+        topMatches: [{ category: 'Shopping', score: 0.5 }],
+        allScores: [{ category: 'Shopping', score: 0.5 }],
+      });
+
+      // User selects a category manually
+      showMonarchCategorySelector.mockImplementation((bankCategory, callback) => {
+        callback({ id: 'cat1', name: 'Shopping' });
+      });
+      applyCategoryMapping.mockReturnValueOnce({
+        needsManualSelection: true,
+        bankCategory: 'Unknown Category',
+      }).mockReturnValue('Shopping');
+
+      convertTransactionsToMonarchCSV.mockReturnValue('csv,data');
+      monarchApi.uploadTransactions.mockResolvedValue(true);
+
+      const result = await uploadRogersBankToMonarch();
+
+      expect(result.success).toBe(true);
+      // Should show manual category selector when skipCategorization is false
+      expect(showMonarchCategorySelector).toHaveBeenCalled();
+    });
+
+    test('should handle skipAll from category selector for remaining categories', async () => {
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+
+      calculateFromDateWithLookback.mockReturnValue('2024-01-01');
+      globalThis.GM_getValue.mockReturnValue(
+        JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' }),
+      );
+
+      // skipCategorization is false (so manual prompts appear)
+      accountServiceMock.getAccountData.mockReturnValue({
+        skipCategorization: false,
+        uploadedTransactions: [],
+      });
+
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
+      monarchApi.uploadBalance.mockResolvedValue(true);
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          activitySummary: {
+            totalCount: 2,
+            activities: [
+              {
+                referenceNumber: 'REF1',
+                activityStatus: 'APPROVED',
+                transactionAmount: -25.00,
+                description: 'Store A',
+                activityDate: '2024-01-10',
+                merchant: { categoryDescription: 'Category A' },
+              },
+              {
+                referenceNumber: 'REF2',
+                activityStatus: 'APPROVED',
+                transactionAmount: -50.00,
+                description: 'Store B',
+                activityDate: '2024-01-11',
+                merchant: { categoryDescription: 'Category B' },
+              },
+            ],
+          },
+        }),
+      });
+
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [{ name: 'Shopping' }] });
+
+      // Both categories need manual selection
+      applyCategoryMapping.mockReturnValue({
+        needsManualSelection: true,
+        bankCategory: 'Category A',
+      });
+
+      const calculateAllCategorySimilarities = jest.requireMock('../../src/mappers/category').calculateAllCategorySimilarities;
+      calculateAllCategorySimilarities.mockReturnValue({
+        topMatches: [],
+        allScores: [],
+      });
+
+      // User clicks "Skip All" on first category prompt
+      showMonarchCategorySelector.mockImplementation((bankCategory, callback) => {
+        callback({ skipAll: true });
+      });
+
+      convertTransactionsToMonarchCSV.mockReturnValue('csv,data');
+      monarchApi.uploadTransactions.mockResolvedValue(true);
+
+      const result = await uploadRogersBankToMonarch();
+
+      expect(result.success).toBe(true);
+      // Should only have been called once (for Category A), then skipAll breaks the loop
+      expect(showMonarchCategorySelector).toHaveBeenCalledTimes(1);
+      // Unresolved categories should get empty string
+      expect(convertTransactionsToMonarchCSV).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ resolvedMonarchCategory: '' }),
+          expect.objectContaining({ resolvedMonarchCategory: '' }),
+        ]),
+        expect.any(String),
+        expect.any(Object),
+      );
+    });
+  });
+
   describe('uploadRogersBankToMonarch - Data Storage', () => {
     test('should save uploaded transaction references to consolidated storage', async () => {
       getRogersBankCredentials.mockReturnValue({

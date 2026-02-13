@@ -99,7 +99,7 @@ export function convertTransactionsToMonarchCSV(transactions, accountName, optio
 
     // Use resolved Monarch category if available, otherwise fall back to old mapping
     let mappedCategory;
-    if (transaction.resolvedMonarchCategory) {
+    if (transaction.resolvedMonarchCategory !== undefined && transaction.resolvedMonarchCategory !== null) {
       // Transaction already has a resolved Monarch category from the category resolution process
       mappedCategory = transaction.resolvedMonarchCategory;
     } else {
@@ -124,7 +124,7 @@ export function convertTransactionsToMonarchCSV(transactions, accountName, optio
     return {
       Date: transaction.date || '',
       Merchant: mappedMerchant,
-      Category: mappedCategory,
+      Category: mappedCategory ?? '',
       Account: accountName,
       'Original Statement': transaction.merchant?.name || '',
       Notes: notes,
@@ -283,7 +283,7 @@ export function convertWealthsimpleTransactionsToMonarchCSV(transactions, accoun
     return {
       Date: transaction.date || '',
       Merchant: transaction.merchant || '',
-      Category: transaction.resolvedMonarchCategory || 'Uncategorized',
+      Category: transaction.resolvedMonarchCategory ?? 'Uncategorized',
       Account: accountName,
       'Original Statement': transaction.originalMerchant || '',
       Notes: notes,
@@ -331,7 +331,7 @@ export function convertQuestradeOrdersToMonarchCSV(orders, accountName) {
     const merchant = order.security?.displayName || 'Unknown Security';
 
     // Use resolved Monarch category
-    const category = order.resolvedMonarchCategory || 'Uncategorized';
+    const category = order.resolvedMonarchCategory ?? 'Uncategorized';
 
     // Format date from updatedDateTime
     let date = '';
@@ -443,7 +443,7 @@ export function convertQuestradeTransactionsToMonarchCSV(transactions, accountNa
     return {
       Date: date,
       Merchant: ruleResult?.merchant || 'Unknown',
-      Category: ruleResult?.category || 'Uncategorized',
+      Category: ruleResult?.category ?? 'Uncategorized',
       Account: accountName,
       'Original Statement': ruleResult?.originalStatement || '',
       Notes: ruleResult?.notes || '',

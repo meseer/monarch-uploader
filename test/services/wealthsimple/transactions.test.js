@@ -3237,6 +3237,290 @@ describe('Wealthsimple Transaction Service', () => {
     });
   });
 
+  describe('skip categorization', () => {
+    describe('credit card - skipCategorization setting', () => {
+      it('should set empty category for unresolved transactions when skipCategorization is true', async () => {
+        const mockRawTransactions = [
+          {
+            externalCanonicalId: 'tx-1',
+            occurredAt: '2025-01-15T10:30:00.000000+00:00',
+            type: 'CREDIT_CARD',
+            subType: 'PURCHASE',
+            status: 'settled',
+            spendMerchant: 'Unknown Merchant',
+            amount: 50.00,
+            amountSign: 'negative',
+          },
+          {
+            externalCanonicalId: 'tx-2',
+            occurredAt: '2025-01-16T10:30:00.000000+00:00',
+            type: 'CREDIT_CARD',
+            subType: 'PAYMENT',
+            status: 'settled',
+            spendMerchant: null,
+            amount: 100.00,
+            amountSign: 'positive',
+          },
+        ];
+
+        wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+        monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [] });
+
+        const accountWithSkip = {
+          wealthsimpleAccount: {
+            id: 'test-account-id',
+            nickname: 'Test Credit Card',
+            type: 'CREDIT_CARD',
+          },
+          skipCategorization: true,
+        };
+
+        const result = await fetchAndProcessCreditCardTransactions(
+          accountWithSkip,
+          '2025-01-01',
+          '2025-01-31',
+        );
+
+        // Should NOT show category selector
+        expect(showMonarchCategorySelector).not.toHaveBeenCalled();
+
+        // PAYMENT is auto-categorized, should keep its category
+        const paymentTx = result.find((tx) => tx.subType === 'PAYMENT');
+        expect(paymentTx.resolvedMonarchCategory).toBe('Credit Card Payment');
+
+        // PURCHASE should have empty category (skip categorization)
+        const purchaseTx = result.find((tx) => tx.subType === 'PURCHASE');
+        expect(purchaseTx.resolvedMonarchCategory).toBe('');
+      });
+    });
+
+    describe('credit card - skipAll from category selector', () => {
+      it('should set empty category for remaining transactions when user clicks Skip All', async () => {
+        const mockRawTransactions = [
+          {
+            externalCanonicalId: 'tx-1',
+            occurredAt: '2025-01-15T10:30:00.000000+00:00',
+            type: 'CREDIT_CARD',
+            subType: 'PURCHASE',
+            status: 'settled',
+            spendMerchant: 'Merchant A',
+            amount: 50.00,
+            amountSign: 'negative',
+          },
+          {
+            externalCanonicalId: 'tx-2',
+            occurredAt: '2025-01-16T10:30:00.000000+00:00',
+            type: 'CREDIT_CARD',
+            subType: 'PURCHASE',
+            status: 'settled',
+            spendMerchant: 'Merchant B',
+            amount: 75.00,
+            amountSign: 'negative',
+          },
+        ];
+
+        wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+        monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [] });
+
+        // Both merchants need manual selection
+        applyWealthsimpleCategoryMapping.mockReturnValue({
+          needsManualSelection: true,
+          bankCategory: 'test',
+          suggestedCategory: null,
+          similarityScore: 0,
+        });
+
+        // User clicks "Skip All" on the first prompt
+        showMonarchCategorySelector.mockImplementation((bankCategory, callback) => {
+          callback({ skipAll: true });
+        });
+
+        const accountNoSkip = {
+          wealthsimpleAccount: {
+            id: 'test-account-id',
+            nickname: 'Test CC',
+            type: 'CREDIT_CARD',
+          },
+        };
+
+        const result = await fetchAndProcessCreditCardTransactions(
+          accountNoSkip,
+          '2025-01-01',
+          '2025-01-31',
+        );
+
+        // Both transactions should have empty category
+        expect(result).toHaveLength(2);
+        expect(result[0].resolvedMonarchCategory).toBe('');
+        expect(result[1].resolvedMonarchCategory).toBe('');
+
+        // Should only show selector once (skipAll stops further prompts)
+        expect(showMonarchCategorySelector).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('cash - skipCategorization setting', () => {
+      const mockCashAccount = {
+        wealthsimpleAccount: {
+          id: 'cash-account-id',
+          nickname: 'Cash Account',
+          type: 'CASH',
+        },
+        skipCategorization: true,
+      };
+
+      it('should skip manual categorization for unmatched transactions when skipCategorization is true', async () => {
+        const mockRawTransactions = [
+          {
+            externalCanonicalId: 'tx-unknown',
+            type: 'UNKNOWN_TYPE',
+            subType: 'UNKNOWN_SUBTYPE',
+            unifiedStatus: 'COMPLETED',
+            amount: 25.00,
+            amountSign: 'negative',
+            occurredAt: '2026-01-15T10:00:00.000000+00:00',
+          },
+          {
+            externalCanonicalId: 'tx-etransfer',
+            type: 'DEPOSIT',
+            subType: 'E_TRANSFER',
+            unifiedStatus: 'COMPLETED',
+            eTransferName: 'John',
+            amount: 100.00,
+            amountSign: 'positive',
+            occurredAt: '2026-01-16T10:00:00.000000+00:00',
+          },
+        ];
+
+        wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+        const result = await fetchAndProcessCashTransactions(
+          mockCashAccount,
+          '2026-01-01',
+          '2026-01-31',
+        );
+
+        // Should NOT show manual categorization dialog
+        expect(showManualTransactionCategorization).not.toHaveBeenCalled();
+
+        // e-transfer should keep its rule-based category
+        const etransferTx = result.find((tx) => tx.id === 'tx-etransfer');
+        expect(etransferTx.resolvedMonarchCategory).toBe('Transfer');
+
+        // Unknown transaction should have empty category
+        const unknownTx = result.find((tx) => tx.id === 'tx-unknown');
+        expect(unknownTx.resolvedMonarchCategory).toBe('');
+        expect(unknownTx.ruleId).toBe('skip-categorization');
+      });
+    });
+
+    describe('investment - skipCategorization setting', () => {
+      const mockInvestmentAccount = {
+        wealthsimpleAccount: {
+          id: 'investment-account-id',
+          nickname: 'My TFSA',
+          type: 'MANAGED_TFSA',
+        },
+        skipCategorization: true,
+      };
+
+      beforeEach(() => {
+        global.GM_getValue = jest.fn().mockReturnValue(JSON.stringify([
+          {
+            wealthsimpleAccount: {
+              id: 'investment-account-id',
+              nickname: 'My TFSA',
+              type: 'MANAGED_TFSA',
+            },
+          },
+        ]));
+      });
+
+      it('should skip manual categorization for unmatched transactions when skipCategorization is true', async () => {
+        const mockRawTransactions = [
+          {
+            externalCanonicalId: 'tx-unknown-invest',
+            type: 'UNKNOWN_TYPE',
+            subType: 'UNKNOWN_SUBTYPE',
+            status: 'completed',
+            amount: 50.00,
+            amountSign: 'negative',
+            occurredAt: '2026-01-15T10:00:00.000000+00:00',
+          },
+        ];
+
+        wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+        const result = await fetchAndProcessInvestmentTransactions(
+          mockInvestmentAccount,
+          '2026-01-01',
+          '2026-01-31',
+        );
+
+        // Should NOT show manual categorization dialog
+        expect(showManualTransactionCategorization).not.toHaveBeenCalled();
+
+        expect(result).toHaveLength(1);
+        expect(result[0].resolvedMonarchCategory).toBe('');
+        expect(result[0].ruleId).toBe('skip-categorization');
+      });
+    });
+
+    describe('line of credit - skipCategorization setting', () => {
+      const mockLocAccount = {
+        wealthsimpleAccount: {
+          id: 'loc-account-id',
+          nickname: 'Portfolio LOC',
+          type: 'PORTFOLIO_LINE_OF_CREDIT',
+        },
+        skipCategorization: true,
+      };
+
+      it('should skip manual categorization for unmatched transactions when skipCategorization is true', async () => {
+        const mockRawTransactions = [
+          {
+            externalCanonicalId: 'loc-unknown',
+            type: 'INTEREST',
+            subType: 'MARGIN_INTEREST',
+            status: 'completed',
+            amount: 50.00,
+            amountSign: 'negative',
+            occurredAt: '2026-01-15T10:00:00.000000+00:00',
+          },
+          {
+            externalCanonicalId: 'loc-borrow',
+            type: 'INTERNAL_TRANSFER',
+            subType: 'SOURCE',
+            status: 'completed',
+            amount: 5000.00,
+            amountSign: 'negative',
+            occurredAt: '2026-01-16T10:00:00.000000+00:00',
+          },
+        ];
+
+        wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+        const result = await fetchAndProcessLineOfCreditTransactions(
+          mockLocAccount,
+          '2026-01-01',
+          '2026-01-31',
+        );
+
+        // Should NOT show manual categorization dialog
+        expect(showManualTransactionCategorization).not.toHaveBeenCalled();
+
+        // Rule-matched transaction should keep its category
+        const borrowTx = result.find((tx) => tx.id === 'loc-borrow');
+        expect(borrowTx.resolvedMonarchCategory).toBe('Transfer');
+
+        // Unknown transaction should have empty category
+        const unknownTx = result.find((tx) => tx.id === 'loc-unknown');
+        expect(unknownTx.resolvedMonarchCategory).toBe('');
+        expect(unknownTx.ruleId).toBe('skip-categorization');
+      });
+    });
+  });
+
   describe('formatReconciliationMessage', () => {
     it('should return "No pending transactions" when noPendingTag is true', () => {
       const result = formatReconciliationMessage({ noPendingTag: true });

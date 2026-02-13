@@ -712,7 +712,28 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
     }
   };
 
+  // Skip All button (skip remaining categories for this sync session)
+  const skipAllBtn = document.createElement('button');
+  skipAllBtn.id = 'category-selector-skip-all-btn';
+  skipAllBtn.textContent = 'Skip All (this sync)';
+  skipAllBtn.style.cssText = `
+    padding: 10px 16px;
+    background-color: #6c757d;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+  `;
+  skipAllBtn.onclick = () => {
+    debugLog('Skip All clicked - skipping remaining category selections for this sync');
+    cleanupKeyboard();
+    overlay.remove();
+    callback({ skipAll: true });
+  };
+
   buttonSection.appendChild(cancelBtn);
+  buttonSection.appendChild(skipAllBtn);
   buttonSection.appendChild(saveRuleBtn);
   buttonSection.appendChild(assignOnceBtn);
 
