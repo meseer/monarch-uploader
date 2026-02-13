@@ -3237,6 +3237,574 @@ describe('Wealthsimple Transaction Service', () => {
     });
   });
 
+  describe('fetchAndProcessInvestmentTransactions - crypto transactions', () => {
+    const mockCryptoAccount = {
+      wealthsimpleAccount: {
+        id: 'crypto-account-id',
+        nickname: 'My Crypto',
+        type: 'SELF_DIRECTED_CRYPTO',
+      },
+    };
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      global.GM_getValue = jest.fn().mockReturnValue(JSON.stringify([
+        {
+          wealthsimpleAccount: {
+            id: 'crypto-account-id',
+            nickname: 'My Crypto',
+            type: 'SELF_DIRECTED_CRYPTO',
+          },
+        },
+      ]));
+    });
+
+    it('should process CRYPTO_BUY transactions with COMPLETED status', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'crypto-buy-order-123',
+          occurredAt: '2026-01-15T10:30:00.000000+00:00',
+          type: 'CRYPTO_BUY',
+          status: 'posted',
+          unifiedStatus: 'COMPLETED',
+          assetSymbol: 'BTC',
+          amount: 1000.00,
+          amountSign: 'negative',
+          assetQuantity: 0.015,
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      wealthsimpleApi.fetchSpendTransactions.mockResolvedValue(new Map());
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        mockCryptoAccount,
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        id: 'crypto-buy-order-123',
+        date: '2026-01-15',
+        merchant: 'BTC',
+        amount: -1000.00,
+        resolvedMonarchCategory: 'Buy',
+        ruleId: 'crypto-buy',
+        isPending: false,
+      });
+    });
+
+    it('should process CRYPTO_SELL transactions with COMPLETED status', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'crypto-sell-order-456',
+          occurredAt: '2026-01-16T14:30:00.000000+00:00',
+          type: 'CRYPTO_SELL',
+          status: 'posted',
+          unifiedStatus: 'COMPLETED',
+          assetSymbol: 'ETH',
+          amount: 2000.00,
+          amountSign: 'positive',
+          assetQuantity: 0.8,
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      wealthsimpleApi.fetchSpendTransactions.mockResolvedValue(new Map());
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        mockCryptoAccount,
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        id: 'crypto-sell-order-456',
+        date: '2026-01-16',
+        merchant: 'ETH',
+        amount: 2000.00,
+        resolvedMonarchCategory: 'Sell',
+        ruleId: 'crypto-sell',
+        isPending: false,
+      });
+    });
+
+    it('should include CRYPTO_BUY transactions with IN_PROGRESS status as pending when includePendingTransactions is true', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'crypto-buy-pending',
+          occurredAt: '2026-01-17T09:00:00.000000+00:00',
+          type: 'CRYPTO_BUY',
+          status: 'pending',
+          unifiedStatus: 'IN_PROGRESS',
+          assetSymbol: 'BTC',
+          amount: 500.00,
+          amountSign: 'negative',
+          assetQuantity: 0.007,
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      wealthsimpleApi.fetchSpendTransactions.mockResolvedValue(new Map());
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        { ...mockCryptoAccount, includePendingTransactions: true },
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        id: 'crypto-buy-pending',
+        merchant: 'BTC',
+        amount: -500.00,
+        resolvedMonarchCategory: 'Buy',
+        ruleId: 'crypto-buy',
+        isPending: true,
+        unifiedStatus: 'IN_PROGRESS',
+      });
+    });
+
+    it('should include CRYPTO_SELL transactions with PENDING status as pending when includePendingTransactions is true', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'crypto-sell-pending',
+          occurredAt: '2026-01-18T11:00:00.000000+00:00',
+          type: 'CRYPTO_SELL',
+          status: null,
+          unifiedStatus: 'PENDING',
+          assetSymbol: 'ETH',
+          amount: 1500.00,
+          amountSign: 'positive',
+          assetQuantity: 0.6,
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      wealthsimpleApi.fetchSpendTransactions.mockResolvedValue(new Map());
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        { ...mockCryptoAccount, includePendingTransactions: true },
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        id: 'crypto-sell-pending',
+        merchant: 'ETH',
+        amount: 1500.00,
+        resolvedMonarchCategory: 'Sell',
+        ruleId: 'crypto-sell',
+        isPending: true,
+        unifiedStatus: 'PENDING',
+      });
+    });
+
+    it('should exclude crypto transactions with IN_PROGRESS status when includePendingTransactions is false', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'crypto-completed',
+          occurredAt: '2026-01-15T10:00:00.000000+00:00',
+          type: 'CRYPTO_BUY',
+          status: 'posted',
+          unifiedStatus: 'COMPLETED',
+          assetSymbol: 'BTC',
+          amount: 1000.00,
+          amountSign: 'negative',
+        },
+        {
+          externalCanonicalId: 'crypto-pending',
+          occurredAt: '2026-01-16T10:00:00.000000+00:00',
+          type: 'CRYPTO_BUY',
+          status: 'pending',
+          unifiedStatus: 'IN_PROGRESS',
+          assetSymbol: 'ETH',
+          amount: 500.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      wealthsimpleApi.fetchSpendTransactions.mockResolvedValue(new Map());
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        { ...mockCryptoAccount, includePendingTransactions: false },
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      // Should only include COMPLETED transaction
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('crypto-completed');
+      expect(result[0].isPending).toBe(false);
+    });
+
+    it('should exclude crypto transactions with CANCELLED status', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'crypto-completed',
+          occurredAt: '2026-01-15T10:00:00.000000+00:00',
+          type: 'CRYPTO_BUY',
+          status: 'posted',
+          unifiedStatus: 'COMPLETED',
+          assetSymbol: 'BTC',
+          amount: 1000.00,
+          amountSign: 'negative',
+        },
+        {
+          externalCanonicalId: 'crypto-cancelled',
+          occurredAt: '2026-01-16T10:00:00.000000+00:00',
+          type: 'CRYPTO_SELL',
+          status: 'cancelled',
+          unifiedStatus: 'CANCELLED',
+          assetSymbol: 'ETH',
+          amount: 2000.00,
+          amountSign: 'positive',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      wealthsimpleApi.fetchSpendTransactions.mockResolvedValue(new Map());
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        { ...mockCryptoAccount, includePendingTransactions: true },
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      // Should only include COMPLETED transaction
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('crypto-completed');
+    });
+
+    it('should exclude crypto transactions with REJECTED status', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'crypto-rejected',
+          occurredAt: '2026-01-15T10:00:00.000000+00:00',
+          type: 'CRYPTO_BUY',
+          status: null,
+          unifiedStatus: 'REJECTED',
+          assetSymbol: 'BTC',
+          amount: 1000.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      wealthsimpleApi.fetchSpendTransactions.mockResolvedValue(new Map());
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        { ...mockCryptoAccount, includePendingTransactions: true },
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      // Should exclude REJECTED transaction
+      expect(result).toEqual([]);
+    });
+
+    it('should exclude crypto transactions with EXPIRED status', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'crypto-expired',
+          occurredAt: '2026-01-15T10:00:00.000000+00:00',
+          type: 'CRYPTO_SELL',
+          status: null,
+          unifiedStatus: 'EXPIRED',
+          assetSymbol: 'ETH',
+          amount: 2000.00,
+          amountSign: 'positive',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      wealthsimpleApi.fetchSpendTransactions.mockResolvedValue(new Map());
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        { ...mockCryptoAccount, includePendingTransactions: true },
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      // Should exclude EXPIRED transaction
+      expect(result).toEqual([]);
+    });
+
+    it('should process mix of crypto buy and sell transactions', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'crypto-buy-1',
+          occurredAt: '2026-01-15T10:00:00.000000+00:00',
+          type: 'CRYPTO_BUY',
+          status: 'posted',
+          unifiedStatus: 'COMPLETED',
+          assetSymbol: 'BTC',
+          amount: 1000.00,
+          amountSign: 'negative',
+        },
+        {
+          externalCanonicalId: 'crypto-sell-1',
+          occurredAt: '2026-01-16T11:00:00.000000+00:00',
+          type: 'CRYPTO_SELL',
+          status: 'posted',
+          unifiedStatus: 'COMPLETED',
+          assetSymbol: 'ETH',
+          amount: 2000.00,
+          amountSign: 'positive',
+        },
+        {
+          externalCanonicalId: 'crypto-buy-pending',
+          occurredAt: '2026-01-17T12:00:00.000000+00:00',
+          type: 'CRYPTO_BUY',
+          status: 'pending',
+          unifiedStatus: 'IN_PROGRESS',
+          assetSymbol: 'SOL',
+          amount: 500.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      wealthsimpleApi.fetchSpendTransactions.mockResolvedValue(new Map());
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        { ...mockCryptoAccount, includePendingTransactions: true },
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      expect(result).toHaveLength(3);
+      
+      // CRYPTO_BUY completed
+      expect(result[0]).toMatchObject({
+        id: 'crypto-buy-1',
+        merchant: 'BTC',
+        amount: -1000.00,
+        resolvedMonarchCategory: 'Buy',
+        ruleId: 'crypto-buy',
+        isPending: false,
+      });
+
+      // CRYPTO_SELL completed
+      expect(result[1]).toMatchObject({
+        id: 'crypto-sell-1',
+        merchant: 'ETH',
+        amount: 2000.00,
+        resolvedMonarchCategory: 'Sell',
+        ruleId: 'crypto-sell',
+        isPending: false,
+      });
+
+      // CRYPTO_BUY pending
+      expect(result[2]).toMatchObject({
+        id: 'crypto-buy-pending',
+        merchant: 'SOL',
+        amount: -500.00,
+        resolvedMonarchCategory: 'Buy',
+        ruleId: 'crypto-buy',
+        isPending: true,
+      });
+    });
+
+    it('should handle crypto transactions with missing assetSymbol', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'crypto-buy-no-symbol',
+          occurredAt: '2026-01-15T10:00:00.000000+00:00',
+          type: 'CRYPTO_BUY',
+          status: 'posted',
+          unifiedStatus: 'COMPLETED',
+          assetSymbol: null,
+          amount: 1000.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      wealthsimpleApi.fetchSpendTransactions.mockResolvedValue(new Map());
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        mockCryptoAccount,
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].merchant).toBe('Unknown');
+    });
+
+    it('should skip already-uploaded crypto transactions', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'crypto-already-uploaded',
+          occurredAt: '2026-01-15T10:00:00.000000+00:00',
+          type: 'CRYPTO_BUY',
+          status: 'posted',
+          unifiedStatus: 'COMPLETED',
+          assetSymbol: 'BTC',
+          amount: 1000.00,
+          amountSign: 'negative',
+        },
+        {
+          externalCanonicalId: 'crypto-new',
+          occurredAt: '2026-01-16T10:00:00.000000+00:00',
+          type: 'CRYPTO_SELL',
+          status: 'posted',
+          unifiedStatus: 'COMPLETED',
+          assetSymbol: 'ETH',
+          amount: 2000.00,
+          amountSign: 'positive',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      wealthsimpleApi.fetchSpendTransactions.mockResolvedValue(new Map());
+
+      const uploadedIds = new Set(['crypto-already-uploaded']);
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        mockCryptoAccount,
+        '2026-01-01',
+        '2026-01-31',
+        { uploadedTransactionIds: uploadedIds },
+      );
+
+      // Should only process the new transaction
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('crypto-new');
+    });
+  });
+
+  describe('reconcilePendingTransactions - crypto transactions', () => {
+    const mockMonarchAccountId = 'monarch-crypto-123';
+    const mockPendingTagId = 'pending-tag-456';
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('should reconcile CRYPTO_BUY transactions using unifiedStatus field', async () => {
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [
+          {
+            id: 'monarch-tx-1',
+            amount: -1000.00,
+            date: '2026-01-10',
+            notes: 'ws-tx:crypto-buy-order-123',
+            ownedByUser: { id: 'user-123' },
+          },
+        ],
+      });
+      monarchApi.updateTransaction.mockResolvedValue({});
+      monarchApi.setTransactionTags.mockResolvedValue({});
+
+      const wealthsimpleTransactions = [
+        {
+          externalCanonicalId: 'crypto-buy-order-123',
+          type: 'CRYPTO_BUY',
+          status: 'posted',
+          unifiedStatus: 'COMPLETED',
+          amount: 1000.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        wealthsimpleTransactions,
+        30,
+        'SELF_DIRECTED_CRYPTO',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.settled).toBe(1);
+      expect(result.cancelled).toBe(0);
+      expect(monarchApi.setTransactionTags).toHaveBeenCalledWith('monarch-tx-1', []);
+    });
+
+    it('should skip CRYPTO_BUY when unifiedStatus is IN_PROGRESS', async () => {
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [
+          {
+            id: 'monarch-tx-1',
+            amount: -500.00,
+            date: '2026-01-10',
+            notes: 'ws-tx:crypto-buy-pending',
+            ownedByUser: { id: 'user-123' },
+          },
+        ],
+      });
+
+      const wealthsimpleTransactions = [
+        {
+          externalCanonicalId: 'crypto-buy-pending',
+          type: 'CRYPTO_BUY',
+          status: 'pending',
+          unifiedStatus: 'IN_PROGRESS',
+          amount: 500.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        wealthsimpleTransactions,
+        30,
+        'SELF_DIRECTED_CRYPTO',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.settled).toBe(0);
+      expect(result.cancelled).toBe(0);
+      expect(monarchApi.updateTransaction).not.toHaveBeenCalled();
+    });
+
+    it('should delete CRYPTO_SELL when unifiedStatus is CANCELLED', async () => {
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [
+          {
+            id: 'monarch-tx-1',
+            amount: 2000.00,
+            date: '2026-01-10',
+            notes: 'ws-tx:crypto-sell-cancelled',
+            ownedByUser: null,
+          },
+        ],
+      });
+      monarchApi.deleteTransaction.mockResolvedValue(true);
+
+      const wealthsimpleTransactions = [
+        {
+          externalCanonicalId: 'crypto-sell-cancelled',
+          type: 'CRYPTO_SELL',
+          status: 'cancelled',
+          unifiedStatus: 'CANCELLED',
+          amount: 2000.00,
+          amountSign: 'positive',
+        },
+      ];
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        wealthsimpleTransactions,
+        30,
+        'SELF_DIRECTED_CRYPTO',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.settled).toBe(0);
+      expect(result.cancelled).toBe(1);
+      expect(monarchApi.deleteTransaction).toHaveBeenCalledWith('monarch-tx-1');
+    });
+  });
+
   describe('skip categorization', () => {
     describe('credit card - skipCategorization setting', () => {
       it('should set empty category for unresolved transactions when skipCategorization is true', async () => {

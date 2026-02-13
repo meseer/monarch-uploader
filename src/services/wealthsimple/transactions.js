@@ -1445,14 +1445,14 @@ const INVESTMENT_TRANSACTION_RULES = [
  * @returns {boolean} True if buy/sell transaction type
  */
 function isInvestmentBuySellTransaction(transaction) {
-  const buySellTypes = ['MANAGED_BUY', 'DIY_BUY', 'MANAGED_SELL', 'DIY_SELL', 'OPTIONS_BUY', 'OPTIONS_SELL'];
+  const buySellTypes = ['MANAGED_BUY', 'DIY_BUY', 'MANAGED_SELL', 'DIY_SELL', 'OPTIONS_BUY', 'OPTIONS_SELL', 'CRYPTO_BUY', 'CRYPTO_SELL'];
   return buySellTypes.includes(transaction.type);
 }
 
 /**
  * Check if a transaction type uses unifiedStatus for status tracking
  * Investment accounts have many transaction types that use unifiedStatus:
- * - Buy/sell orders (MANAGED_BUY, DIY_BUY, etc.)
+ * - Buy/sell orders (MANAGED_BUY, DIY_BUY, CRYPTO_BUY, CRYPTO_SELL, etc.)
  * - Deposits (DEPOSIT with subType EFT, EFT_RECURRING, or null)
  * - Dividends (DIVIDEND)
  * - Interest (INTEREST)
@@ -1465,6 +1465,7 @@ function isInvestmentBuySellTransaction(transaction) {
 function usesUnifiedStatus(transaction) {
   const unifiedStatusTypes = [
     'MANAGED_BUY', 'DIY_BUY', 'MANAGED_SELL', 'DIY_SELL', 'OPTIONS_BUY', 'OPTIONS_SELL', 'OPTIONS_SHORT_EXPIRY',
+    'CRYPTO_BUY', 'CRYPTO_SELL',
     'DEPOSIT', 'DIVIDEND', 'INTEREST', 'INSTITUTIONAL_TRANSFER_INTENT',
   ];
   // Known types that use unifiedStatus, OR any transaction with null status field

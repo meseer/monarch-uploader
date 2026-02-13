@@ -8137,6 +8137,172 @@ describe('Wealthsimple Transaction Rules Engine', () => {
     });
   });
 
+  describe('CRYPTO_BUY rule', () => {
+    it('should match transactions with type CRYPTO_BUY', () => {
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-buy');
+      expect(rule.match({ type: 'CRYPTO_BUY' })).toBe(true);
+    });
+
+    it('should not match transactions with different type', () => {
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-buy');
+
+      expect(rule.match({ type: 'DIY_BUY' })).toBe(false);
+      expect(rule.match({ type: 'CRYPTO_SELL' })).toBe(false);
+      expect(rule.match({ type: 'MANAGED_BUY' })).toBe(false);
+    });
+
+    it('should process CRYPTO_BUY with all fields correctly', () => {
+      const transaction = {
+        externalCanonicalId: 'crypto-buy-123',
+        type: 'CRYPTO_BUY',
+        subType: 'MARKET_ORDER',
+        assetSymbol: 'BTC',
+        amount: 1000,
+        currency: 'CAD',
+        assetQuantity: 0.015,
+      };
+
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-buy');
+      const result = rule.process(transaction, null);
+
+      expect(result).not.toBeNull();
+      expect(result.category).toBe('Buy');
+      expect(result.merchant).toBe('BTC');
+      expect(result.originalStatement).toBe('CRYPTO_BUY:MARKET_ORDER:BTC');
+      expect(result.notes).toContain('BTC');
+      expect(result.technicalDetails).toBe('');
+    });
+
+    it('should handle missing assetSymbol with Unknown fallback', () => {
+      const transaction = {
+        externalCanonicalId: 'crypto-buy-no-symbol',
+        type: 'CRYPTO_BUY',
+        subType: 'LIMIT_ORDER',
+        assetSymbol: null,
+        amount: 500,
+        currency: 'CAD',
+      };
+
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-buy');
+      const result = rule.process(transaction, null);
+
+      expect(result).not.toBeNull();
+      expect(result.merchant).toBe('Unknown');
+      expect(result.originalStatement).toBe('CRYPTO_BUY:LIMIT_ORDER:Unknown');
+    });
+
+    it('should use extended order data when available', () => {
+      const transaction = {
+        externalCanonicalId: 'crypto-buy-extended',
+        type: 'CRYPTO_BUY',
+        subType: 'MARKET_ORDER',
+        assetSymbol: 'ETH',
+        amount: 2000,
+        currency: 'CAD',
+      };
+
+      const enrichmentMap = new Map();
+      enrichmentMap.set('crypto-buy-extended', {
+        orderType: 'BUY',
+        submittedQuantity: 1.5,
+        filledQuantity: 1.5,
+        averageFilledPrice: 1333.33,
+        filledTotalFee: 0,
+      });
+
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-buy');
+      const result = rule.process(transaction, enrichmentMap);
+
+      expect(result).not.toBeNull();
+      expect(result.category).toBe('Buy');
+      expect(result.merchant).toBe('ETH');
+      expect(result.notes).toContain('ETH');
+    });
+  });
+
+  describe('CRYPTO_SELL rule', () => {
+    it('should match transactions with type CRYPTO_SELL', () => {
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-sell');
+      expect(rule.match({ type: 'CRYPTO_SELL' })).toBe(true);
+    });
+
+    it('should not match transactions with different type', () => {
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-sell');
+
+      expect(rule.match({ type: 'DIY_SELL' })).toBe(false);
+      expect(rule.match({ type: 'CRYPTO_BUY' })).toBe(false);
+      expect(rule.match({ type: 'MANAGED_SELL' })).toBe(false);
+    });
+
+    it('should process CRYPTO_SELL with all fields correctly', () => {
+      const transaction = {
+        externalCanonicalId: 'crypto-sell-123',
+        type: 'CRYPTO_SELL',
+        subType: 'MARKET_ORDER',
+        assetSymbol: 'BTC',
+        amount: 1500,
+        currency: 'CAD',
+        assetQuantity: 0.02,
+      };
+
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-sell');
+      const result = rule.process(transaction, null);
+
+      expect(result).not.toBeNull();
+      expect(result.category).toBe('Sell');
+      expect(result.merchant).toBe('BTC');
+      expect(result.originalStatement).toBe('CRYPTO_SELL:MARKET_ORDER:BTC');
+      expect(result.notes).toContain('BTC');
+      expect(result.technicalDetails).toBe('');
+    });
+
+    it('should handle missing assetSymbol with Unknown fallback', () => {
+      const transaction = {
+        externalCanonicalId: 'crypto-sell-no-symbol',
+        type: 'CRYPTO_SELL',
+        subType: 'LIMIT_ORDER',
+        assetSymbol: null,
+        amount: 750,
+        currency: 'CAD',
+      };
+
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-sell');
+      const result = rule.process(transaction, null);
+
+      expect(result).not.toBeNull();
+      expect(result.merchant).toBe('Unknown');
+      expect(result.originalStatement).toBe('CRYPTO_SELL:LIMIT_ORDER:Unknown');
+    });
+
+    it('should use extended order data when available', () => {
+      const transaction = {
+        externalCanonicalId: 'crypto-sell-extended',
+        type: 'CRYPTO_SELL',
+        subType: 'MARKET_ORDER',
+        assetSymbol: 'SOL',
+        amount: 500,
+        currency: 'CAD',
+      };
+
+      const enrichmentMap = new Map();
+      enrichmentMap.set('crypto-sell-extended', {
+        orderType: 'SELL',
+        submittedQuantity: 5,
+        filledQuantity: 5,
+        averageFilledPrice: 100,
+        filledTotalFee: 0,
+      });
+
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-sell');
+      const result = rule.process(transaction, enrichmentMap);
+
+      expect(result).not.toBeNull();
+      expect(result.category).toBe('Sell');
+      expect(result.merchant).toBe('SOL');
+      expect(result.notes).toContain('SOL');
+    });
+  });
+
   describe('OPTIONS_SHORT_EXPIRY rule', () => {
     it('should match transactions with type OPTIONS_SHORT_EXPIRY', () => {
       const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'options-short-expiry');

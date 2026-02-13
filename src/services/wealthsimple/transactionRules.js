@@ -2010,6 +2010,58 @@ export const INVESTMENT_BUY_SELL_TRANSACTION_RULES = [
     },
   },
   {
+    id: 'crypto-buy',
+    description: 'Crypto buy transactions (self-directed crypto accounts)',
+    match: (tx) => tx.type === 'CRYPTO_BUY',
+    /**
+     * Process CRYPTO_BUY transactions
+     * These are cryptocurrency purchases in SELF_DIRECTED_CRYPTO accounts
+     * Same structure as DIY_BUY (.assetSymbol, .amount, .assetQuantity, etc.)
+     *
+     * @param {Object} tx - Raw transaction
+     * @param {Map<string, Object>} enrichmentMap - Map containing extended order data
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx, enrichmentMap) => {
+      const symbol = tx.assetSymbol || 'Unknown';
+      const extendedOrder = enrichmentMap?.get(tx.externalCanonicalId) || null;
+
+      return {
+        category: 'Buy',
+        merchant: symbol,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, symbol),
+        notes: formatInvestmentOrderNotes(tx, extendedOrder),
+        technicalDetails: '',
+      };
+    },
+  },
+  {
+    id: 'crypto-sell',
+    description: 'Crypto sell transactions (self-directed crypto accounts)',
+    match: (tx) => tx.type === 'CRYPTO_SELL',
+    /**
+     * Process CRYPTO_SELL transactions
+     * These are cryptocurrency sales in SELF_DIRECTED_CRYPTO accounts
+     * Same structure as DIY_SELL (.assetSymbol, .amount, .assetQuantity, etc.)
+     *
+     * @param {Object} tx - Raw transaction
+     * @param {Map<string, Object>} enrichmentMap - Map containing extended order data
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx, enrichmentMap) => {
+      const symbol = tx.assetSymbol || 'Unknown';
+      const extendedOrder = enrichmentMap?.get(tx.externalCanonicalId) || null;
+
+      return {
+        category: 'Sell',
+        merchant: symbol,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, symbol),
+        notes: formatInvestmentOrderNotes(tx, extendedOrder),
+        technicalDetails: '',
+      };
+    },
+  },
+  {
     id: 'options-buy',
     description: 'Options buy transactions',
     match: (tx) => tx.type === 'OPTIONS_BUY',
