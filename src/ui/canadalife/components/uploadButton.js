@@ -823,18 +823,18 @@ export function createCanadaLifeUploadButton() {
   // Create collapsible testing section (only visible in Development Mode)
   const testingSection = document.createElement('div');
   testingSection.style.cssText = `
-    border: 1px solid #ddd;
+    border: 1px solid var(--mu-border, #ddd);
     border-radius: 4px;
     margin: 8px 0;
-    background-color: #fafafa;
+    background-color: var(--mu-bg-secondary, #fafafa);
   `;
 
   // Create toggle header for testing section
   const testingHeader = document.createElement('div');
   testingHeader.style.cssText = `
     padding: 8px 12px;
-    background-color: #f0f0f0;
-    border-bottom: 1px solid #ddd;
+    background-color: var(--mu-bg-tertiary, #f0f0f0);
+    border-bottom: 1px solid var(--mu-border, #ddd);
     cursor: pointer;
     user-select: none;
     display: flex;
@@ -842,7 +842,7 @@ export function createCanadaLifeUploadButton() {
     align-items: center;
     font-size: 13px;
     font-weight: 500;
-    color: #666;
+    color: var(--mu-text-secondary, #666);
   `;
 
   const testingTitle = document.createElement('span');

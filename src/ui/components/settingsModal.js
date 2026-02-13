@@ -881,8 +881,8 @@ function renderMonarchTab(container) {
     padding: 12px;
     border-radius: 6px;
     ${authStatus.authenticated
-    ? 'background-color: #d4edda; border: 1px solid #c3e6cb; color: #155724;'
-    : 'background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24;'
+    ? 'background-color: var(--mu-status-success-bg, #d4edda); border: 1px solid var(--mu-status-success-border, #c3e6cb); color: var(--mu-status-success-text, #155724);'
+    : 'background-color: var(--mu-status-error-bg, #f8d7da); border: 1px solid var(--mu-status-error-border, #f5c6cb); color: var(--mu-status-error-text, #721c24);'
 }
   `;
 
@@ -916,7 +916,7 @@ function renderMonarchTab(container) {
 
   // Status details
   const statusDetails = document.createElement('div');
-  statusDetails.style.cssText = 'font-size: 13px; color: #666; margin-bottom: 15px; line-height: 1.4;';
+  statusDetails.style.cssText = 'font-size: 13px; color: var(--mu-text-secondary, #666); margin-bottom: 15px; line-height: 1.4;';
 
   if (authStatus.authenticated) {
     statusDetails.innerHTML = `
@@ -927,7 +927,7 @@ function renderMonarchTab(container) {
     // MIGRATION: Use dynamic Monarch app URL
     statusDetails.innerHTML = `
       <strong>Status:</strong> No authentication token found.<br>
-      <strong>To connect:</strong> Visit <a href="${API.MONARCH_APP_URL}" target="_blank" style="color: #0073b1; text-decoration: none;">Monarch Money</a> and log in. The token will be automatically captured.
+      <strong>To connect:</strong> Visit <a href="${API.MONARCH_APP_URL}" target="_blank" style="color: var(--mu-link-color, #0073b1); text-decoration: none;">Monarch Money</a> and log in. The token will be automatically captured.
     `;
   }
 
@@ -943,7 +943,7 @@ function renderMonarchTab(container) {
 
     // Token info
     const tokenInfo = document.createElement('div');
-    tokenInfo.style.cssText = 'margin-bottom: 15px; font-size: 14px; color: #666;';
+    tokenInfo.style.cssText = 'margin-bottom: 15px; font-size: 14px; color: var(--mu-text-secondary, #666);';
     tokenInfo.textContent = 'Your authentication token is securely stored locally and is used to access Monarch Money\'s API.';
     tokenContainer.appendChild(tokenInfo);
 
@@ -1310,8 +1310,8 @@ function renderCategoryMappingsSection(integrationId, storageKey, sourceColumnLa
     align-items: center;
     justify-content: space-between;
     padding: 10px 12px;
-    background-color: #fff;
-    border: 1px solid #e0e0e0;
+    background-color: var(--mu-bg-primary, #fff);
+    border: 1px solid var(--mu-border, #e0e0e0);
     border-radius: 6px;
     cursor: pointer;
     transition: background-color 0.2s;
@@ -1328,11 +1328,11 @@ function renderCategoryMappingsSection(integrationId, storageKey, sourceColumnLa
 
   const headerTitle = document.createElement('h4');
   headerTitle.textContent = 'Category Mappings';
-  headerTitle.style.cssText = 'margin: 0; font-size: 14px; color: #333;';
+  headerTitle.style.cssText = 'margin: 0; font-size: 14px; color: var(--mu-text-primary, #333);';
   headerLeft.appendChild(headerTitle);
 
   const mappingCount = document.createElement('span');
-  mappingCount.style.cssText = 'font-size: 12px; color: #666;';
+  mappingCount.style.cssText = 'font-size: 12px; color: var(--mu-text-secondary, #666);';
   mappingCount.textContent = `(${categoryData.length} mapping${categoryData.length !== 1 ? 's' : ''})`;
   headerLeft.appendChild(mappingCount);
 
@@ -1345,16 +1345,16 @@ function renderCategoryMappingsSection(integrationId, storageKey, sourceColumnLa
   expandableContent.style.cssText = `
     display: none;
     padding: 12px;
-    border: 1px solid #e0e0e0;
+    border: 1px solid var(--mu-border, #e0e0e0);
     border-top: none;
     border-radius: 0 0 6px 6px;
-    background-color: #fff;
+    background-color: var(--mu-bg-primary, #fff);
   `;
 
   if (categoryData.length === 0) {
     const emptyMessage = document.createElement('p');
     emptyMessage.textContent = 'No category mappings found. Mappings will appear here after you categorize transactions.';
-    emptyMessage.style.cssText = 'color: #666; font-style: italic; margin: 0; font-size: 13px;';
+    emptyMessage.style.cssText = 'color: var(--mu-text-secondary, #666); font-style: italic; margin: 0; font-size: 13px;';
     expandableContent.appendChild(emptyMessage);
   } else {
     // Filter controls container
@@ -1368,7 +1368,7 @@ function renderCategoryMappingsSection(integrationId, storageKey, sourceColumnLa
 
     const sourceFilterLabel = document.createElement('label');
     sourceFilterLabel.textContent = sourceColumnLabel;
-    sourceFilterLabel.style.cssText = 'display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: 500;';
+    sourceFilterLabel.style.cssText = 'display: block; font-size: 12px; color: var(--mu-text-secondary, #666); margin-bottom: 4px; font-weight: 500;';
     sourceFilterWrapper.appendChild(sourceFilterLabel);
 
     const sourceFilterInput = document.createElement('input');
@@ -1394,7 +1394,7 @@ function renderCategoryMappingsSection(integrationId, storageKey, sourceColumnLa
 
     const categoryFilterLabel = document.createElement('label');
     categoryFilterLabel.textContent = 'Monarch Category';
-    categoryFilterLabel.style.cssText = 'display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: 500;';
+    categoryFilterLabel.style.cssText = 'display: block; font-size: 12px; color: var(--mu-text-secondary, #666); margin-bottom: 4px; font-weight: 500;';
     categoryFilterWrapper.appendChild(categoryFilterLabel);
 
     // Searchable dropdown container
@@ -1428,7 +1428,7 @@ function renderCategoryMappingsSection(integrationId, storageKey, sourceColumnLa
       top: 50%;
       transform: translateY(-50%);
       font-size: 10px;
-      color: #666;
+      color: var(--mu-text-secondary, #666);
       pointer-events: none;
     `;
 
@@ -1463,14 +1463,14 @@ function renderCategoryMappingsSection(integrationId, storageKey, sourceColumnLa
       cursor: pointer;
       font-size: 13px;
       font-style: italic;
-      color: #666;
+      color: var(--mu-text-secondary, #666);
       transition: background-color 0.1s;
     `;
     allOption.addEventListener('mouseover', () => {
-      allOption.style.backgroundColor = '#f0f0f0';
+      allOption.style.backgroundColor = 'var(--mu-hover-bg, #f0f0f0)';
     });
     allOption.addEventListener('mouseout', () => {
-      allOption.style.backgroundColor = 'white';
+      allOption.style.backgroundColor = 'var(--mu-bg-primary, white)';
     });
     allOption.addEventListener('click', () => {
       categoryInput.value = '';
@@ -1493,10 +1493,10 @@ function renderCategoryMappingsSection(integrationId, storageKey, sourceColumnLa
         transition: background-color 0.1s;
       `;
       option.addEventListener('mouseover', () => {
-        option.style.backgroundColor = '#f0f0f0';
+        option.style.backgroundColor = 'var(--mu-hover-bg, #f0f0f0)';
       });
       option.addEventListener('mouseout', () => {
-        option.style.backgroundColor = 'white';
+        option.style.backgroundColor = 'var(--mu-bg-primary, white)';
       });
       option.addEventListener('click', () => {
         categoryInput.value = category;
@@ -1591,10 +1591,10 @@ function renderCategoryMappingsSection(integrationId, storageKey, sourceColumnLa
       const th = document.createElement('th');
       th.textContent = headerText;
       th.style.cssText = `
-        background-color: #f8f9fa;
+        background-color: var(--mu-bg-secondary, #f8f9fa);
         padding: 10px;
         text-align: left;
-        border: 1px solid #e0e0e0;
+        border: 1px solid var(--mu-border, #e0e0e0);
         font-weight: bold;
         position: sticky;
         top: 0;
@@ -1618,18 +1618,18 @@ function renderCategoryMappingsSection(integrationId, storageKey, sourceColumnLa
       // Source key cell
       const sourceCell = document.createElement('td');
       sourceCell.textContent = item.sourceKey;
-      sourceCell.style.cssText = 'padding: 10px; border: 1px solid #e0e0e0;';
+      sourceCell.style.cssText = 'padding: 10px; border: 1px solid var(--mu-border, #e0e0e0);';
       row.appendChild(sourceCell);
 
       // Monarch category cell
       const categoryCell = document.createElement('td');
       categoryCell.textContent = item.monarchCategory;
-      categoryCell.style.cssText = 'padding: 10px; border: 1px solid #e0e0e0;';
+      categoryCell.style.cssText = 'padding: 10px; border: 1px solid var(--mu-border, #e0e0e0);';
       row.appendChild(categoryCell);
 
       // Actions cell
       const actionsCell = document.createElement('td');
-      actionsCell.style.cssText = 'padding: 10px; border: 1px solid #e0e0e0;';
+      actionsCell.style.cssText = 'padding: 10px; border: 1px solid var(--mu-border, #e0e0e0);';
 
       const deleteBtn = document.createElement('button');
       deleteBtn.textContent = 'Delete';
@@ -1678,7 +1678,7 @@ function renderCategoryMappingsSection(integrationId, storageKey, sourceColumnLa
     // Filter results count
     const resultsCount = document.createElement('div');
     resultsCount.id = `category-mappings-results-count-${integrationId}`;
-    resultsCount.style.cssText = 'margin-top: 8px; font-size: 12px; color: #666;';
+    resultsCount.style.cssText = 'margin-top: 8px; font-size: 12px; color: var(--mu-text-secondary, #666);';
     resultsCount.textContent = `Showing ${categoryData.length} of ${categoryData.length} mappings`;
 
     // Now define the actual applyFilters implementation and assign to callback
@@ -1766,10 +1766,10 @@ function renderCategoryMappingsSection(integrationId, storageKey, sourceColumnLa
   });
 
   sectionHeader.addEventListener('mouseover', () => {
-    sectionHeader.style.backgroundColor = '#f8f9fa';
+    sectionHeader.style.backgroundColor = 'var(--mu-bg-secondary, #f8f9fa)';
   });
   sectionHeader.addEventListener('mouseout', () => {
-    sectionHeader.style.backgroundColor = '#fff';
+    sectionHeader.style.backgroundColor = 'var(--mu-bg-primary, #fff)';
   });
 
   return sectionContainer;
@@ -1790,13 +1790,13 @@ function renderAccountSettingsSection(integrationId, accountEntry, accountId, on
 
   const settingsTitle = document.createElement('h4');
   settingsTitle.textContent = 'Account Settings';
-  settingsTitle.style.cssText = 'margin: 0 0 10px 0; font-size: 14px; color: #333;';
+  settingsTitle.style.cssText = 'margin: 0 0 10px 0; font-size: 14px; color: var(--mu-text-primary, #333);';
   settingsSection.appendChild(settingsTitle);
 
   const capabilities = getCapabilities(integrationId);
   if (!capabilities || capabilities.settings.length === 0) {
     const noSettingsMsg = document.createElement('div');
-    noSettingsMsg.style.cssText = 'font-size: 13px; color: #666; font-style: italic;';
+    noSettingsMsg.style.cssText = 'font-size: 13px; color: var(--mu-text-secondary, #666); font-style: italic;';
     noSettingsMsg.textContent = 'No configurable settings for this integration.';
     settingsSection.appendChild(noSettingsMsg);
     return settingsSection;
@@ -1806,12 +1806,12 @@ function renderAccountSettingsSection(integrationId, accountEntry, accountId, on
   if (hasSetting(integrationId, ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES)) {
     const transactionDetailsSetting = document.createElement('div');
     transactionDetailsSetting.id = `setting-tx-details-${accountId}`;
-    transactionDetailsSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: white; border-radius: 6px; margin-bottom: 8px;';
+    transactionDetailsSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--mu-bg-primary, white); border-radius: 6px; margin-bottom: 8px;';
 
     const transactionDetailsLabel = document.createElement('div');
     transactionDetailsLabel.innerHTML = `
       <div style="font-weight: 500; font-size: 13px;">Store transaction details in notes</div>
-      <div style="font-size: 11px; color: #666;">When enabled, transaction details will be included in the Notes field</div>
+      <div style="font-size: 11px; color: var(--mu-text-secondary, #666);">When enabled, transaction details will be included in the Notes field</div>
     `;
 
     const currentValue = accountEntry.storeTransactionDetailsInNotes ?? getSettingDefault(integrationId, ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES);
@@ -1839,12 +1839,12 @@ function renderAccountSettingsSection(integrationId, accountEntry, accountId, on
   if (hasSetting(integrationId, ACCOUNT_SETTINGS.STRIP_STORE_NUMBERS)) {
     const stripStoreNumbersSetting = document.createElement('div');
     stripStoreNumbersSetting.id = `setting-strip-store-${accountId}`;
-    stripStoreNumbersSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: white; border-radius: 6px; margin-bottom: 8px;';
+    stripStoreNumbersSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--mu-bg-primary, white); border-radius: 6px; margin-bottom: 8px;';
 
     const stripStoreNumbersLabel = document.createElement('div');
     stripStoreNumbersLabel.innerHTML = `
       <div style="font-weight: 500; font-size: 13px;">Strip store numbers from merchants</div>
-      <div style="font-size: 11px; color: #666;">Remove store numbers from merchant names (e.g., "WALMART #1234" → "WALMART")</div>
+      <div style="font-size: 11px; color: var(--mu-text-secondary, #666);">Remove store numbers from merchant names (e.g., "WALMART #1234" → "WALMART")</div>
     `;
 
     const currentValue = accountEntry.stripStoreNumbers ?? getSettingDefault(integrationId, ACCOUNT_SETTINGS.STRIP_STORE_NUMBERS);
@@ -1872,12 +1872,12 @@ function renderAccountSettingsSection(integrationId, accountEntry, accountId, on
   if (hasSetting(integrationId, ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS)) {
     const includePendingSetting = document.createElement('div');
     includePendingSetting.id = `setting-pending-${accountId}`;
-    includePendingSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: white; border-radius: 6px; margin-bottom: 8px;';
+    includePendingSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--mu-bg-primary, white); border-radius: 6px; margin-bottom: 8px;';
 
     const includePendingLabel = document.createElement('div');
     includePendingLabel.innerHTML = `
       <div style="font-weight: 500; font-size: 13px;">Include pending transactions</div>
-      <div style="font-size: 11px; color: #666;">When enabled, authorized (pending) transactions are included with a "Pending" tag</div>
+      <div style="font-size: 11px; color: var(--mu-text-secondary, #666);">When enabled, authorized (pending) transactions are included with a "Pending" tag</div>
     `;
 
     const currentValue = accountEntry.includePendingTransactions ?? getSettingDefault(integrationId, ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS);
@@ -1905,12 +1905,12 @@ function renderAccountSettingsSection(integrationId, accountEntry, accountId, on
   if (hasSetting(integrationId, ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS)) {
     const retentionDaysSetting = document.createElement('div');
     retentionDaysSetting.id = `setting-retention-days-${accountId}`;
-    retentionDaysSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: white; border-radius: 6px; margin-bottom: 8px;';
+    retentionDaysSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--mu-bg-primary, white); border-radius: 6px; margin-bottom: 8px;';
 
     const retentionDaysLabel = document.createElement('div');
     retentionDaysLabel.innerHTML = `
       <div style="font-weight: 500; font-size: 13px;">Transaction retention days</div>
-      <div style="font-size: 11px; color: #666;">Number of days to keep transaction IDs for deduplication (0 = unlimited)</div>
+      <div style="font-size: 11px; color: var(--mu-text-secondary, #666);">Number of days to keep transaction IDs for deduplication (0 = unlimited)</div>
     `;
 
     const retentionDaysInputContainer = document.createElement('div');
@@ -1922,7 +1922,7 @@ function renderAccountSettingsSection(integrationId, accountEntry, accountId, on
     retentionDaysInput.min = '0';
     retentionDaysInput.max = '3650';
     retentionDaysInput.value = accountEntry.transactionRetentionDays ?? defaultRetentionDays;
-    retentionDaysInput.style.cssText = 'width: 70px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px;';
+    retentionDaysInput.style.cssText = 'width: 70px; padding: 4px 8px; border: 1px solid var(--mu-input-border, #ccc); border-radius: 4px; font-size: 13px; background: var(--mu-input-bg, white); color: var(--mu-text-primary, #333);';
 
     retentionDaysInput.addEventListener('change', () => {
       const value = parseInt(retentionDaysInput.value, 10);
@@ -1953,7 +1953,7 @@ function renderAccountSettingsSection(integrationId, accountEntry, accountId, on
 
     const daysLabel = document.createElement('span');
     daysLabel.textContent = 'days';
-    daysLabel.style.cssText = 'font-size: 12px; color: #666;';
+    daysLabel.style.cssText = 'font-size: 12px; color: var(--mu-text-secondary, #666);';
 
     retentionDaysInputContainer.appendChild(retentionDaysInput);
     retentionDaysInputContainer.appendChild(daysLabel);
@@ -1968,12 +1968,12 @@ function renderAccountSettingsSection(integrationId, accountEntry, accountId, on
   if (hasSetting(integrationId, ACCOUNT_SETTINGS.INVERT_BALANCE)) {
     const invertBalanceSetting = document.createElement('div');
     invertBalanceSetting.id = `setting-invert-balance-${accountId}`;
-    invertBalanceSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: white; border-radius: 6px; margin-bottom: 8px;';
+    invertBalanceSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--mu-bg-primary, white); border-radius: 6px; margin-bottom: 8px;';
 
     const invertBalanceLabel = document.createElement('div');
     invertBalanceLabel.innerHTML = `
       <div style="font-weight: 500; font-size: 13px;">Invert balance values</div>
-      <div style="font-size: 11px; color: #666;">Negate balance values before uploading. Enable for manually created accounts where the bank reports negative balances.</div>
+      <div style="font-size: 11px; color: var(--mu-text-secondary, #666);">Negate balance values before uploading. Enable for manually created accounts where the bank reports negative balances.</div>
     `;
 
     const currentValue = accountEntry.invertBalance ?? getSettingDefault(integrationId, ACCOUNT_SETTINGS.INVERT_BALANCE);
@@ -2001,12 +2001,12 @@ function renderAccountSettingsSection(integrationId, accountEntry, accountId, on
   if (hasSetting(integrationId, ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT)) {
     const retentionCountSetting = document.createElement('div');
     retentionCountSetting.id = `setting-retention-count-${accountId}`;
-    retentionCountSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: white; border-radius: 6px; margin-bottom: 8px;';
+    retentionCountSetting.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--mu-bg-primary, white); border-radius: 6px; margin-bottom: 8px;';
 
     const retentionCountLabel = document.createElement('div');
     retentionCountLabel.innerHTML = `
       <div style="font-weight: 500; font-size: 13px;">Transaction retention count</div>
-      <div style="font-size: 11px; color: #666;">Maximum number of transaction IDs to keep (0 = unlimited)</div>
+      <div style="font-size: 11px; color: var(--mu-text-secondary, #666);">Maximum number of transaction IDs to keep (0 = unlimited)</div>
     `;
 
     const retentionCountInputContainer = document.createElement('div');
@@ -2018,7 +2018,7 @@ function renderAccountSettingsSection(integrationId, accountEntry, accountId, on
     retentionCountInput.min = '0';
     retentionCountInput.max = '100000';
     retentionCountInput.value = accountEntry.transactionRetentionCount ?? defaultRetentionCount;
-    retentionCountInput.style.cssText = 'width: 70px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px;';
+    retentionCountInput.style.cssText = 'width: 70px; padding: 4px 8px; border: 1px solid var(--mu-input-border, #ccc); border-radius: 4px; font-size: 13px; background: var(--mu-input-bg, white); color: var(--mu-text-primary, #333);';
 
     retentionCountInput.addEventListener('change', () => {
       const value = parseInt(retentionCountInput.value, 10);
@@ -2039,7 +2039,7 @@ function renderAccountSettingsSection(integrationId, accountEntry, accountId, on
 
     const countLabel = document.createElement('span');
     countLabel.textContent = 'IDs';
-    countLabel.style.cssText = 'font-size: 12px; color: #666;';
+    countLabel.style.cssText = 'font-size: 12px; color: var(--mu-text-secondary, #666);';
 
     retentionCountInputContainer.appendChild(retentionCountInput);
     retentionCountInputContainer.appendChild(countLabel);
@@ -2085,8 +2085,8 @@ function renderTransactionsManagementSection(integrationId, accountEntry, accoun
     align-items: center;
     justify-content: space-between;
     padding: 10px 12px;
-    background-color: #fff;
-    border: 1px solid #e0e0e0;
+    background-color: var(--mu-bg-primary, #fff);
+    border: 1px solid var(--mu-border, #e0e0e0);
     border-radius: 6px;
     cursor: pointer;
     transition: background-color 0.2s;
@@ -2103,11 +2103,11 @@ function renderTransactionsManagementSection(integrationId, accountEntry, accoun
 
   const headerTitle = document.createElement('h4');
   headerTitle.textContent = 'Uploaded Transactions';
-  headerTitle.style.cssText = 'margin: 0; font-size: 14px; color: #333;';
+  headerTitle.style.cssText = 'margin: 0; font-size: 14px; color: var(--mu-text-primary, #333);';
   headerLeft.appendChild(headerTitle);
 
   const transactionCount = document.createElement('span');
-  transactionCount.style.cssText = 'font-size: 12px; color: #666;';
+  transactionCount.style.cssText = 'font-size: 12px; color: var(--mu-text-secondary, #666);';
   transactionCount.textContent = `(${uploadedTransactions.length} stored)`;
   headerLeft.appendChild(transactionCount);
 
@@ -2120,16 +2120,16 @@ function renderTransactionsManagementSection(integrationId, accountEntry, accoun
   expandableContent.style.cssText = `
     display: none;
     padding: 12px;
-    border: 1px solid #e0e0e0;
+    border: 1px solid var(--mu-border, #e0e0e0);
     border-top: none;
     border-radius: 0 0 6px 6px;
-    background-color: #fff;
+    background-color: var(--mu-bg-primary, #fff);
   `;
 
   if (uploadedTransactions.length === 0) {
     const emptyMessage = document.createElement('p');
     emptyMessage.textContent = 'No uploaded transaction IDs stored. Transactions will appear here after syncing.';
-    emptyMessage.style.cssText = 'color: #666; font-style: italic; margin: 0; font-size: 13px;';
+    emptyMessage.style.cssText = 'color: var(--mu-text-secondary, #666); font-style: italic; margin: 0; font-size: 13px;';
     expandableContent.appendChild(emptyMessage);
   } else {
     // Bulk actions
@@ -2145,7 +2145,7 @@ function renderTransactionsManagementSection(integrationId, accountEntry, accoun
       padding: 5px 10px;
       border: 1px solid #28a745;
       border-radius: 4px;
-      background: white;
+      background: var(--mu-bg-primary, white);
       color: #28a745;
       cursor: pointer;
       font-size: 12px;
@@ -2156,9 +2156,10 @@ function renderTransactionsManagementSection(integrationId, accountEntry, accoun
     selectAllBtn.textContent = 'Select All';
     selectAllBtn.style.cssText = `
       padding: 5px 10px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--mu-input-border, #ccc);
       border-radius: 4px;
-      background: white;
+      background: var(--mu-bg-primary, white);
+      color: var(--mu-text-primary, #333);
       cursor: pointer;
       font-size: 12px;
     `;
@@ -2168,9 +2169,10 @@ function renderTransactionsManagementSection(integrationId, accountEntry, accoun
     selectNoneBtn.textContent = 'Select None';
     selectNoneBtn.style.cssText = `
       padding: 5px 10px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--mu-input-border, #ccc);
       border-radius: 4px;
-      background: white;
+      background: var(--mu-bg-primary, white);
+      color: var(--mu-text-primary, #333);
       cursor: pointer;
       font-size: 12px;
     `;
@@ -2216,8 +2218,8 @@ function renderTransactionsManagementSection(integrationId, accountEntry, accoun
       display: none;
       margin-bottom: 12px;
       padding: 12px;
-      background-color: #f8f9fa;
-      border: 1px solid #e0e0e0;
+      background-color: var(--mu-bg-secondary, #f8f9fa);
+      border: 1px solid var(--mu-border, #e0e0e0);
       border-radius: 4px;
     `;
 
@@ -2233,12 +2235,14 @@ function renderTransactionsManagementSection(integrationId, accountEntry, accoun
       width: 100%;
       min-height: 80px;
       padding: 8px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--mu-input-border, #ccc);
       border-radius: 4px;
       font-family: monospace;
       font-size: 13px;
       resize: vertical;
       box-sizing: border-box;
+      background: var(--mu-input-bg, white);
+      color: var(--mu-text-primary, #333);
     `;
     addInputArea.appendChild(textarea);
 
@@ -2263,10 +2267,10 @@ function renderTransactionsManagementSection(integrationId, accountEntry, accoun
     cancelInputBtn.textContent = 'Cancel';
     cancelInputBtn.style.cssText = `
       padding: 6px 12px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--mu-input-border, #ccc);
       border-radius: 4px;
-      background: white;
-      color: #333;
+      background: var(--mu-bg-primary, white);
+      color: var(--mu-text-primary, #333);
       cursor: pointer;
       font-size: 12px;
     `;
@@ -2282,7 +2286,7 @@ function renderTransactionsManagementSection(integrationId, accountEntry, accoun
     transactionsList.style.cssText = `
       max-height: 250px;
       overflow-y: auto;
-      border: 1px solid #e0e0e0;
+      border: 1px solid var(--mu-border, #e0e0e0);
       border-radius: 4px;
     `;
 
@@ -2294,8 +2298,8 @@ function renderTransactionsManagementSection(integrationId, accountEntry, accoun
         display: flex;
         align-items: center;
         padding: 8px 10px;
-        border-bottom: 1px solid #f0f0f0;
-        background: ${txIndex % 2 === 0 ? '#fff' : '#fafafa'};
+        border-bottom: 1px solid var(--mu-border, #f0f0f0);
+        background: ${txIndex % 2 === 0 ? 'var(--mu-bg-primary, #fff)' : 'var(--mu-bg-secondary, #fafafa)'};
       `;
 
       const checkbox = document.createElement('input');
@@ -2313,8 +2317,8 @@ function renderTransactionsManagementSection(integrationId, accountEntry, accoun
           const dateBadge = document.createElement('span');
           dateBadge.textContent = tx.date;
           dateBadge.style.cssText = `
-            background-color: #e3f2fd;
-            color: #1565c0;
+            background-color: var(--mu-badge-bg, #e3f2fd);
+            color: var(--mu-badge-text, #1565c0);
             padding: 2px 8px;
             border-radius: 4px;
             font-size: 11px;
@@ -2325,7 +2329,7 @@ function renderTransactionsManagementSection(integrationId, accountEntry, accoun
 
         const idText = document.createElement('span');
         idText.textContent = tx.id;
-        idText.style.cssText = 'font-family: monospace; font-size: 13px; color: #333;';
+        idText.style.cssText = 'font-family: monospace; font-size: 13px; color: var(--mu-text-primary, #333);';
         txDisplay.appendChild(idText);
       } else {
         const txText = document.createElement('span');
@@ -2510,10 +2514,10 @@ function renderTransactionsManagementSection(integrationId, accountEntry, accoun
   });
 
   sectionHeader.addEventListener('mouseover', () => {
-    sectionHeader.style.backgroundColor = '#f8f9fa';
+    sectionHeader.style.backgroundColor = 'var(--mu-bg-secondary, #f8f9fa)';
   });
   sectionHeader.addEventListener('mouseout', () => {
-    sectionHeader.style.backgroundColor = '#fff';
+    sectionHeader.style.backgroundColor = 'var(--mu-bg-primary, #fff)';
   });
 
   return sectionContainer;
@@ -2550,8 +2554,8 @@ function renderHoldingsMappingsSection(integrationId, accountEntry, accountId, o
     align-items: center;
     justify-content: space-between;
     padding: 10px 12px;
-    background-color: #fff;
-    border: 1px solid #e0e0e0;
+    background-color: var(--mu-bg-primary, #fff);
+    border: 1px solid var(--mu-border, #e0e0e0);
     border-radius: 6px;
     cursor: pointer;
     transition: background-color 0.2s;
@@ -2568,11 +2572,11 @@ function renderHoldingsMappingsSection(integrationId, accountEntry, accountId, o
 
   const headerTitle = document.createElement('h4');
   headerTitle.textContent = 'Holdings Mappings';
-  headerTitle.style.cssText = 'margin: 0; font-size: 14px; color: #333;';
+  headerTitle.style.cssText = 'margin: 0; font-size: 14px; color: var(--mu-text-primary, #333);';
   headerLeft.appendChild(headerTitle);
 
   const holdingsCountSpan = document.createElement('span');
-  holdingsCountSpan.style.cssText = 'font-size: 12px; color: #666;';
+  holdingsCountSpan.style.cssText = 'font-size: 12px; color: var(--mu-text-secondary, #666);';
   holdingsCountSpan.textContent = `(${holdingsCount} mapping${holdingsCount !== 1 ? 's' : ''})`;
   headerLeft.appendChild(holdingsCountSpan);
 
@@ -2585,16 +2589,16 @@ function renderHoldingsMappingsSection(integrationId, accountEntry, accountId, o
   expandableContent.style.cssText = `
     display: none;
     padding: 12px;
-    border: 1px solid #e0e0e0;
+    border: 1px solid var(--mu-border, #e0e0e0);
     border-top: none;
     border-radius: 0 0 6px 6px;
-    background-color: #fff;
+    background-color: var(--mu-bg-primary, #fff);
   `;
 
   if (holdingsCount === 0) {
     const emptyMessage = document.createElement('p');
     emptyMessage.textContent = 'No holdings mappings stored. Mappings will appear here after syncing positions.';
-    emptyMessage.style.cssText = 'color: #666; font-style: italic; margin: 0; font-size: 13px;';
+    emptyMessage.style.cssText = 'color: var(--mu-text-secondary, #666); font-style: italic; margin: 0; font-size: 13px;';
     expandableContent.appendChild(emptyMessage);
   } else {
     // Holdings list
@@ -2603,7 +2607,7 @@ function renderHoldingsMappingsSection(integrationId, accountEntry, accountId, o
     holdingsList.style.cssText = `
       max-height: 250px;
       overflow-y: auto;
-      border: 1px solid #e0e0e0;
+      border: 1px solid var(--mu-border, #e0e0e0);
       border-radius: 4px;
     `;
 
@@ -2616,8 +2620,8 @@ function renderHoldingsMappingsSection(integrationId, accountEntry, accountId, o
         align-items: center;
         justify-content: space-between;
         padding: 8px 10px;
-        border-bottom: 1px solid #f0f0f0;
-        background: ${index % 2 === 0 ? '#fff' : '#fafafa'};
+        border-bottom: 1px solid var(--mu-border, #f0f0f0);
+        background: ${index % 2 === 0 ? 'var(--mu-bg-primary, #fff)' : 'var(--mu-bg-secondary, #fafafa)'};
       `;
 
       const holdingInfo = document.createElement('div');
@@ -2625,13 +2629,13 @@ function renderHoldingsMappingsSection(integrationId, accountEntry, accountId, o
 
       // Symbol
       const symbolDiv = document.createElement('div');
-      symbolDiv.style.cssText = 'font-weight: 600; font-size: 14px; color: #333;';
+      symbolDiv.style.cssText = 'font-weight: 600; font-size: 14px; color: var(--mu-text-primary, #333);';
       symbolDiv.textContent = mappingData.symbol || 'Unknown Symbol';
       holdingInfo.appendChild(symbolDiv);
 
       // IDs row
       const idsDiv = document.createElement('div');
-      idsDiv.style.cssText = 'font-size: 11px; color: #666; font-family: monospace;';
+      idsDiv.style.cssText = 'font-size: 11px; color: var(--mu-text-secondary, #666); font-family: monospace;';
       idsDiv.textContent = `Security: ${mappingData.securityId || 'N/A'} | Holding: ${mappingData.holdingId || 'N/A'}`;
       holdingInfo.appendChild(idsDiv);
 
@@ -2745,10 +2749,10 @@ function renderHoldingsMappingsSection(integrationId, accountEntry, accountId, o
   });
 
   sectionHeader.addEventListener('mouseover', () => {
-    sectionHeader.style.backgroundColor = '#f8f9fa';
+    sectionHeader.style.backgroundColor = 'var(--mu-bg-secondary, #f8f9fa)';
   });
   sectionHeader.addEventListener('mouseout', () => {
-    sectionHeader.style.backgroundColor = '#fff';
+    sectionHeader.style.backgroundColor = 'var(--mu-bg-primary, #fff)';
   });
 
   return sectionContainer;
@@ -2775,8 +2779,8 @@ function renderDebugJsonSection(integrationId, accountEntry, accountId, onSave) 
     align-items: center;
     justify-content: space-between;
     padding: 10px 12px;
-    background-color: #fff;
-    border: 1px solid #e0e0e0;
+    background-color: var(--mu-bg-primary, #fff);
+    border: 1px solid var(--mu-border, #e0e0e0);
     border-radius: 6px;
     cursor: pointer;
     transition: background-color 0.2s;
@@ -2793,7 +2797,7 @@ function renderDebugJsonSection(integrationId, accountEntry, accountId, onSave) 
 
   const headerTitle = document.createElement('h4');
   headerTitle.textContent = 'Debug Information';
-  headerTitle.style.cssText = 'margin: 0; font-size: 14px; color: #333;';
+  headerTitle.style.cssText = 'margin: 0; font-size: 14px; color: var(--mu-text-primary, #333);';
   headerLeft.appendChild(headerTitle);
 
   sectionHeader.appendChild(headerLeft);
@@ -2805,10 +2809,10 @@ function renderDebugJsonSection(integrationId, accountEntry, accountId, onSave) 
   expandableContent.style.cssText = `
     display: none;
     padding: 12px;
-    border: 1px solid #e0e0e0;
+    border: 1px solid var(--mu-border, #e0e0e0);
     border-top: none;
     border-radius: 0 0 6px 6px;
-    background-color: #fff;
+    background-color: var(--mu-bg-primary, #fff);
   `;
 
   // Button container for Edit/Save/Cancel
@@ -2824,7 +2828,7 @@ function renderDebugJsonSection(integrationId, accountEntry, accountId, onSave) 
     padding: 4px 10px;
     border: 1px solid #6c757d;
     border-radius: 4px;
-    background: white;
+    background: var(--mu-bg-primary, white);
     color: #6c757d;
     cursor: pointer;
     font-size: 12px;
@@ -2834,11 +2838,11 @@ function renderDebugJsonSection(integrationId, accountEntry, accountId, onSave) 
     transition: all 0.2s;
   `;
   editButton.addEventListener('mouseover', () => {
-    editButton.style.backgroundColor = '#f8f9fa';
+    editButton.style.backgroundColor = 'var(--mu-bg-secondary, #f8f9fa)';
     editButton.style.borderColor = '#5a6268';
   });
   editButton.addEventListener('mouseout', () => {
-    editButton.style.backgroundColor = 'white';
+    editButton.style.backgroundColor = 'var(--mu-bg-primary, white)';
     editButton.style.borderColor = '#6c757d';
   });
 
@@ -2874,7 +2878,7 @@ function renderDebugJsonSection(integrationId, accountEntry, accountId, onSave) 
     padding: 4px 10px;
     border: 1px solid #dc3545;
     border-radius: 4px;
-    background: white;
+    background: var(--mu-bg-primary, white);
     color: #dc3545;
     cursor: pointer;
     font-size: 12px;
@@ -2887,7 +2891,7 @@ function renderDebugJsonSection(integrationId, accountEntry, accountId, onSave) 
     cancelButton.style.backgroundColor = '#f8d7da';
   });
   cancelButton.addEventListener('mouseout', () => {
-    cancelButton.style.backgroundColor = 'white';
+    cancelButton.style.backgroundColor = 'var(--mu-bg-primary, white)';
   });
 
   buttonContainer.appendChild(editButton);
@@ -2950,10 +2954,10 @@ function renderDebugJsonSection(integrationId, accountEntry, accountId, onSave) 
   });
 
   sectionHeader.addEventListener('mouseover', () => {
-    sectionHeader.style.backgroundColor = '#f8f9fa';
+    sectionHeader.style.backgroundColor = 'var(--mu-bg-secondary, #f8f9fa)';
   });
   sectionHeader.addEventListener('mouseout', () => {
-    sectionHeader.style.backgroundColor = '#fff';
+    sectionHeader.style.backgroundColor = 'var(--mu-bg-primary, #fff)';
   });
 
   // Edit button click handler

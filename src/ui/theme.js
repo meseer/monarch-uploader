@@ -37,8 +37,10 @@ const THEME_VARIABLES = {
     '--mu-status-processing-text': '#1565c0',
     '--mu-status-success-bg': '#e8f5e9',
     '--mu-status-success-text': '#2e7d32',
+    '--mu-status-success-border': '#c3e6cb',
     '--mu-status-error-bg': '#ffebee',
     '--mu-status-error-text': '#c62828',
+    '--mu-status-error-border': '#f5c6cb',
     '--mu-status-skipped-bg': '#f5f5f5',
 
     // Warning banner (upload button auth message)
@@ -111,8 +113,10 @@ const THEME_VARIABLES = {
     '--mu-status-processing-text': '#64b5f6',
     '--mu-status-success-bg': '#1a3c1e',
     '--mu-status-success-text': '#81c784',
+    '--mu-status-success-border': '#2e5c32',
     '--mu-status-error-bg': '#4a1a1a',
     '--mu-status-error-text': '#ef9a9a',
+    '--mu-status-error-border': '#6b2a2a',
     '--mu-status-skipped-bg': '#383838',
 
     // Warning banner

@@ -256,10 +256,10 @@ export function createTestingSection(accountContext = null) {
   const testingSection = document.createElement('div');
   testingSection.id = 'questrade-testing-section';
   testingSection.style.cssText = `
-    border: 1px solid #ddd;
+    border: 1px solid var(--mu-border, #ddd);
     border-radius: 4px;
     margin: 10px 0;
-    background-color: #fafafa;
+    background-color: var(--mu-bg-secondary, #fafafa);
   `;
 
   // Create toggle header for testing section
@@ -267,8 +267,8 @@ export function createTestingSection(accountContext = null) {
   testingHeader.id = 'questrade-testing-header';
   testingHeader.style.cssText = `
     padding: 8px 12px;
-    background-color: #f0f0f0;
-    border-bottom: 1px solid #ddd;
+    background-color: var(--mu-bg-tertiary, #f0f0f0);
+    border-bottom: 1px solid var(--mu-border, #ddd);
     cursor: pointer;
     user-select: none;
     display: flex;
@@ -276,7 +276,7 @@ export function createTestingSection(accountContext = null) {
     align-items: center;
     font-size: 13px;
     font-weight: 500;
-    color: #666;
+    color: var(--mu-text-secondary, #666);
   `;
 
   const testingTitle = document.createElement('span');
@@ -304,11 +304,11 @@ export function createTestingSection(accountContext = null) {
   description.id = 'questrade-testing-description';
   description.style.cssText = `
     font-size: 12px;
-    color: #666;
+    color: var(--mu-warning-text, #666);
     margin-bottom: 12px;
     padding: 8px;
-    background-color: #fff3cd;
-    border: 1px solid #ffeaa7;
+    background-color: var(--mu-warning-bg, #fff3cd);
+    border: 1px solid var(--mu-warning-border, #ffeaa7);
     border-radius: 4px;
   `;
 
