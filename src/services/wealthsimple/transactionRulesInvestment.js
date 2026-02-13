@@ -779,11 +779,15 @@ export function formatCryptoOrderNotes(activity, cryptoOrder) {
  * These swap one cryptocurrency for another (e.g., BTC -> ETH)
  *
  * With enrichment data:
- * "Swapped 0.003605 BTC for 0.003605 ETH
+ * "Swapped 0.00010745 BTC for 0.003605 ETH
  * Fees: CAD$0.04 (fee: CAD$0.04, swap: CAD$0.00)"
  *
  * Without enrichment data:
  * "Swapped BTC for ETH"
+ *
+ * Field mapping:
+ * - Old asset quantity (assetSymbol, being swapped away): cryptoOrder.executedValue
+ * - New asset quantity (counterAssetSymbol, being received): activity.assetQuantity (fallback: cryptoOrder.quantity)
  *
  * @param {Object} activity - Raw transaction from Wealthsimple API
  * @param {Object|null} cryptoOrder - Crypto order details from FetchCryptoOrder API
@@ -800,8 +804,8 @@ export function formatCryptoSwapNotes(activity, cryptoOrder) {
     return `Swapped ${sourceSymbol} for ${destSymbol}`;
   }
 
-  const sourceQuantity = formatAmount(activity.assetQuantity ?? 0);
-  const destQuantity = formatAmount(cryptoOrder.quantity ?? 0);
+  const sourceQuantity = formatAmount(cryptoOrder.executedValue ?? 0);
+  const destQuantity = formatAmount(activity.assetQuantity ?? cryptoOrder.quantity ?? 0);
   const currency = cryptoOrder.currency || activity.currency || 'CAD';
   const fee = formatAmount(cryptoOrder.fee ?? 0);
   const swapFee = formatAmount(cryptoOrder.swapFee ?? 0);

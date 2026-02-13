@@ -882,7 +882,7 @@ describe('Wealthsimple Transaction Rules Engine - Investment Grants & Crypto', (
 
       expect(result.category).toBe('Swap');
       expect(result.merchant).toBe('BTC -> ETH');
-      expect(result.notes).toContain('Swapped 0.003605 BTC for 0.00360523 ETH');
+      expect(result.notes).toContain('Swapped 0.00010745 BTC for 0.003605 ETH');
       expect(result.notes).toContain('Fees:');
       expect(result.notes).toContain('fee: CAD$0.04');
     });
@@ -979,7 +979,7 @@ describe('Wealthsimple Transaction Rules Engine - Investment Grants & Crypto', (
 
       const result = formatCryptoSwapNotes(activity, cryptoOrder);
 
-      expect(result).toContain('Swapped 0.003605 BTC for 0.00360523 ETH');
+      expect(result).toContain('Swapped 0.00010745 BTC for 0.003605 ETH');
       expect(result).toContain('Fees: CAD$');
       expect(result).toContain('fee: CAD$0.04');
       expect(result).toContain('swap: CAD$');
