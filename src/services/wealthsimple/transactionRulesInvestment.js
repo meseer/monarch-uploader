@@ -780,7 +780,7 @@ export function formatCryptoOrderNotes(activity, cryptoOrder) {
  *
  * With enrichment data:
  * "Swapped 0.00010745 BTC for 0.003605 ETH
- * Fees: CAD$0.04 (fee: CAD$0.04, swap: CAD$0.00)"
+ * Fees: CAD$0.04 (0.5%, 0.00000053 BTC)"
  *
  * Without enrichment data:
  * "Swapped BTC for ETH"
@@ -788,6 +788,9 @@ export function formatCryptoOrderNotes(activity, cryptoOrder) {
  * Field mapping:
  * - Old asset quantity (assetSymbol, being swapped away): cryptoOrder.executedValue
  * - New asset quantity (counterAssetSymbol, being received): activity.assetQuantity (fallback: cryptoOrder.quantity)
+ * - Fee (fiat): cryptoOrder.fee in cryptoOrder.currency
+ * - Commission: cryptoOrder.commissionBps / 100 as percentage
+ * - Swap fee: cryptoOrder.swapFee in source asset symbol (assetSymbol)
  *
  * @param {Object} activity - Raw transaction from Wealthsimple API
  * @param {Object|null} cryptoOrder - Crypto order details from FetchCryptoOrder API
@@ -807,17 +810,30 @@ export function formatCryptoSwapNotes(activity, cryptoOrder) {
   const sourceQuantity = formatAmount(cryptoOrder.executedValue ?? 0);
   const destQuantity = formatAmount(activity.assetQuantity ?? cryptoOrder.quantity ?? 0);
   const currency = cryptoOrder.currency || activity.currency || 'CAD';
-  const fee = formatAmount(cryptoOrder.fee ?? 0);
-  const swapFee = formatAmount(cryptoOrder.swapFee ?? 0);
-  const totalFees = formatAmount(parseFloat(cryptoOrder.fee ?? 0) + parseFloat(cryptoOrder.swapFee ?? 0));
 
   const noteLines = [];
 
-  // Line 1: "Swapped 0.003605 BTC for 0.003605 ETH"
+  // Line 1: "Swapped 0.00010745 BTC for 0.003605 ETH"
   noteLines.push(`Swapped ${sourceQuantity} ${sourceSymbol} for ${destQuantity} ${destSymbol}`);
 
-  // Line 2: Fee breakdown
-  noteLines.push(`Fees: ${currency}$${totalFees} (fee: ${currency}$${fee}, swap: ${currency}$${swapFee})`);
+  // Line 2: Fee breakdown - "Fees: CAD$0.04 (0.5%, 0.00000053 BTC)"
+  const feeValue = parseFloat(cryptoOrder.fee);
+  if (!isNaN(feeValue) && feeValue > 0) {
+    const feeFormatted = formatAmount(feeValue);
+    // Build parenthetical details: commissionBps as %, swapFee in source asset
+    const details = [];
+    const commissionBps = parseFloat(cryptoOrder.commissionBps);
+    if (!isNaN(commissionBps) && commissionBps > 0) {
+      details.push(`${formatAmount(commissionBps / 100)}%`);
+    }
+    const swapFeeValue = parseFloat(cryptoOrder.swapFee);
+    if (!isNaN(swapFeeValue) && swapFeeValue > 0) {
+      // Use raw string to preserve precision for very small crypto amounts (avoid scientific notation)
+      details.push(`${cryptoOrder.swapFee} ${sourceSymbol}`);
+    }
+    const detailStr = details.length > 0 ? ` (${details.join(', ')})` : '';
+    noteLines.push(`Fees: ${currency}$${feeFormatted}${detailStr}`);
+  }
 
   return noteLines.join('\n');
 }

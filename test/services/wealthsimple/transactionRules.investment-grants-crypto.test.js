@@ -874,6 +874,7 @@ describe('Wealthsimple Transaction Rules Engine - Investment Grants & Crypto', (
         limitPrice: null,
         fee: '0.04',
         swapFee: '0.00000053',
+        commissionBps: '50',
         totalCost: '10.11',
       });
 
@@ -883,8 +884,7 @@ describe('Wealthsimple Transaction Rules Engine - Investment Grants & Crypto', (
       expect(result.category).toBe('Swap');
       expect(result.merchant).toBe('BTC -> ETH');
       expect(result.notes).toContain('Swapped 0.00010745 BTC for 0.003605 ETH');
-      expect(result.notes).toContain('Fees:');
-      expect(result.notes).toContain('fee: CAD$0.04');
+      expect(result.notes).toContain('Fees: CAD$0.04 (0.5%, 0.00000053 BTC)');
     });
 
     it('should handle missing assetSymbol and counterAssetSymbol', () => {
@@ -974,15 +974,14 @@ describe('Wealthsimple Transaction Rules Engine - Investment Grants & Crypto', (
         limitPrice: null,
         fee: '0.04',
         swapFee: '0.00000053',
+        commissionBps: '50',
         totalCost: '10.11',
       };
 
       const result = formatCryptoSwapNotes(activity, cryptoOrder);
 
       expect(result).toContain('Swapped 0.00010745 BTC for 0.003605 ETH');
-      expect(result).toContain('Fees: CAD$');
-      expect(result).toContain('fee: CAD$0.04');
-      expect(result).toContain('swap: CAD$');
+      expect(result).toContain('Fees: CAD$0.04 (0.5%, 0.00000053 BTC)');
     });
 
     it('should handle missing symbols with Unknown fallback', () => {
@@ -1014,13 +1013,15 @@ describe('Wealthsimple Transaction Rules Engine - Investment Grants & Crypto', (
         quantity: null,
         fee: null,
         swapFee: null,
+        commissionBps: null,
         currency: null,
       };
 
       const result = formatCryptoSwapNotes(activity, cryptoOrder);
 
+      // With null fee, no Fees line is shown
       expect(result).toContain('Swapped 0 Unknown for 0 Unknown');
-      expect(result).toContain('Fees: CAD$0');
+      expect(result).not.toContain('Fees:');
     });
 
     it('should use crypto order currency over activity currency', () => {
@@ -1038,12 +1039,109 @@ describe('Wealthsimple Transaction Rules Engine - Investment Grants & Crypto', (
         currency: 'CAD',
         fee: '0.05',
         swapFee: '0.01',
+        commissionBps: '50',
       };
 
       const result = formatCryptoSwapNotes(activity, cryptoOrder);
 
-      expect(result).toContain('CAD$');
+      expect(result).toContain('CAD$0.05');
       expect(result).not.toContain('USD$');
+    });
+
+    it('should omit commissionBps when null', () => {
+      const activity = {
+        type: 'CRYPTO_BUY',
+        subType: 'SWAP_MARKET_ORDER',
+        assetSymbol: 'BTC',
+        counterAssetSymbol: 'ETH',
+        assetQuantity: 0.003605,
+        currency: 'CAD',
+      };
+      const cryptoOrder = {
+        executedValue: '0.00010745',
+        quantity: '0.00360523',
+        currency: 'CAD',
+        fee: '0.04',
+        swapFee: '0.00000053',
+        commissionBps: null,
+      };
+
+      const result = formatCryptoSwapNotes(activity, cryptoOrder);
+
+      expect(result).toContain('Fees: CAD$0.04 (0.00000053 BTC)');
+      expect(result).not.toContain('%');
+    });
+
+    it('should omit swapFee when null', () => {
+      const activity = {
+        type: 'CRYPTO_BUY',
+        subType: 'SWAP_MARKET_ORDER',
+        assetSymbol: 'BTC',
+        counterAssetSymbol: 'ETH',
+        assetQuantity: 0.003605,
+        currency: 'CAD',
+      };
+      const cryptoOrder = {
+        executedValue: '0.00010745',
+        quantity: '0.00360523',
+        currency: 'CAD',
+        fee: '0.04',
+        swapFee: null,
+        commissionBps: '50',
+      };
+
+      const result = formatCryptoSwapNotes(activity, cryptoOrder);
+
+      expect(result).toContain('Fees: CAD$0.04 (0.5%)');
+      expect(result).not.toContain('BTC)');
+    });
+
+    it('should omit both commissionBps and swapFee when both null', () => {
+      const activity = {
+        type: 'CRYPTO_BUY',
+        subType: 'SWAP_MARKET_ORDER',
+        assetSymbol: 'BTC',
+        counterAssetSymbol: 'ETH',
+        assetQuantity: 0.003605,
+        currency: 'CAD',
+      };
+      const cryptoOrder = {
+        executedValue: '0.00010745',
+        quantity: '0.00360523',
+        currency: 'CAD',
+        fee: '0.04',
+        swapFee: null,
+        commissionBps: null,
+      };
+
+      const result = formatCryptoSwapNotes(activity, cryptoOrder);
+
+      expect(result).toContain('Fees: CAD$0.04');
+      expect(result).not.toContain('(');
+    });
+
+    it('should omit Fees line entirely when fee is zero', () => {
+      const activity = {
+        type: 'CRYPTO_BUY',
+        subType: 'SWAP_MARKET_ORDER',
+        assetSymbol: 'BTC',
+        counterAssetSymbol: 'ETH',
+        assetQuantity: 0.003605,
+        currency: 'CAD',
+      };
+      const cryptoOrder = {
+        executedValue: '0.00010745',
+        quantity: '0.00360523',
+        currency: 'CAD',
+        fee: '0',
+        swapFee: '0',
+        commissionBps: '0',
+      };
+
+      const result = formatCryptoSwapNotes(activity, cryptoOrder);
+
+      expect(result).toContain('Swapped');
+      expect(result).not.toContain('Fees:');
     });
   });
 
