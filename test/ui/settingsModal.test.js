@@ -499,8 +499,8 @@ describe('Settings Modal Component', () => {
       const devModeContainer = modal.querySelector('#settings-dev-mode-container');
       expect(devModeContainer).toBeTruthy();
 
-      // Toggle should be in on state
-      const toggleSwitch = devModeContainer.querySelector('div[style*="background-color: rgb(33, 150, 243)"]');
+      // Toggle should be in on state (uses CSS variable in implementation)
+      const toggleSwitch = devModeContainer.querySelector('div[style*="background-color: var(--mu-toggle-active-bg"]');
       expect(toggleSwitch).toBeTruthy();
     });
 

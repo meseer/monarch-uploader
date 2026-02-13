@@ -517,7 +517,7 @@ function renderGeneralTab(container) {
   const devModeLabel = document.createElement('div');
   devModeLabel.innerHTML = `
     <div style="font-weight: 500; font-size: 14px; margin-bottom: 4px;">Enable Development Mode</div>
-    <div style="font-size: 12px; color: #666;">When enabled, shows development-only UI elements like testing sections in Canada Life</div>
+    <div style="font-size: 12px; color: var(--mu-text-secondary, #666);">When enabled, shows development-only UI elements like testing sections in Canada Life</div>
   `;
 
   const currentDevMode = GM_getValue(STORAGE.DEVELOPMENT_MODE, false);
@@ -1177,7 +1177,7 @@ function createToggleSwitch(isEnabled, onChange, showLabel = true) {
   if (showLabel) {
     label = document.createElement('span');
     label.textContent = isEnabled ? 'Enabled' : 'Disabled';
-    label.style.cssText = 'font-size: 13px; color: #666;';
+    label.style.cssText = 'font-size: 13px; color: var(--mu-text-secondary, #666);';
   }
 
   const switchContainer = document.createElement('div');
@@ -1185,7 +1185,7 @@ function createToggleSwitch(isEnabled, onChange, showLabel = true) {
     position: relative;
     width: 44px;
     height: 24px;
-    background-color: ${isEnabled ? '#2196F3' : '#ccc'};
+    background-color: ${isEnabled ? 'var(--mu-toggle-active-bg, #2196F3)' : 'var(--mu-toggle-bg, #ccc)'};
     border-radius: 12px;
     transition: background-color 0.3s;
   `;
@@ -1210,7 +1210,7 @@ function createToggleSwitch(isEnabled, onChange, showLabel = true) {
 
   checkbox.addEventListener('change', (e) => {
     const newState = e.target.checked;
-    switchContainer.style.backgroundColor = newState ? '#2196F3' : '#ccc';
+    switchContainer.style.backgroundColor = newState ? 'var(--mu-toggle-active-bg, #2196F3)' : 'var(--mu-toggle-bg, #ccc)';
     switchSlider.style.left = newState ? '22px' : '2px';
     // Update label text if it exists
     if (label) {
@@ -3046,7 +3046,7 @@ function createGenericAccountCards(integrationId, accounts, onRefresh) {
     const card = document.createElement('div');
     card.id = `${integrationId}-account-card-${accountId}`;
     card.style.cssText = `
-      border: 1px solid #e0e0e0;
+      border: 1px solid var(--mu-border, #e0e0e0);
       border-radius: 8px;
       margin-bottom: 15px;
       overflow: hidden;
@@ -3060,7 +3060,7 @@ function createGenericAccountCards(integrationId, accounts, onRefresh) {
       display: flex;
       align-items: center;
       padding: 15px;
-      background-color: ${!syncEnabled ? '#fafafa' : '#fff'};
+      background-color: ${!syncEnabled ? 'var(--mu-bg-tertiary, #fafafa)' : 'var(--mu-bg-primary, #fff)'};
       cursor: pointer;
       transition: background-color 0.2s;
     `;
@@ -3071,7 +3071,7 @@ function createGenericAccountCards(integrationId, accounts, onRefresh) {
     expandIcon.style.cssText = `
       margin-right: 10px;
       font-size: 1.2em;
-      color: ${!syncEnabled ? '#999' : '#666'};
+      color: ${!syncEnabled ? 'var(--mu-text-muted, #999)' : 'var(--mu-text-secondary, #666)'};
       transition: transform 0.2s;
       cursor: pointer;
       flex-shrink: 0;
@@ -3105,7 +3105,7 @@ function createGenericAccountCards(integrationId, accounts, onRefresh) {
 
     const nameDiv = document.createElement('div');
     nameDiv.id = `${integrationId}-name-${accountId}`;
-    nameDiv.style.cssText = `font-weight: bold; font-size: 1.1em; margin-bottom: 2px; color: ${!syncEnabled ? '#999' : '#333'};`;
+    nameDiv.style.cssText = `font-weight: bold; font-size: 1.1em; margin-bottom: 2px; color: ${!syncEnabled ? 'var(--mu-text-muted, #999)' : 'var(--mu-text-primary, #333)'};`;
     nameDiv.textContent = sourceAccount.nickname || sourceAccount.name || 'Unknown Account';
     infoContainer.appendChild(nameDiv);
 
@@ -3113,7 +3113,7 @@ function createGenericAccountCards(integrationId, accounts, onRefresh) {
     if (sourceAccount.type) {
       const typeDiv = document.createElement('div');
       typeDiv.id = `${integrationId}-type-${accountId}`;
-      typeDiv.style.cssText = 'font-size: 0.9em; color: #666; margin-bottom: 2px;';
+      typeDiv.style.cssText = 'font-size: 0.9em; color: var(--mu-text-secondary, #666); margin-bottom: 2px;';
       typeDiv.textContent = sourceAccount.type;
       infoContainer.appendChild(typeDiv);
     }
@@ -3123,9 +3123,9 @@ function createGenericAccountCards(integrationId, accounts, onRefresh) {
     mappingDiv.id = `${integrationId}-mapping-${accountId}`;
     mappingDiv.style.cssText = 'font-size: 0.8em; margin-top: 5px;';
     if (monarchAccount) {
-      mappingDiv.innerHTML = `<span style="color: #28a745;">✓ Mapped to:</span> <span style="color: #666;">${monarchAccount.displayName || monarchAccount.name || 'Monarch Account'}</span>`;
+      mappingDiv.innerHTML = `<span style="color: var(--mu-status-success-text, #28a745);">✓ Mapped to:</span> <span style="color: var(--mu-text-secondary, #666);">${monarchAccount.displayName || monarchAccount.name || 'Monarch Account'}</span>`;
     } else {
-      mappingDiv.innerHTML = '<span style="color: #dc3545;">✗ Not mapped</span>';
+      mappingDiv.innerHTML = '<span style="color: var(--mu-status-error-text, #dc3545);">✗ Not mapped</span>';
     }
     infoContainer.appendChild(mappingDiv);
 
@@ -3133,7 +3133,7 @@ function createGenericAccountCards(integrationId, accounts, onRefresh) {
     if (lastSyncDate) {
       const syncDiv = document.createElement('div');
       syncDiv.id = `${integrationId}-sync-date-${accountId}`;
-      syncDiv.style.cssText = 'font-size: 0.8em; color: #555; margin-top: 2px;';
+      syncDiv.style.cssText = 'font-size: 0.8em; color: var(--mu-text-secondary, #555); margin-top: 2px;';
       syncDiv.textContent = `Last synced: ${formatLastUpdateDate(lastSyncDate)}`;
       infoContainer.appendChild(syncDiv);
     }
@@ -3206,7 +3206,7 @@ function createGenericAccountCards(integrationId, accounts, onRefresh) {
     // Expandable content with settings and debug
     const expandableContent = document.createElement('div');
     expandableContent.id = `${integrationId}-expandable-${accountId}`;
-    expandableContent.style.cssText = 'display: none; padding: 15px; background-color: #f8f9fa; border-top: 1px solid #e0e0e0;';
+    expandableContent.style.cssText = 'display: none; padding: 15px; background-color: var(--mu-bg-secondary, #f8f9fa); border-top: 1px solid var(--mu-border, #e0e0e0);';
 
     // Account Settings Section
     const settingsSection = renderAccountSettingsSection(integrationId, accountEntry, accountId, onRefresh);
@@ -3240,12 +3240,12 @@ function createGenericAccountCards(integrationId, accounts, onRefresh) {
     // Hover effects
     cardHeader.addEventListener('mouseover', () => {
       if (!isExpanded) {
-        cardHeader.style.backgroundColor = !syncEnabled ? '#f0f0f0' : '#f8f9fa';
+        cardHeader.style.backgroundColor = !syncEnabled ? 'var(--mu-hover-bg, #f0f0f0)' : 'var(--mu-bg-secondary, #f8f9fa)';
       }
     });
     cardHeader.addEventListener('mouseout', () => {
       if (!isExpanded) {
-        cardHeader.style.backgroundColor = !syncEnabled ? '#fafafa' : '#fff';
+        cardHeader.style.backgroundColor = !syncEnabled ? 'var(--mu-bg-tertiary, #fafafa)' : 'var(--mu-bg-primary, #fff)';
       }
     });
 

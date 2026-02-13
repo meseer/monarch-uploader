@@ -138,11 +138,11 @@ function formatCollapsedBalanceSummary(balanceChangeData) {
       // Determine color based on change
       let color;
       if (changePercent > 0) {
-        color = '#2e7d32'; // Green
+        color = 'var(--mu-status-success-text, #2e7d32)'; // Green
       } else if (changePercent < 0) {
-        color = '#c62828'; // Red
+        color = 'var(--mu-status-error-text, #c62828)'; // Red
       } else {
-        color = '#666'; // Grey for no change
+        color = 'var(--mu-text-muted, #666)'; // Grey for no change
       }
 
       return { text: `${formattedDollarChange} / ${formattedPercent}`, color };
@@ -167,14 +167,14 @@ function formatCollapsedBalanceSummary(balanceChangeData) {
   // Determine color for cash/credit accounts based on balance change
   // debtAsPositive: true for Rogers (positive balance = debt, increase is bad)
   // debtAsPositive: false/undefined for WS (negative balance = debt, decrease is bad)
-  let color = '#666'; // Grey default
+  let color = 'var(--mu-text-muted, #666)'; // Grey default
   if (changePercent !== undefined && changePercent !== null) {
     if (debtAsPositive) {
       // Rogers-style: positive balance is debt, so increase is bad (red), decrease is good (green)
       if (changePercent > 0) {
-        color = '#c62828'; // Red - more debt
+        color = 'var(--mu-status-error-text, #c62828)'; // Red - more debt
       } else if (changePercent < 0) {
-        color = '#2e7d32'; // Green - less debt
+        color = 'var(--mu-status-success-text, #2e7d32)'; // Green - less debt
       }
     } else {
       // WS-style: negative balance is debt
@@ -185,16 +185,16 @@ function formatCollapsedBalanceSummary(balanceChangeData) {
         // Balance going from -1000 to -800 (less debt) = changePercent positive = green
         // Balance going from -1000 to -1200 (more debt) = changePercent negative = red
         if (changePercent > 0) {
-          color = '#2e7d32'; // Green - less debt
+          color = 'var(--mu-status-success-text, #2e7d32)'; // Green - less debt
         } else if (changePercent < 0) {
-          color = '#c62828'; // Red - more debt
+          color = 'var(--mu-status-error-text, #c62828)'; // Red - more debt
         }
       } else {
         // Regular cash account
         if (changePercent > 0) {
-          color = '#2e7d32'; // Green - balance increased
+          color = 'var(--mu-status-success-text, #2e7d32)'; // Green - balance increased
         } else if (changePercent < 0) {
-          color = '#c62828'; // Red - balance decreased
+          color = 'var(--mu-status-error-text, #c62828)'; // Red - balance decreased
         }
       }
     }
@@ -236,16 +236,16 @@ function getStepIcon(status) {
 function getStepColor(status) {
   switch (status) {
   case 'processing':
-    return '#1565c0';
+    return 'var(--mu-status-processing-text, #1565c0)';
   case 'success':
-    return '#2e7d32';
+    return 'var(--mu-status-success-text, #2e7d32)';
   case 'error':
-    return '#c62828';
+    return 'var(--mu-status-error-text, #c62828)';
   case 'skipped':
-    return '#888';
+    return 'var(--mu-text-muted, #888)';
   case 'pending':
   default:
-    return '#888';
+    return 'var(--mu-text-muted, #888)';
   }
 }
 

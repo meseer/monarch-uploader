@@ -143,7 +143,7 @@ async function createUIContainer(injectionPoint = null, targetInfo = null) {
   title.textContent = 'Balance Uploader';
   title.style.cssText = `
     font-weight: 600;
-    color: ${COLORS.WEALTHSIMPLE_BRAND};
+    color: var(--mu-text-primary, ${COLORS.WEALTHSIMPLE_BRAND});
     font-size: 16px;
   `;
   titleRow.appendChild(title);
