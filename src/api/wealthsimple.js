@@ -256,7 +256,7 @@ export async function makeGraphQLQuery(operationName, query, variables = {}) {
 
   // Inject identity ID into variables if not present
   // Note: FetchFundingIntent, FetchInternalTransfer, FetchFundsTransfer, FetchSoOrdersExtendedOrder, and FetchActivityByOrdersServiceOrderId don't accept identityId and return 403 if it's passed
-  const skipIdentityInjection = ['FetchFundingIntent', 'FetchInternalTransfer', 'FetchFundsTransfer', 'FetchSoOrdersExtendedOrder', 'FetchActivityByOrdersServiceOrderId'];
+  const skipIdentityInjection = ['FetchFundingIntent', 'FetchInternalTransfer', 'FetchFundsTransfer', 'FetchSoOrdersExtendedOrder', 'FetchActivityByOrdersServiceOrderId', 'FetchCryptoOrder'];
   if (!variables.identityId && authStatus.identityId && !skipIdentityInjection.includes(operationName)) {
     variables.identityId = authStatus.identityId;
   }
@@ -2866,6 +2866,89 @@ fragment SpendTransaction on SpendTransaction {
   }
 }
 
+/**
+ * Fetch crypto order details for a single crypto buy/sell order
+ * Used to get detailed fill information, fees, and pricing for crypto orders
+ *
+ * Returns:
+ * - quantity: Requested quantity
+ * - executedQuantity: Actually filled quantity
+ * - price: Price per unit at fill time
+ * - executedValue: Total value of filled portion (excl. fees)
+ * - fee: Trading commission fee
+ * - swapFee: Crypto-specific swap fee
+ * - totalCost: Total cost including all fees
+ * - limitPrice: Limit price (null for market orders)
+ * - timeInForce: Order time in force (e.g., "day")
+ * - currency: Order currency
+ * - filledAt: Fill timestamp
+ *
+ * @param {string} id - Crypto order ID (e.g., "order-sqXS6HQQ0uJra3R7W9Zof2GgGRJ")
+ * @returns {Promise<Object|null>} Crypto order details or null if not found
+ */
+export async function fetchCryptoOrder(id) {
+  try {
+    if (!id) {
+      debugLog('No crypto order ID provided');
+      return null;
+    }
+
+    debugLog(`Fetching crypto order details for ${id}...`);
+
+    const query = `query FetchCryptoOrder($id: ID!) {
+  cryptoOrder(id: $id) {
+    ...CryptoOrder
+    __typename
+  }
+}
+
+fragment CryptoOrder on Crypto_Order {
+  id
+  createdAt
+  quantity
+  price
+  currency
+  limitPrice
+  filledAt
+  timeInForce
+  fee
+  totalCost
+  executedQuantity
+  executedValue
+  swapFee
+  isModifiable
+  commissionBps
+  category
+  __typename
+}`;
+
+    const response = await makeGraphQLQuery('FetchCryptoOrder', query, { id });
+
+    if (!response || !response.cryptoOrder) {
+      debugLog(`No crypto order data found for ${id}`);
+      return null;
+    }
+
+    const cryptoOrder = response.cryptoOrder;
+    debugLog(`Fetched crypto order ${id}:`, {
+      quantity: cryptoOrder.quantity,
+      executedQuantity: cryptoOrder.executedQuantity,
+      price: cryptoOrder.price,
+      fee: cryptoOrder.fee,
+      swapFee: cryptoOrder.swapFee,
+      totalCost: cryptoOrder.totalCost,
+      limitPrice: cryptoOrder.limitPrice,
+      currency: cryptoOrder.currency,
+    });
+
+    return cryptoOrder;
+  } catch (error) {
+    debugLog(`Error fetching crypto order ${id}:`, error);
+    // Return null on error - don't fail the entire sync
+    return null;
+  }
+}
+
 export default {
   checkAuth,
   setupTokenMonitoring,
@@ -2890,4 +2973,5 @@ export default {
   fetchSecurity,
   fetchAccountsWithBalance,
   fetchSpendTransactions,
+  fetchCryptoOrder,
 };

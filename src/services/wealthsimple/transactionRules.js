@@ -1895,6 +1895,67 @@ export const INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES = [
 ];
 
 /**
+ * Format crypto order notes from activity and crypto order data
+ * Handles market orders and limit orders for CRYPTO_BUY and CRYPTO_SELL transactions
+ *
+ * Market order format:
+ * "Market order Buy 0.000109 BTC
+ * Filled 0.00010891 @ CAD$91358.8685646, fees: CAD$0.0897908481 (fee: CAD$0.04, swap: CAD$0.0497908481)
+ * Total CAD$10"
+ *
+ * Limit order format:
+ * "Limit order Buy 0.001 BTC @ 90000 Limit day
+ * Filled 0.001 @ CAD$89500, fees: CAD$0.09 (fee: CAD$0.04, swap: CAD$0.05)
+ * Total CAD$89.59"
+ *
+ * @param {Object} activity - Raw transaction from Wealthsimple API
+ * @param {Object|null} cryptoOrder - Crypto order details from FetchCryptoOrder API
+ * @returns {string} Formatted notes string
+ */
+export function formatCryptoOrderNotes(activity, cryptoOrder) {
+  if (!activity) return '';
+
+  const symbol = activity.assetSymbol || 'N/A';
+  const amount = formatAmount(activity.amount ?? 0);
+  const isBuy = activity.type === 'CRYPTO_BUY';
+  const action = isBuy ? 'Buy' : 'Sell';
+
+  // If no crypto order data, return minimal notes
+  if (!cryptoOrder) {
+    return `${action} ${symbol}\nTotal ${activity.currency || 'CAD'}$${amount}`;
+  }
+
+  const currency = cryptoOrder.currency || activity.currency || 'CAD';
+  const requestedQuantity = formatAmount(cryptoOrder.quantity ?? 0);
+  const executedQuantity = formatAmount(cryptoOrder.executedQuantity ?? 0);
+  const price = formatAmount(cryptoOrder.price ?? 0);
+  const fee = formatAmount(cryptoOrder.fee ?? 0);
+  const swapFee = formatAmount(cryptoOrder.swapFee ?? 0);
+  const totalCost = formatAmount(cryptoOrder.totalCost ?? 0);
+
+  // Calculate total fees (fee + swapFee)
+  const totalFees = formatAmount(parseFloat(cryptoOrder.fee ?? 0) + parseFloat(cryptoOrder.swapFee ?? 0));
+
+  // Determine if this is a limit order
+  const isLimitOrder = cryptoOrder.limitPrice !== null && cryptoOrder.limitPrice !== undefined;
+
+  if (isLimitOrder) {
+    const limitPrice = formatAmount(cryptoOrder.limitPrice);
+    const timeInForce = cryptoOrder.timeInForce || '';
+    // Line 1: "Limit order Buy 0.001 BTC @ 90000 Limit day"
+    // Line 2: "Filled 0.001 @ CAD$89500, fees: CAD$0.09 (fee: CAD$0.04, swap: CAD$0.05)"
+    // Line 3: "Total CAD$89.59"
+    return `Limit order ${action} ${requestedQuantity} ${symbol} @ ${limitPrice} Limit ${timeInForce}\nFilled ${executedQuantity} @ ${currency}$${price}, fees: ${currency}$${totalFees} (fee: ${currency}$${fee}, swap: ${currency}$${swapFee})\nTotal ${currency}$${totalCost}`;
+  }
+
+  // Market order format
+  // Line 1: "Market order Buy 0.000109 BTC"
+  // Line 2: "Filled 0.00010891 @ CAD$91358.8685646, fees: CAD$0.0897908481 (fee: CAD$0.04, swap: CAD$0.0497908481)"
+  // Line 3: "Total CAD$10"
+  return `Market order ${action} ${requestedQuantity} ${symbol}\nFilled ${executedQuantity} @ ${currency}$${price}, fees: ${currency}$${totalFees} (fee: ${currency}$${fee}, swap: ${currency}$${swapFee})\nTotal ${currency}$${totalCost}`;
+}
+
+/**
  * Investment account buy/sell transaction rules
  * These rules handle stock purchase and sale transactions in investment accounts
  *
@@ -2016,21 +2077,26 @@ export const INVESTMENT_BUY_SELL_TRANSACTION_RULES = [
     /**
      * Process CRYPTO_BUY transactions
      * These are cryptocurrency purchases in SELF_DIRECTED_CRYPTO accounts
-     * Same structure as DIY_BUY (.assetSymbol, .amount, .assetQuantity, etc.)
+     * Enrichment data comes from FetchCryptoOrder API (marked with isCryptoOrderData)
      *
      * @param {Object} tx - Raw transaction
-     * @param {Map<string, Object>} enrichmentMap - Map containing extended order data
+     * @param {Map<string, Object>} enrichmentMap - Map containing crypto order data
      * @returns {Object} Processed transaction fields
      */
     process: (tx, enrichmentMap) => {
       const symbol = tx.assetSymbol || 'Unknown';
-      const extendedOrder = enrichmentMap?.get(tx.externalCanonicalId) || null;
+      const enrichmentData = enrichmentMap?.get(tx.externalCanonicalId) || null;
+
+      // Use crypto-specific formatter if we have crypto order data, fall back to generic
+      const notes = enrichmentData?.isCryptoOrderData
+        ? formatCryptoOrderNotes(tx, enrichmentData)
+        : formatCryptoOrderNotes(tx, null);
 
       return {
         category: 'Buy',
         merchant: symbol,
         originalStatement: formatOriginalStatement(tx.type, tx.subType, symbol),
-        notes: formatInvestmentOrderNotes(tx, extendedOrder),
+        notes,
         technicalDetails: '',
       };
     },
@@ -2042,21 +2108,26 @@ export const INVESTMENT_BUY_SELL_TRANSACTION_RULES = [
     /**
      * Process CRYPTO_SELL transactions
      * These are cryptocurrency sales in SELF_DIRECTED_CRYPTO accounts
-     * Same structure as DIY_SELL (.assetSymbol, .amount, .assetQuantity, etc.)
+     * Enrichment data comes from FetchCryptoOrder API (marked with isCryptoOrderData)
      *
      * @param {Object} tx - Raw transaction
-     * @param {Map<string, Object>} enrichmentMap - Map containing extended order data
+     * @param {Map<string, Object>} enrichmentMap - Map containing crypto order data
      * @returns {Object} Processed transaction fields
      */
     process: (tx, enrichmentMap) => {
       const symbol = tx.assetSymbol || 'Unknown';
-      const extendedOrder = enrichmentMap?.get(tx.externalCanonicalId) || null;
+      const enrichmentData = enrichmentMap?.get(tx.externalCanonicalId) || null;
+
+      // Use crypto-specific formatter if we have crypto order data, fall back to generic
+      const notes = enrichmentData?.isCryptoOrderData
+        ? formatCryptoOrderNotes(tx, enrichmentData)
+        : formatCryptoOrderNotes(tx, null);
 
       return {
         category: 'Sell',
         merchant: symbol,
         originalStatement: formatOriginalStatement(tx.type, tx.subType, symbol),
-        notes: formatInvestmentOrderNotes(tx, extendedOrder),
+        notes,
         technicalDetails: '',
       };
     },

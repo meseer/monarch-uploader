@@ -1599,24 +1599,40 @@ function isOrdersServiceOrderId(externalId) {
 }
 
 /**
+ * Check if a transaction is a crypto buy/sell order
+ * @param {Object} transaction - Raw transaction from API
+ * @returns {boolean} True if crypto buy/sell transaction type
+ */
+function isCryptoBuySellTransaction(transaction) {
+  return transaction.type === 'CRYPTO_BUY' || transaction.type === 'CRYPTO_SELL';
+}
+
+/**
  * Collect order IDs from buy/sell transactions that need extended order data
- * Separates managed orders (use FetchActivityByOrdersServiceOrderId) from DIY orders (use FetchSoOrdersExtendedOrder)
+ * Separates into three groups:
+ * - Managed orders (MANAGED_BUY/SELL with order- prefix) → FetchActivityByOrdersServiceOrderId
+ * - Crypto orders (CRYPTO_BUY/SELL with order- prefix) → FetchCryptoOrder
+ * - DIY orders (all others) → FetchSoOrdersExtendedOrder
  *
  * @param {Array} transactions - Raw transactions from Wealthsimple API
- * @returns {Object} Object with { managedOrders: Array<{id, accountId}>, diyOrderIds: Array<string> }
+ * @returns {Object} Object with { managedOrders: Array<{id, accountId}>, diyOrderIds: Array<string>, cryptoOrderIds: Array<string> }
  */
 function collectBuySellOrderIds(transactions) {
   const managedOrders = [];
   const diyOrderIds = [];
+  const cryptoOrderIds = [];
 
   for (const tx of transactions) {
     if (isInvestmentBuySellTransaction(tx) && tx.externalCanonicalId) {
-      // Managed orders (MANAGED_BUY, MANAGED_SELL) with "order-" prefix need the new API
+      // Managed orders (MANAGED_BUY, MANAGED_SELL) with "order-" prefix need the managed API
       if ((tx.type === 'MANAGED_BUY' || tx.type === 'MANAGED_SELL') && isOrdersServiceOrderId(tx.externalCanonicalId)) {
         managedOrders.push({
           id: tx.externalCanonicalId,
           accountId: tx.accountId,
         });
+      } else if (isCryptoBuySellTransaction(tx) && isOrdersServiceOrderId(tx.externalCanonicalId)) {
+        // Crypto orders with "order-" prefix need the FetchCryptoOrder API
+        cryptoOrderIds.push(tx.externalCanonicalId);
       } else {
         // DIY orders and other types use the standard API
         diyOrderIds.push(tx.externalCanonicalId);
@@ -1624,7 +1640,7 @@ function collectBuySellOrderIds(transactions) {
     }
   }
 
-  return { managedOrders, diyOrderIds };
+  return { managedOrders, diyOrderIds, cryptoOrderIds };
 }
 
 /**
@@ -1872,12 +1888,12 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
     }
 
     // Fetch extended order data for buy/sell transactions
-    // Managed orders use fetchActivityByOrdersServiceOrderId, DIY orders use fetchExtendedOrder
-    const { managedOrders, diyOrderIds } = buySellOrderIds;
-    const totalOrderCount = managedOrders.length + diyOrderIds.length;
+    // Managed orders use fetchActivityByOrdersServiceOrderId, DIY orders use fetchExtendedOrder, crypto orders use fetchCryptoOrder
+    const { managedOrders, diyOrderIds, cryptoOrderIds } = buySellOrderIds;
+    const totalOrderCount = managedOrders.length + diyOrderIds.length + cryptoOrderIds.length;
 
     if (totalOrderCount > 0) {
-      debugLog(`Fetching order details: ${managedOrders.length} managed order(s), ${diyOrderIds.length} DIY order(s)...`);
+      debugLog(`Fetching order details: ${managedOrders.length} managed, ${diyOrderIds.length} DIY, ${cryptoOrderIds.length} crypto order(s)...`);
       let orderProgressNum = 0;
 
       // Fetch managed orders using FetchActivityByOrdersServiceOrderId API
@@ -1886,14 +1902,12 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
         orderProgressNum += 1;
         debugLog(`Fetching managed order details (${orderProgressNum}/${totalOrderCount}): ${orderId}`);
 
-        // Update progress callback for UI
         if (onProgress) {
           onProgress(`Order details (${orderProgressNum}/${totalOrderCount})`);
         }
 
         const activityData = await wealthsimpleApi.fetchActivityByOrdersServiceOrderId(orderAccountId, orderId);
         if (activityData) {
-          // Store with a marker to indicate it's from the new API (limited data)
           enrichmentMap.set(orderId, { ...activityData, isManagedOrderData: true });
         }
       }
@@ -1904,7 +1918,6 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
         orderProgressNum += 1;
         debugLog(`Fetching DIY order details (${orderProgressNum}/${totalOrderCount}): ${orderId}`);
 
-        // Update progress callback for UI
         if (onProgress) {
           onProgress(`Order details (${orderProgressNum}/${totalOrderCount})`);
         }
@@ -1915,7 +1928,24 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
         }
       }
 
-      debugLog(`Fetched ${totalOrderCount} order(s) (${managedOrders.length} managed, ${diyOrderIds.length} DIY)`);
+      // Fetch crypto orders using FetchCryptoOrder API
+      for (let i = 0; i < cryptoOrderIds.length; i++) {
+        const orderId = cryptoOrderIds[i];
+        orderProgressNum += 1;
+        debugLog(`Fetching crypto order details (${orderProgressNum}/${totalOrderCount}): ${orderId}`);
+
+        if (onProgress) {
+          onProgress(`Order details (${orderProgressNum}/${totalOrderCount})`);
+        }
+
+        const cryptoOrder = await wealthsimpleApi.fetchCryptoOrder(orderId);
+        if (cryptoOrder) {
+          // Store with isCryptoOrderData marker for the rules engine
+          enrichmentMap.set(orderId, { ...cryptoOrder, isCryptoOrderData: true });
+        }
+      }
+
+      debugLog(`Fetched ${totalOrderCount} order(s) (${managedOrders.length} managed, ${diyOrderIds.length} DIY, ${cryptoOrderIds.length} crypto)`);
     }
 
     // Fetch corporate action child activities (individual calls with progress)

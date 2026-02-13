@@ -31,6 +31,7 @@ import {
   formatCorporateActionNotes,
   formatShortOptionExpiryNotes,
   formatManagedOrderNotes,
+  formatCryptoOrderNotes,
 } from '../../../src/services/wealthsimple/transactionRules';
 import { STORAGE } from '../../../src/core/config';
 
@@ -8300,6 +8301,268 @@ describe('Wealthsimple Transaction Rules Engine', () => {
       expect(result.category).toBe('Sell');
       expect(result.merchant).toBe('SOL');
       expect(result.notes).toContain('SOL');
+    });
+  });
+
+  describe('formatCryptoOrderNotes', () => {
+    it('should return empty string for null activity', () => {
+      expect(formatCryptoOrderNotes(null, null)).toBe('');
+    });
+
+    it('should return minimal notes when no crypto order data', () => {
+      const activity = {
+        type: 'CRYPTO_BUY',
+        assetSymbol: 'BTC',
+        amount: 10,
+        currency: 'CAD',
+      };
+
+      const result = formatCryptoOrderNotes(activity, null);
+      expect(result).toBe('Buy BTC\nTotal CAD$10');
+    });
+
+    it('should return minimal sell notes when no crypto order data', () => {
+      const activity = {
+        type: 'CRYPTO_SELL',
+        assetSymbol: 'ETH',
+        amount: 500,
+        currency: 'USD',
+      };
+
+      const result = formatCryptoOrderNotes(activity, null);
+      expect(result).toBe('Sell ETH\nTotal USD$500');
+    });
+
+    it('should format market order buy with full crypto order data', () => {
+      const activity = {
+        type: 'CRYPTO_BUY',
+        assetSymbol: 'BTC',
+        amount: 10,
+        currency: 'CAD',
+      };
+      const cryptoOrder = {
+        quantity: '0.000109',
+        executedQuantity: '0.00010891',
+        price: '91358.8685646',
+        currency: 'CAD',
+        limitPrice: null,
+        fee: '0.04',
+        swapFee: '0.0497908481',
+        totalCost: '10.0',
+      };
+
+      const result = formatCryptoOrderNotes(activity, cryptoOrder);
+
+      expect(result).toBe(
+        'Market order Buy 0.000109 BTC\n' +
+        'Filled 0.00010891 @ CAD$91358.8685646, fees: CAD$0.0897908481 (fee: CAD$0.04, swap: CAD$0.0497908481)\n' +
+        'Total CAD$10',
+      );
+    });
+
+    it('should format limit order buy with full crypto order data', () => {
+      const activity = {
+        type: 'CRYPTO_BUY',
+        assetSymbol: 'BTC',
+        amount: 89.59,
+        currency: 'CAD',
+      };
+      const cryptoOrder = {
+        quantity: '0.001',
+        executedQuantity: '0.001',
+        price: '89500',
+        currency: 'CAD',
+        limitPrice: '90000',
+        timeInForce: 'day',
+        fee: '0.04',
+        swapFee: '0.05',
+        totalCost: '89.59',
+      };
+
+      const result = formatCryptoOrderNotes(activity, cryptoOrder);
+
+      expect(result).toBe(
+        'Limit order Buy 0.001 BTC @ 90000 Limit day\n' +
+        'Filled 0.001 @ CAD$89500, fees: CAD$0.09 (fee: CAD$0.04, swap: CAD$0.05)\n' +
+        'Total CAD$89.59',
+      );
+    });
+
+    it('should format market order sell correctly', () => {
+      const activity = {
+        type: 'CRYPTO_SELL',
+        assetSymbol: 'ETH',
+        amount: 500,
+        currency: 'CAD',
+      };
+      const cryptoOrder = {
+        quantity: '0.15',
+        executedQuantity: '0.15',
+        price: '3300',
+        currency: 'CAD',
+        limitPrice: null,
+        fee: '0.1',
+        swapFee: '0.2',
+        totalCost: '500',
+      };
+
+      const result = formatCryptoOrderNotes(activity, cryptoOrder);
+
+      expect(result).toContain('Market order Sell 0.15 ETH');
+      expect(result).toContain('Filled 0.15 @ CAD$3300');
+      expect(result).toContain('fees: CAD$0.3 (fee: CAD$0.1, swap: CAD$0.2)');
+      expect(result).toContain('Total CAD$500');
+    });
+
+    it('should handle missing fields with defaults', () => {
+      const activity = {
+        type: 'CRYPTO_BUY',
+        assetSymbol: null,
+        amount: null,
+        currency: null,
+      };
+      const cryptoOrder = {
+        quantity: null,
+        executedQuantity: null,
+        price: null,
+        currency: null,
+        limitPrice: null,
+        fee: null,
+        swapFee: null,
+        totalCost: null,
+      };
+
+      const result = formatCryptoOrderNotes(activity, cryptoOrder);
+
+      expect(result).toContain('Market order Buy 0 N/A');
+      expect(result).toContain('Filled 0 @ CAD$0');
+      expect(result).toContain('Total CAD$0');
+    });
+
+    it('should use crypto order currency over activity currency', () => {
+      const activity = {
+        type: 'CRYPTO_BUY',
+        assetSymbol: 'BTC',
+        amount: 100,
+        currency: 'USD',
+      };
+      const cryptoOrder = {
+        quantity: '0.001',
+        executedQuantity: '0.001',
+        price: '95000',
+        currency: 'CAD',
+        limitPrice: null,
+        fee: '0.05',
+        swapFee: '0.05',
+        totalCost: '100',
+      };
+
+      const result = formatCryptoOrderNotes(activity, cryptoOrder);
+
+      expect(result).toContain('CAD$95000');
+      expect(result).toContain('Total CAD$100');
+    });
+  });
+
+  describe('CRYPTO_BUY/CRYPTO_SELL rules with crypto order enrichment', () => {
+    it('should use formatCryptoOrderNotes with crypto order data for CRYPTO_BUY', () => {
+      const transaction = {
+        externalCanonicalId: 'order-crypto123',
+        type: 'CRYPTO_BUY',
+        subType: 'MARKET_ORDER',
+        assetSymbol: 'BTC',
+        amount: 10,
+        currency: 'CAD',
+      };
+
+      const enrichmentMap = new Map();
+      enrichmentMap.set('order-crypto123', {
+        isCryptoOrderData: true,
+        quantity: '0.000109',
+        executedQuantity: '0.00010891',
+        price: '91358.8685646',
+        currency: 'CAD',
+        limitPrice: null,
+        fee: '0.04',
+        swapFee: '0.0497908481',
+        totalCost: '10.0',
+      });
+
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-buy');
+      const result = rule.process(transaction, enrichmentMap);
+
+      expect(result.notes).toContain('Market order Buy 0.000109 BTC');
+      expect(result.notes).toContain('Filled 0.00010891 @ CAD$91358.8685646');
+      expect(result.notes).toContain('Total CAD$10');
+    });
+
+    it('should use formatCryptoOrderNotes with crypto order data for CRYPTO_SELL', () => {
+      const transaction = {
+        externalCanonicalId: 'order-cryptosell',
+        type: 'CRYPTO_SELL',
+        subType: 'MARKET_ORDER',
+        assetSymbol: 'ETH',
+        amount: 500,
+        currency: 'CAD',
+      };
+
+      const enrichmentMap = new Map();
+      enrichmentMap.set('order-cryptosell', {
+        isCryptoOrderData: true,
+        quantity: '0.15',
+        executedQuantity: '0.15',
+        price: '3300',
+        currency: 'CAD',
+        limitPrice: null,
+        fee: '0.1',
+        swapFee: '0.2',
+        totalCost: '500',
+      });
+
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-sell');
+      const result = rule.process(transaction, enrichmentMap);
+
+      expect(result.notes).toContain('Market order Sell 0.15 ETH');
+      expect(result.notes).toContain('Filled 0.15 @ CAD$3300');
+    });
+
+    it('should fall back to minimal notes when no enrichment data', () => {
+      const transaction = {
+        externalCanonicalId: 'order-noenrich',
+        type: 'CRYPTO_BUY',
+        subType: 'MARKET_ORDER',
+        assetSymbol: 'SOL',
+        amount: 200,
+        currency: 'CAD',
+      };
+
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-buy');
+      const result = rule.process(transaction, new Map());
+
+      expect(result.notes).toBe('Buy SOL\nTotal CAD$200');
+    });
+
+    it('should fall back to minimal notes when enrichment is not crypto order data', () => {
+      const transaction = {
+        externalCanonicalId: 'order-notcrypto',
+        type: 'CRYPTO_BUY',
+        subType: 'MARKET_ORDER',
+        assetSymbol: 'BTC',
+        amount: 100,
+        currency: 'CAD',
+      };
+
+      const enrichmentMap = new Map();
+      enrichmentMap.set('order-notcrypto', {
+        // No isCryptoOrderData marker
+        orderType: 'BUY',
+        submittedQuantity: 1,
+      });
+
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-buy');
+      const result = rule.process(transaction, enrichmentMap);
+
+      expect(result.notes).toBe('Buy BTC\nTotal CAD$100');
     });
   });
 
