@@ -304,6 +304,17 @@ async function resolveCategoriesForTransactions(transactions, options = {}) {
         throw new Error(`Category selection cancelled for "${categoryToResolve.bankCategory}". Upload aborted.`);
       }
 
+      // Handle "Skip (single transaction)" response - skip without saving a rule
+      if (selectedCategory.skipped) {
+        debugLog(`Skipped categorization for "${categoryToResolve.bankCategory}" (single transaction)`);
+        categoriesToResolve.shift();
+        resolvedCount += 1;
+        if (onProgress) {
+          onProgress(`Resolving categories (${resolvedCount}/${totalCategories})`);
+        }
+        continue;
+      }
+
       // Handle "Skip All (this sync)" response
       if (selectedCategory.skipAll === true) {
         debugLog('User chose "Skip All" - setting empty category for all remaining transactions');

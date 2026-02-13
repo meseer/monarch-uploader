@@ -206,6 +206,101 @@ function createSearchInput(placeholder, onSearch) {
 }
 
 /**
+ * Create a split "Skip" button with dropdown for skip-all option
+ * @param {Function} onSkipThis - Callback when "Skip" (single) is clicked
+ * @param {Function} onSkipAll - Callback when "Skip All" is clicked
+ * @returns {HTMLElement} The split button container element
+ */
+function createSplitSkipButton(onSkipThis, onSkipAll) {
+  const container = document.createElement('div');
+  container.id = 'category-selector-skip-container';
+  container.style.cssText = 'position: relative; display: inline-flex;';
+
+  const skipBtn = document.createElement('button');
+  skipBtn.id = 'category-selector-skip-btn';
+  skipBtn.textContent = 'Skip';
+  skipBtn.title = 'Skip categorization for this transaction';
+  skipBtn.style.cssText = 'padding: 8px 14px; background-color: #6c757d; color: white; border: none; border-right: 1px solid rgba(255,255,255,0.3); border-radius: 4px 0 0 4px; cursor: pointer; font-size: 13px; line-height: 1;';
+  skipBtn.onmouseover = () => { skipBtn.style.backgroundColor = '#5a6268'; };
+  skipBtn.onmouseout = () => { skipBtn.style.backgroundColor = '#6c757d'; };
+  skipBtn.onclick = (e) => { e.stopPropagation(); onSkipThis(); };
+
+  const dropdownBtn = document.createElement('button');
+  dropdownBtn.id = 'category-selector-skip-dropdown-btn';
+  dropdownBtn.textContent = '\u25BE';
+  dropdownBtn.title = 'More skip options';
+  dropdownBtn.style.cssText = 'padding: 8px 8px; background-color: #6c757d; color: white; border: none; border-radius: 0 4px 4px 0; cursor: pointer; font-size: 13px; line-height: 1;';
+  dropdownBtn.onmouseover = () => { dropdownBtn.style.backgroundColor = '#5a6268'; };
+  dropdownBtn.onmouseout = () => { dropdownBtn.style.backgroundColor = '#6c757d'; };
+
+  const dropdownMenu = document.createElement('div');
+  dropdownMenu.id = 'category-selector-skip-dropdown-menu';
+  dropdownMenu.style.cssText = 'display: none; position: absolute; top: 100%; left: 0; margin-top: 4px; background: white; border: 1px solid #ddd; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 10001; min-width: 220px;';
+
+  const skipAllOption = document.createElement('div');
+  skipAllOption.id = 'category-selector-skip-all-option';
+  skipAllOption.style.cssText = 'padding: 10px 14px; cursor: pointer; font-size: 13px; color: #333; white-space: nowrap;';
+  skipAllOption.onmouseover = () => { skipAllOption.style.backgroundColor = '#f5f5f5'; };
+  skipAllOption.onmouseout = () => { skipAllOption.style.backgroundColor = 'white'; };
+
+  const skipAllLabel = document.createElement('div');
+  skipAllLabel.style.cssText = 'font-weight: 500;';
+  skipAllLabel.textContent = 'Skip all remaining (this sync)';
+  skipAllOption.appendChild(skipAllLabel);
+
+  const skipAllDesc = document.createElement('div');
+  skipAllDesc.style.cssText = 'font-size: 11px; color: #888; margin-top: 2px;';
+  skipAllDesc.textContent = 'Let Monarch auto-categorize the rest';
+  skipAllOption.appendChild(skipAllDesc);
+
+  skipAllOption.onclick = (e) => { e.stopPropagation(); dropdownMenu.style.display = 'none'; onSkipAll(); };
+  dropdownMenu.appendChild(skipAllOption);
+
+  dropdownBtn.onclick = (e) => {
+    e.stopPropagation();
+    dropdownMenu.style.display = dropdownMenu.style.display !== 'none' ? 'none' : 'block';
+  };
+
+  const closeDropdown = (e) => { if (!container.contains(e.target)) dropdownMenu.style.display = 'none'; };
+  document.addEventListener('click', closeDropdown, true);
+
+  container.appendChild(skipBtn);
+  container.appendChild(dropdownBtn);
+  container.appendChild(dropdownMenu);
+  container.cleanupFn = () => { document.removeEventListener('click', closeDropdown, true); };
+
+  return container;
+}
+
+/**
+ * Create the top action bar with Skip (split) and Cancel buttons
+ * @param {Function} onSkipThis - Callback when "Skip" (single) is clicked
+ * @param {Function} onSkipAll - Callback when "Skip All remaining" is clicked
+ * @param {Function} onCancel - Callback when "Cancel" is clicked
+ * @returns {HTMLElement} The action bar element
+ */
+function createTopActionBar(onSkipThis, onSkipAll, onCancel) {
+  const actionBar = document.createElement('div');
+  actionBar.id = 'category-selector-action-bar';
+  actionBar.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 10px 12px; background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 6px;';
+
+  const splitSkip = createSplitSkipButton(onSkipThis, onSkipAll);
+  actionBar.appendChild(splitSkip);
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.id = 'category-selector-cancel-btn';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.style.cssText = 'padding: 8px 14px; background-color: #f5f5f5; color: #333; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 13px; line-height: 1;';
+  cancelBtn.onmouseover = () => { cancelBtn.style.backgroundColor = '#e9ecef'; };
+  cancelBtn.onmouseout = () => { cancelBtn.style.backgroundColor = '#f5f5f5'; };
+  cancelBtn.onclick = onCancel;
+  actionBar.appendChild(cancelBtn);
+
+  actionBar.cleanupFn = () => { if (splitSkip.cleanupFn) splitSkip.cleanupFn(); };
+  return actionBar;
+}
+
+/**
  * Show the category group selection screen
  * @param {Array} categoryGroups - List of category groups with categories
  * @param {string} bankCategory - Bank category name being mapped
@@ -222,10 +317,12 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
 
   // Set up keyboard navigation cleanup function
   let cleanupKeyboard = () => {};
+  let actionBarCleanup = () => {};
 
   // Create overlay
   const overlay = createModalOverlay(() => {
     cleanupKeyboard();
+    actionBarCleanup();
     overlay.remove();
     callback(null);
   });
@@ -398,6 +495,37 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
 
   bankCategoryRef.innerHTML = bankCategoryHtml;
   modal.appendChild(bankCategoryRef);
+
+  // Add top action bar (Skip + Cancel) ABOVE the search and category list
+  const topActionBar = createTopActionBar(
+    // onSkipThis: skip categorization for this transaction only
+    () => {
+      debugLog('Skip clicked - skipping categorization for this transaction');
+      cleanupKeyboard();
+      actionBarCleanup();
+      overlay.remove();
+      toast.show('Skipped categorization for this transaction', 'info');
+      setTimeout(() => callback({ name: '', assignmentType: 'once', skipped: true }), 0);
+    },
+    // onSkipAll: skip categorization for all remaining in this sync
+    () => {
+      debugLog('Skip All clicked - skipping remaining category selections for this sync');
+      cleanupKeyboard();
+      actionBarCleanup();
+      overlay.remove();
+      toast.show('Skipping categorization for remaining transactions', 'info');
+      setTimeout(() => callback({ skipAll: true }), 0);
+    },
+    // onCancel
+    () => {
+      cleanupKeyboard();
+      actionBarCleanup();
+      overlay.remove();
+      callback(null);
+    },
+  );
+  actionBarCleanup = () => { if (topActionBar.cleanupFn) topActionBar.cleanupFn(); };
+  modal.appendChild(topActionBar);
 
   // Create placeholder for search container (will be filled after updateDisplay is defined)
   const searchPlaceholder = document.createElement('div');
@@ -645,25 +773,6 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
     justify-content: flex-end;
   `;
 
-  // Cancel button
-  const cancelBtn = document.createElement('button');
-  cancelBtn.id = 'category-selector-cancel-btn';
-  cancelBtn.textContent = 'Cancel';
-  cancelBtn.style.cssText = `
-    padding: 10px 16px;
-    background-color: #f5f5f5;
-    color: #333;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
-  `;
-  cancelBtn.onclick = () => {
-    cleanupKeyboard();
-    overlay.remove();
-    callback(null);
-  };
-
   // Save as Rule button
   const saveRuleBtn = document.createElement('button');
   saveRuleBtn.id = 'category-selector-save-rule-btn';
@@ -712,28 +821,6 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
     }
   };
 
-  // Skip All button (skip remaining categories for this sync session)
-  const skipAllBtn = document.createElement('button');
-  skipAllBtn.id = 'category-selector-skip-all-btn';
-  skipAllBtn.textContent = 'Skip All (this sync)';
-  skipAllBtn.style.cssText = `
-    padding: 10px 16px;
-    background-color: #6c757d;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
-  `;
-  skipAllBtn.onclick = () => {
-    debugLog('Skip All clicked - skipping remaining category selections for this sync');
-    cleanupKeyboard();
-    overlay.remove();
-    callback({ skipAll: true });
-  };
-
-  buttonSection.appendChild(cancelBtn);
-  buttonSection.appendChild(skipAllBtn);
   buttonSection.appendChild(saveRuleBtn);
   buttonSection.appendChild(assignOnceBtn);
 
@@ -948,6 +1035,7 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
 
   // Set up keyboard navigation cleanup function
   let cleanupKeyboard = () => {};
+  let actionBarCleanup = () => {};
 
   // Create the overlay first
   let overlay;
@@ -955,6 +1043,7 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
   // Helper to close modal with cleanup
   const closeModal = () => {
     cleanupKeyboard();
+    actionBarCleanup();
     overlay.remove();
     callback(null);
   };
@@ -1073,6 +1162,32 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
   bankCategoryRef.style.cssText = 'margin-bottom: 15px; font-size: 0.95em;';
   bankCategoryRef.innerHTML = `Selecting Monarch category for bank category: <b>${bankCategory}</b>`;
   modal.appendChild(bankCategoryRef);
+
+  // Add top action bar (Skip + Cancel) ABOVE the search and category list
+  const topActionBar = createTopActionBar(
+    // onSkipThis: skip categorization for this transaction only
+    () => {
+      debugLog('Skip clicked (detail view) - skipping categorization for this transaction');
+      cleanupKeyboard();
+      actionBarCleanup();
+      overlay.remove();
+      toast.show('Skipped categorization for this transaction', 'info');
+      setTimeout(() => callback({ name: '', assignmentType: 'once', skipped: true }), 0);
+    },
+    // onSkipAll: skip categorization for all remaining in this sync
+    () => {
+      debugLog('Skip All clicked (detail view) - skipping remaining category selections for this sync');
+      cleanupKeyboard();
+      actionBarCleanup();
+      overlay.remove();
+      toast.show('Skipping categorization for remaining transactions', 'info');
+      setTimeout(() => callback({ skipAll: true }), 0);
+    },
+    // onCancel
+    closeModal,
+  );
+  actionBarCleanup = () => { if (topActionBar.cleanupFn) topActionBar.cleanupFn(); };
+  modal.appendChild(topActionBar);
 
   // Create placeholder for search container (will be filled after updateDisplay is defined)
   const searchPlaceholder = document.createElement('div');
@@ -1246,21 +1361,6 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
 
   // Initial display
   updateDisplay();
-
-  // Add a cancel button
-  const cancelBtn = document.createElement('button');
-  cancelBtn.textContent = 'Cancel';
-  cancelBtn.style.cssText = `
-    padding: 8px 16px;
-    background-color: #f5f5f5;
-    color: #333;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    margin-top: 10px;
-  `;
-  cancelBtn.onclick = closeModal;
-  modal.appendChild(cancelBtn);
 
   // Add keyboard handlers for the modal (Escape to close)
   const cleanupModalHandlers = addModalKeyboardHandlers(overlay, closeModal);

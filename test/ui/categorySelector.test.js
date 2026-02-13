@@ -664,12 +664,13 @@ describe('Category Selector Component', () => {
       expect(modal.innerHTML).toContain('85.0% similarity');
     });
 
-    test('should handle cancel button functionality', async () => {
+    test('should handle cancel button functionality in top action bar', async () => {
       const callback = jest.fn();
 
       await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', callback);
 
-      const cancelButton = document.querySelector('button');
+      // Cancel button is now in the top action bar
+      const cancelButton = document.getElementById('category-selector-cancel-btn');
       expect(cancelButton).toBeTruthy();
       expect(cancelButton.textContent).toBe('Cancel');
 
@@ -678,22 +679,63 @@ describe('Category Selector Component', () => {
       expect(callback).toHaveBeenCalledWith(null);
     });
 
-    test('should display "Skip All (this sync)" button that resolves with skipAll sentinel', async () => {
+    test('should display split Skip button with dropdown for Skip All', async () => {
       const callback = jest.fn();
 
       await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', callback);
 
-      // Find all buttons in the modal
-      const buttons = document.querySelectorAll('button');
-      const skipAllButton = Array.from(buttons).find((btn) => btn.textContent.includes('Skip All'));
+      // Check the Skip button exists in the top action bar
+      const skipBtn = document.getElementById('category-selector-skip-btn');
+      expect(skipBtn).toBeTruthy();
+      expect(skipBtn.textContent).toBe('Skip');
 
-      expect(skipAllButton).toBeTruthy();
-      expect(skipAllButton.textContent).toContain('Skip All');
+      // Check the dropdown toggle button exists
+      const dropdownBtn = document.getElementById('category-selector-skip-dropdown-btn');
+      expect(dropdownBtn).toBeTruthy();
 
-      // Click the Skip All button
-      skipAllButton.click();
+      // Check the dropdown menu exists (hidden by default)
+      const dropdownMenu = document.getElementById('category-selector-skip-dropdown-menu');
+      expect(dropdownMenu).toBeTruthy();
+      expect(dropdownMenu.style.display).toBe('none');
 
-      // Should resolve with { skipAll: true } sentinel
+      // Check the Skip All option exists in the dropdown
+      const skipAllOption = document.getElementById('category-selector-skip-all-option');
+      expect(skipAllOption).toBeTruthy();
+      expect(skipAllOption.textContent).toContain('Skip all remaining');
+    });
+
+    test('should resolve with skipped sentinel when Skip button is clicked', async () => {
+      const callback = jest.fn();
+
+      await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', callback);
+
+      const skipBtn = document.getElementById('category-selector-skip-btn');
+      skipBtn.click();
+
+      // setTimeout is used for async UI, so wait for it
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(callback).toHaveBeenCalledWith(
+        expect.objectContaining({ name: '', assignmentType: 'once', skipped: true }),
+      );
+    });
+
+    test('should resolve with skipAll sentinel when Skip All dropdown option is clicked', async () => {
+      const callback = jest.fn();
+
+      await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', callback);
+
+      // Open the dropdown first
+      const dropdownBtn = document.getElementById('category-selector-skip-dropdown-btn');
+      dropdownBtn.click();
+
+      // Click the Skip All option
+      const skipAllOption = document.getElementById('category-selector-skip-all-option');
+      skipAllOption.click();
+
+      // setTimeout is used for async UI, so wait for it
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
       expect(callback).toHaveBeenCalledWith({ skipAll: true });
     });
   });

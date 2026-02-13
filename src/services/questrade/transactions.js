@@ -269,6 +269,12 @@ async function resolveCategoriesForOrders(orders, options = {}) {
       }
 
       // Handle "Skip All (this sync)" response
+      // Handle "Skip single" - don't save as rule, just continue to next
+      if (selectedCategory.skipped) {
+        debugLog(`Skipped categorization for "${actionToResolve.bankCategory}" (single transaction)`);
+        continue;
+      }
+
       if (selectedCategory.skipAll === true) {
         debugLog('User chose "Skip All" - setting empty category for all remaining Questrade orders');
         return orders.map((order) => {

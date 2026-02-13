@@ -208,6 +208,12 @@ async function resolveCategoriesForTransactions(transactions, options = {}) {
         break;
       }
 
+      // Handle "Skip single" - don't save as rule, just continue to next
+      if (selectedCategory.skipped) {
+        debugLog(`Skipped categorization for "${categoryToResolve.bankCategory}" (single transaction)`);
+        continue;
+      }
+
       saveUserCategorySelection(categoryToResolve.bankCategory, selectedCategory.name);
     }
   }
