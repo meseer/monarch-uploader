@@ -55,18 +55,17 @@ find src test -name "*.js" | xargs wc -l | sort -rn | head -20
 
 ## Known Oversized Files (Legacy)
 
-The following files currently exceed the 1,500 line limit and should be split in follow-up work:
+All previously oversized files have been split as of v5.81.0. No files currently exceed the 1,500 line limit.
 
-| File | Lines | Priority |
-|------|-------|----------|
-| `src/ui/components/settingsModal.js` | 3,316 | High |
-| `src/api/wealthsimple.js` | 2,977 | High |
-| `src/api/monarch.js` | 2,833 | High |
-| `src/services/wealthsimple/transactions.js` | 2,613 | Medium |
-| `src/services/wealthsimple/transactionRules.js` | 2,341 | Medium |
-| `src/ui/components/categorySelector.js` | 1,986 | Medium |
-
-These files were created before this rule was established. They should be split when next modified or as dedicated cleanup tasks.
+**Split history (v5.81.0):**
+| Original File | Was | Now | Sub-modules |
+|---------------|-----|-----|-------------|
+| `src/ui/components/settingsModal.js` | 3,316 | 798 | `settingsModalHelpers.js`, `settingsModalAccountCards.js` |
+| `src/api/wealthsimple.js` | 2,977 | 1,038 | `wealthsimplePositions.js`, `wealthsimpleQueries.js` |
+| `src/api/monarch.js` | 2,833 | 975 | `monarchTransactions.js`, `monarchAccounts.js` |
+| `src/services/wealthsimple/transactions.js` | 2,613 | 1,042 | `transactionsHelpers.js`, `transactionsInvestment.js`, `transactionsReconciliation.js` |
+| `src/services/wealthsimple/transactionRules.js` | 2,341 | 753 | `transactionRulesHelpers.js`, `transactionRulesInvestment.js` |
+| `src/ui/components/categorySelector.js` | 1,986 | 1,020 | `categorySelectorUtils.js`, `categorySelectorManual.js` |
 
 ## Important Notes
 
