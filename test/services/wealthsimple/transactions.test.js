@@ -3288,9 +3288,9 @@ describe('Wealthsimple Transaction Service', () => {
         const paymentTx = result.find((tx) => tx.subType === 'PAYMENT');
         expect(paymentTx.resolvedMonarchCategory).toBe('Credit Card Payment');
 
-        // PURCHASE should have empty category (skip categorization)
+        // PURCHASE should have Uncategorized (skip categorization)
         const purchaseTx = result.find((tx) => tx.subType === 'PURCHASE');
-        expect(purchaseTx.resolvedMonarchCategory).toBe('');
+        expect(purchaseTx.resolvedMonarchCategory).toBe('Uncategorized');
       });
     });
 
@@ -3349,10 +3349,10 @@ describe('Wealthsimple Transaction Service', () => {
           '2025-01-31',
         );
 
-        // Both transactions should have empty category
+        // Both transactions should have Uncategorized
         expect(result).toHaveLength(2);
-        expect(result[0].resolvedMonarchCategory).toBe('');
-        expect(result[1].resolvedMonarchCategory).toBe('');
+        expect(result[0].resolvedMonarchCategory).toBe('Uncategorized');
+        expect(result[1].resolvedMonarchCategory).toBe('Uncategorized');
 
         // Should only show selector once (skipAll stops further prompts)
         expect(showMonarchCategorySelector).toHaveBeenCalledTimes(1);
@@ -3407,9 +3407,9 @@ describe('Wealthsimple Transaction Service', () => {
         const etransferTx = result.find((tx) => tx.id === 'tx-etransfer');
         expect(etransferTx.resolvedMonarchCategory).toBe('Transfer');
 
-        // Unknown transaction should have empty category
+        // Unknown transaction should have Uncategorized
         const unknownTx = result.find((tx) => tx.id === 'tx-unknown');
-        expect(unknownTx.resolvedMonarchCategory).toBe('');
+        expect(unknownTx.resolvedMonarchCategory).toBe('Uncategorized');
         expect(unknownTx.ruleId).toBe('skip-categorization');
       });
     });
@@ -3461,7 +3461,7 @@ describe('Wealthsimple Transaction Service', () => {
         expect(showManualTransactionCategorization).not.toHaveBeenCalled();
 
         expect(result).toHaveLength(1);
-        expect(result[0].resolvedMonarchCategory).toBe('');
+        expect(result[0].resolvedMonarchCategory).toBe('Uncategorized');
         expect(result[0].ruleId).toBe('skip-categorization');
       });
     });
@@ -3518,9 +3518,9 @@ describe('Wealthsimple Transaction Service', () => {
         const paymentTx = result.find((tx) => tx.subType === 'PAYMENT');
         expect(paymentTx.resolvedMonarchCategory).toBe('Credit Card Payment');
 
-        // PURCHASE should have empty category (skip categorization via options)
+        // PURCHASE should have Uncategorized (skip categorization via options)
         const purchaseTx = result.find((tx) => tx.subType === 'PURCHASE');
-        expect(purchaseTx.resolvedMonarchCategory).toBe('');
+        expect(purchaseTx.resolvedMonarchCategory).toBe('Uncategorized');
       });
     });
 
@@ -3558,7 +3558,7 @@ describe('Wealthsimple Transaction Service', () => {
 
         expect(showManualTransactionCategorization).not.toHaveBeenCalled();
         expect(result).toHaveLength(1);
-        expect(result[0].resolvedMonarchCategory).toBe('');
+        expect(result[0].resolvedMonarchCategory).toBe('Uncategorized');
         expect(result[0].ruleId).toBe('skip-categorization');
       });
     });
@@ -3610,9 +3610,9 @@ describe('Wealthsimple Transaction Service', () => {
         const borrowTx = result.find((tx) => tx.id === 'loc-borrow');
         expect(borrowTx.resolvedMonarchCategory).toBe('Transfer');
 
-        // Unknown transaction should have empty category
+        // Unknown transaction should have Uncategorized
         const unknownTx = result.find((tx) => tx.id === 'loc-unknown');
-        expect(unknownTx.resolvedMonarchCategory).toBe('');
+        expect(unknownTx.resolvedMonarchCategory).toBe('Uncategorized');
         expect(unknownTx.ruleId).toBe('skip-categorization');
       });
     });

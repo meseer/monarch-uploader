@@ -182,13 +182,13 @@ async function resolveCategoriesForOrders(orders, options = {}) {
     debugLog('Failed to fetch categories from Monarch, will use manual selection for all:', error);
   }
 
-  // If skip categorization is enabled, set empty category for all orders
+  // If skip categorization is enabled, set Uncategorized for all orders
   // and return immediately (no manual prompts)
   if (skipCategorization) {
-    debugLog('Skip categorization enabled - setting empty category for all Questrade orders');
+    debugLog('Skip categorization enabled - setting Uncategorized for all Questrade orders');
     return orders.map((order) => ({
       ...order,
-      resolvedMonarchCategory: '', // Empty = let Monarch apply its own rules
+      resolvedMonarchCategory: 'Uncategorized',
       originalAction: order.action || 'Unknown',
     }));
   }
@@ -276,12 +276,12 @@ async function resolveCategoriesForOrders(orders, options = {}) {
       }
 
       if (selectedCategory.skipAll === true) {
-        debugLog('User chose "Skip All" - setting empty category for all remaining Questrade orders');
+        debugLog('User chose "Skip All" - setting Uncategorized for all remaining Questrade orders');
         return orders.map((order) => {
           const action = order.action || 'Unknown';
           const mappingResult = applyCategoryMapping(action, availableCategories);
-          // Already-resolved categories keep their mapping, unresolved get empty
-          const resolvedCategory = typeof mappingResult === 'string' ? mappingResult : '';
+          // Already-resolved categories keep their mapping, unresolved get Uncategorized
+          const resolvedCategory = typeof mappingResult === 'string' ? mappingResult : 'Uncategorized';
           return {
             ...order,
             resolvedMonarchCategory: resolvedCategory,

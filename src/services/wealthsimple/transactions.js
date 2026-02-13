@@ -182,17 +182,17 @@ async function resolveCategoriesForTransactions(transactions, options = {}) {
     }
   });
 
-  // If skip categorization is enabled, set all unresolved transactions to empty category
+  // If skip categorization is enabled, set all unresolved transactions to 'Uncategorized'
   // and return immediately (no manual prompts)
   if (skipCategorization) {
-    debugLog('Skip categorization enabled - setting empty category for all unresolved transactions');
+    debugLog('Skip categorization enabled - setting Uncategorized for all unresolved transactions');
     return transactions.map((transaction) => {
       if (transaction.resolvedMonarchCategory) {
         return transaction; // Keep auto-categorized
       }
       return {
         ...transaction,
-        resolvedMonarchCategory: '', // Empty = let Monarch apply its own rules
+        resolvedMonarchCategory: 'Uncategorized',
       };
     });
   }
@@ -317,8 +317,8 @@ async function resolveCategoriesForTransactions(transactions, options = {}) {
 
       // Handle "Skip All (this sync)" response
       if (selectedCategory.skipAll === true) {
-        debugLog('User chose "Skip All" - setting empty category for all remaining transactions');
-        // Clear remaining categories and set all unresolved to empty
+        debugLog('User chose "Skip All" - setting Uncategorized for all remaining transactions');
+        // Clear remaining categories and set all unresolved to Uncategorized
         categoriesToResolve.length = 0;
         return transactions.map((transaction) => {
           if (transaction.resolvedMonarchCategory) {
@@ -341,7 +341,7 @@ async function resolveCategoriesForTransactions(transactions, options = {}) {
           }
           return {
             ...transaction,
-            resolvedMonarchCategory: '', // Empty = let Monarch apply its own rules
+            resolvedMonarchCategory: 'Uncategorized',
           };
         });
       }
@@ -992,7 +992,7 @@ export async function fetchAndProcessCashTransactions(consolidatedAccount, fromD
     // Step 7: Handle transactions without rules - show manual categorization UI
     if (transactionsWithoutRules.length > 0) {
       if (skipCategorization) {
-        // Skip manual categorization - assign empty merchant/category for Monarch auto-rules
+        // Skip manual categorization - assign Uncategorized for Monarch
         debugLog(`Skip categorization enabled - auto-assigning ${transactionsWithoutRules.length} transactions without rules`);
         for (const rawTransaction of transactionsWithoutRules) {
           const isNegative = rawTransaction.amountSign === 'negative';
@@ -1010,7 +1010,7 @@ export async function fetchAndProcessCashTransactions(consolidatedAccount, fromD
             status: rawTransaction.status,
             unifiedStatus: rawTransaction.unifiedStatus,
             isPending,
-            resolvedMonarchCategory: '', // Empty = let Monarch apply its own rules
+            resolvedMonarchCategory: 'Uncategorized',
             ruleId: 'skip-categorization',
             notes: '',
             technicalDetails: '',
@@ -1297,7 +1297,7 @@ export async function fetchAndProcessLineOfCreditTransactions(consolidatedAccoun
     // Step 6: Handle transactions without rules - show manual categorization UI
     if (transactionsWithoutRules.length > 0) {
       if (skipCategorization) {
-        // Skip manual categorization - assign empty merchant/category for Monarch auto-rules
+        // Skip manual categorization - assign Uncategorized for Monarch
         debugLog(`Skip categorization enabled - auto-assigning ${transactionsWithoutRules.length} LOC transactions without rules`);
         for (const rawTransaction of transactionsWithoutRules) {
           const isNegative = rawTransaction.amountSign === 'negative';
@@ -1314,7 +1314,7 @@ export async function fetchAndProcessLineOfCreditTransactions(consolidatedAccoun
             subType: rawTransaction.subType,
             status: rawTransaction.status,
             isPending,
-            resolvedMonarchCategory: '', // Empty = let Monarch apply its own rules
+            resolvedMonarchCategory: 'Uncategorized',
             ruleId: 'skip-categorization',
             notes: '',
             technicalDetails: '',
@@ -1998,7 +1998,7 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
     // Step 7: Handle transactions without rules - show manual categorization UI
     if (transactionsWithoutRules.length > 0) {
       if (skipCategorization) {
-        // Skip manual categorization - assign empty merchant/category for Monarch auto-rules
+        // Skip manual categorization - assign Uncategorized for Monarch
         debugLog(`Skip categorization enabled - auto-assigning ${transactionsWithoutRules.length} investment transactions without rules`);
         for (const rawTransaction of transactionsWithoutRules) {
           const isNegative = rawTransaction.amountSign === 'negative';
@@ -2024,7 +2024,7 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
             status: rawTransaction.status,
             unifiedStatus: rawTransaction.unifiedStatus,
             isPending,
-            resolvedMonarchCategory: '', // Empty = let Monarch apply its own rules
+            resolvedMonarchCategory: 'Uncategorized',
             ruleId: 'skip-categorization',
             notes: '',
             technicalDetails: '',

@@ -324,11 +324,11 @@ describe('Questrade Transactions Service', () => {
       // Category selector should not have been shown
       const { showMonarchCategorySelector } = require('../../../src/ui/components/categorySelector');
       expect(showMonarchCategorySelector).not.toHaveBeenCalled();
-      // Orders should have empty resolved category
+      // Orders should have Uncategorized resolved category
       expect(convertQuestradeOrdersToMonarchCSV).toHaveBeenCalledWith(
         expect.arrayContaining([
-          expect.objectContaining({ orderUuid: 'uuid1', resolvedMonarchCategory: '' }),
-          expect.objectContaining({ orderUuid: 'uuid2', resolvedMonarchCategory: '' }),
+          expect.objectContaining({ orderUuid: 'uuid1', resolvedMonarchCategory: 'Uncategorized' }),
+          expect.objectContaining({ orderUuid: 'uuid2', resolvedMonarchCategory: 'Uncategorized' }),
         ]),
         expect.any(String),
       );
@@ -372,10 +372,10 @@ describe('Questrade Transactions Service', () => {
       );
 
       expect(result.success).toBe(true);
-      // Orders should have empty resolved category after skipAll
+      // Orders should have Uncategorized resolved category after skipAll
       expect(convertQuestradeOrdersToMonarchCSV).toHaveBeenCalledWith(
         expect.arrayContaining([
-          expect.objectContaining({ resolvedMonarchCategory: '' }),
+          expect.objectContaining({ resolvedMonarchCategory: 'Uncategorized' }),
         ]),
         expect.any(String),
       );

@@ -716,7 +716,7 @@ describe('Category Selector Component', () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
 
       expect(callback).toHaveBeenCalledWith(
-        expect.objectContaining({ name: '', assignmentType: 'once', skipped: true }),
+        expect.objectContaining({ name: 'Uncategorized', assignmentType: 'once', skipped: true }),
       );
     });
 

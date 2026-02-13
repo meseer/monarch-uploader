@@ -142,15 +142,15 @@ async function resolveCategoriesForTransactions(transactions, options = {}) {
     debugLog('Failed to fetch categories from Monarch:', error);
   }
 
-  // If skip categorization is enabled, set empty category for all transactions
+  // If skip categorization is enabled, set Uncategorized for all transactions
   // and return immediately (no manual prompts)
   if (skipCategorization) {
-    debugLog('Skip categorization enabled - setting empty category for all Rogers Bank transactions');
+    debugLog('Skip categorization enabled - setting Uncategorized for all Rogers Bank transactions');
     return transactions.map((transaction) => {
       const bankCategory = transaction.merchant?.categoryDescription
         || transaction.merchant?.category
         || 'Uncategorized';
-      return { ...transaction, resolvedMonarchCategory: '', originalBankCategory: bankCategory };
+      return { ...transaction, resolvedMonarchCategory: 'Uncategorized', originalBankCategory: bankCategory };
     });
   }
 
@@ -203,7 +203,7 @@ async function resolveCategoriesForTransactions(transactions, options = {}) {
 
       // Handle "Skip All (this sync)" response
       if (selectedCategory.skipAll === true) {
-        debugLog('User chose "Skip All" - setting empty category for all remaining Rogers Bank transactions');
+        debugLog('User chose "Skip All" - setting Uncategorized for all remaining Rogers Bank transactions');
         skipAllTriggered = true;
         break;
       }
@@ -224,9 +224,9 @@ async function resolveCategoriesForTransactions(transactions, options = {}) {
       || 'Uncategorized';
     const mappingResult = applyCategoryMapping(bankCategory, availableCategories);
 
-    // If skip all was triggered, unresolved categories get empty string
+    // If skip all was triggered, unresolved categories get Uncategorized
     if (skipAllTriggered && typeof mappingResult !== 'string') {
-      return { ...transaction, resolvedMonarchCategory: '', originalBankCategory: bankCategory };
+      return { ...transaction, resolvedMonarchCategory: 'Uncategorized', originalBankCategory: bankCategory };
     }
 
     const resolvedCategory = typeof mappingResult === 'string' ? mappingResult : 'Uncategorized';

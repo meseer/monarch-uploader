@@ -2177,11 +2177,11 @@ describe('Rogers Bank Upload Service', () => {
       expect(result.success).toBe(true);
       // Should NOT show manual category selector
       expect(showMonarchCategorySelector).not.toHaveBeenCalled();
-      // All transactions should have empty resolved category
+      // All transactions should have Uncategorized resolved category
       expect(convertTransactionsToMonarchCSV).toHaveBeenCalledWith(
         expect.arrayContaining([
-          expect.objectContaining({ resolvedMonarchCategory: '', originalBankCategory: 'Restaurants' }),
-          expect.objectContaining({ resolvedMonarchCategory: '', originalBankCategory: 'Unknown Category' }),
+          expect.objectContaining({ resolvedMonarchCategory: 'Uncategorized', originalBankCategory: 'Restaurants' }),
+          expect.objectContaining({ resolvedMonarchCategory: 'Uncategorized', originalBankCategory: 'Unknown Category' }),
         ]),
         expect.any(String),
         expect.any(Object),
@@ -2340,11 +2340,11 @@ describe('Rogers Bank Upload Service', () => {
       expect(result.success).toBe(true);
       // Should only have been called once (for Category A), then skipAll breaks the loop
       expect(showMonarchCategorySelector).toHaveBeenCalledTimes(1);
-      // Unresolved categories should get empty string
+      // Unresolved categories should get Uncategorized
       expect(convertTransactionsToMonarchCSV).toHaveBeenCalledWith(
         expect.arrayContaining([
-          expect.objectContaining({ resolvedMonarchCategory: '' }),
-          expect.objectContaining({ resolvedMonarchCategory: '' }),
+          expect.objectContaining({ resolvedMonarchCategory: 'Uncategorized' }),
+          expect.objectContaining({ resolvedMonarchCategory: 'Uncategorized' }),
         ]),
         expect.any(String),
         expect.any(Object),

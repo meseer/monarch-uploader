@@ -560,7 +560,7 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
       actionBarCleanup();
       overlay.remove();
       toast.show('Skipped categorization for this transaction', 'info');
-      setTimeout(() => callback({ name: '', assignmentType: 'once', skipped: true }), 0);
+      setTimeout(() => callback({ name: 'Uncategorized', assignmentType: 'once', skipped: true }), 0);
     },
     // onSkipAll: skip categorization for all remaining in this sync
     () => {
@@ -1228,7 +1228,7 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
       actionBarCleanup();
       overlay.remove();
       toast.show('Skipped categorization for this transaction', 'info');
-      setTimeout(() => callback({ name: '', assignmentType: 'once', skipped: true }), 0);
+      setTimeout(() => callback({ name: 'Uncategorized', assignmentType: 'once', skipped: true }), 0);
     },
     // onSkipAll: skip categorization for all remaining in this sync
     () => {
