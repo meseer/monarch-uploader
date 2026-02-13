@@ -222,9 +222,15 @@ export async function syncPositionToHolding(holdingId, position) {
 
 /**
  * Detect and remove deleted holdings
- * Starts from Monarch holdings (source of truth for what exists) and validates
- * against Questrade positions (source of truth for what should exist).
- * Auto-repairs missing mappings when ticker matches, deletes orphaned holdings.
+ * Positions at the institution are the source of truth. Holdings in Monarch must
+ * always match positions in Questrade. Mappings are preserved for future re-purchases.
+ *
+ * Logic for each Monarch holding:
+ * 1. Has mapping AND mapped position still exists ’ keep
+ * 2. Has mapping AND mapped position no longer exists ’ delete holding, clear holdingId from mapping
+ * 3. No mapping AND ticker matches a position ’ auto-repair (create mapping)
+ * 4. No mapping AND no matching position ’ delete holding
+ *
  * @param {string} accountId - Questrade account ID
  * @param {string} monarchAccountId - Monarch account ID
  * @param {Array} currentPositions - Current positions from Questrade
@@ -248,7 +254,16 @@ export async function detectAndRemoveDeletedHoldings(accountId, monarchAccountId
     // Step 2: Load stored mappings using accountService
     const mappings = accountService.getHoldingsMappings(INTEGRATIONS.QUESTRADE, accountId);
 
-    // Step 3: Build Questrade position lookup by symbol
+    // Step 3: Build set of current position security keys (source of truth)
+    const currentPositionKeys = new Set();
+    for (const position of currentPositions) {
+      const key = position.securityUuid || position.symbolId;
+      if (key) {
+        currentPositionKeys.add(key);
+      }
+    }
+
+    // Build Questrade position lookup by symbol (for auto-repair)
     const positionsBySymbol = new Map();
     for (const position of currentPositions) {
       const symbol = position.security?.symbol;
@@ -257,7 +272,7 @@ export async function detectAndRemoveDeletedHoldings(accountId, monarchAccountId
       }
     }
 
-    debugLog(`Found ${portfolio.aggregateHoldings.edges.length} aggregate holdings in Monarch, ${positionsBySymbol.size} Questrade positions`);
+    debugLog(`Found ${portfolio.aggregateHoldings.edges.length} aggregate holdings in Monarch, ${currentPositionKeys.size} Questrade positions`);
 
     // Step 4: Process each Monarch holding
     for (const edge of portfolio.aggregateHoldings.edges) {
@@ -276,12 +291,36 @@ export async function detectAndRemoveDeletedHoldings(accountId, monarchAccountId
           continue;
         }
 
-        // Check if we have a mapping for this holding ID
-        const hasMapping = Object.values(mappings).some((m) => m.holdingId === holdingId);
+        // Find mapping entry for this holding ID
+        const mappingEntry = Object.entries(mappings).find(([, m]) => m.holdingId === holdingId);
 
-        if (hasMapping) {
-          // Holding is tracked, keep it
-          debugLog(`Holding ${ticker} (${holdingId}) has mapping, keeping`);
+        if (mappingEntry) {
+          const [mappingKey, mappingData] = mappingEntry;
+
+          // Check if the mapped position still exists in current positions
+          if (currentPositionKeys.has(mappingKey)) {
+            // Case 1: Mapped position still exists ’ keep
+            debugLog(`Holding ${ticker} (${holdingId}) has mapping and position exists, keeping`);
+            continue;
+          }
+
+          // Case 2: Mapped position no longer exists ’ delete holding, clear holdingId
+          try {
+            debugLog(`Deleting holding for sold position: ${ticker} (${holdingId}) - position no longer exists`);
+            await monarchApi.deleteHolding(holdingId);
+            debugLog(`Successfully deleted holding ${ticker}`);
+            deletedCount += 1;
+
+            // Clear holdingId from mapping but preserve securityId for future re-purchases
+            accountService.saveHoldingMapping(INTEGRATIONS.QUESTRADE, accountId, mappingKey, {
+              securityId: mappingData.securityId,
+              holdingId: null,
+              symbol: mappingData.symbol,
+            });
+            debugLog(`Cleared holdingId from mapping for ${ticker}, preserved securityId ${mappingData.securityId}`);
+          } catch (error) {
+            debugLog(`Failed to delete holding ${ticker} (${holdingId}):`, error);
+          }
           continue;
         }
 
@@ -289,7 +328,7 @@ export async function detectAndRemoveDeletedHoldings(accountId, monarchAccountId
         const matchingPosition = positionsBySymbol.get(ticker);
 
         if (matchingPosition) {
-          // Auto-repair: Create missing mapping
+          // Case 3: Auto-repair - create missing mapping
           const securityUuid = matchingPosition.securityUuid || matchingPosition.symbolId;
           const securityId = aggregateHolding.security?.id;
 
@@ -305,7 +344,7 @@ export async function detectAndRemoveDeletedHoldings(accountId, monarchAccountId
             autoRepairedCount += 1;
           }
         } else {
-          // No matching Questrade position - delete orphaned holding
+          // Case 4: No mapping AND no matching position ’ delete orphaned holding
           try {
             debugLog(`Deleting orphaned holding: ${ticker} (${holdingId}) - no matching Questrade position`);
             await monarchApi.deleteHolding(holdingId);

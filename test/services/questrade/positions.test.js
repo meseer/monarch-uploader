@@ -644,7 +644,7 @@ describe('Questrade Positions Service', () => {
   });
 
   describe('detectAndRemoveDeletedHoldings', () => {
-    test('should delete orphaned holdings', async () => {
+    test('should delete orphaned holdings (no mapping, no matching position)', async () => {
       const currentPositions = [
         { securityUuid: 'UUID1', security: { symbol: 'TSLA' } },
       ];
@@ -723,7 +723,7 @@ describe('Questrade Positions Service', () => {
       );
     });
 
-    test('should keep holdings with existing mappings', async () => {
+    test('should keep holdings with existing mappings when position still exists', async () => {
       const currentPositions = [
         { securityUuid: 'UUID1', security: { symbol: 'AAPL' } },
       ];
@@ -756,6 +756,130 @@ describe('Questrade Positions Service', () => {
       expect(result.deleted).toBe(0);
       expect(result.autoRepaired).toBe(0);
       expect(monarchApi.deleteHolding).not.toHaveBeenCalled();
+    });
+
+    test('should delete holding when mapped position no longer exists (sold position)', async () => {
+      // Only GOOGL exists now; AAPL was sold
+      const currentPositions = [
+        { securityUuid: 'UUID2', security: { symbol: 'GOOGL' } },
+      ];
+
+      const portfolio = {
+        aggregateHoldings: {
+          edges: [
+            {
+              node: {
+                security: { id: 'SEC_AAPL' },
+                holdings: [{ id: 'HOLD_AAPL', ticker: 'AAPL' }],
+              },
+            },
+            {
+              node: {
+                security: { id: 'SEC_GOOGL' },
+                holdings: [{ id: 'HOLD_GOOGL', ticker: 'GOOGL' }],
+              },
+            },
+          ],
+        },
+      };
+
+      // Both have mappings
+      accountService.getHoldingsMappings.mockReturnValue({
+        UUID1: { securityId: 'SEC_AAPL', holdingId: 'HOLD_AAPL', symbol: 'AAPL' },
+        UUID2: { securityId: 'SEC_GOOGL', holdingId: 'HOLD_GOOGL', symbol: 'GOOGL' },
+      });
+
+      monarchApi.getHoldings.mockResolvedValue(portfolio);
+      monarchApi.deleteHolding.mockResolvedValue({});
+
+      const result = await detectAndRemoveDeletedHoldings(
+        'ACC123',
+        'MON123',
+        currentPositions,
+      );
+
+      expect(result.deleted).toBe(1);
+      expect(result.autoRepaired).toBe(0);
+
+      // AAPL holding should be deleted
+      expect(monarchApi.deleteHolding).toHaveBeenCalledWith('HOLD_AAPL');
+      expect(monarchApi.deleteHolding).toHaveBeenCalledTimes(1);
+
+      // AAPL mapping should have holdingId cleared but securityId preserved
+      expect(accountService.saveHoldingMapping).toHaveBeenCalledWith(
+        'questrade',
+        'ACC123',
+        'UUID1',
+        {
+          securityId: 'SEC_AAPL',
+          holdingId: null,
+          symbol: 'AAPL',
+        },
+      );
+    });
+
+    test('should handle all four cases in a single run', async () => {
+      // Positions: GOOGL exists, TSLA exists; AAPL sold, ORPHAN never existed
+      const currentPositions = [
+        { securityUuid: 'UUID2', security: { symbol: 'GOOGL' } },
+        { securityUuid: 'UUID3', security: { symbol: 'TSLA' } },
+      ];
+
+      const portfolio = {
+        aggregateHoldings: {
+          edges: [
+            {
+              node: {
+                security: { id: 'SEC_GOOGL' },
+                holdings: [{ id: 'HOLD_GOOGL', ticker: 'GOOGL' }],
+              },
+            },
+            {
+              node: {
+                security: { id: 'SEC_AAPL' },
+                holdings: [{ id: 'HOLD_AAPL', ticker: 'AAPL' }],
+              },
+            },
+            {
+              node: {
+                security: { id: 'SEC_TSLA' },
+                holdings: [{ id: 'HOLD_TSLA', ticker: 'TSLA' }],
+              },
+            },
+            {
+              node: {
+                security: { id: 'SEC_ORPHAN' },
+                holdings: [{ id: 'HOLD_ORPHAN', ticker: 'ORPHAN' }],
+              },
+            },
+          ],
+        },
+      };
+
+      // GOOGL and AAPL have mappings
+      accountService.getHoldingsMappings.mockReturnValue({
+        UUID2: { securityId: 'SEC_GOOGL', holdingId: 'HOLD_GOOGL', symbol: 'GOOGL' },
+        UUID1: { securityId: 'SEC_AAPL', holdingId: 'HOLD_AAPL', symbol: 'AAPL' },
+      });
+
+      monarchApi.getHoldings.mockResolvedValue(portfolio);
+      monarchApi.deleteHolding.mockResolvedValue({});
+
+      const result = await detectAndRemoveDeletedHoldings(
+        'ACC123',
+        'MON123',
+        currentPositions,
+      );
+
+      // Case 1: GOOGL kept (mapped + position exists)
+      // Case 2: AAPL deleted (mapped + position sold)
+      // Case 3: TSLA auto-repaired (unmapped + ticker match)
+      // Case 4: ORPHAN deleted (unmapped + no match)
+      expect(result.deleted).toBe(2); // AAPL + ORPHAN
+      expect(result.autoRepaired).toBe(1); // TSLA
+      expect(monarchApi.deleteHolding).toHaveBeenCalledWith('HOLD_AAPL');
+      expect(monarchApi.deleteHolding).toHaveBeenCalledWith('HOLD_ORPHAN');
+      expect(monarchApi.deleteHolding).toHaveBeenCalledTimes(2);
     });
 
     test('should handle empty Monarch holdings', async () => {
