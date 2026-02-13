@@ -774,6 +774,51 @@ export function formatCryptoOrderNotes(activity, cryptoOrder) {
 }
 
 /**
+ * Format crypto swap order notes from activity and crypto order data
+ * Handles CRYPTO_BUY transactions with subType SWAP_MARKET_ORDER
+ * These swap one cryptocurrency for another (e.g., BTC -> ETH)
+ *
+ * With enrichment data:
+ * "Swapped 0.003605 BTC for 0.003605 ETH
+ * Fees: CAD$0.04 (fee: CAD$0.04, swap: CAD$0.00)"
+ *
+ * Without enrichment data:
+ * "Swapped BTC for ETH"
+ *
+ * @param {Object} activity - Raw transaction from Wealthsimple API
+ * @param {Object|null} cryptoOrder - Crypto order details from FetchCryptoOrder API
+ * @returns {string} Formatted notes string
+ */
+export function formatCryptoSwapNotes(activity, cryptoOrder) {
+  if (!activity) return '';
+
+  const sourceSymbol = activity.assetSymbol || 'Unknown';
+  const destSymbol = activity.counterAssetSymbol || 'Unknown';
+
+  // If no crypto order data, return minimal notes
+  if (!cryptoOrder) {
+    return `Swapped ${sourceSymbol} for ${destSymbol}`;
+  }
+
+  const sourceQuantity = formatAmount(activity.assetQuantity ?? 0);
+  const destQuantity = formatAmount(cryptoOrder.quantity ?? 0);
+  const currency = cryptoOrder.currency || activity.currency || 'CAD';
+  const fee = formatAmount(cryptoOrder.fee ?? 0);
+  const swapFee = formatAmount(cryptoOrder.swapFee ?? 0);
+  const totalFees = formatAmount(parseFloat(cryptoOrder.fee ?? 0) + parseFloat(cryptoOrder.swapFee ?? 0));
+
+  const noteLines = [];
+
+  // Line 1: "Swapped 0.003605 BTC for 0.003605 ETH"
+  noteLines.push(`Swapped ${sourceQuantity} ${sourceSymbol} for ${destQuantity} ${destSymbol}`);
+
+  // Line 2: Fee breakdown
+  noteLines.push(`Fees: ${currency}$${totalFees} (fee: ${currency}$${fee}, swap: ${currency}$${swapFee})`);
+
+  return noteLines.join('\n');
+}
+
+/**
  * Investment account buy/sell transaction rules
  * These rules handle stock purchase and sale transactions in investment accounts
  *
@@ -884,6 +929,47 @@ export const INVESTMENT_BUY_SELL_TRANSACTION_RULES = [
         merchant: symbol,
         originalStatement: formatOriginalStatement(tx.type, tx.subType, symbol),
         notes: formatInvestmentOrderNotes(tx, extendedOrder),
+        technicalDetails: '',
+      };
+    },
+  },
+  {
+    id: 'crypto-swap',
+    description: 'Crypto swap transactions (swapping one cryptocurrency for another)',
+    match: (tx) => tx.type === 'CRYPTO_BUY' && tx.subType === 'SWAP_MARKET_ORDER',
+    /**
+     * Process CRYPTO_BUY/SWAP_MARKET_ORDER transactions
+     * These are cryptocurrency swaps in SELF_DIRECTED_CRYPTO accounts
+     * where one crypto is exchanged for another (e.g., BTC -> ETH)
+     *
+     * Activity fields:
+     * - assetSymbol: Source cryptocurrency being swapped away
+     * - counterAssetSymbol: Destination cryptocurrency being received
+     * - assetQuantity: Quantity of source crypto removed
+     *
+     * Enrichment data from FetchCryptoOrder provides:
+     * - quantity: Quantity of destination crypto received
+     * - fee/swapFee: Fee breakdown
+     *
+     * @param {Object} tx - Raw transaction
+     * @param {Map<string, Object>} enrichmentMap - Map containing crypto order data
+     * @returns {Object} Processed transaction fields
+     */
+    process: (tx, enrichmentMap) => {
+      const sourceSymbol = tx.assetSymbol || 'Unknown';
+      const destSymbol = tx.counterAssetSymbol || 'Unknown';
+      const enrichmentData = enrichmentMap?.get(tx.externalCanonicalId) || null;
+
+      // Use crypto swap formatter if we have crypto order data, fall back to generic
+      const notes = enrichmentData?.isCryptoOrderData
+        ? formatCryptoSwapNotes(tx, enrichmentData)
+        : formatCryptoSwapNotes(tx, null);
+
+      return {
+        category: 'Swap',
+        merchant: `${sourceSymbol} -> ${destSymbol}`,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, `${sourceSymbol}:${destSymbol}`),
+        notes,
         technicalDetails: '',
       };
     },

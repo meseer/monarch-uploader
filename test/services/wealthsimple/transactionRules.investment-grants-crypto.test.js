@@ -11,6 +11,7 @@ import {
   INVESTMENT_BUY_SELL_TRANSACTION_RULES,
   formatManagedOrderNotes,
   formatCryptoOrderNotes,
+  formatCryptoSwapNotes,
 } from '../../../src/services/wealthsimple/transactionRules';
 import { STORAGE } from '../../../src/core/config';
 
@@ -793,6 +794,279 @@ describe('Wealthsimple Transaction Rules Engine - Investment Grants & Crypto', (
       const result = rule.process(transaction, enrichmentMap);
 
       expect(result.notes).toBe('Buy BTC\nTotal CAD$100');
+    });
+  });
+
+  describe('CRYPTO_SWAP rule', () => {
+    it('should match CRYPTO_BUY with subType SWAP_MARKET_ORDER', () => {
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-swap');
+      expect(rule.match({ type: 'CRYPTO_BUY', subType: 'SWAP_MARKET_ORDER' })).toBe(true);
+    });
+
+    it('should not match CRYPTO_BUY with subType MARKET_ORDER', () => {
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-swap');
+      expect(rule.match({ type: 'CRYPTO_BUY', subType: 'MARKET_ORDER' })).toBe(false);
+    });
+
+    it('should not match CRYPTO_BUY with null subType', () => {
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-swap');
+      expect(rule.match({ type: 'CRYPTO_BUY', subType: null })).toBe(false);
+    });
+
+    it('should not match CRYPTO_SELL with subType SWAP_MARKET_ORDER', () => {
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-swap');
+      expect(rule.match({ type: 'CRYPTO_SELL', subType: 'SWAP_MARKET_ORDER' })).toBe(false);
+    });
+
+    it('should not match DIY_BUY', () => {
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-swap');
+      expect(rule.match({ type: 'DIY_BUY', subType: 'SWAP_MARKET_ORDER' })).toBe(false);
+    });
+
+    it('should appear before crypto-buy in rule order', () => {
+      const swapIndex = INVESTMENT_BUY_SELL_TRANSACTION_RULES.findIndex((r) => r.id === 'crypto-swap');
+      const buyIndex = INVESTMENT_BUY_SELL_TRANSACTION_RULES.findIndex((r) => r.id === 'crypto-buy');
+      expect(swapIndex).toBeLessThan(buyIndex);
+    });
+
+    it('should process swap transaction with correct category and merchant', () => {
+      const transaction = {
+        externalCanonicalId: 'order-swap123',
+        type: 'CRYPTO_BUY',
+        subType: 'SWAP_MARKET_ORDER',
+        assetSymbol: 'BTC',
+        counterAssetSymbol: 'ETH',
+        assetQuantity: 0.003605,
+        amount: 10.11,
+        currency: 'CAD',
+      };
+
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-swap');
+      const result = rule.process(transaction, null);
+
+      expect(result.category).toBe('Swap');
+      expect(result.merchant).toBe('BTC -> ETH');
+      expect(result.originalStatement).toBe('CRYPTO_BUY:SWAP_MARKET_ORDER:BTC:ETH');
+      expect(result.notes).toBe('Swapped BTC for ETH');
+      expect(result.technicalDetails).toBe('');
+    });
+
+    it('should process swap transaction with enrichment data', () => {
+      const transaction = {
+        externalCanonicalId: 'order-swap456',
+        type: 'CRYPTO_BUY',
+        subType: 'SWAP_MARKET_ORDER',
+        assetSymbol: 'BTC',
+        counterAssetSymbol: 'ETH',
+        assetQuantity: 0.003605,
+        amount: 10.11,
+        currency: 'CAD',
+      };
+
+      const enrichmentMap = new Map();
+      enrichmentMap.set('order-swap456', {
+        isCryptoOrderData: true,
+        quantity: '0.00360523',
+        executedQuantity: '0.00360523',
+        executedValue: '0.00010745',
+        price: '2793.1643750884',
+        currency: 'CAD',
+        limitPrice: null,
+        fee: '0.04',
+        swapFee: '0.00000053',
+        totalCost: '10.11',
+      });
+
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-swap');
+      const result = rule.process(transaction, enrichmentMap);
+
+      expect(result.category).toBe('Swap');
+      expect(result.merchant).toBe('BTC -> ETH');
+      expect(result.notes).toContain('Swapped 0.003605 BTC for 0.00360523 ETH');
+      expect(result.notes).toContain('Fees:');
+      expect(result.notes).toContain('fee: CAD$0.04');
+    });
+
+    it('should handle missing assetSymbol and counterAssetSymbol', () => {
+      const transaction = {
+        externalCanonicalId: 'order-swap-missing',
+        type: 'CRYPTO_BUY',
+        subType: 'SWAP_MARKET_ORDER',
+        assetSymbol: null,
+        counterAssetSymbol: null,
+        amount: 5,
+        currency: 'CAD',
+      };
+
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-swap');
+      const result = rule.process(transaction, null);
+
+      expect(result.category).toBe('Swap');
+      expect(result.merchant).toBe('Unknown -> Unknown');
+      expect(result.notes).toBe('Swapped Unknown for Unknown');
+    });
+
+    it('should fall back to minimal notes when enrichment is not crypto order data', () => {
+      const transaction = {
+        externalCanonicalId: 'order-swap-notcrypto',
+        type: 'CRYPTO_BUY',
+        subType: 'SWAP_MARKET_ORDER',
+        assetSymbol: 'SOL',
+        counterAssetSymbol: 'BTC',
+        assetQuantity: 1.5,
+        amount: 100,
+        currency: 'CAD',
+      };
+
+      const enrichmentMap = new Map();
+      enrichmentMap.set('order-swap-notcrypto', {
+        // No isCryptoOrderData marker
+        orderType: 'BUY',
+      });
+
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-swap');
+      const result = rule.process(transaction, enrichmentMap);
+
+      expect(result.notes).toBe('Swapped SOL for BTC');
+    });
+  });
+
+  describe('formatCryptoSwapNotes', () => {
+    it('should return empty string for null activity', () => {
+      expect(formatCryptoSwapNotes(null, null)).toBe('');
+    });
+
+    it('should return empty string for undefined activity', () => {
+      expect(formatCryptoSwapNotes(undefined, null)).toBe('');
+    });
+
+    it('should return minimal notes without crypto order data', () => {
+      const activity = {
+        type: 'CRYPTO_BUY',
+        subType: 'SWAP_MARKET_ORDER',
+        assetSymbol: 'BTC',
+        counterAssetSymbol: 'ETH',
+        assetQuantity: 0.003605,
+        amount: 10.11,
+        currency: 'CAD',
+      };
+
+      const result = formatCryptoSwapNotes(activity, null);
+      expect(result).toBe('Swapped BTC for ETH');
+    });
+
+    it('should format swap notes with full crypto order data', () => {
+      const activity = {
+        type: 'CRYPTO_BUY',
+        subType: 'SWAP_MARKET_ORDER',
+        assetSymbol: 'BTC',
+        counterAssetSymbol: 'ETH',
+        assetQuantity: 0.003605,
+        amount: 10.11,
+        currency: 'CAD',
+      };
+      const cryptoOrder = {
+        quantity: '0.00360523',
+        executedQuantity: '0.00360523',
+        executedValue: '0.00010745',
+        price: '2793.1643750884',
+        currency: 'CAD',
+        limitPrice: null,
+        fee: '0.04',
+        swapFee: '0.00000053',
+        totalCost: '10.11',
+      };
+
+      const result = formatCryptoSwapNotes(activity, cryptoOrder);
+
+      expect(result).toContain('Swapped 0.003605 BTC for 0.00360523 ETH');
+      expect(result).toContain('Fees: CAD$');
+      expect(result).toContain('fee: CAD$0.04');
+      expect(result).toContain('swap: CAD$');
+    });
+
+    it('should handle missing symbols with Unknown fallback', () => {
+      const activity = {
+        type: 'CRYPTO_BUY',
+        subType: 'SWAP_MARKET_ORDER',
+        assetSymbol: null,
+        counterAssetSymbol: null,
+        assetQuantity: null,
+        amount: 0,
+        currency: null,
+      };
+
+      const result = formatCryptoSwapNotes(activity, null);
+      expect(result).toBe('Swapped Unknown for Unknown');
+    });
+
+    it('should handle missing fields with defaults when crypto order provided', () => {
+      const activity = {
+        type: 'CRYPTO_BUY',
+        subType: 'SWAP_MARKET_ORDER',
+        assetSymbol: null,
+        counterAssetSymbol: null,
+        assetQuantity: null,
+        amount: 0,
+        currency: null,
+      };
+      const cryptoOrder = {
+        quantity: null,
+        fee: null,
+        swapFee: null,
+        currency: null,
+      };
+
+      const result = formatCryptoSwapNotes(activity, cryptoOrder);
+
+      expect(result).toContain('Swapped 0 Unknown for 0 Unknown');
+      expect(result).toContain('Fees: CAD$0');
+    });
+
+    it('should use crypto order currency over activity currency', () => {
+      const activity = {
+        type: 'CRYPTO_BUY',
+        subType: 'SWAP_MARKET_ORDER',
+        assetSymbol: 'SOL',
+        counterAssetSymbol: 'BTC',
+        assetQuantity: 5.0,
+        amount: 100,
+        currency: 'USD',
+      };
+      const cryptoOrder = {
+        quantity: '0.001',
+        currency: 'CAD',
+        fee: '0.05',
+        swapFee: '0.01',
+      };
+
+      const result = formatCryptoSwapNotes(activity, cryptoOrder);
+
+      expect(result).toContain('CAD$');
+      expect(result).not.toContain('USD$');
+    });
+  });
+
+  describe('CRYPTO_BUY rule should not match SWAP_MARKET_ORDER', () => {
+    it('should not match SWAP_MARKET_ORDER because crypto-swap comes first', () => {
+      // Verify that when iterating rules in order, crypto-swap matches first
+      const swapTx = { type: 'CRYPTO_BUY', subType: 'SWAP_MARKET_ORDER' };
+      const swapRule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-swap');
+      const buyRule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'crypto-buy');
+
+      // Both rules would technically match, but crypto-swap is first
+      expect(swapRule.match(swapTx)).toBe(true);
+      expect(buyRule.match(swapTx)).toBe(true); // Would also match, but rule order prevents this
+
+      // Find the FIRST matching rule (simulating the rules engine behavior)
+      const firstMatchingRule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.match(swapTx));
+      expect(firstMatchingRule.id).toBe('crypto-swap');
+    });
+
+    it('should still match regular CRYPTO_BUY with MARKET_ORDER subType', () => {
+      const regularTx = { type: 'CRYPTO_BUY', subType: 'MARKET_ORDER' };
+      const firstMatchingRule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.match(regularTx));
+      expect(firstMatchingRule.id).toBe('crypto-buy');
     });
   });
 
