@@ -59,19 +59,12 @@ The following files currently exceed the 1,500 line limit and should be split in
 
 | File | Lines | Priority |
 |------|-------|----------|
-| `test/services/wealthsimple/transactions.test.js` | 4,235 | High |
-| `test/api/monarch.test.js` | 3,489 | High |
-| `test/api/wealthsimple.test.js` | 3,418 | High |
 | `src/ui/components/settingsModal.js` | 3,316 | High |
-| `test/services/rogersbank-upload.test.js` | 3,027 | High |
 | `src/api/wealthsimple.js` | 2,977 | High |
 | `src/api/monarch.js` | 2,833 | High |
 | `src/services/wealthsimple/transactions.js` | 2,613 | Medium |
 | `src/services/wealthsimple/transactionRules.js` | 2,341 | Medium |
 | `src/ui/components/categorySelector.js` | 1,986 | Medium |
-| `test/api/canadalife.test.js` | 1,687 | Low |
-| `test/api/questrade.test.js` | 1,664 | Low |
-| `test/ui/settingsModal.test.js` | 1,530 | Low |
 
 These files were created before this rule was established. They should be split when next modified or as dedicated cleanup tasks.
 
