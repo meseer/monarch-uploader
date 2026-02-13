@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Monarch Uploader
 // @namespace    https://github.com/meseer/monarch-uploader
-// @version      5.78.3
+// @version      5.78.4
 // @description  Upload Questrade, CanadaLife, Rogers Bank, and Wealthsimple balance and transactions to Monarch.
 // @author       Mykhailo Delegan
 // @match        https://myportal.questrade.com/*

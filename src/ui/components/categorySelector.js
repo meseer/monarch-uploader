@@ -261,6 +261,8 @@ function createSplitSkipButton(onSkipThis, onSkipAll) {
     position: absolute;
     top: 100%;
     right: 0;
+    min-width: 100%;
+    box-sizing: border-box;
     margin-top: 0;
     background: var(--mu-close-btn-bg, #6c757d);
     border: none;
