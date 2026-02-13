@@ -701,7 +701,7 @@ describe('Category Selector Component', () => {
       // Check the Skip All option exists in the dropdown
       const skipAllOption = document.getElementById('category-selector-skip-all-option');
       expect(skipAllOption).toBeTruthy();
-      expect(skipAllOption.textContent).toContain('Skip all remaining');
+      expect(skipAllOption.textContent).toContain('Skip All Remaining');
     });
 
     test('should resolve with skipped sentinel when Skip button is clicked', async () => {

@@ -220,7 +220,17 @@ function createSplitSkipButton(onSkipThis, onSkipAll) {
   skipBtn.id = 'category-selector-skip-btn';
   skipBtn.textContent = 'Skip';
   skipBtn.title = 'Skip categorization for this transaction';
-  skipBtn.style.cssText = 'padding: 8px 14px; background-color: #6c757d; color: white; border: none; border-right: 1px solid rgba(255,255,255,0.3); border-radius: 4px 0 0 4px; cursor: pointer; font-size: 13px; line-height: 1;';
+  skipBtn.style.cssText = `
+    padding: 10px 18px;
+    background-color: #6c757d;
+    color: white;
+    border: none;
+    border-right: 1px solid rgba(255,255,255,0.3);
+    border-radius: 4px 0 0 4px;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+  `;
   skipBtn.onmouseover = () => { skipBtn.style.backgroundColor = '#5a6268'; };
   skipBtn.onmouseout = () => { skipBtn.style.backgroundColor = '#6c757d'; };
   skipBtn.onclick = (e) => { e.stopPropagation(); onSkipThis(); };
@@ -229,39 +239,71 @@ function createSplitSkipButton(onSkipThis, onSkipAll) {
   dropdownBtn.id = 'category-selector-skip-dropdown-btn';
   dropdownBtn.textContent = '\u25BE';
   dropdownBtn.title = 'More skip options';
-  dropdownBtn.style.cssText = 'padding: 8px 8px; background-color: #6c757d; color: white; border: none; border-radius: 0 4px 4px 0; cursor: pointer; font-size: 13px; line-height: 1;';
+  dropdownBtn.style.cssText = `
+    padding: 10px 10px;
+    background-color: #6c757d;
+    color: white;
+    border: none;
+    border-radius: 0 4px 4px 0;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+  `;
   dropdownBtn.onmouseover = () => { dropdownBtn.style.backgroundColor = '#5a6268'; };
   dropdownBtn.onmouseout = () => { dropdownBtn.style.backgroundColor = '#6c757d'; };
 
   const dropdownMenu = document.createElement('div');
   dropdownMenu.id = 'category-selector-skip-dropdown-menu';
-  dropdownMenu.style.cssText = 'display: none; position: absolute; top: 100%; left: 0; margin-top: 4px; background: white; border: 1px solid #ddd; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 10001; min-width: 220px;';
+  dropdownMenu.style.cssText = `
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 0;
+    background: #6c757d;
+    border: none;
+    border-radius: 0 0 4px 4px;
+    z-index: 10001;
+  `;
 
   const skipAllOption = document.createElement('div');
   skipAllOption.id = 'category-selector-skip-all-option';
-  skipAllOption.style.cssText = 'padding: 10px 14px; cursor: pointer; font-size: 13px; color: #333; white-space: nowrap;';
-  skipAllOption.onmouseover = () => { skipAllOption.style.backgroundColor = '#f5f5f5'; };
-  skipAllOption.onmouseout = () => { skipAllOption.style.backgroundColor = 'white'; };
-
-  const skipAllLabel = document.createElement('div');
-  skipAllLabel.style.cssText = 'font-weight: 500;';
-  skipAllLabel.textContent = 'Skip all remaining (this sync)';
-  skipAllOption.appendChild(skipAllLabel);
-
-  const skipAllDesc = document.createElement('div');
-  skipAllDesc.style.cssText = 'font-size: 11px; color: #888; margin-top: 2px;';
-  skipAllDesc.textContent = 'Let Monarch auto-categorize the rest';
-  skipAllOption.appendChild(skipAllDesc);
+  skipAllOption.style.cssText = `
+    padding: 10px 18px;
+    cursor: pointer;
+    font-size: 14px;
+    color: white;
+    white-space: nowrap;
+  `;
+  skipAllOption.onmouseover = () => { skipAllOption.style.backgroundColor = '#5a6268'; };
+  skipAllOption.onmouseout = () => { skipAllOption.style.backgroundColor = 'transparent'; };
+  skipAllOption.textContent = 'Skip All Remaining';
 
   skipAllOption.onclick = (e) => { e.stopPropagation(); dropdownMenu.style.display = 'none'; onSkipAll(); };
   dropdownMenu.appendChild(skipAllOption);
 
   dropdownBtn.onclick = (e) => {
     e.stopPropagation();
-    dropdownMenu.style.display = dropdownMenu.style.display !== 'none' ? 'none' : 'block';
+    const isOpen = dropdownMenu.style.display !== 'none';
+    dropdownMenu.style.display = isOpen ? 'none' : 'block';
+    // Remove bottom border-radius from main buttons when open
+    if (!isOpen) {
+      skipBtn.style.borderRadius = '4px 0 0 0';
+      dropdownBtn.style.borderRadius = '0';
+    } else {
+      skipBtn.style.borderRadius = '4px 0 0 4px';
+      dropdownBtn.style.borderRadius = '0 4px 4px 0';
+    }
   };
 
-  const closeDropdown = (e) => { if (!container.contains(e.target)) dropdownMenu.style.display = 'none'; };
+  const closeDropdown = (e) => {
+    if (!container.contains(e.target)) {
+      dropdownMenu.style.display = 'none';
+      skipBtn.style.borderRadius = '4px 0 0 4px';
+      dropdownBtn.style.borderRadius = '0 4px 4px 0';
+    }
+  };
   document.addEventListener('click', closeDropdown, true);
 
   container.appendChild(skipBtn);
@@ -282,19 +324,28 @@ function createSplitSkipButton(onSkipThis, onSkipAll) {
 function createTopActionBar(onSkipThis, onSkipAll, onCancel) {
   const actionBar = document.createElement('div');
   actionBar.id = 'category-selector-action-bar';
-  actionBar.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 10px 12px; background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 6px;';
-
-  const splitSkip = createSplitSkipButton(onSkipThis, onSkipAll);
-  actionBar.appendChild(splitSkip);
+  actionBar.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;';
 
   const cancelBtn = document.createElement('button');
   cancelBtn.id = 'category-selector-cancel-btn';
   cancelBtn.textContent = 'Cancel';
-  cancelBtn.style.cssText = 'padding: 8px 14px; background-color: #f5f5f5; color: #333; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 13px; line-height: 1;';
-  cancelBtn.onmouseover = () => { cancelBtn.style.backgroundColor = '#e9ecef'; };
-  cancelBtn.onmouseout = () => { cancelBtn.style.backgroundColor = '#f5f5f5'; };
+  cancelBtn.style.cssText = `
+    padding: 10px 18px;
+    background-color: transparent;
+    color: #dc3545;
+    border: 1px solid #dc3545;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+  `;
+  cancelBtn.onmouseover = () => { cancelBtn.style.backgroundColor = '#dc3545'; cancelBtn.style.color = 'white'; };
+  cancelBtn.onmouseout = () => { cancelBtn.style.backgroundColor = 'transparent'; cancelBtn.style.color = '#dc3545'; };
   cancelBtn.onclick = onCancel;
   actionBar.appendChild(cancelBtn);
+
+  const splitSkip = createSplitSkipButton(onSkipThis, onSkipAll);
+  actionBar.appendChild(splitSkip);
 
   actionBar.cleanupFn = () => { if (splitSkip.cleanupFn) splitSkip.cleanupFn(); };
   return actionBar;
