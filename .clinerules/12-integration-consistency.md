@@ -56,177 +56,46 @@ This document defines the patterns and requirements for maintaining consistency 
 ### 2. Integration Capabilities Configuration
 
 **All integrations MUST be registered in `src/core/integrationCapabilities.js`:**
-
-```javascript
-// Add to INTEGRATIONS enum
-export const INTEGRATIONS = {
-  QUESTRADE: 'questrade',
-  CANADALIFE: 'canadalife',
-  ROGERSBANK: 'rogersbank',
-  WEALTHSIMPLE: 'wealthsimple',
-  NEW_INTEGRATION: 'newintegration', // Add new integration here
-};
-
-// Add configuration to INTEGRATION_CONFIG
-[INTEGRATIONS.NEW_INTEGRATION]: {
-  displayName: 'New Integration',
-  storageKeys: {
-    accountsList: 'newintegration_accounts_list',
-    lookbackDays: 'newintegration_lookback_days',
-    mappingPrefix: 'newintegration_monarch_account_for_',
-    lastUploadPrefix: 'newintegration_last_upload_date_',
-    // Add other storage keys as needed
-  },
-  accountKeyName: 'newintegrationAccount', // Key name in account object
-  faviconDomain: 'newintegration.com',
-  hasDeduplication: true, // Whether it tracks uploaded transactions
-  hasTransactions: true,  // Whether it supports transaction sync
-  hasBalance: true,       // Whether it supports balance sync
-  hasHoldings: false,     // Whether it supports holdings sync
-  hasCreditLimit: false,  // Whether it tracks credit limits
-  settings: [
-    ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS,
-    ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT,
-    ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES,
-  ],
-  categoryMappings: {
-    enabled: false, // Set to true if integration uses category mappings
-    storageKey: null,
-    sourceLabel: null,
-  },
-}
-```
+- Add to `INTEGRATIONS` enum
+- Add configuration to `INTEGRATION_CONFIG` with: `displayName`, `storageKeys`, `accountKeyName`, `faviconDomain`, capability flags (`hasDeduplication`, `hasTransactions`, `hasBalance`, `hasHoldings`, `hasCreditLimit`), `settings` array, and `categoryMappings` config
 
 ### 3. Account Service Usage
 
 **All integrations MUST use `accountService` for account operations:**
-
-```javascript
-import accountService from '../services/common/accountService';
-import { INTEGRATIONS } from '../core/integrationCapabilities';
-
-// Getting accounts
-const accounts = accountService.getAccounts(INTEGRATIONS.NEW_INTEGRATION);
-
-// Getting Monarch account mapping
-const monarchAccount = accountService.getMonarchAccountMapping(
-  INTEGRATIONS.NEW_INTEGRATION,
-  accountId
-);
-
-// Saving/updating account
-accountService.upsertAccount(INTEGRATIONS.NEW_INTEGRATION, {
-  newintegrationAccount: { id: accountId, nickname: name, ... },
-  monarchAccount: selectedMonarchAccount,
-  syncEnabled: true,
-});
-
-// Updating specific fields
-accountService.updateAccountInList(INTEGRATIONS.NEW_INTEGRATION, accountId, {
-  lastSyncDate: new Date().toISOString().split('T')[0],
-  uploadedTransactions: [...existingTx, ...newTx],
-});
-
-// Getting last update date (uses utils.js helper)
-import { getLastUpdateDate, saveLastUploadDate } from '../core/utils';
-const lastDate = getLastUpdateDate(accountId, INTEGRATIONS.NEW_INTEGRATION);
-saveLastUploadDate(accountId, INTEGRATIONS.NEW_INTEGRATION, newDate);
-```
+- `accountService.getAccounts(integrationId)` — get all accounts
+- `accountService.getMonarchAccountMapping(integrationId, accountId)` — get Monarch mapping
+- `accountService.upsertAccount(integrationId, accountData)` — save/update account
+- `accountService.updateAccountInList(integrationId, accountId, fields)` — update specific fields
+- `getLastUpdateDate(accountId, integrationId)` / `saveLastUploadDate(accountId, integrationId, date)` from `src/core/utils`
 
 ### 4. Settings UI Pattern
 
-**All integrations MUST use `createGenericAccountCards()` for settings display:**
-
-```javascript
-// In settingsModal.js renderTab function
-function renderNewIntegrationTab(container) {
-  // Lookback Period Section (if applicable)
-  const lookbackSection = createLookbackPeriodSection('newintegration');
-  container.appendChild(lookbackSection);
-
-  // Account Mappings Section
-  const mappingsSection = createSection('Account Mappings', '🔗', 'Description');
-  
-  const accounts = accountService.getAccounts(INTEGRATIONS.NEW_INTEGRATION);
-  const accountCards = createGenericAccountCards(
-    INTEGRATIONS.NEW_INTEGRATION,
-    accounts,
-    () => renderTabContent(container, 'newintegration')
-  );
-  mappingsSection.appendChild(accountCards);
-  
-  container.appendChild(mappingsSection);
-
-  // Category Mappings Section (if applicable)
-  const categorySection = renderCategoryMappingsSectionIfEnabled(
-    INTEGRATIONS.NEW_INTEGRATION,
-    () => renderTabContent(container, 'newintegration')
-  );
-  container.appendChild(categorySection);
-}
-```
+**All integrations MUST use `createGenericAccountCards()` for settings display** in their `renderTab` function. Include lookback period section, account mappings section, and category mappings section (if enabled) following existing integration patterns.
 
 ## Never Do: Legacy Storage Direct Access
 
 **NEVER access legacy storage keys directly for lookups:**
-
-```javascript
-// ❌ DON'T: Direct legacy storage access
-const mapping = GM_getValue(STORAGE.PREFIX + accountId);
-
-// ❌ DON'T: Use monarchApi.resolveAccountMapping for existing integrations
-const monarchAccount = await monarchApi.resolveAccountMapping(accountId, prefix, type);
-
-// ✅ DO: Use accountService
-const monarchAccount = accountService.getMonarchAccountMapping(
-  INTEGRATIONS.YOUR_INTEGRATION,
-  accountId
-);
-```
+- ❌ `GM_getValue(STORAGE.PREFIX + accountId)` — direct legacy access
+- ❌ `monarchApi.resolveAccountMapping(...)` — for existing integrations
+- ✅ `accountService.getMonarchAccountMapping(integrationId, accountId)` — always use this
 
 ## Transaction Deduplication Pattern
 
-**For integrations with deduplication:**
-
-```javascript
-// Store transaction IDs in consolidated account object
-const accountData = accountService.getAccountData(integrationId, accountId);
-const uploadedTransactions = accountData?.uploadedTransactions || [];
-
-// Check for duplicates
-const existingIds = new Set(uploadedTransactions.map(tx => tx.id));
-const newTransactions = transactions.filter(tx => !existingIds.has(tx.id));
-
-// After successful upload, save new IDs
-const today = new Date().toISOString().split('T')[0];
-const newEntries = newTransactions.map(tx => ({ id: tx.id, date: today }));
-const updatedTransactions = [...uploadedTransactions, ...newEntries];
-
-accountService.updateAccountInList(integrationId, accountId, {
-  uploadedTransactions: updatedTransactions,
-});
-```
+For integrations with `hasDeduplication: true`:
+1. Get `uploadedTransactions` from account data via `accountService`
+2. Filter out already-uploaded transaction IDs
+3. After successful upload, append new transaction IDs with today's date
+4. Save via `accountService.updateAccountInList()`
 
 ## Migration Requirements
 
 When migrating from legacy storage to consolidated:
-
-1. **Support both read paths** during migration period
-2. **Write only to consolidated** storage
-3. **Implement sync count tracking** for cleanup
-4. **Clean up legacy storage** after 2+ successful syncs
-
-```javascript
-// Sync count tracking
-const newSyncCount = accountService.incrementSyncCount(integrationId, accountId);
-if (accountService.isReadyForLegacyCleanup(integrationId, accountId)) {
-  accountService.cleanupLegacyStorage(integrationId, accountId);
-}
-```
+1. Support both read paths during migration period
+2. Write only to consolidated storage
+3. Track sync count via `accountService.incrementSyncCount()`
+4. Clean up legacy storage after 2+ successful syncs via `accountService.cleanupLegacyStorage()`
 
 ## Checklist for Adding New Integrations
-
-Before implementing a new integration, verify:
 
 ### Configuration
 - [ ] Add to `INTEGRATIONS` enum in `integrationCapabilities.js`
@@ -257,10 +126,6 @@ Before implementing a new integration, verify:
 - [ ] Add tests for upload/sync service
 - [ ] Add tests for settings UI rendering
 
-### Documentation
-- [ ] Update `design/settings-unification-plan.md` if applicable
-- [ ] Add integration-specific documentation if needed
-
 ## Storage Key Naming Convention
 
 ```
@@ -270,12 +135,9 @@ Examples:
 - wealthsimple_accounts_list        # Consolidated account data
 - questrade_lookback_days           # Global setting
 - rogersbank_category_mappings      # Category mapping storage
-- canadalife_monarch_account_for_{id}  # Legacy (migration only)
 ```
 
 ## Account Entry Structure Reference
-
-Each account in the consolidated list should have:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -294,5 +156,4 @@ Each account in the consolidated list should have:
 - **Always use capabilities** to check what an integration supports
 - **Never hardcode** integration-specific logic outside capabilities
 - **Test with fresh install** to ensure no legacy data dependency
-- **Test migration path** with existing users' data
 - **Keep backward compatibility** during migration periods
