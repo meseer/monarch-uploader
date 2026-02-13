@@ -3466,6 +3466,103 @@ describe('Wealthsimple Transaction Service', () => {
       });
     });
 
+    describe('credit card - skipCategorization via options', () => {
+      it('should skip category resolution when skipCategorization is passed in options (balance reconstruction)', async () => {
+        const mockRawTransactions = [
+          {
+            externalCanonicalId: 'tx-1',
+            occurredAt: '2025-01-15T10:30:00.000000+00:00',
+            type: 'CREDIT_CARD',
+            subType: 'PURCHASE',
+            status: 'settled',
+            spendMerchant: 'Unknown Merchant',
+            amount: 50.00,
+            amountSign: 'negative',
+          },
+          {
+            externalCanonicalId: 'tx-2',
+            occurredAt: '2025-01-16T10:30:00.000000+00:00',
+            type: 'CREDIT_CARD',
+            subType: 'PAYMENT',
+            status: 'settled',
+            spendMerchant: null,
+            amount: 100.00,
+            amountSign: 'positive',
+          },
+        ];
+
+        wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+        monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [] });
+
+        // Account does NOT have skipCategorization set
+        const accountNoSkip = {
+          wealthsimpleAccount: {
+            id: 'test-account-id',
+            nickname: 'Test Credit Card',
+            type: 'CREDIT_CARD',
+          },
+        };
+
+        // Pass skipCategorization via options (as balance reconstruction would)
+        const result = await fetchAndProcessCreditCardTransactions(
+          accountNoSkip,
+          '2025-01-01',
+          '2025-01-31',
+          { skipCategorization: true },
+        );
+
+        // Should NOT show category selector
+        expect(showMonarchCategorySelector).not.toHaveBeenCalled();
+
+        // PAYMENT is auto-categorized, should keep its category
+        const paymentTx = result.find((tx) => tx.subType === 'PAYMENT');
+        expect(paymentTx.resolvedMonarchCategory).toBe('Credit Card Payment');
+
+        // PURCHASE should have empty category (skip categorization via options)
+        const purchaseTx = result.find((tx) => tx.subType === 'PURCHASE');
+        expect(purchaseTx.resolvedMonarchCategory).toBe('');
+      });
+    });
+
+    describe('cash - skipCategorization via options', () => {
+      it('should skip manual categorization when skipCategorization is passed in options', async () => {
+        const mockRawTransactions = [
+          {
+            externalCanonicalId: 'tx-unknown',
+            type: 'UNKNOWN_TYPE',
+            subType: 'UNKNOWN_SUBTYPE',
+            unifiedStatus: 'COMPLETED',
+            amount: 25.00,
+            amountSign: 'negative',
+            occurredAt: '2026-01-15T10:00:00.000000+00:00',
+          },
+        ];
+
+        wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+        // Account does NOT have skipCategorization set
+        const cashAccount = {
+          wealthsimpleAccount: {
+            id: 'cash-account-id',
+            nickname: 'Cash Account',
+            type: 'CASH',
+          },
+        };
+
+        const result = await fetchAndProcessCashTransactions(
+          cashAccount,
+          '2026-01-01',
+          '2026-01-31',
+          { skipCategorization: true },
+        );
+
+        expect(showManualTransactionCategorization).not.toHaveBeenCalled();
+        expect(result).toHaveLength(1);
+        expect(result[0].resolvedMonarchCategory).toBe('');
+        expect(result[0].ruleId).toBe('skip-categorization');
+      });
+    });
+
     describe('line of credit - skipCategorization setting', () => {
       const mockLocAccount = {
         wealthsimpleAccount: {

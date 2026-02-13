@@ -512,7 +512,8 @@ export async function fetchAndProcessCreditCardTransactions(consolidatedAccount,
     debugLog(`Processed ${processedTransactions.length} credit card transactions`);
 
     // Step 6: Resolve categories (will prompt user for unknown merchants)
-    const skipCategorization = consolidatedAccount.skipCategorization === true;
+    // skipCategorization can be forced via options (e.g., balance reconstruction) or set per-account
+    const skipCategorization = options.skipCategorization === true || consolidatedAccount.skipCategorization === true;
     const transactionsWithCategories = await resolveCategoriesForTransactions(processedTransactions, { skipCategorization });
 
     debugLog(`Category resolution complete, returning ${transactionsWithCategories.length} transactions (${uploadedSkipCount} already uploaded)`);
@@ -985,7 +986,8 @@ export async function fetchAndProcessCashTransactions(consolidatedAccount, fromD
     debugLog(`Processed ${processedTransactions.length} transactions with rules`);
 
     // Read skip categorization setting
-    const skipCategorization = consolidatedAccount.skipCategorization === true;
+    // skipCategorization can be forced via options (e.g., balance reconstruction) or set per-account
+    const skipCategorization = options.skipCategorization === true || consolidatedAccount.skipCategorization === true;
 
     // Step 7: Handle transactions without rules - show manual categorization UI
     if (transactionsWithoutRules.length > 0) {
@@ -1289,7 +1291,8 @@ export async function fetchAndProcessLineOfCreditTransactions(consolidatedAccoun
     }
 
     // Read skip categorization setting
-    const skipCategorization = consolidatedAccount.skipCategorization === true;
+    // skipCategorization can be forced via options (e.g., balance reconstruction) or set per-account
+    const skipCategorization = options.skipCategorization === true || consolidatedAccount.skipCategorization === true;
 
     // Step 6: Handle transactions without rules - show manual categorization UI
     if (transactionsWithoutRules.length > 0) {
@@ -1989,7 +1992,8 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
     debugLog(`Processed ${processedTransactions.length} transactions with rules`);
 
     // Read skip categorization setting
-    const skipCategorization = consolidatedAccount.skipCategorization === true;
+    // skipCategorization can be forced via options (e.g., balance reconstruction) or set per-account
+    const skipCategorization = options.skipCategorization === true || consolidatedAccount.skipCategorization === true;
 
     // Step 7: Handle transactions without rules - show manual categorization UI
     if (transactionsWithoutRules.length > 0) {

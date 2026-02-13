@@ -59,7 +59,8 @@ async function createBalanceCheckpoint(accountId, fromDate, toDate) {
     }
 
     // Fetch transactions from fromDate to toDate to calculate checkpoint balance
-    const transactions = await fetchAndProcessTransactions(accountData, fromDate, toDate);
+    // Skip categorization since checkpoint calculation only needs dates and amounts
+    const transactions = await fetchAndProcessTransactions(accountData, fromDate, toDate, { skipCategorization: true });
 
     // Reconstruct balance history to get the balance at checkpoint date
     const balanceHistory = reconstructBalanceFromTransactions(transactions || [], fromDate, toDate, 0);
@@ -125,7 +126,8 @@ async function updateBalanceCheckpoint(accountId, toDate, _currentBalance) {
     }
 
     // Fetch transactions from existing checkpoint date to today
-    const transactions = await fetchAndProcessTransactions(accountData, existingCheckpoint.date, toDate);
+    // Skip categorization since checkpoint calculation only needs dates and amounts
+    const transactions = await fetchAndProcessTransactions(accountData, existingCheckpoint.date, toDate, { skipCategorization: true });
 
     // Reconstruct balance history from existing checkpoint
     const balanceHistory = reconstructBalanceFromTransactions(

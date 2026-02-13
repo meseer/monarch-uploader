@@ -267,7 +267,8 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
       debugLog('First sync with reconstruction enabled - building balance from transactions');
 
       // Fetch and process transactions to use for balance reconstruction
-      const processedTransactions = await fetchAndProcessTransactions(accountData, actualFromDate, actualToDate);
+      // Skip categorization since balance reconstruction only needs dates and amounts
+      const processedTransactions = await fetchAndProcessTransactions(accountData, actualFromDate, actualToDate, { skipCategorization: true });
 
       const hasTransactions = processedTransactions && processedTransactions.length > 0;
 
@@ -351,7 +352,8 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
       debugLog(`Checkpoint: ${checkpoint.date} = ${checkpoint.amount}`);
 
       // Fetch and process transactions from checkpoint date to today
-      const processedTransactions = await fetchAndProcessTransactions(accountData, checkpoint.date, todayDate);
+      // Skip categorization since balance reconstruction only needs dates and amounts
+      const processedTransactions = await fetchAndProcessTransactions(accountData, checkpoint.date, todayDate, { skipCategorization: true });
 
       // Reconstruct balance from checkpoint to today
       const balanceHistory = reconstructBalanceFromCheckpoint(
