@@ -298,6 +298,24 @@ describe('Settings Modal Component', () => {
 
   describe('Rogers Bank Transaction Management', () => {
     test('should display transaction references when available', () => {
+      // Mock accountService to return a Rogers Bank account with uploaded transactions
+      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      accountService.getAccounts.mockImplementation((integrationId) => {
+        if (integrationId === 'rogersbank') {
+          return [{
+            rogersbankAccount: { id: '12345', nickname: 'Rogers Card' },
+            monarchAccount: { id: 'monarch-123', displayName: 'Monarch Rogers' },
+            syncEnabled: true,
+            uploadedTransactions: [
+              { id: 'tx1', date: '2024-01-10' },
+              { id: 'tx2', date: '2024-01-11' },
+              { id: 'tx3', date: '2024-01-12' },
+            ],
+          }];
+        }
+        return [];
+      });
+
       globalThis.GM_listValues.mockReturnValue(['rogersbank_uploaded_refs_12345']);
       globalThis.GM_getValue.mockImplementation((key) => {
         if (key === 'rogersbank_uploaded_refs_12345') {

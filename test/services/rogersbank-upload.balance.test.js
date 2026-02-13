@@ -184,6 +184,7 @@ describe('Rogers Bank Upload Service - Balance Inversion, Skip Categorization, D
   let showMonarchCategorySelector;
   let calculateFromDateWithLookback;
   let saveLastUploadDate;
+  let getLastUpdateDate;
   let accountServiceMock;
 
   beforeEach(() => {
@@ -220,6 +221,11 @@ describe('Rogers Bank Upload Service - Balance Inversion, Skip Categorization, D
     showMonarchCategorySelector = jest.requireMock('../../src/ui/components/categorySelector').showMonarchCategorySelector;
     calculateFromDateWithLookback = jest.requireMock('../../src/core/utils').calculateFromDateWithLookback;
     saveLastUploadDate = jest.requireMock('../../src/core/utils').saveLastUploadDate;
+    getLastUpdateDate = jest.requireMock('../../src/core/utils').getLastUpdateDate;
+
+    // Default: not first sync (has previous upload date)
+    // Tests that need first sync should override with getLastUpdateDate.mockReturnValue(null)
+    getLastUpdateDate.mockReturnValue('2024-01-01');
 
     // Reset getTransactionIdsFromArray to return empty Set by default
     const transactionStorageMock = jest.requireMock('../../src/utils/transactionStorage');
@@ -391,6 +397,7 @@ describe('Rogers Bank Upload Service - Balance Inversion, Skip Categorization, D
       });
 
       // First sync - no last upload date
+      getLastUpdateDate.mockReturnValue(null);
       globalThis.GM_getValue.mockImplementation((key) => {
         if (key.includes('rogersbank_last_upload_date_')) {
           return null; // First sync
@@ -948,6 +955,7 @@ describe('Rogers Bank Upload Service - Balance Inversion, Skip Categorization, D
       });
 
       // First sync - no last upload date
+      getLastUpdateDate.mockReturnValue(null);
       globalThis.GM_getValue.mockImplementation((key) => {
         if (key.includes('rogersbank_account_')) {
           return JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' });
@@ -1040,6 +1048,7 @@ describe('Rogers Bank Upload Service - Balance Inversion, Skip Categorization, D
       });
 
       // First sync - no last upload date
+      getLastUpdateDate.mockReturnValue(null);
       globalThis.GM_getValue.mockImplementation((key) => {
         if (key.includes('rogersbank_account_')) {
           return JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' });
@@ -1120,6 +1129,7 @@ describe('Rogers Bank Upload Service - Balance Inversion, Skip Categorization, D
       });
 
       // First sync - no last upload date
+      getLastUpdateDate.mockReturnValue(null);
       globalThis.GM_getValue.mockImplementation((key) => {
         if (key.includes('rogersbank_last_upload_date_')) {
           return null; // First sync
@@ -1216,6 +1226,7 @@ describe('Rogers Bank Upload Service - Balance Inversion, Skip Categorization, D
       });
 
       // First sync - no last upload date
+      getLastUpdateDate.mockReturnValue(null);
       globalThis.GM_getValue.mockImplementation((key) => {
         if (key.includes('rogersbank_account_')) {
           return JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' });
@@ -1305,6 +1316,7 @@ describe('Rogers Bank Upload Service - Balance Inversion, Skip Categorization, D
       });
 
       // First sync - no last upload date
+      getLastUpdateDate.mockReturnValue(null);
       globalThis.GM_getValue.mockImplementation((key) => {
         if (key.includes('rogersbank_account_')) {
           return JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' });
@@ -1411,6 +1423,7 @@ describe('Rogers Bank Upload Service - Balance Inversion, Skip Categorization, D
       });
 
       // First sync - no last upload date
+      getLastUpdateDate.mockReturnValue(null);
       globalThis.GM_getValue.mockImplementation((key) => {
         if (key.includes('rogersbank_account_')) {
           return JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' });
