@@ -9,8 +9,6 @@ import {
   updateAccountInList,
   markAccountAsSkipped,
   isAccountSkipped,
-  getExistingAccountMapping,
-  clearAccountMapping,
   getDefaultAccountSettings,
   applyTransactionRetentionEviction,
 } from '../../../src/services/wealthsimple/account';
@@ -570,48 +568,6 @@ describe('Wealthsimple Account Service', () => {
 
       // When syncEnabled is undefined, !undefined = true, so account is skipped
       expect(result).toBe(true);
-    });
-  });
-
-  describe('getExistingAccountMapping', () => {
-    it('should return parsed mapping when exists', () => {
-      const mockMapping = { id: 'monarch-123', displayName: 'My Account' };
-      GM_getValue.mockReturnValue(JSON.stringify(mockMapping));
-
-      const result = getExistingAccountMapping('ws-acc-1');
-
-      expect(result).toEqual(mockMapping);
-      expect(GM_getValue).toHaveBeenCalledWith(`${STORAGE.WEALTHSIMPLE_ACCOUNT_MAPPING_PREFIX}ws-acc-1`, null);
-    });
-
-    it('should return null when no mapping exists', () => {
-      GM_getValue.mockReturnValue(null);
-
-      const result = getExistingAccountMapping('ws-acc-1');
-
-      expect(result).toBeNull();
-    });
-
-    it('should return null on JSON parse error', () => {
-      GM_getValue.mockReturnValue('invalid json');
-
-      const result = getExistingAccountMapping('ws-acc-1');
-
-      expect(result).toBeNull();
-    });
-  });
-
-  describe('clearAccountMapping', () => {
-    it('should call GM_deleteValue with correct key', () => {
-      clearAccountMapping('ws-acc-1');
-
-      expect(GM_deleteValue).toHaveBeenCalledWith(`${STORAGE.WEALTHSIMPLE_ACCOUNT_MAPPING_PREFIX}ws-acc-1`);
-    });
-
-    it('should handle different account IDs', () => {
-      clearAccountMapping('different-id');
-
-      expect(GM_deleteValue).toHaveBeenCalledWith(`${STORAGE.WEALTHSIMPLE_ACCOUNT_MAPPING_PREFIX}different-id`);
     });
   });
 

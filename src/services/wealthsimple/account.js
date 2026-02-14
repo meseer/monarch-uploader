@@ -175,33 +175,6 @@ export async function resolveWealthsimpleAccountMapping(consolidatedAccount, cur
 }
 
 /**
- * Get existing Monarch account mapping for a Wealthsimple account
- * @param {string} wealthsimpleAccountId - Wealthsimple account ID
- * @returns {Object|null} Monarch account object if mapping exists, null otherwise
- */
-export function getExistingAccountMapping(wealthsimpleAccountId) {
-  try {
-    const mapping = GM_getValue(`${STORAGE.WEALTHSIMPLE_ACCOUNT_MAPPING_PREFIX}${wealthsimpleAccountId}`, null);
-    if (mapping) {
-      return JSON.parse(mapping);
-    }
-    return null;
-  } catch (error) {
-    debugLog('Error getting existing account mapping:', error);
-    return null;
-  }
-}
-
-/**
- * Clear account mapping for a Wealthsimple account
- * @param {string} wealthsimpleAccountId - Wealthsimple account ID
- */
-export function clearAccountMapping(wealthsimpleAccountId) {
-  GM_deleteValue(`${STORAGE.WEALTHSIMPLE_ACCOUNT_MAPPING_PREFIX}${wealthsimpleAccountId}`);
-  debugLog(`Cleared account mapping for Wealthsimple account ${wealthsimpleAccountId}`);
-}
-
-/**
  * Upload Wealthsimple account balance history to Monarch
  * Handles three scenarios:
  * 1. Investment accounts: Fetch balance history from API
@@ -840,8 +813,6 @@ export async function syncCreditLimit(consolidatedAccount, monarchAccountId) {
 
 export default {
   resolveWealthsimpleAccountMapping,
-  getExistingAccountMapping,
-  clearAccountMapping,
   uploadWealthsimpleBalance,
   uploadWealthsimpleTransactions,
   getWealthsimpleAccounts,
