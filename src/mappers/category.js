@@ -27,15 +27,22 @@ import {
  */
 function getSavedCategoryMappings() {
   try {
-    // Try configStore first
+    // Read from configStore only
     const configMappings = getConfigCategoryMappings(INTEGRATIONS.ROGERSBANK);
     if (Object.keys(configMappings).length > 0) {
       return configMappings;
     }
 
-    // Fall back to legacy key
+    // Migrate-on-read: if configStore is empty, check legacy key and migrate
     const saved = GM_getValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS, '{}');
-    return JSON.parse(saved);
+    const legacyMappings = JSON.parse(saved);
+    if (Object.keys(legacyMappings).length > 0) {
+      debugLog('getSavedCategoryMappings: Migrating Rogers Bank legacy category mappings to configStore');
+      saveConfigCategoryMappings(INTEGRATIONS.ROGERSBANK, legacyMappings);
+      return legacyMappings;
+    }
+
+    return {};
   } catch (error) {
     debugLog('Error loading saved Rogers Bank category mappings:', error);
     return {};
@@ -52,13 +59,8 @@ function saveCategoryMapping(bankCategory, monarchCategory) {
   try {
     const upperCategory = bankCategory.toUpperCase();
 
-    // Write to configStore (primary)
+    // Write to configStore only  migration completed, no dual-write
     setConfigCategoryMapping(INTEGRATIONS.ROGERSBANK, upperCategory, monarchCategory);
-
-    // Write to legacy key (backward compatibility)
-    const savedMappings = getSavedCategoryMappings();
-    savedMappings[upperCategory] = monarchCategory;
-    GM_setValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS, JSON.stringify(savedMappings));
 
     debugLog('Saved Rogers Bank category mapping:', { bankCategory, monarchCategory });
   } catch (error) {
@@ -78,15 +80,22 @@ function saveCategoryMapping(bankCategory, monarchCategory) {
  */
 function getSavedWealthsimpleCategoryMappings() {
   try {
-    // Try configStore first
+    // Read from configStore only
     const configMappings = getConfigCategoryMappings(INTEGRATIONS.WEALTHSIMPLE);
     if (Object.keys(configMappings).length > 0) {
       return configMappings;
     }
 
-    // Fall back to legacy key
+    // Migrate-on-read: if configStore is empty, check legacy key and migrate
     const saved = GM_getValue(STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS, '{}');
-    return JSON.parse(saved);
+    const legacyMappings = JSON.parse(saved);
+    if (Object.keys(legacyMappings).length > 0) {
+      debugLog('getSavedWealthsimpleCategoryMappings: Migrating legacy category mappings to configStore');
+      saveConfigCategoryMappings(INTEGRATIONS.WEALTHSIMPLE, legacyMappings);
+      return legacyMappings;
+    }
+
+    return {};
   } catch (error) {
     debugLog('Error loading saved Wealthsimple category mappings:', error);
     return {};
@@ -103,13 +112,8 @@ function saveWealthsimpleCategoryMapping(merchantName, monarchCategory) {
   try {
     const upperMerchant = merchantName.toUpperCase();
 
-    // Write to configStore (primary)
+    // Write to configStore only  migration completed, no dual-write
     setConfigCategoryMapping(INTEGRATIONS.WEALTHSIMPLE, upperMerchant, monarchCategory);
-
-    // Write to legacy key (backward compatibility)
-    const savedMappings = getSavedWealthsimpleCategoryMappings();
-    savedMappings[upperMerchant] = monarchCategory;
-    GM_setValue(STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS, JSON.stringify(savedMappings));
 
     debugLog('Saved Wealthsimple category mapping:', { merchantName, monarchCategory });
   } catch (error) {
@@ -348,11 +352,8 @@ export function getClosestMonarchCategory(category, availableCategories = []) {
  */
 export function clearSavedCategoryMappings() {
   try {
-    // Clear from configStore
+    // Clear from configStore only  migration completed
     saveConfigCategoryMappings(INTEGRATIONS.ROGERSBANK, {});
-
-    // Clear legacy key
-    GM_setValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS, '{}');
     debugLog('Cleared all saved Rogers Bank category mappings');
   } catch (error) {
     debugLog('Error clearing Rogers Bank category mappings:', error);
@@ -373,11 +374,8 @@ export function getAllSavedCategoryMappings() {
  */
 export function clearSavedWealthsimpleCategoryMappings() {
   try {
-    // Clear from configStore
+    // Clear from configStore only  migration completed
     saveConfigCategoryMappings(INTEGRATIONS.WEALTHSIMPLE, {});
-
-    // Clear legacy key
-    GM_setValue(STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS, '{}');
     debugLog('Cleared all saved Wealthsimple category mappings');
   } catch (error) {
     debugLog('Error clearing Wealthsimple category mappings:', error);

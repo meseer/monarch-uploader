@@ -6,7 +6,7 @@
 import { debugLog, getDefaultLookbackDays, validateLookbackVsRetention, getMinRetentionForInstitution, getLookbackForInstitution } from '../../core/utils';
 import { STORAGE } from '../../core/config';
 import { INTEGRATIONS, getCategoryMappingsConfig } from '../../core/integrationCapabilities';
-import { getAuth, setSetting } from '../../services/common/configStore';
+import { getAuth, setSetting, getCategoryMappings, saveCategoryMappings } from '../../services/common/configStore';
 import { checkMonarchAuth } from '../../services/auth';
 import { checkQuestradeAuth } from '../../services/questrade/auth';
 import toast from '../toast';
@@ -31,16 +31,14 @@ export function checkInstitutionConnection(institutionId) {
       return false;
     }
   case 'rogersbank': {
-    // Check configStore first, then legacy key
+    // Read from configStore only — migration completed
     const rbAuth = getAuth(INTEGRATIONS.ROGERSBANK);
-    if (rbAuth.authToken) return true;
-    return Boolean(GM_getValue(STORAGE.ROGERSBANK_AUTH_TOKEN));
+    return Boolean(rbAuth.authToken);
   }
   case 'wealthsimple': {
-    // Check configStore first, then legacy key
+    // Read from configStore only — migration completed
     const wsAuth = getAuth(INTEGRATIONS.WEALTHSIMPLE);
-    if (wsAuth.accessToken) return true;
-    return Boolean(GM_getValue(STORAGE.WEALTHSIMPLE_ACCESS_TOKEN));
+    return Boolean(wsAuth.accessToken);
   }
   case 'monarch':
     return checkMonarchAuth().authenticated;
@@ -527,15 +525,14 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
   sectionContainer.id = `category-mappings-section-${integrationId}`;
   sectionContainer.style.cssText = 'margin-bottom: 15px;';
 
-  // Get category mappings
-  const categoryMappingsStr = GM_getValue(storageKey, '{}');
+  // Get category mappings from configStore (with legacy fallback via category mapper)
   let categoryData = [];
   const allCategories = new Set();
 
   try {
-    const mappings = JSON.parse(categoryMappingsStr);
+    const mappings = getCategoryMappings(integrationId);
     categoryData = Object.entries(mappings).map(([sourceKey, monarchCategory]) => ({
-      key: `${storageKey}.${sourceKey}`,
+      key: `${integrationId}.${sourceKey}`,
       sourceKey,
       monarchCategory,
     }));
@@ -898,9 +895,9 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
         );
         if (confirmed) {
           try {
-            const currentMappings = JSON.parse(GM_getValue(storageKey, '{}'));
+            const currentMappings = getCategoryMappings(integrationId);
             delete currentMappings[item.sourceKey];
-            GM_setValue(storageKey, JSON.stringify(currentMappings));
+            saveCategoryMappings(integrationId, currentMappings);
             toast.show('Category mapping deleted', 'info');
             onRefresh();
           } catch (error) {
@@ -986,7 +983,7 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
         `Are you sure you want to delete ALL ${categoryData.length} category mapping(s)?\n\nThis action cannot be undone.`,
       );
       if (confirmed) {
-        GM_setValue(storageKey, '{}');
+        saveCategoryMappings(integrationId, {});
         toast.show(`Deleted ${categoryData.length} category mapping(s)`, 'info');
         debugLog(`Deleted all ${integrationId} category mappings (${categoryData.length} total)`);
         onRefresh();

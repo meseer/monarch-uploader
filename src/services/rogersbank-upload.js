@@ -8,7 +8,7 @@ import {
   getLastUpdateDate,
 } from '../core/utils';
 import toast from '../ui/toast';
-import { STORAGE, LOGO_CLOUDINARY_IDS } from '../core/config';
+import { LOGO_CLOUDINARY_IDS } from '../core/config';
 import stateManager from '../core/state';
 import { getRogersBankCredentials, fetchRogersBankAccountDetails } from '../api/rogersbank';
 import monarchApi from '../api/monarch';
@@ -856,8 +856,7 @@ export async function uploadRogersBankToMonarch() {
       progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Converting...');
       // Use per-account setting from consolidated storage, fall back to global setting, then default to false
       const accountData = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, rogersAccountId);
-      const storeTransactionDetailsInNotes = accountData?.storeTransactionDetailsInNotes
-        ?? GM_getValue(STORAGE.ROGERSBANK_STORE_TX_DETAILS_IN_NOTES, false);
+      const storeTransactionDetailsInNotes = accountData?.storeTransactionDetailsInNotes ?? false;
       const csvData = convertTransactionsToMonarchCSV(resolvedTx, rogersAccountName, { storeTransactionDetailsInNotes });
       if (!csvData) throw new Error('Failed to convert transactions to CSV');
 

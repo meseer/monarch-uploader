@@ -119,6 +119,14 @@ jest.mock('../../src/scriptInfo.json', () => ({
   gistUrl: 'https://gist.github.com/meseer/f00fb552c96efeb3eb4e4e1fd520d4e7/raw/monarch-uploader.user.js',
 }), { virtual: true });
 
+jest.mock('../../src/services/common/configStore', () => ({
+  getAuth: jest.fn(() => ({})),
+  setSetting: jest.fn(),
+  getSetting: jest.fn(() => undefined),
+  getCategoryMappings: jest.fn(() => ({})),
+  saveCategoryMappings: jest.fn(),
+}));
+
 jest.mock('../../src/core/integrationCapabilities', () => ({
   INTEGRATIONS: {
     WEALTHSIMPLE: 'wealthsimple',
@@ -589,14 +597,10 @@ describe('Settings Modal Component', () => {
 
   describe('Rogers Bank Delete All Category Mappings', () => {
     test('should display "Delete All" button when category mappings exist (inside collapsed section)', () => {
-      globalThis.GM_getValue.mockImplementation((key) => {
-        if (key === 'rogersbank_category_mappings') {
-          return JSON.stringify({
-            Groceries: 'Food & Dining',
-            Gas: 'Auto & Transport',
-          });
-        }
-        return null;
+      const { getCategoryMappings } = jest.requireMock('../../src/services/common/configStore');
+      getCategoryMappings.mockReturnValue({
+        Groceries: 'Food & Dining',
+        Gas: 'Auto & Transport',
       });
 
       modal = createSettingsModal();
@@ -616,12 +620,8 @@ describe('Settings Modal Component', () => {
     });
 
     test('should not display "Delete All" button when no category mappings exist', () => {
-      globalThis.GM_getValue.mockImplementation((key) => {
-        if (key === 'rogersbank_category_mappings') {
-          return '{}';
-        }
-        return null;
-      });
+      const { getCategoryMappings } = jest.requireMock('../../src/services/common/configStore');
+      getCategoryMappings.mockReturnValue({});
 
       modal = createSettingsModal();
 
@@ -635,12 +635,8 @@ describe('Settings Modal Component', () => {
     });
 
     test('should handle "Delete All" button hover effects', () => {
-      globalThis.GM_getValue.mockImplementation((key) => {
-        if (key === 'rogersbank_category_mappings') {
-          return JSON.stringify({ Groceries: 'Food & Dining' });
-        }
-        return null;
-      });
+      const { getCategoryMappings } = jest.requireMock('../../src/services/common/configStore');
+      getCategoryMappings.mockReturnValue({ Groceries: 'Food & Dining' });
 
       modal = createSettingsModal();
 

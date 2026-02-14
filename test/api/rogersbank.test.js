@@ -289,8 +289,11 @@ describe('Rogers Bank API Client', () => {
       // Simulate sending - this should trigger credential capture
       originalSend.call(mockXHR, null);
 
-      // Check if GM_setValue was called for saving credentials
-      expect(globalThis.GM_setValue).toHaveBeenCalled();
+      // Check if setAuth was called for saving credentials to configStore
+      const { setAuth } = jest.requireMock('../../src/services/common/configStore');
+      expect(setAuth).toHaveBeenCalledWith('rogersbank', expect.objectContaining({
+        authToken: expect.any(String),
+      }));
     });
 
     test('should handle token regeneration XHR responses', () => {
@@ -350,7 +353,11 @@ describe('Rogers Bank API Client', () => {
       // This should trigger credential capture
       await globalThis.fetch(transactionUrl, options);
 
-      expect(globalThis.GM_setValue).toHaveBeenCalled();
+      // Credentials saved to configStore via setAuth
+      const { setAuth } = jest.requireMock('../../src/services/common/configStore');
+      expect(setAuth).toHaveBeenCalledWith('rogersbank', expect.objectContaining({
+        authToken: expect.any(String),
+      }));
     });
 
     test('should handle token regeneration in fetch API calls', async () => {
@@ -424,21 +431,22 @@ describe('Rogers Bank API Client', () => {
       const transactionUrl = 'https://selfserve.apis.rogersbank.com/corebank/v1/account/12345/customer/67890/transactions';
       await globalThis.fetch(transactionUrl, { headers });
 
-      expect(globalThis.GM_setValue).toHaveBeenCalled();
+      // Credentials saved to configStore via setAuth
+      const { setAuth } = jest.requireMock('../../src/services/common/configStore');
+      expect(setAuth).toHaveBeenCalledWith('rogersbank', expect.objectContaining({
+        authToken: expect.any(String),
+      }));
     });
   });
 
   describe('clearRogersBankCredentials', () => {
     test('should clear all credentials from storage', () => {
+      const { clearAuth } = jest.requireMock('../../src/services/common/configStore');
+
       clearRogersBankCredentials();
 
-      expect(globalThis.GM_deleteValue).toHaveBeenCalledWith('rogersbank_auth_token');
-      expect(globalThis.GM_deleteValue).toHaveBeenCalledWith('rogersbank_account_id');
-      expect(globalThis.GM_deleteValue).toHaveBeenCalledWith('rogersbank_customer_id');
-      expect(globalThis.GM_deleteValue).toHaveBeenCalledWith('rogersbank_account_id_encoded');
-      expect(globalThis.GM_deleteValue).toHaveBeenCalledWith('rogersbank_customer_id_encoded');
-      expect(globalThis.GM_deleteValue).toHaveBeenCalledWith('rogersbank_device_id');
-      expect(globalThis.GM_deleteValue).toHaveBeenCalledWith('rogersbank_last_updated');
+      // Should clear via configStore only  no legacy GM_deleteValue calls
+      expect(clearAuth).toHaveBeenCalledWith('rogersbank');
     });
 
     test('should update state manager', () => {

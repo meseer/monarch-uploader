@@ -29,16 +29,46 @@ const credentials = {
  */
 export function getRogersBankCredentials() {
   try {
-    // Read from configStore first (primary), then fall back to legacy keys
+    // Read from configStore only  migration completed
     const configAuth = getAuth(INTEGRATIONS.ROGERSBANK);
+
+    // Migrate-on-read: if configStore is empty, check legacy keys and migrate
+    if (!configAuth.authToken && !configAuth.accountId) {
+      const legacyToken = GM_getValue(STORAGE.ROGERSBANK_AUTH_TOKEN, null);
+      if (legacyToken) {
+        const legacyData = {
+          authToken: legacyToken,
+          accountId: GM_getValue(STORAGE.ROGERSBANK_ACCOUNT_ID, null),
+          customerId: GM_getValue(STORAGE.ROGERSBANK_CUSTOMER_ID, null),
+          accountIdEncoded: GM_getValue(STORAGE.ROGERSBANK_ACCOUNT_ID_ENCODED, null),
+          customerIdEncoded: GM_getValue(STORAGE.ROGERSBANK_CUSTOMER_ID_ENCODED, null),
+          deviceId: GM_getValue(STORAGE.ROGERSBANK_DEVICE_ID, null),
+          lastUpdated: GM_getValue(STORAGE.ROGERSBANK_LAST_UPDATED, null),
+        };
+        debugLog('getRogersBankCredentials: Migrating legacy credentials to configStore');
+        setAuth(INTEGRATIONS.ROGERSBANK, legacyData);
+        Object.assign(credentials, legacyData);
+
+        debugLog('Rogers Bank credentials retrieved (migrated from legacy):', {
+          hasToken: Boolean(legacyData.authToken),
+          hasAccountId: Boolean(legacyData.accountId),
+          hasCustomerId: Boolean(legacyData.customerId),
+          hasDeviceId: Boolean(legacyData.deviceId),
+          lastUpdated: legacyData.lastUpdated,
+        });
+
+        return legacyData;
+      }
+    }
+
     const stored = {
-      authToken: configAuth.authToken ?? GM_getValue(STORAGE.ROGERSBANK_AUTH_TOKEN, null),
-      accountId: configAuth.accountId ?? GM_getValue(STORAGE.ROGERSBANK_ACCOUNT_ID, null),
-      customerId: configAuth.customerId ?? GM_getValue(STORAGE.ROGERSBANK_CUSTOMER_ID, null),
-      accountIdEncoded: configAuth.accountIdEncoded ?? GM_getValue(STORAGE.ROGERSBANK_ACCOUNT_ID_ENCODED, null),
-      customerIdEncoded: configAuth.customerIdEncoded ?? GM_getValue(STORAGE.ROGERSBANK_CUSTOMER_ID_ENCODED, null),
-      deviceId: configAuth.deviceId ?? GM_getValue(STORAGE.ROGERSBANK_DEVICE_ID, null),
-      lastUpdated: configAuth.lastUpdated ?? GM_getValue(STORAGE.ROGERSBANK_LAST_UPDATED, null),
+      authToken: configAuth.authToken ?? null,
+      accountId: configAuth.accountId ?? null,
+      customerId: configAuth.customerId ?? null,
+      accountIdEncoded: configAuth.accountIdEncoded ?? null,
+      customerIdEncoded: configAuth.customerIdEncoded ?? null,
+      deviceId: configAuth.deviceId ?? null,
+      lastUpdated: configAuth.lastUpdated ?? null,
     };
 
     // Update local credentials cache
@@ -80,29 +110,8 @@ function saveRogersBankCredentials(newCredentials) {
     if (newCredentials.deviceId !== undefined) authUpdate.deviceId = newCredentials.deviceId;
     authUpdate.lastUpdated = timestamp;
 
-    // Write to configStore (primary)
+    // Write to configStore only  migration completed, no dual-write
     setAuth(INTEGRATIONS.ROGERSBANK, authUpdate);
-
-    // Dual-write to legacy keys (backward compatibility)
-    if (newCredentials.authToken !== undefined) {
-      GM_setValue(STORAGE.ROGERSBANK_AUTH_TOKEN, newCredentials.authToken);
-    }
-    if (newCredentials.accountId !== undefined) {
-      GM_setValue(STORAGE.ROGERSBANK_ACCOUNT_ID, newCredentials.accountId);
-    }
-    if (newCredentials.customerId !== undefined) {
-      GM_setValue(STORAGE.ROGERSBANK_CUSTOMER_ID, newCredentials.customerId);
-    }
-    if (newCredentials.accountIdEncoded !== undefined) {
-      GM_setValue(STORAGE.ROGERSBANK_ACCOUNT_ID_ENCODED, newCredentials.accountIdEncoded);
-    }
-    if (newCredentials.customerIdEncoded !== undefined) {
-      GM_setValue(STORAGE.ROGERSBANK_CUSTOMER_ID_ENCODED, newCredentials.customerIdEncoded);
-    }
-    if (newCredentials.deviceId !== undefined) {
-      GM_setValue(STORAGE.ROGERSBANK_DEVICE_ID, newCredentials.deviceId);
-    }
-    GM_setValue(STORAGE.ROGERSBANK_LAST_UPDATED, timestamp);
 
     // Update state manager
     stateManager.setRogersBankAuth(credentials);
@@ -379,17 +388,8 @@ export function setupCredentialInterception() {
 export function clearRogersBankCredentials() {
   debugLog('Clearing Rogers Bank credentials...');
 
-  // Clear from configStore (primary)
+  // Clear from configStore only  migration completed
   clearConfigAuth(INTEGRATIONS.ROGERSBANK);
-
-  // Clear from legacy GM storage (backward compatibility)
-  GM_deleteValue(STORAGE.ROGERSBANK_AUTH_TOKEN);
-  GM_deleteValue(STORAGE.ROGERSBANK_ACCOUNT_ID);
-  GM_deleteValue(STORAGE.ROGERSBANK_CUSTOMER_ID);
-  GM_deleteValue(STORAGE.ROGERSBANK_ACCOUNT_ID_ENCODED);
-  GM_deleteValue(STORAGE.ROGERSBANK_CUSTOMER_ID_ENCODED);
-  GM_deleteValue(STORAGE.ROGERSBANK_DEVICE_ID);
-  GM_deleteValue(STORAGE.ROGERSBANK_LAST_UPDATED);
 
   // Clear local cache
   Object.keys(credentials).forEach((key) => {

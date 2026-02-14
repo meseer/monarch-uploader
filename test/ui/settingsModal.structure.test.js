@@ -394,9 +394,10 @@ describe('Settings Modal Component', () => {
     });
 
     test('should show connected status when Rogers Bank token exists', () => {
-      globalThis.GM_getValue.mockImplementation((key) => {
-        if (key === 'rogersbank_auth_token') return 'valid-token';
-        return null;
+      const { getAuth } = jest.requireMock('../../src/services/common/configStore');
+      getAuth.mockImplementation((integrationId) => {
+        if (integrationId === 'rogersbank') return { authToken: 'valid-token' };
+        return {};
       });
 
       modal = createSettingsModal();

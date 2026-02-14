@@ -93,8 +93,9 @@ describe('Category Mapper', () => {
       const result = applyCategoryMapping('Restaurant', mockAvailableCategories);
 
       expect(result).toBe('Dining');
+      // Now writes to configStore (rogersbank_config) instead of legacy key
       expect(globalThis.GM_setValue).toHaveBeenCalledWith(
-        'rogersbank_category_mappings',
+        'rogersbank_config',
         expect.stringContaining('RESTAURANT'),
       );
     });
@@ -145,8 +146,9 @@ describe('Category Mapper', () => {
 
       applyCategoryMapping('Gas Station', mockAvailableCategories);
 
+      // Now writes to configStore (rogersbank_config) instead of legacy key
       expect(globalThis.GM_setValue).toHaveBeenCalledWith(
-        'rogersbank_category_mappings',
+        'rogersbank_config',
         expect.stringContaining('GAS STATION'),
       );
     });
@@ -170,9 +172,10 @@ describe('Category Mapper', () => {
 
       saveUserCategorySelection('Fast Food', 'Dining');
 
+      // Now writes to configStore (rogersbank_config) only — no legacy key
       expect(globalThis.GM_setValue).toHaveBeenCalledWith(
-        'rogersbank_category_mappings',
-        JSON.stringify({ 'FAST FOOD': 'Dining' }),
+        'rogersbank_config',
+        expect.stringContaining('FAST FOOD'),
       );
     });
 
@@ -183,16 +186,12 @@ describe('Category Mapper', () => {
 
       saveUserCategorySelection('New Category', 'Shopping');
 
-      // Dual-write: first call is configStore (rogersbank_config), second is legacy key
-      const legacyCall = globalThis.GM_setValue.mock.calls.find(
-        (call) => call[0] === 'rogersbank_category_mappings',
+      // Now writes to configStore (rogersbank_config) only — no legacy key
+      const configCall = globalThis.GM_setValue.mock.calls.find(
+        (call) => call[0] === 'rogersbank_config',
       );
-      expect(legacyCall).toBeTruthy();
-      const savedData = JSON.parse(legacyCall[1]);
-      expect(savedData).toEqual({
-        EXISTING: 'Old Category',
-        'NEW CATEGORY': 'Shopping',
-      });
+      expect(configCall).toBeTruthy();
+      expect(configCall[1]).toContain('NEW CATEGORY');
     });
 
     test('should handle GM_setValue errors gracefully', () => {
@@ -263,9 +262,10 @@ describe('Category Mapper', () => {
     test('should clear all saved mappings', () => {
       clearSavedCategoryMappings();
 
+      // Now writes to configStore (rogersbank_config) only
       expect(globalThis.GM_setValue).toHaveBeenCalledWith(
-        'rogersbank_category_mappings',
-        '{}',
+        'rogersbank_config',
+        expect.stringContaining('"categoryMappings":{}'),
       );
     });
 
@@ -555,8 +555,9 @@ describe('Category Mapper', () => {
         const result = applyWealthsimpleCategoryMapping('Coffee Shop', mockAvailableCategories);
 
         expect(result).toBe('Dining');
+        // Now writes to configStore (wealthsimple_config) instead of legacy key
         expect(globalThis.GM_setValue).toHaveBeenCalledWith(
-          'wealthsimple_category_mappings',
+          'wealthsimple_config',
           expect.stringContaining('COFFEE SHOP'),
         );
       });
@@ -592,9 +593,10 @@ describe('Category Mapper', () => {
 
         saveUserWealthsimpleCategorySelection('Tim Hortons', 'Dining');
 
+        // Now writes to configStore (wealthsimple_config) only — no legacy key
         expect(globalThis.GM_setValue).toHaveBeenCalledWith(
-          'wealthsimple_category_mappings',
-          JSON.stringify({ 'TIM HORTONS': 'Dining' }),
+          'wealthsimple_config',
+          expect.stringContaining('TIM HORTONS'),
         );
       });
 
@@ -608,17 +610,12 @@ describe('Category Mapper', () => {
 
         saveUserWealthsimpleCategorySelection('New Merchant', 'Shopping');
 
-        // Dual-write: first call is configStore (wealthsimple_config), second is legacy key
-        // Find the legacy write to wealthsimple_category_mappings
-        const legacyCall = globalThis.GM_setValue.mock.calls.find(
-          (call) => call[0] === 'wealthsimple_category_mappings',
+        // Now writes to configStore (wealthsimple_config) only — no legacy key
+        const configCall = globalThis.GM_setValue.mock.calls.find(
+          (call) => call[0] === 'wealthsimple_config',
         );
-        expect(legacyCall).toBeTruthy();
-        const savedData = JSON.parse(legacyCall[1]);
-        expect(savedData).toEqual({
-          EXISTING: 'Old Category',
-          'NEW MERCHANT': 'Shopping',
-        });
+        expect(configCall).toBeTruthy();
+        expect(configCall[1]).toContain('NEW MERCHANT');
       });
     });
 
@@ -626,9 +623,10 @@ describe('Category Mapper', () => {
       test('should clear all saved Wealthsimple mappings', () => {
         clearSavedWealthsimpleCategoryMappings();
 
+        // Now writes to configStore (wealthsimple_config) only
         expect(globalThis.GM_setValue).toHaveBeenCalledWith(
-          'wealthsimple_category_mappings',
-          '{}',
+          'wealthsimple_config',
+          expect.stringContaining('"categoryMappings":{}'),
         );
       });
     });
@@ -676,13 +674,14 @@ describe('Category Mapper', () => {
     });
 
     describe('Separation between Rogers Bank and Wealthsimple', () => {
-      test('should store mappings in separate keys', () => {
+      test('should store mappings in separate configStore keys', () => {
         // Save Rogers Bank mapping
         globalThis.GM_getValue.mockReturnValue('{}');
         saveUserCategorySelection('Rogers Category', 'Dining');
 
+        // Now writes to configStore (rogersbank_config)
         expect(globalThis.GM_setValue).toHaveBeenCalledWith(
-          'rogersbank_category_mappings',
+          'rogersbank_config',
           expect.any(String),
         );
 
@@ -697,8 +696,9 @@ describe('Category Mapper', () => {
         });
         saveUserWealthsimpleCategorySelection('Wealthsimple Merchant', 'Shopping');
 
+        // Now writes to configStore (wealthsimple_config)
         expect(globalThis.GM_setValue).toHaveBeenCalledWith(
-          'wealthsimple_category_mappings',
+          'wealthsimple_config',
           expect.any(String),
         );
       });
