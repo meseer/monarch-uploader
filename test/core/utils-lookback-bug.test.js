@@ -145,12 +145,9 @@ describe('Canada Life Lookback Bug', () => {
       lastSyncDate: yesterday,
     });
 
-    GM_getValue.mockImplementation((key, defaultValue) => {
-      if (key === 'canadalife_lookback_days') {
-        return 0; // Zero lookback
-      }
-      return defaultValue;
-    });
+    // Mock configStore to return 0 lookback days (configStore is the authoritative source)
+    const configStore = require('../../src/services/common/configStore');
+    configStore.getSetting.mockReturnValue(0);
 
     const fromDateOption2 = calculateFromDateWithLookback('canadalife', accountId);
     expect(fromDateOption2).toBe(yesterday); // yesterday - 0 = yesterday

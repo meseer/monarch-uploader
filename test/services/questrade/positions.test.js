@@ -27,7 +27,6 @@ jest.mock('../../../src/core/utils', () => ({
 
 jest.mock('../../../src/core/config', () => ({
   STORAGE: {
-    QUESTRADE_HOLDINGS_FOR_PREFIX: 'questrade_holdings_',
     ACCOUNTS_LIST: 'questrade_accounts_list',
   },
 }));

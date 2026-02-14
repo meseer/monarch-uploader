@@ -75,9 +75,9 @@ describe('Wealthsimple Balance Service', () => {
     });
 
     test('uses lastSyncDate minus lookback days for subsequent sync', () => {
-      // Mock lookback days to 2
+      // Mock lookback days to 2 via configStore (wealthsimple_config key)
       global.GM_getValue = jest.fn((key, defaultValue) => {
-        if (key === 'wealthsimple_lookback_days') return 2;
+        if (key === 'wealthsimple_config') return JSON.stringify({ settings: { lookbackDays: 2 } });
         return defaultValue;
       });
 
@@ -97,7 +97,7 @@ describe('Wealthsimple Balance Service', () => {
 
     test('never returns date before account creation', () => {
       global.GM_getValue = jest.fn((key, defaultValue) => {
-        if (key === 'wealthsimple_lookback_days') return 10;
+        if (key === 'wealthsimple_config') return JSON.stringify({ settings: { lookbackDays: 10 } });
         return defaultValue;
       });
 

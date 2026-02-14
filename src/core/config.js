@@ -43,15 +43,8 @@ export const STORAGE = {
   QUESTRADE_CONFIG: 'questrade_config',
   CANADALIFE_CONFIG: 'canadalife_config',
   ROGERSBANK_CONFIG: 'rogersbank_config',
-  // Questrade specific storage keys
-  QUESTRADE_LAST_UPLOAD_DATE_PREFIX: 'questrade_last_upload_date_',
-  QUESTRADE_ACCOUNT_MAPPING_PREFIX: 'questrade_monarch_account_for_',
-  QUESTRADE_HOLDINGS_FOR_PREFIX: 'questrade_holdings_for_',
-  QUESTRADE_UPLOADED_ORDERS_PREFIX: 'questrade_uploaded_orders_', // LEGACY - now uses consolidated storage in questrade_accounts_list[].uploadedTransactions
   // CanadaLife specific storage keys
   CANADALIFE_TOKEN_KEY: '$AuraClientService.token$siteforce:communityApp',
-  CANADALIFE_LAST_UPLOAD_DATE_PREFIX: 'canadalife_last_upload_date_',
-  CANADALIFE_ACCOUNT_MAPPING_PREFIX: 'canadalife_monarch_account_for_',
   // Rogers Bank specific storage keys
   ROGERSBANK_AUTH_TOKEN: 'rogersbank_auth_token',
   ROGERSBANK_ACCOUNT_ID: 'rogersbank_account_id',
@@ -66,7 +59,6 @@ export const STORAGE = {
   ROGERSBANK_CATEGORY_MAPPINGS: 'rogersbank_category_mappings', // Store bank category to Monarch category mappings
   ROGERSBANK_LAST_CREDIT_LIMIT_PREFIX: 'rogersbank_last_credit_limit_', // Store last synced credit limit per account
   ROGERSBANK_BALANCE_CHECKPOINT_PREFIX: 'rogersbank_balance_checkpoint_', // Store balance checkpoint for reconstruction
-  ROGERSBANK_STORE_TX_DETAILS_IN_NOTES: 'rogersbank_store_tx_details_in_notes', // Whether to store transaction details in notes (default: false)
   // Lookback period storage keys (days to look back from last upload date)
   ROGERSBANK_LOOKBACK_DAYS: 'rogersbank_lookback_days',
   // Transaction retention settings (separate from lookback - for deduplication)

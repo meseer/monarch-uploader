@@ -687,21 +687,13 @@ export async function clearAccountMapping(location = window.location) {
     let institutionName = '';
 
     switch (institution) {
-    case 'questrade':
-      prefix = STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX;
-      institutionName = 'Questrade';
-      break;
-    case 'canadalife':
-      prefix = STORAGE.CANADALIFE_ACCOUNT_MAPPING_PREFIX;
-      institutionName = 'Canada Life';
-      break;
     case 'rogersbank':
       prefix = STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX;
       institutionName = 'Rogers Bank';
       break;
     default:
-      debugLog('Not on a supported financial institution site');
-      toast.show('Please run this on a supported financial site', 'warning');
+      debugLog('Not on a supported financial institution site or no legacy account mapping keys');
+      toast.show('No legacy account mappings to clear', 'info');
       return;
     }
 
@@ -728,21 +720,13 @@ export async function clearLastUploadedDate(location = window.location) {
     let institutionName = '';
 
     switch (institution) {
-    case 'questrade':
-      institutionName = 'Questrade';
-      keysToDelete.push(...keys.filter((key) => key.startsWith(STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX)));
-      break;
-    case 'canadalife':
-      institutionName = 'Canada Life';
-      keysToDelete.push(...keys.filter((key) => key.startsWith(STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX)));
-      break;
     case 'rogersbank':
       institutionName = 'Rogers Bank';
       keysToDelete.push(...keys.filter((key) => key.startsWith(STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX)));
       break;
     default:
-      debugLog('Not on a supported financial institution site');
-      toast.show('Please run this on a supported financial site', 'warning');
+      debugLog('Not on a supported financial institution site or no legacy upload date keys');
+      toast.show('No legacy upload dates to clear', 'info');
       return;
     }
 

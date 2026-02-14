@@ -25,49 +25,25 @@ const ACCOUNT_LIST_STORAGE_KEYS = {
 };
 
 /**
- * Legacy storage prefix mapping for each integration
- * Note: Questrade and CanadaLife migration disabled - already migrated, no need to check legacy storage
+ * Legacy storage prefix mapping for Rogers Bank (only remaining integration with legacy keys).
+ * Wealthsimple, Questrade, and CanadaLife legacy migration is complete  no legacy fallback needed.
  */
 const LEGACY_MAPPING_PREFIXES = {
-  [INTEGRATIONS.WEALTHSIMPLE]: null, // Wealthsimple already uses consolidated
-  [INTEGRATIONS.QUESTRADE]: null, // Migration disabled - already migrated
-  [INTEGRATIONS.CANADALIFE]: null, // Migration disabled - already migrated
   [INTEGRATIONS.ROGERSBANK]: STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX,
 };
 
 /**
- * Legacy last upload date prefix mapping
- * Note: Questrade and CanadaLife migration disabled - already migrated
+ * Legacy last upload date prefix mapping (Rogers Bank only)
  */
 const LEGACY_LAST_UPLOAD_PREFIXES = {
-  [INTEGRATIONS.WEALTHSIMPLE]: null, // Stored in account object
-  [INTEGRATIONS.QUESTRADE]: null, // Migration disabled - already migrated
-  [INTEGRATIONS.CANADALIFE]: null, // Migration disabled - already migrated
   [INTEGRATIONS.ROGERSBANK]: STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX,
 };
 
 /**
- * Legacy uploaded transactions/orders prefix mapping
- * For integrations with deduplication, this is where transaction IDs are stored
- * Note: Questrade migration disabled - already migrated
+ * Legacy uploaded transactions/orders prefix mapping (Rogers Bank only)
  */
 const LEGACY_UPLOADED_TRANSACTIONS_PREFIXES = {
-  [INTEGRATIONS.WEALTHSIMPLE]: null, // Stored in account object (uploadedTransactions)
-  [INTEGRATIONS.QUESTRADE]: null, // Migration disabled - already migrated
-  [INTEGRATIONS.CANADALIFE]: null, // CanadaLife doesn't have deduplication
   [INTEGRATIONS.ROGERSBANK]: STORAGE.ROGERSBANK_UPLOADED_REFS_PREFIX,
-};
-
-/**
- * Legacy holdings mappings prefix mapping
- * For integrations with holdings/positions support
- * Note: Questrade migration disabled - already migrated
- */
-const LEGACY_HOLDINGS_PREFIXES = {
-  [INTEGRATIONS.WEALTHSIMPLE]: null, // Stored in account object (holdingsMappings)
-  [INTEGRATIONS.QUESTRADE]: null, // Migration disabled - already migrated
-  [INTEGRATIONS.CANADALIFE]: null, // No holdings support
-  [INTEGRATIONS.ROGERSBANK]: null, // No holdings support
 };
 
 /**
@@ -195,52 +171,6 @@ export function getAccounts(integrationId) {
 
       // Save the updated accounts if we merged any transactions
       if (needsSave) {
-        saveAccounts(integrationId, accounts);
-      }
-    }
-
-    // Check for and merge legacy holdings mappings if holdingsMappings is missing
-    // This handles accounts that were migrated before holdings migration was added
-    const holdingsPrefix = LEGACY_HOLDINGS_PREFIXES[integrationId];
-    if (holdingsPrefix && accounts.length > 0) {
-      const accountKeyName = getAccountKeyName(integrationId);
-      let needsSaveHoldings = false;
-
-      accounts = accounts.map((account) => {
-        // Skip if already has holdingsMappings
-        if (account.holdingsMappings && Object.keys(account.holdingsMappings).length > 0) {
-          return account;
-        }
-
-        const accountId = account[accountKeyName]?.id;
-        if (!accountId) {
-          return account;
-        }
-
-        // Check for legacy holdings data
-        const legacyHoldings = GM_getValue(`${holdingsPrefix}${accountId}`, null);
-        if (legacyHoldings) {
-          try {
-            const parsed = typeof legacyHoldings === 'string'
-              ? JSON.parse(legacyHoldings)
-              : legacyHoldings;
-
-            // Holdings are stored as an object { securityUuid: { securityId, holdingId, symbol } }
-            if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
-              debugLog(`Merged ${Object.keys(parsed).length} legacy holdings mappings for ${accountId}`);
-              needsSaveHoldings = true;
-              return { ...account, holdingsMappings: parsed };
-            }
-          } catch (e) {
-            debugLog(`Error parsing legacy holdings for ${accountId}:`, e);
-          }
-        }
-
-        return account;
-      });
-
-      // Save the updated accounts if we merged any holdings
-      if (needsSaveHoldings) {
         saveAccounts(integrationId, accounts);
       }
     }
@@ -928,14 +858,6 @@ export function cleanupLegacyStorage(integrationId, accountId) {
       }
       if (GM_getValue(balanceCheckpointKey, null) !== null) {
         keysToDelete.push(balanceCheckpointKey);
-      }
-    }
-
-    if (integrationId === INTEGRATIONS.QUESTRADE) {
-      // Questrade has holdings key
-      const holdingsKey = `${STORAGE.QUESTRADE_HOLDINGS_FOR_PREFIX}${accountId}`;
-      if (GM_getValue(holdingsKey, null) !== null) {
-        keysToDelete.push(holdingsKey);
       }
     }
 

@@ -17,18 +17,13 @@ jest.mock('../../src/core/config', () => ({
     ROGERSBANK_CUSTOMER_ID_ENCODED: 'rogersbank_customer_id_encoded',
     ROGERSBANK_DEVICE_ID: 'rogersbank_device_id',
     ROGERSBANK_LAST_UPDATED: 'rogersbank_last_updated',
-    ROGERSBANK_STORE_TX_DETAILS_IN_NOTES: 'rogersbank_store_tx_details_in_notes',
     ROGERSBANK_TRANSACTION_RETENTION_DAYS: 'rogersbank_transaction_retention_days',
     ROGERSBANK_TRANSACTION_RETENTION_COUNT: 'rogersbank_transaction_retention_count',
     ROGERSBANK_ACCOUNTS_LIST: 'rogersbank_accounts_list',
     ROGERSBANK_LAST_CREDIT_LIMIT_PREFIX: 'rogersbank_last_credit_limit_',
     ROGERSBANK_BALANCE_CHECKPOINT_PREFIX: 'rogersbank_balance_checkpoint_',
-    QUESTRADE_ACCOUNT_MAPPING_PREFIX: 'questrade_account_mapping_',
-    CANADALIFE_ACCOUNT_MAPPING_PREFIX: 'canadalife_account_mapping_',
     ROGERSBANK_ACCOUNT_MAPPING_PREFIX: 'rogersbank_account_mapping_',
     ROGERSBANK_LOOKBACK_DAYS: 'rogersbank_lookback_days',
-    QUESTRADE_LAST_UPLOAD_DATE_PREFIX: 'questrade_last_upload_date_',
-    CANADALIFE_LAST_UPLOAD_DATE_PREFIX: 'canadalife_last_upload_date_',
     ROGERSBANK_LAST_UPLOAD_DATE_PREFIX: 'rogersbank_last_upload_date_',
     ROGERSBANK_UPLOADED_REFS_PREFIX: 'rogersbank_uploaded_refs_',
     ROGERSBANK_CATEGORY_MAPPINGS: 'rogersbank_category_mappings',
@@ -148,7 +143,7 @@ jest.mock('../../src/core/integrationCapabilities', () => ({
     hasDeduplication: true,
     hasHoldings: integrationId === 'questrade' || integrationId === 'wealthsimple',
     hasCategorization: integrationId === 'rogersbank' || integrationId === 'wealthsimple',
-    categoryMappingsStorageKey: integrationId === 'rogersbank' ? 'rogersbank_category_mappings' : (integrationId === 'wealthsimple' ? 'wealthsimple_config' : null),
+    categoryMappingsStorageKey: integrationId === 'rogersbank' ? 'rogersbank_config' : (integrationId === 'wealthsimple' ? 'wealthsimple_config' : null),
     categorySourceLabel: integrationId === 'rogersbank' ? 'Bank Category' : (integrationId === 'wealthsimple' ? 'Merchant Name' : null),
     settings: [],
     settingDefaults: {},
@@ -169,7 +164,7 @@ jest.mock('../../src/core/integrationCapabilities', () => ({
   }),
   getCategoryMappingsConfig: jest.fn((integrationId) => {
     if (integrationId === 'rogersbank') {
-      return { storageKey: 'rogersbank_category_mappings', sourceLabel: 'Bank Category' };
+      return { storageKey: 'rogersbank_config', sourceLabel: 'Bank Category' };
     }
     if (integrationId === 'wealthsimple') {
       return { storageKey: 'wealthsimple_config', sourceLabel: 'Merchant Name' };

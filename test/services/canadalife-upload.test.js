@@ -7,9 +7,7 @@ import '../setup';
 
 // Mock all dependencies before importing the module under test
 jest.mock('../../src/core/config', () => ({
-  STORAGE: {
-    CANADALIFE_ACCOUNT_MAPPING_PREFIX: 'canadalife_account_mapping_',
-  },
+  STORAGE: {},
   TRANSACTION_RETENTION_DEFAULTS: {
     DAYS: 91,
     COUNT: 1000,

@@ -763,36 +763,16 @@ describe('Utility Functions', () => {
       global.GM_listValues.mockClear();
     });
 
-    it('should clear upload dates for questrade', async () => {
+    it('should not delete legacy keys for questrade (migration complete)', async () => {
       const mockLoc = { hostname: 'myportal.questrade.com' };
-
-      global.GM_listValues.mockResolvedValue([
-        'questrade_last_upload_date_acc1',
-        'questrade_last_upload_date_acc2',
-        'other_key',
-      ]);
-      global.GM_deleteValue.mockResolvedValue(undefined);
-
       await clearLastUploadedDate(mockLoc);
-
-      expect(global.GM_deleteValue).toHaveBeenCalledTimes(2);
-      expect(global.GM_deleteValue).toHaveBeenCalledWith('questrade_last_upload_date_acc1');
-      expect(global.GM_deleteValue).toHaveBeenCalledWith('questrade_last_upload_date_acc2');
+      expect(global.GM_deleteValue).not.toHaveBeenCalled();
     });
 
-    it('should clear upload dates for canadalife', async () => {
+    it('should not delete legacy keys for canadalife (migration complete)', async () => {
       const mockLoc = { hostname: 'my.canadalife.com' };
-
-      global.GM_listValues.mockResolvedValue([
-        'canadalife_last_upload_date_acc1',
-        'other_key',
-      ]);
-      global.GM_deleteValue.mockResolvedValue(undefined);
-
       await clearLastUploadedDate(mockLoc);
-
-      expect(global.GM_deleteValue).toHaveBeenCalledTimes(1);
-      expect(global.GM_deleteValue).toHaveBeenCalledWith('canadalife_last_upload_date_acc1');
+      expect(global.GM_deleteValue).not.toHaveBeenCalled();
     });
 
     it('should clear upload dates for rogersbank', async () => {

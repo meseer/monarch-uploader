@@ -161,7 +161,7 @@ export const INTEGRATION_CAPABILITIES = {
     hasHoldings: false, // Credit card only
     hasBalanceReconstruction: true,
     hasCategorization: true, // Bank category to Monarch category mappings
-    categoryMappingsStorageKey: STORAGE.ROGERSBANK_CATEGORY_MAPPINGS,
+    categoryMappingsStorageKey: STORAGE.ROGERSBANK_CONFIG,
     categorySourceLabel: 'Bank Category',
     settings: [
       ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES,
