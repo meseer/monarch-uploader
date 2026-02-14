@@ -17,7 +17,6 @@ jest.mock('../../src/core/config', () => ({
     ROGERSBANK_CUSTOMER_ID_ENCODED: 'rogersbank_customer_id_encoded',
     ROGERSBANK_DEVICE_ID: 'rogersbank_device_id',
     ROGERSBANK_LAST_UPDATED: 'rogersbank_last_updated',
-    ROGERSBANK_FROM_DATE: 'rogersbank_from_date',
     ROGERSBANK_STORE_TX_DETAILS_IN_NOTES: 'rogersbank_store_tx_details_in_notes',
     ROGERSBANK_TRANSACTION_RETENTION_DAYS: 'rogersbank_transaction_retention_days',
     ROGERSBANK_TRANSACTION_RETENTION_COUNT: 'rogersbank_transaction_retention_count',
@@ -652,6 +651,9 @@ describe('Settings Modal Component', () => {
     });
 
     test('should load current lookback value for institution', () => {
+      const { getLookbackForInstitution } = jest.requireMock('../../src/core/utils');
+      getLookbackForInstitution.mockReturnValue(5);
+
       globalThis.GM_getValue.mockImplementation((key, defaultValue) => {
         if (key === 'questrade_lookback_days') return 5;
         return defaultValue;

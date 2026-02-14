@@ -9,6 +9,12 @@
 
 import { debugLog, stringSimilarity } from '../core/utils';
 import { STORAGE } from '../core/config';
+import { INTEGRATIONS } from '../core/integrationCapabilities';
+import {
+  getCategoryMappings as getConfigCategoryMappings,
+  setCategoryMapping as setConfigCategoryMapping,
+  saveCategoryMappings as saveConfigCategoryMappings,
+} from '../services/common/configStore';
 
 // ============================================================================
 // ROGERS BANK CATEGORY MAPPINGS
@@ -16,10 +22,18 @@ import { STORAGE } from '../core/config';
 
 /**
  * Get saved Rogers Bank category mappings from storage
+ * Reads from configStore first, falls back to legacy key
  * @returns {Object} Saved category mappings
  */
 function getSavedCategoryMappings() {
   try {
+    // Try configStore first
+    const configMappings = getConfigCategoryMappings(INTEGRATIONS.ROGERSBANK);
+    if (Object.keys(configMappings).length > 0) {
+      return configMappings;
+    }
+
+    // Fall back to legacy key
     const saved = GM_getValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS, '{}');
     return JSON.parse(saved);
   } catch (error) {
@@ -30,14 +44,22 @@ function getSavedCategoryMappings() {
 
 /**
  * Save Rogers Bank category mapping to storage
+ * Writes to configStore (primary) and legacy key (backward compatibility)
  * @param {string} bankCategory - Bank category name
  * @param {string} monarchCategory - Monarch category name
  */
 function saveCategoryMapping(bankCategory, monarchCategory) {
   try {
+    const upperCategory = bankCategory.toUpperCase();
+
+    // Write to configStore (primary)
+    setConfigCategoryMapping(INTEGRATIONS.ROGERSBANK, upperCategory, monarchCategory);
+
+    // Write to legacy key (backward compatibility)
     const savedMappings = getSavedCategoryMappings();
-    savedMappings[bankCategory.toUpperCase()] = monarchCategory;
+    savedMappings[upperCategory] = monarchCategory;
     GM_setValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS, JSON.stringify(savedMappings));
+
     debugLog('Saved Rogers Bank category mapping:', { bankCategory, monarchCategory });
   } catch (error) {
     debugLog('Error saving Rogers Bank category mapping:', error);
@@ -50,11 +72,19 @@ function saveCategoryMapping(bankCategory, monarchCategory) {
 
 /**
  * Get saved Wealthsimple category mappings from storage
+ * Reads from configStore first, falls back to legacy key
  * Shared across all Wealthsimple accounts
  * @returns {Object} Saved category mappings (merchant name -> Monarch category)
  */
 function getSavedWealthsimpleCategoryMappings() {
   try {
+    // Try configStore first
+    const configMappings = getConfigCategoryMappings(INTEGRATIONS.WEALTHSIMPLE);
+    if (Object.keys(configMappings).length > 0) {
+      return configMappings;
+    }
+
+    // Fall back to legacy key
     const saved = GM_getValue(STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS, '{}');
     return JSON.parse(saved);
   } catch (error) {
@@ -65,14 +95,22 @@ function getSavedWealthsimpleCategoryMappings() {
 
 /**
  * Save Wealthsimple category mapping to storage
+ * Writes to configStore (primary) and legacy key (backward compatibility)
  * @param {string} merchantName - Merchant name (cleaned)
  * @param {string} monarchCategory - Monarch category name
  */
 function saveWealthsimpleCategoryMapping(merchantName, monarchCategory) {
   try {
+    const upperMerchant = merchantName.toUpperCase();
+
+    // Write to configStore (primary)
+    setConfigCategoryMapping(INTEGRATIONS.WEALTHSIMPLE, upperMerchant, monarchCategory);
+
+    // Write to legacy key (backward compatibility)
     const savedMappings = getSavedWealthsimpleCategoryMappings();
-    savedMappings[merchantName.toUpperCase()] = monarchCategory;
+    savedMappings[upperMerchant] = monarchCategory;
     GM_setValue(STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS, JSON.stringify(savedMappings));
+
     debugLog('Saved Wealthsimple category mapping:', { merchantName, monarchCategory });
   } catch (error) {
     debugLog('Error saving Wealthsimple category mapping:', error);
@@ -306,9 +344,14 @@ export function getClosestMonarchCategory(category, availableCategories = []) {
 
 /**
  * Clear all saved Rogers Bank category mappings
+ * Clears from both configStore and legacy key
  */
 export function clearSavedCategoryMappings() {
   try {
+    // Clear from configStore
+    saveConfigCategoryMappings(INTEGRATIONS.ROGERSBANK, {});
+
+    // Clear legacy key
     GM_setValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS, '{}');
     debugLog('Cleared all saved Rogers Bank category mappings');
   } catch (error) {
@@ -326,9 +369,14 @@ export function getAllSavedCategoryMappings() {
 
 /**
  * Clear all saved Wealthsimple category mappings
+ * Clears from both configStore and legacy key
  */
 export function clearSavedWealthsimpleCategoryMappings() {
   try {
+    // Clear from configStore
+    saveConfigCategoryMappings(INTEGRATIONS.WEALTHSIMPLE, {});
+
+    // Clear legacy key
     GM_setValue(STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS, '{}');
     debugLog('Cleared all saved Wealthsimple category mappings');
   } catch (error) {

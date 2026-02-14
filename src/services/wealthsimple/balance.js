@@ -3,8 +3,8 @@
  * Handles fetching, processing, and uploading balance history data
  */
 
-import { debugLog, formatDate, parseLocalDate } from '../../core/utils';
-import { STORAGE, WEALTHSIMPLE_BALANCE_RECONSTRUCTION_TYPES } from '../../core/config';
+import { debugLog, formatDate, parseLocalDate, getLookbackForInstitution } from '../../core/utils';
+import { WEALTHSIMPLE_BALANCE_RECONSTRUCTION_TYPES } from '../../core/config';
 import stateManager from '../../core/state';
 import wealthsimpleApi from '../../api/wealthsimple';
 import monarchApi from '../../api/monarch';
@@ -280,10 +280,11 @@ export function createCurrentBalanceOnly(currentBalance, toDate) {
 
 /**
  * Get default lookback days from settings
+ * Reads from configStore first, falls back to legacy storage key
  * @returns {number} Number of days to look back
  */
 function getLookbackDays() {
-  return GM_getValue(STORAGE.WEALTHSIMPLE_LOOKBACK_DAYS, 2);
+  return getLookbackForInstitution('wealthsimple');
 }
 
 /**

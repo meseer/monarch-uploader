@@ -4,6 +4,8 @@
  */
 
 import { STORAGE, TRANSACTION_RETENTION_DEFAULTS } from './config';
+import { INTEGRATIONS } from './integrationCapabilities';
+import { getSetting } from '../services/common/configStore';
 import toast from '../ui/toast';
 import accountService from '../services/common/accountService';
 
@@ -640,14 +642,22 @@ export async function clearCategoryMappings(location = window.location) {
     let institutionName = '';
 
     switch (institution) {
-    case 'rogersbank':
+    case 'rogersbank': {
+      // Clear from both configStore and legacy key
+      const { saveCategoryMappings: saveRBMappings } = await import('../services/common/configStore');
+      saveRBMappings(INTEGRATIONS.ROGERSBANK, {});
       await GM_deleteValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS);
       institutionName = 'Rogers Bank';
       break;
-    case 'wealthsimple':
+    }
+    case 'wealthsimple': {
+      // Clear from both configStore and legacy key
+      const { saveCategoryMappings } = await import('../services/common/configStore');
+      saveCategoryMappings(INTEGRATIONS.WEALTHSIMPLE, {});
       await GM_deleteValue(STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS);
       institutionName = 'Wealthsimple';
       break;
+    }
     default:
       debugLog('No category mappings to clear for this institution');
       toast.show('No category mappings to clear', 'debug');
@@ -725,8 +735,7 @@ export async function clearLastUploadedDate(location = window.location) {
       break;
     case 'rogersbank':
       institutionName = 'Rogers Bank';
-      keysToDelete.push(...keys.filter((key) => key.startsWith(STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX)
-          || key === STORAGE.ROGERSBANK_FROM_DATE));
+      keysToDelete.push(...keys.filter((key) => key.startsWith(STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX)));
       break;
     default:
       debugLog('Not on a supported financial institution site');
@@ -876,30 +885,32 @@ export function getMinRetentionForInstitution(institutionType) {
 }
 
 /**
- * Gets the current lookback period for an institution
+ * Gets the current lookback period for an institution.
+ * For Wealthsimple, reads from configStore first, falls back to legacy key.
  * @param {string} institutionType - Institution type
  * @returns {number} Current lookback days
  */
 export function getLookbackForInstitution(institutionType) {
-  let lookbackKey;
-  switch (institutionType) {
-  case 'questrade':
-    lookbackKey = STORAGE.QUESTRADE_LOOKBACK_DAYS;
-    break;
-  case 'canadalife':
-    lookbackKey = STORAGE.CANADALIFE_LOOKBACK_DAYS;
-    break;
-  case 'rogersbank':
-    lookbackKey = STORAGE.ROGERSBANK_LOOKBACK_DAYS;
-    break;
-  case 'wealthsimple':
-    lookbackKey = STORAGE.WEALTHSIMPLE_LOOKBACK_DAYS;
-    break;
-  default:
-    return 0;
+  const defaultLookback = getDefaultLookbackDays(institutionType);
+
+  // For migrated integrations, try configStore first
+  const integrationMap = {
+    wealthsimple: { id: INTEGRATIONS.WEALTHSIMPLE, legacyKey: STORAGE.WEALTHSIMPLE_LOOKBACK_DAYS },
+    rogersbank: { id: INTEGRATIONS.ROGERSBANK, legacyKey: STORAGE.ROGERSBANK_LOOKBACK_DAYS },
+    questrade: { id: INTEGRATIONS.QUESTRADE, legacyKey: STORAGE.QUESTRADE_LOOKBACK_DAYS },
+    canadalife: { id: INTEGRATIONS.CANADALIFE, legacyKey: STORAGE.CANADALIFE_LOOKBACK_DAYS },
+  };
+
+  const mapped = integrationMap[institutionType];
+  if (mapped) {
+    const configValue = getSetting(mapped.id, 'lookbackDays', undefined);
+    if (configValue !== undefined) {
+      return configValue;
+    }
+    return GM_getValue(mapped.legacyKey, defaultLookback);
   }
 
-  return GM_getValue(lookbackKey, getDefaultLookbackDays(institutionType));
+  return 0;
 }
 
 // Default export with all utility functions

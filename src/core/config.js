@@ -38,13 +38,17 @@ export const STORAGE = {
   WEALTHSIMPLE_ACCOUNTS_LIST: 'wealthsimple_accounts_list',
   ROGERSBANK_ACCOUNTS_LIST: 'rogersbank_accounts_list',
   CANADALIFE_ACCOUNTS_LIST: 'canadalife_accounts_list',
+  // Consolidated per-integration config (auth, settings, category mappings, holdings mappings)
+  WEALTHSIMPLE_CONFIG: 'wealthsimple_config',
+  QUESTRADE_CONFIG: 'questrade_config',
+  CANADALIFE_CONFIG: 'canadalife_config',
+  ROGERSBANK_CONFIG: 'rogersbank_config',
   // Questrade specific storage keys
   QUESTRADE_ACCOUNTS_CACHE: 'questrade_accounts_cache', // DEPRECATED - legacy cache, cleaned up after first API fetch
   QUESTRADE_LAST_UPLOAD_DATE_PREFIX: 'questrade_last_upload_date_',
   QUESTRADE_ACCOUNT_MAPPING_PREFIX: 'questrade_monarch_account_for_',
   QUESTRADE_HOLDINGS_FOR_PREFIX: 'questrade_holdings_for_',
   QUESTRADE_UPLOADED_ORDERS_PREFIX: 'questrade_uploaded_orders_', // LEGACY - now uses consolidated storage in questrade_accounts_list[].uploadedTransactions
-  QUESTRADE_ORDER_CATEGORY_MAPPINGS: 'questrade_order_category_mappings', // Store order action to Monarch category mappings
   // CanadaLife specific storage keys
   CANADALIFE_TOKEN_KEY: '$AuraClientService.token$siteforce:communityApp',
   CANADALIFE_LAST_UPLOAD_DATE_PREFIX: 'canadalife_last_upload_date_',
@@ -59,7 +63,6 @@ export const STORAGE = {
   ROGERSBANK_LAST_UPDATED: 'rogersbank_last_updated',
   ROGERSBANK_LAST_UPLOAD_DATE_PREFIX: 'rogersbank_last_upload_date_',
   ROGERSBANK_ACCOUNT_MAPPING_PREFIX: 'rogersbank_monarch_account_for_',
-  ROGERSBANK_FROM_DATE: 'rogersbank_from_date',
   ROGERSBANK_UPLOADED_REFS_PREFIX: 'rogersbank_uploaded_refs_', // Store uploaded transaction reference numbers
   ROGERSBANK_CATEGORY_MAPPINGS: 'rogersbank_category_mappings', // Store bank category to Monarch category mappings
   ROGERSBANK_LAST_CREDIT_LIMIT_PREFIX: 'rogersbank_last_credit_limit_', // Store last synced credit limit per account

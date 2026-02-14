@@ -33,6 +33,14 @@ jest.mock('../../src/core/config', () => ({
   STORAGE: {
     ROGERSBANK_CATEGORY_MAPPINGS: 'rogersbank_category_mappings',
     WEALTHSIMPLE_CATEGORY_MAPPINGS: 'wealthsimple_category_mappings',
+    WEALTHSIMPLE_CONFIG: 'wealthsimple_config',
+    QUESTRADE_CONFIG: 'questrade_config',
+    CANADALIFE_CONFIG: 'canadalife_config',
+    ROGERSBANK_CONFIG: 'rogersbank_config',
+  },
+  TRANSACTION_RETENTION_DEFAULTS: {
+    DAYS: 91,
+    COUNT: 1000,
   },
 }));
 
@@ -175,7 +183,12 @@ describe('Category Mapper', () => {
 
       saveUserCategorySelection('New Category', 'Shopping');
 
-      const savedData = JSON.parse(globalThis.GM_setValue.mock.calls[0][1]);
+      // Dual-write: first call is configStore (rogersbank_config), second is legacy key
+      const legacyCall = globalThis.GM_setValue.mock.calls.find(
+        (call) => call[0] === 'rogersbank_category_mappings',
+      );
+      expect(legacyCall).toBeTruthy();
+      const savedData = JSON.parse(legacyCall[1]);
       expect(savedData).toEqual({
         EXISTING: 'Old Category',
         'NEW CATEGORY': 'Shopping',
@@ -595,7 +608,13 @@ describe('Category Mapper', () => {
 
         saveUserWealthsimpleCategorySelection('New Merchant', 'Shopping');
 
-        const savedData = JSON.parse(globalThis.GM_setValue.mock.calls[0][1]);
+        // Dual-write: first call is configStore (wealthsimple_config), second is legacy key
+        // Find the legacy write to wealthsimple_category_mappings
+        const legacyCall = globalThis.GM_setValue.mock.calls.find(
+          (call) => call[0] === 'wealthsimple_category_mappings',
+        );
+        expect(legacyCall).toBeTruthy();
+        const savedData = JSON.parse(legacyCall[1]);
         expect(savedData).toEqual({
           EXISTING: 'Old Category',
           'NEW MERCHANT': 'Shopping',

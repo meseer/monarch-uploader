@@ -3,8 +3,7 @@
  * Handles uploading Wealthsimple account data to Monarch
  */
 
-import { debugLog, getDefaultLookbackDays, getTodayLocal } from '../core/utils';
-import { STORAGE } from '../core/config';
+import { debugLog, getLookbackForInstitution, getTodayLocal } from '../core/utils';
 import toast from '../ui/toast';
 import wealthsimpleApi from '../api/wealthsimple';
 import {
@@ -48,7 +47,7 @@ async function createBalanceCheckpoint(accountId, fromDate, toDate) {
     }
 
     const account = accountData.wealthsimpleAccount;
-    const lookbackDays = GM_getValue(STORAGE.WEALTHSIMPLE_LOOKBACK_DAYS, getDefaultLookbackDays('wealthsimple'));
+    const lookbackDays = getLookbackForInstitution('wealthsimple');
 
     // Calculate checkpoint date: toDate - lookbackDays
     const checkpointDate = calculateCheckpointDate(toDate, lookbackDays, account.createdAt);
@@ -115,7 +114,7 @@ async function updateBalanceCheckpoint(accountId, toDate, _currentBalance) {
       return false;
     }
 
-    const lookbackDays = GM_getValue(STORAGE.WEALTHSIMPLE_LOOKBACK_DAYS, getDefaultLookbackDays('wealthsimple'));
+    const lookbackDays = getLookbackForInstitution('wealthsimple');
 
     // Calculate new checkpoint date: toDate - lookbackDays
     const newCheckpointDate = calculateCheckpointDate(toDate, lookbackDays, account.createdAt);
@@ -776,7 +775,7 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
 
       try {
         // Get lookback days from settings
-        const lookbackDays = GM_getValue(STORAGE.WEALTHSIMPLE_LOOKBACK_DAYS, getDefaultLookbackDays('wealthsimple'));
+        const lookbackDays = getLookbackForInstitution('wealthsimple');
 
         // Run pending transaction reconciliation
         // Pass account type so reconciliation can handle different status fields

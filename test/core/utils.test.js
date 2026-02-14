@@ -767,9 +767,9 @@ describe('Utility Functions', () => {
 
       await clearLastUploadedDate(mockLoc);
 
-      expect(global.GM_deleteValue).toHaveBeenCalledTimes(2);
+      // Only rogersbank_last_upload_date_* keys are cleared; rogersbank_from_date was dead code and removed
+      expect(global.GM_deleteValue).toHaveBeenCalledTimes(1);
       expect(global.GM_deleteValue).toHaveBeenCalledWith('rogersbank_last_upload_date_acc1');
-      expect(global.GM_deleteValue).toHaveBeenCalledWith('rogersbank_from_date');
     });
 
     it('should handle unsupported institutions', async () => {

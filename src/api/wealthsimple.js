@@ -5,6 +5,8 @@
 
 import { debugLog, formatDate } from '../core/utils';
 import { STORAGE, API } from '../core/config';
+import { INTEGRATIONS } from '../core/integrationCapabilities';
+import { getAuth, setAuth, clearAuth as clearConfigAuth } from '../services/common/configStore';
 import stateManager from '../core/state';
 import { getAccountTypeDisplayName } from '../mappers/wealthsimple-account-types';
 import { fetchBalanceHistory, fetchIdentityPositions } from './wealthsimplePositions';
@@ -58,10 +60,26 @@ function parseOAuthCookie() {
 
 /**
  * Save Wealthsimple token data to storage
+ * Writes to configStore (primary) and legacy keys (backward compatibility)
  * @param {Object} tokenData - Token data to save
  */
 function saveTokenData(tokenData) {
   if (tokenData) {
+    // Write to configStore (primary)
+    const authData = {
+      accessToken: tokenData.accessToken,
+      identityId: tokenData.identityId,
+      expiresAt: tokenData.expiresAt,
+    };
+    if (tokenData.investProfile) {
+      authData.investProfile = tokenData.investProfile;
+    }
+    if (tokenData.tradeProfile) {
+      authData.tradeProfile = tokenData.tradeProfile;
+    }
+    setAuth(INTEGRATIONS.WEALTHSIMPLE, authData);
+
+    // Write to legacy keys (backward compatibility during migration)
     GM_setValue(STORAGE.WEALTHSIMPLE_ACCESS_TOKEN, tokenData.accessToken);
     GM_setValue(STORAGE.WEALTHSIMPLE_IDENTITY_ID, tokenData.identityId);
     GM_setValue(STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT, tokenData.expiresAt);
@@ -93,8 +111,13 @@ function saveTokenData(tokenData) {
 
 /**
  * Clear all Wealthsimple token data from storage
+ * Clears from both configStore (primary) and legacy keys
  */
 function clearTokenData() {
+  // Clear from configStore
+  clearConfigAuth(INTEGRATIONS.WEALTHSIMPLE);
+
+  // Clear legacy keys
   GM_deleteValue(STORAGE.WEALTHSIMPLE_ACCESS_TOKEN);
   GM_deleteValue(STORAGE.WEALTHSIMPLE_IDENTITY_ID);
   GM_deleteValue(STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT);
@@ -109,9 +132,23 @@ function clearTokenData() {
 
 /**
  * Get stored Wealthsimple token data
+ * Reads from configStore first, falls back to legacy keys
  * @returns {Object|null} Token data or null
  */
 function getStoredTokenData() {
+  // Try configStore first
+  const configAuth = getAuth(INTEGRATIONS.WEALTHSIMPLE);
+  if (configAuth.accessToken && configAuth.identityId) {
+    return {
+      accessToken: configAuth.accessToken,
+      identityId: configAuth.identityId,
+      expiresAt: configAuth.expiresAt,
+      investProfile: configAuth.investProfile || null,
+      tradeProfile: configAuth.tradeProfile || null,
+    };
+  }
+
+  // Fall back to legacy keys
   const accessToken = GM_getValue(STORAGE.WEALTHSIMPLE_ACCESS_TOKEN);
   const identityId = GM_getValue(STORAGE.WEALTHSIMPLE_IDENTITY_ID);
   const expiresAt = GM_getValue(STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT);

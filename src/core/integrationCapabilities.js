@@ -69,6 +69,7 @@ export const INTEGRATION_CAPABILITIES = {
     id: INTEGRATIONS.WEALTHSIMPLE,
     displayName: 'Wealthsimple',
     accountKeyName: 'wealthsimpleAccount',
+    configStorageKey: STORAGE.WEALTHSIMPLE_CONFIG,
     hasTransactions: true,
     hasDeduplication: true,
     hasBalanceHistory: true,
@@ -100,6 +101,7 @@ export const INTEGRATION_CAPABILITIES = {
     id: INTEGRATIONS.QUESTRADE,
     displayName: 'Questrade',
     accountKeyName: 'questradeAccount',
+    configStorageKey: STORAGE.QUESTRADE_CONFIG,
     hasTransactions: true, // Order transactions
     hasDeduplication: true,
     hasBalanceHistory: true,
@@ -127,6 +129,7 @@ export const INTEGRATION_CAPABILITIES = {
     id: INTEGRATIONS.CANADALIFE,
     displayName: 'Canada Life',
     accountKeyName: 'canadalifeAccount',
+    configStorageKey: STORAGE.CANADALIFE_CONFIG,
     hasTransactions: true, // Supports activity/transaction upload
     hasDeduplication: true, // Uses hash-based transaction IDs for deduplication
     hasBalanceHistory: true,
@@ -150,6 +153,7 @@ export const INTEGRATION_CAPABILITIES = {
     id: INTEGRATIONS.ROGERSBANK,
     displayName: 'Rogers Bank',
     accountKeyName: 'rogersbankAccount',
+    configStorageKey: STORAGE.ROGERSBANK_CONFIG,
     hasTransactions: true,
     hasDeduplication: true,
     hasBalanceHistory: true,

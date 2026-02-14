@@ -21,6 +21,14 @@ jest.mock('../../src/core/config', () => ({
     ROGERSBANK_CUSTOMER_ID_ENCODED: 'rogersbank_customer_id_encoded',
     ROGERSBANK_DEVICE_ID: 'rogersbank_device_id',
     ROGERSBANK_LAST_UPDATED: 'rogersbank_last_updated',
+    ROGERSBANK_CONFIG: 'rogersbank_config',
+    WEALTHSIMPLE_CONFIG: 'wealthsimple_config',
+    QUESTRADE_CONFIG: 'questrade_config',
+    CANADALIFE_CONFIG: 'canadalife_config',
+  },
+  TRANSACTION_RETENTION_DEFAULTS: {
+    DAYS: 91,
+    COUNT: 1000,
   },
 }));
 
@@ -39,6 +47,21 @@ jest.mock('../../src/ui/toast', () => ({
   __esModule: true,
   default: {
     show: jest.fn(),
+  },
+}));
+
+jest.mock('../../src/services/common/configStore', () => ({
+  getAuth: jest.fn(() => ({})),
+  setAuth: jest.fn(),
+  clearAuth: jest.fn(),
+}));
+
+jest.mock('../../src/core/integrationCapabilities', () => ({
+  INTEGRATIONS: {
+    WEALTHSIMPLE: 'wealthsimple',
+    QUESTRADE: 'questrade',
+    CANADALIFE: 'canadalife',
+    ROGERSBANK: 'rogersbank',
   },
 }));
 

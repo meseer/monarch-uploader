@@ -3,14 +3,13 @@
  * Common UI components and utilities used across settings modal tabs
  */
 
-import { debugLog, getDefaultLookbackDays, validateLookbackVsRetention, getMinRetentionForInstitution } from '../../core/utils';
+import { debugLog, getDefaultLookbackDays, validateLookbackVsRetention, getMinRetentionForInstitution, getLookbackForInstitution } from '../../core/utils';
 import { STORAGE } from '../../core/config';
+import { INTEGRATIONS, getCategoryMappingsConfig } from '../../core/integrationCapabilities';
+import { getAuth, setSetting } from '../../services/common/configStore';
 import { checkMonarchAuth } from '../../services/auth';
 import { checkQuestradeAuth } from '../../services/questrade/auth';
 import toast from '../toast';
-import {
-  getCategoryMappingsConfig,
-} from '../../core/integrationCapabilities';
 import accountService from '../../services/common/accountService';
 import { getMonarchAccountTypeMapping } from '../../mappers/wealthsimple-account-types';
 
@@ -31,12 +30,18 @@ export function checkInstitutionConnection(institutionId) {
     } catch (error) {
       return false;
     }
-  case 'rogersbank':
-    // Check for Rogers Bank auth token
+  case 'rogersbank': {
+    // Check configStore first, then legacy key
+    const rbAuth = getAuth(INTEGRATIONS.ROGERSBANK);
+    if (rbAuth.authToken) return true;
     return Boolean(GM_getValue(STORAGE.ROGERSBANK_AUTH_TOKEN));
-  case 'wealthsimple':
-    // Check for Wealthsimple auth token
+  }
+  case 'wealthsimple': {
+    // Check configStore first, then legacy key
+    const wsAuth = getAuth(INTEGRATIONS.WEALTHSIMPLE);
+    if (wsAuth.accessToken) return true;
     return Boolean(GM_getValue(STORAGE.WEALTHSIMPLE_ACCESS_TOKEN));
+  }
   case 'monarch':
     return checkMonarchAuth().authenticated;
   default:
@@ -102,9 +107,9 @@ export function createLookbackPeriodSection(institutionType) {
     return section;
   }
 
-  // Load current value or default
+  // Load current value or default (uses configStore for Wealthsimple)
   const defaultLookback = getDefaultLookbackDays(institutionType);
-  const currentValue = GM_getValue(storageKey, defaultLookback);
+  const currentValue = getLookbackForInstitution(institutionType);
   input.value = currentValue;
 
   const daysLabel = document.createElement('span');
@@ -139,6 +144,24 @@ export function createLookbackPeriodSection(institutionType) {
     • Range: 0-30 days (0 means start exactly from the last upload date)
   `;
 
+  /**
+   * Save lookback value to storage (configStore for Wealthsimple, legacy key for others)
+   * @param {number} value - Lookback days value
+   */
+  const saveLookbackValue = (value) => {
+    if (institutionType === 'wealthsimple') {
+      setSetting(INTEGRATIONS.WEALTHSIMPLE, 'lookbackDays', value);
+    } else if (institutionType === 'rogersbank') {
+      setSetting(INTEGRATIONS.ROGERSBANK, 'lookbackDays', value);
+    } else if (institutionType === 'questrade') {
+      setSetting(INTEGRATIONS.QUESTRADE, 'lookbackDays', value);
+    } else if (institutionType === 'canadalife') {
+      setSetting(INTEGRATIONS.CANADALIFE, 'lookbackDays', value);
+    }
+    // Write to legacy key (all integrations for backward compat)
+    GM_setValue(storageKey, value);
+  };
+
   // Save changes
   const saveChanges = () => {
     const value = parseInt(input.value, 10);
@@ -157,7 +180,7 @@ export function createLookbackPeriodSection(institutionType) {
       return;
     }
 
-    GM_setValue(storageKey, value);
+    saveLookbackValue(value);
     toast.show(`${institutionName} lookback period set to ${value} day${value !== 1 ? 's' : ''}`, 'info');
     debugLog(`${institutionName} lookback period updated to: ${value} days`);
   };
@@ -173,7 +196,7 @@ export function createLookbackPeriodSection(institutionType) {
     }
 
     input.value = defaultLookback;
-    GM_setValue(storageKey, defaultLookback);
+    saveLookbackValue(defaultLookback);
     toast.show(`${institutionName} lookback period reset to default (${defaultLookback} day${defaultLookback !== 1 ? 's' : ''})`, 'info');
   });
 
