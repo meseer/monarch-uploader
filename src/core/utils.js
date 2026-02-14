@@ -232,18 +232,7 @@ export function getLastUpdateDate(accountId, institutionType) {
     }
   }
 
-  // Fall back to legacy storage keys only for Rogers Bank (still dual-writing)
-  // Questrade and Canada Life have completed migration to consolidated storage
-  if (institutionType === 'rogersbank') {
-    const storageKey = STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX + accountId;
-    const legacyDate = GM_getValue(storageKey, null);
-    if (legacyDate) {
-      debugLog(`getLastUpdateDate: Found legacy storage date for rogersbank/${accountId}: ${legacyDate}`);
-    }
-    return legacyDate;
-  }
-
-  if (institutionType !== 'questrade' && institutionType !== 'canadalife' && institutionType !== 'wealthsimple') {
+  if (institutionType !== 'questrade' && institutionType !== 'canadalife' && institutionType !== 'wealthsimple' && institutionType !== 'rogersbank') {
     debugLog(`Unknown institution type: ${institutionType}`);
   }
   return null;
@@ -263,10 +252,8 @@ export function calculateFromDateWithLookback(institutionType, accountId) {
     return null;
   }
 
-  // Get configurable lookback period or use default
-  const lookbackStorageKey = `${institutionType}_lookback_days`;
-  const defaultLookback = getDefaultLookbackDays(institutionType);
-  const lookbackDays = GM_getValue(lookbackStorageKey, defaultLookback);
+  // Get configurable lookback period from configStore (with legacy migrate-on-read)
+  const lookbackDays = getLookbackForInstitution(institutionType);
 
   debugLog(`Calculating from date for ${institutionType} account ${accountId}: lastUploadDate=${lastUploadDate}, lookback=${lookbackDays} days`);
 
@@ -297,26 +284,6 @@ export function saveLastUploadDate(accountId, uploadDate, institutionType) {
       debugLog(`saveLastUploadDate: Account ${accountId} not found in consolidated storage for ${institutionType}, will create on next sync`);
     }
   }
-
-  // Also save to legacy keys for backward compatibility (will be cleaned up after successful sync)
-  // Note: Questrade and Canada Life have completed migration to consolidated storage
-  let storageKey;
-
-  switch (institutionType) {
-  case 'rogersbank':
-    storageKey = STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX + accountId;
-    break;
-  case 'questrade':
-  case 'canadalife':
-    // Questrade and Canada Life use consolidated storage only - no legacy key needed
-    return;
-  default:
-    debugLog(`Unknown institution type: ${institutionType}, cannot save last upload date`);
-    return;
-  }
-
-  GM_setValue(storageKey, uploadDate);
-  debugLog(`saveLastUploadDate: Also saved to legacy key ${storageKey} for backward compatibility`);
 }
 /**
  * Extracts domain from a URL
@@ -902,8 +869,10 @@ export function getLookbackForInstitution(institutionType) {
     // Migrate-on-read: if legacy key has a value, migrate it to configStore
     const legacyValue = GM_getValue(mapped.legacyKey, undefined);
     if (legacyValue !== undefined) {
-      debugLog(`getLookbackForInstitution: Migrating legacy lookback for ${institutionType}: ${legacyValue} ’ configStore`);
+      debugLog(`getLookbackForInstitution: Migrating legacy lookback for ${institutionType}: ${legacyValue} -> configStore`);
       setSetting(mapped.id, 'lookbackDays', legacyValue);
+      GM_deleteValue(mapped.legacyKey);
+      debugLog(`getLookbackForInstitution: Deleted legacy key ${mapped.legacyKey}`);
       return legacyValue;
     }
 

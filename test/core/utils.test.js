@@ -460,11 +460,16 @@ describe('Utility Functions', () => {
       expect(global.GM_getValue).not.toHaveBeenCalledWith('canadalife_last_upload_date_acc1', null);
     });
 
-    it('should fall back to legacy key for rogersbank (still dual-writing)', () => {
-      global.GM_getValue.mockReturnValue('2024-01-20');
+    it('should return null for rogersbank when not in consolidated storage', () => {
+      const result = getLastUpdateDate('acc2', 'rogersbank');
+      expect(result).toBeNull();
+    });
+
+    it('should return date from consolidated storage for rogersbank', () => {
+      const accountService = require('../../src/services/common/accountService').default;
+      accountService.getAccountData.mockReturnValueOnce({ lastSyncDate: '2024-01-20' });
       const result = getLastUpdateDate('acc2', 'rogersbank');
       expect(result).toBe('2024-01-20');
-      expect(global.GM_getValue).toHaveBeenCalledWith('rogersbank_last_upload_date_acc2', null);
     });
   });
 
@@ -480,11 +485,11 @@ describe('Utility Functions', () => {
       const accountService = require('../../src/services/common/accountService').default;
       accountService.getAccountData.mockReturnValueOnce({ lastSyncDate: '2024-01-15' });
 
-      // Mock lookback via legacy key (calculateFromDateWithLookback uses GM_getValue directly)
-      global.GM_getValue.mockImplementation((key, defaultValue) => {
-        if (key === 'questrade_lookback_days') return 3;
-        if (key === 'debug_log_level') return 'info';
-        return defaultValue;
+      // Mock lookback via configStore (getLookbackForInstitution reads from configStore)
+      const { getSetting } = require('../../src/services/common/configStore');
+      getSetting.mockImplementation((id, setting, defaultVal) => {
+        if (id === 'questrade' && setting === 'lookbackDays') return 3;
+        return defaultVal;
       });
 
       const result = calculateFromDateWithLookback('questrade', 'account123');
@@ -496,11 +501,10 @@ describe('Utility Functions', () => {
       const accountService = require('../../src/services/common/accountService').default;
       accountService.getAccountData.mockReturnValueOnce({ lastSyncDate: '2024-01-15' });
 
-      global.GM_getValue.mockImplementation((key, defaultValue) => {
-        if (key === 'questrade_lookback_days') return 0; // Use default for questrade (0 days)
-        if (key === 'debug_log_level') return 'info';
-        return defaultValue;
-      });
+      // configStore returns undefined ’ getLookbackForInstitution falls through to default
+      const { getSetting: getSetting2 } = require('../../src/services/common/configStore');
+      getSetting2.mockImplementation(() => undefined);
+      global.GM_getValue.mockImplementation((key, defaultValue) => defaultValue);
 
       const result = calculateFromDateWithLookback('questrade', 'account123');
       expect(result).toBe('2024-01-15'); // questrade default is 0 days
@@ -515,10 +519,11 @@ describe('Utility Functions', () => {
       expect(global.GM_setValue).not.toHaveBeenCalled();
     });
 
-    it('should save date to legacy storage for rogersbank (still dual-writing)', () => {
+    it('should NOT save to legacy storage for rogersbank (uses consolidated storage only)', () => {
       global.GM_setValue.mockClear();
       saveLastUploadDate('account789', '2024-01-17', 'rogersbank');
-      expect(global.GM_setValue).toHaveBeenCalledWith('rogersbank_last_upload_date_account789', '2024-01-17');
+      // Rogers Bank has completed migration - no legacy key should be written
+      expect(global.GM_setValue).not.toHaveBeenCalled();
     });
 
     it('should NOT save to legacy storage for canadalife (uses consolidated storage only)', () => {
