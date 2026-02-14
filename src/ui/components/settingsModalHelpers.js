@@ -191,10 +191,19 @@ export function createLookbackPeriodSection(institutionType) {
     toast.show(`${institutionName} lookback period reset to default (${defaultLookback} day${defaultLookback !== 1 ? 's' : ''})`, 'info');
   });
 
-  // Save on blur or enter
-  input.addEventListener('blur', saveChanges);
+  // Save on blur, enter, or spinner button clicks (debounced input event)
+  let saveTimeout;
+  input.addEventListener('input', () => {
+    clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(saveChanges, 500);
+  });
+  input.addEventListener('blur', () => {
+    clearTimeout(saveTimeout);
+    saveChanges();
+  });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
+      clearTimeout(saveTimeout);
       saveChanges();
       input.blur();
     }

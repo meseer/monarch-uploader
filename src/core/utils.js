@@ -876,6 +876,8 @@ export function getLookbackForInstitution(institutionType) {
       return legacyValue;
     }
 
+    // No configStore or legacy value found  save default to configStore so the key is created
+    setSetting(mapped.id, 'lookbackDays', defaultLookback);
     return defaultLookback;
   }
 
