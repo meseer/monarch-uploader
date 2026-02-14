@@ -61,11 +61,6 @@ export const STORAGE = {
   ROGERSBANK_BALANCE_CHECKPOINT_PREFIX: 'rogersbank_balance_checkpoint_', // Store balance checkpoint for reconstruction
   // Lookback period storage keys (days to look back from last upload date)
   ROGERSBANK_LOOKBACK_DAYS: 'rogersbank_lookback_days',
-  // Transaction retention settings (separate from lookback - for deduplication)
-  QUESTRADE_TRANSACTION_RETENTION_DAYS: 'questrade_transaction_retention_days',
-  QUESTRADE_TRANSACTION_RETENTION_COUNT: 'questrade_transaction_retention_count',
-  ROGERSBANK_TRANSACTION_RETENTION_DAYS: 'rogersbank_transaction_retention_days',
-  ROGERSBANK_TRANSACTION_RETENTION_COUNT: 'rogersbank_transaction_retention_count',
 };
 
 // Transaction retention defaults (for deduplication storage)

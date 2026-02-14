@@ -17,8 +17,6 @@ jest.mock('../../src/core/config', () => ({
     ROGERSBANK_CUSTOMER_ID_ENCODED: 'rogersbank_customer_id_encoded',
     ROGERSBANK_DEVICE_ID: 'rogersbank_device_id',
     ROGERSBANK_LAST_UPDATED: 'rogersbank_last_updated',
-    ROGERSBANK_TRANSACTION_RETENTION_DAYS: 'rogersbank_transaction_retention_days',
-    ROGERSBANK_TRANSACTION_RETENTION_COUNT: 'rogersbank_transaction_retention_count',
     ROGERSBANK_ACCOUNTS_LIST: 'rogersbank_accounts_list',
     ROGERSBANK_LAST_CREDIT_LIMIT_PREFIX: 'rogersbank_last_credit_limit_',
     ROGERSBANK_BALANCE_CHECKPOINT_PREFIX: 'rogersbank_balance_checkpoint_',

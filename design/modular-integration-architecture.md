@@ -390,68 +390,87 @@ Holdings mappings move from per-account to institution-level (same security mapp
 
 ## 5.1 Storage Migration Status
 
-**Last updated: v5.85.2**
+**Last updated: v5.85.3**
 
-### Completed Migrations
+### Current State Summary
 
-| Integration | configStore | accounts_list | Legacy Prefix Keys | Legacy Migration Code |
-|---|:---:|:---:|:---:|:---:|
-| **Wealthsimple** | ✅ `wealthsimple_config` | ✅ `wealthsimple_accounts_list` | ✅ Removed (v5.85.0) | ✅ Removed (v5.85.0) |
-| **Questrade** | ✅ `questrade_config` | ✅ `questrade_accounts_list` | ✅ Removed (v5.85.1) | ✅ Removed (v5.85.0) |
-| **Canada Life** | ✅ `canadalife_config` | ✅ `canadalife_accounts_list` | ✅ Removed (v5.85.1) | ✅ Removed (v5.85.0) |
-| **Rogers Bank** | ✅ `rogersbank_config` | ✅ `rogersbank_accounts_list` | ⏳ Still has legacy prefix keys | ⏳ Active migration path |
+All four integrations use consolidated storage (`{integration}_config` + `{integration}_accounts_list`). **No integration dual-writes to legacy keys** — all write paths go exclusively to consolidated/configStore. Rogers Bank is the only integration that still has legacy **read** fallbacks and migration code.
 
-### Rogers Bank — Remaining Legacy Work
+### Migration Completion by Integration
 
-Rogers Bank is the **only integration** that still has:
-- **Legacy prefix keys** in `config.js`: `ROGERSBANK_ACCOUNT_MAPPING_PREFIX`, `ROGERSBANK_LAST_UPLOAD_DATE_PREFIX`, `ROGERSBANK_UPLOADED_REFS_PREFIX`, etc.
-- **Active legacy migration path** in `accountService.js` (`LEGACY_MAPPING_PREFIXES`, `LEGACY_LAST_UPLOAD_PREFIXES`, `LEGACY_UPLOADED_TRANSACTIONS_PREFIXES`)
-- **Cleanup code** in `accountService.cleanupLegacyStorage()` for Rogers Bank-specific keys
-- **Legacy key deletion** in `utils.js` (`clearAccountMapping`, `clearLastUploadedDate`) for Rogers Bank only
+| Integration | configStore | accounts_list | Legacy Keys in config.js | Legacy Read Fallbacks | Migration Code |
+|---|:---:|:---:|:---:|:---:|:---:|
+| **Wealthsimple** | ✅ | ✅ | ✅ None | ✅ None | ✅ Removed |
+| **Questrade** | ✅ | ✅ | ✅ None | ✅ None | ✅ Removed |
+| **Canada Life** | ✅ | ✅ | ✅ None | ✅ None | ✅ Removed |
+| **Rogers Bank** | ✅ | ✅ | ⏳ 14 legacy keys remain | ⏳ 3 migration paths active | ⏳ Active |
 
-### What Was Removed in v5.85.0–v5.85.1
+### Rogers Bank — Remaining Legacy Key Inventory
 
-**v5.85.0** — Removed all legacy migration logic and eager migration code for Wealthsimple, Questrade, and Canada Life:
-- Refactored `src/services/common/legacyMigration.js` to Rogers Bank only (removed WS/QT/CL eager migration)
-- Removed WS/QT/CL migration paths from `accountService.js` (set prefixes to `null`)
-- Removed legacy auth key cleanup for WS/QT/CL from `configStore.js`
+#### Per-Account Prefix Keys (in `config.js`)
 
-**v5.85.1** — Cleaned up remaining dead code references for Questrade and Canada Life:
-- Removed 6 dead prefix key constants from `config.js` (`QUESTRADE_LAST_UPLOAD_DATE_PREFIX`, `QUESTRADE_ACCOUNT_MAPPING_PREFIX`, `QUESTRADE_HOLDINGS_FOR_PREFIX`, `QUESTRADE_UPLOADED_ORDERS_PREFIX`, `CANADALIFE_LAST_UPLOAD_DATE_PREFIX`, `CANADALIFE_ACCOUNT_MAPPING_PREFIX`)
-- Removed unused `storagePrefix` property from settings modal tab definitions
-- Removed QT/CL cases from `utils.js` cleanup functions (`clearAccountMapping`, `clearLastUploadedDate`)
-- Removed QT/CL/WS `null` entries from `accountService.js` legacy prefix maps (Rogers Bank only remains)
-- Removed QT-specific holdings cleanup block from `accountService.cleanupLegacyStorage()`
-- Removed legacy holdings merge-on-read code from `accountService.getAccounts()`
+Used by `accountService.js` for lazy migrate-on-read and `cleanupLegacyStorage()`:
 
-**v5.85.2** — Cleaned up dead code, test mocks, and configuration inconsistencies:
-- Removed dead `ROGERSBANK_STORE_TX_DETAILS_IN_NOTES` storage key from `config.js` (defined but never used)
-- Fixed `categoryMappingsStorageKey` inconsistency for Rogers Bank in `integrationCapabilities.js`: changed from legacy `STORAGE.ROGERSBANK_CATEGORY_MAPPINGS` to `STORAGE.ROGERSBANK_CONFIG` (consistent with configStore pattern used by Wealthsimple)
-- Cleaned stale QT/CL legacy prefix key references from 5 test files:
-  - `test/ui/settingsModal.structure.test.js` — removed dead STORAGE mock keys
-  - `test/ui/settingsModal.features.test.js` — removed dead STORAGE mock keys
-  - `test/services/canadalife-upload.test.js` — removed `CANADALIFE_ACCOUNT_MAPPING_PREFIX` from mock
-  - `test/services/questrade/positions.test.js` — removed `QUESTRADE_HOLDINGS_FOR_PREFIX` from mock
-  - `test/services/common/accountService.test.js` — removed all stale QT/CL `GM_setValue` calls using undefined prefix keys, updated comments to reference v5.85.0 removal
+| Key Constant | Value Pattern | Read By | Migrated By |
+|---|---|---|---|
+| `ROGERSBANK_ACCOUNT_MAPPING_PREFIX` | `rogersbank_monarch_account_for_{id}` | `accountService.getMonarchAccountMapping()` | `accountService.migrateFromLegacyStorage()` |
+| `ROGERSBANK_LAST_UPLOAD_DATE_PREFIX` | `rogersbank_last_upload_date_{id}` | `accountService.migrateFromLegacyStorage()` | `accountService.migrateFromLegacyStorage()` |
+| `ROGERSBANK_UPLOADED_REFS_PREFIX` | `rogersbank_uploaded_refs_{id}` | `accountService.getAccounts()` (merge) | `accountService.getAccounts()` (merge) |
+| `ROGERSBANK_LAST_CREDIT_LIMIT_PREFIX` | `rogersbank_last_credit_limit_{id}` | `accountService.cleanupLegacyStorage()` | N/A (cleanup only) |
+| `ROGERSBANK_BALANCE_CHECKPOINT_PREFIX` | `rogersbank_balance_checkpoint_{id}` | `accountService.cleanupLegacyStorage()` | N/A (cleanup only) |
 
-### Remaining Complexity: Rogers Bank Duplicate Migration Paths
+#### Global Legacy Keys (in `config.js`)
 
-Rogers Bank currently has **three migration paths** that coexist:
-1. **Eager migration** in `src/services/common/legacyMigration.js` — runs at script load, migrates auth, lookback days, and category mappings to configStore
-2. **Lazy migrate-on-read** in `accountService.js` — migrates account mappings, upload dates, and transaction refs when `getAccounts()` is called
-3. **Inline lazy migration** scattered across `api/rogersbank.js`, `utils.js`, `mappers/category.js` — reads from legacy keys as fallback
+Migrated by both eager and inline lazy paths:
 
-These duplicate paths are functional but should eventually be unified into a single migration strategy.
+| Key Constant | Value | Read By | Migrated By (Eager) | Migrated By (Inline Lazy) |
+|---|---|---|---|---|
+| `ROGERSBANK_AUTH_TOKEN` | `rogersbank_auth_token` | — | `legacyMigration.migrateRogersBankAuth()` | `api/rogersbank.getRogersBankCredentials()` |
+| `ROGERSBANK_ACCOUNT_ID` | `rogersbank_account_id` | — | `legacyMigration.migrateRogersBankAuth()` | `api/rogersbank.getRogersBankCredentials()` |
+| `ROGERSBANK_CUSTOMER_ID` | `rogersbank_customer_id` | — | `legacyMigration.migrateRogersBankAuth()` | `api/rogersbank.getRogersBankCredentials()` |
+| `ROGERSBANK_ACCOUNT_ID_ENCODED` | `rogersbank_account_id_encoded` | — | `legacyMigration.migrateRogersBankAuth()` | `api/rogersbank.getRogersBankCredentials()` |
+| `ROGERSBANK_CUSTOMER_ID_ENCODED` | `rogersbank_customer_id_encoded` | — | `legacyMigration.migrateRogersBankAuth()` | `api/rogersbank.getRogersBankCredentials()` |
+| `ROGERSBANK_DEVICE_ID` | `rogersbank_device_id` | — | `legacyMigration.migrateRogersBankAuth()` | `api/rogersbank.getRogersBankCredentials()` |
+| `ROGERSBANK_LAST_UPDATED` | `rogersbank_last_updated` | — | `legacyMigration.migrateRogersBankAuth()` | `api/rogersbank.getRogersBankCredentials()` |
+| `ROGERSBANK_LOOKBACK_DAYS` | `rogersbank_lookback_days` | — | `legacyMigration.migrateLookbackDays()` | `utils.getLookbackForInstitution()` |
+| `ROGERSBANK_CATEGORY_MAPPINGS` | `rogersbank_category_mappings` | — | `legacyMigration.migrateCategoryMappings()` | `category.getSavedCategoryMappings()` |
+
+### Rogers Bank — Duplicate Migration Paths
+
+Rogers Bank has **three coexisting migration paths** with significant overlap between Path 1 and Path 3:
+
+| Path | Location | Runs When | Migrates | Deletes Legacy Keys |
+|---|---|---|---|---|
+| **1. Eager** | `legacyMigration.js` | Script load (`index.js`) | Auth (7 keys), lookback, category mappings | ✅ Yes |
+| **2. Lazy (accounts)** | `accountService.js` | `getAccounts()` called | Account mappings, upload dates, transaction refs | ❌ No (safety) |
+| **3. Inline lazy** | `api/rogersbank.js`, `utils.js`, `category.js` | First read of each data type | Auth (7 keys), lookback, category mappings | ✅ Yes |
+
+**Path 1 and Path 3 fully overlap** — they migrate the exact same 9 global keys (auth, lookback, category mappings). Both are idempotent. The eager path runs at script load; the inline lazy path runs on first read. Cleanup occurs in both.
+
+**Path 2 is distinct** — it handles per-account prefix keys and does NOT delete legacy data (safety rule; cleanup happens via `accountService.cleanupLegacyStorage()` after 2+ successful syncs).
+
+### Admin/Debug Cleanup Utilities
+
+`utils.js` contains admin functions that directly reference Rogers Bank legacy keys for manual cleanup:
+- `clearTransactionUploadHistory()` — deletes `ROGERSBANK_UPLOADED_REFS_PREFIX*` keys
+- `clearAccountMapping()` — deletes `ROGERSBANK_ACCOUNT_MAPPING_PREFIX*` keys
+- `clearLastUploadedDate()` — deletes `ROGERSBANK_LAST_UPLOAD_DATE_PREFIX*` keys
+- `clearCategoryMappings()` — deletes both configStore and `ROGERSBANK_CATEGORY_MAPPINGS`
+
+These are developer/debug utilities invoked from the settings modal, not part of the sync flow.
 
 ### Next Steps for Rogers Bank
 
-To complete storage migration for Rogers Bank:
-1. Ensure all Rogers Bank users have synced 2+ times with consolidated storage (safety threshold)
-2. Remove Rogers Bank legacy prefix keys from `config.js`
-3. Remove Rogers Bank entries from `LEGACY_*_PREFIXES` maps in `accountService.js`
-4. Remove Rogers Bank cases from `utils.js` cleanup functions
-5. Simplify `accountService.cleanupLegacyStorage()` (remove Rogers Bank-specific keys)
-6. Remove `hasLegacyData()`, `migrateFromLegacyStorage()`, and related migration functions if no other integrations need them
+Prioritized order:
+
+1. **Unify eager + inline lazy migration** (eliminate Path 1/Path 3 overlap) — either remove `legacyMigration.js` entirely (rely on inline lazy) or remove inline lazy fallbacks (rely on eager)
+2. **Wait for users to sync 2+ times** with consolidated storage (safety threshold for Path 2 cleanup)
+3. **Remove per-account prefix keys** from `config.js` (`ROGERSBANK_ACCOUNT_MAPPING_PREFIX`, `ROGERSBANK_LAST_UPLOAD_DATE_PREFIX`, `ROGERSBANK_UPLOADED_REFS_PREFIX`, `ROGERSBANK_LAST_CREDIT_LIMIT_PREFIX`, `ROGERSBANK_BALANCE_CHECKPOINT_PREFIX`)
+4. **Remove global legacy keys** from `config.js` (all 9 auth/lookback/category keys)
+5. **Remove `LEGACY_*_PREFIXES` maps** from `accountService.js`
+6. **Simplify `accountService.cleanupLegacyStorage()`** (remove Rogers Bank-specific keys)
+7. **Remove admin cleanup utilities** from `utils.js` (or convert to clear consolidated storage)
+8. **Remove `hasLegacyData()`, `migrateFromLegacyStorage()`** and related migration functions
 
 ---
 

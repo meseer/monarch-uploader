@@ -813,62 +813,65 @@ export function validateLookbackVsRetention(lookbackDays, retentionDays) {
 /**
  * Gets the minimum retention period across all accounts for an institution.
  * Used to validate that global lookback doesn't exceed any account's retention.
+ * Reads from consolidated accounts_list storage for all integrations.
  *
  * @param {string} institutionType - Institution type ('wealthsimple', 'questrade', 'rogersbank')
  * @returns {number} Minimum retention days across all accounts (0 = unlimited)
  */
 export function getMinRetentionForInstitution(institutionType) {
-  if (institutionType === 'wealthsimple') {
-    // Wealthsimple uses consolidated account structure
-    try {
-      const accounts = JSON.parse(GM_getValue(STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST, '[]'));
-      if (accounts.length === 0) {
-        return TRANSACTION_RETENTION_DEFAULTS.DAYS;
-      }
+  const storageKeyMap = {
+    wealthsimple: STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST,
+    questrade: STORAGE.ACCOUNTS_LIST,
+    rogersbank: STORAGE.ROGERSBANK_ACCOUNTS_LIST,
+  };
 
-      // Get minimum retention from all accounts that have transactions (credit cards)
-      let minRetention = Infinity;
-      let hasTransactionAccounts = false;
+  const accountKeyMap = {
+    wealthsimple: 'wealthsimpleAccount',
+    questrade: 'questradeAccount',
+    rogersbank: 'rogersbankAccount',
+  };
 
-      accounts.forEach((account) => {
-        const accountType = account.wealthsimpleAccount?.type || '';
-        // Only consider credit card accounts that have transactions
-        if (accountType.includes('CREDIT')) {
-          hasTransactionAccounts = true;
-          const retention = account.transactionRetentionDays ?? TRANSACTION_RETENTION_DEFAULTS.DAYS;
-          // 0 means unlimited, so skip it when finding minimum
-          if (retention > 0 && retention < minRetention) {
-            minRetention = retention;
-          }
-        }
-      });
-
-      // If no transaction accounts or all have unlimited retention
-      if (!hasTransactionAccounts || minRetention === Infinity) {
-        return TRANSACTION_RETENTION_DEFAULTS.DAYS;
-      }
-
-      return minRetention;
-    } catch (error) {
-      debugLog('Error getting min retention for Wealthsimple:', error);
-      return TRANSACTION_RETENTION_DEFAULTS.DAYS;
-    }
-  }
-
-  // For other institutions, use per-key storage
-  let retentionDaysKey;
-  switch (institutionType) {
-  case 'questrade':
-    retentionDaysKey = STORAGE.QUESTRADE_TRANSACTION_RETENTION_DAYS;
-    break;
-  case 'rogersbank':
-    retentionDaysKey = STORAGE.ROGERSBANK_TRANSACTION_RETENTION_DAYS;
-    break;
-  default:
+  const storageKey = storageKeyMap[institutionType];
+  if (!storageKey) {
     return TRANSACTION_RETENTION_DEFAULTS.DAYS;
   }
 
-  return GM_getValue(retentionDaysKey, TRANSACTION_RETENTION_DEFAULTS.DAYS);
+  try {
+    const accounts = JSON.parse(GM_getValue(storageKey, '[]'));
+    if (accounts.length === 0) {
+      return TRANSACTION_RETENTION_DEFAULTS.DAYS;
+    }
+
+    const accountKey = accountKeyMap[institutionType];
+    let minRetention = Infinity;
+    let hasRelevantAccounts = false;
+
+    accounts.forEach((account) => {
+      // For Wealthsimple, only credit card accounts have transaction dedup
+      if (institutionType === 'wealthsimple') {
+        const accountType = account[accountKey]?.type || '';
+        if (!accountType.includes('CREDIT')) {
+          return;
+        }
+      }
+
+      hasRelevantAccounts = true;
+      const retention = account.transactionRetentionDays ?? TRANSACTION_RETENTION_DEFAULTS.DAYS;
+      // 0 means unlimited, so skip it when finding minimum
+      if (retention > 0 && retention < minRetention) {
+        minRetention = retention;
+      }
+    });
+
+    if (!hasRelevantAccounts || minRetention === Infinity) {
+      return TRANSACTION_RETENTION_DEFAULTS.DAYS;
+    }
+
+    return minRetention;
+  } catch (error) {
+    debugLog(`Error getting min retention for ${institutionType}:`, error);
+    return TRANSACTION_RETENTION_DEFAULTS.DAYS;
+  }
 }
 
 // Default export with all utility functions
