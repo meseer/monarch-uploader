@@ -14,9 +14,32 @@ import {
 global.GM_getValue = jest.fn();
 global.GM_setValue = jest.fn();
 
+// Mock toast
+jest.mock('../../src/ui/toast', () => ({
+  show: jest.fn(),
+}));
+
+// Mock accountService for consolidated storage reads
+jest.mock('../../src/services/common/accountService', () => ({
+  __esModule: true,
+  default: {
+    getAccountData: jest.fn(() => null),
+    updateAccountInList: jest.fn(() => false),
+  },
+}));
+
+// Mock configStore for getLookbackForInstitution
+jest.mock('../../src/services/common/configStore', () => ({
+  getSetting: jest.fn(() => undefined),
+  setSetting: jest.fn(),
+}));
+
 describe('Canada Life Lookback Bug', () => {
+  let accountService;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    accountService = require('../../src/services/common/accountService').default;
   });
 
   test('Canada Life uses consolidated storage only - no legacy keys written', () => {
@@ -30,12 +53,13 @@ describe('Canada Life Lookback Bug', () => {
     // Verify that NO legacy key was written (uses consolidated storage via accountService)
     expect(GM_setValue).not.toHaveBeenCalled();
 
-    // The actual storage is handled by accountService.updateAccountInList() which is mocked
-    // Legacy reading still works for backward compatibility during migration period
+    // Mock consolidated storage to return the last sync date
+    accountService.getAccountData.mockReturnValue({
+      lastSyncDate: yesterday,
+    });
+
+    // Mock lookback via legacy key (migrate-on-read will handle this)
     GM_getValue.mockImplementation((key, defaultValue) => {
-      if (key === 'canadalife_last_upload_date_test-account-123') {
-        return yesterday; // Legacy read still works
-      }
       if (key === 'canadalife_lookback_days') {
         return 1; // Default lookback for Canada Life
       }
@@ -54,11 +78,12 @@ describe('Canada Life Lookback Bug', () => {
     const today = '2024-10-11';
     const yesterday = '2024-10-10';
 
-    // If we stored today as the last upload date (which would be correct)
+    // Mock consolidated storage with today as last sync date
+    accountService.getAccountData.mockReturnValue({
+      lastSyncDate: today,
+    });
+
     GM_getValue.mockImplementation((key, defaultValue) => {
-      if (key === 'canadalife_last_upload_date_test-account-123') {
-        return today;
-      }
       if (key === 'canadalife_lookback_days') {
         return 1; // Default lookback for Canada Life
       }
@@ -98,13 +123,14 @@ describe('Canada Life Lookback Bug', () => {
     const yesterday = '2024-10-10';
 
     // Option 1: Store today as last upload when uploading today's data
-    GM_setValue.mockImplementation(() => {});
     saveLastUploadDate(accountId, today, 'canadalife'); // Store today instead of yesterday
 
+    // Mock consolidated storage returning today
+    accountService.getAccountData.mockReturnValue({
+      lastSyncDate: today,
+    });
+
     GM_getValue.mockImplementation((key, defaultValue) => {
-      if (key === 'canadalife_last_upload_date_test-account-123') {
-        return today;
-      }
       if (key === 'canadalife_lookback_days') {
         return 1;
       }
@@ -115,10 +141,11 @@ describe('Canada Life Lookback Bug', () => {
     expect(fromDateOption1).toBe(yesterday); // today - 1 = yesterday
 
     // Option 2: Use 0 lookback for Canada Life (like Questrade)
+    accountService.getAccountData.mockReturnValue({
+      lastSyncDate: yesterday,
+    });
+
     GM_getValue.mockImplementation((key, defaultValue) => {
-      if (key === 'canadalife_last_upload_date_test-account-123') {
-        return yesterday; // Still stored yesterday
-      }
       if (key === 'canadalife_lookback_days') {
         return 0; // Zero lookback
       }

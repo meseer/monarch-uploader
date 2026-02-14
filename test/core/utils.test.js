@@ -46,6 +46,13 @@ jest.mock('../../src/services/common/accountService', () => ({
   },
 }));
 
+// Mock the configStore module since getLookbackForInstitution uses getSetting/setSetting
+jest.mock('../../src/services/common/configStore', () => ({
+  getSetting: jest.fn(() => undefined), // Default: no config value
+  setSetting: jest.fn(),
+  saveCategoryMappings: jest.fn(), // Used by clearCategoryMappings
+}));
+
 // Mock console methods before running tests
 beforeEach(() => {
   console.log = jest.fn();
@@ -425,11 +432,20 @@ describe('Utility Functions', () => {
   });
 
   describe('getLastUpdateDate', () => {
-    it('should return stored date for questrade', () => {
-      global.GM_getValue.mockReturnValue('2024-01-15');
+    it('should return null for questrade when no consolidated data (no legacy fallback)', () => {
+      // accountService.getAccountData returns null by default (from mock)
+      const result = getLastUpdateDate('account123', 'questrade');
+      expect(result).toBeNull();
+      // Should NOT read from legacy key for questrade
+      expect(global.GM_getValue).not.toHaveBeenCalledWith('questrade_last_upload_date_account123', null);
+    });
+
+    it('should return consolidated date for questrade when available', () => {
+      const accountService = require('../../src/services/common/accountService').default;
+      accountService.getAccountData.mockReturnValueOnce({ lastSyncDate: '2024-01-15' });
+
       const result = getLastUpdateDate('account123', 'questrade');
       expect(result).toBe('2024-01-15');
-      expect(global.GM_getValue).toHaveBeenCalledWith('questrade_last_upload_date_account123', null);
     });
 
     it('should return null for unknown institution', () => {
@@ -437,11 +453,18 @@ describe('Utility Functions', () => {
       expect(result).toBeNull();
     });
 
-    it('should handle canadalife and rogersbank', () => {
-      global.GM_getValue.mockReturnValue('2024-01-20');
+    it('should return null for canadalife when no consolidated data (no legacy fallback)', () => {
+      const result = getLastUpdateDate('acc1', 'canadalife');
+      expect(result).toBeNull();
+      // Should NOT read from legacy key for canadalife
+      expect(global.GM_getValue).not.toHaveBeenCalledWith('canadalife_last_upload_date_acc1', null);
+    });
 
-      expect(getLastUpdateDate('acc1', 'canadalife')).toBe('2024-01-20');
-      expect(getLastUpdateDate('acc2', 'rogersbank')).toBe('2024-01-20');
+    it('should fall back to legacy key for rogersbank (still dual-writing)', () => {
+      global.GM_getValue.mockReturnValue('2024-01-20');
+      const result = getLastUpdateDate('acc2', 'rogersbank');
+      expect(result).toBe('2024-01-20');
+      expect(global.GM_getValue).toHaveBeenCalledWith('rogersbank_last_upload_date_acc2', null);
     });
   });
 
@@ -453,9 +476,12 @@ describe('Utility Functions', () => {
     });
 
     it('should calculate correct from date with lookback', () => {
-      // Use mockImplementation to handle multiple GM_getValue calls
+      // Mock consolidated storage to return the last sync date for questrade
+      const accountService = require('../../src/services/common/accountService').default;
+      accountService.getAccountData.mockReturnValueOnce({ lastSyncDate: '2024-01-15' });
+
+      // Mock lookback via legacy key (calculateFromDateWithLookback uses GM_getValue directly)
       global.GM_getValue.mockImplementation((key, defaultValue) => {
-        if (key === 'questrade_last_upload_date_account123') return '2024-01-15';
         if (key === 'questrade_lookback_days') return 3;
         if (key === 'debug_log_level') return 'info';
         return defaultValue;
@@ -466,9 +492,11 @@ describe('Utility Functions', () => {
     });
 
     it('should use default lookback when not configured', () => {
-      // Use mockImplementation to handle multiple GM_getValue calls
+      // Mock consolidated storage to return the last sync date for questrade
+      const accountService = require('../../src/services/common/accountService').default;
+      accountService.getAccountData.mockReturnValueOnce({ lastSyncDate: '2024-01-15' });
+
       global.GM_getValue.mockImplementation((key, defaultValue) => {
-        if (key === 'questrade_last_upload_date_account123') return '2024-01-15';
         if (key === 'questrade_lookback_days') return 0; // Use default for questrade (0 days)
         if (key === 'debug_log_level') return 'info';
         return defaultValue;
@@ -480,10 +508,14 @@ describe('Utility Functions', () => {
   });
 
   describe('saveLastUploadDate', () => {
-    it('should save date for questrade and rogersbank (legacy storage)', () => {
+    it('should NOT save to legacy storage for questrade (uses consolidated storage only)', () => {
+      global.GM_setValue.mockClear();
       saveLastUploadDate('account123', '2024-01-15', 'questrade');
-      expect(global.GM_setValue).toHaveBeenCalledWith('questrade_last_upload_date_account123', '2024-01-15');
+      // Questrade has completed migration - no legacy key should be written
+      expect(global.GM_setValue).not.toHaveBeenCalled();
+    });
 
+    it('should save date to legacy storage for rogersbank (still dual-writing)', () => {
       global.GM_setValue.mockClear();
       saveLastUploadDate('account789', '2024-01-17', 'rogersbank');
       expect(global.GM_setValue).toHaveBeenCalledWith('rogersbank_last_upload_date_account789', '2024-01-17');
@@ -647,12 +679,15 @@ describe('Utility Functions', () => {
       global.GM_deleteValue.mockClear();
     });
 
-    it('should clear Rogers Bank category mappings', async () => {
+    it('should clear Rogers Bank category mappings (legacy key)', async () => {
       const mockLoc = { hostname: 'online.rogersbank.com' };
       global.GM_deleteValue.mockResolvedValue(undefined);
 
       await clearCategoryMappings(mockLoc);
 
+      // clearCategoryMappings calls both configStore.saveCategoryMappings({}) and GM_deleteValue
+      // The dynamic import of configStore may or may not resolve in test context
+      // At minimum, the legacy GM_deleteValue should be called
       expect(global.GM_deleteValue).toHaveBeenCalledWith('rogersbank_category_mappings');
     });
 

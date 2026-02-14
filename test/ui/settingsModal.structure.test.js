@@ -119,6 +119,13 @@ jest.mock('../../src/scriptInfo.json', () => ({
   gistUrl: 'https://gist.github.com/meseer/f00fb552c96efeb3eb4e4e1fd520d4e7/raw/monarch-uploader.user.js',
 }), { virtual: true });
 
+jest.mock('../../src/services/common/configStore', () => ({
+  getAuth: jest.fn(() => ({})),
+  setSetting: jest.fn(),
+  getSetting: jest.fn(() => undefined),
+  saveCategoryMappings: jest.fn(),
+}));
+
 jest.mock('../../src/core/integrationCapabilities', () => ({
   INTEGRATIONS: {
     WEALTHSIMPLE: 'wealthsimple',
@@ -669,7 +676,9 @@ describe('Settings Modal Component', () => {
       expect(input.value).toBe('5');
     });
 
-    test('should save lookback days on blur', () => {
+    test('should save lookback days on blur via configStore', () => {
+      const { setSetting } = jest.requireMock('../../src/services/common/configStore');
+
       modal = createSettingsModal();
 
       const questradeTab = Array.from(modal.querySelectorAll('.settings-tab-button'))
@@ -682,14 +691,16 @@ describe('Settings Modal Component', () => {
       const blurEvent = new Event('blur');
       input.dispatchEvent(blurEvent);
 
-      expect(globalThis.GM_setValue).toHaveBeenCalledWith('questrade_lookback_days', 7);
+      expect(setSetting).toHaveBeenCalledWith('questrade', 'lookbackDays', 7);
       expect(toast.show).toHaveBeenCalledWith(
         expect.stringContaining('Questrade lookback period set to 7'),
         'info',
       );
     });
 
-    test('should save lookback days on enter key', () => {
+    test('should save lookback days on enter key via configStore', () => {
+      const { setSetting } = jest.requireMock('../../src/services/common/configStore');
+
       modal = createSettingsModal();
 
       const questradeTab = Array.from(modal.querySelectorAll('.settings-tab-button'))
@@ -702,7 +713,7 @@ describe('Settings Modal Component', () => {
       const keydownEvent = new KeyboardEvent('keydown', { key: 'Enter' });
       input.dispatchEvent(keydownEvent);
 
-      expect(globalThis.GM_setValue).toHaveBeenCalledWith('questrade_lookback_days', 10);
+      expect(setSetting).toHaveBeenCalledWith('questrade', 'lookbackDays', 10);
     });
 
     test('should validate lookback days input range', () => {
@@ -724,7 +735,9 @@ describe('Settings Modal Component', () => {
       );
     });
 
-    test('should reset to default when reset button clicked', () => {
+    test('should reset to default when reset button clicked via configStore', () => {
+      const { setSetting } = jest.requireMock('../../src/services/common/configStore');
+
       modal = createSettingsModal();
 
       const questradeTab = Array.from(modal.querySelectorAll('.settings-tab-button'))
@@ -737,7 +750,7 @@ describe('Settings Modal Component', () => {
 
       resetButton.click();
 
-      expect(globalThis.GM_setValue).toHaveBeenCalledWith('questrade_lookback_days', 3);
+      expect(setSetting).toHaveBeenCalledWith('questrade', 'lookbackDays', 3);
       expect(toast.show).toHaveBeenCalledWith(
         expect.stringContaining('reset to default'),
         'info',

@@ -330,7 +330,7 @@ describe('Account Service', () => {
   });
 
   describe('Account Mapping', () => {
-    test('linkAccounts should save mapping between accounts', () => {
+    test('linkAccounts should save mapping to consolidated storage only', () => {
       const questradeAccountId = '12345';
       const questradeAccountName = 'Test Questrade Account';
       const monarchAccount = { id: 'monarch-123', displayName: 'Test Monarch Account' };
@@ -349,11 +349,8 @@ describe('Account Service', () => {
         },
         monarchAccount,
       });
-      // Should also save to legacy storage for backward compatibility
-      expect(GM_setValue).toHaveBeenCalledWith(
-        `${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}${questradeAccountId}`,
-        JSON.stringify(monarchAccount),
-      );
+      // Should NOT save to legacy storage (migration completed)
+      expect(GM_setValue).not.toHaveBeenCalled();
       expect(stateManager.setAccount).toHaveBeenCalledWith(questradeAccountId, questradeAccountName);
     });
 
@@ -361,7 +358,7 @@ describe('Account Service', () => {
       const result = linkAccounts('12345', 'Test Account', null);
 
       expect(result).toBe(false);
-      expect(GM_setValue).not.toHaveBeenCalled();
+      expect(commonAccountService.upsertAccount).not.toHaveBeenCalled();
     });
 
     test('getLinkedAccount should return mapped account from consolidated storage', () => {
@@ -380,57 +377,25 @@ describe('Account Service', () => {
       expect(commonAccountService.getAccountData).toHaveBeenCalledWith(INTEGRATIONS.QUESTRADE, questradeAccountId);
     });
 
-    test('getLinkedAccount should fall back to legacy storage when not in consolidated', () => {
-      const questradeAccountId = '12345';
-      const monarchAccount = { id: 'monarch-123', displayName: 'Test Monarch Account' };
-
-      // Mock no account in consolidated storage
-      commonAccountService.getAccountData.mockReturnValueOnce(null);
-
-      // Mock getting mapping from legacy storage
-      GM_getValue.mockImplementation((key, defaultValue) => {
-        if (key === `${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}${questradeAccountId}`) {
-          return JSON.stringify(monarchAccount);
-        }
-        return defaultValue;
-      });
-
-      const result = getLinkedAccount(questradeAccountId);
-
-      expect(result).toEqual(monarchAccount);
-    });
-
-    test('getLinkedAccount should return null when no mapping exists in either storage', () => {
+    test('getLinkedAccount should return null when no mapping exists in consolidated storage', () => {
       const questradeAccountId = '12345';
 
       // Mock no account in consolidated storage
       commonAccountService.getAccountData.mockReturnValueOnce(null);
-
-      // Mock no mapping in legacy storage
-      GM_getValue.mockImplementation((key, defaultValue) => {
-        if (key === `${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}${questradeAccountId}`) {
-          return null;
-        }
-        return defaultValue;
-      });
 
       const result = getLinkedAccount(questradeAccountId);
 
       expect(result).toBeNull();
+      // Should NOT attempt to read from legacy storage
+      expect(GM_getValue).not.toHaveBeenCalled();
     });
 
     test('getLinkedAccount should handle errors gracefully', () => {
       const questradeAccountId = '12345';
 
-      // Mock no account in consolidated storage
-      commonAccountService.getAccountData.mockReturnValueOnce(null);
-
-      // Mock error when parsing legacy mapping
-      GM_getValue.mockImplementation((key, defaultValue) => {
-        if (key === `${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}${questradeAccountId}`) {
-          return 'invalid json';
-        }
-        return defaultValue;
+      // Mock error in consolidated storage
+      commonAccountService.getAccountData.mockImplementationOnce(() => {
+        throw new Error('Storage error');
       });
 
       const result = getLinkedAccount(questradeAccountId);

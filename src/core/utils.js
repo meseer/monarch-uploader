@@ -5,7 +5,7 @@
 
 import { STORAGE, TRANSACTION_RETENTION_DEFAULTS } from './config';
 import { INTEGRATIONS } from './integrationCapabilities';
-import { getSetting } from '../services/common/configStore';
+import { getSetting, setSetting } from '../services/common/configStore';
 import toast from '../ui/toast';
 import accountService from '../services/common/accountService';
 
@@ -214,7 +214,9 @@ function getIntegrationIdFromType(institutionType) {
 
 /**
  * Gets the last update date for an account based on institution type.
- * First checks consolidated storage (accountService), then falls back to legacy keys.
+ * Checks consolidated storage (accountService) first.
+ * Falls back to legacy keys only for Rogers Bank (still dual-writing).
+ * Questrade and Canada Life have completed migration  no legacy fallback.
  * @param {string} accountId - Account ID
  * @param {string} institutionType - Institution type ('questrade', 'canadalife', 'rogersbank')
  * @returns {string|null} Last update date in YYYY-MM-DD format or null if not found
@@ -230,29 +232,21 @@ export function getLastUpdateDate(accountId, institutionType) {
     }
   }
 
-  // Fall back to legacy storage keys
-  let storageKey;
+  // Fall back to legacy storage keys only for Rogers Bank (still dual-writing)
+  // Questrade and Canada Life have completed migration to consolidated storage
+  if (institutionType === 'rogersbank') {
+    const storageKey = STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX + accountId;
+    const legacyDate = GM_getValue(storageKey, null);
+    if (legacyDate) {
+      debugLog(`getLastUpdateDate: Found legacy storage date for rogersbank/${accountId}: ${legacyDate}`);
+    }
+    return legacyDate;
+  }
 
-  switch (institutionType) {
-  case 'questrade':
-    storageKey = STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX + accountId;
-    break;
-  case 'canadalife':
-    storageKey = STORAGE.CANADALIFE_LAST_UPLOAD_DATE_PREFIX + accountId;
-    break;
-  case 'rogersbank':
-    storageKey = STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX + accountId;
-    break;
-  default:
+  if (institutionType !== 'questrade' && institutionType !== 'canadalife' && institutionType !== 'wealthsimple') {
     debugLog(`Unknown institution type: ${institutionType}`);
-    return null;
   }
-
-  const legacyDate = GM_getValue(storageKey, null);
-  if (legacyDate) {
-    debugLog(`getLastUpdateDate: Found legacy storage date for ${institutionType}/${accountId}: ${legacyDate}`);
-  }
-  return legacyDate;
+  return null;
 }
 
 /**
@@ -305,19 +299,16 @@ export function saveLastUploadDate(accountId, uploadDate, institutionType) {
   }
 
   // Also save to legacy keys for backward compatibility (will be cleaned up after successful sync)
-  // Note: Canada Life has completed migration to consolidated storage and no longer uses legacy keys
+  // Note: Questrade and Canada Life have completed migration to consolidated storage
   let storageKey;
 
   switch (institutionType) {
-  case 'questrade':
-    storageKey = STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX + accountId;
-    break;
   case 'rogersbank':
     storageKey = STORAGE.ROGERSBANK_LAST_UPLOAD_DATE_PREFIX + accountId;
     break;
+  case 'questrade':
   case 'canadalife':
-    // Canada Life uses consolidated storage only - no legacy key needed
-    debugLog('saveLastUploadDate: Canada Life uses consolidated storage only');
+    // Questrade and Canada Life use consolidated storage only - no legacy key needed
     return;
   default:
     debugLog(`Unknown institution type: ${institutionType}, cannot save last upload date`);
@@ -886,14 +877,14 @@ export function getMinRetentionForInstitution(institutionType) {
 
 /**
  * Gets the current lookback period for an institution.
- * For Wealthsimple, reads from configStore first, falls back to legacy key.
+ * Reads from configStore first. If not found, checks legacy key and migrates to configStore.
  * @param {string} institutionType - Institution type
  * @returns {number} Current lookback days
  */
 export function getLookbackForInstitution(institutionType) {
   const defaultLookback = getDefaultLookbackDays(institutionType);
 
-  // For migrated integrations, try configStore first
+  // All integrations use configStore, with legacy key migrate-on-read
   const integrationMap = {
     wealthsimple: { id: INTEGRATIONS.WEALTHSIMPLE, legacyKey: STORAGE.WEALTHSIMPLE_LOOKBACK_DAYS },
     rogersbank: { id: INTEGRATIONS.ROGERSBANK, legacyKey: STORAGE.ROGERSBANK_LOOKBACK_DAYS },
@@ -907,7 +898,16 @@ export function getLookbackForInstitution(institutionType) {
     if (configValue !== undefined) {
       return configValue;
     }
-    return GM_getValue(mapped.legacyKey, defaultLookback);
+
+    // Migrate-on-read: if legacy key has a value, migrate it to configStore
+    const legacyValue = GM_getValue(mapped.legacyKey, undefined);
+    if (legacyValue !== undefined) {
+      debugLog(`getLookbackForInstitution: Migrating legacy lookback for ${institutionType}: ${legacyValue} ’ configStore`);
+      setSetting(mapped.id, 'lookbackDays', legacyValue);
+      return legacyValue;
+    }
+
+    return defaultLookback;
   }
 
   return 0;

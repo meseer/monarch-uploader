@@ -4,7 +4,6 @@
  */
 
 import { debugLog } from '../../core/utils';
-import { STORAGE } from '../../core/config';
 import { INTEGRATIONS } from '../../core/integrationCapabilities';
 import stateManager from '../../core/state';
 import questradeApi from '../../api/questrade';
@@ -178,7 +177,7 @@ export function getDateRange(accountId, days = 90) {
 
 /**
  * Link a Questrade account to a Monarch account
- * Saves to both consolidated storage and legacy storage for backward compatibility
+ * Saves to consolidated storage only (legacy migration completed)
  * @param {string} questradeAccountId - Questrade account ID
  * @param {string} questradeAccountName - Questrade account name
  * @param {Object} monarchAccount - Monarch account object
@@ -199,10 +198,6 @@ export function linkAccounts(questradeAccountId, questradeAccountName, monarchAc
       monarchAccount,
     });
 
-    // Also store in legacy format for backward compatibility during migration period
-    const mappingKey = `${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}${questradeAccountId}`;
-    GM_setValue(mappingKey, JSON.stringify(monarchAccount));
-
     // Update state
     stateManager.setAccount(questradeAccountId, questradeAccountName);
 
@@ -221,7 +216,7 @@ export function linkAccounts(questradeAccountId, questradeAccountName, monarchAc
 
 /**
  * Get linked Monarch account for a Questrade account
- * Checks consolidated storage first, then falls back to legacy storage
+ * Reads from consolidated storage only (legacy migration completed)
  * @param {string} questradeAccountId - Questrade account ID
  * @returns {Object|null} Monarch account or null if not found
  */
@@ -229,20 +224,11 @@ export function getLinkedAccount(questradeAccountId) {
   try {
     if (!questradeAccountId) return null;
 
-    // Check consolidated storage first
+    // Check consolidated storage
     const accountData = accountService.getAccountData(INTEGRATIONS.QUESTRADE, questradeAccountId);
     if (accountData?.monarchAccount) {
       debugLog(`Found Monarch mapping for ${questradeAccountId} in consolidated storage`);
       return accountData.monarchAccount;
-    }
-
-    // Fall back to legacy storage
-    const mappingKey = `${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}${questradeAccountId}`;
-    const mapping = GM_getValue(mappingKey, null);
-
-    if (mapping) {
-      debugLog(`Found Monarch mapping for ${questradeAccountId} in legacy storage`);
-      return JSON.parse(mapping);
     }
 
     return null;

@@ -5,7 +5,7 @@
  */
 
 import { debugLog, getTodayLocal, formatDate, getLastUpdateDate } from '../../core/utils';
-import { STORAGE, LOGO_CLOUDINARY_IDS } from '../../core/config';
+import { LOGO_CLOUDINARY_IDS } from '../../core/config';
 import { INTEGRATIONS } from '../../core/integrationCapabilities';
 import stateManager from '../../core/state';
 import monarchApi from '../../api/monarch';
@@ -423,7 +423,7 @@ export async function syncAllAccountsToMonarch() {
 
 /**
  * Ensure all accounts have Monarch account mappings
- * Checks consolidated storage first, then falls back to legacy storage
+ * Checks consolidated storage only (legacy migration completed)
  * @param {Array} accounts - List of Questrade accounts
  * @param {Object} progressDialog - Progress dialog instance
  * @returns {Promise<boolean>} True if all accounts are mapped, false if cancelled
@@ -431,21 +431,17 @@ export async function syncAllAccountsToMonarch() {
 async function ensureAllAccountMappings(accounts, progressDialog) {
   const unmappedAccounts = [];
 
-  // Check each account for mapping - check consolidated storage first, then legacy
+  // Check each account for mapping in consolidated storage
   for (let i = 0; i < accounts.length; i += 1) {
     const account = accounts[i];
 
-    // Check consolidated storage first via accountService
+    // Check consolidated storage via accountService
     const accountData = accountService.getAccountData(INTEGRATIONS.QUESTRADE, account.key);
     if (accountData?.monarchAccount) {
       continue; // Already mapped in consolidated storage
     }
 
-    // Fall back to legacy storage
-    const legacyMapping = JSON.parse(GM_getValue(`${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}${account.key}`, null));
-    if (!legacyMapping) {
-      unmappedAccounts.push(account);
-    }
+    unmappedAccounts.push(account);
   }
 
   // Return early if all accounts are mapped
@@ -515,7 +511,7 @@ async function ensureAllAccountMappings(accounts, progressDialog) {
       }
     }
 
-    // Save the mapping to both consolidated and legacy storage
+    // Save the mapping to consolidated storage
     const upsertSuccess = accountService.upsertAccount(INTEGRATIONS.QUESTRADE, {
       questradeAccount: {
         id: account.key,
@@ -525,9 +521,6 @@ async function ensureAllAccountMappings(accounts, progressDialog) {
       },
       monarchAccount,
     });
-
-    // Also save to legacy storage for backward compatibility during migration
-    GM_setValue(`${STORAGE.QUESTRADE_ACCOUNT_MAPPING_PREFIX}${account.key}`, JSON.stringify(monarchAccount));
 
     debugLog(`Saved account mapping for ${accountName}, consolidated: ${upsertSuccess}`);
 

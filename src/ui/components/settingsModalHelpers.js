@@ -82,24 +82,19 @@ export function createLookbackPeriodSection(institutionType) {
     color: var(--mu-text-primary, #333);
   `;
 
-  // Get storage key based on institution type
-  let storageKey;
+  // Get institution name for display
   let institutionName;
   switch (institutionType) {
   case 'questrade':
-    storageKey = STORAGE.QUESTRADE_LOOKBACK_DAYS;
     institutionName = 'Questrade';
     break;
   case 'canadalife':
-    storageKey = STORAGE.CANADALIFE_LOOKBACK_DAYS;
     institutionName = 'CanadaLife';
     break;
   case 'rogersbank':
-    storageKey = STORAGE.ROGERSBANK_LOOKBACK_DAYS;
     institutionName = 'Rogers Bank';
     break;
   case 'wealthsimple':
-    storageKey = STORAGE.WEALTHSIMPLE_LOOKBACK_DAYS;
     institutionName = 'Wealthsimple';
     break;
   default:
@@ -158,8 +153,6 @@ export function createLookbackPeriodSection(institutionType) {
     } else if (institutionType === 'canadalife') {
       setSetting(INTEGRATIONS.CANADALIFE, 'lookbackDays', value);
     }
-    // Write to legacy key (all integrations for backward compat)
-    GM_setValue(storageKey, value);
   };
 
   // Save changes

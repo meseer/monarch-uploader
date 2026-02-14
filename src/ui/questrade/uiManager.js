@@ -3,7 +3,7 @@
  * Responsible for initializing and managing UI components
  */
 
-import { debugLog, isQuestradeAllAccountsPage } from '../../core/utils';
+import { debugLog, isQuestradeAllAccountsPage, getLastUpdateDate } from '../../core/utils';
 import { STORAGE } from '../../core/config';
 import stateManager from '../../core/state';
 import questradeApi from '../../api/questrade';
@@ -143,7 +143,7 @@ export function updateStatusIndicators(indicators) {
 
   // Update last downloaded note
   if (indicators.lastDownloaded && state.currentAccount.id) {
-    const lastUsedDate = GM_getValue(`${STORAGE.QUESTRADE_LAST_UPLOAD_DATE_PREFIX}${state.currentAccount.id}`);
+    const lastUsedDate = getLastUpdateDate(state.currentAccount.id, 'questrade');
     if (lastUsedDate) {
       indicators.lastDownloaded.textContent = `Last download: ${lastUsedDate}`;
     } else {
