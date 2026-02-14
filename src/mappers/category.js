@@ -39,6 +39,8 @@ function getSavedCategoryMappings() {
     if (Object.keys(legacyMappings).length > 0) {
       debugLog('getSavedCategoryMappings: Migrating Rogers Bank legacy category mappings to configStore');
       saveConfigCategoryMappings(INTEGRATIONS.ROGERSBANK, legacyMappings);
+      GM_deleteValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS);
+      debugLog('getSavedCategoryMappings: Deleted legacy key', STORAGE.ROGERSBANK_CATEGORY_MAPPINGS);
       return legacyMappings;
     }
 
@@ -92,6 +94,8 @@ function getSavedWealthsimpleCategoryMappings() {
     if (Object.keys(legacyMappings).length > 0) {
       debugLog('getSavedWealthsimpleCategoryMappings: Migrating legacy category mappings to configStore');
       saveConfigCategoryMappings(INTEGRATIONS.WEALTHSIMPLE, legacyMappings);
+      GM_deleteValue(STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS);
+      debugLog('getSavedWealthsimpleCategoryMappings: Deleted legacy key', STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS);
       return legacyMappings;
     }
 

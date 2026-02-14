@@ -14,6 +14,7 @@ import {
   clearLastUploadedDate,
 } from './core/utils';
 import { clearSavedCategoryMappings } from './mappers/category';
+import { migrateAllLegacyStorage } from './services/common/legacyMigration';
 import stateManager from './core/state';
 import navigationManager from './core/navigation';
 
@@ -43,6 +44,9 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
   GM_registerMenuCommand('Clear Account Mapping', clearAccountMapping);
   GM_registerMenuCommand('Clear Last Uploaded Date', clearLastUploadedDate);
   GM_registerMenuCommand('Clear Category Mappings', clearSavedCategoryMappings);
+
+  // Run eager migration of all legacy storage keys to configStore
+  migrateAllLegacyStorage();
 
   // Initialize the application once the DOM is ready
 

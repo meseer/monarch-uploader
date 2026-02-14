@@ -47,6 +47,7 @@ jest.mock('../../src/core/config', () => ({
 // Mock Greasemonkey functions
 globalThis.GM_getValue = jest.fn();
 globalThis.GM_setValue = jest.fn();
+globalThis.GM_deleteValue = jest.fn();
 
 describe('Category Mapper', () => {
   let mockAvailableCategories;
@@ -85,6 +86,21 @@ describe('Category Mapper', () => {
 
       const result = applyCategoryMapping('Restaurants', mockAvailableCategories);
       expect(result).toBe('Dining');
+    });
+
+    test('should delete legacy key after migrate-on-read for Rogers Bank', () => {
+      // configStore returns empty (first GM_getValue call for rogersbank_config)
+      // legacy key returns data (second GM_getValue call for rogersbank_category_mappings)
+      const legacyMappings = { RESTAURANTS: 'Dining' };
+      globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
+        if (key === 'rogersbank_category_mappings') return JSON.stringify(legacyMappings);
+        return defaultVal || '{}';
+      });
+
+      const result = getAllSavedCategoryMappings();
+
+      expect(result).toEqual(legacyMappings);
+      expect(globalThis.GM_deleteValue).toHaveBeenCalledWith('rogersbank_category_mappings');
     });
 
     test('should apply automatic mapping for high similarity score', () => {
@@ -541,6 +557,19 @@ describe('Category Mapper', () => {
 
         const result = applyWealthsimpleCategoryMapping('Starbucks', mockAvailableCategories);
         expect(result).toBe('Dining');
+      });
+
+      test('should delete legacy key after migrate-on-read for Wealthsimple', () => {
+        const legacyMappings = { STARBUCKS: 'Dining', UBER: 'Transportation' };
+        globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
+          if (key === 'wealthsimple_category_mappings') return JSON.stringify(legacyMappings);
+          return defaultVal || '{}';
+        });
+
+        const result = getAllSavedWealthsimpleCategoryMappings();
+
+        expect(result).toEqual(legacyMappings);
+        expect(globalThis.GM_deleteValue).toHaveBeenCalledWith('wealthsimple_category_mappings');
       });
 
       test('should apply automatic mapping for high similarity score', () => {
