@@ -77,7 +77,7 @@ export const INTEGRATION_CAPABILITIES = {
     hasHoldings: true,
     hasBalanceReconstruction: true, // For credit cards
     hasCategorization: true, // Merchant name to Monarch category mappings
-    categoryMappingsStorageKey: STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS,
+    categoryMappingsStorageKey: STORAGE.WEALTHSIMPLE_CONFIG,
     categorySourceLabel: 'Merchant Name',
     settings: [
       ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES,

@@ -76,30 +76,13 @@ function saveCategoryMapping(bankCategory, monarchCategory) {
 
 /**
  * Get saved Wealthsimple category mappings from storage
- * Reads from configStore first, falls back to legacy key
+ * Reads from configStore (legacy migration completed)
  * Shared across all Wealthsimple accounts
  * @returns {Object} Saved category mappings (merchant name -> Monarch category)
  */
 function getSavedWealthsimpleCategoryMappings() {
   try {
-    // Read from configStore only
-    const configMappings = getConfigCategoryMappings(INTEGRATIONS.WEALTHSIMPLE);
-    if (Object.keys(configMappings).length > 0) {
-      return configMappings;
-    }
-
-    // Migrate-on-read: if configStore is empty, check legacy key and migrate
-    const saved = GM_getValue(STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS, '{}');
-    const legacyMappings = JSON.parse(saved);
-    if (Object.keys(legacyMappings).length > 0) {
-      debugLog('getSavedWealthsimpleCategoryMappings: Migrating legacy category mappings to configStore');
-      saveConfigCategoryMappings(INTEGRATIONS.WEALTHSIMPLE, legacyMappings);
-      GM_deleteValue(STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS);
-      debugLog('getSavedWealthsimpleCategoryMappings: Deleted legacy key', STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS);
-      return legacyMappings;
-    }
-
-    return {};
+    return getConfigCategoryMappings(INTEGRATIONS.WEALTHSIMPLE);
   } catch (error) {
     debugLog('Error loading saved Wealthsimple category mappings:', error);
     return {};

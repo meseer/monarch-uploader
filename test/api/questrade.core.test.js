@@ -330,32 +330,6 @@ describe('Questrade API', () => {
       expect(result[1].syncEnabled).toBe(true);
     });
 
-    test('should clean up legacy cache if it exists', async () => {
-      globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
-        if (key === 'questrade_accounts_cache') {
-          return '[{"key": "old-acc"}]';
-        }
-        return defaultVal;
-      });
-      globalThis.GM_deleteValue = jest.fn();
-
-      const mockApiAccounts = [{ key: 'acc1', type: 'Margin' }];
-
-      globalThis.GM_xmlhttpRequest.mockImplementation((options) => {
-        setTimeout(() => {
-          options.onload({
-            status: 200,
-            responseText: JSON.stringify(mockApiAccounts),
-          });
-        }, 0);
-      });
-
-      await fetchAndCacheQuestradeAccounts();
-
-      // Should clean up legacy cache
-      expect(globalThis.GM_deleteValue).toHaveBeenCalledWith('questrade_accounts_cache');
-    });
-
     test('should preserve orphaned accounts in storage but NOT return them (only return API accounts)', async () => {
       // Simulate existing accounts where one (acc2) has a Monarch mapping but is no longer in API
       const existingAccounts = [
@@ -501,26 +475,25 @@ describe('Questrade API', () => {
   });
 
   describe('getQuestradeAccount', () => {
-    test('should return account by ID', () => {
-      const mockAccounts = [
-        { key: 'acc1', type: 'Margin', name: 'Margin Account' },
-        { key: 'acc2', type: 'TFSA', name: 'TFSA Account' },
+    test('should return account by ID from consolidated storage', () => {
+      const mockConsolidatedAccounts = [
+        { questradeAccount: { id: 'acc1', key: 'acc1', type: 'Margin', nickname: 'Margin Account' }, monarchAccount: null, syncEnabled: true },
+        { questradeAccount: { id: 'acc2', key: 'acc2', type: 'TFSA', nickname: 'TFSA Account' }, monarchAccount: null, syncEnabled: true },
       ];
 
-      globalThis.GM_getValue.mockReturnValue(JSON.stringify(mockAccounts));
+      globalThis.GM_getValue.mockReturnValue(JSON.stringify(mockConsolidatedAccounts));
 
       const result = getQuestradeAccount('acc2');
 
-      expect(result).toEqual({ key: 'acc2', type: 'TFSA', name: 'TFSA Account' });
-      expect(globalThis.GM_getValue).toHaveBeenCalledWith('questrade_accounts_cache', '[]');
+      expect(result).toEqual({ id: 'acc2', key: 'acc2', type: 'TFSA', nickname: 'TFSA Account' });
     });
 
     test('should return undefined for non-existent account', () => {
-      const mockAccounts = [
-        { key: 'acc1', type: 'Margin', name: 'Margin Account' },
+      const mockConsolidatedAccounts = [
+        { questradeAccount: { id: 'acc1', key: 'acc1', type: 'Margin', nickname: 'Margin Account' }, monarchAccount: null, syncEnabled: true },
       ];
 
-      globalThis.GM_getValue.mockReturnValue(JSON.stringify(mockAccounts));
+      globalThis.GM_getValue.mockReturnValue(JSON.stringify(mockConsolidatedAccounts));
 
       const result = getQuestradeAccount('nonexistent');
 
@@ -1052,10 +1025,13 @@ describe('Questrade API', () => {
       expect(result[0].monarchAccount).toBeNull();
       expect(result[0].syncEnabled).toBe(true);
 
-      // Test getting account by ID (legacy getQuestradeAccount still uses cache)
-      globalThis.GM_getValue.mockReturnValue(JSON.stringify(mockApiAccounts));
+      // Test getting account by ID from consolidated storage
+      const consolidatedAccounts = [
+        { questradeAccount: { id: 'acc1', key: 'acc1', type: 'Margin', name: 'Test Account' }, monarchAccount: null, syncEnabled: true },
+      ];
+      globalThis.GM_getValue.mockReturnValue(JSON.stringify(consolidatedAccounts));
       const account = getQuestradeAccount('acc1');
-      expect(account).toEqual(mockApiAccounts[0]);
+      expect(account).toEqual(consolidatedAccounts[0].questradeAccount);
     });
 
     test('should handle auth failure in workflow', async () => {

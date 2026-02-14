@@ -1,12 +1,16 @@
 /**
  * Legacy Storage Migration
  *
- * Eagerly migrates all legacy individual GM storage keys into the consolidated
- * `{integration}_config` configStore structure. This runs once at script load
- * to ensure legacy data is migrated promptly, not just lazily on first read.
+ * Eagerly migrates Rogers Bank legacy individual GM storage keys into the
+ * consolidated `rogersbank_config` configStore structure. This runs once at
+ * script load to ensure legacy data is migrated promptly, not just lazily
+ * on first read.
  *
  * Each migration is idempotent: it only copies data if the configStore section
  * is empty, and always deletes the legacy key afterward.
+ *
+ * Note: Questrade, Canada Life, and Wealthsimple migration has been completed
+ * and removed. Only Rogers Bank migration remains.
  *
  * @module services/common/legacyMigration
  */
@@ -24,18 +28,6 @@ import {
 } from './configStore';
 
 /**
- * Legacy Wealthsimple auth storage keys (orphaned after previous migration)
- */
-const WEALTHSIMPLE_LEGACY_AUTH_KEYS = [
-  STORAGE.WEALTHSIMPLE_AUTH_TOKEN,
-  STORAGE.WEALTHSIMPLE_ACCESS_TOKEN,
-  STORAGE.WEALTHSIMPLE_IDENTITY_ID,
-  STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT,
-  STORAGE.WEALTHSIMPLE_INVEST_PROFILE,
-  STORAGE.WEALTHSIMPLE_TRADE_PROFILE,
-];
-
-/**
  * Legacy Rogers Bank auth storage keys
  */
 const ROGERSBANK_LEGACY_AUTH_KEYS = [
@@ -49,21 +41,17 @@ const ROGERSBANK_LEGACY_AUTH_KEYS = [
 ];
 
 /**
- * Lookback days legacy key mapping
+ * Lookback days legacy key mapping (Rogers Bank only)
  */
 const LOOKBACK_LEGACY_KEYS = [
-  { id: INTEGRATIONS.WEALTHSIMPLE, legacyKey: STORAGE.WEALTHSIMPLE_LOOKBACK_DAYS },
   { id: INTEGRATIONS.ROGERSBANK, legacyKey: STORAGE.ROGERSBANK_LOOKBACK_DAYS },
-  { id: INTEGRATIONS.QUESTRADE, legacyKey: STORAGE.QUESTRADE_LOOKBACK_DAYS },
-  { id: INTEGRATIONS.CANADALIFE, legacyKey: STORAGE.CANADALIFE_LOOKBACK_DAYS },
 ];
 
 /**
- * Category mappings legacy key mapping
+ * Category mappings legacy key mapping (Rogers Bank only)
  */
 const CATEGORY_MAPPINGS_LEGACY_KEYS = [
   { id: INTEGRATIONS.ROGERSBANK, legacyKey: STORAGE.ROGERSBANK_CATEGORY_MAPPINGS },
-  { id: INTEGRATIONS.WEALTHSIMPLE, legacyKey: STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS },
 ];
 
 /**
@@ -200,33 +188,6 @@ export function migrateCategoryMappings() {
 }
 
 /**
- * Clean up orphaned Wealthsimple legacy auth keys
- * These keys were already migrated in a previous version but may still exist in storage
- * @returns {number} Number of legacy keys deleted
- */
-export function cleanupWealthsimpleLegacyAuth() {
-  let deleted = 0;
-
-  for (const key of WEALTHSIMPLE_LEGACY_AUTH_KEYS) {
-    try {
-      const value = GM_getValue(key, undefined);
-      if (value !== undefined) {
-        safeDelete(key);
-        deleted++;
-      }
-    } catch (error) {
-      debugLog(`[legacyMigration] Error cleaning up Wealthsimple key ${key}:`, error);
-    }
-  }
-
-  if (deleted > 0) {
-    debugLog(`[legacyMigration] Cleaned up ${deleted} orphaned Wealthsimple legacy auth keys`);
-  }
-
-  return deleted;
-}
-
-/**
  * Run all legacy storage migrations eagerly at script load.
  * Each migration is idempotent and safe to run multiple times.
  * @returns {number} Total number of legacy keys deleted
@@ -239,7 +200,6 @@ export function migrateAllLegacyStorage() {
   totalDeleted += migrateRogersBankAuth();
   totalDeleted += migrateLookbackDays();
   totalDeleted += migrateCategoryMappings();
-  totalDeleted += cleanupWealthsimpleLegacyAuth();
 
   if (totalDeleted > 0) {
     debugLog(`[legacyMigration] Eager migration complete: deleted ${totalDeleted} legacy key(s)`);
@@ -255,5 +215,4 @@ export default {
   migrateRogersBankAuth,
   migrateLookbackDays,
   migrateCategoryMappings,
-  cleanupWealthsimpleLegacyAuth,
 };

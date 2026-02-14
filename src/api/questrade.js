@@ -166,13 +166,6 @@ export async function fetchAndCacheQuestradeAccounts() {
     GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(mergedAccounts));
     debugLog(`Cached ${mergedAccounts.length} Questrade accounts with consolidated structure`);
 
-    // Clean up legacy cache if it exists (one-time cleanup)
-    const legacyCache = GM_getValue(STORAGE.QUESTRADE_ACCOUNTS_CACHE, null);
-    if (legacyCache) {
-      debugLog('Removing legacy questrade_accounts_cache (migrated to consolidated storage)');
-      GM_deleteValue(STORAGE.QUESTRADE_ACCOUNTS_CACHE);
-    }
-
     // Return ONLY actual API accounts (not orphans)
     // Orphans are saved to storage but shouldn't be returned as "API accounts"
     // getAccountsForSync() will find orphans by comparing storage with the returned API accounts
@@ -192,18 +185,11 @@ export async function fetchAndCacheQuestradeAccounts() {
  * @deprecated Use accountService.getAccountData(INTEGRATIONS.QUESTRADE, accountId).questradeAccount instead
  */
 export function getQuestradeAccount(accountId) {
-  // First try consolidated storage (new approach)
   const consolidatedAccounts = JSON.parse(GM_getValue(STORAGE.ACCOUNTS_LIST, '[]'));
   const consolidated = consolidatedAccounts.find(
     (acc) => acc.questradeAccount?.id === accountId || acc.questradeAccount?.key === accountId,
   );
-  if (consolidated?.questradeAccount) {
-    return consolidated.questradeAccount;
-  }
-
-  // Fall back to legacy cache for backward compatibility during transition
-  const legacyAccounts = JSON.parse(GM_getValue(STORAGE.QUESTRADE_ACCOUNTS_CACHE, '[]'));
-  return legacyAccounts.find((acc) => acc.key === accountId);
+  return consolidated?.questradeAccount;
 }
 
 /**

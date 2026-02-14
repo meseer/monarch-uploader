@@ -105,6 +105,52 @@ export function parseLocalDate(dateString) {
 }
 
 /**
+ * Gets the current lookback period for an institution.
+ * Reads from configStore. Rogers Bank still has legacy migrate-on-read;
+ * Questrade, Canada Life, and Wealthsimple migration is complete.
+ * @param {string} institutionType - Institution type
+ * @returns {number} Current lookback days
+ */
+export function getLookbackForInstitution(institutionType) {
+  const defaultLookback = getDefaultLookbackDays(institutionType);
+
+  // Integration ID mapping
+  const integrationIdMap = {
+    wealthsimple: INTEGRATIONS.WEALTHSIMPLE,
+    questrade: INTEGRATIONS.QUESTRADE,
+    canadalife: INTEGRATIONS.CANADALIFE,
+    rogersbank: INTEGRATIONS.ROGERSBANK,
+  };
+
+  const integrationId = integrationIdMap[institutionType];
+  if (!integrationId) {
+    return 0;
+  }
+
+  // Read from configStore
+  const configValue = getSetting(integrationId, 'lookbackDays', undefined);
+  if (configValue !== undefined) {
+    return configValue;
+  }
+
+  // Rogers Bank: migrate-on-read from legacy key
+  if (institutionType === 'rogersbank') {
+    const legacyValue = GM_getValue(STORAGE.ROGERSBANK_LOOKBACK_DAYS, undefined);
+    if (legacyValue !== undefined) {
+      debugLog(`getLookbackForInstitution: Migrating legacy lookback for rogersbank: ${legacyValue} -> configStore`);
+      setSetting(INTEGRATIONS.ROGERSBANK, 'lookbackDays', legacyValue);
+      GM_deleteValue(STORAGE.ROGERSBANK_LOOKBACK_DAYS);
+      debugLog(`getLookbackForInstitution: Deleted legacy key ${STORAGE.ROGERSBANK_LOOKBACK_DAYS}`);
+      return legacyValue;
+    }
+  }
+
+  // No value found  save default to configStore so the key is created
+  setSetting(integrationId, 'lookbackDays', defaultLookback);
+  return defaultLookback;
+}
+
+/**
  * Gets today's date formatted as YYYY-MM-DD in local timezone
  * @returns {string} Today's date string
  */
@@ -609,10 +655,9 @@ export async function clearCategoryMappings(location = window.location) {
       break;
     }
     case 'wealthsimple': {
-      // Clear from both configStore and legacy key
+      // Clear from configStore only  legacy migration completed
       const { saveCategoryMappings } = await import('../services/common/configStore');
       saveCategoryMappings(INTEGRATIONS.WEALTHSIMPLE, {});
-      await GM_deleteValue(STORAGE.WEALTHSIMPLE_CATEGORY_MAPPINGS);
       institutionName = 'Wealthsimple';
       break;
     }
@@ -840,48 +885,6 @@ export function getMinRetentionForInstitution(institutionType) {
   }
 
   return GM_getValue(retentionDaysKey, TRANSACTION_RETENTION_DEFAULTS.DAYS);
-}
-
-/**
- * Gets the current lookback period for an institution.
- * Reads from configStore first. If not found, checks legacy key and migrates to configStore.
- * @param {string} institutionType - Institution type
- * @returns {number} Current lookback days
- */
-export function getLookbackForInstitution(institutionType) {
-  const defaultLookback = getDefaultLookbackDays(institutionType);
-
-  // All integrations use configStore, with legacy key migrate-on-read
-  const integrationMap = {
-    wealthsimple: { id: INTEGRATIONS.WEALTHSIMPLE, legacyKey: STORAGE.WEALTHSIMPLE_LOOKBACK_DAYS },
-    rogersbank: { id: INTEGRATIONS.ROGERSBANK, legacyKey: STORAGE.ROGERSBANK_LOOKBACK_DAYS },
-    questrade: { id: INTEGRATIONS.QUESTRADE, legacyKey: STORAGE.QUESTRADE_LOOKBACK_DAYS },
-    canadalife: { id: INTEGRATIONS.CANADALIFE, legacyKey: STORAGE.CANADALIFE_LOOKBACK_DAYS },
-  };
-
-  const mapped = integrationMap[institutionType];
-  if (mapped) {
-    const configValue = getSetting(mapped.id, 'lookbackDays', undefined);
-    if (configValue !== undefined) {
-      return configValue;
-    }
-
-    // Migrate-on-read: if legacy key has a value, migrate it to configStore
-    const legacyValue = GM_getValue(mapped.legacyKey, undefined);
-    if (legacyValue !== undefined) {
-      debugLog(`getLookbackForInstitution: Migrating legacy lookback for ${institutionType}: ${legacyValue} -> configStore`);
-      setSetting(mapped.id, 'lookbackDays', legacyValue);
-      GM_deleteValue(mapped.legacyKey);
-      debugLog(`getLookbackForInstitution: Deleted legacy key ${mapped.legacyKey}`);
-      return legacyValue;
-    }
-
-    // No configStore or legacy value found  save default to configStore so the key is created
-    setSetting(mapped.id, 'lookbackDays', defaultLookback);
-    return defaultLookback;
-  }
-
-  return 0;
 }
 
 // Default export with all utility functions

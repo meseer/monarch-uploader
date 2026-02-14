@@ -32,7 +32,6 @@ jest.mock('../../src/core/utils', () => ({
 jest.mock('../../src/core/config', () => ({
   STORAGE: {
     ROGERSBANK_CATEGORY_MAPPINGS: 'rogersbank_category_mappings',
-    WEALTHSIMPLE_CATEGORY_MAPPINGS: 'wealthsimple_category_mappings',
     WEALTHSIMPLE_CONFIG: 'wealthsimple_config',
     QUESTRADE_CONFIG: 'questrade_config',
     CANADALIFE_CONFIG: 'canadalife_config',
@@ -549,8 +548,8 @@ describe('Category Mapper', () => {
 
       test('should return saved mapping when exists', () => {
         globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
-          if (key === 'wealthsimple_category_mappings') {
-            return JSON.stringify({ STARBUCKS: 'Dining' });
+          if (key === 'wealthsimple_config') {
+            return JSON.stringify({ categoryMappings: { STARBUCKS: 'Dining' } });
           }
           return defaultVal;
         });
@@ -559,23 +558,10 @@ describe('Category Mapper', () => {
         expect(result).toBe('Dining');
       });
 
-      test('should delete legacy key after migrate-on-read for Wealthsimple', () => {
-        const legacyMappings = { STARBUCKS: 'Dining', UBER: 'Transportation' };
-        globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
-          if (key === 'wealthsimple_category_mappings') return JSON.stringify(legacyMappings);
-          return defaultVal || '{}';
-        });
-
-        const result = getAllSavedWealthsimpleCategoryMappings();
-
-        expect(result).toEqual(legacyMappings);
-        expect(globalThis.GM_deleteValue).toHaveBeenCalledWith('wealthsimple_category_mappings');
-      });
-
       test('should apply automatic mapping for high similarity score', () => {
         globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
-          if (key === 'wealthsimple_category_mappings') {
-            return '{}';
+          if (key === 'wealthsimple_config') {
+            return JSON.stringify({ categoryMappings: {} });
           }
           return defaultVal;
         });
@@ -593,8 +579,8 @@ describe('Category Mapper', () => {
 
       test('should request manual selection for low similarity score', () => {
         globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
-          if (key === 'wealthsimple_category_mappings') {
-            return '{}';
+          if (key === 'wealthsimple_config') {
+            return JSON.stringify({ categoryMappings: {} });
           }
           return defaultVal;
         });
@@ -614,8 +600,8 @@ describe('Category Mapper', () => {
     describe('saveUserWealthsimpleCategorySelection', () => {
       test('should save user category selection to Wealthsimple storage', () => {
         globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
-          if (key === 'wealthsimple_category_mappings') {
-            return '{}';
+          if (key === 'wealthsimple_config') {
+            return JSON.stringify({ categoryMappings: {} });
           }
           return defaultVal;
         });
@@ -631,8 +617,8 @@ describe('Category Mapper', () => {
 
       test('should update existing mappings', () => {
         globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
-          if (key === 'wealthsimple_category_mappings') {
-            return JSON.stringify({ EXISTING: 'Old Category' });
+          if (key === 'wealthsimple_config') {
+            return JSON.stringify({ categoryMappings: { EXISTING: 'Old Category' } });
           }
           return defaultVal;
         });
@@ -667,8 +653,8 @@ describe('Category Mapper', () => {
           UBER: 'Transportation',
         };
         globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
-          if (key === 'wealthsimple_category_mappings') {
-            return JSON.stringify(mockMappings);
+          if (key === 'wealthsimple_config') {
+            return JSON.stringify({ categoryMappings: mockMappings });
           }
           return defaultVal;
         });
@@ -679,8 +665,8 @@ describe('Category Mapper', () => {
 
       test('should return empty object for no saved mappings', () => {
         globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
-          if (key === 'wealthsimple_category_mappings') {
-            return '{}';
+          if (key === 'wealthsimple_config') {
+            return JSON.stringify({ categoryMappings: {} });
           }
           return defaultVal;
         });
@@ -691,7 +677,7 @@ describe('Category Mapper', () => {
 
       test('should handle JSON parse errors', () => {
         globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
-          if (key === 'wealthsimple_category_mappings') {
+          if (key === 'wealthsimple_config') {
             return 'invalid json';
           }
           return defaultVal;
@@ -718,8 +704,8 @@ describe('Category Mapper', () => {
 
         // Save Wealthsimple mapping
         globalThis.GM_getValue.mockImplementation((key, defaultVal) => {
-          if (key === 'wealthsimple_category_mappings') {
-            return '{}';
+          if (key === 'wealthsimple_config') {
+            return JSON.stringify({ categoryMappings: {} });
           }
           return defaultVal;
         });
@@ -740,8 +726,8 @@ describe('Category Mapper', () => {
           if (key === 'rogersbank_category_mappings') {
             return JSON.stringify(rogersMappings);
           }
-          if (key === 'wealthsimple_category_mappings') {
-            return JSON.stringify(wealthsimpleMappings);
+          if (key === 'wealthsimple_config') {
+            return JSON.stringify({ categoryMappings: wealthsimpleMappings });
           }
           return defaultVal;
         });

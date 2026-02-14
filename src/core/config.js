@@ -44,7 +44,6 @@ export const STORAGE = {
   CANADALIFE_CONFIG: 'canadalife_config',
   ROGERSBANK_CONFIG: 'rogersbank_config',
   // Questrade specific storage keys
-  QUESTRADE_ACCOUNTS_CACHE: 'questrade_accounts_cache', // DEPRECATED - legacy cache, cleaned up after first API fetch
   QUESTRADE_LAST_UPLOAD_DATE_PREFIX: 'questrade_last_upload_date_',
   QUESTRADE_ACCOUNT_MAPPING_PREFIX: 'questrade_monarch_account_for_',
   QUESTRADE_HOLDINGS_FOR_PREFIX: 'questrade_holdings_for_',
@@ -68,19 +67,8 @@ export const STORAGE = {
   ROGERSBANK_LAST_CREDIT_LIMIT_PREFIX: 'rogersbank_last_credit_limit_', // Store last synced credit limit per account
   ROGERSBANK_BALANCE_CHECKPOINT_PREFIX: 'rogersbank_balance_checkpoint_', // Store balance checkpoint for reconstruction
   ROGERSBANK_STORE_TX_DETAILS_IN_NOTES: 'rogersbank_store_tx_details_in_notes', // Whether to store transaction details in notes (default: false)
-  // Wealthsimple specific storage keys
-  WEALTHSIMPLE_AUTH_TOKEN: 'wealthsimple_auth_token',
-  WEALTHSIMPLE_ACCESS_TOKEN: 'wealthsimple_access_token',
-  WEALTHSIMPLE_IDENTITY_ID: 'wealthsimple_identity_id',
-  WEALTHSIMPLE_TOKEN_EXPIRES_AT: 'wealthsimple_token_expires_at',
-  WEALTHSIMPLE_INVEST_PROFILE: 'wealthsimple_invest_profile',
-  WEALTHSIMPLE_TRADE_PROFILE: 'wealthsimple_trade_profile',
-  WEALTHSIMPLE_CATEGORY_MAPPINGS: 'wealthsimple_category_mappings', // Shared across all Wealthsimple accounts
   // Lookback period storage keys (days to look back from last upload date)
-  QUESTRADE_LOOKBACK_DAYS: 'questrade_lookback_days',
-  CANADALIFE_LOOKBACK_DAYS: 'canadalife_lookback_days',
   ROGERSBANK_LOOKBACK_DAYS: 'rogersbank_lookback_days',
-  WEALTHSIMPLE_LOOKBACK_DAYS: 'wealthsimple_lookback_days',
   // Transaction retention settings (separate from lookback - for deduplication)
   QUESTRADE_TRANSACTION_RETENTION_DAYS: 'questrade_transaction_retention_days',
   QUESTRADE_TRANSACTION_RETENTION_COUNT: 'questrade_transaction_retention_count',

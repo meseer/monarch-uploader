@@ -26,8 +26,6 @@ jest.mock('../../src/core/config', () => ({
     QUESTRADE_ACCOUNT_MAPPING_PREFIX: 'questrade_account_mapping_',
     CANADALIFE_ACCOUNT_MAPPING_PREFIX: 'canadalife_account_mapping_',
     ROGERSBANK_ACCOUNT_MAPPING_PREFIX: 'rogersbank_account_mapping_',
-    QUESTRADE_LOOKBACK_DAYS: 'questrade_lookback_days',
-    CANADALIFE_LOOKBACK_DAYS: 'canadalife_lookback_days',
     ROGERSBANK_LOOKBACK_DAYS: 'rogersbank_lookback_days',
     QUESTRADE_LAST_UPLOAD_DATE_PREFIX: 'questrade_last_upload_date_',
     CANADALIFE_LAST_UPLOAD_DATE_PREFIX: 'canadalife_last_upload_date_',
@@ -35,9 +33,11 @@ jest.mock('../../src/core/config', () => ({
     ROGERSBANK_UPLOADED_REFS_PREFIX: 'rogersbank_uploaded_refs_',
     ROGERSBANK_CATEGORY_MAPPINGS: 'rogersbank_category_mappings',
     MONARCH_TOKEN: 'monarch_token',
-    WEALTHSIMPLE_ACCESS_TOKEN: 'wealthsimple_access_token',
     WEALTHSIMPLE_ACCOUNTS_LIST: 'wealthsimple_accounts_list',
-    WEALTHSIMPLE_CATEGORY_MAPPINGS: 'wealthsimple_category_mappings',
+    WEALTHSIMPLE_CONFIG: 'wealthsimple_config',
+    QUESTRADE_CONFIG: 'questrade_config',
+    CANADALIFE_CONFIG: 'canadalife_config',
+    ROGERSBANK_CONFIG: 'rogersbank_config',
   },
   API: {
     MONARCH_APP_URL: 'https://app.monarchmoney.com',
@@ -148,7 +148,7 @@ jest.mock('../../src/core/integrationCapabilities', () => ({
     hasDeduplication: true,
     hasHoldings: integrationId === 'questrade' || integrationId === 'wealthsimple',
     hasCategorization: integrationId === 'rogersbank' || integrationId === 'wealthsimple',
-    categoryMappingsStorageKey: integrationId === 'rogersbank' ? 'rogersbank_category_mappings' : (integrationId === 'wealthsimple' ? 'wealthsimple_category_mappings' : null),
+    categoryMappingsStorageKey: integrationId === 'rogersbank' ? 'rogersbank_category_mappings' : (integrationId === 'wealthsimple' ? 'wealthsimple_config' : null),
     categorySourceLabel: integrationId === 'rogersbank' ? 'Bank Category' : (integrationId === 'wealthsimple' ? 'Merchant Name' : null),
     settings: [],
     settingDefaults: {},
@@ -172,7 +172,7 @@ jest.mock('../../src/core/integrationCapabilities', () => ({
       return { storageKey: 'rogersbank_category_mappings', sourceLabel: 'Bank Category' };
     }
     if (integrationId === 'wealthsimple') {
-      return { storageKey: 'wealthsimple_category_mappings', sourceLabel: 'Merchant Name' };
+      return { storageKey: 'wealthsimple_config', sourceLabel: 'Merchant Name' };
     }
     return null;
   }),
