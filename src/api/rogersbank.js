@@ -49,6 +49,16 @@ export function getRogersBankCredentials() {
         setAuth(INTEGRATIONS.ROGERSBANK, legacyData);
         Object.assign(credentials, legacyData);
 
+        // Clean up legacy keys after successful migration
+        GM_deleteValue(STORAGE.ROGERSBANK_AUTH_TOKEN);
+        GM_deleteValue(STORAGE.ROGERSBANK_ACCOUNT_ID);
+        GM_deleteValue(STORAGE.ROGERSBANK_CUSTOMER_ID);
+        GM_deleteValue(STORAGE.ROGERSBANK_ACCOUNT_ID_ENCODED);
+        GM_deleteValue(STORAGE.ROGERSBANK_CUSTOMER_ID_ENCODED);
+        GM_deleteValue(STORAGE.ROGERSBANK_DEVICE_ID);
+        GM_deleteValue(STORAGE.ROGERSBANK_LAST_UPDATED);
+        debugLog('getRogersBankCredentials: Cleaned up legacy credential keys');
+
         debugLog('Rogers Bank credentials retrieved (migrated from legacy):', {
           hasToken: Boolean(legacyData.authToken),
           hasAccountId: Boolean(legacyData.accountId),

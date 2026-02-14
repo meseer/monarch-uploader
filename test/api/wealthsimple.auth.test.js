@@ -25,6 +25,24 @@ jest.mock('../../src/core/state', () => ({
   },
 }));
 
+/**
+ * Helper to set up GM_getValue mock with Wealthsimple auth in configStore format.
+ * configStore.getAuth() reads from GM_getValue(STORAGE.WEALTHSIMPLE_CONFIG) and parses JSON.
+ * @param {Object} authData - Auth data to store (null for no auth)
+ * @param {Object} extraMocks - Additional key->value pairs for GM_getValue
+ */
+function setupConfigStoreAuth(authData, extraMocks = {}) {
+  GM_getValue.mockImplementation((key, defaultValue) => {
+    if (key === STORAGE.WEALTHSIMPLE_CONFIG) {
+      if (!authData) return '{}';
+      return JSON.stringify({ auth: authData });
+    }
+    if (key in extraMocks) return extraMocks[key];
+    if (key === 'debug_log_level') return 'info';
+    return defaultValue !== undefined ? defaultValue : null;
+  });
+}
+
 describe('Wealthsimple API Client - Auth & Accounts', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -34,7 +52,7 @@ describe('Wealthsimple API Client - Auth & Accounts', () => {
 
   describe('checkAuth', () => {
     it('should return not authenticated when no token stored', () => {
-      GM_getValue.mockReturnValue(null);
+      setupConfigStoreAuth(null);
 
       const result = wealthsimpleApi.checkAuth();
 
@@ -44,12 +62,11 @@ describe('Wealthsimple API Client - Auth & Accounts', () => {
     });
 
     it('should return authenticated when valid token exists', () => {
-      const futureDate = new Date(Date.now() + 3600000).toISOString(); // 1 hour future
-      GM_getValue.mockImplementation((key) => {
-        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
-        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
-        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
-        return null;
+      const futureDate = new Date(Date.now() + 3600000).toISOString();
+      setupConfigStoreAuth({
+        accessToken: 'test-token',
+        identityId: 'identity-123',
+        expiresAt: futureDate,
       });
 
       const result = wealthsimpleApi.checkAuth();
@@ -61,31 +78,29 @@ describe('Wealthsimple API Client - Auth & Accounts', () => {
     });
 
     it('should return expired true and clear data when token is expired', () => {
-      const pastDate = new Date(Date.now() - 3600000).toISOString(); // 1 hour past
-      GM_getValue.mockImplementation((key) => {
-        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
-        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
-        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return pastDate;
-        return null;
+      const pastDate = new Date(Date.now() - 3600000).toISOString();
+      setupConfigStoreAuth({
+        accessToken: 'test-token',
+        identityId: 'identity-123',
+        expiresAt: pastDate,
       });
 
       const result = wealthsimpleApi.checkAuth();
 
       expect(result.authenticated).toBe(false);
       expect(result.expired).toBe(true);
-      expect(GM_deleteValue).toHaveBeenCalledWith(STORAGE.WEALTHSIMPLE_ACCESS_TOKEN);
-      expect(GM_deleteValue).toHaveBeenCalledWith(STORAGE.WEALTHSIMPLE_IDENTITY_ID);
+      // clearTokenData now clears via configStore (GM_setValue with empty config)
+      expect(GM_setValue).toHaveBeenCalled();
     });
 
     it('should include profile IDs when available', () => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
-      GM_getValue.mockImplementation((key) => {
-        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
-        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
-        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
-        if (key === STORAGE.WEALTHSIMPLE_INVEST_PROFILE) return 'invest-456';
-        if (key === STORAGE.WEALTHSIMPLE_TRADE_PROFILE) return 'trade-789';
-        return null;
+      setupConfigStoreAuth({
+        accessToken: 'test-token',
+        identityId: 'identity-123',
+        expiresAt: futureDate,
+        investProfile: 'invest-456',
+        tradeProfile: 'trade-789',
       });
 
       const result = wealthsimpleApi.checkAuth();
@@ -104,7 +119,7 @@ describe('Wealthsimple API Client - Auth & Accounts', () => {
       jest.useRealTimers();
     });
 
-    it('should set up cookie monitoring', () => {
+    it('should set up cookie monitoring and save to configStore', () => {
       const tokenData = {
         access_token: 'test-token',
         identity_canonical_id: 'identity-123',
@@ -116,16 +131,14 @@ describe('Wealthsimple API Client - Auth & Accounts', () => {
       };
 
       document.cookie = `_oauth2_access_v2=${encodeURIComponent(JSON.stringify(tokenData))}`;
+      setupConfigStoreAuth(null);
 
       wealthsimpleApi.setupTokenMonitoring();
 
+      // saveTokenData now writes to configStore via setAuth ’ GM_setValue(WEALTHSIMPLE_CONFIG, ...)
       expect(GM_setValue).toHaveBeenCalledWith(
-        STORAGE.WEALTHSIMPLE_ACCESS_TOKEN,
-        'test-token',
-      );
-      expect(GM_setValue).toHaveBeenCalledWith(
-        STORAGE.WEALTHSIMPLE_IDENTITY_ID,
-        'identity-123',
+        STORAGE.WEALTHSIMPLE_CONFIG,
+        expect.stringContaining('test-token'),
       );
     });
 
@@ -144,11 +157,10 @@ describe('Wealthsimple API Client - Auth & Accounts', () => {
   describe('makeGraphQLQuery', () => {
     it('should make successful GraphQL request', async () => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
-      GM_getValue.mockImplementation((key) => {
-        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
-        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
-        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
-        return null;
+      setupConfigStoreAuth({
+        accessToken: 'test-token',
+        identityId: 'identity-123',
+        expiresAt: futureDate,
       });
 
       const mockResponse = {
@@ -190,11 +202,10 @@ describe('Wealthsimple API Client - Auth & Accounts', () => {
 
     it('should inject identity ID into variables if not present', async () => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
-      GM_getValue.mockImplementation((key) => {
-        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
-        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
-        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
-        return null;
+      setupConfigStoreAuth({
+        accessToken: 'test-token',
+        identityId: 'identity-123',
+        expiresAt: futureDate,
       });
 
       GM_xmlhttpRequest.mockImplementation(({ data, onload }) => {
@@ -213,11 +224,10 @@ describe('Wealthsimple API Client - Auth & Accounts', () => {
 
     it('should NOT inject identity ID for FetchFundingIntent operation', async () => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
-      GM_getValue.mockImplementation((key) => {
-        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
-        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
-        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
-        return null;
+      setupConfigStoreAuth({
+        accessToken: 'test-token',
+        identityId: 'identity-123',
+        expiresAt: futureDate,
       });
 
       GM_xmlhttpRequest.mockImplementation(({ data, onload }) => {
@@ -237,7 +247,7 @@ describe('Wealthsimple API Client - Auth & Accounts', () => {
     });
 
     it('should throw error when not authenticated', async () => {
-      GM_getValue.mockReturnValue(null);
+      setupConfigStoreAuth(null);
 
       await expect(
         wealthsimpleApi.makeGraphQLQuery('TestQuery', 'query { ... }', {}),
@@ -246,11 +256,10 @@ describe('Wealthsimple API Client - Auth & Accounts', () => {
 
     it('should handle 401 and clear token', async () => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
-      GM_getValue.mockImplementation((key) => {
-        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
-        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
-        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
-        return null;
+      setupConfigStoreAuth({
+        accessToken: 'test-token',
+        identityId: 'identity-123',
+        expiresAt: futureDate,
       });
 
       GM_xmlhttpRequest.mockImplementation(({ onload }) => {
@@ -261,16 +270,16 @@ describe('Wealthsimple API Client - Auth & Accounts', () => {
         wealthsimpleApi.makeGraphQLQuery('TestQuery', 'query { ... }', {}),
       ).rejects.toThrow('Auth token expired');
 
-      expect(GM_deleteValue).toHaveBeenCalledWith(STORAGE.WEALTHSIMPLE_ACCESS_TOKEN);
+      // clearTokenData now clears via configStore
+      expect(GM_setValue).toHaveBeenCalled();
     });
 
     it('should handle GraphQL errors in response', async () => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
-      GM_getValue.mockImplementation((key) => {
-        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
-        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
-        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
-        return null;
+      setupConfigStoreAuth({
+        accessToken: 'test-token',
+        identityId: 'identity-123',
+        expiresAt: futureDate,
       });
 
       const errorResponse = {
@@ -294,11 +303,10 @@ describe('Wealthsimple API Client - Auth & Accounts', () => {
 
     it('should handle network errors', async () => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
-      GM_getValue.mockImplementation((key) => {
-        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
-        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
-        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
-        return null;
+      setupConfigStoreAuth({
+        accessToken: 'test-token',
+        identityId: 'identity-123',
+        expiresAt: futureDate,
       });
 
       GM_xmlhttpRequest.mockImplementation(({ onerror }) => {
@@ -314,11 +322,10 @@ describe('Wealthsimple API Client - Auth & Accounts', () => {
   describe('validateToken', () => {
     it('should validate token successfully', async () => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
-      GM_getValue.mockImplementation((key) => {
-        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
-        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
-        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
-        return null;
+      setupConfigStoreAuth({
+        accessToken: 'test-token',
+        identityId: 'identity-123',
+        expiresAt: futureDate,
       });
 
       const tokenInfo = {
@@ -340,7 +347,7 @@ describe('Wealthsimple API Client - Auth & Accounts', () => {
     });
 
     it('should throw error when no token to validate', async () => {
-      GM_getValue.mockReturnValue(null);
+      setupConfigStoreAuth(null);
 
       await expect(wealthsimpleApi.validateToken()).rejects.toThrow(
         'No token to validate',
@@ -349,11 +356,10 @@ describe('Wealthsimple API Client - Auth & Accounts', () => {
 
     it('should handle 401 and clear token', async () => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
-      GM_getValue.mockImplementation((key) => {
-        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
-        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
-        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
-        return null;
+      setupConfigStoreAuth({
+        accessToken: 'test-token',
+        identityId: 'identity-123',
+        expiresAt: futureDate,
       });
 
       GM_xmlhttpRequest.mockImplementation(({ onload }) => {
@@ -364,18 +370,18 @@ describe('Wealthsimple API Client - Auth & Accounts', () => {
         'Token is invalid or expired',
       );
 
-      expect(GM_deleteValue).toHaveBeenCalled();
+      // clearTokenData now clears via configStore
+      expect(GM_setValue).toHaveBeenCalled();
     });
   });
 
   describe('fetchAccounts', () => {
     beforeEach(() => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
-      GM_getValue.mockImplementation((key) => {
-        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
-        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
-        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
-        return null;
+      setupConfigStoreAuth({
+        accessToken: 'test-token',
+        identityId: 'identity-123',
+        expiresAt: futureDate,
       });
     });
 
@@ -697,7 +703,7 @@ describe('Wealthsimple API Client - Auth & Accounts', () => {
   });
 
   describe('Cookie parsing', () => {
-    it('should parse valid OAuth cookie', () => {
+    it('should parse valid OAuth cookie and save to configStore', () => {
       const tokenData = {
         access_token: 'test-token',
         identity_canonical_id: 'identity-123',
@@ -710,20 +716,18 @@ describe('Wealthsimple API Client - Auth & Accounts', () => {
       };
 
       document.cookie = `_oauth2_access_v2=${encodeURIComponent(JSON.stringify(tokenData))}`;
+      setupConfigStoreAuth(null);
 
       wealthsimpleApi.setupTokenMonitoring();
 
+      // saveTokenData now writes to configStore via setAuth
       expect(GM_setValue).toHaveBeenCalledWith(
-        STORAGE.WEALTHSIMPLE_ACCESS_TOKEN,
-        'test-token',
+        STORAGE.WEALTHSIMPLE_CONFIG,
+        expect.stringContaining('test-token'),
       );
       expect(GM_setValue).toHaveBeenCalledWith(
-        STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT,
-        '2026-01-02T22:00:00.000Z',
-      );
-      expect(GM_setValue).toHaveBeenCalledWith(
-        STORAGE.WEALTHSIMPLE_INVEST_PROFILE,
-        'invest-456',
+        STORAGE.WEALTHSIMPLE_CONFIG,
+        expect.stringContaining('invest-456'),
       );
     });
 
@@ -735,18 +739,20 @@ describe('Wealthsimple API Client - Auth & Accounts', () => {
       };
 
       document.cookie = `_oauth2_access_v2=${encodeURIComponent(JSON.stringify(tokenData))}`;
+      setupConfigStoreAuth(null);
 
       wealthsimpleApi.setupTokenMonitoring();
 
+      // Should save to configStore without throwing
       expect(GM_setValue).toHaveBeenCalledWith(
-        STORAGE.WEALTHSIMPLE_ACCESS_TOKEN,
-        'test-token',
+        STORAGE.WEALTHSIMPLE_CONFIG,
+        expect.stringContaining('test-token'),
       );
-      // Should not throw, just not save profile IDs
     });
 
     it('should handle missing OAuth cookie', () => {
       document.cookie = 'some_other_cookie=value';
+      setupConfigStoreAuth(null);
 
       wealthsimpleApi.setupTokenMonitoring();
 
@@ -758,11 +764,10 @@ describe('Wealthsimple API Client - Auth & Accounts', () => {
   describe('fetchAccountBalances', () => {
     beforeEach(() => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
-      GM_getValue.mockImplementation((key) => {
-        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
-        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
-        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
-        return null;
+      setupConfigStoreAuth({
+        accessToken: 'test-token',
+        identityId: 'identity-123',
+        expiresAt: futureDate,
       });
     });
 

@@ -24,6 +24,20 @@ jest.mock('../../src/core/state', () => ({
   },
 }));
 
+/**
+ * Helper to set up GM_getValue mock with Wealthsimple auth in configStore format.
+ */
+function setupConfigStoreAuth(authData) {
+  GM_getValue.mockImplementation((key, defaultValue) => {
+    if (key === STORAGE.WEALTHSIMPLE_CONFIG) {
+      if (!authData) return '{}';
+      return JSON.stringify({ auth: authData });
+    }
+    if (key === 'debug_log_level') return 'info';
+    return defaultValue !== undefined ? defaultValue : null;
+  });
+}
+
 describe('Wealthsimple API Client - Transactions', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -37,11 +51,10 @@ describe('Wealthsimple API Client - Transactions', () => {
       jest.spyOn(Date, 'now').mockReturnValue(new Date('2026-01-03T16:00:00.000Z').getTime());
 
       const futureDate = new Date(Date.now() + 3600000).toISOString();
-      GM_getValue.mockImplementation((key) => {
-        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
-        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
-        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
-        return null;
+      setupConfigStoreAuth({
+        accessToken: 'test-token',
+        identityId: 'identity-123',
+        expiresAt: futureDate,
       });
     });
 
@@ -497,11 +510,10 @@ describe('Wealthsimple API Client - Transactions', () => {
   describe('fetchCreditCardAccountSummary', () => {
     beforeEach(() => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
-      GM_getValue.mockImplementation((key) => {
-        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
-        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
-        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
-        return null;
+      setupConfigStoreAuth({
+        accessToken: 'test-token',
+        identityId: 'identity-123',
+        expiresAt: futureDate,
       });
     });
 
@@ -704,7 +716,8 @@ describe('Wealthsimple API Client - Transactions', () => {
         wealthsimpleApi.fetchCreditCardAccountSummary('ca-credit-card-ABC123'),
       ).rejects.toThrow('Auth token expired');
 
-      expect(GM_deleteValue).toHaveBeenCalledWith(STORAGE.WEALTHSIMPLE_ACCESS_TOKEN);
+      // clearTokenData now clears via configStore
+      expect(GM_setValue).toHaveBeenCalled();
     });
 
     it('should handle GraphQL errors', async () => {
@@ -750,11 +763,10 @@ describe('Wealthsimple API Client - Transactions', () => {
   describe('fetchFundingIntents', () => {
     beforeEach(() => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
-      GM_getValue.mockImplementation((key) => {
-        if (key === STORAGE.WEALTHSIMPLE_ACCESS_TOKEN) return 'test-token';
-        if (key === STORAGE.WEALTHSIMPLE_IDENTITY_ID) return 'identity-123';
-        if (key === STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT) return futureDate;
-        return null;
+      setupConfigStoreAuth({
+        accessToken: 'test-token',
+        identityId: 'identity-123',
+        expiresAt: futureDate,
       });
     });
 

@@ -60,12 +60,11 @@ function parseOAuthCookie() {
 
 /**
  * Save Wealthsimple token data to storage
- * Writes to configStore (primary) and legacy keys (backward compatibility)
+ * Writes to configStore only
  * @param {Object} tokenData - Token data to save
  */
 function saveTokenData(tokenData) {
   if (tokenData) {
-    // Write to configStore (primary)
     const authData = {
       accessToken: tokenData.accessToken,
       identityId: tokenData.identityId,
@@ -78,18 +77,6 @@ function saveTokenData(tokenData) {
       authData.tradeProfile = tokenData.tradeProfile;
     }
     setAuth(INTEGRATIONS.WEALTHSIMPLE, authData);
-
-    // Write to legacy keys (backward compatibility during migration)
-    GM_setValue(STORAGE.WEALTHSIMPLE_ACCESS_TOKEN, tokenData.accessToken);
-    GM_setValue(STORAGE.WEALTHSIMPLE_IDENTITY_ID, tokenData.identityId);
-    GM_setValue(STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT, tokenData.expiresAt);
-
-    if (tokenData.investProfile) {
-      GM_setValue(STORAGE.WEALTHSIMPLE_INVEST_PROFILE, tokenData.investProfile);
-    }
-    if (tokenData.tradeProfile) {
-      GM_setValue(STORAGE.WEALTHSIMPLE_TRADE_PROFILE, tokenData.tradeProfile);
-    }
 
     debugLog('Wealthsimple token data saved:', {
       identityId: tokenData.identityId,
@@ -111,18 +98,9 @@ function saveTokenData(tokenData) {
 
 /**
  * Clear all Wealthsimple token data from storage
- * Clears from both configStore (primary) and legacy keys
  */
 function clearTokenData() {
-  // Clear from configStore
   clearConfigAuth(INTEGRATIONS.WEALTHSIMPLE);
-
-  // Clear legacy keys
-  GM_deleteValue(STORAGE.WEALTHSIMPLE_ACCESS_TOKEN);
-  GM_deleteValue(STORAGE.WEALTHSIMPLE_IDENTITY_ID);
-  GM_deleteValue(STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT);
-  GM_deleteValue(STORAGE.WEALTHSIMPLE_INVEST_PROFILE);
-  GM_deleteValue(STORAGE.WEALTHSIMPLE_TRADE_PROFILE);
 
   debugLog('Wealthsimple token data cleared');
 
@@ -132,11 +110,10 @@ function clearTokenData() {
 
 /**
  * Get stored Wealthsimple token data
- * Reads from configStore first, falls back to legacy keys
+ * Reads from configStore only
  * @returns {Object|null} Token data or null
  */
 function getStoredTokenData() {
-  // Try configStore first
   const configAuth = getAuth(INTEGRATIONS.WEALTHSIMPLE);
   if (configAuth.accessToken && configAuth.identityId) {
     return {
@@ -148,22 +125,7 @@ function getStoredTokenData() {
     };
   }
 
-  // Fall back to legacy keys
-  const accessToken = GM_getValue(STORAGE.WEALTHSIMPLE_ACCESS_TOKEN);
-  const identityId = GM_getValue(STORAGE.WEALTHSIMPLE_IDENTITY_ID);
-  const expiresAt = GM_getValue(STORAGE.WEALTHSIMPLE_TOKEN_EXPIRES_AT);
-
-  if (!accessToken || !identityId) {
-    return null;
-  }
-
-  return {
-    accessToken,
-    identityId,
-    expiresAt,
-    investProfile: GM_getValue(STORAGE.WEALTHSIMPLE_INVEST_PROFILE),
-    tradeProfile: GM_getValue(STORAGE.WEALTHSIMPLE_TRADE_PROFILE),
-  };
+  return null;
 }
 
 /**
