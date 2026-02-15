@@ -67,6 +67,11 @@ export function convertToCSV(data, columns = null) {
 
 /**
  * Convert Rogers Bank transactions to Monarch CSV format
+ *
+ * Supports both settled and pending transactions:
+ * - Settled transactions: standard CSV row with no tags
+ * - Pending transactions: "Pending" tag and generated hash ID in notes (for reconciliation)
+ *
  * @param {Array} transactions - Array of Rogers Bank transaction objects
  * @param {string} accountName - Rogers account name for the Account column
  * @param {Object} options - Conversion options
@@ -115,11 +120,26 @@ export function convertTransactionsToMonarchCSV(transactions, accountName, optio
       }
     }
 
-    // Create notes field - only include transaction details if setting is enabled
-    let notes = '';
-    if (storeTransactionDetailsInNotes) {
-      notes = `${transaction.activityType || ''} / ${transaction.referenceNumber || ''}`.trim();
+    // Check if this is a pending transaction
+    const isPending = transaction.isPending === true;
+
+    // Build notes field
+    const notesParts = [];
+
+    // Include transaction details if setting is enabled (for settled transactions)
+    if (storeTransactionDetailsInNotes && !isPending) {
+      const details = `${transaction.activityType || ''} / ${transaction.referenceNumber || ''}`.trim();
+      if (details && details !== '/') {
+        notesParts.push(details);
+      }
     }
+
+    // For pending transactions, always include the generated hash ID for reconciliation
+    if (isPending && transaction.pendingId) {
+      notesParts.push(transaction.pendingId);
+    }
+
+    const notes = notesParts.join('\n');
 
     return {
       Date: transaction.date || '',
@@ -129,7 +149,7 @@ export function convertTransactionsToMonarchCSV(transactions, accountName, optio
       'Original Statement': transaction.merchant?.name || '',
       Notes: notes,
       Amount: -(transaction.amount?.value || 0), // Negate amount for Rogers transactions
-      Tags: '', // Empty for now, can be enhanced later
+      Tags: isPending ? 'Pending' : '',
     };
   });
 
@@ -138,6 +158,7 @@ export function convertTransactionsToMonarchCSV(transactions, accountName, optio
     transformedCount: monarchRows.length,
     sample: monarchRows[0], // Log first row as sample
     resolvedCategoryCount: transactions.filter((t) => t.resolvedMonarchCategory).length,
+    pendingCount: transactions.filter((t) => t.isPending).length,
   });
 
   return convertToCSV(monarchRows, columns);

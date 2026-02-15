@@ -5,26 +5,12 @@ global.TextEncoder = TextEncoder;
 
 // Mock for Web Crypto API (crypto.subtle)
 // JSDOM has a crypto object but without subtle, so we need to add it
+// Use Node.js built-in crypto for real SHA-256 hashing to avoid collisions
+const nodeCrypto = require('crypto');
 const mockDigest = jest.fn(async (algorithm, data) => {
-  // Create a deterministic hash based on the input data
-  // This allows consistent hashing in tests
-  const dataArray = new Uint8Array(data);
-  const hash = new ArrayBuffer(32);
-  const hashView = new Uint8Array(hash);
-
-  // Simple deterministic hash for testing (not cryptographically secure)
-  let sum = 0;
-  for (let i = 0; i < dataArray.length; i++) {
-    sum = (sum * 31 + dataArray[i]) >>> 0;
-  }
-
-  // Fill hash buffer with deterministic values
-  for (let i = 0; i < 32; i++) {
-    hashView[i] = (sum >> (i % 4) * 8) & 0xff;
-    sum = (sum * 31 + i) >>> 0;
-  }
-
-  return hash;
+  const algoName = algorithm.replace('-', '').toLowerCase(); // 'SHA-256' -> 'sha256'
+  const hash = nodeCrypto.createHash(algoName).update(Buffer.from(data)).digest();
+  return hash.buffer.slice(hash.byteOffset, hash.byteOffset + hash.byteLength);
 });
 
 // Define subtle on the existing crypto object or create new one

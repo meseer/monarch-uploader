@@ -163,6 +163,31 @@ jest.mock('../../src/core/integrationCapabilities', () => ({
     QUESTRADE: 'questrade',
     CANADALIFE: 'canadalife',
   },
+  ACCOUNT_SETTINGS: {
+    STORE_TX_DETAILS_IN_NOTES: 'storeTransactionDetailsInNotes',
+    TRANSACTION_RETENTION_DAYS: 'transactionRetentionDays',
+    TRANSACTION_RETENTION_COUNT: 'transactionRetentionCount',
+    STRIP_STORE_NUMBERS: 'stripStoreNumbers',
+    INCLUDE_PENDING_TRANSACTIONS: 'includePendingTransactions',
+    INVERT_BALANCE: 'invertBalance',
+    SKIP_CATEGORIZATION: 'skipCategorization',
+  },
+}));
+
+jest.mock('../../src/services/rogersbank/pendingTransactions', () => ({
+  separateAndDeduplicateTransactions: jest.fn(async (transactions) => {
+    const settled = (transactions || []).filter((tx) => tx.activityStatus === 'APPROVED');
+    const pending = (transactions || []).filter((tx) => tx.activityStatus === 'PENDING').map((tx) => ({
+      ...tx,
+      generatedId: `rb-tx:mock${Math.random().toString(16).slice(2, 18)}`,
+    }));
+    return { settled, pending, pendingIdMap: new Map(), settledIdMap: new Map(), duplicatesRemoved: 0 };
+  }),
+  reconcileRogersPendingTransactions: jest.fn(async () => ({
+    success: true, settled: 0, cancelled: 0, failed: 0, noPendingTransactions: true,
+  })),
+  formatReconciliationMessage: jest.fn(() => 'No pending transactions'),
+  formatPendingIdForNotes: jest.fn((id) => id || ''),
 }));
 
 // Mock GM functions

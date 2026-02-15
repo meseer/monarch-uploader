@@ -172,17 +172,21 @@ describe('Integration Capabilities', () => {
         expect(rb.hasHoldings).toBe(false);
       });
 
-      test('should have transaction settings but not Wealthsimple-specific ones', () => {
+      test('should have transaction and pending settings but not strip store numbers', () => {
         expect(rb.settings).toContain(ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES);
         expect(rb.settings).toContain(ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS);
         expect(rb.settings).toContain(ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT);
         expect(rb.settings).toContain(ACCOUNT_SETTINGS.SKIP_CATEGORIZATION);
+        expect(rb.settings).toContain(ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS);
+        expect(rb.settings).toContain(ACCOUNT_SETTINGS.INVERT_BALANCE);
         expect(rb.settings).not.toContain(ACCOUNT_SETTINGS.STRIP_STORE_NUMBERS);
-        expect(rb.settings).not.toContain(ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS);
       });
 
-      test('should have correct default for skipCategorization', () => {
+      test('should have correct default values', () => {
         expect(rb.settingDefaults[ACCOUNT_SETTINGS.SKIP_CATEGORIZATION]).toBe(false);
+        expect(rb.settingDefaults[ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS]).toBe(true);
+        expect(rb.settingDefaults[ACCOUNT_SETTINGS.INVERT_BALANCE]).toBe(false);
+        expect(rb.settingDefaults[ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES]).toBe(false);
       });
     });
   });

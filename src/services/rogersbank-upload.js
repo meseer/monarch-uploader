@@ -24,7 +24,13 @@ import {
   getRetentionSettingsFromAccount,
 } from '../utils/transactionStorage';
 import accountService from './common/accountService';
-import { INTEGRATIONS } from '../core/integrationCapabilities';
+import { INTEGRATIONS, ACCOUNT_SETTINGS } from '../core/integrationCapabilities';
+import {
+  separateAndDeduplicateTransactions,
+  reconcileRogersPendingTransactions,
+  formatReconciliationMessage,
+  formatPendingIdForNotes,
+} from './rogersbank/pendingTransactions';
 
 /**
  * Extract Rogers account name from DOM
@@ -64,19 +70,18 @@ function getEndOfCurrentMonth() {
 }
 
 /**
- * Filter out already uploaded transactions
+ * Filter out already uploaded settled transactions
  * Uses consolidated storage for uploaded transaction IDs
- * @param {Array} transactions - Array of transactions
+ * @param {Array} transactions - Array of settled transactions
  * @param {string} accountId - Rogers account ID
  * @returns {Object} Filtered transactions and statistics
  */
-function filterDuplicateTransactions(transactions, accountId) {
+function filterDuplicateSettledTransactions(transactions, accountId) {
   // Read from consolidated storage (uploadedTransactions in account object)
   const accountData = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, accountId);
   const uploadedRefs = getTransactionIdsFromArray(accountData?.uploadedTransactions || []);
   const originalCount = transactions.length;
 
-  // DIAGNOSTIC: Log stored transaction IDs for debugging
   debugLog(`[DEDUP DEBUG] Account: ${accountId}`);
   debugLog(`[DEDUP DEBUG] Stored transaction IDs count: ${uploadedRefs.size}`);
   if (uploadedRefs.size > 0) {
@@ -87,9 +92,8 @@ function filterDuplicateTransactions(transactions, accountId) {
     const refNum = transaction.referenceNumber;
     const isNew = !uploadedRefs.has(refNum);
 
-    // DIAGNOSTIC: Log each transaction being checked if it passes filter
     if (isNew) {
-      debugLog(`[DEDUP DEBUG] Transaction PASSED filter - refNum: "${refNum}" (type: ${typeof refNum}), date: ${transaction.activityDate}, amount: ${transaction.transactionAmount}, merchant: ${transaction.merchant?.name || 'N/A'}`);
+      debugLog(`[DEDUP DEBUG] Settled transaction PASSED filter - refNum: "${refNum}", date: ${transaction.date}, merchant: ${transaction.merchant?.name || 'N/A'}`);
     }
 
     return isNew;
@@ -97,23 +101,40 @@ function filterDuplicateTransactions(transactions, accountId) {
 
   const duplicateCount = originalCount - newTransactions.length;
 
-  // DIAGNOSTIC: Summary logging
-  debugLog(`[DEDUP DEBUG] Filter summary: ${originalCount} total, ${duplicateCount} duplicates, ${newTransactions.length} new`);
-
-  if (newTransactions.length > 0) {
-    debugLog('[DEDUP DEBUG] NEW transactions that will be uploaded:',
-      newTransactions.map((tx) => ({
-        refNum: tx.referenceNumber,
-        refNumType: typeof tx.referenceNumber,
-        date: tx.activityDate,
-        amount: tx.transactionAmount,
-        merchant: tx.merchant?.name,
-      })));
+  if (duplicateCount > 0) {
+    debugLog(`Filtered out ${duplicateCount} duplicate settled transactions`);
   }
 
+  return { transactions: newTransactions, duplicateCount, originalCount };
+}
+
+/**
+ * Filter out already uploaded pending transactions
+ * Uses generated hash IDs stored in uploadedTransactions
+ * @param {Array} pendingTransactions - Array of pending transactions with generatedId property
+ * @param {string} accountId - Rogers account ID
+ * @returns {Object} Filtered transactions and statistics
+ */
+function filterDuplicatePendingTransactions(pendingTransactions, accountId) {
+  const accountData = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, accountId);
+  const uploadedRefs = getTransactionIdsFromArray(accountData?.uploadedTransactions || []);
+  const originalCount = pendingTransactions.length;
+
+  const newTransactions = pendingTransactions.filter((transaction) => {
+    const hashId = transaction.generatedId;
+    const isNew = !uploadedRefs.has(hashId);
+
+    if (isNew) {
+      debugLog(`[DEDUP DEBUG] Pending transaction PASSED filter - hashId: "${hashId}", date: ${transaction.date}, merchant: ${transaction.merchant?.name || 'N/A'}`);
+    }
+
+    return isNew;
+  });
+
+  const duplicateCount = originalCount - newTransactions.length;
+
   if (duplicateCount > 0) {
-    debugLog(`Filtered out ${duplicateCount} duplicate transactions`);
-    toast.show(`Skipping ${duplicateCount} already uploaded transactions`, 'debug');
+    debugLog(`Filtered out ${duplicateCount} duplicate pending transactions`);
   }
 
   return { transactions: newTransactions, duplicateCount, originalCount };
@@ -312,12 +333,15 @@ async function fetchRogersBankTransactions(fromDate, toDate, fullHistory = false
 
 /**
  * Build sync steps for progress dialog
+ * Order: credit limit → transactions → pending reconciliation → balance
+ * (Reconciliation before balance ensures deleted pending transactions don't affect balance)
  */
-function buildRogersBankSteps(hasTransactions = true, includeCreditLimit = true) {
+function buildRogersBankSteps(hasTransactions = true, includeCreditLimit = true, includePendingReconciliation = true) {
   const steps = [];
   if (includeCreditLimit) steps.push({ key: 'creditLimit', name: 'Credit limit sync' });
-  steps.push({ key: 'balance', name: 'Balance upload' });
   if (hasTransactions) steps.push({ key: 'transactions', name: 'Transaction sync' });
+  if (includePendingReconciliation) steps.push({ key: 'pendingReconciliation', name: 'Pending reconciliation' });
+  steps.push({ key: 'balance', name: 'Balance upload' });
   return steps;
 }
 
@@ -730,9 +754,154 @@ export async function uploadRogersBankToMonarch() {
       debugLog('Warning: Transaction history truncated at 1000 transactions');
     }
 
-    const allApprovedTx = (txResult.transactions || []).filter((tx) => tx.activityStatus === 'APPROVED');
+    // Separate transactions into settled and pending, and deduplicate
+    // (removes pending duplicates when a settled version exists with the same hash)
+    const allTransactions = txResult.transactions || [];
 
-    // STEP 2: Upload balance
+    progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Separating transactions...');
+    const separationResult = await separateAndDeduplicateTransactions(allTransactions);
+    const { settled: allSettledTx, pending: allPendingTx } = separationResult;
+
+    // Read includePendingTransactions setting from account data
+    const accountDataForPending = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, rogersAccountId);
+    const includePendingTransactions = accountDataForPending?.[ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS] !== false;
+
+    debugLog(`Rogers Bank transactions: ${allSettledTx.length} settled, ${allPendingTx.length} pending (include pending: ${includePendingTransactions})`);
+    if (separationResult.duplicatesRemoved > 0) {
+      debugLog(`Removed ${separationResult.duplicatesRemoved} pending duplicates that matched settled transactions`);
+    }
+
+    // Use only settled (APPROVED) transactions for balance reconstruction
+    const allApprovedTx = allSettledTx;
+
+    // STEP 2: Upload transactions (before balance, so reconciliation can adjust balance)
+    if (abortController.signal.aborted) {
+      progressDialog.updateProgress(rogersAccountId, 'error', 'Cancelled');
+      progressDialog.hideCancel();
+      return { success: false, message: 'Cancelled' };
+    }
+
+    progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Checking duplicates...');
+
+    let transactionUploadSuccess = false;
+    let totalNewSettled = 0;
+    let totalNewPending = 0;
+    let totalDuplicates = 0;
+
+    if (txResult.success && (allSettledTx.length > 0 || allPendingTx.length > 0)) {
+      // Filter out already-uploaded settled transactions
+      const settledFilterResult = filterDuplicateSettledTransactions(allSettledTx, rogersAccountId);
+      totalDuplicates += settledFilterResult.duplicateCount;
+
+      // Filter out already-uploaded pending transactions
+      let newPendingTx = [];
+      if (includePendingTransactions && allPendingTx.length > 0) {
+        const pendingFilterResult = filterDuplicatePendingTransactions(allPendingTx, rogersAccountId);
+        newPendingTx = pendingFilterResult.transactions;
+        totalDuplicates += pendingFilterResult.duplicateCount;
+      }
+
+      const allNewTransactions = [...settledFilterResult.transactions, ...newPendingTx];
+      totalNewSettled = settledFilterResult.transactions.length;
+      totalNewPending = newPendingTx.length;
+
+      if (totalDuplicates > 0) {
+        toast.show(`Skipping ${totalDuplicates} already uploaded transactions`, 'debug');
+      }
+
+      if (allNewTransactions.length === 0) {
+        const msg = totalDuplicates > 0 ? `${totalDuplicates} already uploaded` : 'No new';
+        progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', msg);
+      } else {
+        progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Resolving categories...');
+        const accountDataForSkip = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, rogersAccountId);
+        const skipCategorization = accountDataForSkip?.skipCategorization === true;
+
+        // Prepare pending transactions with isPending flag and pendingId for CSV
+        const transactionsForCategorization = allNewTransactions.map((tx) => {
+          if (tx.generatedId) {
+            // Pending transaction — add metadata for CSV
+            return { ...tx, isPending: true, pendingId: formatPendingIdForNotes(tx.generatedId) };
+          }
+          return tx;
+        });
+
+        const resolvedTx = await resolveCategoriesForTransactions(transactionsForCategorization, { skipCategorization });
+
+        progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Converting...');
+        const accountData = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, rogersAccountId);
+        const storeTransactionDetailsInNotes = accountData?.storeTransactionDetailsInNotes ?? false;
+        const csvData = convertTransactionsToMonarchCSV(resolvedTx, rogersAccountName, { storeTransactionDetailsInNotes });
+        if (!csvData) throw new Error('Failed to convert transactions to CSV');
+
+        progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Uploading...');
+        const filename = `rogers_transactions_${fromDate}_to_${toDate}.csv`;
+        const uploadSuccess = await monarchApi.uploadTransactions(monarchAccount.id, csvData, filename, false, false);
+
+        if (uploadSuccess) {
+          transactionUploadSuccess = true;
+
+          // Save settled transaction reference numbers to dedup store
+          const settledRefs = settledFilterResult.transactions.map((tx) => tx.referenceNumber).filter(Boolean);
+          // Save pending transaction hash IDs to dedup store
+          const pendingRefs = newPendingTx.map((tx) => tx.generatedId).filter(Boolean);
+          const allRefs = [...settledRefs, ...pendingRefs];
+
+          if (allRefs.length > 0) {
+            let txDate = getTodayLocal();
+            const withDates = allNewTransactions.filter((tx) => tx.date);
+            if (withDates.length > 0) {
+              withDates.sort((a, b) => b.date.localeCompare(a.date));
+              txDate = withDates[0].date;
+            }
+            const txAccountData = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, rogersAccountId);
+            const existingTransactions = txAccountData?.uploadedTransactions || [];
+            const retentionSettings = getRetentionSettingsFromAccount(txAccountData);
+            const updatedTransactions = mergeAndRetainTransactions(existingTransactions, allRefs, retentionSettings, txDate);
+            accountService.updateAccountInList(INTEGRATIONS.ROGERSBANK, rogersAccountId, {
+              uploadedTransactions: updatedTransactions,
+            });
+          }
+
+          saveLastUploadDate(rogersAccountId, getTodayLocal(), 'rogersbank');
+
+          // Build transaction count message
+          const parts = [];
+          if (totalNewSettled > 0) parts.push(`${totalNewSettled} settled`);
+          if (totalNewPending > 0) parts.push(`${totalNewPending} pending`);
+          const uploadedMsg = parts.join(', ');
+          const msg = totalDuplicates > 0
+            ? `${uploadedMsg} uploaded (${totalDuplicates} skipped)`
+            : `${uploadedMsg} uploaded`;
+
+          progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', msg);
+        } else {
+          throw new Error('Upload to Monarch failed');
+        }
+      }
+    } else {
+      progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', 'No transactions');
+    }
+
+    // STEP 3: Pending transaction reconciliation
+    progressDialog.updateStepStatus(rogersAccountId, 'pendingReconciliation', 'processing', 'Reconciling...');
+    try {
+      const lookbackDays = 90; // Rogers Bank lookback for reconciliation
+      const reconciliationResult = await reconcileRogersPendingTransactions(
+        monarchAccount.id,
+        allTransactions,
+        lookbackDays,
+      );
+      const reconciliationMsg = formatReconciliationMessage(reconciliationResult);
+      const reconciliationStatus = reconciliationResult.success !== false ? 'success' : 'error';
+      progressDialog.updateStepStatus(rogersAccountId, 'pendingReconciliation', reconciliationStatus, reconciliationMsg);
+      debugLog('Rogers Bank pending reconciliation result:', reconciliationResult);
+    } catch (reconciliationError) {
+      debugLog('Error during Rogers Bank pending reconciliation:', reconciliationError);
+      progressDialog.updateStepStatus(rogersAccountId, 'pendingReconciliation', 'error', reconciliationError.message);
+    }
+
+    // STEP 4: Upload balance (after reconciliation so deleted pending transactions don't affect balance)
     progressDialog.updateStepStatus(rogersAccountId, 'balance', 'processing', 'Preparing...');
     let balanceUploadSuccess = false;
     const todayFormatted = getTodayLocal();
@@ -816,102 +985,6 @@ export async function uploadRogersBankToMonarch() {
       }
     }
 
-    // STEP 3: Upload transactions (reuse the already-fetched transactions)
-    if (abortController.signal.aborted) {
-      progressDialog.updateProgress(rogersAccountId, 'error', 'Cancelled');
-      progressDialog.hideCancel();
-      return { success: false, message: 'Cancelled' };
-    }
-
-    progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Processing...');
-
-    if (txResult.success && allApprovedTx.length > 0) {
-      progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Checking duplicates...');
-      const filterResult = filterDuplicateTransactions(allApprovedTx, rogersAccountId);
-
-      if (filterResult.transactions.length === 0) {
-        const msg = filterResult.duplicateCount > 0 ? `${filterResult.duplicateCount} already uploaded` : 'No new';
-        progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', msg);
-
-        // Increment sync count and cleanup legacy storage if ready (even when all transactions are duplicates)
-        const newSyncCount = accountService.incrementSyncCount(INTEGRATIONS.ROGERSBANK, rogersAccountId);
-        debugLog(`Rogers Bank sync count for ${rogersAccountId}: ${newSyncCount}`);
-        if (accountService.isReadyForLegacyCleanup(INTEGRATIONS.ROGERSBANK, rogersAccountId)) {
-          const cleanupResult = accountService.cleanupLegacyStorage(INTEGRATIONS.ROGERSBANK, rogersAccountId);
-          if (cleanupResult.cleaned && cleanupResult.keysDeleted > 0) {
-            debugLog(`Cleaned up ${cleanupResult.keysDeleted} legacy storage keys for Rogers Bank account ${rogersAccountId}`);
-          }
-        }
-
-        progressDialog.hideCancel();
-        progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
-        return { success: true, message: `Balance uploaded. ${msg}` };
-      }
-
-      progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Resolving categories...');
-      const accountDataForSkip = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, rogersAccountId);
-      const skipCategorization = accountDataForSkip?.skipCategorization === true;
-      const resolvedTx = await resolveCategoriesForTransactions(filterResult.transactions, { skipCategorization });
-
-      progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Converting...');
-      // Use per-account setting from consolidated storage, fall back to global setting, then default to false
-      const accountData = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, rogersAccountId);
-      const storeTransactionDetailsInNotes = accountData?.storeTransactionDetailsInNotes ?? false;
-      const csvData = convertTransactionsToMonarchCSV(resolvedTx, rogersAccountName, { storeTransactionDetailsInNotes });
-      if (!csvData) throw new Error('Failed to convert transactions to CSV');
-
-      progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Uploading...');
-      const filename = `rogers_transactions_${fromDate}_to_${toDate}.csv`;
-      const uploadSuccess = await monarchApi.uploadTransactions(monarchAccount.id, csvData, filename, false, false);
-
-      if (uploadSuccess) {
-        const refs = filterResult.transactions.map((tx) => tx.referenceNumber).filter(Boolean);
-        if (refs.length > 0) {
-          let txDate = getTodayLocal();
-          const withDates = filterResult.transactions.filter((tx) => tx.activityDate);
-          if (withDates.length > 0) {
-            txDate = withDates.map((tx) => new Date(tx.activityDate)).sort((a, b) => b - a)[0].toISOString().split('T')[0];
-          }
-          // Save to consolidated storage (uploadedTransactions in account object)
-          const txAccountData = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, rogersAccountId);
-          const existingTransactions = txAccountData?.uploadedTransactions || [];
-          const retentionSettings = getRetentionSettingsFromAccount(txAccountData);
-          const updatedTransactions = mergeAndRetainTransactions(existingTransactions, refs, retentionSettings, txDate);
-          accountService.updateAccountInList(INTEGRATIONS.ROGERSBANK, rogersAccountId, {
-            uploadedTransactions: updatedTransactions,
-          });
-        }
-
-        saveLastUploadDate(rogersAccountId, getTodayLocal(), 'rogersbank');
-
-        const msg = filterResult.duplicateCount > 0
-          ? `${filterResult.transactions.length} uploaded (${filterResult.duplicateCount} skipped)`
-          : `${filterResult.transactions.length} uploaded`;
-
-        progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', msg);
-
-        // Increment sync count and cleanup legacy storage if ready
-        const newSyncCount = accountService.incrementSyncCount(INTEGRATIONS.ROGERSBANK, rogersAccountId);
-        debugLog(`Rogers Bank sync count for ${rogersAccountId}: ${newSyncCount}`);
-        if (accountService.isReadyForLegacyCleanup(INTEGRATIONS.ROGERSBANK, rogersAccountId)) {
-          const cleanupResult = accountService.cleanupLegacyStorage(INTEGRATIONS.ROGERSBANK, rogersAccountId);
-          if (cleanupResult.cleaned && cleanupResult.keysDeleted > 0) {
-            debugLog(`Cleaned up ${cleanupResult.keysDeleted} legacy storage keys for Rogers Bank account ${rogersAccountId}`);
-          }
-        }
-
-        progressDialog.hideCancel();
-        progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
-        toast.show(`${msg} to Monarch!`, 'info');
-
-        return { success: true, message: `${msg} to Monarch!` };
-      }
-      throw new Error('Upload to Monarch failed');
-    }
-
-    // No transactions case - still count as successful sync for legacy cleanup
-    progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', 'No transactions');
-
     // Increment sync count and cleanup legacy storage if ready
     const newSyncCount = accountService.incrementSyncCount(INTEGRATIONS.ROGERSBANK, rogersAccountId);
     debugLog(`Rogers Bank sync count for ${rogersAccountId}: ${newSyncCount}`);
@@ -922,9 +995,23 @@ export async function uploadRogersBankToMonarch() {
       }
     }
 
+    // Build summary message
+    const summaryParts = [];
+    if (totalNewSettled > 0 || totalNewPending > 0) {
+      const txParts = [];
+      if (totalNewSettled > 0) txParts.push(`${totalNewSettled} settled`);
+      if (totalNewPending > 0) txParts.push(`${totalNewPending} pending`);
+      summaryParts.push(`${txParts.join(', ')} uploaded`);
+    }
+    if (totalDuplicates > 0) summaryParts.push(`${totalDuplicates} skipped`);
+    const summaryMsg = summaryParts.length > 0 ? summaryParts.join(', ') : 'Balance uploaded';
+
     progressDialog.hideCancel();
     progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
-    return { success: true, message: 'Balance uploaded. No transactions found.' };
+    if (transactionUploadSuccess) {
+      toast.show(`${summaryMsg} to Monarch!`, 'info');
+    }
+    return { success: true, message: summaryMsg };
   } catch (error) {
     debugLog('Error in Rogers Bank upload:', error);
     if (progressDialog && rogersAccountId) {

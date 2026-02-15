@@ -315,6 +315,146 @@ describe('CSV Conversion Utilities', () => {
       const result = convertTransactionsToMonarchCSV(transactions, 'Test Account');
       expect(result).toContain('Uncategorized'); // Should use 'Uncategorized' when mapping returns object
     });
+
+    describe('Pending transaction support', () => {
+      test('should add "Pending" tag for pending transactions', () => {
+        const transactions = [
+          {
+            date: '2024-01-15',
+            merchant: { name: 'STARBUCKS' },
+            amount: { value: 5.50 },
+            isPending: true,
+            pendingId: 'rb-tx:abc123def456789a',
+          },
+        ];
+
+        const result = convertTransactionsToMonarchCSV(transactions, 'Test Account');
+        expect(result).toContain('Pending');
+      });
+
+      test('should NOT add "Pending" tag for settled transactions', () => {
+        const transactions = [
+          {
+            date: '2024-01-15',
+            merchant: { name: 'STARBUCKS' },
+            amount: { value: 5.50 },
+            referenceNumber: 'REF123',
+            activityType: 'PURCHASE',
+          },
+        ];
+
+        const result = convertTransactionsToMonarchCSV(transactions, 'Test Account');
+        const lines = result.split('\n');
+        const dataRow = lines[1];
+        // Tags column should be empty for settled transactions
+        expect(dataRow.endsWith(',')).toBe(true);
+      });
+
+      test('should include pending ID in notes for pending transactions', () => {
+        const transactions = [
+          {
+            date: '2024-01-15',
+            merchant: { name: 'STARBUCKS' },
+            amount: { value: 5.50 },
+            isPending: true,
+            pendingId: 'rb-tx:abc123def456789a',
+          },
+        ];
+
+        const result = convertTransactionsToMonarchCSV(transactions, 'Test Account');
+        expect(result).toContain('rb-tx:abc123def456789a');
+      });
+
+      test('should NOT include pending ID in notes for settled transactions', () => {
+        const transactions = [
+          {
+            date: '2024-01-15',
+            merchant: { name: 'STARBUCKS' },
+            amount: { value: 5.50 },
+            referenceNumber: 'REF123',
+            activityType: 'PURCHASE',
+          },
+        ];
+
+        const result = convertTransactionsToMonarchCSV(transactions, 'Test Account', {
+          storeTransactionDetailsInNotes: false,
+        });
+        expect(result).not.toContain('rb-tx:');
+      });
+
+      test('should not include transaction details for pending transactions even when storeTransactionDetailsInNotes is true', () => {
+        const transactions = [
+          {
+            date: '2024-01-15',
+            merchant: { name: 'STARBUCKS' },
+            amount: { value: 5.50 },
+            isPending: true,
+            pendingId: 'rb-tx:abc123def456789a',
+            activityType: 'PURCHASE',
+            referenceNumber: 'REF123',
+          },
+        ];
+
+        const result = convertTransactionsToMonarchCSV(transactions, 'Test Account', {
+          storeTransactionDetailsInNotes: true,
+        });
+        // Should have pending ID but NOT activity type / reference for pending transactions
+        expect(result).toContain('rb-tx:abc123def456789a');
+        expect(result).not.toContain('PURCHASE / REF123');
+      });
+
+      test('should handle mixed settled and pending transactions', () => {
+        const transactions = [
+          {
+            date: '2024-01-15',
+            merchant: { name: 'SETTLED MERCHANT' },
+            amount: { value: 10.00 },
+            referenceNumber: 'REF1',
+            activityType: 'PURCHASE',
+          },
+          {
+            date: '2024-01-16',
+            merchant: { name: 'PENDING MERCHANT' },
+            amount: { value: 20.00 },
+            isPending: true,
+            pendingId: 'rb-tx:abc123def456789a',
+          },
+        ];
+
+        const result = convertTransactionsToMonarchCSV(transactions, 'Test Account', {
+          storeTransactionDetailsInNotes: false,
+        });
+
+        const lines = result.split('\n');
+        expect(lines).toHaveLength(3); // Header + 2 data rows
+
+        // First transaction (settled) should NOT have Pending tag
+        expect(lines[1]).toContain('SETTLED MERCHANT');
+        expect(lines[1]).not.toContain('Pending');
+
+        // Second transaction (pending) should have Pending tag and pending ID in notes
+        expect(lines[2]).toContain('PENDING MERCHANT');
+        expect(lines[2]).toContain('Pending');
+        expect(lines[2]).toContain('rb-tx:abc123def456789a');
+      });
+
+      test('should handle pending transaction without pendingId gracefully', () => {
+        const transactions = [
+          {
+            date: '2024-01-15',
+            merchant: { name: 'STARBUCKS' },
+            amount: { value: 5.50 },
+            isPending: true,
+            // No pendingId
+          },
+        ];
+
+        const result = convertTransactionsToMonarchCSV(transactions, 'Test Account');
+        // Should still have Pending tag but empty notes
+        expect(result).toContain('Pending');
+        expect(result).not.toContain('rb-tx:');
+      });
+    });
   });
 
   describe('parseCSV', () => {
