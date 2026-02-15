@@ -2,10 +2,10 @@
 
 ## Monarch Uploader - Firebase Cloud Sync
 
-**Version:** 1.0  
+**Version:** 1.1  
 **Status:** Draft  
 **Author:** AI Assistant  
-**Date:** January 2026
+**Date:** February 2026
 
 ---
 
@@ -247,48 +247,87 @@ GM_setValue('questrade_monarch_account_for_12345', {
 
 ## 4. User Identification Strategy
 
-### Approach: Monarch Token Hash
+### Chosen Approach: Google OAuth (Shared with Metrics)
 
-To maintain user privacy while enabling sync, we'll use a hash derived from the user's Monarch authentication:
+> **Updated in v1.1:** This section was revised to align with the metrics & instrumentation design (`design/metrics-and-instrumentation.md`). Both cloud sync and metrics share the same identity layer — a single Google OAuth sign-in provides identity for all backend features.
+
+User identification is handled via mandatory Google OAuth sign-in. The same `userId` and `deviceId` are used for both metrics telemetry and cloud sync. This means users sign in **once** and both features work.
+
+**Identity flow (handled by the shared metrics auth module):**
+
+```
+1. User signs in with Google (via metrics consent dialog)
+         │
+         ▼
+2. Backend verifies Google id_token, extracts `sub`
+         │
+         ▼
+3. Backend hashes: userId = SHA256("mu_" + sub).substring(0, 32)
+         │
+         ▼
+4. Client stores in GM_setValue:
+   - 'mu_user_id'    → userId (hashed, stable across devices)
+   - 'mu_auth_token'  → JWT (for API calls)
+   - 'mu_device_id'   → random UUID (per device)
+```
+
+**Reading identity in sync code:**
 
 ```javascript
-async function generateUserHash(monarchToken) {
-  // Extract a stable identifier from the JWT token
-  const tokenPayload = parseJwt(monarchToken);
-  const userId = tokenPayload.sub || tokenPayload.user_id;
-  
-  // Create a SHA-256 hash for privacy
-  const encoder = new TextEncoder();
-  const data = encoder.encode(`monarch_uploader_sync_${userId}`);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  
-  return hashHex.substring(0, 32); // Use first 32 chars
+function getUserId() {
+  return GM_getValue('mu_user_id'); // Set during Google OAuth sign-in
+}
+
+function getDeviceId() {
+  return GM_getValue('mu_device_id'); // Random UUID, shared with metrics
 }
 ```
 
-### Device Identification
+### Firebase Database Key
+
+The Firebase `users` key uses the Google OAuth `userId`:
 
 ```javascript
-function getOrCreateDeviceId() {
-  let deviceId = GM_getValue('sync_device_id');
-  if (!deviceId) {
-    deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    GM_setValue('sync_device_id', deviceId);
-  }
-  return deviceId;
-}
+const userId = GM_getValue('mu_user_id');
+const userRef = ref(database, `users/${userId}`);
 ```
 
 ### Why This Approach?
 
 | Consideration | Solution |
 |--------------|----------|
-| No additional login | Uses existing Monarch auth |
-| Privacy | Hash of user ID, not stored plainly |
-| Unique per user | Monarch user IDs are unique |
-| Stable | Same hash across devices with same Monarch account |
+| Cross-device identity | Same Google account → same `userId` on all devices |
+| Privacy | SHA-256 hash of Google `sub`, not stored plainly |
+| Unique per user | Google `sub` is unique per user per OAuth client |
+| Stable | Does not rotate like session tokens |
+| Shared with metrics | Single sign-in for all backend features |
+| No Monarch dependency | Identity works even when Monarch is unreachable |
+
+### Rejected Alternatives
+
+| Alternative | Why Rejected |
+|---|---|
+| **Monarch Token Hash** (v1.0 approach) | Tokens rotate per session; hash changes on re-login; not truly stable; couples identity to Monarch availability |
+| **Stable Device ID (random UUID)** | Cannot correlate across devices; no accurate user count; no user-level debugging |
+| **Email-based registration** | Requires password management; more complex; Google OAuth achieves the same with less friction |
+| **Anonymous / No identity** | Cannot sync across devices; no user identification for debugging |
+
+### Device Identification
+
+Each device gets a random UUID, shared between metrics and cloud sync:
+
+```javascript
+function getOrCreateDeviceId() {
+  let deviceId = GM_getValue('mu_device_id');
+  if (!deviceId) {
+    deviceId = `dev_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    GM_setValue('mu_device_id', deviceId);
+  }
+  return deviceId;
+}
+```
+
+> **Note:** The old `sync_device_id` storage key from v1.0 is deprecated. Migration code should copy the value from `sync_device_id` to `mu_device_id` if it exists, then delete the old key.
 
 ---
 
@@ -1378,21 +1417,39 @@ const NEVER_SYNC = [
 
 ### 8.3 Firebase Authentication
 
-For production, consider adding Firebase Authentication:
+Firebase authentication uses the Google OAuth identity established via the shared metrics auth layer. The backend issues a Firebase custom token based on the verified Google `userId`.
 
 ```javascript
-// Option 1: Anonymous auth (simplest)
-import { getAuth, signInAnonymously } from 'firebase/auth';
+// Production approach: Custom token from our backend
+// The backend verifies the mu_auth_token JWT and issues a Firebase custom token
+import { getAuth, signInWithCustomToken } from 'firebase/auth';
 
 async function authenticateFirebase() {
+  const muAuthToken = GM_getValue('mu_auth_token');
+  if (!muAuthToken) {
+    throw new Error('Not authenticated — sign in with Google first');
+  }
+
+  // Exchange our JWT for a Firebase custom token via our backend
+  const response = await fetch(`${API_BASE}/v1/auth/firebase-token`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${muAuthToken}`,
+    },
+  });
+
+  const { firebaseToken } = await response.json();
+
   const auth = getAuth();
-  const userCredential = await signInAnonymously(auth);
+  const userCredential = await signInWithCustomToken(auth, firebaseToken);
   return userCredential.user.uid;
 }
-
-// Option 2: Custom token from Monarch (more secure)
-// Would require a backend to validate Monarch token and issue Firebase token
 ```
+
+> **Rejected alternatives:**
+> - **Anonymous auth:** Does not tie to a known user; cannot enforce per-user security rules
+> - **Monarch token custom auth (v1.0 approach):** Couples to Monarch availability; tokens rotate
 
 ### 8.4 Rate Limiting
 
@@ -1635,6 +1692,7 @@ async function migrateExistingData() {
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | January 2026 | Initial draft |
+| 1.1 | February 2026 | Updated Section 4 (User Identification) to use Google OAuth shared with metrics; updated Section 8.3 (Firebase Auth) to use custom tokens from shared identity layer; deprecated `sync_device_id` in favor of shared `mu_device_id`; added rejected alternatives documentation |
 
 ---
 
