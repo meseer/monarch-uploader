@@ -944,6 +944,174 @@ describe('Progress Dialog Component', () => {
     });
   });
 
+  describe('programmatic action counter prevents race conditions', () => {
+    beforeEach(() => {
+      // Use real DOM for these tests
+      document.createElement.mockRestore();
+      document.body.appendChild.mockRestore();
+      document.body.innerHTML = '';
+
+      // jsdom doesn't implement scrollTo, so polyfill it
+      Element.prototype.scrollTo = Element.prototype.scrollTo || jest.fn();
+    });
+
+    test('should expand and collapse all accounts in a 4-account sequential sync', () => {
+      jest.useFakeTimers();
+
+      const accounts = [
+        { key: 'acc1', nickname: 'Account 1' },
+        { key: 'acc2', nickname: 'Account 2' },
+        { key: 'acc3', nickname: 'Account 3' },
+        { key: 'acc4', nickname: 'Account 4' },
+      ];
+      dialog = showProgressDialog(accounts);
+
+      // Initialize steps for all accounts
+      accounts.forEach((acc) => {
+        dialog.initSteps(acc.key, [
+          { key: 'balance', name: 'Balance history' },
+          { key: 'positions', name: 'Positions sync' },
+        ]);
+      });
+
+      const getStepsContainer = (key) =>
+        document.querySelector(`[id*="steps-container-${key}"]`);
+
+      // --- Account 1: start processing ---
+      dialog.updateStepStatus('acc1', 'balance', 'processing', 'Working...');
+      expect(getStepsContainer('acc1').style.display).toBe('block'); // expanded
+
+      // Account 1: complete
+      dialog.updateStepStatus('acc1', 'balance', 'success', 'Done');
+      dialog.updateStepStatus('acc1', 'positions', 'success', 'Done');
+      // acc1 should be collapsed (more accounts to process)
+      expect(getStepsContainer('acc1').style.display).toBe('none');
+
+      // --- Account 2: start processing (collapse timer for acc1 is still pending at 150ms) ---
+      dialog.updateStepStatus('acc2', 'balance', 'processing', 'Working...');
+      expect(getStepsContainer('acc2').style.display).toBe('block'); // expanded
+
+      // Advance past the collapse timer (150ms)  this is the race condition scenario
+      // The 150ms timer fires but should NOT clear isProgrammaticAction because
+      // the 600ms expand timer is still active
+      jest.advanceTimersByTime(200);
+
+      // Fire a scroll event on the account list  this simulates what the browser does
+      // during smooth scrolling. With the old boolean flag, this would disable auto-scroll.
+      const accountList = document.querySelector('[id*="account-list"]');
+      accountList.dispatchEvent(new Event('scroll'));
+
+      // Advance past the expand timer (600ms total, 400ms remaining)
+      jest.advanceTimersByTime(500);
+
+      // Account 2: complete
+      dialog.updateStepStatus('acc2', 'balance', 'success', 'Done');
+      dialog.updateStepStatus('acc2', 'positions', 'success', 'Done');
+      // acc2 should be collapsed
+      expect(getStepsContainer('acc2').style.display).toBe('none');
+
+      // --- Account 3: should still auto-expand (this was the bug) ---
+      dialog.updateStepStatus('acc3', 'balance', 'processing', 'Working...');
+      expect(getStepsContainer('acc3').style.display).toBe('block'); // expanded
+
+      jest.advanceTimersByTime(700); // clear all timers
+
+      // Account 3: complete
+      dialog.updateStepStatus('acc3', 'balance', 'success', 'Done');
+      dialog.updateStepStatus('acc3', 'positions', 'success', 'Done');
+      expect(getStepsContainer('acc3').style.display).toBe('none');
+
+      // --- Account 4 (last): should expand and stay expanded ---
+      dialog.updateStepStatus('acc4', 'balance', 'processing', 'Working...');
+      expect(getStepsContainer('acc4').style.display).toBe('block');
+
+      jest.advanceTimersByTime(700);
+
+      dialog.updateStepStatus('acc4', 'balance', 'success', 'Done');
+      dialog.updateStepStatus('acc4', 'positions', 'success', 'Done');
+      // Last account stays expanded
+      expect(getStepsContainer('acc4').style.display).toBe('block');
+
+      jest.useRealTimers();
+    });
+
+    test('should not disable auto-scroll from scroll events during programmatic actions', () => {
+      jest.useFakeTimers();
+
+      const accounts = [
+        { key: 'acc1', nickname: 'Account 1' },
+        { key: 'acc2', nickname: 'Account 2' },
+      ];
+      dialog = showProgressDialog(accounts);
+
+      dialog.initSteps('acc1', [{ key: 'step1', name: 'Step 1' }]);
+      dialog.initSteps('acc2', [{ key: 'step1', name: 'Step 1' }]);
+
+      const getStepsContainer = (key) =>
+        document.querySelector(`[id*="steps-container-${key}"]`);
+      const accountList = document.querySelector('[id*="account-list"]');
+
+      // Start processing acc1 (sets programmatic action for 600ms)
+      dialog.updateStepStatus('acc1', 'step1', 'processing', 'Working...');
+
+      // Fire scroll events at various points during the programmatic action window
+      jest.advanceTimersByTime(100);
+      accountList.dispatchEvent(new Event('scroll'));
+
+      jest.advanceTimersByTime(200);
+      accountList.dispatchEvent(new Event('scroll'));
+
+      // Complete acc1
+      dialog.updateStepStatus('acc1', 'step1', 'success', 'Done');
+      expect(getStepsContainer('acc1').style.display).toBe('none'); // collapsed
+
+      // acc2 should still auto-expand because scroll events during programmatic
+      // action should NOT have disabled auto-scroll
+      dialog.updateStepStatus('acc2', 'step1', 'processing', 'Working...');
+      expect(getStepsContainer('acc2').style.display).toBe('block'); // expanded
+
+      jest.advanceTimersByTime(700);
+      jest.useRealTimers();
+    });
+
+    test('should disable auto-scroll from scroll events AFTER programmatic action ends', () => {
+      jest.useFakeTimers();
+
+      const accounts = [
+        { key: 'acc1', nickname: 'Account 1' },
+        { key: 'acc2', nickname: 'Account 2' },
+      ];
+      dialog = showProgressDialog(accounts);
+
+      dialog.initSteps('acc1', [{ key: 'step1', name: 'Step 1' }]);
+      dialog.initSteps('acc2', [{ key: 'step1', name: 'Step 1' }]);
+
+      const getStepsContainer = (key) =>
+        document.querySelector(`[id*="steps-container-${key}"]`);
+      const accountList = document.querySelector('[id*="account-list"]');
+
+      // Start processing acc1
+      dialog.updateStepStatus('acc1', 'step1', 'processing', 'Working...');
+
+      // Wait for all programmatic action timers to complete
+      jest.advanceTimersByTime(700);
+
+      // Now fire a scroll event  this represents genuine user scrolling
+      accountList.dispatchEvent(new Event('scroll'));
+
+      // Complete acc1
+      dialog.updateStepStatus('acc1', 'step1', 'success', 'Done');
+      // Should NOT collapse because auto-scroll is now disabled
+      expect(getStepsContainer('acc1').style.display).toBe('block');
+
+      // acc2 should NOT auto-expand because user scrolled
+      dialog.updateStepStatus('acc2', 'step1', 'processing', 'Working...');
+      expect(getStepsContainer('acc2').style.display).toBe('none'); // stays collapsed
+
+      jest.useRealTimers();
+    });
+  });
+
   describe('user interaction disables auto-scroll', () => {
     beforeEach(() => {
       dialog = showProgressDialog(mockAccounts);

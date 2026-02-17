@@ -317,7 +317,26 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
   // It is disabled when user interacts with the dialog (scrolling or clicking to expand/collapse)
   let autoScrollEnabled = true;
   let isProgrammaticAction = false; // Flag to distinguish programmatic scrolling from user scrolling
+  let programmaticActionCount = 0; // Counter to handle overlapping programmatic actions
   let isScrollMonitoringActive = false; // Only start monitoring after first account starts processing
+
+  /**
+   * Mark the start of a programmatic action that may trigger scroll events.
+   * Uses a counter so overlapping actions (e.g. collapse + expand) don't
+   * prematurely clear the flag when the shorter timeout fires first.
+   * @param {number} durationMs - How long the programmatic action lasts
+   */
+  function beginProgrammaticAction(durationMs) {
+    programmaticActionCount += 1;
+    isProgrammaticAction = true;
+    setTimeout(() => {
+      programmaticActionCount -= 1;
+      if (programmaticActionCount <= 0) {
+        programmaticActionCount = 0;
+        isProgrammaticAction = false;
+      }
+    }, durationMs);
+  }
 
   // Add scroll event listener to detect user scrolling
   // Only monitors after isScrollMonitoringActive is true (when first account starts processing)
@@ -831,7 +850,9 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
           }
 
           // Account is actively processing - scroll into view and expand
-          isProgrammaticAction = true;
+          // Use counter-based flag so overlapping collapse/expand actions
+          // don't prematurely clear the programmatic action guard
+          beginProgrammaticAction(600);
 
           // Expand the account details
           el.setExpanded(true);
@@ -850,12 +871,6 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
             behavior: 'smooth',
           });
 
-          // Reset the programmatic action flag after a delay longer than smooth scroll animation
-          // (smooth scroll typically takes ~400-500ms)
-          setTimeout(() => {
-            isProgrammaticAction = false;
-          }, 600);
-
           debugLog(`Auto-scrolled to account ${accountId}, scrollTop: ${targetScrollTop}`);
         } else if (allDone && el.isExpanded()) {
           // Account has completed all steps - check if this is the last account
@@ -869,12 +884,8 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
 
           if (!allAccountsDone) {
             // More accounts to process - collapse to make room for the next one
-            isProgrammaticAction = true;
+            beginProgrammaticAction(150);
             el.setExpanded(false);
-
-            setTimeout(() => {
-              isProgrammaticAction = false;
-            }, 150);
 
             debugLog(`Auto-collapsed completed account ${accountId}`);
           } else {
