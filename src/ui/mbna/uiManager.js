@@ -383,11 +383,11 @@ async function handleUploadClick(button) {
 
       button.textContent = `Processing ${account.displayName || account.endingIn || 'account'}...`;
 
-      // Set current account in state manager
-      stateManager.setAccount({
-        id: account.accountId,
-        nickname: account.displayName || `MBNA Card (${account.endingIn})`,
-      });
+      // Set current account in state manager (positional args: id, nickname)
+      stateManager.setAccount(
+        account.accountId,
+        account.displayName || `MBNA Card (${account.endingIn})`,
+      );
 
       // Check for existing Monarch account mapping
       const existingMapping = accountService.getMonarchAccountMapping(
@@ -471,7 +471,7 @@ function handleAccountSelection(selectedAccount, account) {
         id: account.accountId,
         endingIn: account.endingIn,
         cardName: account.cardName,
-        displayName: account.displayName,
+        nickname: account.displayName,
       },
       monarchAccount: null,
       syncEnabled: false,
@@ -489,7 +489,7 @@ function handleAccountSelection(selectedAccount, account) {
         id: account.accountId,
         endingIn: account.endingIn,
         cardName: account.cardName,
-        displayName: account.displayName,
+        nickname: account.displayName,
       },
       monarchAccount: {
         id: selectedAccount.id,
