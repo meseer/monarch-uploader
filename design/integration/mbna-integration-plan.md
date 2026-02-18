@@ -85,13 +85,41 @@ Response:
   .accountBalances.currentBalance            → number (e.g., 93.12)
   .accountBalances.creditAvailable           → number (e.g., 29806.88)
   .accountBalances.minimumPaymentDue         → number
-  .accountTransactions.pendingTransactions   → array
-  .accountTransactions.recentTransactions    → array
+  .accountTransactions.pendingTransactions   → array (referenceNumber="TEMP")
+  .accountTransactions.recentTransactions    → array (settled, real referenceNumber)
 ```
 
-### Transaction History
+### Closing Dates Dropdown
 ```
-TBD — detailed endpoint and response format to be provided
+GET https://service.mbna.ca/waw/mbna/accounts/statement/{accountNumber}/closingdatedropdown
+Response:
+  .closingDate            → object (keys are YYYY-MM-DD date strings + "mostRecentTransactions")
+  Example keys: "2025-12-15", "2025-11-15", "mostRecentTransactions"
+  Dates are filtered to YYYY-MM-DD format, sorted newest-first.
+```
+
+### Statement by Closing Date
+```
+GET https://service.mbna.ca/waw/mbna/accounts/{accountNumber}/statement/closingdate/{closingDate}
+Response:
+  .statement.statementBalance               → number
+  .statement.creditLimit                    → number
+  .statement.statementClosingDate           → string (YYYY-MM-DD)
+  .statement.minPaymentDue                  → number
+  .statement.minPaymentDueDate              → string
+  .statement.nextStatementClosingDate       → string
+  .statement.accountTransactions            → array (transactions in this billing cycle)
+```
+
+### Transaction Object Shape (common to snapshot and statement responses)
+```
+Transaction fields:
+  .referenceNumber        → string ("TEMP" for pending, real number for settled)
+  .transactionDate        → string (YYYY-MM-DD)
+  .postingDate            → string (YYYY-MM-DD)
+  .description            → string (merchant/description)
+  .amount                 → number (positive=charge, negative=payment/credit)
+  .endingIn               → string (card last 4 digits)
 ```
 
 ---
@@ -100,25 +128,29 @@ TBD — detailed endpoint and response format to be provided
 
 ```
 src/integrations/mbna/
-├── manifest.js               # IntegrationManifest (reference implementation)
-├── api.js                    # createApi(httpClient, storage) — HTTP GET JSON client
-├── auth.js                   # createAuth(storage) — cookie-based auth monitoring
-├── injectionPoint.js         # UI injection config for service.mbna.ca
-├── monarch-mapper/
-│   ├── index.js              # applyTransactionRule(), pendingTransactions helpers
-│   └── pendingTransactions.js # Hash ID generation, separation, reconciliation
-└── index.js                  # Barrel export (IntegrationModule shape)
+├── manifest.js                     # IntegrationManifest (reference implementation)
+├── api.js                          # createApi(httpClient, auth) — HTTP GET JSON client
+├── auth.js                         # createAuth() — HttpOnly cookie auth (API probe based)
+├── injectionPoint.js               # UI injection config for service.mbna.ca
+├── balanceReconstruction.js        # Build daily balance history from statement data
+├── index.js                        # Barrel export (IntegrationModule shape)
+└── monarch-mapper/
+    ├── index.js                    # Barrel re-exports for all mapper modules
+    ├── transactions.js             # processMbnaTransactions(), resolveMbnaCategories(), filterDuplicateSettledTransactions()
+    ├── pendingTransactions.js      # Hash ID generation, separation, reconciliation
+    └── balanceFormatter.js         # Sign inversion for Monarch balance upload
 ```
 
 ### System Wiring Files (modified)
 
 ```
-src/core/config.js                          # + MBNA storage keys
+src/core/config.js                          # + MBNA storage keys, LOGO_CLOUDINARY_IDS.MBNA
 src/core/integrationCapabilities.js         # + MBNA capabilities entry
 src/core/state.js                           # + mbnaAuth state slot
 src/services/common/configStore.js          # + MBNA config storage key mapping
-src/services/mbna-upload.js                 # Upload orchestrator
-src/ui/mbna/uiManager.js                   # UI manager
+src/services/mbna-upload.js                 # Upload orchestrator (full sync pipeline)
+src/utils/csv.js                            # + convertMbnaTransactionsToMonarchCSV()
+src/ui/mbna/uiManager.js                   # UI manager (SPA-aware injection)
 src/ui/mbna/components/connectionStatus.js  # Connection status component
 src/ui/mbna/components/uploadButton.js      # Upload button component
 src/index.js                                # + MBNA site detection
@@ -137,8 +169,10 @@ Section 7 for the data-driven settings architecture.
 test/integrations/mbna/manifest.test.js
 test/integrations/mbna/api.test.js
 test/integrations/mbna/auth.test.js
-test/integrations/mbna/monarchMapper.test.js
-test/integrations/mbna/pendingTransactions.test.js
+test/integrations/mbna/balanceReconstruction.test.js
+test/integrations/mbna/monarch-mapper/transactions.test.js
+test/integrations/mbna/monarch-mapper/pendingTransactions.test.js
+test/integrations/mbna/monarch-mapper/balanceFormatter.test.js
 test/services/mbna-upload.test.js
 ```
 
@@ -146,7 +180,7 @@ test/services/mbna-upload.test.js
 
 ## Milestone Plan
 
-### Milestone 1: Integration Scaffolding + System Wiring ✅ → Testable via unit tests
+### Milestone 1: Integration Scaffolding + System Wiring ✅
 
 **Goal:** Create all integration module files following the contract, wire into existing system. No runtime behavior yet — just structure.
 
@@ -173,7 +207,7 @@ test/services/mbna-upload.test.js
 
 ---
 
-### Milestone 2: UI Injection ✅ → Testable on service.mbna.ca
+### Milestone 2: UI Injection ✅
 
 **Goal:** Inject visible UI on the MBNA website. Upload button calls a placeholder.
 
@@ -222,49 +256,72 @@ test/services/mbna-upload.test.js
 - UI manager refactored to delegate to upload service
 
 **Tests:**
-- `test/services/mbna-upload.test.js` (15 tests: credit limit sync, skipped steps, summary, error handling)
+- `test/services/mbna-upload.test.js` (credit limit sync, skipped steps, summary, error handling)
 - `test/integrations/mbna/api.test.js` (getCreditLimit + getBalance suites)
 
 ---
 
-### Milestone 5: Transaction Sync ⏳ Needs API specs
+### Milestone 5: Transaction Sync ✅
 
 **Goal:** Download transactions from MBNA, apply category mapping, upload to Monarch.
 
 **Implementation:**
-- `api.js` — implement `getTransactions()` 
-- `monarch-mapper/index.js` — implement `applyTransactionRule()`
-- Upload service — transaction processing pipeline (fetch → categorize → CSV → upload)
-- Deduplication using uploaded transaction IDs
+- `api.js` — `getClosingDates()`, `getStatementByClosingDate()`, `getCurrentCycleTransactions()`, `getTransactions()` (full multi-statement fetcher with progress callback)
+- `monarch-mapper/transactions.js` — `processMbnaTransactions()` (merchant mapping, auto-categorization for PAYMENT), `resolveMbnaCategories()` (stored mappings → similarity auto-match → manual prompt → skipAll), `filterDuplicateSettledTransactions()`
+- `src/utils/csv.js` — `convertMbnaTransactionsToMonarchCSV()`
+- `src/services/mbna-upload.js` — Full transaction pipeline: fetch → separate/dedup → process → filter duplicates → resolve categories → CSV → upload → save dedup IDs
+- Deduplication using `uploadedTransactions` array with `mergeAndRetainTransactions()`
+- First sync date picker with reconstruct balance checkbox
 
 **Tests:**
-- `test/integrations/mbna/monarchMapper.test.js`
+- `test/integrations/mbna/monarch-mapper/transactions.test.js`
+- `test/integrations/mbna/api.test.js` (getClosingDates, getStatementByClosingDate, getTransactions suites)
 - `test/services/mbna-upload.test.js` (transaction steps)
 
 ---
 
-### Milestone 6: Pending Transactions + Reconciliation ⏳ Needs API specs
+### Milestone 6: Pending Transactions + Reconciliation ✅
 
 **Goal:** Handle pending transactions with hash ID generation and reconcile with Monarch.
 
 **Implementation:**
-- `monarch-mapper/pendingTransactions.js` — hash ID generation, pending/settled separation
-- Upload service — pending transaction flow
-- Reconciliation against existing Monarch transactions
+- `monarch-mapper/pendingTransactions.js`:
+  - `generatePendingTransactionId()` — SHA-256 hash of date + sanitized description + amount + card last 4
+  - `separateAndDeduplicateTransactions()` — separates pending (TEMP) from settled, removes pending duplicates that have settled
+  - `reconcileMbnaPendingTransactions()` — fetches Monarch transactions with "Pending" tag, extracts `mbna-tx:{hash}` from notes, settles/cancels/keeps
+  - `formatReconciliationMessage()`, `extractPendingIdFromNotes()`, `formatPendingIdForNotes()`
+- `src/services/mbna-upload.js` — integrated reconciliation step in sync pipeline
 
 **Tests:**
-- `test/integrations/mbna/pendingTransactions.test.js`
+- `test/integrations/mbna/monarch-mapper/pendingTransactions.test.js`
+- `test/services/mbna-upload.test.js` (pending reconciliation steps)
 
 ---
 
-### Milestone 7: Full Tests + Polish
+### Milestone 6b: Balance Reconstruction ✅
+
+**Goal:** Reconstruct daily balance history from statement data for first sync.
+
+**Implementation:**
+- `src/integrations/mbna/balanceReconstruction.js` — `buildBalanceHistory()` uses statement closing balances as checkpoints and walks through transactions day-by-day. Handles current cycle, multiple statement periods, and filtering by start date.
+- `src/integrations/mbna/monarch-mapper/balanceFormatter.js` — `formatBalanceHistoryForMonarch()` inverts sign (MBNA positive owed → Monarch negative liability)
+- `src/services/mbna-upload.js` — balance upload step supports both single-day and reconstructed history. Respects `invertBalance` setting.
+- `src/ui/components/datePicker.js` — `showReconstructCheckbox` option for first sync
+
+**Tests:**
+- `test/integrations/mbna/balanceReconstruction.test.js`
+- `test/integrations/mbna/monarch-mapper/balanceFormatter.test.js`
+
+---
+
+### Milestone 7: Full Tests + Polish ⏳
 
 **Goal:** Complete test coverage, build validation, version bump.
 
 **Implementation:**
 - Fill any test gaps
 - `npm run lint && npm test && npm run build && npm run build:full`
-- Version bump: `npm run version:bump -- X.Y.0` (minor: new integration)
+- Version bump: `npm run version:bump -- 5.91.0` (minor: new integration)
 - Generate commit message
 
 ---
@@ -305,3 +362,6 @@ modifications are needed. This is possible because:
 5. **Upload service bridges old and new** — `mbna-upload.js` follows existing patterns (Rogers Bank) but internally uses the module's contract methods
 6. **Cookie-based auth** — similar to Wealthsimple's OAuth cookie approach, but simpler (session cookies)
 7. **SPA navigation** — MBNA uses Angular-style SPA (`index.html#/accountsoverview`), requires MutationObserver for UI injection
+8. **Balance reconstruction** — uses statement closing balances as checkpoints and walks through transactions backwards to fill daily gaps
+9. **Pending transaction hashing** — SHA-256 of stable fields (date, sanitized description, amount, card last 4) produces deterministic IDs that match between pending and settled versions
+10. **Transaction amount inversion** — MBNA positive (charge) → Monarch negative; MBNA negative (payment) → Monarch positive
