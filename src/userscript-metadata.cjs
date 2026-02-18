@@ -18,13 +18,14 @@ function generateMetadata(_buildType = 'local') {
 // @name         Monarch Uploader
 // @namespace    https://github.com/meseer/monarch-uploader
 // @version      ${version}
-// @description  Upload Questrade, CanadaLife, Rogers Bank, and Wealthsimple balance and transactions to Monarch.
+// @description  Upload Questrade, CanadaLife, Rogers Bank, Wealthsimple, and MBNA balance and transactions to Monarch.
 // @author       Mykhailo Delegan
 // @match        https://myportal.questrade.com/*
 // @match        https://app.monarch.com/*
 // @match        https://my.canadalife.com/*
 // @match        https://selfserve.rogersbank.com/*
 // @match        https://my.wealthsimple.com/*
+// @match        https://service.mbna.ca/*
 ${downloadLine}${updateLine}// @grant        GM_addElement
 // @grant        GM_deleteValue
 // @grant        GM_download
@@ -36,6 +37,7 @@ ${downloadLine}${updateLine}// @grant        GM_addElement
 // @grant        GM_xmlhttpRequest
 // @connect      api.monarch.com
 // @connect      api.questrade.com
+// @connect      service.mbna.ca
 // @run-at       document-idle
 // ==/UserScript==`;
 }

@@ -48,6 +48,9 @@ class StateManager {
           identityId: null,
           expiresAt: null,
         },
+        mbna: {
+          authenticated: false,
+        },
       },
     };
 
@@ -146,6 +149,20 @@ class StateManager {
   setRogersBankAuth(credentials) {
     const prevState = { ...this.state };
     this.state.auth.rogersbank = { credentials };
+
+    this.notifyListeners('auth', prevState, this.state);
+  }
+
+  /**
+   * Update MBNA authentication status
+   * @param {Object} authInfo - MBNA auth information
+   * @param {boolean} authInfo.authenticated - Whether session is active
+   */
+  setMbnaAuth(authInfo) {
+    const prevState = { ...this.state };
+    this.state.auth.mbna = authInfo || {
+      authenticated: false,
+    };
 
     this.notifyListeners('auth', prevState, this.state);
   }

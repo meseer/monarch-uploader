@@ -43,6 +43,8 @@ export const STORAGE = {
   QUESTRADE_CONFIG: 'questrade_config',
   CANADALIFE_CONFIG: 'canadalife_config',
   ROGERSBANK_CONFIG: 'rogersbank_config',
+  MBNA_CONFIG: 'mbna_config',
+  MBNA_ACCOUNTS_LIST: 'mbna_accounts_list',
   // CanadaLife specific storage keys
   CANADALIFE_TOKEN_KEY: '$AuraClientService.token$siteforce:communityApp',
   // Rogers Bank specific storage keys

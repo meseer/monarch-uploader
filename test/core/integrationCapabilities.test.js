@@ -317,11 +317,12 @@ describe('Integration Capabilities', () => {
 
     test('should return all integrations with balance history', () => {
       const result = getIntegrationsWithCapability('hasBalanceHistory');
-      expect(result).toHaveLength(4);
+      expect(result).toHaveLength(5);
       expect(result).toContain(INTEGRATIONS.WEALTHSIMPLE);
       expect(result).toContain(INTEGRATIONS.QUESTRADE);
       expect(result).toContain(INTEGRATIONS.CANADALIFE);
       expect(result).toContain(INTEGRATIONS.ROGERSBANK);
+      expect(result).toContain(INTEGRATIONS.MBNA);
     });
 
     test('should return empty array for non-existent capability', () => {

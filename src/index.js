@@ -32,6 +32,7 @@ import { initUI, updateStatusIndicators } from './ui/questrade/uiManager';
 import { initCanadaLifeUI } from './ui/canadalife/uiManager';
 import { initRogersBankUI } from './ui/rogersbank/uiManager';
 import { initWealthsimpleUI } from './ui/wealthsimple/uiManager';
+import { initMbnaUI } from './ui/mbna/uiManager';
 import { loadCurrentAccountInfo } from './services/questrade/account';
 
 // Main IIFE - application entry point
@@ -116,6 +117,19 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
 
       // Initialize Rogers Bank components
       initializeRogersBankApp();
+
+      // Initialize Monarch token monitoring (event-driven, no polling)
+      initializeMonarchTokenMonitoring();
+      return;
+    }
+
+    // When running on MBNA, initialize MBNA application
+    if (window.location.hostname.includes('service.mbna.ca')
+        || window.location.hostname.includes('mbna.ca')) {
+      debugLog('Running on MBNA site');
+
+      // Initialize MBNA components
+      initializeMbnaApp();
 
       // Initialize Monarch token monitoring (event-driven, no polling)
       initializeMonarchTokenMonitoring();
@@ -311,6 +325,22 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
         .catch((err) => debugLog('Error initializing Rogers Bank UI:', err));
     } catch (error) {
       debugLog('Error initializing Rogers Bank application:', error);
+    }
+  }
+
+  /**
+     * Initialize MBNA application components
+     */
+  function initializeMbnaApp() {
+    try {
+      debugLog('Initializing MBNA application components...');
+
+      // Initialize MBNA UI
+      initMbnaUI()
+        .then(() => debugLog('MBNA UI initialized successfully'))
+        .catch((err) => debugLog('Error initializing MBNA UI:', err));
+    } catch (error) {
+      debugLog('Error initializing MBNA application:', error);
     }
   }
 
