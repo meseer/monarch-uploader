@@ -202,16 +202,182 @@ export function createApi(httpClient, _auth) {
     },
 
     /**
-     * Fetch transactions for an account within a date range.
+     * Fetch transactions from the current billing cycle.
+     * Extracts pending and settled transactions from the account snapshot.
      *
-     * @param {string} _accountId - MBNA account ID
-     * @param {string} _startDate - Start date (YYYY-MM-DD)
-     * @param {string} _endDate - End date (YYYY-MM-DD)
-     * @returns {Promise<Object[]>} Array of raw transaction objects
+     * Pending transactions have referenceNumber="TEMP".
+     * Settled (recent) transactions have a real referenceNumber assigned.
+     *
+     * @param {string} accountId - MBNA account ID
+     * @returns {Promise<{pending: Object[], settled: Object[]}>} Current cycle transactions
      */
-    async getTransactions(_accountId, _startDate, _endDate) {
-      // TODO: Milestone 5 — implement transaction fetching
-      return [];
+    async getCurrentCycleTransactions(accountId) {
+      const data = await this.getAccountSnapshot(accountId);
+
+      const pending = data?.accountTransactions?.pendingTransactions || [];
+      const settled = data?.accountTransactions?.recentTransactions || [];
+
+      return { pending, settled };
+    },
+
+    /**
+     * Fetch available statement closing dates for an account.
+     * GET /waw/mbna/accounts/statement/{accountId}/closingdatedropdown
+     *
+     * Returns dates when billing cycles ended. These dates are used
+     * to fetch statement details for past billing cycles.
+     *
+     * @param {string} accountId - MBNA account ID
+     * @returns {Promise<string[]>} Array of closing dates (YYYY-MM-DD), newest first
+     */
+    async getClosingDates(accountId) {
+      if (!accountId) {
+        throw new Error('Account ID is required');
+      }
+
+      const data = await mbnaGet(`/accounts/statement/${accountId}/closingdatedropdown`);
+
+      if (!data?.closingDate || typeof data.closingDate !== 'object') {
+        throw new Error('Unexpected closing dates format: missing closingDate object');
+      }
+
+      // Extract date keys, filtering out "mostRecentTransactions"
+      const dates = Object.keys(data.closingDate)
+        .filter((key) => key !== 'mostRecentTransactions')
+        .filter((key) => /^\d{4}-\d{2}-\d{2}$/.test(key))
+        .sort((a, b) => b.localeCompare(a)); // Newest first
+
+      return dates;
+    },
+
+    /**
+     * Fetch statement details for a specific closing date.
+     * GET /waw/mbna/accounts/{accountId}/statement/closingdate/{closingDate}
+     *
+     * Returns the full statement including transactions, balance, and credit limit
+     * for a specific billing cycle.
+     *
+     * @param {string} accountId - MBNA account ID
+     * @param {string} closingDate - Statement closing date (YYYY-MM-DD)
+     * @returns {Promise<Object>} Statement data with transactions and balances
+     */
+    async getStatementByClosingDate(accountId, closingDate) {
+      if (!accountId) {
+        throw new Error('Account ID is required');
+      }
+      if (!closingDate) {
+        throw new Error('Closing date is required');
+      }
+
+      const data = await mbnaGet(`/accounts/${accountId}/statement/closingdate/${closingDate}`);
+
+      if (!data?.statement) {
+        throw new Error('Unexpected statement format: missing statement object');
+      }
+
+      return {
+        statementBalance: data.statement.statementBalance ?? null,
+        creditLimit: data.statement.creditLimit ?? null,
+        statementClosingDate: data.statement.statementClosingDate || closingDate,
+        minPaymentDue: data.statement.minPaymentDue ?? null,
+        minPaymentDueDate: data.statement.minPaymentDueDate || null,
+        nextStatementClosingDate: data.statement.nextStatementClosingDate || null,
+        transactions: data.statement.accountTransactions || [],
+        raw: data,
+      };
+    },
+
+    /**
+     * Fetch all transactions for an account within a date range.
+     *
+     * Combines current billing cycle transactions (from snapshot) with
+     * historical statement transactions. Iterates through past billing
+     * cycles until all transactions within the requested date range
+     * are collected.
+     *
+     * @param {string} accountId - MBNA account ID
+     * @param {string} startDate - Start date (YYYY-MM-DD)
+     * @returns {Promise<Object>} Transaction result
+     *   {
+     *     currentCycle: { pending: [], settled: [] },
+     *     statements: [{ closingDate, statementBalance, transactions: [] }],
+     *     allSettled: [],    // All settled transactions (current + past)
+     *     allPending: [],    // All pending transactions (current cycle only)
+     *   }
+     */
+    async getTransactions(accountId, startDate) {
+      if (!accountId) {
+        throw new Error('Account ID is required');
+      }
+
+      // Step 1: Get current cycle transactions
+      const currentCycle = await this.getCurrentCycleTransactions(accountId);
+
+      // Step 2: Get closing dates for historical statements
+      let closingDates = [];
+      try {
+        closingDates = await this.getClosingDates(accountId);
+      } catch (error) {
+        // If closing dates unavailable, return only current cycle
+        return {
+          currentCycle,
+          statements: [],
+          allSettled: [...currentCycle.settled],
+          allPending: [...currentCycle.pending],
+        };
+      }
+
+      // Step 3: Filter closing dates to those relevant for the requested range
+      // Include dates >= startDate (statements contain transactions before the closing date)
+      const relevantDates = startDate
+        ? closingDates.filter((date) => date >= startDate)
+        : closingDates;
+
+      // Step 4: Fetch each relevant statement
+      const statements = [];
+      for (const closingDate of relevantDates) {
+        const statement = await this.getStatementByClosingDate(accountId, closingDate);
+        statements.push({
+          closingDate,
+          statementBalance: statement.statementBalance,
+          transactions: statement.transactions,
+          raw: statement,
+        });
+      }
+
+      // Step 5: Merge all settled transactions and deduplicate by referenceNumber
+      const seenRefs = new Set();
+      const allSettled = [];
+
+      // Add current cycle settled transactions first (most recent)
+      for (const tx of currentCycle.settled) {
+        if (tx.referenceNumber && tx.referenceNumber !== 'TEMP' && !seenRefs.has(tx.referenceNumber)) {
+          seenRefs.add(tx.referenceNumber);
+          allSettled.push(tx);
+        }
+      }
+
+      // Add historical statement transactions
+      for (const statement of statements) {
+        for (const tx of statement.transactions) {
+          if (tx.referenceNumber && tx.referenceNumber !== 'TEMP' && !seenRefs.has(tx.referenceNumber)) {
+            seenRefs.add(tx.referenceNumber);
+            allSettled.push(tx);
+          }
+        }
+      }
+
+      // Filter by startDate if provided
+      const filteredSettled = startDate
+        ? allSettled.filter((tx) => (tx.transactionDate || tx.postingDate) >= startDate)
+        : allSettled;
+
+      return {
+        currentCycle,
+        statements,
+        allSettled: filteredSettled,
+        allPending: [...currentCycle.pending],
+      };
     },
   };
 }

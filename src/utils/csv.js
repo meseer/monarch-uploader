@@ -165,6 +165,86 @@ export function convertTransactionsToMonarchCSV(transactions, accountName, optio
 }
 
 /**
+ * Convert MBNA transactions to Monarch CSV format
+ *
+ * Supports both settled and pending transactions:
+ * - Settled transactions: standard CSV row with no tags
+ * - Pending transactions: "Pending" tag and generated hash ID in notes (for reconciliation)
+ *
+ * @param {Array} transactions - Array of processed MBNA transaction objects (from processMbnaTransactions)
+ * @param {string} accountName - MBNA account name for the Account column
+ * @param {Object} options - Conversion options
+ * @param {boolean} options.storeTransactionDetailsInNotes - Whether to include referenceNumber in notes (default: false)
+ * @returns {string} CSV string formatted for Monarch
+ */
+export function convertMbnaTransactionsToMonarchCSV(transactions, accountName, options = {}) {
+  if (!transactions || transactions.length === 0) {
+    return '';
+  }
+
+  const { storeTransactionDetailsInNotes = false } = options;
+
+  // Define Monarch CSV columns
+  const columns = [
+    'Date',
+    'Merchant',
+    'Category',
+    'Account',
+    'Original Statement',
+    'Notes',
+    'Amount',
+    'Tags',
+  ];
+
+  // Transform transactions to Monarch format
+  const monarchRows = transactions.map((transaction) => {
+    const isPending = transaction.isPending === true;
+
+    // Build notes field
+    const notesParts = [];
+
+    // Include reference number if setting is enabled (for settled transactions)
+    if (storeTransactionDetailsInNotes && !isPending && transaction.referenceNumber) {
+      notesParts.push(transaction.referenceNumber);
+    }
+
+    // For pending transactions, always include the generated hash ID for reconciliation
+    if (isPending && transaction.pendingId) {
+      notesParts.push(transaction.pendingId);
+    }
+
+    const notes = notesParts.join('\n');
+
+    // Use resolved category, auto-category, or default to Uncategorized
+    const category = transaction.resolvedMonarchCategory
+      ?? transaction.autoCategory
+      ?? 'Uncategorized';
+
+    return {
+      Date: transaction.date || '',
+      Merchant: transaction.merchant || '',
+      Category: category,
+      Account: accountName,
+      'Original Statement': transaction.originalStatement || '',
+      Notes: notes,
+      // Amount signs kept as-is from MBNA (positive = charge, negative = payment)
+      Amount: transaction.amount || 0,
+      Tags: isPending ? 'Pending' : '',
+    };
+  });
+
+  debugLog('Transformed MBNA transactions for CSV:', {
+    originalCount: transactions.length,
+    transformedCount: monarchRows.length,
+    pendingCount: transactions.filter((t) => t.isPending).length,
+    autoCategorizedCount: transactions.filter((t) => t.autoCategory).length,
+    sample: monarchRows[0],
+  });
+
+  return convertToCSV(monarchRows, columns);
+}
+
+/**
  * Format a Wealthsimple transaction ID for storage in Monarch notes
  * Uses the ws-tx: prefix format for consistent detection during reconciliation
  *

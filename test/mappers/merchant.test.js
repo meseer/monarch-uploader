@@ -117,7 +117,9 @@ describe('Merchant Mapping Utilities', () => {
     });
 
     test('should only remove first matching prefix', () => {
+      // TST- removed first, non-Amazon so asterisk stays
       expect(applyMerchantMapping('TST-SQ *MERCHANT NAME')).toBe('Sq *merchant Name');
+      // SQ * removed first � 'TST-MERCHANT NAME' � no asterisk � title case
       expect(applyMerchantMapping('SQ *TST-MERCHANT NAME')).toBe('Tst-merchant Name');
     });
 
@@ -223,11 +225,31 @@ describe('Merchant Mapping Utilities', () => {
   describe('Integration tests', () => {
     test('should handle real-world merchant names', () => {
       const testCases = [
+        // TST- removed � 'UBER * TRIP ...' � asterisk strip � 'UBER' � 'Uber'
         { input: 'TST-UBER * TRIP 123-456-789', expected: 'Uber * Trip 123-456-789' },
+        // SQ * prefix removed � 'CORNER COFFEE SHOP' � no asterisk � 'Corner Coffee Shop'
         { input: 'SQ *CORNER COFFEE SHOP', expected: 'Corner Coffee Shop' },
-        { input: 'AMZN MKTP US*ABC123DEF', expected: 'Amzn Mktp Us*abc123def' },
+        // No prefix � asterisk strip � 'AMZN MKTP US' � 'Amzn Mktp Us'
+        { input: 'AMZN MKTP US*ABC123DEF', expected: 'Amzn Mktp Us' },
+        // Not Amazon/AMZN so asterisk NOT stripped, title case applied
         { input: 'PAYPAL *MERCHANTNAME', expected: 'Paypal *merchantname' },
+        // Not Amazon/AMZN so asterisk NOT stripped, title case applied
         { input: 'GOOGLE *YOUTUBE PREMIUM', expected: 'Google *youtube Premium' },
+      ];
+
+      testCases.forEach(({ input, expected }) => {
+        expect(applyMerchantMapping(input)).toBe(expected);
+      });
+    });
+
+    test('should handle MBNA-style merchant descriptions', () => {
+      const testCases = [
+        // MBNA descriptions with asterisk + reference code + location
+        { input: 'Amazon.ca*RA6HH70U3 TORONTO ON', expected: 'Amazon.ca' },
+        { input: 'UBER *EATS HELP.UBER.COM ON', expected: 'Uber *eats Help.uber.com on' },
+        { input: 'NETFLIX.COM*ABC123 LOS GATOS CA', expected: 'Netflix.com*abc123 Los Gatos Ca' },
+        // STR* prefix removed first, then no asterisk remains
+        { input: 'STR*SOME ONLINE SERVICE', expected: 'Some Online Service' },
       ];
 
       testCases.forEach(({ input, expected }) => {

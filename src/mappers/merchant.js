@@ -115,8 +115,26 @@ export function applyMerchantMapping(merchantName, options = {}) {
 
   const { stripStoreNumbers: shouldStripStoreNumbers = true } = options;
 
-  // Rule 1: Remove leading prefixes (TST-, Sq *, Ls, Str*)
-  let transformed = removeLeadingPrefixes(merchantName);
+  let transformed = merchantName.trim();
+
+  // Rule 1: Remove leading prefixes (TST-, SQ *, LS, SP, STR*)
+  transformed = removeLeadingPrefixes(transformed);
+
+  // Rule 1b: Strip asterisk suffix for Amazon/AMZN merchants only
+  // e.g., "Amazon.ca*RA6HH70U3 TORONTO ON" -> "Amazon.ca"
+  // e.g., "AMZN MKTP US*ABC123DEF" -> "AMZN MKTP US"
+  // Only applies when the text before '*' starts with "amazon" or "amzn" (case-insensitive)
+  const asteriskIndex = transformed.indexOf('*');
+  if (asteriskIndex > 0) {
+    const beforeAsterisk = transformed.substring(0, asteriskIndex).trim().toLowerCase();
+    if (beforeAsterisk.startsWith('amazon') || beforeAsterisk.startsWith('amzn')) {
+      transformed = transformed.substring(0, asteriskIndex).trim();
+      debugLog('Stripped asterisk suffix from Amazon merchant:', {
+        original: merchantName,
+        transformed,
+      });
+    }
+  }
 
   // Rule 2: Transform Impark variants to standardized name
   // Matches merchant names starting with "Impark" followed by alphanumeric codes
