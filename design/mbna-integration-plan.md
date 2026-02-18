@@ -25,7 +25,7 @@ MBNA Canada is the **reference implementation** for the modular integration arch
 | **Injection Point** | After `<app-quick-links>` element |
 | **Monarch Account Type** | `credit` / `credit_card` |
 | **Brand Color** | `#003087` |
-| **Logo Cloudinary ID** | TBD |
+| **Logo Cloudinary ID** | `production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/uyjbhlklztevwjlpmj0n` |
 
 ## Capabilities
 
@@ -64,11 +64,29 @@ Response:
   .cardSummary.cardArtInfo[language="en"].cardName → string (account display name)
 ```
 
+### Accounts Summary (Multi-Account Discovery)
+```
+GET https://service.mbna.ca/waw/mbna/accounts/summary
+Response: Array of account objects
+  [].accountId            → string (e.g., "00240691635")
+  [].endingIn             → string (last 4 digits, e.g., "4201")
+  [].cardName             → string (e.g., "Amazon.ca Rewards Mastercard®")
+  [].cardNameShort        → string (e.g., "Amazon.ca Rewards")
+  [].primaryCardHolder    → boolean
+  [].pchName              → string (cardholder name)
+```
+
 ### Account Snapshot (Balance, Credit Limit, Transactions)
 ```
 GET https://service.mbna.ca/waw/mbna/accounts/{accountNumber}/snapshot
 Response:
-  TBD — contains credit limit, current balance, pending and settled transactions
+  .accountSnapshotBalances.creditLimit       → number (e.g., 29900.00)
+  .accountSnapshotBalances.lastStatementBalance → number
+  .accountBalances.currentBalance            → number (e.g., 93.12)
+  .accountBalances.creditAvailable           → number (e.g., 29806.88)
+  .accountBalances.minimumPaymentDue         → number
+  .accountTransactions.pendingTransactions   → array
+  .accountTransactions.recentTransactions    → array
 ```
 
 ### Transaction History
@@ -166,15 +184,17 @@ test/services/mbna-upload.test.js
 
 ---
 
-### Milestone 3: Auth + Account Discovery ⏳ Needs API specs
+### Milestone 3: Auth + Account Discovery ✅
 
 **Goal:** Capture MBNA session from cookies, fetch account info via API.
 
 **Implementation:**
-- `auth.js` — implement cookie detection and monitoring
-- `api.js` — implement `getAccountInfo()` using `GET /waw/mbna/current-account`
-- `api.js` — implement `getAccountSnapshot()` using `GET /waw/mbna/accounts/{accountNumber}/snapshot`
-- Wire auth status updates to UI (connection status indicator)
+- `auth.js` — HttpOnly cookie auth (no JS-accessible cookies; connectivity determined by API probe)
+- `api.js` — `getAccountInfo()` via `GET /waw/mbna/current-account`
+- `api.js` — `getAccountsSummary()` via `GET /waw/mbna/accounts/summary`
+- `api.js` — `getAccountSnapshot()` via `GET /waw/mbna/accounts/{accountNumber}/snapshot`
+- Account selector → Monarch account mapping via `accountSelectorWithCreate`
+- Connection probe in `uiManager.js` (API call determines auth state)
 
 **Tests:**
 - `test/integrations/mbna/auth.test.js`
@@ -182,18 +202,22 @@ test/services/mbna-upload.test.js
 
 ---
 
-### Milestone 4: Balance + Credit Limit Upload ⏳ Needs API specs
+### Milestone 4: Credit Limit Sync + Full Sync UI ✅
 
-**Goal:** Upload current balance and credit limit to Monarch.
+**Goal:** Sync credit limit to Monarch with full progress dialog UI. Set account icon on newly created Monarch accounts.
 
 **Implementation:**
-- `src/services/mbna-upload.js` — upload orchestrator (balance + credit limit steps)
-- Balance reconstruction from transactions (first sync)
-- Credit limit sync to Monarch
-- Wire upload button to orchestrator
+- `src/services/mbna-upload.js` — upload orchestrator with `syncMbnaAccount()` and `uploadMbnaAccount()`
+- Credit limit sync: fetch from snapshot → compare with stored value → push to Monarch → verify
+- Progress dialog with 4 steps (creditLimit active; balance, transactions, pending skipped as "Coming soon")
+- Account icon upload via `monarchApi.setAccountLogo()` for newly created accounts
+- `LOGO_CLOUDINARY_IDS.MBNA` added to `src/core/config.js`
+- Fixed `accountService` storage bug: added MBNA to `ACCOUNT_LIST_STORAGE_KEYS`
+- UI manager refactored to delegate to upload service
 
 **Tests:**
-- `test/services/mbna-upload.test.js` (balance + credit limit)
+- `test/services/mbna-upload.test.js` (15 tests: credit limit sync, skipped steps, summary, error handling)
+- `test/integrations/mbna/api.test.js` (getCreditLimit + getBalance suites)
 
 ---
 

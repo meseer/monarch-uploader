@@ -13,20 +13,17 @@
 
 import { debugLog } from '../../core/utils';
 import { STORAGE } from '../../core/config';
-import { INTEGRATIONS } from '../../core/integrationCapabilities';
-import stateManager from '../../core/state';
 import manifest from '../../integrations/mbna/manifest';
 import injectionPoint from '../../integrations/mbna/injectionPoint';
 import { createAuth } from '../../integrations/mbna/auth';
 import { createApi } from '../../integrations/mbna/api';
 import { createGMHttpClient } from '../../core/httpClient';
-import accountService from '../../services/common/accountService';
 import toast from '../toast';
 import { showSettingsModal } from '../components/settingsModal';
-import { showMonarchAccountSelectorWithCreate } from '../components/accountSelectorWithCreate';
 import { createConnectionStatus, updateMbnaStatus, updateMonarchStatus } from './components/connectionStatus';
 import { createMbnaUploadButton } from './components/uploadButton';
 import { createMonarchLoginLink } from '../components/monarchLoginLink';
+import { uploadMbnaAccount } from '../../services/mbna-upload';
 
 const BRAND_COLOR = manifest.brandColor;
 const CONTAINER_ID = injectionPoint.containerId;
@@ -354,8 +351,8 @@ function createUIContainer() {
 
 /**
  * Handle the upload button click.
- * Iterates through all MBNA accounts, checks for existing Monarch mapping,
- * and shows account selector for any unmapped accounts.
+ * Iterates through all MBNA accounts, delegates to upload service
+ * for account mapping resolution and sync.
  *
  * @param {HTMLButtonElement} button - The upload button (for disabling during operation)
  */
@@ -374,7 +371,7 @@ async function handleUploadClick(button) {
 
     debugLog('[MBNA] Processing', cachedAccounts.length, 'account(s)');
 
-    // Iterate through all accounts
+    // Process each account through the upload service
     for (const account of cachedAccounts) {
       if (!account.accountId) {
         debugLog('[MBNA] Skipping account with no accountId:', account);
@@ -383,132 +380,21 @@ async function handleUploadClick(button) {
 
       button.textContent = `Processing ${account.displayName || account.endingIn || 'account'}...`;
 
-      // Set current account in state manager (positional args: id, nickname)
-      stateManager.setAccount(
-        account.accountId,
-        account.displayName || `MBNA Card (${account.endingIn})`,
-      );
+      // Delegate to upload service — handles mapping, icon upload, and sync
+      const result = await uploadMbnaAccount(account, api);
+      debugLog('[MBNA] Upload result for', account.displayName, ':', result);
 
-      // Check for existing Monarch account mapping
-      const existingMapping = accountService.getMonarchAccountMapping(
-        INTEGRATIONS.MBNA,
-        account.accountId,
-      );
-
-      if (existingMapping) {
-        debugLog('[MBNA] Existing mapping for', account.displayName, '→', existingMapping.displayName);
-        toast.show(`${account.displayName}: mapped to ${existingMapping.displayName}`, 'info', 3000);
-        // TODO: Milestone 4 — proceed to balance upload with existing mapping
-        continue;
+      if (!result.success && result.message === 'Cancelled') {
+        debugLog('[MBNA] Upload cancelled for', account.displayName);
+        break;
       }
-
-      // Check if this account was previously skipped
-      const accountData = accountService.getAccountData(INTEGRATIONS.MBNA, account.accountId);
-      if (accountData && accountData.syncEnabled === false) {
-        debugLog('[MBNA] Account', account.displayName, 'was skipped, ignoring');
-        continue;
-      }
-
-      // No existing mapping — show account selector for first-sync mapping
-      debugLog('[MBNA] No mapping for', account.displayName, '— showing account selector');
-
-      const createDefaults = {
-        defaultName: account.displayName || `MBNA ${account.cardName || 'Card'}`,
-        defaultType: 'credit',
-        defaultSubtype: 'credit_card',
-        accountType: 'credit',
-      };
-
-      // Wait for user to select/create/skip this account
-      await new Promise((resolve) => {
-        showMonarchAccountSelectorWithCreate(
-          [], // legacy param
-          (selectedAccount) => {
-            handleAccountSelection(selectedAccount, account);
-            resolve();
-          },
-          null, // legacy param
-          'credit',
-          createDefaults,
-        );
-      });
     }
-
-    toast.show('Account mapping complete', 'success', 3000);
   } catch (error) {
     debugLog('[MBNA] Upload error:', error);
     toast.show(error.message || 'Failed to start upload', 'error');
   } finally {
     button.textContent = 'Upload to Monarch';
     button.disabled = false;
-  }
-}
-
-/**
- * Handle Monarch account selection result.
- * Saves the MBNA → Monarch mapping to account service.
- *
- * @param {Object|null} selectedAccount - The selected/created Monarch account, or null if cancelled
- * @param {Object} account - MBNA account from accounts summary
- */
-function handleAccountSelection(selectedAccount, account) {
-  if (!selectedAccount) {
-    debugLog('[MBNA] Account selection cancelled for', account.displayName);
-    toast.show('Account mapping cancelled', 'info', 2000);
-    return;
-  }
-
-  if (selectedAccount.cancelled) {
-    debugLog('[MBNA] Account selection cancelled by user for', account.displayName);
-    return;
-  }
-
-  if (selectedAccount.skipped) {
-    debugLog('[MBNA] Account skipped:', account.displayName);
-    // Save with syncEnabled: false so it's skipped on subsequent syncs
-    const skippedData = {
-      mbnaAccount: {
-        id: account.accountId,
-        endingIn: account.endingIn,
-        cardName: account.cardName,
-        nickname: account.displayName,
-      },
-      monarchAccount: null,
-      syncEnabled: false,
-      lastSyncDate: null,
-    };
-    accountService.upsertAccount(INTEGRATIONS.MBNA, skippedData);
-    toast.show(`${account.displayName}: skipped`, 'info', 2000);
-    return;
-  }
-
-  try {
-    // Save mapping to account service
-    const accountData = {
-      mbnaAccount: {
-        id: account.accountId,
-        endingIn: account.endingIn,
-        cardName: account.cardName,
-        nickname: account.displayName,
-      },
-      monarchAccount: {
-        id: selectedAccount.id,
-        displayName: selectedAccount.displayName,
-      },
-      syncEnabled: true,
-      lastSyncDate: null,
-    };
-
-    accountService.upsertAccount(INTEGRATIONS.MBNA, accountData);
-
-    debugLog('[MBNA] Account mapping saved:', {
-      mbna: account.displayName,
-      monarch: selectedAccount.displayName,
-    });
-    toast.show(`Mapped: ${account.displayName} → ${selectedAccount.displayName}`, 'success', 3000);
-  } catch (error) {
-    debugLog('[MBNA] Error saving account mapping:', error);
-    toast.show('Failed to save account mapping', 'error');
   }
 }
 

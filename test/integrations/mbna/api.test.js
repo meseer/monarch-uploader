@@ -386,6 +386,161 @@ describe('MBNA API Client', () => {
     });
   });
 
+  describe('getCreditLimit', () => {
+    const SAMPLE_SNAPSHOT = {
+      accountSnapshotBalances: {
+        creditLimit: 29900.00,
+        lastStatementBalance: 0.00,
+      },
+      accountBalances: {
+        currentBalance: 93.12,
+        creditAvailable: 29806.88,
+        minimumPaymentDue: 0,
+      },
+      accountTransactions: {
+        pendingTransactions: [],
+        recentTransactions: [],
+      },
+    };
+
+    it('should extract creditLimit from snapshot response', async () => {
+      mockHttpClient = createMockHttpClient({
+        responseText: JSON.stringify(SAMPLE_SNAPSHOT),
+      });
+      api = createApi(mockHttpClient, mockAuth);
+
+      const result = await api.getCreditLimit('00240691635');
+
+      expect(result).toBe(29900.00);
+    });
+
+    it('should return null when accountSnapshotBalances is missing', async () => {
+      mockHttpClient = createMockHttpClient({
+        responseText: JSON.stringify({ accountBalances: { currentBalance: 100 } }),
+      });
+      api = createApi(mockHttpClient, mockAuth);
+
+      const result = await api.getCreditLimit('00240691635');
+
+      expect(result).toBeNull();
+    });
+
+    it('should return null when creditLimit is missing from snapshot', async () => {
+      mockHttpClient = createMockHttpClient({
+        responseText: JSON.stringify({
+          accountSnapshotBalances: { lastStatementBalance: 0 },
+        }),
+      });
+      api = createApi(mockHttpClient, mockAuth);
+
+      const result = await api.getCreditLimit('00240691635');
+
+      expect(result).toBeNull();
+    });
+
+    it('should return 0 when credit limit is explicitly 0', async () => {
+      mockHttpClient = createMockHttpClient({
+        responseText: JSON.stringify({
+          accountSnapshotBalances: { creditLimit: 0 },
+        }),
+      });
+      api = createApi(mockHttpClient, mockAuth);
+
+      const result = await api.getCreditLimit('00240691635');
+
+      expect(result).toBe(0);
+    });
+
+    it('should call getAccountSnapshot with correct account ID', async () => {
+      mockHttpClient = createMockHttpClient({
+        responseText: JSON.stringify(SAMPLE_SNAPSHOT),
+      });
+      api = createApi(mockHttpClient, mockAuth);
+
+      await api.getCreditLimit('00240691635');
+
+      expect(mockHttpClient.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: 'https://service.mbna.ca/waw/mbna/accounts/00240691635/snapshot',
+        }),
+      );
+    });
+  });
+
+  describe('getBalance', () => {
+    const SAMPLE_SNAPSHOT = {
+      accountSnapshotBalances: {
+        creditLimit: 29900.00,
+        lastStatementBalance: 0.00,
+      },
+      accountBalances: {
+        currentBalance: 93.12,
+        creditAvailable: 29806.88,
+        minimumPaymentDue: 0,
+      },
+    };
+
+    it('should extract all balance fields from snapshot', async () => {
+      mockHttpClient = createMockHttpClient({
+        responseText: JSON.stringify(SAMPLE_SNAPSHOT),
+      });
+      api = createApi(mockHttpClient, mockAuth);
+
+      const result = await api.getBalance('00240691635');
+
+      expect(result.currentBalance).toBe(93.12);
+      expect(result.creditAvailable).toBe(29806.88);
+      expect(result.creditLimit).toBe(29900.00);
+      expect(result.currency).toBe('CAD');
+      expect(result.raw).toEqual(SAMPLE_SNAPSHOT);
+    });
+
+    it('should return null for missing balance fields', async () => {
+      mockHttpClient = createMockHttpClient({
+        responseText: JSON.stringify({}),
+      });
+      api = createApi(mockHttpClient, mockAuth);
+
+      const result = await api.getBalance('00240691635');
+
+      expect(result.currentBalance).toBeNull();
+      expect(result.creditAvailable).toBeNull();
+      expect(result.creditLimit).toBeNull();
+      expect(result.currency).toBe('CAD');
+    });
+
+    it('should handle zero balances', async () => {
+      mockHttpClient = createMockHttpClient({
+        responseText: JSON.stringify({
+          accountBalances: { currentBalance: 0, creditAvailable: 0 },
+          accountSnapshotBalances: { creditLimit: 0 },
+        }),
+      });
+      api = createApi(mockHttpClient, mockAuth);
+
+      const result = await api.getBalance('00240691635');
+
+      expect(result.currentBalance).toBe(0);
+      expect(result.creditAvailable).toBe(0);
+      expect(result.creditLimit).toBe(0);
+    });
+
+    it('should handle partial snapshot (only accountBalances)', async () => {
+      mockHttpClient = createMockHttpClient({
+        responseText: JSON.stringify({
+          accountBalances: { currentBalance: 500.50, creditAvailable: 4499.50 },
+        }),
+      });
+      api = createApi(mockHttpClient, mockAuth);
+
+      const result = await api.getBalance('00240691635');
+
+      expect(result.currentBalance).toBe(500.50);
+      expect(result.creditAvailable).toBe(4499.50);
+      expect(result.creditLimit).toBeNull();
+    });
+  });
+
   describe('getTransactions (stub)', () => {
     it('should return empty array (not yet implemented)', async () => {
       const result = await api.getTransactions('12345', '2024-01-01', '2024-12-31');

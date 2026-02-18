@@ -173,16 +173,17 @@ export function createApi(httpClient, _auth) {
 
     /**
      * Fetch current balance for an account.
-     * Delegates to getAccountSnapshot and extracts balance.
+     * Delegates to getAccountSnapshot and extracts balance fields.
      *
      * @param {string} accountId - MBNA account ID
-     * @returns {Promise<Object>} Balance data { amount, currency }
+     * @returns {Promise<Object>} Balance data { currentBalance, creditAvailable, creditLimit, currency }
      */
     async getBalance(accountId) {
-      // TODO: Milestone 4 — implement using getAccountSnapshot()
       const data = await this.getAccountSnapshot(accountId);
       return {
-        amount: null, // Will be extracted from snapshot
+        currentBalance: data?.accountBalances?.currentBalance ?? null,
+        creditAvailable: data?.accountBalances?.creditAvailable ?? null,
+        creditLimit: data?.accountSnapshotBalances?.creditLimit ?? null,
         currency: 'CAD',
         raw: data,
       };
@@ -196,9 +197,8 @@ export function createApi(httpClient, _auth) {
      * @returns {Promise<number|null>} Credit limit or null
      */
     async getCreditLimit(accountId) {
-      // TODO: Milestone 4 — implement using getAccountSnapshot()
-      await this.getAccountSnapshot(accountId);
-      return null; // Will be extracted from snapshot
+      const data = await this.getAccountSnapshot(accountId);
+      return data?.accountSnapshotBalances?.creditLimit ?? null;
     },
 
     /**

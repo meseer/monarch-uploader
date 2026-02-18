@@ -144,8 +144,10 @@ describe('MBNA Manifest', () => {
       expect(manifest.brandColor).toBe('#003087');
     });
 
-    it('has logoCloudinaryId as null (TBD)', () => {
-      expect(manifest.logoCloudinaryId).toBeNull();
+    it('has logoCloudinaryId for MBNA logo', () => {
+      expect(manifest.logoCloudinaryId).toBe(
+        'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/uyjbhlklztevwjlpmj0n',
+      );
     });
   });
 

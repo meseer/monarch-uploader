@@ -64,7 +64,7 @@ const manifest = {
 
   // ── Brand theming ─────────────────────────────────────────
   brandColor: '#003087',
-  logoCloudinaryId: null, // TBD — will be set once uploaded to Monarch
+  logoCloudinaryId: 'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/uyjbhlklztevwjlpmj0n',
 
   // ── UI extensions ─────────────────────────────────────────
   uiExtensions: {
