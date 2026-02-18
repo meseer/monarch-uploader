@@ -17,6 +17,10 @@ import { clearSavedCategoryMappings } from './mappers/category';
 import { migrateAllLegacyStorage } from './services/common/legacyMigration';
 import stateManager from './core/state';
 import navigationManager from './core/navigation';
+import { registerIntegration } from './core/integrationRegistry';
+import { createGMHttpClient } from './core/httpClient';
+import { createGMStorageAdapter } from './core/storageAdapter';
+import { AVAILABLE_INTEGRATIONS } from './integrations';
 
 // Import API clients
 import { checkTokenStatus } from './api/questrade';
@@ -48,6 +52,21 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
 
   // Run eager migration of all legacy storage keys to configStore
   migrateAllLegacyStorage();
+
+  // Register modular integrations in the runtime registry
+  // This must happen before any UI renders so settings tabs and
+  // connection-status checks can discover registered modules.
+  const httpClient = createGMHttpClient();
+  const storage = createGMStorageAdapter();
+  AVAILABLE_INTEGRATIONS.forEach((integration) => {
+    registerIntegration({
+      manifest: integration.manifest,
+      api: integration.createApi(httpClient, storage),
+      auth: integration.createAuth(storage),
+      injectionPoint: integration.injectionPoint,
+      monarchMapper: integration.monarchMapper || null,
+    });
+  });
 
   // Initialize the application once the DOM is ready
 

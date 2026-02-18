@@ -8,19 +8,21 @@
  * @type {import('../types').IntegrationModule}
  */
 
+import * as monarchMapperNs from './monarch-mapper';
+
 export { default as manifest } from './manifest';
 export { createApi } from './api';
 export { createAuth } from './auth';
 export { default as injectionPoint } from './injectionPoint';
 export {
-  applyTransactionRule,
-  hasRuleForTransaction,
   separateAndDeduplicateTransactions,
-  generatePendingId,
+  generatePendingTransactionId,
   formatPendingIdForNotes,
 } from './monarch-mapper';
 
 /**
- * Monarch mapper as a single object (for registry registration)
+ * Monarch mapper re-exported as a namespace object for registry registration.
+ * Since monarch-mapper has no default export, we import all named exports
+ * and re-export them as a single object.
  */
-export { default as monarchMapper } from './monarch-mapper';
+export const monarchMapper = monarchMapperNs;
