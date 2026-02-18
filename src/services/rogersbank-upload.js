@@ -774,7 +774,41 @@ export async function uploadRogersBankToMonarch() {
     // Use only settled (APPROVED) transactions for balance reconstruction
     const allApprovedTx = allSettledTx;
 
-    // STEP 2: Upload transactions (before balance, so reconciliation can adjust balance)
+    // STEP 2: Pending transaction reconciliation
+    // Runs BEFORE transaction upload so settled ref IDs are saved to dedup store,
+    // preventing the settled version from being uploaded as a duplicate.
+    progressDialog.updateStepStatus(rogersAccountId, 'pendingReconciliation', 'processing', 'Reconciling...');
+    try {
+      const lookbackDays = 90; // Rogers Bank lookback for reconciliation
+      const reconciliationResult = await reconcileRogersPendingTransactions(
+        monarchAccount.id,
+        allTransactions,
+        lookbackDays,
+      );
+
+      // Save settled ref IDs to dedup store so transaction upload skips them
+      const settledRefIds = reconciliationResult.settledRefIds || [];
+      if (settledRefIds.length > 0) {
+        debugLog(`Saving ${settledRefIds.length} reconciled settled ref IDs to dedup store`);
+        const reconAcctData = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, rogersAccountId);
+        const reconExisting = reconAcctData?.uploadedTransactions || [];
+        const reconRetention = getRetentionSettingsFromAccount(reconAcctData);
+        const reconUpdated = mergeAndRetainTransactions(reconExisting, settledRefIds, reconRetention, getTodayLocal());
+        accountService.updateAccountInList(INTEGRATIONS.ROGERSBANK, rogersAccountId, {
+          uploadedTransactions: reconUpdated,
+        });
+      }
+
+      const reconciliationMsg = formatReconciliationMessage(reconciliationResult);
+      const reconciliationStatus = reconciliationResult.success !== false ? 'success' : 'error';
+      progressDialog.updateStepStatus(rogersAccountId, 'pendingReconciliation', reconciliationStatus, reconciliationMsg);
+      debugLog('Rogers Bank pending reconciliation result:', reconciliationResult);
+    } catch (reconciliationError) {
+      debugLog('Error during Rogers Bank pending reconciliation:', reconciliationError);
+      progressDialog.updateStepStatus(rogersAccountId, 'pendingReconciliation', 'error', reconciliationError.message);
+    }
+
+    // STEP 3: Upload transactions
     if (abortController.signal.aborted) {
       progressDialog.updateProgress(rogersAccountId, 'error', 'Cancelled');
       progressDialog.hideCancel();
@@ -790,6 +824,7 @@ export async function uploadRogersBankToMonarch() {
 
     if (txResult.success && (allSettledTx.length > 0 || allPendingTx.length > 0)) {
       // Filter out already-uploaded settled transactions
+      // (includes ref IDs saved by reconciliation above, so reconciled transactions are skipped)
       const settledFilterResult = filterDuplicateSettledTransactions(allSettledTx, rogersAccountId);
       totalDuplicates += settledFilterResult.duplicateCount;
 
@@ -881,24 +916,6 @@ export async function uploadRogersBankToMonarch() {
       }
     } else {
       progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', 'No transactions');
-    }
-
-    // STEP 3: Pending transaction reconciliation
-    progressDialog.updateStepStatus(rogersAccountId, 'pendingReconciliation', 'processing', 'Reconciling...');
-    try {
-      const lookbackDays = 90; // Rogers Bank lookback for reconciliation
-      const reconciliationResult = await reconcileRogersPendingTransactions(
-        monarchAccount.id,
-        allTransactions,
-        lookbackDays,
-      );
-      const reconciliationMsg = formatReconciliationMessage(reconciliationResult);
-      const reconciliationStatus = reconciliationResult.success !== false ? 'success' : 'error';
-      progressDialog.updateStepStatus(rogersAccountId, 'pendingReconciliation', reconciliationStatus, reconciliationMsg);
-      debugLog('Rogers Bank pending reconciliation result:', reconciliationResult);
-    } catch (reconciliationError) {
-      debugLog('Error during Rogers Bank pending reconciliation:', reconciliationError);
-      progressDialog.updateStepStatus(rogersAccountId, 'pendingReconciliation', 'error', reconciliationError.message);
     }
 
     // STEP 4: Upload balance (after reconciliation so deleted pending transactions don't affect balance)

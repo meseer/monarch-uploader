@@ -34,6 +34,10 @@ import {
   separateAndDeduplicateTransactions,
   formatReconciliationMessage,
 } from './pendingReconciliation';
+import {
+  mergeAndRetainTransactions,
+  getRetentionSettingsFromAccount,
+} from '../../utils/transactionStorage';
 import { convertToCSV } from '../../utils/csv';
 
 // ── Monarch CSV column definitions ──────────────────────────
@@ -158,31 +162,28 @@ async function executeCreditLimitStep({ integrationId, accountId, monarchAccount
 }
 
 /**
- * Execute the transaction sync step.
+ * Fetch and separate raw transactions from the source.
+ *
+ * This is the first phase of the transaction pipeline: fetch from source API,
+ * then separate into settled/pending and deduplicate (remove pending duplicates
+ * that match settled transactions by hash).
  *
  * @param {Object} params - Parameters
- * @param {string} params.integrationId - Integration identifier
  * @param {string} params.accountId - Source account ID
- * @param {string} params.accountDisplayName - Display name for CSV
- * @param {string} params.monarchAccountId - Monarch account ID
  * @param {Object} params.api - Integration API client
  * @param {string} params.fromDate - Start date
- * @param {boolean} params.includePendingTransactions - Whether to include pending
- * @param {boolean} params.storeTransactionDetailsInNotes - Notes setting
  * @param {string} params.txIdPrefix - Pending transaction ID prefix
  * @param {import('../../integrations/types').SyncHooks} params.hooks - Sync hooks
  * @param {Object} params.progressDialog - Progress dialog instance
  * @param {AbortController} params.abortController - Abort controller
- * @returns {Promise<Object>} Transaction step result
+ * @returns {Promise<Object>} Fetched and separated data
  */
-async function executeTransactionStep({
-  integrationId, accountId, accountDisplayName, monarchAccountId, api, fromDate,
-  includePendingTransactions, storeTransactionDetailsInNotes, txIdPrefix, hooks,
+async function fetchAndSeparateTransactions({
+  accountId, api, fromDate, txIdPrefix, hooks,
   progressDialog, abortController,
 }) {
   if (abortController.signal.aborted) throw new Error('Cancelled');
 
-  // ── Fetch ────────────────────────────────────────────────
   progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Fetching...');
 
   const fetchResult = await hooks.fetchTransactions(api, accountId, fromDate, {
@@ -195,9 +196,7 @@ async function executeTransactionStep({
 
   debugLog(`[orchestrator] Fetched ${rawSettled.length} settled, ${rawPending.length} pending transactions`);
 
-  // ── Separate & deduplicate pending vs settled ────────────
-  progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Deduplicating...');
-
+  // Separate & deduplicate pending vs settled
   let dedupSettled = rawSettled;
   let dedupPending = rawPending;
 
@@ -216,6 +215,36 @@ async function executeTransactionStep({
       debugLog(`[orchestrator] Removed ${dedupResult.duplicatesRemoved} pending duplicates`);
     }
   }
+
+  return { rawSettled, rawPending, dedupSettled, dedupPending, metadata };
+}
+
+/**
+ * Execute the transaction sync step (process, dedup, categorize, upload).
+ *
+ * Expects pre-fetched and separated transaction data from fetchAndSeparateTransactions.
+ *
+ * @param {Object} params - Parameters
+ * @param {string} params.integrationId - Integration identifier
+ * @param {string} params.accountId - Source account ID
+ * @param {string} params.accountDisplayName - Display name for CSV
+ * @param {string} params.monarchAccountId - Monarch account ID
+ * @param {string} params.fromDate - Start date
+ * @param {boolean} params.includePendingTransactions - Whether to include pending
+ * @param {boolean} params.storeTransactionDetailsInNotes - Notes setting
+ * @param {Array} params.dedupSettled - Settled transactions (after pending/settled dedup)
+ * @param {Array} params.dedupPending - Pending transactions (after pending/settled dedup)
+ * @param {import('../../integrations/types').SyncHooks} params.hooks - Sync hooks
+ * @param {Object} params.progressDialog - Progress dialog instance
+ * @param {AbortController} params.abortController - Abort controller
+ * @returns {Promise<Object>} Transaction step result
+ */
+async function executeTransactionStep({
+  integrationId, accountId, accountDisplayName, monarchAccountId, fromDate,
+  includePendingTransactions, storeTransactionDetailsInNotes, dedupSettled, dedupPending, hooks,
+  progressDialog, abortController,
+}) {
+  if (abortController.signal.aborted) throw new Error('Cancelled');
 
   // ── Process (normalize) ──────────────────────────────────
   progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Processing...');
@@ -292,9 +321,6 @@ async function executeTransactionStep({
 
   return {
     success: transactionUploadSuccess,
-    rawPending,
-    rawSettled,
-    metadata,
   };
 }
 
@@ -311,7 +337,7 @@ async function executeTransactionStep({
  * @param {import('../../integrations/types').SyncHooks} params.hooks - Sync hooks
  * @param {Object} params.progressDialog - Progress dialog instance
  * @param {AbortController} params.abortController - Abort controller
- * @returns {Promise<void>}
+ * @returns {Promise<Object>} Reconciliation result (includes settledRefIds)
  */
 async function executePendingReconciliationStep({
   integrationId, accountId, monarchAccountId, rawPending, rawSettled,
@@ -331,15 +357,33 @@ async function executePendingReconciliationStep({
       lookbackDays,
       getPendingIdFields: hooks.getPendingIdFields,
       getSettledAmount: hooks.getSettledAmount,
+      getSettledRefId: hooks.getSettledRefId,
     });
+
+    // Save settled ref IDs to dedup store so transaction upload skips them
+    const settledRefIds = result.settledRefIds || [];
+    if (settledRefIds.length > 0) {
+      debugLog(`[orchestrator] Saving ${settledRefIds.length} reconciled settled ref IDs to dedup store`);
+      const acctData = accountService.getAccountData(integrationId, accountId);
+      const existingTransactions = acctData?.uploadedTransactions || [];
+      const retentionSettings = getRetentionSettingsFromAccount(acctData);
+      const updatedTransactions = mergeAndRetainTransactions(
+        existingTransactions, settledRefIds, retentionSettings, getTodayLocal(),
+      );
+      accountService.updateAccountInList(integrationId, accountId, {
+        uploadedTransactions: updatedTransactions,
+      });
+    }
 
     const msg = formatReconciliationMessage(result);
     const status = result.success !== false ? 'success' : 'error';
     progressDialog.updateStepStatus(accountId, 'pending', status, msg);
     debugLog(`[orchestrator] Pending reconciliation for ${integrationId}:`, result);
+    return result;
   } catch (error) {
     debugLog('[orchestrator] Error during pending reconciliation:', error);
     progressDialog.updateStepStatus(accountId, 'pending', 'error', error.message);
+    return { success: false, error: error.message };
   }
 }
 
@@ -348,9 +392,10 @@ async function executePendingReconciliationStep({
  *
  * Drives the full sync workflow:
  * 1. Credit limit sync (if capable)
- * 2. Transaction fetch → process → dedup → categorize → CSV → upload
- * 3. Pending reconciliation (if enabled)
- * 4. Balance upload (single-day or reconstructed history)
+ * 2. Transaction fetch & separation
+ * 3. Pending reconciliation (if enabled) — saves settled ref IDs to dedup store
+ * 4. Transaction process → dedup → categorize → CSV → upload
+ * 5. Balance upload (single-day or reconstructed history)
  *
  * @param {Object} params - Sync parameters
  * @param {string} params.integrationId - Integration identifier
@@ -409,28 +454,41 @@ export async function syncAccount({
       });
     }
 
-    // ── STEP 2: Fetch & Upload Transactions ────────────────
+    // ── STEP 2: Fetch & Separate Transactions ──────────────
+    let fetchData = null;
     let txStepResult = null;
 
     if (capabilities.hasTransactions) {
-      txStepResult = await executeTransactionStep({
-        integrationId, accountId, accountDisplayName, monarchAccountId, api, fromDate,
-        includePendingTransactions, storeTransactionDetailsInNotes, txIdPrefix, hooks,
+      fetchData = await fetchAndSeparateTransactions({
+        accountId, api, fromDate, txIdPrefix, hooks,
         progressDialog, abortController,
       });
     }
 
     // ── STEP 3: Pending Reconciliation ─────────────────────
-    if (includePendingTransactions && txStepResult && txIdPrefix && hooks.getPendingIdFields) {
+    // Runs BEFORE transaction upload so settled ref IDs are saved to dedup store,
+    // preventing the settled version from being uploaded as a duplicate.
+    if (includePendingTransactions && fetchData && txIdPrefix && hooks.getPendingIdFields) {
       await executePendingReconciliationStep({
         integrationId, accountId, monarchAccountId,
-        rawPending: txStepResult.rawPending,
-        rawSettled: txStepResult.rawSettled,
+        rawPending: fetchData.rawPending,
+        rawSettled: fetchData.rawSettled,
         txIdPrefix, hooks, progressDialog, abortController,
       });
     }
 
-    // ── STEP 4: Balance Upload ─────────────────────────────
+    // ── STEP 4: Process, Dedup & Upload Transactions ───────
+    if (fetchData) {
+      txStepResult = await executeTransactionStep({
+        integrationId, accountId, accountDisplayName, monarchAccountId, fromDate,
+        includePendingTransactions, storeTransactionDetailsInNotes,
+        dedupSettled: fetchData.dedupSettled,
+        dedupPending: fetchData.dedupPending,
+        hooks, progressDialog, abortController,
+      });
+    }
+
+    // ── STEP 5: Balance Upload ─────────────────────────────
     if (abortController.signal.aborted) throw new Error('Cancelled');
 
     progressDialog.updateStepStatus(accountId, 'balance', 'processing', 'Preparing...');
@@ -450,11 +508,11 @@ export async function syncAccount({
 
     // Build balance history if reconstructing
     let balanceHistory = null;
-    if (firstSync && reconstructBalance && hooks.buildBalanceHistory && txStepResult?.metadata) {
+    if (firstSync && reconstructBalance && hooks.buildBalanceHistory && fetchData?.metadata) {
       progressDialog.updateStepStatus(accountId, 'balance', 'processing', 'Reconstructing...');
       balanceHistory = hooks.buildBalanceHistory({
         currentBalance,
-        metadata: txStepResult.metadata,
+        metadata: fetchData.metadata,
         fromDate,
         invertBalance,
       });

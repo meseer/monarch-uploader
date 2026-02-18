@@ -229,10 +229,10 @@ export async function separateAndDeduplicateTransactions(transactions) {
  * @param {string} monarchAccountId - Monarch account ID
  * @param {Array} allTransactions - All current Rogers Bank transactions from API
  * @param {number} lookbackDays - Number of days to look back for pending transactions
- * @returns {Promise<Object>} Reconciliation result { success, settled, cancelled, failed, error }
+ * @returns {Promise<Object>} Reconciliation result { success, settled, cancelled, failed, error, settledRefIds }
  */
 export async function reconcileRogersPendingTransactions(monarchAccountId, allTransactions, lookbackDays) {
-  const result = { success: true, settled: 0, cancelled: 0, failed: 0, error: null };
+  const result = { success: true, settled: 0, cancelled: 0, failed: 0, error: null, settledRefIds: [] };
 
   try {
     debugLog('Starting Rogers Bank pending transaction reconciliation', {
@@ -337,6 +337,11 @@ export async function reconcileRogersPendingTransactions(monarchAccountId, allTr
 
           // Remove Pending tag
           await monarchApi.setTransactionTags(monarchTxId, []);
+
+          // Collect settled reference number for dedup store
+          if (settledTx.referenceNumber) {
+            result.settledRefIds.push(settledTx.referenceNumber);
+          }
 
           result.settled += 1;
           continue;

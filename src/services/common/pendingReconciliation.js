@@ -154,7 +154,8 @@ async function buildHashMaps(txIdPrefix, getPendingIdFields, settled, pending) {
  * @param {number} params.lookbackDays - Days to look back for pending transactions
  * @param {Function} params.getPendingIdFields - Hook: (tx) => Array<string>
  * @param {Function} params.getSettledAmount - Hook: (settledTx) => number (Monarch-normalized amount)
- * @returns {Promise<Object>} Reconciliation result
+ * @param {Function} [params.getSettledRefId] - Hook: (settledTx) => string (settled reference ID for dedup)
+ * @returns {Promise<Object>} Reconciliation result including settledRefIds array
  */
 export async function reconcilePendingTransactions({
   txIdPrefix,
@@ -164,8 +165,9 @@ export async function reconcilePendingTransactions({
   lookbackDays,
   getPendingIdFields,
   getSettledAmount,
+  getSettledRefId,
 }) {
-  const result = { success: true, settled: 0, cancelled: 0, failed: 0, error: null };
+  const result = { success: true, settled: 0, cancelled: 0, failed: 0, error: null, settledRefIds: [] };
 
   try {
     debugLog(`[reconciliation] Starting pending reconciliation for ${txIdPrefix}`, {
@@ -263,6 +265,14 @@ export async function reconcilePendingTransactions({
 
           // Remove Pending tag
           await monarchApi.setTransactionTags(monarchTxId, []);
+
+          // Collect settled ref ID for dedup store
+          if (getSettledRefId) {
+            const settledRef = getSettledRefId(settledTx);
+            if (settledRef) {
+              result.settledRefIds.push(settledRef);
+            }
+          }
 
           result.settled += 1;
           continue;
