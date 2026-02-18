@@ -70,7 +70,6 @@ export function renderAccountSettingsSection(integrationId, accountEntry, accoun
         const success = accountService.updateAccountInList(integrationId, accountId, { storeTransactionDetailsInNotes: isEnabled });
         if (success) {
           toast.show(`Transaction details in notes ${isEnabled ? 'enabled' : 'disabled'}`, 'info');
-          if (onUpdate) onUpdate();
         } else {
           toast.show('Failed to update setting', 'error');
         }
@@ -103,7 +102,6 @@ export function renderAccountSettingsSection(integrationId, accountEntry, accoun
         const success = accountService.updateAccountInList(integrationId, accountId, { stripStoreNumbers: isEnabled });
         if (success) {
           toast.show(`Store number stripping ${isEnabled ? 'enabled' : 'disabled'}`, 'info');
-          if (onUpdate) onUpdate();
         } else {
           toast.show('Failed to update setting', 'error');
         }
@@ -136,7 +134,6 @@ export function renderAccountSettingsSection(integrationId, accountEntry, accoun
         const success = accountService.updateAccountInList(integrationId, accountId, { includePendingTransactions: isEnabled });
         if (success) {
           toast.show(`Pending transactions ${isEnabled ? 'enabled' : 'disabled'}`, 'info');
-          if (onUpdate) onUpdate();
         } else {
           toast.show('Failed to update setting', 'error');
         }
@@ -232,7 +229,6 @@ export function renderAccountSettingsSection(integrationId, accountEntry, accoun
         const success = accountService.updateAccountInList(integrationId, accountId, { invertBalance: isEnabled });
         if (success) {
           toast.show(`Balance inversion ${isEnabled ? 'enabled' : 'disabled'}`, 'info');
-          if (onUpdate) onUpdate();
         } else {
           toast.show('Failed to update setting', 'error');
         }
@@ -265,7 +261,6 @@ export function renderAccountSettingsSection(integrationId, accountEntry, accoun
         const success = accountService.updateAccountInList(integrationId, accountId, { skipCategorization: isEnabled });
         if (success) {
           toast.show(`Manual categorization ${isEnabled ? 'disabled' : 'enabled'}`, 'info');
-          if (onUpdate) onUpdate();
         } else {
           toast.show('Failed to update setting', 'error');
         }

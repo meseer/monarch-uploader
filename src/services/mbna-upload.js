@@ -347,6 +347,16 @@ export async function syncMbnaAccount(account, monarchAccount, api, options = {}
     progressDialog.updateStepStatus(accountId, 'balance', 'processing', 'Preparing...');
     const todayFormatted = getTodayLocal();
 
+    // Read invertBalance setting from account data
+    // Default MBNA behaviour: negate balance (positive=owed → Monarch negative=liability)
+    // invertBalance=true: apply additional inversion (for manual accounts reporting negative balances)
+    const balanceAccountData = accountService.getAccountData(INTEGRATIONS.MBNA, accountId);
+    const invertBalance = balanceAccountData?.invertBalance === true;
+
+    if (invertBalance) {
+      debugLog('[MBNA] Inverting balance (invertBalance setting enabled)');
+    }
+
     // Get current balance
     let currentBalance = null;
     try {
@@ -355,6 +365,13 @@ export async function syncMbnaAccount(account, monarchAccount, api, options = {}
     } catch (error) {
       debugLog('[MBNA] Error fetching balance:', error);
     }
+
+    // Compute the Monarch balance: default negation, then additional inversion if setting is on
+    // Default: -currentBalance (MBNA positive=owed → Monarch negative)
+    // invertBalance=true: currentBalance (additional negate cancels default negate)
+    const monarchBalance = currentBalance !== null
+      ? (invertBalance ? currentBalance : -currentBalance)
+      : null;
 
     if (currentBalance === null) {
       progressDialog.updateStepStatus(accountId, 'balance', 'skipped', 'Not available');
@@ -370,7 +387,10 @@ export async function syncMbnaAccount(account, monarchAccount, api, options = {}
       });
 
       if (balanceHistory.length > 0) {
-        const monarchEntries = formatBalanceHistoryForMonarch(balanceHistory);
+        // formatBalanceHistoryForMonarch negates by default; if invertBalance is on, skip that negation
+        const monarchEntries = invertBalance
+          ? balanceHistory // Already in raw form, no negation needed
+          : formatBalanceHistoryForMonarch(balanceHistory);
         const balanceCSV = generateBalanceHistoryCSV(monarchEntries, accountDisplayName);
 
         progressDialog.updateStepStatus(accountId, 'balance', 'processing', 'Uploading...');
@@ -384,7 +404,7 @@ export async function syncMbnaAccount(account, monarchAccount, api, options = {}
         if (balanceSuccess) {
           saveLastUploadDate(accountId, todayFormatted, 'mbna');
           progressDialog.updateStepStatus(accountId, 'balance', 'success', `${balanceHistory.length} days`);
-          progressDialog.updateBalanceChange(accountId, { newBalance: -currentBalance });
+          progressDialog.updateBalanceChange(accountId, { newBalance: monarchBalance });
         } else {
           progressDialog.updateStepStatus(accountId, 'balance', 'error', 'Upload failed');
         }
@@ -392,14 +412,14 @@ export async function syncMbnaAccount(account, monarchAccount, api, options = {}
         progressDialog.updateStepStatus(accountId, 'balance', 'skipped', 'No history data');
       }
     } else {
-      // Upload single-day balance (negated: MBNA positive=owed → Monarch negative=liability)
-      const balanceCSV = generateBalanceCSV(-currentBalance, accountDisplayName);
+      // Upload single-day balance
+      const balanceCSV = generateBalanceCSV(monarchBalance, accountDisplayName);
       const balanceSuccess = await monarchApi.uploadBalance(monarchAccount.id, balanceCSV, todayFormatted, todayFormatted);
 
       if (balanceSuccess) {
         const formatted = `$${Math.abs(currentBalance).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
         progressDialog.updateStepStatus(accountId, 'balance', 'success', formatted);
-        progressDialog.updateBalanceChange(accountId, { newBalance: -currentBalance });
+        progressDialog.updateBalanceChange(accountId, { newBalance: monarchBalance });
         saveLastUploadDate(accountId, todayFormatted, 'mbna');
       } else {
         progressDialog.updateStepStatus(accountId, 'balance', 'error', 'Upload failed');

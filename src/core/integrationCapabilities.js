@@ -194,9 +194,9 @@ export const INTEGRATION_CAPABILITIES = {
     hasCreditLimit: true,
     hasHoldings: false, // Credit card only
     hasBalanceReconstruction: true,
-    hasCategorization: true, // Bank category to Monarch category mappings
+    hasCategorization: true, // Merchant name to Monarch category mappings
     categoryMappingsStorageKey: STORAGE.MBNA_CONFIG,
-    categorySourceLabel: 'Bank Category',
+    categorySourceLabel: 'Merchant Name',
     settings: [
       ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES,
       ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS,
@@ -211,7 +211,7 @@ export const INTEGRATION_CAPABILITIES = {
       [ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT]: TRANSACTION_RETENTION_DEFAULTS.COUNT,
       [ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS]: true,
       [ACCOUNT_SETTINGS.INVERT_BALANCE]: false,
-      [ACCOUNT_SETTINGS.SKIP_CATEGORIZATION]: false,
+      [ACCOUNT_SETTINGS.SKIP_CATEGORIZATION]: true,
     },
   },
 };

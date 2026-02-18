@@ -9,10 +9,14 @@
  * @module integrations/mbna/monarch-mapper/transactions
  */
 
-import { debugLog } from '../../../core/utils';
+import { debugLog, stringSimilarity } from '../../../core/utils';
 import { applyMerchantMapping } from '../../../mappers/merchant';
-import { INTEGRATIONS, getCapabilities } from '../../../core/integrationCapabilities';
-import { getCategoryMapping } from '../../../services/common/configStore';
+import { INTEGRATIONS } from '../../../core/integrationCapabilities';
+import { getCategoryMapping, setCategoryMapping } from '../../../services/common/configStore';
+import { calculateAllCategorySimilarities } from '../../../mappers/category';
+import { showMonarchCategorySelector } from '../../../ui/components/categorySelector';
+import monarchApi from '../../../api/monarch';
+import accountService from '../../../services/common/accountService';
 
 /**
  * Auto-categorization rules for MBNA transactions
@@ -111,57 +115,209 @@ export function processMbnaTransactions(settledTransactions, pendingTransactions
 }
 
 /**
+ * Check if a merchant has a high-confidence auto-match to a Monarch category
+ * @param {string} merchant - Merchant name to match
+ * @param {Array} availableCategories - Available Monarch categories
+ * @returns {string|null} Auto-matched category name or null
+ */
+function findAutoMatch(merchant, availableCategories) {
+  if (!merchant || !availableCategories || availableCategories.length === 0) return null;
+
+  const normalizedMerchant = merchant.toLowerCase().trim();
+  let bestMatch = null;
+  let bestScore = 0;
+
+  for (const category of availableCategories) {
+    const categoryName = typeof category === 'string' ? category : category.name;
+    if (!categoryName) continue;
+    const score = stringSimilarity(normalizedMerchant, categoryName.toLowerCase());
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = categoryName;
+    }
+  }
+
+  // Only auto-match at very high confidence
+  if (bestScore > 0.95) {
+    debugLog(`MBNA auto-match: "${merchant}" → "${bestMatch}" (score: ${bestScore.toFixed(3)})`);
+    return bestMatch;
+  }
+
+  return null;
+}
+
+/**
  * Resolve categories for processed MBNA transactions
  *
  * Uses the common category resolution flow:
  * 1. Auto-categorized transactions (e.g., PAYMENT → Credit Card Payment) keep their category
- * 2. Other transactions go through user category mappings and skip-categorization logic
+ * 2. Stored category mappings are applied (merchant name → Monarch category)
+ * 3. High-confidence similarity matches are applied automatically
+ * 4. Remaining transactions prompt the user for manual categorization (unless skipCategorization)
  *
  * @param {Array} transactions - Processed MBNA transactions from processMbnaTransactions
  * @param {string} mbnaAccountId - MBNA account ID (for per-account settings)
  * @returns {Promise<Array>} Transactions with resolvedMonarchCategory set
  */
-export async function resolveMbnaCategories(transactions, _mbnaAccountId) {
-  const config = getCapabilities(INTEGRATIONS.MBNA);
+export async function resolveMbnaCategories(transactions, mbnaAccountId) {
+  if (!transactions || transactions.length === 0) return [];
+
+  // Read skipCategorization setting from account data
+  const accountData = accountService.getAccountData(INTEGRATIONS.MBNA, mbnaAccountId);
+  const skipCategorization = accountData?.skipCategorization === true;
 
   // Separate auto-categorized from those needing resolution
-  const autoCategorized = [];
-  const needsResolution = [];
-
+  const autoCategorized = new Set();
   for (const tx of transactions) {
     if (tx.autoCategory) {
-      autoCategorized.push({ ...tx, resolvedMonarchCategory: tx.autoCategory });
-    } else {
-      needsResolution.push(tx);
+      autoCategorized.add(tx);
     }
   }
 
-  // Resolve categories for non-auto-categorized transactions using stored mappings
-  let resolved = needsResolution;
-  if (needsResolution.length > 0 && config?.categoryMappings) {
-    resolved = needsResolution.map((tx) => {
-      const mapping = getCategoryMapping(INTEGRATIONS.MBNA, tx.merchant);
-      if (mapping) {
-        return { ...tx, resolvedMonarchCategory: mapping };
+  // If skipCategorization, set Uncategorized for all non-auto-categorized and return
+  if (skipCategorization) {
+    debugLog('MBNA: skipCategorization enabled — setting Uncategorized for non-auto-categorized');
+    const result = transactions.map((tx) => {
+      if (autoCategorized.has(tx)) {
+        return { ...tx, resolvedMonarchCategory: tx.autoCategory };
       }
-      return tx;
+      return { ...tx, resolvedMonarchCategory: 'Uncategorized' };
     });
+    debugLog('MBNA category resolution complete (skipped):', {
+      total: transactions.length,
+      autoCategorized: autoCategorized.size,
+    });
+    return result;
   }
 
-  // Merge back together preserving order
-  const result = transactions.map((tx) => {
-    if (tx.autoCategory) {
-      return autoCategorized.find((a) => a === tx || (a.date === tx.date && a.amount === tx.amount && a.originalStatement === tx.originalStatement))
-        || { ...tx, resolvedMonarchCategory: tx.autoCategory };
+  // Fetch available Monarch categories for similarity matching and manual selection
+  let availableCategories = [];
+  try {
+    const categoryData = await monarchApi.getCategoriesAndGroups();
+    availableCategories = categoryData.categories || [];
+  } catch (error) {
+    debugLog('MBNA: Failed to fetch Monarch categories:', error);
+  }
+
+  // Resolve categories: stored mappings → auto-match → collect for manual prompt
+  const resolvedMap = new Map(); // tx index → resolvedMonarchCategory
+  const uniqueMerchants = new Map(); // merchant → { resolved, needsManual, exampleTx }
+
+  for (let i = 0; i < transactions.length; i += 1) {
+    const tx = transactions[i];
+
+    if (autoCategorized.has(tx)) {
+      resolvedMap.set(i, tx.autoCategory);
+      continue;
     }
-    return resolved.find((r) => r === tx || (r.date === tx.date && r.amount === tx.amount && r.originalStatement === tx.originalStatement))
-      || tx;
+
+    const merchant = tx.merchant || '';
+    if (uniqueMerchants.has(merchant)) {
+      // Already resolved or queued for this merchant — skip
+      continue;
+    }
+
+    // 1. Check stored mapping
+    const storedMapping = getCategoryMapping(INTEGRATIONS.MBNA, merchant);
+    if (storedMapping) {
+      uniqueMerchants.set(merchant, { resolved: storedMapping });
+      continue;
+    }
+
+    // 2. Check high-confidence auto-match
+    const autoMatch = findAutoMatch(merchant, availableCategories);
+    if (autoMatch) {
+      setCategoryMapping(INTEGRATIONS.MBNA, merchant, autoMatch);
+      uniqueMerchants.set(merchant, { resolved: autoMatch });
+      continue;
+    }
+
+    // 3. Needs manual resolution
+    uniqueMerchants.set(merchant, { needsManual: true, exampleTx: tx });
+  }
+
+  // Collect merchants needing manual categorization
+  const merchantsNeedingManual = [];
+  for (const [merchant, info] of uniqueMerchants) {
+    if (info.needsManual) {
+      merchantsNeedingManual.push({ merchant, exampleTx: info.exampleTx });
+    }
+  }
+
+  // Prompt user for each unresolved merchant
+  let skipAllTriggered = false;
+
+  if (merchantsNeedingManual.length > 0 && availableCategories.length > 0) {
+    debugLog(`MBNA: ${merchantsNeedingManual.length} merchants need manual categorization`);
+
+    for (const { merchant, exampleTx } of merchantsNeedingManual) {
+      if (skipAllTriggered) {
+        uniqueMerchants.set(merchant, { resolved: 'Uncategorized' });
+        continue;
+      }
+
+      const similarityData = calculateAllCategorySimilarities(merchant, availableCategories);
+
+      const transactionDetails = {};
+      if (exampleTx) {
+        transactionDetails.merchant = exampleTx.originalStatement || merchant;
+        transactionDetails.amount = exampleTx.amount || 0;
+        if (exampleTx.date) {
+          transactionDetails.date = exampleTx.date;
+        }
+      }
+
+      const selectedCategory = await new Promise((resolve) => {
+        showMonarchCategorySelector(merchant, resolve, similarityData, transactionDetails);
+      });
+
+      if (!selectedCategory) {
+        throw new Error(`Category selection cancelled for "${merchant}".`);
+      }
+
+      if (selectedCategory.skipAll === true) {
+        debugLog('MBNA: User chose "Skip All" — setting Uncategorized for remaining');
+        skipAllTriggered = true;
+        uniqueMerchants.set(merchant, { resolved: 'Uncategorized' });
+        continue;
+      }
+
+      if (selectedCategory.skipped) {
+        debugLog(`MBNA: Skipped categorization for "${merchant}"`);
+        uniqueMerchants.set(merchant, { resolved: 'Uncategorized' });
+        continue;
+      }
+
+      // Save user selection for future syncs
+      setCategoryMapping(INTEGRATIONS.MBNA, merchant, selectedCategory.name);
+      uniqueMerchants.set(merchant, { resolved: selectedCategory.name });
+    }
+  } else if (merchantsNeedingManual.length > 0) {
+    // No categories available — set Uncategorized
+    for (const { merchant } of merchantsNeedingManual) {
+      uniqueMerchants.set(merchant, { resolved: 'Uncategorized' });
+    }
+  }
+
+  // Build final result array preserving original order
+  const result = transactions.map((tx, i) => {
+    // Already resolved (auto-categorized)
+    if (resolvedMap.has(i)) {
+      return { ...tx, resolvedMonarchCategory: resolvedMap.get(i) };
+    }
+
+    const merchant = tx.merchant || '';
+    const merchantInfo = uniqueMerchants.get(merchant);
+    const category = merchantInfo?.resolved || 'Uncategorized';
+    return { ...tx, resolvedMonarchCategory: category };
   });
 
   debugLog('MBNA category resolution complete:', {
     total: transactions.length,
-    autoCategorized: autoCategorized.length,
-    resolved: needsResolution.length,
+    autoCategorized: autoCategorized.size,
+    storedMappings: [...uniqueMerchants.values()].filter((v) => v.resolved && !v.needsManual).length,
+    manuallyResolved: merchantsNeedingManual.length,
+    skipAllTriggered,
   });
 
   return result;

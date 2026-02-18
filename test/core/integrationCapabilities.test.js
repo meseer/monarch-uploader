@@ -189,6 +189,51 @@ describe('Integration Capabilities', () => {
         expect(rb.settingDefaults[ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES]).toBe(false);
       });
     });
+
+    describe('MBNA capabilities', () => {
+      const mbna = INTEGRATION_CAPABILITIES[INTEGRATIONS.MBNA];
+
+      test('should have correct display name and account key', () => {
+        expect(mbna.displayName).toBe('MBNA');
+        expect(mbna.accountKeyName).toBe('mbnaAccount');
+      });
+
+      test('should support credit card features', () => {
+        expect(mbna.hasTransactions).toBe(true);
+        expect(mbna.hasDeduplication).toBe(true);
+        expect(mbna.hasBalanceHistory).toBe(true);
+        expect(mbna.hasCreditLimit).toBe(true);
+        expect(mbna.hasBalanceReconstruction).toBe(true);
+        expect(mbna.hasCategorization).toBe(true);
+      });
+
+      test('should not support holdings (credit card only)', () => {
+        expect(mbna.hasHoldings).toBe(false);
+      });
+
+      test('should have all expected settings', () => {
+        expect(mbna.settings).toContain(ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES);
+        expect(mbna.settings).toContain(ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS);
+        expect(mbna.settings).toContain(ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT);
+        expect(mbna.settings).toContain(ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS);
+        expect(mbna.settings).toContain(ACCOUNT_SETTINGS.INVERT_BALANCE);
+        expect(mbna.settings).toContain(ACCOUNT_SETTINGS.SKIP_CATEGORIZATION);
+        expect(mbna.settings).not.toContain(ACCOUNT_SETTINGS.STRIP_STORE_NUMBERS);
+      });
+
+      test('should have correct default values', () => {
+        expect(mbna.settingDefaults[ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES]).toBe(false);
+        expect(mbna.settingDefaults[ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS]).toBe(TRANSACTION_RETENTION_DEFAULTS.DAYS);
+        expect(mbna.settingDefaults[ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT]).toBe(TRANSACTION_RETENTION_DEFAULTS.COUNT);
+        expect(mbna.settingDefaults[ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS]).toBe(true);
+        expect(mbna.settingDefaults[ACCOUNT_SETTINGS.INVERT_BALANCE]).toBe(false);
+        expect(mbna.settingDefaults[ACCOUNT_SETTINGS.SKIP_CATEGORIZATION]).toBe(true);
+      });
+
+      test('should use Merchant Name as category source label', () => {
+        expect(mbna.categorySourceLabel).toBe('Merchant Name');
+      });
+    });
   });
 
   describe('getCapabilities', () => {
@@ -315,7 +360,7 @@ describe('Integration Capabilities', () => {
       expect(result).not.toContain(INTEGRATIONS.CANADALIFE);
     });
 
-    test('should return all integrations with balance history', () => {
+    test('should return integrations with balance history', () => {
       const result = getIntegrationsWithCapability('hasBalanceHistory');
       expect(result).toHaveLength(5);
       expect(result).toContain(INTEGRATIONS.WEALTHSIMPLE);
