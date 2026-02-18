@@ -1,29 +1,6 @@
-// ==UserScript==
-// @name         Monarch Uploader
-// @namespace    https://github.com/meseer/monarch-uploader
-// @version      5.81.0
-// @description  Upload Questrade, CanadaLife, Rogers Bank, and Wealthsimple balance and transactions to Monarch.
-// @author       Mykhailo Delegan
-// @match        https://myportal.questrade.com/*
-// @match        https://app.monarch.com/*
-// @match        https://my.canadalife.com/*
-// @match        https://selfserve.rogersbank.com/*
-// @match        https://my.wealthsimple.com/*
-// @grant        GM_addElement
-// @grant        GM_deleteValue
-// @grant        GM_download
-// @grant        GM_getValue
-// @grant        GM_listValues
-// @grant        GM_log
-// @grant        GM_registerMenuCommand
-// @grant        GM_setValue
-// @grant        GM_xmlhttpRequest
-// @connect      api.monarch.com
-// @connect      api.questrade.com
-// @run-at       document-idle
-// ==/UserScript==
+// Generates userscript metadata block at build time.
+// Version is read from scriptInfo.json  do NOT hardcode a version here.
 
-// Import shared script info
 const scriptInfo = require('./scriptInfo.json');
 
 function generateMetadata(_buildType = 'local') {

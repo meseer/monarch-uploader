@@ -1,11 +1,19 @@
 # Versioning Guidelines - MANDATORY
 
-## Version Locations (ALL must match)
+## How to Update the Version
 
-Update version in **ALL THREE** locations after any changes:
-1. `package.json` → `"version": "X.Y.Z"`
-2. `src/scriptInfo.json` → `"version": "X.Y.Z"`
-3. `README.md` → version badge `[![Version](https://img.shields.io/badge/version-X.Y.Z-blue)]`
+**Run the version bump script** — it updates all required locations automatically:
+
+```bash
+npm run version:bump -- X.Y.Z
+```
+
+This single command updates:
+- `package.json` → `"version": "X.Y.Z"`
+- `src/scriptInfo.json` → `"version": "X.Y.Z"`
+- `README.md` → version badge
+
+**Do NOT manually edit version strings in these files.** Always use the script.
 
 The `src/userscript-metadata.cjs` reads version from `scriptInfo.json` at build time — do NOT edit it directly for version changes.
 
@@ -16,5 +24,11 @@ The `src/userscript-metadata.cjs` reads version from `scriptInfo.json` at build 
 - **Major** (X+1.0.0): New financial institution support, breaking API changes, new @grant permissions, major architectural changes
 
 When in doubt, use patch. If multiple change types, use the highest impact.
+
+## How to Determine the Current Version
+
+```bash
+node -p "require('./src/scriptInfo.json').version"
+```
 
 See `VERSIONING.md` for full details and examples.

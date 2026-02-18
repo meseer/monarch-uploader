@@ -18,7 +18,8 @@
     "test:watch": "jest --watch",
     "clean": "rm -rf dist/",
     "postbuild": "echo 'Build complete! Output in dist/'",
-    "build:quick": "npm run clean && npm run build:dev"
+    "build:quick": "npm run clean && npm run build:dev",
+    "version:bump": "node scripts/bump-version.cjs"
   },
   "keywords": [
     "violentmonkey",

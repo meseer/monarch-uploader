@@ -1,13 +1,25 @@
 # Version Management Guidelines
 
-## Version Locations (ALL must match)
+## Automated Version Bumping
 
-**Update version in ALL THREE locations after any changes:**
+**Use the version bump script** to update all version locations at once:
+
+```bash
+npm run version:bump -- X.Y.Z
+```
+
+This updates:
 1. `package.json` → `"version": "X.Y.Z"`
 2. `src/scriptInfo.json` → `"version": "X.Y.Z"`
 3. `README.md` → version badge `[![Version](https://img.shields.io/badge/version-X.Y.Z-blue)]`
 
 The `src/userscript-metadata.cjs` reads version from `scriptInfo.json` at build time — do NOT edit it directly for version changes.
+
+## How to Check the Current Version
+
+```bash
+node -p "require('./src/scriptInfo.json').version"
+```
 
 ## Version Increment Decision Tree
 
@@ -46,15 +58,6 @@ The `src/userscript-metadata.cjs` reads version from `scriptInfo.json` at build 
 | Added support for new bank (TD Bank) | Major | 3.9.0 → 4.0.0 |
 | Refactored state management code | Patch | 4.0.0 → 4.0.1 |
 | Added settings modal | Minor | 4.0.1 → 4.1.0 |
-
-## Version Synchronization Check
-
-Before finalizing, ensure these match:
-```bash
-grep '"version"' package.json
-grep '"version"' src/scriptInfo.json
-grep 'version-' README.md
-```
 
 ## Semantic Versioning
 
