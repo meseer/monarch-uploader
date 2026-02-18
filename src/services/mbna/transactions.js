@@ -64,8 +64,8 @@ function processTransaction(tx, options = {}) {
     date: tx.transactionDate || tx.postingDate || '',
     merchant: mappedMerchant,
     originalStatement: description,
-    // Amount signs kept as-is: positive = charge, negative = payment
-    amount: tx.amount ?? 0,
+    // Amount signs inverted for Monarch: MBNA positive (charge) → negative, MBNA negative (payment) → positive
+    amount: tx.amount !== null && tx.amount !== undefined ? -tx.amount : 0,
     referenceNumber: tx.referenceNumber || '',
     isPending,
     pendingId: pendingId || null,

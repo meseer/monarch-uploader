@@ -227,7 +227,7 @@ export function convertMbnaTransactionsToMonarchCSV(transactions, accountName, o
       Account: accountName,
       'Original Statement': transaction.originalStatement || '',
       Notes: notes,
-      // Amount signs kept as-is from MBNA (positive = charge, negative = payment)
+      // Amount signs already inverted in transaction processing (MBNA charge ’ negative, payment ’ positive)
       Amount: transaction.amount || 0,
       Tags: isPending ? 'Pending' : '',
     };

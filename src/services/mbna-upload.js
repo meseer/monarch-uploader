@@ -552,16 +552,29 @@ export async function uploadMbnaAccount(account, api) {
   let reconstructBalance = false;
 
   if (firstSync) {
-    // Show date picker for first sync
-    const defaultDate = (() => {
+    // Determine suggested start date: 30 days before oldest closing date, fallback to 90 days ago
+    let defaultDate;
+    try {
+      const closingDates = await api.getClosingDates(accountId);
+      if (closingDates.length > 0) {
+        const oldestClosingDate = closingDates[closingDates.length - 1]; // sorted newest-first
+        const d = new Date(`${oldestClosingDate}T00:00:00`);
+        d.setDate(d.getDate() - 30);
+        defaultDate = d.toISOString().split('T')[0];
+        debugLog(`[MBNA] Suggested start date: ${defaultDate} (30 days before oldest closing date ${oldestClosingDate})`);
+      }
+    } catch (error) {
+      debugLog('[MBNA] Could not fetch closing dates for start date suggestion:', error.message);
+    }
+    if (!defaultDate) {
       const d = new Date();
       d.setDate(d.getDate() - 90);
-      return d.toISOString().split('T')[0];
-    })();
+      defaultDate = d.toISOString().split('T')[0];
+    }
 
     const datePickerResult = await showDatePickerWithOptionsPromise(
       defaultDate,
-      `Select the start date for syncing "${accountDisplayName}". Default is 90 days ago.`,
+      `Select the start date for syncing "${accountDisplayName}". Default is 30 days before your oldest statement.`,
       { showReconstructCheckbox: true, reconstructCheckedByDefault: true },
     );
 

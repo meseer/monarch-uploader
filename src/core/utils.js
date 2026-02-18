@@ -232,6 +232,8 @@ export function getDefaultLookbackDays(institutionType) {
     return 7; // Current 7 day lookback behavior
   case 'wealthsimple':
     return 7; // 7 day lookback for balance checkpoints
+  case 'mbna':
+    return 7; // 7 day lookback for credit card deduplication overlap
   default:
     debugLog(`Unknown institution type: ${institutionType}, using 0 days`);
     return 0;
@@ -253,6 +255,8 @@ function getIntegrationIdFromType(institutionType) {
     return 'rogersbank';
   case 'wealthsimple':
     return 'wealthsimple';
+  case 'mbna':
+    return 'mbna';
   default:
     return null;
   }

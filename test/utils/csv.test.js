@@ -1393,7 +1393,7 @@ describe('CSV Conversion Utilities', () => {
         date: '2026-02-15',
         merchant: 'Amazon.ca',
         originalStatement: 'Amazon.ca*RA6HH70U3 TORONTO ON',
-        amount: 77.82,
+        amount: -77.82,
         referenceNumber: '55490535351206796539264',
         isPending: false,
         autoCategory: null,
@@ -1403,7 +1403,7 @@ describe('CSV Conversion Utilities', () => {
         date: '2026-02-10',
         merchant: 'MBNA Credit Card Payment',
         originalStatement: 'PAYMENT',
-        amount: -13.32,
+        amount: 13.32,
         referenceNumber: '03000306013000455833905',
         isPending: false,
         autoCategory: 'Credit Card Payment',
@@ -1460,10 +1460,10 @@ describe('CSV Conversion Utilities', () => {
       expect(result).toContain('Uncategorized');
     });
 
-    test('should keep amount signs as-is (positive = charge, negative = payment)', () => {
+    test('should have inverted amount signs (charge ’ negative, payment ’ positive)', () => {
       const result = convertMbnaTransactionsToMonarchCSV(sampleSettled, 'MBNA Mastercard');
-      expect(result).toContain('77.82');
-      expect(result).toContain('-13.32');
+      expect(result).toContain('-77.82');
+      expect(result).toContain('13.32');
     });
 
     test('should add Pending tag for pending transactions', () => {

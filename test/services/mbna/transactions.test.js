@@ -49,7 +49,7 @@ describe('MBNA Transaction Processing', () => {
       expect(result.settled[0].merchant).toBe('Amazon.ca');
       expect(result.settled[0].originalStatement).toBe('Amazon.ca*RA6HH70U3 TORONTO ON');
       expect(result.settled[0].date).toBe('2026-02-15');
-      expect(result.settled[0].amount).toBe(77.82);
+      expect(result.settled[0].amount).toBe(-77.82);
       expect(result.settled[0].isPending).toBe(false);
     });
 
@@ -101,13 +101,16 @@ describe('MBNA Transaction Processing', () => {
       expect(result.all).toHaveLength(0);
     });
 
-    it('should keep amount signs as-is', () => {
+    it('should invert amount signs for Monarch (charge → negative, payment → positive)', () => {
       const result = processMbnaTransactions(sampleSettled, []);
 
-      const charge = result.settled.find((tx) => tx.amount > 0);
-      const payment = result.settled.find((tx) => tx.amount < 0);
-      expect(charge.amount).toBe(77.82);
-      expect(payment.amount).toBe(-13.32);
+      // MBNA charge 77.82 → Monarch -77.82
+      const charge = result.settled.find((tx) => tx.originalStatement === 'Amazon.ca*RA6HH70U3 TORONTO ON');
+      expect(charge.amount).toBe(-77.82);
+
+      // MBNA payment -13.32 → Monarch 13.32
+      const payment = result.settled.find((tx) => tx.originalStatement === 'PAYMENT');
+      expect(payment.amount).toBe(13.32);
     });
   });
 
