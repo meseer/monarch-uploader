@@ -2,18 +2,24 @@
  * MBNA Upload Service
  *
  * Orchestrates syncing MBNA credit card data to Monarch Money.
- * Implements credit limit sync, balance upload/reconstruction,
- * transaction sync, and pending transaction reconciliation.
+ * Uses common services for credit limit sync, balance upload,
+ * deduplication, and transaction upload. Delegates MBNA-specific
+ * logic (transaction processing, category resolution, balance
+ * reconstruction, pending reconciliation) to the MBNA integration module.
  *
  * @module services/mbna-upload
  */
 
-import { debugLog, getTodayLocal, calculateFromDateWithLookback, saveLastUploadDate, getLastUpdateDate } from '../core/utils';
+import { debugLog, getTodayLocal, calculateFromDateWithLookback, getLastUpdateDate } from '../core/utils';
 import { LOGO_CLOUDINARY_IDS } from '../core/config';
 import { INTEGRATIONS, ACCOUNT_SETTINGS } from '../core/integrationCapabilities';
 import stateManager from '../core/state';
 import monarchApi from '../api/monarch';
 import accountService from './common/accountService';
+import { syncCreditLimit } from './common/creditLimitSync';
+import { executeBalanceUploadStep } from './common/balanceUpload';
+import { uploadTransactionsAndSaveRefs, formatTransactionUploadMessage } from './common/transactionUpload';
+import { filterDuplicateSettledTransactions, filterDuplicatePendingTransactions } from './common/deduplication';
 import toast from '../ui/toast';
 import { showProgressDialog } from '../ui/components/progressDialog';
 import { showMonarchAccountSelectorWithCreate } from '../ui/components/accountSelectorWithCreate';
@@ -24,14 +30,11 @@ import {
   reconcileMbnaPendingTransactions,
   formatReconciliationMessage,
 } from '../integrations/mbna/sinks/monarch/pendingTransactions';
-import { processMbnaTransactions, resolveMbnaCategories, filterDuplicateSettledTransactions } from '../integrations/mbna/sinks/monarch/transactions';
+import { processMbnaTransactions, resolveMbnaCategories } from '../integrations/mbna/sinks/monarch/transactions';
 import { buildBalanceHistory } from '../integrations/mbna/source/balanceReconstruction';
 import { formatBalanceHistoryForMonarch } from '../integrations/mbna/sinks/monarch/balanceFormatter';
-import {
-  getTransactionIdsFromArray,
-  mergeAndRetainTransactions,
-  getRetentionSettingsFromAccount,
-} from '../utils/transactionStorage';
+
+const INTEGRATION_ID = INTEGRATIONS.MBNA;
 
 /**
  * Build sync steps for the progress dialog.
@@ -61,77 +64,214 @@ function buildSyncSteps({ includeTransactions = true, includePending = true } = 
  * @returns {boolean} True if first sync
  */
 function isFirstSync(mbnaAccountId) {
-  const lastUploadDate = getLastUpdateDate(mbnaAccountId, 'mbna');
-  return !lastUploadDate;
+  return !getLastUpdateDate(mbnaAccountId, 'mbna');
 }
 
 /**
- * Sync credit limit from MBNA to Monarch.
- * Compares with last synced value to avoid unnecessary API calls.
+ * Execute the credit limit sync step with progress dialog updates.
  *
- * @param {string} mbnaAccountId - MBNA account ID
+ * @param {string} accountId - MBNA account ID
  * @param {string} monarchAccountId - Monarch account ID
- * @param {number|null} creditLimit - Credit limit value from MBNA API
- * @returns {Promise<{success: boolean, message: string}>} Sync result
+ * @param {Object} api - MBNA API client
+ * @param {Object} progressDialog - Progress dialog instance
+ * @param {AbortController} abortController - Abort controller for cancellation
+ * @returns {Promise<void>}
  */
-async function syncCreditLimit(mbnaAccountId, monarchAccountId, creditLimit) {
-  if (creditLimit === null || creditLimit === undefined) {
-    return { success: true, message: 'Not available', skipped: true };
-  }
+async function executeCreditLimitStep(accountId, monarchAccountId, api, progressDialog, abortController) {
+  progressDialog.updateStepStatus(accountId, 'creditLimit', 'processing', 'Fetching...');
 
-  // Check if credit limit has changed since last sync
-  const accountData = accountService.getAccountData(INTEGRATIONS.MBNA, mbnaAccountId);
-  const storedCreditLimit = accountData?.lastSyncedCreditLimit;
+  if (abortController.signal.aborted) throw new Error('Cancelled');
 
-  if (storedCreditLimit !== null && storedCreditLimit !== undefined && storedCreditLimit === creditLimit) {
-    debugLog(`[MBNA] Credit limit unchanged: $${creditLimit}`);
-    return { success: true, message: `$${creditLimit.toLocaleString()} (unchanged)`, skipped: false };
-  }
-
+  let creditLimit = null;
   try {
-    const updatedAccount = await monarchApi.setCreditLimit(monarchAccountId, creditLimit);
+    creditLimit = await api.getCreditLimit(accountId);
+    debugLog(`[MBNA] Credit limit fetched: $${creditLimit}`);
+  } catch (error) {
+    debugLog('[MBNA] Error fetching credit limit:', error);
+    progressDialog.updateStepStatus(accountId, 'creditLimit', 'error', error.message);
+    return;
+  }
 
-    if (updatedAccount && updatedAccount.limit === creditLimit) {
-      accountService.updateAccountInList(INTEGRATIONS.MBNA, mbnaAccountId, {
-        lastSyncedCreditLimit: creditLimit,
-      });
-      debugLog(`[MBNA] Credit limit synced: $${creditLimit}`);
-      return { success: true, message: `$${creditLimit.toLocaleString()}`, skipped: false };
+  if (creditLimit !== null) {
+    progressDialog.updateStepStatus(accountId, 'creditLimit', 'processing', 'Syncing...');
+    const result = await syncCreditLimit(INTEGRATION_ID, accountId, monarchAccountId, creditLimit);
+
+    progressDialog.updateStepStatus(
+      accountId, 'creditLimit',
+      result.success ? 'success' : 'error',
+      result.message,
+    );
+  } else if (!abortController.signal.aborted) {
+    progressDialog.updateStepStatus(accountId, 'creditLimit', 'skipped', 'Not available');
+  }
+}
+
+/**
+ * Execute the transaction sync step with progress dialog updates.
+ *
+ * @param {Object} params - Parameters
+ * @param {string} params.accountId - MBNA account ID
+ * @param {string} params.accountDisplayName - Display name for CSV
+ * @param {string} params.monarchAccountId - Monarch account ID
+ * @param {Object} params.api - MBNA API client
+ * @param {string} params.fromDate - Start date for transaction fetch
+ * @param {boolean} params.includePendingTransactions - Whether to include pending
+ * @param {boolean} params.storeTransactionDetailsInNotes - Notes setting
+ * @param {Object} params.progressDialog - Progress dialog instance
+ * @param {AbortController} params.abortController - Abort controller
+ * @returns {Promise<{success: boolean, rawPending: Array, rawSettled: Array, statements: Array, currentCycle: Object}>}
+ */
+async function executeTransactionStep({
+  accountId, accountDisplayName, monarchAccountId, api, fromDate,
+  includePendingTransactions, storeTransactionDetailsInNotes, progressDialog, abortController,
+}) {
+  if (abortController.signal.aborted) throw new Error('Cancelled');
+
+  progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Fetching current cycle...');
+
+  const txResult = await api.getTransactions(accountId, fromDate, {
+    onProgress: (current, total) => {
+      progressDialog.updateStepStatus(accountId, 'transactions', 'processing', `Loading statement ${current}/${total}...`);
+    },
+  });
+  const { allSettled: rawSettled, allPending: rawPending, statements, currentCycle } = txResult;
+
+  debugLog(`[MBNA] Fetched ${rawSettled.length} settled, ${rawPending.length} pending transactions`);
+
+  // Separate and deduplicate pending vs settled
+  progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Deduplicating...');
+  const dedupResult = await separateAndDeduplicateTransactions(rawPending, rawSettled);
+
+  if (dedupResult.duplicatesRemoved > 0) {
+    debugLog(`[MBNA] Removed ${dedupResult.duplicatesRemoved} pending duplicates that matched settled`);
+  }
+
+  // Process transactions (merchant mapping, auto-categorization)
+  progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Processing...');
+  const processed = processMbnaTransactions(
+    dedupResult.settled,
+    dedupResult.pending,
+    { includePending: includePendingTransactions },
+  );
+
+  // Filter already-uploaded settled transactions using common dedup service
+  const { newTransactions: newSettled, duplicateCount: settledDups } = filterDuplicateSettledTransactions(
+    INTEGRATION_ID, accountId, processed.settled, (tx) => tx.referenceNumber,
+  );
+
+  // Filter already-uploaded pending transactions using common dedup service
+  const { newTransactions: newPending, duplicateCount: pendingDups } = filterDuplicatePendingTransactions(
+    INTEGRATION_ID, accountId, processed.pending, (tx) => tx.pendingId,
+  );
+
+  const totalDuplicates = settledDups + pendingDups;
+  const allNewTransactions = [...newSettled, ...newPending];
+
+  if (totalDuplicates > 0) {
+    debugLog(`[MBNA] Filtered ${totalDuplicates} duplicate transactions (${settledDups} settled, ${pendingDups} pending)`);
+  }
+
+  let transactionUploadSuccess = false;
+
+  if (allNewTransactions.length === 0) {
+    const msg = formatTransactionUploadMessage(0, 0, totalDuplicates);
+    progressDialog.updateStepStatus(accountId, 'transactions', 'success', msg);
+  } else {
+    // Resolve categories
+    progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Resolving categories...');
+    const resolvedTx = await resolveMbnaCategories(allNewTransactions, accountId);
+
+    // Convert to CSV
+    progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Converting...');
+    const csvData = convertMbnaTransactionsToMonarchCSV(resolvedTx, accountDisplayName, {
+      storeTransactionDetailsInNotes,
+    });
+
+    if (!csvData) {
+      throw new Error('Failed to convert MBNA transactions to CSV');
     }
 
-    debugLog(`[MBNA] Credit limit update returned but value not applied. Expected: ${creditLimit}, Got: ${updatedAccount?.limit}`);
-    return { success: false, message: 'Value not applied', skipped: false };
+    // Upload using common transaction upload service
+    progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Uploading...');
+    const today = getTodayLocal();
+    const filename = `mbna_transactions_${fromDate || 'all'}_to_${today}.csv`;
+
+    const settledRefs = newSettled.map((tx) => tx.referenceNumber).filter(Boolean);
+    const pendingRefs = newPending.map((tx) => tx.pendingId).filter(Boolean);
+
+    const uploadSuccess = await uploadTransactionsAndSaveRefs({
+      integrationId: INTEGRATION_ID,
+      sourceAccountId: accountId,
+      monarchAccountId,
+      csvData,
+      filename,
+      transactionRefs: [...settledRefs, ...pendingRefs],
+      transactions: allNewTransactions,
+    });
+
+    if (uploadSuccess) {
+      transactionUploadSuccess = true;
+      const msg = formatTransactionUploadMessage(newSettled.length, newPending.length, totalDuplicates);
+      progressDialog.updateStepStatus(accountId, 'transactions', 'success', msg);
+    } else {
+      throw new Error('Upload to Monarch failed');
+    }
+  }
+
+  return { success: transactionUploadSuccess, rawPending, rawSettled, statements, currentCycle };
+}
+
+/**
+ * Execute the pending reconciliation step with progress dialog updates.
+ *
+ * @param {string} accountId - MBNA account ID
+ * @param {string} monarchAccountId - Monarch account ID
+ * @param {Array} rawPending - Raw pending transactions
+ * @param {Array} rawSettled - Raw settled transactions
+ * @param {Object} progressDialog - Progress dialog instance
+ * @param {AbortController} abortController - Abort controller
+ * @returns {Promise<void>}
+ */
+async function executePendingReconciliationStep(accountId, monarchAccountId, rawPending, rawSettled, progressDialog, abortController) {
+  if (abortController.signal.aborted) throw new Error('Cancelled');
+
+  progressDialog.updateStepStatus(accountId, 'pending', 'processing', 'Reconciling...');
+  try {
+    const lookbackDays = 90;
+    const result = await reconcileMbnaPendingTransactions(monarchAccountId, rawPending, rawSettled, lookbackDays);
+    const msg = formatReconciliationMessage(result);
+    const status = result.success !== false ? 'success' : 'error';
+    progressDialog.updateStepStatus(accountId, 'pending', status, msg);
+    debugLog('[MBNA] Pending reconciliation result:', result);
   } catch (error) {
-    debugLog('[MBNA] Error syncing credit limit:', error);
-    return { success: false, message: error.message, skipped: false };
+    debugLog('[MBNA] Error during pending reconciliation:', error);
+    progressDialog.updateStepStatus(accountId, 'pending', 'error', error.message);
   }
 }
 
 /**
- * Generate CSV for single-day balance
- * @param {number} balance - Current balance
- * @param {string} accountName - Account name for CSV
- * @returns {string} CSV content
+ * Build balance history for Monarch, handling invertBalance.
+ *
+ * @param {Object} params - Parameters
+ * @param {number} params.currentBalance - Current raw balance
+ * @param {Array} params.statements - Statement data for reconstruction
+ * @param {Array} params.currentCycleSettled - Current cycle settled transactions
+ * @param {string} params.fromDate - Start date
+ * @param {boolean} params.invertBalance - Whether invertBalance is enabled
+ * @returns {Array<{date: string, amount: number}>|null} Formatted balance history or null
  */
-function generateBalanceCSV(balance, accountName) {
-  const todayFormatted = getTodayLocal();
-  let csvContent = '"Date","Total Equity","Account Name"\n';
-  csvContent += `"${todayFormatted}","${balance}","${accountName}"\n`;
-  return csvContent;
-}
-
-/**
- * Generate CSV for balance history
- * @param {Array} balanceHistory - Array of { date, amount } entries
- * @param {string} accountName - Account name for CSV
- * @returns {string} CSV content
- */
-function generateBalanceHistoryCSV(balanceHistory, accountName) {
-  let csvContent = '"Date","Total Equity","Account Name"\n';
-  balanceHistory.forEach((entry) => {
-    csvContent += `"${entry.date}","${entry.amount}","${accountName}"\n`;
+function buildFormattedBalanceHistory({ currentBalance, statements, currentCycleSettled, fromDate, invertBalance }) {
+  const rawHistory = buildBalanceHistory({
+    currentBalance,
+    statements,
+    currentCycleSettled,
+    startDate: fromDate,
   });
-  return csvContent;
+
+  if (!rawHistory || rawHistory.length === 0) return null;
+
+  // formatBalanceHistoryForMonarch negates by default; if invertBalance is on, skip that negation
+  return invertBalance ? rawHistory : formatBalanceHistoryForMonarch(rawHistory);
 }
 
 /**
@@ -155,7 +295,7 @@ export async function syncMbnaAccount(account, monarchAccount, api, options = {}
   stateManager.setAccount(accountId, accountDisplayName);
 
   // Read account settings
-  const accountData = accountService.getAccountData(INTEGRATIONS.MBNA, accountId);
+  const accountData = accountService.getAccountData(INTEGRATION_ID, accountId);
   const includePendingTransactions = accountData?.[ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS] !== false;
   const storeTransactionDetailsInNotes = accountData?.storeTransactionDetailsInNotes ?? false;
 
@@ -174,188 +314,38 @@ export async function syncMbnaAccount(account, monarchAccount, api, options = {}
 
   try {
     // ── STEP 1: Credit Limit Sync ──────────────────────────
-    progressDialog.updateStepStatus(accountId, 'creditLimit', 'processing', 'Fetching...');
-
-    if (abortController.signal.aborted) throw new Error('Cancelled');
-
-    let creditLimit = null;
-    try {
-      creditLimit = await api.getCreditLimit(accountId);
-      debugLog(`[MBNA] Credit limit fetched: $${creditLimit}`);
-    } catch (error) {
-      debugLog('[MBNA] Error fetching credit limit:', error);
-      progressDialog.updateStepStatus(accountId, 'creditLimit', 'error', error.message);
-    }
-
-    if (creditLimit !== null) {
-      progressDialog.updateStepStatus(accountId, 'creditLimit', 'processing', 'Syncing...');
-      const creditLimitResult = await syncCreditLimit(accountId, monarchAccount.id, creditLimit);
-
-      if (creditLimitResult.success) {
-        progressDialog.updateStepStatus(accountId, 'creditLimit', 'success', creditLimitResult.message);
-      } else {
-        progressDialog.updateStepStatus(accountId, 'creditLimit', 'error', creditLimitResult.message);
-      }
-    } else if (!abortController.signal.aborted) {
-      progressDialog.updateStepStatus(accountId, 'creditLimit', 'skipped', 'Not available');
-    }
+    await executeCreditLimitStep(accountId, monarchAccount.id, api, progressDialog, abortController);
 
     // ── STEP 2: Fetch & Upload Transactions ────────────────
-    if (abortController.signal.aborted) throw new Error('Cancelled');
-
-    progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Fetching current cycle...');
-
-    const txResult = await api.getTransactions(accountId, fromDate, {
-      onProgress: (current, total) => {
-        progressDialog.updateStepStatus(
-          accountId, 'transactions', 'processing',
-          `Loading statement ${current}/${total}...`,
-        );
-      },
+    const txStepResult = await executeTransactionStep({
+      accountId,
+      accountDisplayName,
+      monarchAccountId: monarchAccount.id,
+      api,
+      fromDate,
+      includePendingTransactions,
+      storeTransactionDetailsInNotes,
+      progressDialog,
+      abortController,
     });
-    const { allSettled: rawSettled, allPending: rawPending, statements, currentCycle } = txResult;
-
-    debugLog(`[MBNA] Fetched ${rawSettled.length} settled, ${rawPending.length} pending transactions`);
-
-    // Separate and deduplicate pending vs settled
-    progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Deduplicating...');
-    const dedupResult = await separateAndDeduplicateTransactions(rawPending, rawSettled);
-
-    if (dedupResult.duplicatesRemoved > 0) {
-      debugLog(`[MBNA] Removed ${dedupResult.duplicatesRemoved} pending duplicates that matched settled`);
-    }
-
-    // Process transactions (merchant mapping, auto-categorization)
-    progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Processing...');
-    const processed = processMbnaTransactions(
-      dedupResult.settled,
-      dedupResult.pending,
-      { includePending: includePendingTransactions },
-    );
-
-    // Filter already-uploaded settled transactions
-    const uploadedTxRecords = accountData?.uploadedTransactions || [];
-    const { newTransactions: newSettled, duplicateCount } = filterDuplicateSettledTransactions(
-      processed.settled,
-      uploadedTxRecords,
-    );
-
-    // Filter already-uploaded pending transactions
-    const uploadedRefSet = new Set(getTransactionIdsFromArray(uploadedTxRecords));
-    const newPending = processed.pending.filter((tx) => !tx.pendingId || !uploadedRefSet.has(tx.pendingId));
-    const pendingDuplicates = processed.pending.length - newPending.length;
-
-    const totalDuplicates = duplicateCount + pendingDuplicates;
-    const allNewTransactions = [...newSettled, ...newPending];
-
-    if (totalDuplicates > 0) {
-      debugLog(`[MBNA] Filtered ${totalDuplicates} duplicate transactions (${duplicateCount} settled, ${pendingDuplicates} pending)`);
-    }
-
-    let transactionUploadSuccess = false;
-
-    if (allNewTransactions.length === 0) {
-      const msg = totalDuplicates > 0 ? `${totalDuplicates} already uploaded` : 'No new';
-      progressDialog.updateStepStatus(accountId, 'transactions', 'success', msg);
-    } else {
-      // Resolve categories
-      progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Resolving categories...');
-      const resolvedTx = await resolveMbnaCategories(allNewTransactions, accountId);
-
-      // Convert to CSV
-      progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Converting...');
-      const csvData = convertMbnaTransactionsToMonarchCSV(resolvedTx, accountDisplayName, {
-        storeTransactionDetailsInNotes,
-      });
-
-      if (!csvData) {
-        throw new Error('Failed to convert MBNA transactions to CSV');
-      }
-
-      // Upload
-      progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Uploading...');
-      const today = getTodayLocal();
-      const filename = `mbna_transactions_${fromDate || 'all'}_to_${today}.csv`;
-      const uploadSuccess = await monarchApi.uploadTransactions(monarchAccount.id, csvData, filename, false, false);
-
-      if (uploadSuccess) {
-        transactionUploadSuccess = true;
-
-        // Save transaction IDs to dedup store
-        const settledRefs = newSettled.map((tx) => tx.referenceNumber).filter(Boolean);
-        const pendingRefs = newPending.map((tx) => tx.pendingId).filter(Boolean);
-        const allRefs = [...settledRefs, ...pendingRefs];
-
-        if (allRefs.length > 0) {
-          let txDate = today;
-          const withDates = allNewTransactions.filter((tx) => tx.date);
-          if (withDates.length > 0) {
-            withDates.sort((a, b) => b.date.localeCompare(a.date));
-            txDate = withDates[0].date;
-          }
-          const existingTransactions = accountData?.uploadedTransactions || [];
-          const retentionSettings = getRetentionSettingsFromAccount(accountData);
-          const updatedTransactions = mergeAndRetainTransactions(existingTransactions, allRefs, retentionSettings, txDate);
-          accountService.updateAccountInList(INTEGRATIONS.MBNA, accountId, {
-            uploadedTransactions: updatedTransactions,
-          });
-        }
-
-        saveLastUploadDate(accountId, today, 'mbna');
-
-        // Build success message
-        const parts = [];
-        if (newSettled.length > 0) parts.push(`${newSettled.length} settled`);
-        if (newPending.length > 0) parts.push(`${newPending.length} pending`);
-        const uploadedMsg = parts.join(', ');
-        const msg = totalDuplicates > 0
-          ? `${uploadedMsg} uploaded (${totalDuplicates} skipped)`
-          : `${uploadedMsg} uploaded`;
-
-        progressDialog.updateStepStatus(accountId, 'transactions', 'success', msg);
-      } else {
-        throw new Error('Upload to Monarch failed');
-      }
-    }
 
     // ── STEP 3: Pending Reconciliation ─────────────────────
     if (includePendingTransactions) {
-      if (abortController.signal.aborted) throw new Error('Cancelled');
-
-      progressDialog.updateStepStatus(accountId, 'pending', 'processing', 'Reconciling...');
-      try {
-        const lookbackDays = 90;
-        const reconciliationResult = await reconcileMbnaPendingTransactions(
-          monarchAccount.id,
-          rawPending,
-          rawSettled,
-          lookbackDays,
-        );
-        const reconciliationMsg = formatReconciliationMessage(reconciliationResult);
-        const reconciliationStatus = reconciliationResult.success !== false ? 'success' : 'error';
-        progressDialog.updateStepStatus(accountId, 'pending', reconciliationStatus, reconciliationMsg);
-        debugLog('[MBNA] Pending reconciliation result:', reconciliationResult);
-      } catch (reconciliationError) {
-        debugLog('[MBNA] Error during pending reconciliation:', reconciliationError);
-        progressDialog.updateStepStatus(accountId, 'pending', 'error', reconciliationError.message);
-      }
+      await executePendingReconciliationStep(
+        accountId, monarchAccount.id,
+        txStepResult.rawPending, txStepResult.rawSettled,
+        progressDialog, abortController,
+      );
     }
 
     // ── STEP 4: Balance Upload ─────────────────────────────
     if (abortController.signal.aborted) throw new Error('Cancelled');
 
     progressDialog.updateStepStatus(accountId, 'balance', 'processing', 'Preparing...');
-    const todayFormatted = getTodayLocal();
 
-    // Read invertBalance setting from account data
-    // Default MBNA behaviour: negate balance (positive=owed → Monarch negative=liability)
-    // invertBalance=true: apply additional inversion (for manual accounts reporting negative balances)
-    const balanceAccountData = accountService.getAccountData(INTEGRATIONS.MBNA, accountId);
+    // Read invertBalance setting
+    const balanceAccountData = accountService.getAccountData(INTEGRATION_ID, accountId);
     const invertBalance = balanceAccountData?.invertBalance === true;
-
-    if (invertBalance) {
-      debugLog('[MBNA] Inverting balance (invertBalance setting enabled)');
-    }
 
     // Get current balance
     let currentBalance = null;
@@ -366,76 +356,44 @@ export async function syncMbnaAccount(account, monarchAccount, api, options = {}
       debugLog('[MBNA] Error fetching balance:', error);
     }
 
-    // Compute the Monarch balance: default negation, then additional inversion if setting is on
-    // Default: -currentBalance (MBNA positive=owed → Monarch negative)
-    // invertBalance=true: currentBalance (additional negate cancels default negate)
-    const monarchBalance = currentBalance !== null
-      ? (invertBalance ? currentBalance : -currentBalance)
-      : null;
-
-    if (currentBalance === null) {
-      progressDialog.updateStepStatus(accountId, 'balance', 'skipped', 'Not available');
-    } else if (isFirst && reconstructBalance && statements.length > 0) {
-      // Reconstruct balance history from statements
+    // Build balance history if reconstructing
+    let balanceHistory = null;
+    if (isFirst && reconstructBalance && txStepResult.statements.length > 0) {
       progressDialog.updateStepStatus(accountId, 'balance', 'processing', 'Reconstructing...');
-
-      const balanceHistory = buildBalanceHistory({
+      balanceHistory = buildFormattedBalanceHistory({
         currentBalance,
-        statements,
-        currentCycleSettled: currentCycle.settled,
-        startDate: fromDate,
+        statements: txStepResult.statements,
+        currentCycleSettled: txStepResult.currentCycle.settled,
+        fromDate,
+        invertBalance,
       });
-
-      if (balanceHistory.length > 0) {
-        // formatBalanceHistoryForMonarch negates by default; if invertBalance is on, skip that negation
-        const monarchEntries = invertBalance
-          ? balanceHistory // Already in raw form, no negation needed
-          : formatBalanceHistoryForMonarch(balanceHistory);
-        const balanceCSV = generateBalanceHistoryCSV(monarchEntries, accountDisplayName);
-
-        progressDialog.updateStepStatus(accountId, 'balance', 'processing', 'Uploading...');
-        const balanceSuccess = await monarchApi.uploadBalance(
-          monarchAccount.id,
-          balanceCSV,
-          fromDate || balanceHistory[0].date,
-          todayFormatted,
-        );
-
-        if (balanceSuccess) {
-          saveLastUploadDate(accountId, todayFormatted, 'mbna');
-          progressDialog.updateStepStatus(accountId, 'balance', 'success', `${balanceHistory.length} days`);
-          progressDialog.updateBalanceChange(accountId, { newBalance: monarchBalance });
-        } else {
-          progressDialog.updateStepStatus(accountId, 'balance', 'error', 'Upload failed');
-        }
-      } else {
-        progressDialog.updateStepStatus(accountId, 'balance', 'skipped', 'No history data');
-      }
-    } else {
-      // Upload single-day balance
-      const balanceCSV = generateBalanceCSV(monarchBalance, accountDisplayName);
-      const balanceSuccess = await monarchApi.uploadBalance(monarchAccount.id, balanceCSV, todayFormatted, todayFormatted);
-
-      if (balanceSuccess) {
-        const formatted = `$${Math.abs(currentBalance).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
-        progressDialog.updateStepStatus(accountId, 'balance', 'success', formatted);
-        progressDialog.updateBalanceChange(accountId, { newBalance: monarchBalance });
-        saveLastUploadDate(accountId, todayFormatted, 'mbna');
-      } else {
-        progressDialog.updateStepStatus(accountId, 'balance', 'error', 'Upload failed');
-      }
     }
 
+    // Use common balance upload service
+    await executeBalanceUploadStep({
+      integrationId: INTEGRATION_ID,
+      sourceAccountId: accountId,
+      monarchAccountId: monarchAccount.id,
+      accountName: accountDisplayName,
+      currentBalance,
+      invertBalance,
+      isFirstSync: isFirst,
+      reconstructBalance,
+      balanceHistory,
+      fromDate,
+      progressDialog,
+    });
+
     // ── Update sync metadata ───────────────────────────────
-    accountService.updateAccountInList(INTEGRATIONS.MBNA, accountId, {
+    accountService.updateAccountInList(INTEGRATION_ID, accountId, {
       lastSyncDate: getTodayLocal(),
     });
 
     // Increment sync count and cleanup legacy storage if ready
-    const newSyncCount = accountService.incrementSyncCount(INTEGRATIONS.MBNA, accountId);
+    const newSyncCount = accountService.incrementSyncCount(INTEGRATION_ID, accountId);
     debugLog(`[MBNA] Sync count for ${accountId}: ${newSyncCount}`);
-    if (accountService.isReadyForLegacyCleanup(INTEGRATIONS.MBNA, accountId)) {
-      const cleanupResult = accountService.cleanupLegacyStorage(INTEGRATIONS.MBNA, accountId);
+    if (accountService.isReadyForLegacyCleanup(INTEGRATION_ID, accountId)) {
+      const cleanupResult = accountService.cleanupLegacyStorage(INTEGRATION_ID, accountId);
       if (cleanupResult.cleaned && cleanupResult.keysDeleted > 0) {
         debugLog(`[MBNA] Cleaned up ${cleanupResult.keysDeleted} legacy storage keys`);
       }
@@ -446,7 +404,7 @@ export async function syncMbnaAccount(account, monarchAccount, api, options = {}
     progressDialog.showSummary({ success: 1, failed: 0, total: 1 });
 
     const summaryParts = [];
-    if (transactionUploadSuccess) summaryParts.push('Transactions synced');
+    if (txStepResult.success) summaryParts.push('Transactions synced');
     summaryParts.push('Balance uploaded');
 
     return { success: true, message: summaryParts.join(', ') };
@@ -482,16 +440,13 @@ export async function uploadMbnaAccount(account, api) {
   stateManager.setAccount(accountId, accountDisplayName);
 
   // Check for existing Monarch account mapping
-  let monarchAccount = accountService.getMonarchAccountMapping(
-    INTEGRATIONS.MBNA,
-    accountId,
-  );
+  let monarchAccount = accountService.getMonarchAccountMapping(INTEGRATION_ID, accountId);
 
   if (monarchAccount) {
     debugLog('[MBNA] Using existing mapping:', accountDisplayName, '→', monarchAccount.displayName);
   } else {
     // Check if account was previously skipped
-    const accountData = accountService.getAccountData(INTEGRATIONS.MBNA, accountId);
+    const accountData = accountService.getAccountData(INTEGRATION_ID, accountId);
     if (accountData && accountData.syncEnabled === false) {
       debugLog('[MBNA] Account was skipped:', accountDisplayName);
       return { success: true, message: 'Skipped', skipped: true };
@@ -538,7 +493,7 @@ export async function uploadMbnaAccount(account, api) {
         syncEnabled: false,
         lastSyncDate: null,
       };
-      accountService.upsertAccount(INTEGRATIONS.MBNA, skippedData);
+      accountService.upsertAccount(INTEGRATION_ID, skippedData);
       toast.show(`${accountDisplayName}: skipped`, 'info', 2000);
       return { success: true, message: 'Skipped', skipped: true };
     }
@@ -558,7 +513,7 @@ export async function uploadMbnaAccount(account, api) {
       syncEnabled: true,
       lastSyncDate: null,
     };
-    accountService.upsertAccount(INTEGRATIONS.MBNA, accountData2);
+    accountService.upsertAccount(INTEGRATION_ID, accountData2);
 
     debugLog('[MBNA] Account mapping saved:', accountDisplayName, '→', monarchAccount.displayName);
     toast.show(`Mapped: ${accountDisplayName} → ${monarchAccount.displayName}`, 'success', 3000);
