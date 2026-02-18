@@ -1,5 +1,5 @@
 /**
- * Tests for MBNA Pending Transactions Service
+ * Tests for MBNA → Monarch Pending Transactions
  */
 
 import {
@@ -10,7 +10,7 @@ import {
   formatReconciliationMessage,
   formatPendingIdForNotes,
   extractPendingIdFromNotes,
-} from '../../../src/services/mbna/pendingTransactions';
+} from '../../../../src/integrations/mbna/monarch-mapper/pendingTransactions';
 
 describe('MBNA Pending Transactions', () => {
   describe('isPendingTransaction', () => {

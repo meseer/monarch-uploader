@@ -580,10 +580,11 @@ export function createInstitutionUIManager(integration, { storage, state, sink }
 
 ## 9. Key Design Decisions
 
-1. **Transaction rules = "monarch-mapper"** — Institution-to-Monarch transformations, shipped in integration module, explicitly named to show Monarch coupling
-2. **Merchant mapping stays in core** — Institution-agnostic second-pass normalization applied before Monarch submission
-3. **Enrichment in integration modules** — Uses onProgress callback for UI progress reporting without module knowing about UI
-4. **Holdings mappings at institution level** — Same security mapping reused across accounts
-5. **Generic UI manager** — All institution UIs follow same pattern, config-driven by injectionPoint.js
-6. **Build-time selection first** — Lazy loading designed-for but not implemented yet
-7. **Complete upload service replacement in Phase 6** — Generic orchestrator fully replaces per-institution services
+1. **Integration module boundary: institution-specific vs sink-coupled** — Everything inside `src/integrations/{institution}/` (top-level files) is institution-specific, sink-agnostic logic (e.g., balance reconstruction, transaction parsing, API clients). The `monarch-mapper/` subdirectory is the ONLY place for sink-coupled code (Monarch-specific transformations). When a new sink is added (e.g., Actual Budget), a parallel `{sink}-mapper/` directory would be created alongside `monarch-mapper/`. This separation ensures institution logic is reusable across sinks.
+2. **Transaction rules = "monarch-mapper"** — Institution-to-Monarch transformations, shipped in integration module, explicitly named to show Monarch coupling
+3. **Merchant mapping stays in core** — Institution-agnostic second-pass normalization applied before Monarch submission
+4. **Enrichment in integration modules** — Uses onProgress callback for UI progress reporting without module knowing about UI
+5. **Holdings mappings at institution level** — Same security mapping reused across accounts
+6. **Generic UI manager** — All institution UIs follow same pattern, config-driven by injectionPoint.js
+7. **Build-time selection first** — Lazy loading designed-for but not implemented yet
+8. **Complete upload service replacement in Phase 6** — Generic orchestrator fully replaces per-institution services

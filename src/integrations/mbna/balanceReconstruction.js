@@ -1,11 +1,14 @@
 /**
- * MBNA Balance Service
+ * MBNA Balance Reconstruction
  *
  * Handles balance reconstruction from MBNA statement data.
  * Uses statement closing balances as checkpoints and walks through
  * transactions day by day to build a balance history.
  *
- * @module services/mbna/balance
+ * This is institution-specific, sink-agnostic logic.
+ * For Monarch-specific formatting, see monarch-mapper/balanceFormatter.js
+ *
+ * @module integrations/mbna/balanceReconstruction
  */
 
 import { debugLog } from '../../core/utils';
@@ -194,23 +197,6 @@ function roundBalance(balance) {
   return Math.round(balance * 100) / 100;
 }
 
-/**
- * Format balance history for Monarch API upload
- *
- * Monarch expects balance history entries with date and balance fields.
- * For credit cards, balance should be positive when owed.
- *
- * @param {Array<{date: string, balance: number}>} balanceHistory - Balance entries
- * @returns {Array<{date: string, amount: number}>} Formatted for Monarch API
- */
-export function formatBalanceHistoryForMonarch(balanceHistory) {
-  return balanceHistory.map((entry) => ({
-    date: entry.date,
-    amount: entry.balance,
-  }));
-}
-
 export default {
   buildBalanceHistory,
-  formatBalanceHistoryForMonarch,
 };

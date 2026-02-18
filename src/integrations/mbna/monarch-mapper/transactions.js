@@ -1,16 +1,18 @@
 /**
- * MBNA Transaction Processing Service
+ * MBNA → Monarch Transaction Mapper
  *
  * Processes raw MBNA transactions into a format suitable for Monarch CSV upload.
  * Handles merchant sanitization, category resolution, and PAYMENT auto-categorization.
  *
- * @module services/mbna/transactions
+ * Explicitly coupled to Monarch's data format — this is by design.
+ *
+ * @module integrations/mbna/monarch-mapper/transactions
  */
 
-import { debugLog } from '../../core/utils';
-import { applyMerchantMapping } from '../../mappers/merchant';
-import { INTEGRATIONS, getCapabilities } from '../../core/integrationCapabilities';
-import { getCategoryMapping } from '../common/configStore';
+import { debugLog } from '../../../core/utils';
+import { applyMerchantMapping } from '../../../mappers/merchant';
+import { INTEGRATIONS, getCapabilities } from '../../../core/integrationCapabilities';
+import { getCategoryMapping } from '../../../services/common/configStore';
 
 /**
  * Auto-categorization rules for MBNA transactions

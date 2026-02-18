@@ -1,11 +1,11 @@
 /**
- * Tests for MBNA Transaction Processing Service
+ * Tests for MBNA → Monarch Transaction Processing
  */
 
 import {
   processMbnaTransactions,
   filterDuplicateSettledTransactions,
-} from '../../../src/services/mbna/transactions';
+} from '../../../../src/integrations/mbna/monarch-mapper/transactions';
 
 describe('MBNA Transaction Processing', () => {
   describe('processMbnaTransactions', () => {

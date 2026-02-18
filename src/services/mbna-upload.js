@@ -23,9 +23,10 @@ import {
   separateAndDeduplicateTransactions,
   reconcileMbnaPendingTransactions,
   formatReconciliationMessage,
-} from './mbna/pendingTransactions';
-import { processMbnaTransactions, resolveMbnaCategories, filterDuplicateSettledTransactions } from './mbna/transactions';
-import { buildBalanceHistory, formatBalanceHistoryForMonarch } from './mbna/balance';
+} from '../integrations/mbna/monarch-mapper/pendingTransactions';
+import { processMbnaTransactions, resolveMbnaCategories, filterDuplicateSettledTransactions } from '../integrations/mbna/monarch-mapper/transactions';
+import { buildBalanceHistory } from '../integrations/mbna/balanceReconstruction';
+import { formatBalanceHistoryForMonarch } from '../integrations/mbna/monarch-mapper/balanceFormatter';
 import {
   getTransactionIdsFromArray,
   mergeAndRetainTransactions,
@@ -376,7 +377,7 @@ export async function syncMbnaAccount(account, monarchAccount, api, options = {}
         if (balanceSuccess) {
           saveLastUploadDate(accountId, todayFormatted, 'mbna');
           progressDialog.updateStepStatus(accountId, 'balance', 'success', `${balanceHistory.length} days`);
-          progressDialog.updateBalanceChange(accountId, { newBalance: currentBalance });
+          progressDialog.updateBalanceChange(accountId, { newBalance: -currentBalance });
         } else {
           progressDialog.updateStepStatus(accountId, 'balance', 'error', 'Upload failed');
         }
@@ -384,14 +385,14 @@ export async function syncMbnaAccount(account, monarchAccount, api, options = {}
         progressDialog.updateStepStatus(accountId, 'balance', 'skipped', 'No history data');
       }
     } else {
-      // Upload single-day balance
-      const balanceCSV = generateBalanceCSV(currentBalance, accountDisplayName);
+      // Upload single-day balance (negated: MBNA positive=owed → Monarch negative=liability)
+      const balanceCSV = generateBalanceCSV(-currentBalance, accountDisplayName);
       const balanceSuccess = await monarchApi.uploadBalance(monarchAccount.id, balanceCSV, todayFormatted, todayFormatted);
 
       if (balanceSuccess) {
         const formatted = `$${Math.abs(currentBalance).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
         progressDialog.updateStepStatus(accountId, 'balance', 'success', formatted);
-        progressDialog.updateBalanceChange(accountId, { newBalance: currentBalance });
+        progressDialog.updateBalanceChange(accountId, { newBalance: -currentBalance });
         saveLastUploadDate(accountId, todayFormatted, 'mbna');
       } else {
         progressDialog.updateStepStatus(accountId, 'balance', 'error', 'Upload failed');
