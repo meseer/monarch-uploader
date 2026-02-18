@@ -497,7 +497,88 @@ Prioritized order:
 
 ---
 
-## 7. Generic UI Manager
+## 7. Data-Driven Settings UI
+
+### 7.1 Hybrid Tab Generation (Current State)
+
+The settings modal (`settingsModal.js`) uses a hybrid approach for integration tabs:
+
+- **Hardcoded legacy tabs** — Questrade, CanadaLife, Rogers Bank, Wealthsimple each have a dedicated `render{Integration}Tab()` function and explicit tab entry. These remain until each integration is migrated to the modular architecture.
+- **Dynamic modular tabs** — Any integration registered in the `integrationRegistry` that is NOT in the legacy set automatically gets a settings tab. The tab label, favicon, and content are all derived from the integration's manifest and `INTEGRATION_CAPABILITIES`.
+
+```
+┌────────────────────────────────────────────────┐
+│  Tab List                                       │
+│  ─────────                                      │
+│  ⚙️ General              (always present)       │
+│  🏢 Questrade            (hardcoded legacy)     │
+│  🏢 CanadaLife            (hardcoded legacy)     │
+│  🏢 Rogers Bank           (hardcoded legacy)     │
+│  🏢 Wealthsimple          (hardcoded legacy)     │
+│  🏢 MBNA                  (dynamic / modular)   │
+│  🏢 [future integration]  (dynamic / modular)   │
+│  👑 Monarch               (always present)      │
+└────────────────────────────────────────────────┘
+```
+
+When a legacy integration is migrated to the module architecture:
+1. Remove its entry from the `legacyTabs` array and `legacyIntegrationIds` set in `settingsModal.js`
+2. Remove its dedicated `render{Integration}Tab()` function
+3. It will then appear automatically via the dynamic modular path
+
+### 7.2 `renderModularIntegrationTab()` — Generic, Capability-Driven
+
+A single function renders the settings tab for any modular integration:
+
+```js
+function renderModularIntegrationTab(container, integrationId) {
+  const capabilities = getCapabilities(integrationId);
+
+  // 1. Lookback Period (all integrations)
+  container.appendChild(createLookbackPeriodSection(integrationId));
+
+  // 2. Account Mappings (all integrations)
+  const accounts = accountService.getAccounts(integrationId);
+  const mappingsSection = createSection('Account Mappings', '🔗', ...);
+  mappingsSection.appendChild(createGenericAccountCards(integrationId, accounts, refreshFn));
+  container.appendChild(mappingsSection);
+
+  // 3. Category Mappings (only if hasCategorization)
+  if (capabilities.hasCategorization) {
+    container.appendChild(renderCategoryMappingsSectionIfEnabled(integrationId, refreshFn));
+  }
+}
+```
+
+### 7.3 Connection Status (Registry-Driven)
+
+For legacy integrations, `checkInstitutionConnection()` uses hardcoded switch/case logic. For modular integrations, it falls through to a generic handler that queries the integration registry:
+
+```js
+default: {
+  const registration = getIntegration(institutionId);
+  if (registration?.auth) {
+    return registration.auth.checkStatus().authenticated;
+  }
+  return false;
+}
+```
+
+### 7.4 Lookback Period (Generic configStore)
+
+`createLookbackPeriodSection()` and `saveLookbackValue()` work generically for all integrations via `setSetting(integrationId, 'lookbackDays', value)`. Institution display names are resolved from `getDisplayName(integrationId)` — no hardcoded name map required.
+
+### 7.5 End State (After All Migrations)
+
+Once all legacy integrations are migrated to modules:
+- `legacyTabs` and `legacyIntegrationIds` are empty — all integration tabs are dynamic
+- All `render{Integration}Tab()` functions are deleted
+- All switch/case blocks in helpers become unnecessary — the `default` handler covers everything
+- `settingsModal.js` becomes ~50% shorter
+
+---
+
+## 8. Generic UI Manager
 
 All per-institution UI managers (~1,600 lines total) replaced by one generic `institutionUI.js` (~200-300 lines) driven by `injectionPoint.js` config:
 
@@ -519,7 +600,7 @@ export function createInstitutionUIManager(integration, { storage, state, sink }
 
 ---
 
-## 8. Execution Plan
+## 9. Execution Plan
 
 ### Phase 0: Foundation (no behavior changes)
 1. `src/core/storageAdapter.js` — GM_* abstraction
@@ -553,10 +634,11 @@ export function createInstitutionUIManager(integration, { storage, state, sink }
 1. `integrationCapabilities.js` → derive from registry manifests
 2. `config.js` → remove all institution-specific constants
 3. `state.js` → generic per-integration auth state
-4. `settingsModal.js` → fully data-driven from manifests
-5. Clean up old API files
-6. `integrations/index.js` barrel with build-time selection
-7. Tests, full build validation
+4. `settingsModal.js` → remove legacy tabs as each integration is migrated (already supports dynamic tabs for modular integrations — see Section 7)
+5. `settingsModalHelpers.js` → remove legacy switch/cases once all integrations are modular
+6. Clean up old API files
+7. `integrations/index.js` barrel with build-time selection
+8. Tests, full build validation
 
 ### Phase 4: Data sink abstraction
 1. `src/sinks/monarch/` — Monarch as first sink
@@ -578,7 +660,7 @@ export function createInstitutionUIManager(integration, { storage, state, sink }
 
 ---
 
-## 9. Key Design Decisions
+## 10. Key Design Decisions
 
 1. **Integration module boundary: institution-specific vs sink-coupled** — Everything inside `src/integrations/{institution}/` (top-level files) is institution-specific, sink-agnostic logic (e.g., balance reconstruction, transaction parsing, API clients). The `monarch-mapper/` subdirectory is the ONLY place for sink-coupled code (Monarch-specific transformations). When a new sink is added (e.g., Actual Budget), a parallel `{sink}-mapper/` directory would be created alongside `monarch-mapper/`. This separation ensures institution logic is reusable across sinks.
 2. **Transaction rules = "monarch-mapper"** — Institution-to-Monarch transformations, shipped in integration module, explicitly named to show Monarch coupling

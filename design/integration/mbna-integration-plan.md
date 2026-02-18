@@ -125,6 +125,12 @@ src/index.js                                # + MBNA site detection
 src/userscript-metadata.cjs                 # + @match service.mbna.ca
 ```
 
+**Settings UI — NO changes required.** The settings modal automatically discovers MBNA
+via the integration registry. The MBNA tab, favicon, connection status, lookback period,
+account mappings, and category mappings sections all appear automatically based on the
+manifest and `INTEGRATION_CAPABILITIES` entry. See `design/modular-integration-architecture.md`
+Section 7 for the data-driven settings architecture.
+
 ### Test Files
 
 ```
@@ -260,6 +266,33 @@ test/services/mbna-upload.test.js
 - `npm run lint && npm test && npm run build && npm run build:full`
 - Version bump: `npm run version:bump -- X.Y.0` (minor: new integration)
 - Generate commit message
+
+---
+
+## Settings UI — Automatic via Module Registration
+
+MBNA's settings tab appears **automatically** in the settings modal — no `settingsModal.js`
+modifications are needed. This is possible because:
+
+1. **Tab Discovery:** `settingsModal.js` calls `getAllManifests()` from the integration registry
+   and generates tabs for any registered module not in the hardcoded legacy set. MBNA's manifest
+   provides `displayName` ('MBNA') and `faviconDomain` ('mbna.ca') for the tab button.
+
+2. **Connection Status:** The `checkInstitutionConnection()` default case queries the registry
+   for `integration.auth.checkStatus()`. MBNA's `createAuth()` returns `{ authenticated: true }`
+   (connectivity determined by API probe, not cookies).
+
+3. **Lookback Period:** `createLookbackPeriodSection()` uses `getDisplayName(integrationId)` for
+   the label and `setSetting(integrationId, 'lookbackDays', value)` for persistence — both work
+   generically for any integration.
+
+4. **Account Mappings:** `createGenericAccountCards()` already works for any integration via
+   `accountService.getAccounts(integrationId)`.
+
+5. **Category Mappings:** The `renderModularIntegrationTab()` function checks `capabilities.hasCategorization`
+   and renders the section if enabled. MBNA has `hasCategorization: true`.
+
+**Zero settings code was added or modified for the MBNA integration.**
 
 ---
 

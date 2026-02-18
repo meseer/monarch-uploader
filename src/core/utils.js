@@ -114,18 +114,16 @@ export function parseLocalDate(dateString) {
 export function getLookbackForInstitution(institutionType) {
   const defaultLookback = getDefaultLookbackDays(institutionType);
 
-  // Integration ID mapping
-  const integrationIdMap = {
+  // Integration ID mapping for legacy integrations.
+  // Modular integrations (e.g., 'mbna') use their ID directly.
+  const legacyIntegrationIdMap = {
     wealthsimple: INTEGRATIONS.WEALTHSIMPLE,
     questrade: INTEGRATIONS.QUESTRADE,
     canadalife: INTEGRATIONS.CANADALIFE,
     rogersbank: INTEGRATIONS.ROGERSBANK,
   };
 
-  const integrationId = integrationIdMap[institutionType];
-  if (!integrationId) {
-    return 0;
-  }
+  const integrationId = legacyIntegrationIdMap[institutionType] || institutionType;
 
   // Read from configStore
   const configValue = getSetting(integrationId, 'lookbackDays', undefined);

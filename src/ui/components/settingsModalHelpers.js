@@ -5,7 +5,8 @@
 
 import { debugLog, getDefaultLookbackDays, validateLookbackVsRetention, getMinRetentionForInstitution, getLookbackForInstitution } from '../../core/utils';
 import { STORAGE } from '../../core/config';
-import { INTEGRATIONS, getCategoryMappingsConfig } from '../../core/integrationCapabilities';
+import { INTEGRATIONS, getCategoryMappingsConfig, getDisplayName } from '../../core/integrationCapabilities';
+import { getIntegration } from '../../core/integrationRegistry';
 import { getAuth, setSetting, getCategoryMappings, saveCategoryMappings } from '../../services/common/configStore';
 import { checkMonarchAuth } from '../../services/auth';
 import { checkQuestradeAuth } from '../../services/questrade/auth';
@@ -42,8 +43,21 @@ export function checkInstitutionConnection(institutionId) {
   }
   case 'monarch':
     return checkMonarchAuth().authenticated;
-  default:
+  default: {
+    // Generic fallback for modular integrations registered in the integration registry.
+    // Uses the integration's auth.checkStatus() if available.
+    const registeredIntegration = getIntegration(institutionId);
+    if (registeredIntegration && registeredIntegration.auth) {
+      try {
+        const status = registeredIntegration.auth.checkStatus();
+        return Boolean(status && status.authenticated);
+      } catch (error) {
+        debugLog(`[settingsModalHelpers] Error checking auth for ${institutionId}:`, error);
+        return false;
+      }
+    }
     return false;
+  }
   }
 }
 
@@ -80,25 +94,8 @@ export function createLookbackPeriodSection(institutionType) {
     color: var(--mu-text-primary, #333);
   `;
 
-  // Get institution name for display
-  let institutionName;
-  switch (institutionType) {
-  case 'questrade':
-    institutionName = 'Questrade';
-    break;
-  case 'canadalife':
-    institutionName = 'CanadaLife';
-    break;
-  case 'rogersbank':
-    institutionName = 'Rogers Bank';
-    break;
-  case 'wealthsimple':
-    institutionName = 'Wealthsimple';
-    break;
-  default:
-    console.error('Unknown institution type:', institutionType);
-    return section;
-  }
+  // Get institution name from capabilities (works for both legacy and modular integrations)
+  const institutionName = getDisplayName(institutionType);
 
   // Load current value or default (uses configStore for Wealthsimple)
   const defaultLookback = getDefaultLookbackDays(institutionType);
@@ -138,19 +135,12 @@ export function createLookbackPeriodSection(institutionType) {
   `;
 
   /**
-   * Save lookback value to storage (configStore for Wealthsimple, legacy key for others)
+   * Save lookback value to storage via configStore.
+   * Works for all integrations — both legacy and modular.
    * @param {number} value - Lookback days value
    */
   const saveLookbackValue = (value) => {
-    if (institutionType === 'wealthsimple') {
-      setSetting(INTEGRATIONS.WEALTHSIMPLE, 'lookbackDays', value);
-    } else if (institutionType === 'rogersbank') {
-      setSetting(INTEGRATIONS.ROGERSBANK, 'lookbackDays', value);
-    } else if (institutionType === 'questrade') {
-      setSetting(INTEGRATIONS.QUESTRADE, 'lookbackDays', value);
-    } else if (institutionType === 'canadalife') {
-      setSetting(INTEGRATIONS.CANADALIFE, 'lookbackDays', value);
-    }
+    setSetting(institutionType, 'lookbackDays', value);
   };
 
   // Save changes

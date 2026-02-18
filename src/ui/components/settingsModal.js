@@ -10,7 +10,9 @@ import toast from '../toast';
 import { createMonarchLoginLink } from './monarchLoginLink';
 import {
   INTEGRATIONS,
+  getCapabilities,
 } from '../../core/integrationCapabilities';
+import { getAllManifests } from '../../core/integrationRegistry';
 import accountService from '../../services/common/accountService';
 import scriptInfo from '../../scriptInfo.json';
 import {
@@ -135,44 +137,51 @@ export function createSettingsModal() {
     overflow-y: auto;
   `;
 
-  // Define tabs with institution mapping for dynamic logos
-  const tabs = [
-    {
-      id: 'general',
-      label: 'General',
-      fallbackIcon: '⚙️',
-      institutionName: null,
-    },
+  // IDs of legacy (hardcoded) integration tabs — these will be removed
+  // as each integration is migrated to the modular architecture
+  const legacyIntegrationIds = new Set(['questrade', 'canadalife', 'rogersbank', 'wealthsimple']);
+
+  // Hardcoded legacy tabs (kept until each integration is migrated to module architecture)
+  const legacyTabs = [
     {
       id: 'questrade',
       label: 'Questrade',
-      fallbackIcon: '💼',
-      institutionName: 'Questrade',
+      faviconDomain: 'questrade.com',
     },
     {
       id: 'canadalife',
       label: 'CanadaLife',
-      fallbackIcon: '🏛️',
-      institutionName: 'Canada Life',
+      faviconDomain: 'canadalife.com',
     },
     {
       id: 'rogersbank',
       label: 'Rogers Bank',
-      fallbackIcon: '🏦',
-      institutionName: 'Rogers Bank',
+      faviconDomain: 'rogersbank.com',
     },
     {
       id: 'wealthsimple',
       label: 'Wealthsimple',
-      fallbackIcon: '💰',
-      institutionName: 'Wealthsimple',
+      faviconDomain: 'wealthsimple.com',
     },
-    {
-      id: 'monarch',
-      label: 'Monarch',
-      fallbackIcon: '👑',
-      institutionName: 'Monarch Money',
-    },
+  ];
+
+  // Dynamic tabs — auto-generated from modular integrations registered in the registry.
+  // When a legacy integration is migrated to a module, remove it from legacyTabs above
+  // and it will automatically appear here via its manifest.
+  const modularTabs = getAllManifests()
+    .filter((manifest) => !legacyIntegrationIds.has(manifest.id))
+    .map((manifest) => ({
+      id: manifest.id,
+      label: manifest.displayName,
+      faviconDomain: manifest.faviconDomain,
+    }));
+
+  // Assemble full tab list: General → legacy integrations → modular integrations → Monarch
+  const tabs = [
+    { id: 'general', label: 'General', fallbackIcon: '⚙️' },
+    ...legacyTabs,
+    ...modularTabs,
+    { id: 'monarch', label: 'Monarch', faviconDomain: 'monarchmoney.com' },
   ];
 
   let activeTab = 'general';
@@ -186,63 +195,19 @@ export function createSettingsModal() {
     const buttonContent = document.createElement('div');
     buttonContent.style.cssText = 'display: flex; align-items: center;';
 
-    if (tab.id === 'monarch') {
-      // Use Google Favicon API for Monarch tab
+    if (tab.faviconDomain) {
+      // Use Google Favicon API for any tab with a favicon domain
       const logoContainer = document.createElement('div');
       logoContainer.style.cssText = 'display: inline-flex; margin-right: 6px;';
 
       GM_addElement(logoContainer, 'img', {
-        src: 'https://www.google.com/s2/favicons?domain=monarchmoney.com&sz=128',
+        src: `https://www.google.com/s2/favicons?domain=${tab.faviconDomain}&sz=128`,
         style: 'width: 16px; height: 16px; border-radius: 3px; object-fit: contain;',
       });
 
       buttonContent.appendChild(logoContainer);
-    } else if (tab.id === 'wealthsimple') {
-      // Use Google Favicon API for Wealthsimple tab
-      const logoContainer = document.createElement('div');
-      logoContainer.style.cssText = 'display: inline-flex; margin-right: 6px;';
-
-      GM_addElement(logoContainer, 'img', {
-        src: 'https://www.google.com/s2/favicons?domain=wealthsimple.com&sz=128',
-        style: 'width: 16px; height: 16px; border-radius: 3px; object-fit: contain;',
-      });
-
-      buttonContent.appendChild(logoContainer);
-    } else if (tab.id === 'questrade') {
-      // Use Google Favicon API for Questrade tab
-      const logoContainer = document.createElement('div');
-      logoContainer.style.cssText = 'display: inline-flex; margin-right: 6px;';
-
-      GM_addElement(logoContainer, 'img', {
-        src: 'https://www.google.com/s2/favicons?domain=questrade.com&sz=128',
-        style: 'width: 16px; height: 16px; border-radius: 3px; object-fit: contain;',
-      });
-
-      buttonContent.appendChild(logoContainer);
-    } else if (tab.id === 'canadalife') {
-      // Use Google Favicon API for CanadaLife tab
-      const logoContainer = document.createElement('div');
-      logoContainer.style.cssText = 'display: inline-flex; margin-right: 6px;';
-
-      GM_addElement(logoContainer, 'img', {
-        src: 'https://www.google.com/s2/favicons?domain=canadalife.com&sz=128',
-        style: 'width: 16px; height: 16px; border-radius: 3px; object-fit: contain;',
-      });
-
-      buttonContent.appendChild(logoContainer);
-    } else if (tab.id === 'rogersbank') {
-      // Use Google Favicon API for Rogers Bank tab
-      const logoContainer = document.createElement('div');
-      logoContainer.style.cssText = 'display: inline-flex; margin-right: 6px;';
-
-      GM_addElement(logoContainer, 'img', {
-        src: 'https://www.google.com/s2/favicons?domain=rogersbank.com&sz=128',
-        style: 'width: 16px; height: 16px; border-radius: 3px; object-fit: contain;',
-      });
-
-      buttonContent.appendChild(logoContainer);
-    } else {
-      // Use fallback emoji for general tab
+    } else if (tab.fallbackIcon) {
+      // Use fallback emoji for tabs without a favicon domain (e.g., General)
       const iconSpan = document.createElement('span');
       iconSpan.textContent = tab.fallbackIcon;
       iconSpan.style.cssText = 'margin-right: 6px;';
@@ -410,7 +375,9 @@ function renderTabContent(container, tabId) {
     renderMonarchTab(container);
     break;
   default:
-    container.innerHTML = '<p>Tab content not found.</p>';
+    // Dynamic tab for modular integrations — driven by capabilities
+    renderModularIntegrationTab(container, tabId);
+    break;
   }
 }
 
@@ -748,6 +715,54 @@ function renderMonarchTab(container) {
     container.appendChild(tokenSection);
   } else {
     container.appendChild(statusSection);
+  }
+}
+
+/**
+ * Renders a settings tab for a modular integration — fully driven by capabilities.
+ *
+ * This function is used for integrations registered via the integration registry
+ * (src/integrations/). It reads capabilities from INTEGRATION_CAPABILITIES to
+ * determine which sections to render (lookback, account mappings, category mappings).
+ *
+ * As legacy integrations are migrated to the modular architecture, their hardcoded
+ * render functions (renderQuestradeTab, etc.) will be removed and they'll use
+ * this generic function instead.
+ *
+ * @param {HTMLElement} container - Tab content container
+ * @param {string} integrationId - Integration identifier (e.g., 'mbna')
+ */
+function renderModularIntegrationTab(container, integrationId) {
+  const capabilities = getCapabilities(integrationId);
+  if (!capabilities) {
+    container.innerHTML = `<p>Unknown integration: ${integrationId}</p>`;
+    return;
+  }
+
+  // 1. Lookback Period Section (all integrations have this)
+  const lookbackSection = createLookbackPeriodSection(integrationId);
+  container.appendChild(lookbackSection);
+
+  // 2. Account Mappings Section (all integrations have this)
+  const mappingsSection = createSection(
+    'Account Mappings',
+    '🔗',
+    `${capabilities.displayName} to Monarch account mappings`,
+  );
+
+  const accounts = accountService.getAccounts(integrationId);
+  const accountCards = createGenericAccountCards(integrationId, accounts, () => {
+    renderTabContent(container, integrationId);
+  });
+  mappingsSection.appendChild(accountCards);
+  container.appendChild(mappingsSection);
+
+  // 3. Category Mappings Section (only if hasCategorization capability is enabled)
+  if (capabilities.hasCategorization) {
+    const categorySection = renderCategoryMappingsSectionIfEnabled(integrationId, () => {
+      renderTabContent(container, integrationId);
+    });
+    container.appendChild(categorySection);
   }
 }
 
