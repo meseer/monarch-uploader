@@ -15,7 +15,9 @@
 const BASE_URL = 'https://service.mbna.ca/waw/mbna';
 
 /**
- * Standard headers sent with every MBNA API request
+ * Standard headers sent with every MBNA API request.
+ * Note: No Cookie header needed — GM_xmlhttpRequest automatically
+ * includes browser cookies (including HttpOnly) for same-origin requests.
  */
 const STANDARD_HEADERS = {
   Accept: 'application/json, text/plain, */*',
@@ -66,21 +68,18 @@ function normalizeAccountSummary(entry) {
  * @param {Object} auth - Auth handler with getCredentials()
  * @returns {Object} API client instance
  */
-export function createApi(httpClient, auth) {
+export function createApi(httpClient, _auth) {
   /**
    * Make an authenticated GET request to the MBNA API.
-   * All MBNA endpoints use the same GET pattern with cookie auth.
+   * All MBNA endpoints use the same GET pattern.
+   * Cookies (including HttpOnly JSESSIONID) are forwarded automatically
+   * by GM_xmlhttpRequest for same-origin requests.
    *
    * @param {string} path - API path relative to /waw/mbna/ (e.g., '/current-account')
    * @returns {Promise<Object>} Parsed JSON response
    * @throws {Error} On auth failure, HTTP errors, or parse errors
    */
   async function mbnaGet(path) {
-    const creds = auth.getCredentials();
-    if (!creds) {
-      throw new Error('MBNA session expired. Please refresh the page and log in again.');
-    }
-
     const url = `${BASE_URL}${path}`;
 
     const response = await httpClient.request({
@@ -88,7 +87,6 @@ export function createApi(httpClient, auth) {
       url,
       headers: {
         ...STANDARD_HEADERS,
-        Cookie: creds.cookieHeader,
       },
     });
 

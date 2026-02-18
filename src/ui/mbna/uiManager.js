@@ -181,18 +181,13 @@ const navigationManager = new MbnaNavigationManager();
  * Probe MBNA API connectivity by fetching accounts summary.
  * Updates module state (cachedAccounts, mbnaConnected).
  *
+ * Since MBNA uses HttpOnly cookies (not readable from JS), we can't
+ * pre-check authentication. Instead, we make an actual API call and
+ * let the response determine connectivity (200 = connected, 401/403 = not).
+ *
  * @returns {Promise<boolean>} True if connection is valid
  */
 async function probeConnection() {
-  // Quick check: no cookie → definitely not connected
-  const authStatus = auth.checkStatus();
-  if (!authStatus.authenticated) {
-    mbnaConnected = false;
-    cachedAccounts = [];
-    debugLog('[MBNA] Probe: no JSESSIONID cookie found');
-    return false;
-  }
-
   try {
     const accounts = await api.getAccountsSummary();
     cachedAccounts = accounts;

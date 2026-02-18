@@ -1,41 +1,29 @@
 /**
  * MBNA Auth Module
  *
- * Handles cookie-based session detection for MBNA.
- * Since our script runs on service.mbna.ca after the user has logged in,
- * the JSESSIONID cookie is guaranteed to be present for the session.
- * No monitoring or polling is needed — we check on demand.
+ * Handles session detection for MBNA.
+ *
+ * MBNA uses HttpOnly JSESSIONID cookies that are NOT accessible via
+ * document.cookie. However, GM_xmlhttpRequest (Tampermonkey) automatically
+ * includes browser cookies for same-origin requests, so we don't need
+ * to read or forward cookies manually.
+ *
+ * Auth status is determined by making an actual API probe call —
+ * if it returns 200, we're authenticated; if 401/403, we're not.
  *
  * @module integrations/mbna/auth
  */
 
 /**
- * Static cookie prefix required by MBNA API requests
- */
-const COOKIE_PREFIX = 'TD-persist=SOC';
-
-/**
- * Extract the JSESSIONID value from document.cookie
- * @returns {string|null} JSESSIONID value or null if not found
- */
-function extractJsessionId() {
-  try {
-    const cookies = document.cookie.split(';');
-    for (const cookie of cookies) {
-      const trimmed = cookie.trim();
-      if (trimmed.startsWith('JSESSIONID=')) {
-        const value = trimmed.substring('JSESSIONID='.length);
-        return value || null;
-      }
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Create an auth handler for MBNA
+ *
+ * Since MBNA uses HttpOnly cookies that can't be read from JS,
+ * this module doesn't attempt to read cookies. Instead:
+ * - checkStatus() always returns "assumed authenticated" (let API probe decide)
+ * - getCredentials() returns a marker object (no cookie header needed)
+ *
+ * The actual auth validation happens when the API probe call
+ * succeeds or fails with 401/403.
  *
  * @returns {import('../types').IntegrationAuth} Auth handler instance
  */
@@ -43,31 +31,33 @@ export function createAuth() {
   return {
     /**
      * Check current authentication status.
-     * Reads JSESSIONID from document.cookie on demand.
-     * @returns {{ authenticated: boolean, jsessionId: string|null }}
+     *
+     * Since JSESSIONID is HttpOnly, we can't read it from JS.
+     * We assume the user is authenticated (they're on the MBNA site)
+     * and let the API probe confirm or deny.
+     *
+     * @returns {{ authenticated: boolean }}
      */
     checkStatus() {
-      const jsessionId = extractJsessionId();
+      // Can't read HttpOnly cookies — assume authenticated,
+      // actual validation happens via API probe
       return {
-        authenticated: jsessionId !== null,
-        jsessionId,
+        authenticated: true,
       };
     },
 
     /**
      * Get credentials for API calls.
-     * Constructs the Cookie header value needed for MBNA API requests.
-     * @returns {{ cookieHeader: string, jsessionId: string }|null} Credentials or null if not authenticated
+     *
+     * GM_xmlhttpRequest automatically sends browser cookies (including
+     * HttpOnly ones) for same-origin requests. No manual Cookie header needed.
+     *
+     * @returns {{ autoManaged: boolean }} Always returns a truthy object
      */
     getCredentials() {
-      const jsessionId = extractJsessionId();
-      if (!jsessionId) {
-        return null;
-      }
-
+      // GM_xmlhttpRequest handles cookie forwarding automatically
       return {
-        jsessionId,
-        cookieHeader: `${COOKIE_PREFIX}; JSESSIONID=${jsessionId}`,
+        autoManaged: true,
       };
     },
   };

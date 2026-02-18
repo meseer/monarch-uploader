@@ -70,13 +70,9 @@ describe('MBNA API Client', () => {
     };
   }
 
-  function createMockAuth(authenticated = true) {
+  function createMockAuth() {
     return {
-      getCredentials: jest.fn().mockReturnValue(
-        authenticated
-          ? { jsessionId: 'test-session', cookieHeader: 'TD-persist=SOC; JSESSIONID=test-session' }
-          : null,
-      ),
+      getCredentials: jest.fn().mockReturnValue({ autoManaged: true }),
     };
   }
 
@@ -87,28 +83,22 @@ describe('MBNA API Client', () => {
   });
 
   describe('mbnaGet (via getAccountInfo)', () => {
-    it('should send correct headers including Cookie', async () => {
+    it('should send standard headers without Cookie (GM_xmlhttpRequest handles cookies)', async () => {
       await api.getAccountInfo();
 
-      expect(mockHttpClient.request).toHaveBeenCalledWith({
+      const callArgs = mockHttpClient.request.mock.calls[0][0];
+      expect(callArgs).toEqual({
         method: 'GET',
         url: 'https://service.mbna.ca/waw/mbna/current-account',
-        headers: expect.objectContaining({
+        headers: {
           Accept: 'application/json, text/plain, */*',
           Referer: 'https://service.mbna.ca/waw/mbna/index.html',
-          Cookie: 'TD-persist=SOC; JSESSIONID=test-session',
           'Sec-Fetch-Dest': 'empty',
           'Sec-Fetch-Mode': 'cors',
           'Sec-Fetch-Site': 'same-origin',
-        }),
+        },
       });
-    });
-
-    it('should throw when not authenticated', async () => {
-      mockAuth = createMockAuth(false);
-      api = createApi(mockHttpClient, mockAuth);
-
-      await expect(api.getAccountInfo()).rejects.toThrow('MBNA session expired');
+      expect(callArgs.headers).not.toHaveProperty('Cookie');
     });
 
     it('should throw on 401 response', async () => {
@@ -258,13 +248,6 @@ describe('MBNA API Client', () => {
       const result = await api.getAccountsSummary();
 
       expect(result[0].displayName).toBe('My Card');
-    });
-
-    it('should throw on auth failure', async () => {
-      mockAuth = createMockAuth(false);
-      api = createApi(mockHttpClient, mockAuth);
-
-      await expect(api.getAccountsSummary()).rejects.toThrow('MBNA session expired');
     });
 
     it('should throw on 401 response (session expired)', async () => {
