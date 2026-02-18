@@ -35,6 +35,9 @@ const manifest = {
     hasHoldingsMappings: false,
   },
 
+  // ── Pending transaction ID prefix ─────────────────────────
+  txIdPrefix: 'mbna-tx',
+
   // ── Capabilities (feature flags) ─────────────────────────
   capabilities: {
     hasTransactions: true,

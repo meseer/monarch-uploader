@@ -26,3 +26,9 @@ export {
  * and re-export them as a single object.
  */
 export const monarchMapper = monarchMapperNs;
+
+/**
+ * Sync hooks for the generic syncOrchestrator.
+ * @type {import('../types').SyncHooks}
+ */
+export { default as syncHooks } from './sinks/monarch/syncHooks';

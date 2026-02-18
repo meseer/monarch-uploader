@@ -34,6 +34,8 @@
  * @property {IntegrationCapabilities} capabilities - Feature flags
  * @property {IntegrationCategoryConfig|null} categoryConfig - Category mapping configuration (null if no categorization)
  *
+ * @property {string|null} [txIdPrefix] - Prefix for generated pending transaction IDs (e.g., 'mbna-tx'). Required if hasDeduplication + pending support.
+ *
  * @property {string} accountKeyName - Key name for source account in consolidated storage (e.g., 'wealthsimpleAccount')
  * @property {IntegrationSettingDefinition[]} settings - Per-account settings with defaults
  *
@@ -232,6 +234,142 @@
  * @property {CreateEnrichmentFunction} [createEnrichment] - Factory for enrichment fetcher (optional)
  * @property {IntegrationInjectionPoint} injectionPoint - UI injection point config
  * @property {IntegrationMonarchMapper} [monarchMapper] - Monarch data mapper (optional)
+ */
+
+// ============================================================
+// SYNC HOOKS (orchestrator contract)
+// ============================================================
+
+/**
+ * @typedef {Object} SyncHooks
+ * Minimal set of institution-specific hooks that the generic
+ * syncOrchestrator calls during the sync workflow.
+ *
+ * Everything generic (CSV generation, filename, balance sign,
+ * dedup filtering, reconciliation algorithm, upload) stays in
+ * the orchestrator or common services. Only truly institution-
+ * specific logic is exposed as hooks.
+ *
+ * Required hooks:
+ * @property {FetchTransactionsHook} fetchTransactions - Fetch raw transactions from institution API
+ * @property {ProcessTransactionsHook} processTransactions - Normalize raw transactions into orchestrator-compatible shape
+ * @property {GetSettledRefIdHook} getSettledRefId - Extract dedup reference ID from a settled transaction
+ * @property {GetPendingRefIdHook} getPendingRefId - Extract dedup reference ID from a pending transaction
+ * @property {ResolveCategoriesHook} resolveCategories - Resolve Monarch categories for transactions
+ * @property {BuildTransactionNotesHook} buildTransactionNotes - Build notes string for a transaction CSV row
+ *
+ * Optional hooks (capability-dependent):
+ * @property {GetPendingIdFieldsHook} [getPendingIdFields] - Stable fields for pending transaction ID hashing
+ * @property {BuildBalanceHistoryHook} [buildBalanceHistory] - Build balance history for first-sync reconstruction
+ */
+
+/**
+ * Fetch raw transactions from the institution API.
+ *
+ * Returns raw settled + pending arrays plus any metadata the integration
+ * needs for later steps (e.g., statements for balance reconstruction).
+ *
+ * @callback FetchTransactionsHook
+ * @param {Object} api - Integration API client
+ * @param {string} accountId - Source account ID
+ * @param {string} fromDate - Start date (YYYY-MM-DD)
+ * @param {Object} callbacks - Progress callbacks
+ * @param {function(string): void} callbacks.onProgress - Progress message callback
+ * @returns {Promise<{settled: Array, pending: Array, metadata: Object}>}
+ *   metadata is integration-specific (e.g., { statements, currentCycle } for MBNA)
+ */
+
+/**
+ * Process raw transactions into a normalized shape for the orchestrator.
+ *
+ * Each returned transaction MUST have these fields:
+ *   { date, merchant, originalStatement, amount, referenceNumber,
+ *     isPending, pendingId, autoCategory }
+ *
+ * Conventions:
+ * - `amount` must be Monarch-sign-normalized (charges negative, payments positive)
+ * - `merchant` should be display-ready (applyMerchantMapping already applied)
+ * - `autoCategory` is non-null only if an auto-rule matched (e.g., "PAYMENT" → "Credit Card Payment")
+ * - `referenceNumber` is the institution's unique transaction ID (empty for pending)
+ * - `pendingId` is the generated hash ID for pending transactions (null for settled)
+ *
+ * @callback ProcessTransactionsHook
+ * @param {Array} settled - Raw settled transactions from fetchTransactions
+ * @param {Array} pending - Raw pending transactions from fetchTransactions
+ * @param {Object} options - Processing options
+ * @param {boolean} options.includePending - Whether to include pending transactions
+ * @returns {{settled: Array, pending: Array}}
+ */
+
+/**
+ * Extract the dedup reference ID from a settled transaction.
+ *
+ * @callback GetSettledRefIdHook
+ * @param {Object} tx - Processed settled transaction
+ * @returns {string} Reference ID (e.g., referenceNumber)
+ */
+
+/**
+ * Extract the dedup reference ID from a pending transaction.
+ *
+ * @callback GetPendingRefIdHook
+ * @param {Object} tx - Processed pending transaction
+ * @returns {string} Reference ID (e.g., pendingId hash)
+ */
+
+/**
+ * Resolve Monarch categories for transactions.
+ *
+ * Uses the integration's category resolution flow (stored mappings,
+ * auto-match, manual prompt). Returns transactions with
+ * `resolvedMonarchCategory` set.
+ *
+ * @callback ResolveCategoriesHook
+ * @param {Array} transactions - Processed transactions needing category resolution
+ * @param {string} accountId - Source account ID (for per-account settings)
+ * @returns {Promise<Array>} Transactions with resolvedMonarchCategory set
+ */
+
+/**
+ * Build the notes string for a single transaction's CSV row.
+ *
+ * Notes format differs per institution (e.g., MBNA stores referenceNumber
+ * for settled, pendingId for pending; Wealthsimple has multi-line memo +
+ * technical details + ws-tx: ID).
+ *
+ * @callback BuildTransactionNotesHook
+ * @param {Object} tx - Processed transaction
+ * @param {Object} options - Options
+ * @param {boolean} options.storeTransactionDetailsInNotes - User setting
+ * @returns {string} Notes string for the CSV row
+ */
+
+/**
+ * Get the set of stable field values to hash for pending transaction ID generation.
+ *
+ * The orchestrator (via pendingReconciliation service) handles the actual
+ * SHA-256 hashing. The hook just provides the ordered field values that
+ * should be hashed for this institution's transactions.
+ *
+ * Required when the integration supports pending transactions.
+ *
+ * @callback GetPendingIdFieldsHook
+ * @param {Object} tx - Raw transaction from the institution API
+ * @returns {Array<string>} Ordered field values to concatenate and hash
+ */
+
+/**
+ * Build balance history from statement/transaction data for first-sync reconstruction.
+ *
+ * Required when capabilities.hasBalanceReconstruction is true.
+ *
+ * @callback BuildBalanceHistoryHook
+ * @param {Object} params - Parameters
+ * @param {number} params.currentBalance - Current raw balance from source
+ * @param {Object} params.metadata - Metadata from fetchTransactions (e.g., statements, currentCycle)
+ * @param {string} params.fromDate - Start date for reconstruction
+ * @param {boolean} params.invertBalance - Whether invertBalance setting is enabled
+ * @returns {Array<{date: string, amount: number}>|null} Balance history entries or null
  */
 
 // This file is types-only — no runtime exports needed.

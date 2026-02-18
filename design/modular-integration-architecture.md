@@ -707,3 +707,134 @@ export function createInstitutionUIManager(integration, { storage, state, sink }
 6. **Generic UI manager** — All institution UIs follow same pattern, config-driven by injectionPoint.js
 7. **Build-time selection first** — Lazy loading designed-for but not implemented yet
 8. **Complete upload service replacement in Phase 6** — Generic orchestrator fully replaces per-institution services
+
+---
+
+## 11. Sync Hooks & Generic Orchestrator (Part C)
+
+### 11.1 Overview
+
+Part C introduces two generic services (`syncOrchestrator.js`, `pendingReconciliation.js`) and a **SyncHooks** interface that integration modules implement. This separates the universal sync workflow (CSV generation, dedup, upload, balance, credit limit, reconciliation) from institution-specific data access and transformation.
+
+### 11.2 SyncHooks Interface
+
+Each integration provides an object conforming to the `SyncHooks` typedef (defined in `src/integrations/types.js`):
+
+| Hook | Required | Signature | Purpose |
+|------|:--------:|-----------|---------|
+| `fetchTransactions` | ✅ | `(api, accountId, fromDate, {onProgress}) → {settled, pending, metadata}` | Fetch raw transactions from institution API |
+| `processTransactions` | ✅ | `(settled, pending, {includePending}) → {settled, pending}` | Normalize raw transactions (merchant cleanup, amount sign, auto-category) |
+| `getSettledRefId` | ✅ | `(tx) → string` | Extract dedup reference ID from a settled transaction |
+| `getPendingRefId` | ✅ | `(tx) → string` | Extract dedup reference ID from a pending transaction |
+| `resolveCategories` | ✅ | `(transactions, accountId) → Promise<transactions>` | Resolve Monarch categories (stored mappings, similarity, manual prompt) |
+| `buildTransactionNotes` | ✅ | `(tx, {storeTransactionDetailsInNotes}) → string` | Build per-row notes for CSV (reference numbers, pending IDs) |
+| `getPendingIdFields` | ⬡ | `(rawTx) → Array<string>` | Return stable field values for pending transaction hash ID generation |
+| `getSettledAmount` | ⬡ | `(rawSettledTx) → number` | Return Monarch-normalized amount for a raw settled transaction |
+| `buildBalanceHistory` | ⬡ | `({currentBalance, metadata, fromDate, invertBalance}) → Array\|null` | Build reconstructed balance history for first-sync |
+
+⬡ = Optional (only needed if integration supports pending transactions or balance reconstruction)
+
+### 11.3 Sync Orchestrator (`services/common/syncOrchestrator.js`)
+
+The orchestrator's `syncAccount()` function drives the complete sync workflow:
+
+```
+┌─────────────────────────────────────────────────┐
+│  syncAccount(integrationId, manifest, hooks,    │
+│              api, account, monarchAccount, ...)  │
+├─────────────────────────────────────────────────┤
+│                                                  │
+│  1. Credit Limit Sync (if hasCreditLimit)        │
+│     └── api.getCreditLimit() → creditLimitSync   │
+│                                                  │
+│  2. Transaction Sync (if hasTransactions)         │
+│     ├── hooks.fetchTransactions()                │
+│     ├── separateAndDeduplicateTransactions()     │
+│     ├── hooks.processTransactions()              │
+│     ├── filterDuplicate{Settled,Pending}()       │
+│     ├── hooks.resolveCategories()                │
+│     ├── convertTransactionsToMonarchCSV()        │
+│     │   └── hooks.buildTransactionNotes()        │
+│     └── uploadTransactionsAndSaveRefs()          │
+│                                                  │
+│  3. Pending Reconciliation (if enabled + prefix) │
+│     └── reconcilePendingTransactions()           │
+│         ├── hooks.getPendingIdFields()           │
+│         └── hooks.getSettledAmount()             │
+│                                                  │
+│  4. Balance Upload                               │
+│     ├── hooks.buildBalanceHistory() (first sync) │
+│     └── executeBalanceUploadStep()               │
+│                                                  │
+│  5. Update sync metadata                         │
+│     └── accountService.updateAccountInList()     │
+└─────────────────────────────────────────────────┘
+```
+
+**Key design decisions:**
+
+- **CSV generation is generic.** The orchestrator owns `convertTransactionsToMonarchCSV()` with a fixed column set (`Date`, `Merchant`, `Category`, `Account`, `Original Statement`, `Notes`, `Amount`, `Tags`). The only per-row hook is `buildTransactionNotes`.
+- **Filename construction is generic.** Format: `{integrationId}_transactions_{fromDate}_to_{today}.csv`
+- **Amount sign** is handled by the institution's `processTransactions` hook (not the orchestrator), because sign convention varies by institution.
+- **Progress dialog** is passed in by the caller; the orchestrator calls `initSteps`, `updateStepStatus`, `showSummary`.
+
+### 11.4 Pending Reconciliation (`services/common/pendingReconciliation.js`)
+
+Generic reconciliation engine that works for any integration supporting pending transactions.
+
+**ID Generation:**
+- Uses `txIdPrefix` from the integration manifest (e.g., `'mbna-tx'`, `'rb-tx'`)
+- Hashes stable field values from `getPendingIdFields(tx)` via SHA-256
+- Format: `{prefix}:{first 16 hex chars}` (e.g., `mbna-tx:a1b2c3d4e5f67890`)
+- ID is embedded in Monarch transaction notes for later extraction
+
+**Reconciliation Algorithm:**
+1. Fetch Monarch transactions tagged "Pending" for the account
+2. For each, extract the pending ID from notes via `extractPendingIdFromNotes()`
+3. Build hash maps for current source settled + pending transactions
+4. Compare:
+   - Hash matches settled → **settle** (update amount, remove tag, clean notes)
+   - Hash matches still-pending → **skip** (no action)
+   - Hash not found → **cancelled** → delete from Monarch
+
+**Exported functions:**
+
+| Function | Purpose |
+|----------|---------|
+| `generatePendingTransactionId(prefix, fields)` | Deterministic SHA-256 hash ID |
+| `extractPendingIdFromNotes(prefix, notes)` | Regex extraction from Monarch notes |
+| `cleanPendingIdFromNotes(prefix, notes)` | Remove ID preserving user content |
+| `separateAndDeduplicateTransactions({...})` | Split pending/settled, remove duplicates |
+| `reconcilePendingTransactions({...})` | Full reconciliation algorithm |
+| `formatReconciliationMessage(result)` | Human-readable progress message |
+
+### 11.5 MBNA as First Consumer
+
+MBNA is the first integration wired to the generic orchestrator:
+
+- **`integrations/mbna/sinks/monarch/syncHooks.js`** — Implements all SyncHooks (required + optional)
+- **`integrations/mbna/manifest.js`** — Added `txIdPrefix: 'mbna-tx'`
+- **`services/mbna-upload.js`** — Reduced from ~400 lines to ~210 lines; `syncMbnaAccount()` creates a progress dialog and calls `syncAccount()` from the orchestrator with MBNA manifest + hooks
+
+### 11.6 Wiring Pattern for New Integrations
+
+To wire an existing or new integration to the generic orchestrator:
+
+1. **Create `sinks/monarch/syncHooks.js`** implementing at minimum the 6 required hooks
+2. **Add `txIdPrefix`** to `manifest.js` (if integration supports pending transactions)
+3. **Export `syncHooks`** from the integration's `index.js` barrel
+4. **Refactor the upload service** to call `syncAccount()` from `syncOrchestrator.js`
+5. **Delete** inline sync logic (credit limit, CSV generation, balance, reconciliation) from the upload service
+
+### 11.7 Relationship to Existing Common Services
+
+The orchestrator composes the common services extracted in Part A:
+
+| Common Service | Called By | Purpose |
+|----------------|-----------|---------|
+| `creditLimitSync.js` | Orchestrator step 1 | Sync credit limit to Monarch |
+| `deduplication.js` | Orchestrator step 2 | Filter already-uploaded transactions |
+| `transactionUpload.js` | Orchestrator step 2 | Upload CSV + save refs |
+| `pendingReconciliation.js` | Orchestrator step 3 | Reconcile pending transactions |
+| `balanceUpload.js` | Orchestrator step 4 | Upload balance (single-day or history) |
+| `accountService.js` | Orchestrator step 5 | Update sync metadata |
