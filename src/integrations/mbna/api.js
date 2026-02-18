@@ -2,7 +2,7 @@
  * MBNA API Client
  *
  * Tampermonkey-agnostic API client for MBNA. Receives injected httpClient
- * and storage adapters — never calls GM_* directly.
+ * and auth handler. All MBNA API endpoints live under /waw/mbna/.
  *
  * Returns raw MBNA data. Does NOT transform data into Monarch format.
  *
@@ -15,28 +15,80 @@
 const BASE_URL = 'https://service.mbna.ca/waw/mbna';
 
 /**
+ * Standard headers sent with every MBNA API request
+ */
+const STANDARD_HEADERS = {
+  Accept: 'application/json, text/plain, */*',
+  Referer: 'https://service.mbna.ca/waw/mbna/index.html',
+  'Sec-Fetch-Dest': 'empty',
+  'Sec-Fetch-Mode': 'cors',
+  'Sec-Fetch-Site': 'same-origin',
+};
+
+/**
+ * Extract English card name from account info response
+ * @param {Object} data - Raw account info response
+ * @returns {string|null} Card name or null
+ */
+function extractCardName(data) {
+  const cardArtInfos = data.cardSummary?.cardArtInfos;
+  if (!Array.isArray(cardArtInfos)) {
+    return null;
+  }
+
+  const englishCard = cardArtInfos.find((info) => info.language === 'en');
+  return englishCard?.cardName || null;
+}
+
+/**
+ * Normalize a single account summary entry from /accounts/summary
+ * @param {Object} entry - Raw account summary entry
+ * @returns {Object} Normalized account object
+ */
+function normalizeAccountSummary(entry) {
+  return {
+    accountId: entry.accountId || null,
+    endingIn: entry.endingIn || null,
+    cardName: entry.cardName || null,
+    cardNameShort: entry.cardNameShort || null,
+    displayName: entry.cardName && entry.endingIn
+      ? `${entry.cardName} (${entry.endingIn})`
+      : entry.cardName || null,
+    primaryCardHolder: entry.primaryCardHolder ?? false,
+    raw: entry,
+  };
+}
+
+/**
  * Create an MBNA API client
  *
  * @param {import('../../core/httpClient').HttpClient} httpClient - Injected HTTP client
- * @param {import('../../core/storageAdapter').StorageAdapter} storage - Injected storage adapter
- * @returns {import('../types').IntegrationApi} API client instance
+ * @param {Object} auth - Auth handler with getCredentials()
+ * @returns {Object} API client instance
  */
-export function createApi(httpClient, _storage) {
+export function createApi(httpClient, auth) {
   /**
-   * Make a GET request to the MBNA API
-   * @param {string} path - API path (appended to BASE_URL)
-   * @param {Object} [options] - Additional options
+   * Make an authenticated GET request to the MBNA API.
+   * All MBNA endpoints use the same GET pattern with cookie auth.
+   *
+   * @param {string} path - API path relative to /waw/mbna/ (e.g., '/current-account')
    * @returns {Promise<Object>} Parsed JSON response
+   * @throws {Error} On auth failure, HTTP errors, or parse errors
    */
-  async function get(path, options = {}) {
-    const url = path.startsWith('http') ? path : `${BASE_URL}${path}`;
+  async function mbnaGet(path) {
+    const creds = auth.getCredentials();
+    if (!creds) {
+      throw new Error('MBNA session expired. Please refresh the page and log in again.');
+    }
+
+    const url = `${BASE_URL}${path}`;
 
     const response = await httpClient.request({
       method: 'GET',
       url,
       headers: {
-        accept: 'application/json, text/plain, */*',
-        ...options.headers,
+        ...STANDARD_HEADERS,
+        Cookie: creds.cookieHeader,
       },
     });
 
@@ -65,48 +117,72 @@ export function createApi(httpClient, _storage) {
 
   return {
     /**
-     * Fetch current account info.
+     * Fetch accounts summary (list of all accounts).
+     * GET /waw/mbna/accounts/summary
+     *
+     * This is the primary endpoint for discovering accounts and serves
+     * as a connection probe during initialization.
+     *
+     * @returns {Promise<Object[]>} Array of normalized account objects
+     */
+    async getAccountsSummary() {
+      const data = await mbnaGet('/accounts/summary');
+
+      if (!Array.isArray(data)) {
+        throw new Error('Unexpected MBNA accounts summary format: expected array');
+      }
+
+      return data.map(normalizeAccountSummary);
+    },
+
+    /**
+     * Fetch current account info (detailed, single-account view).
      * GET /waw/mbna/current-account
      *
-     * @returns {Promise<Object>} Account info with accountNumber, cardSummary
+     * @returns {Promise<Object>} Account info with accountId, card details, balance
      */
     async getAccountInfo() {
-      const data = await get('/current-account');
+      const data = await mbnaGet('/current-account');
+
+      const cardName = extractCardName(data);
+      const endingIn = data.cardSummary?.endingIn || null;
 
       return {
-        accountNumber: data.accountNumber || null,
-        endingIn: data.cardSummary?.endingIn || null,
-        cardName: extractCardName(data) || null,
+        accountId: data.accountNumber || null,
+        endingIn,
+        cardName,
+        displayName: cardName && endingIn ? `${cardName} (${endingIn})` : cardName || null,
+        currentBalance: data.cardSummary?.currentBalance ?? null,
+        creditAvailable: data.cardSummary?.creditAvailable ?? null,
         raw: data,
       };
     },
 
     /**
      * Fetch account snapshot (balance, credit limit, transactions summary).
-     * GET /waw/mbna/accounts/{accountNumber}/snapshot
+     * GET /waw/mbna/accounts/{accountId}/snapshot
      *
-     * @param {string} accountNumber - MBNA account number
+     * @param {string} accountId - MBNA account ID
      * @returns {Promise<Object>} Account snapshot
      */
-    async getAccountSnapshot(accountNumber) {
-      if (!accountNumber) {
-        throw new Error('Account number is required');
+    async getAccountSnapshot(accountId) {
+      if (!accountId) {
+        throw new Error('Account ID is required');
       }
 
-      const data = await get(`/accounts/${accountNumber}/snapshot`);
-      return data;
+      return mbnaGet(`/accounts/${accountId}/snapshot`);
     },
 
     /**
      * Fetch current balance for an account.
      * Delegates to getAccountSnapshot and extracts balance.
      *
-     * @param {string} accountNumber - MBNA account number
+     * @param {string} accountId - MBNA account ID
      * @returns {Promise<Object>} Balance data { amount, currency }
      */
-    async getBalance(accountNumber) {
+    async getBalance(accountId) {
       // TODO: Milestone 4 — implement using getAccountSnapshot()
-      const data = await this.getAccountSnapshot(accountNumber);
+      const data = await this.getAccountSnapshot(accountId);
       return {
         amount: null, // Will be extracted from snapshot
         currency: 'CAD',
@@ -118,44 +194,28 @@ export function createApi(httpClient, _storage) {
      * Fetch credit limit for an account.
      * Delegates to getAccountSnapshot and extracts credit limit.
      *
-     * @param {string} accountNumber - MBNA account number
+     * @param {string} accountId - MBNA account ID
      * @returns {Promise<number|null>} Credit limit or null
      */
-    async getCreditLimit(accountNumber) {
+    async getCreditLimit(accountId) {
       // TODO: Milestone 4 — implement using getAccountSnapshot()
-      await this.getAccountSnapshot(accountNumber);
+      await this.getAccountSnapshot(accountId);
       return null; // Will be extracted from snapshot
     },
 
     /**
      * Fetch transactions for an account within a date range.
      *
-     * @param {string} accountNumber - MBNA account number
-     * @param {string} startDate - Start date (YYYY-MM-DD)
-     * @param {string} endDate - End date (YYYY-MM-DD)
+     * @param {string} _accountId - MBNA account ID
+     * @param {string} _startDate - Start date (YYYY-MM-DD)
+     * @param {string} _endDate - End date (YYYY-MM-DD)
      * @returns {Promise<Object[]>} Array of raw transaction objects
      */
-    async getTransactions(_accountNumber, _startDate, endDate) {
+    async getTransactions(_accountId, _startDate, _endDate) {
       // TODO: Milestone 5 — implement transaction fetching
-      // Endpoint and response format TBD
       return [];
     },
   };
-}
-
-/**
- * Extract English card name from account info response
- * @param {Object} data - Raw account info response
- * @returns {string|null} Card name or null
- */
-function extractCardName(data) {
-  const cardArtInfo = data.cardSummary?.cardArtInfo;
-  if (!Array.isArray(cardArtInfo)) {
-    return null;
-  }
-
-  const englishCard = cardArtInfo.find((info) => info.language === 'en');
-  return englishCard?.cardName || null;
 }
 
 export default { createApi };

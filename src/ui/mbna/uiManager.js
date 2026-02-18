@@ -5,24 +5,49 @@
  * Uses the injection point configuration from the integration manifest.
  *
  * The MBNA site is an Angular SPA at service.mbna.ca with hash-based routing
- * (e.g., index.html#/accountsoverview). The UI is injected after `<app-quick-links>`.
+ * (e.g., index.html#/accountsoverview). The UI is injected after the appropriate
+ * target element based on the active page mode.
  *
  * @module ui/mbna/uiManager
  */
 
 import { debugLog } from '../../core/utils';
 import { STORAGE } from '../../core/config';
+import { INTEGRATIONS } from '../../core/integrationCapabilities';
 import stateManager from '../../core/state';
 import manifest from '../../integrations/mbna/manifest';
 import injectionPoint from '../../integrations/mbna/injectionPoint';
+import { createAuth } from '../../integrations/mbna/auth';
+import { createApi } from '../../integrations/mbna/api';
+import { createGMHttpClient } from '../../core/httpClient';
+import accountService from '../../services/common/accountService';
 import toast from '../toast';
 import { showSettingsModal } from '../components/settingsModal';
+import { showMonarchAccountSelectorWithCreate } from '../components/accountSelectorWithCreate';
 import { createConnectionStatus, updateMbnaStatus, updateMonarchStatus } from './components/connectionStatus';
 import { createMbnaUploadButton } from './components/uploadButton';
 import { createMonarchLoginLink } from '../components/monarchLoginLink';
 
 const BRAND_COLOR = manifest.brandColor;
 const CONTAINER_ID = injectionPoint.containerId;
+
+// ──────────────────────────────────────────────────────────────
+// Integration Instances (created once at module load)
+// ──────────────────────────────────────────────────────────────
+
+const auth = createAuth();
+const httpClient = createGMHttpClient();
+const api = createApi(httpClient, auth);
+
+// ──────────────────────────────────────────────────────────────
+// Module State — cached accounts from initialization probe
+// ──────────────────────────────────────────────────────────────
+
+/** @type {Object[]} Accounts fetched from getAccountsSummary() */
+let cachedAccounts = [];
+
+/** @type {boolean} Whether the initialization probe confirmed connectivity */
+let mbnaConnected = false;
 
 // ──────────────────────────────────────────────────────────────
 // SPA Navigation Manager
@@ -149,6 +174,40 @@ class MbnaNavigationManager {
 const navigationManager = new MbnaNavigationManager();
 
 // ──────────────────────────────────────────────────────────────
+// Initialization Probe
+// ──────────────────────────────────────────────────────────────
+
+/**
+ * Probe MBNA API connectivity by fetching accounts summary.
+ * Updates module state (cachedAccounts, mbnaConnected).
+ *
+ * @returns {Promise<boolean>} True if connection is valid
+ */
+async function probeConnection() {
+  // Quick check: no cookie → definitely not connected
+  const authStatus = auth.checkStatus();
+  if (!authStatus.authenticated) {
+    mbnaConnected = false;
+    cachedAccounts = [];
+    debugLog('[MBNA] Probe: no JSESSIONID cookie found');
+    return false;
+  }
+
+  try {
+    const accounts = await api.getAccountsSummary();
+    cachedAccounts = accounts;
+    mbnaConnected = true;
+    debugLog('[MBNA] Probe: connected, found', accounts.length, 'account(s)');
+    return true;
+  } catch (error) {
+    mbnaConnected = false;
+    cachedAccounts = [];
+    debugLog('[MBNA] Probe: API call failed:', error.message);
+    return false;
+  }
+}
+
+// ──────────────────────────────────────────────────────────────
 // UI Container
 // ──────────────────────────────────────────────────────────────
 
@@ -196,7 +255,7 @@ function findInjectionTarget() {
 }
 
 /**
- * Creates and appends the main UI container after `<app-quick-links>`
+ * Creates and appends the main UI container after the injection target
  * @returns {HTMLElement|null} Created container or null
  */
 function createUIContainer() {
@@ -295,34 +354,201 @@ function createUIContainer() {
 }
 
 // ──────────────────────────────────────────────────────────────
+// Upload Flow
+// ──────────────────────────────────────────────────────────────
+
+/**
+ * Handle the upload button click.
+ * Iterates through all MBNA accounts, checks for existing Monarch mapping,
+ * and shows account selector for any unmapped accounts.
+ *
+ * @param {HTMLButtonElement} button - The upload button (for disabling during operation)
+ */
+async function handleUploadClick(button) {
+  try {
+    button.disabled = true;
+
+    // If we don't have cached accounts, re-probe
+    if (cachedAccounts.length === 0) {
+      button.textContent = 'Fetching accounts...';
+      const connected = await probeConnection();
+      if (!connected || cachedAccounts.length === 0) {
+        throw new Error('Could not retrieve MBNA accounts. Please refresh the page.');
+      }
+    }
+
+    debugLog('[MBNA] Processing', cachedAccounts.length, 'account(s)');
+
+    // Iterate through all accounts
+    for (const account of cachedAccounts) {
+      if (!account.accountId) {
+        debugLog('[MBNA] Skipping account with no accountId:', account);
+        continue;
+      }
+
+      button.textContent = `Processing ${account.displayName || account.endingIn || 'account'}...`;
+
+      // Set current account in state manager
+      stateManager.setAccount({
+        id: account.accountId,
+        nickname: account.displayName || `MBNA Card (${account.endingIn})`,
+      });
+
+      // Check for existing Monarch account mapping
+      const existingMapping = accountService.getMonarchAccountMapping(
+        INTEGRATIONS.MBNA,
+        account.accountId,
+      );
+
+      if (existingMapping) {
+        debugLog('[MBNA] Existing mapping for', account.displayName, '→', existingMapping.displayName);
+        toast.show(`${account.displayName}: mapped to ${existingMapping.displayName}`, 'info', 3000);
+        // TODO: Milestone 4 — proceed to balance upload with existing mapping
+        continue;
+      }
+
+      // Check if this account was previously skipped
+      const accountData = accountService.getAccountData(INTEGRATIONS.MBNA, account.accountId);
+      if (accountData && accountData.syncEnabled === false) {
+        debugLog('[MBNA] Account', account.displayName, 'was skipped, ignoring');
+        continue;
+      }
+
+      // No existing mapping — show account selector for first-sync mapping
+      debugLog('[MBNA] No mapping for', account.displayName, '— showing account selector');
+
+      const createDefaults = {
+        defaultName: account.displayName || `MBNA ${account.cardName || 'Card'}`,
+        defaultType: 'credit',
+        defaultSubtype: 'credit_card',
+        accountType: 'credit',
+      };
+
+      // Wait for user to select/create/skip this account
+      await new Promise((resolve) => {
+        showMonarchAccountSelectorWithCreate(
+          [], // legacy param
+          (selectedAccount) => {
+            handleAccountSelection(selectedAccount, account);
+            resolve();
+          },
+          null, // legacy param
+          'credit',
+          createDefaults,
+        );
+      });
+    }
+
+    toast.show('Account mapping complete', 'success', 3000);
+  } catch (error) {
+    debugLog('[MBNA] Upload error:', error);
+    toast.show(error.message || 'Failed to start upload', 'error');
+  } finally {
+    button.textContent = 'Upload to Monarch';
+    button.disabled = false;
+  }
+}
+
+/**
+ * Handle Monarch account selection result.
+ * Saves the MBNA → Monarch mapping to account service.
+ *
+ * @param {Object|null} selectedAccount - The selected/created Monarch account, or null if cancelled
+ * @param {Object} account - MBNA account from accounts summary
+ */
+function handleAccountSelection(selectedAccount, account) {
+  if (!selectedAccount) {
+    debugLog('[MBNA] Account selection cancelled for', account.displayName);
+    toast.show('Account mapping cancelled', 'info', 2000);
+    return;
+  }
+
+  if (selectedAccount.cancelled) {
+    debugLog('[MBNA] Account selection cancelled by user for', account.displayName);
+    return;
+  }
+
+  if (selectedAccount.skipped) {
+    debugLog('[MBNA] Account skipped:', account.displayName);
+    // Save with syncEnabled: false so it's skipped on subsequent syncs
+    const skippedData = {
+      mbnaAccount: {
+        id: account.accountId,
+        endingIn: account.endingIn,
+        cardName: account.cardName,
+        displayName: account.displayName,
+      },
+      monarchAccount: null,
+      syncEnabled: false,
+      lastSyncDate: null,
+    };
+    accountService.upsertAccount(INTEGRATIONS.MBNA, skippedData);
+    toast.show(`${account.displayName}: skipped`, 'info', 2000);
+    return;
+  }
+
+  try {
+    // Save mapping to account service
+    const accountData = {
+      mbnaAccount: {
+        id: account.accountId,
+        endingIn: account.endingIn,
+        cardName: account.cardName,
+        displayName: account.displayName,
+      },
+      monarchAccount: {
+        id: selectedAccount.id,
+        displayName: selectedAccount.displayName,
+      },
+      syncEnabled: true,
+      lastSyncDate: null,
+    };
+
+    accountService.upsertAccount(INTEGRATIONS.MBNA, accountData);
+
+    debugLog('[MBNA] Account mapping saved:', {
+      mbna: account.displayName,
+      monarch: selectedAccount.displayName,
+    });
+    toast.show(`Mapped: ${account.displayName} → ${selectedAccount.displayName}`, 'success', 3000);
+  } catch (error) {
+    debugLog('[MBNA] Error saving account mapping:', error);
+    toast.show('Failed to save account mapping', 'error');
+  }
+}
+
+// ──────────────────────────────────────────────────────────────
 // UI Components Initialization
 // ──────────────────────────────────────────────────────────────
 
 /**
- * Initialize UI components inside the container
+ * Initialize UI components inside the container.
+ * Runs the connection probe, then renders connection status and upload button.
+ *
  * @param {HTMLElement} container
  */
-function initializeUIComponents(container) {
+async function initializeUIComponents(container) {
   try {
     // Clear existing dynamic content (keep header)
     const children = Array.from(container.children).slice(1);
     children.forEach((child) => child.remove());
 
-    // Connection status
+    // Connection status (show "Checking..." initially)
     const connectionStatus = createConnectionStatus();
     container.appendChild(connectionStatus);
 
-    // Upload button (starts as not-authenticated; will refresh on auth changes)
-    const uploadButton = createMbnaUploadButton(false);
+    // Run connection probe (cookie check + API call)
+    await probeConnection();
+
+    // Upload button — pass probe result and upload handler
+    const uploadButton = createMbnaUploadButton(mbnaConnected, handleUploadClick);
     container.appendChild(uploadButton);
 
-    // Wire up status monitoring
-    setupStatusMonitoring(connectionStatus);
-
-    // Immediate status update
+    // Update connection status indicators with probe results
     updateConnectionStatus(connectionStatus);
 
-    debugLog('[MBNA] UI components initialized');
+    debugLog('[MBNA] UI components initialized, connected:', mbnaConnected,
+      'accounts:', cachedAccounts.length);
     toast.show('MBNA Balance Uploader initialized', 'debug', 2000);
   } catch (error) {
     debugLog('[MBNA] Error initializing UI components:', error);
@@ -331,18 +557,8 @@ function initializeUIComponents(container) {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Status Monitoring
+// Status Updates
 // ──────────────────────────────────────────────────────────────
-
-/**
- * Wire state listeners for auth changes
- * @param {HTMLElement} connectionStatus
- */
-function setupStatusMonitoring(connectionStatus) {
-  stateManager.addListener('auth', () => {
-    updateConnectionStatus(connectionStatus);
-  });
-}
 
 /**
  * Refresh all connection status indicators
@@ -352,12 +568,11 @@ function updateConnectionStatus(connectionStatus) {
   if (!connectionStatus) return;
 
   try {
-    const state = stateManager.getState();
-    const mbnaAuth = state.auth.mbna || { authenticated: false };
+    // Check Monarch token
     const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN);
 
-    // Update MBNA indicator
-    updateMbnaStatus(connectionStatus, mbnaAuth.authenticated);
+    // Update MBNA indicator using probe result
+    updateMbnaStatus(connectionStatus, mbnaConnected);
 
     // Update Monarch indicator with login link
     updateMonarchStatus(connectionStatus, Boolean(monarchToken), () => {
@@ -370,10 +585,10 @@ function updateConnectionStatus(connectionStatus) {
       }
     });
 
-    // Refresh upload button
+    // Refresh upload button with current connection state
     const existingUpload = document.getElementById('mbna-upload-button-container');
     if (existingUpload) {
-      const newUploadButton = createMbnaUploadButton(mbnaAuth.authenticated);
+      const newUploadButton = createMbnaUploadButton(mbnaConnected, handleUploadClick);
       existingUpload.parentNode.replaceChild(newUploadButton, existingUpload);
     }
 
@@ -388,7 +603,7 @@ function updateConnectionStatus(connectionStatus) {
 // ──────────────────────────────────────────────────────────────
 
 /**
- * Wait for injection target element using MutationObserver
+ * Wait for injection target element using polling
  * @returns {Promise<HTMLElement>}
  */
 function waitForTargetElementAsync() {
@@ -472,7 +687,7 @@ export async function initMbnaUI() {
     // Try to create container immediately
     const container = createUIContainer();
     if (container) {
-      initializeUIComponents(container);
+      await initializeUIComponents(container);
       navigationManager.uiInitialized = true;
     } else {
       debugLog('[MBNA] Injection target not found yet, setting up MutationObserver...');
@@ -487,7 +702,10 @@ export async function initMbnaUI() {
 /**
  * Refresh the UI when auth state changes
  */
-export function refreshMbnaUI() {
+export async function refreshMbnaUI() {
+  // Re-probe to refresh connection state
+  await probeConnection();
+
   const connectionStatus = document.querySelector(`#${CONTAINER_ID} .connection-status-container`);
   if (connectionStatus) {
     updateConnectionStatus(connectionStatus);
