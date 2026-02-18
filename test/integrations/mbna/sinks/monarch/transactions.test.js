@@ -6,15 +6,15 @@ import {
   processMbnaTransactions,
   resolveMbnaCategories,
   filterDuplicateSettledTransactions,
-} from '../../../../src/integrations/mbna/monarch-mapper/transactions';
+} from '../../../../../src/integrations/mbna/sinks/monarch/transactions';
 
 // Mock dependencies
-jest.mock('../../../../src/core/utils', () => ({
+jest.mock('../../../../../src/core/utils', () => ({
   debugLog: jest.fn(),
   stringSimilarity: jest.fn(() => 0),
 }));
 
-jest.mock('../../../../src/mappers/merchant', () => ({
+jest.mock('../../../../../src/mappers/merchant', () => ({
   applyMerchantMapping: jest.fn((desc) => {
     // Simplified merchant mapping for tests
     if (!desc) return '';
@@ -28,7 +28,7 @@ jest.mock('../../../../src/mappers/merchant', () => ({
   }),
 }));
 
-jest.mock('../../../../src/core/integrationCapabilities', () => ({
+jest.mock('../../../../../src/core/integrationCapabilities', () => ({
   INTEGRATIONS: { MBNA: 'mbna' },
   getCapabilities: jest.fn(() => ({
     categoryMappings: true,
@@ -36,12 +36,12 @@ jest.mock('../../../../src/core/integrationCapabilities', () => ({
   })),
 }));
 
-jest.mock('../../../../src/services/common/configStore', () => ({
+jest.mock('../../../../../src/services/common/configStore', () => ({
   getCategoryMapping: jest.fn(() => null),
   setCategoryMapping: jest.fn(),
 }));
 
-jest.mock('../../../../src/mappers/category', () => ({
+jest.mock('../../../../../src/mappers/category', () => ({
   calculateAllCategorySimilarities: jest.fn(() => ({
     bankCategory: 'test',
     categoryGroups: [],
@@ -49,29 +49,29 @@ jest.mock('../../../../src/mappers/category', () => ({
   })),
 }));
 
-jest.mock('../../../../src/ui/components/categorySelector', () => ({
+jest.mock('../../../../../src/ui/components/categorySelector', () => ({
   showMonarchCategorySelector: jest.fn(),
 }));
 
-jest.mock('../../../../src/api/monarch', () => ({
+jest.mock('../../../../../src/api/monarch', () => ({
   __esModule: true,
   default: {
     getCategoriesAndGroups: jest.fn(() => Promise.resolve({ categories: [] })),
   },
 }));
 
-jest.mock('../../../../src/services/common/accountService', () => ({
+jest.mock('../../../../../src/services/common/accountService', () => ({
   __esModule: true,
   default: {
     getAccountData: jest.fn(() => null),
   },
 }));
 
-import { getCategoryMapping, setCategoryMapping } from '../../../../src/services/common/configStore';
-import { showMonarchCategorySelector } from '../../../../src/ui/components/categorySelector';
-import monarchApi from '../../../../src/api/monarch';
-import accountService from '../../../../src/services/common/accountService';
-import { stringSimilarity } from '../../../../src/core/utils';
+import { getCategoryMapping, setCategoryMapping } from '../../../../../src/services/common/configStore';
+import { showMonarchCategorySelector } from '../../../../../src/ui/components/categorySelector';
+import monarchApi from '../../../../../src/api/monarch';
+import accountService from '../../../../../src/services/common/accountService';
+import { stringSimilarity } from '../../../../../src/core/utils';
 
 describe('MBNA Transaction Processing', () => {
   describe('processMbnaTransactions', () => {

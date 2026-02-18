@@ -6,17 +6,17 @@
  *
  * Explicitly coupled to Monarch's data format — this is by design.
  *
- * @module integrations/mbna/monarch-mapper/transactions
+ * @module integrations/mbna/sinks/monarch/transactions
  */
 
-import { debugLog, stringSimilarity } from '../../../core/utils';
-import { applyMerchantMapping } from '../../../mappers/merchant';
-import { INTEGRATIONS } from '../../../core/integrationCapabilities';
-import { getCategoryMapping, setCategoryMapping } from '../../../services/common/configStore';
-import { calculateAllCategorySimilarities } from '../../../mappers/category';
-import { showMonarchCategorySelector } from '../../../ui/components/categorySelector';
-import monarchApi from '../../../api/monarch';
-import accountService from '../../../services/common/accountService';
+import { debugLog, stringSimilarity } from '../../../../core/utils';
+import { applyMerchantMapping } from '../../../../mappers/merchant';
+import { INTEGRATIONS } from '../../../../core/integrationCapabilities';
+import { getCategoryMapping, setCategoryMapping } from '../../../../services/common/configStore';
+import { calculateAllCategorySimilarities } from '../../../../mappers/category';
+import { showMonarchCategorySelector } from '../../../../ui/components/categorySelector';
+import monarchApi from '../../../../api/monarch';
+import accountService from '../../../../services/common/accountService';
 
 /**
  * Auto-categorization rules for MBNA transactions

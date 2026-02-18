@@ -8,21 +8,21 @@
  * @type {import('../types').IntegrationModule}
  */
 
-import * as monarchMapperNs from './monarch-mapper';
+import * as monarchMapperNs from './sinks/monarch';
 
 export { default as manifest } from './manifest';
-export { createApi } from './api';
-export { createAuth } from './auth';
-export { default as injectionPoint } from './injectionPoint';
+export { createApi } from './source/api';
+export { createAuth } from './source/auth';
+export { default as injectionPoint } from './source/injectionPoint';
 export {
   separateAndDeduplicateTransactions,
   generatePendingTransactionId,
   formatPendingIdForNotes,
-} from './monarch-mapper';
+} from './sinks/monarch';
 
 /**
  * Monarch mapper re-exported as a namespace object for registry registration.
- * Since monarch-mapper has no default export, we import all named exports
+ * Since the monarch sink adapter has no default export, we import all named exports
  * and re-export them as a single object.
  */
 export const monarchMapper = monarchMapperNs;

@@ -34,47 +34,55 @@ src/
 │   │
 │   ├── wealthsimple/
 │   │   ├── manifest.js               # Capabilities, metadata, settings, storage keys, match domains
-│   │   ├── api.js                    # API client (GraphQL, token parsing) — NO GM_* calls
-│   │   ├── auth.js                   # Credential/token capture logic
-│   │   ├── enrichment.js             # Transaction enrichment data fetcher
-│   │   ├── injectionPoint.js         # Where/how to inject UI on the institution site
-│   │   ├── accountTypes.js           # Account type constants (moved from config.js)
-│   │   ├── monarch-mapper/           # Institution-to-Monarch data mapper
-│   │   │   ├── transactionRules.js
-│   │   │   ├── transactionRulesHelpers.js
-│   │   │   ├── transactionRulesInvestment.js
-│   │   │   ├── creditCardMapper.js
-│   │   │   └── index.js
-│   │   └── index.js                  # Barrel export
+│   │   ├── index.js                  # Barrel export
+│   │   ├── source/                   # Institution-specific, sink-agnostic code
+│   │   │   ├── api.js                # API client (GraphQL, token parsing) — NO GM_* calls
+│   │   │   ├── auth.js               # Credential/token capture logic
+│   │   │   ├── enrichment.js         # Transaction enrichment data fetcher
+│   │   │   ├── injectionPoint.js     # Where/how to inject UI on the institution site
+│   │   │   └── accountTypes.js       # Account type constants (moved from config.js)
+│   │   └── sinks/
+│   │       └── monarch/              # Institution-to-Monarch data transformation
+│   │           ├── index.js
+│   │           ├── transactionRules.js
+│   │           ├── transactionRulesHelpers.js
+│   │           ├── transactionRulesInvestment.js
+│   │           └── creditCardMapper.js
 │   │
 │   ├── questrade/
 │   │   ├── manifest.js
-│   │   ├── api.js
-│   │   ├── auth.js
-│   │   ├── enrichment.js             # Order details fetching
-│   │   ├── injectionPoint.js
-│   │   ├── monarch-mapper/
-│   │   │   ├── transactionRules.js
-│   │   │   └── index.js
-│   │   └── index.js
+│   │   ├── index.js
+│   │   ├── source/
+│   │   │   ├── api.js
+│   │   │   ├── auth.js
+│   │   │   ├── enrichment.js         # Order details fetching
+│   │   │   └── injectionPoint.js
+│   │   └── sinks/
+│   │       └── monarch/
+│   │           ├── index.js
+│   │           └── transactionRules.js
 │   │
 │   ├── canadalife/
 │   │   ├── manifest.js
-│   │   ├── api.js
-│   │   ├── auth.js
-│   │   ├── injectionPoint.js
-│   │   ├── monarch-mapper/
-│   │   │   └── index.js              # Simple Buy/Sell mapping
-│   │   └── index.js
+│   │   ├── index.js
+│   │   ├── source/
+│   │   │   ├── api.js
+│   │   │   ├── auth.js
+│   │   │   └── injectionPoint.js
+│   │   └── sinks/
+│   │       └── monarch/
+│   │           └── index.js           # Simple Buy/Sell mapping
 │   │
 │   └── rogersbank/
 │       ├── manifest.js
-│       ├── api.js
-│       ├── auth.js                   # XHR interception credential capture
-│       ├── injectionPoint.js
-│       ├── monarch-mapper/
-│       │   └── index.js              # Bank category mapping
-│       └── index.js
+│       ├── index.js
+│       ├── source/
+│       │   ├── api.js
+│       │   ├── auth.js               # XHR interception credential capture
+│       │   └── injectionPoint.js
+│       └── sinks/
+│           └── monarch/
+│               └── index.js           # Bank category mapping
 │
 ├── sinks/                            # Data destination adapters
 │   ├── types.js                      # JSDoc typedefs for the data sink interface
@@ -276,9 +284,38 @@ export default {
 };
 ```
 
-### 3.6 Monarch Mapper (`monarch-mapper/`)
+### 3.6 Sink Adapters (`sinks/`)
 
-Institution-to-Monarch data transformation rules. Explicitly coupled to Monarch's data format.
+Each integration contains a `sinks/` directory with per-sink subdirectories for data transformation. The `source/` directory holds institution-specific, sink-agnostic code (API client, auth, balance reconstruction, injection point), while `sinks/{sink-name}/` holds destination-specific transformation logic.
+
+```
+{integration}/
+├── manifest.js          # Integration metadata (stays at root)
+├── index.js             # Barrel export (stays at root)
+├── source/              # Institution-specific, sink-agnostic code
+│   ├── api.js           # API client
+│   ├── auth.js          # Credential/token capture
+│   ├── injectionPoint.js
+│   └── ...              # Other institution-specific modules
+└── sinks/
+    └── monarch/         # Monarch-specific data transformation
+        ├── index.js
+        ├── transactions.js
+        ├── balanceFormatter.js
+        └── ...
+```
+
+When a new sink is added (e.g., Actual Budget), a parallel directory is created:
+
+```
+sinks/
+├── monarch/             # Existing Monarch transformations
+│   └── ...
+└── actualbudget/        # New sink transformations
+    └── ...
+```
+
+Example barrel export from `sinks/monarch/index.js`:
 
 ```js
 export { applyTransactionRule } from './transactionRules';
@@ -662,8 +699,8 @@ export function createInstitutionUIManager(integration, { storage, state, sink }
 
 ## 10. Key Design Decisions
 
-1. **Integration module boundary: institution-specific vs sink-coupled** — Everything inside `src/integrations/{institution}/` (top-level files) is institution-specific, sink-agnostic logic (e.g., balance reconstruction, transaction parsing, API clients). The `monarch-mapper/` subdirectory is the ONLY place for sink-coupled code (Monarch-specific transformations). When a new sink is added (e.g., Actual Budget), a parallel `{sink}-mapper/` directory would be created alongside `monarch-mapper/`. This separation ensures institution logic is reusable across sinks.
-2. **Transaction rules = "monarch-mapper"** — Institution-to-Monarch transformations, shipped in integration module, explicitly named to show Monarch coupling
+1. **Integration module boundary: `source/` vs `sinks/`** — Each integration module uses a `source/` + `sinks/` directory pattern. `source/` contains institution-specific, sink-agnostic code (API clients, auth, balance reconstruction, injection point). `sinks/monarch/` is the ONLY place for sink-coupled code (Monarch-specific transformations). When a new sink is added (e.g., Actual Budget), a parallel `sinks/actualbudget/` directory is created alongside `sinks/monarch/`. The `manifest.js` and `index.js` barrel remain at the integration root. This separation ensures institution logic is reusable across sinks.
+2. **Transaction rules = sink adapters** — Institution-to-sink transformations live in `sinks/{sink-name}/`, explicitly scoped to show sink coupling. For Monarch, these live in `sinks/monarch/`.
 3. **Merchant mapping stays in core** — Institution-agnostic second-pass normalization applied before Monarch submission
 4. **Enrichment in integration modules** — Uses onProgress callback for UI progress reporting without module knowing about UI
 5. **Holdings mappings at institution level** — Same security mapping reused across accounts

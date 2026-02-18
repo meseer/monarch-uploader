@@ -2,7 +2,7 @@
  * Tests for MBNA API Client
  */
 
-import { createApi } from '../../../src/integrations/mbna/api';
+import { createApi } from '../../../src/integrations/mbna/source/api';
 
 // Sample response matching the real MBNA /accounts/summary endpoint
 const SAMPLE_ACCOUNTS_SUMMARY = [

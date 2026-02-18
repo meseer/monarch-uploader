@@ -10,7 +10,7 @@ import {
   formatReconciliationMessage,
   formatPendingIdForNotes,
   extractPendingIdFromNotes,
-} from '../../../../src/integrations/mbna/monarch-mapper/pendingTransactions';
+} from '../../../../../src/integrations/mbna/sinks/monarch/pendingTransactions';
 
 describe('MBNA Pending Transactions', () => {
   describe('isPendingTransaction', () => {

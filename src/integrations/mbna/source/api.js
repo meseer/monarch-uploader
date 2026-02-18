@@ -6,7 +6,7 @@
  *
  * Returns raw MBNA data. Does NOT transform data into Monarch format.
  *
- * @module integrations/mbna/api
+ * @module integrations/mbna/source/api
  */
 
 /**
@@ -64,7 +64,7 @@ function normalizeAccountSummary(entry) {
 /**
  * Create an MBNA API client
  *
- * @param {import('../../core/httpClient').HttpClient} httpClient - Injected HTTP client
+ * @param {import('../../../core/httpClient').HttpClient} httpClient - Injected HTTP client
  * @param {Object} auth - Auth handler with getCredentials()
  * @returns {Object} API client instance
  */

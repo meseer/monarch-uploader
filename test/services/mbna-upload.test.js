@@ -107,21 +107,21 @@ jest.mock('../../src/utils/csv', () => ({
   convertMbnaTransactionsToMonarchCSV: jest.fn(() => 'csv-data'),
 }));
 
-jest.mock('../../src/integrations/mbna/monarch-mapper/transactions', () => ({
+jest.mock('../../src/integrations/mbna/sinks/monarch/transactions', () => ({
   processMbnaTransactions: jest.fn(() => ({ settled: [], pending: [], all: [] })),
   resolveMbnaCategories: jest.fn((txs) => txs),
   filterDuplicateSettledTransactions: jest.fn((txs) => ({ newTransactions: txs, duplicateCount: 0 })),
 }));
 
-jest.mock('../../src/integrations/mbna/balanceReconstruction', () => ({
+jest.mock('../../src/integrations/mbna/source/balanceReconstruction', () => ({
   buildBalanceHistory: jest.fn(() => []),
 }));
 
-jest.mock('../../src/integrations/mbna/monarch-mapper/balanceFormatter', () => ({
+jest.mock('../../src/integrations/mbna/sinks/monarch/balanceFormatter', () => ({
   formatBalanceHistoryForMonarch: jest.fn(() => []),
 }));
 
-jest.mock('../../src/integrations/mbna/monarch-mapper/pendingTransactions', () => ({
+jest.mock('../../src/integrations/mbna/sinks/monarch/pendingTransactions', () => ({
   separateAndDeduplicateTransactions: jest.fn(() => ({
     settled: [],
     pending: [],

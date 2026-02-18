@@ -11,7 +11,7 @@
  * Auth status is determined by making an actual API probe call —
  * if it returns 200, we're authenticated; if 401/403, we're not.
  *
- * @module integrations/mbna/auth
+ * @module integrations/mbna/source/auth
  */
 
 /**
@@ -25,7 +25,7 @@
  * The actual auth validation happens when the API probe call
  * succeeds or fails with 401/403.
  *
- * @returns {import('../types').IntegrationAuth} Auth handler instance
+ * @returns {import('../../types').IntegrationAuth} Auth handler instance
  */
 export function createAuth() {
   return {

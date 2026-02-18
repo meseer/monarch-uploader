@@ -23,10 +23,10 @@ import {
   separateAndDeduplicateTransactions,
   reconcileMbnaPendingTransactions,
   formatReconciliationMessage,
-} from '../integrations/mbna/monarch-mapper/pendingTransactions';
-import { processMbnaTransactions, resolveMbnaCategories, filterDuplicateSettledTransactions } from '../integrations/mbna/monarch-mapper/transactions';
-import { buildBalanceHistory } from '../integrations/mbna/balanceReconstruction';
-import { formatBalanceHistoryForMonarch } from '../integrations/mbna/monarch-mapper/balanceFormatter';
+} from '../integrations/mbna/sinks/monarch/pendingTransactions';
+import { processMbnaTransactions, resolveMbnaCategories, filterDuplicateSettledTransactions } from '../integrations/mbna/sinks/monarch/transactions';
+import { buildBalanceHistory } from '../integrations/mbna/source/balanceReconstruction';
+import { formatBalanceHistoryForMonarch } from '../integrations/mbna/sinks/monarch/balanceFormatter';
 import {
   getTransactionIdsFromArray,
   mergeAndRetainTransactions,

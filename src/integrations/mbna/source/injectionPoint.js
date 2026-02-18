@@ -9,13 +9,13 @@
  * to skip hidden instances, while the snapshot page uses
  * `div.snapshot-quick-link-wrapper`.
  *
- * @type {import('../types').IntegrationInjectionPoint}
- * @module integrations/mbna/injectionPoint
+ * @type {import('../../types').IntegrationInjectionPoint}
+ * @module integrations/mbna/source/injectionPoint
  */
 
-/** @type {import('../types').IntegrationInjectionPoint} */
+/** @type {import('../../types').IntegrationInjectionPoint} */
 const injectionPoint = {
-  // Global selectors fallback (empty  prefer per-page-mode selectors)
+  // Global selectors fallback (empty  prefer per-page-mode selectors)
   selectors: [],
 
   // MBNA uses Angular SPA with hash-based routing

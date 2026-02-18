@@ -2,7 +2,7 @@
  * Tests for MBNA → Monarch Balance Formatting
  */
 
-import { formatBalanceHistoryForMonarch } from '../../../../src/integrations/mbna/monarch-mapper/balanceFormatter';
+import { formatBalanceHistoryForMonarch } from '../../../../../src/integrations/mbna/sinks/monarch/balanceFormatter';
 
 describe('MBNA → Monarch Balance Formatting', () => {
   describe('formatBalanceHistoryForMonarch', () => {

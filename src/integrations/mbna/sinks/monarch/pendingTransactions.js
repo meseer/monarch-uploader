@@ -13,11 +13,11 @@
  *
  * ID format: mbna-tx:{first 16 chars of SHA-256 hex hash}
  *
- * @module integrations/mbna/monarch-mapper/pendingTransactions
+ * @module integrations/mbna/sinks/monarch/pendingTransactions
  */
 
-import { debugLog, formatDate } from '../../../core/utils';
-import monarchApi from '../../../api/monarch';
+import { debugLog, formatDate } from '../../../../core/utils';
+import monarchApi from '../../../../api/monarch';
 
 /**
  * Prefix for MBNA generated transaction IDs stored in Monarch notes

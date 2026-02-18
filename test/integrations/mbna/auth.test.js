@@ -6,7 +6,7 @@
  * validation happens via the API probe call.
  */
 
-import { createAuth } from '../../../src/integrations/mbna/auth';
+import { createAuth } from '../../../src/integrations/mbna/source/auth';
 
 describe('MBNA Auth', () => {
   let auth;

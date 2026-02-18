@@ -14,9 +14,9 @@
 import { debugLog } from '../../core/utils';
 import { STORAGE } from '../../core/config';
 import manifest from '../../integrations/mbna/manifest';
-import injectionPoint from '../../integrations/mbna/injectionPoint';
-import { createAuth } from '../../integrations/mbna/auth';
-import { createApi } from '../../integrations/mbna/api';
+import injectionPoint from '../../integrations/mbna/source/injectionPoint';
+import { createAuth } from '../../integrations/mbna/source/auth';
+import { createApi } from '../../integrations/mbna/source/api';
 import { createGMHttpClient } from '../../core/httpClient';
 import toast from '../toast';
 import { showSettingsModal } from '../components/settingsModal';

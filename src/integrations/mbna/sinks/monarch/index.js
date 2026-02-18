@@ -4,7 +4,7 @@
  * Barrel re-exports for all MBNA-to-Monarch transformation modules.
  * Explicitly coupled to Monarch's data model — this is by design.
  *
- * @module integrations/mbna/monarch-mapper
+ * @module integrations/mbna/sinks/monarch
  */
 
 // Transaction processing (merchant mapping, auto-categorization, amount inversion)

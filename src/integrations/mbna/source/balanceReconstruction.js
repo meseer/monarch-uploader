@@ -6,12 +6,12 @@
  * transactions day by day to build a balance history.
  *
  * This is institution-specific, sink-agnostic logic.
- * For Monarch-specific formatting, see monarch-mapper/balanceFormatter.js
+ * For Monarch-specific formatting, see sinks/monarch/balanceFormatter.js
  *
- * @module integrations/mbna/balanceReconstruction
+ * @module integrations/mbna/source/balanceReconstruction
  */
 
-import { debugLog } from '../../core/utils';
+import { debugLog } from '../../../core/utils';
 
 /**
  * Build balance history from statement data and current balance.

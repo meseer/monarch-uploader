@@ -2,7 +2,7 @@
  * Tests for MBNA Balance Reconstruction
  */
 
-import { buildBalanceHistory } from '../../../src/integrations/mbna/balanceReconstruction';
+import { buildBalanceHistory } from '../../../src/integrations/mbna/source/balanceReconstruction';
 
 describe('MBNA Balance Reconstruction', () => {
   describe('buildBalanceHistory', () => {

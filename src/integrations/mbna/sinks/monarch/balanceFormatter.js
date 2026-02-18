@@ -4,7 +4,7 @@
  * Transforms raw MBNA balance history into Monarch-compatible format.
  * Handles the sign inversion: MBNA positive (owed) → Monarch negative (liability).
  *
- * @module integrations/mbna/monarch-mapper/balanceFormatter
+ * @module integrations/mbna/sinks/monarch/balanceFormatter
  */
 
 /**
