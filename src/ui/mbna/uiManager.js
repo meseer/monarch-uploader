@@ -34,6 +34,7 @@ const CONTAINER_ID = injectionPoint.containerId;
 class MbnaNavigationManager {
   constructor() {
     this.currentHash = window.location.hash;
+    this.currentPageModeId = null;
     this.isInitialized = false;
     this.hashCheckInterval = null;
     this.uiInitialized = false;
@@ -78,8 +79,16 @@ class MbnaNavigationManager {
 
       const shouldShow = this.shouldShowUI();
       const hasUI = this.hasUIContainer();
+      const newPageModeId = getActivePageMode()?.id || null;
+      const pageModeChanged = newPageModeId !== this.currentPageModeId;
+      this.currentPageModeId = newPageModeId;
 
-      if (shouldShow && !hasUI) {
+      if (shouldShow && pageModeChanged && hasUI) {
+        // Page mode changed (e.g., dashboard → snapshot): cleanup and re-inject
+        debugLog('[MBNA] Page mode changed, re-injecting UI at new target');
+        this.cleanupUI();
+        await this.reinitializeUI();
+      } else if (shouldShow && !hasUI) {
         debugLog('[MBNA] Re-initializing UI after navigation');
         await this.reinitializeUI();
       } else if (!shouldShow && hasUI) {
@@ -144,13 +153,44 @@ const navigationManager = new MbnaNavigationManager();
 // ──────────────────────────────────────────────────────────────
 
 /**
- * Find the injection target element using selectors from injectionPoint config
+ * Get the active page mode based on current URL hash
+ * @returns {object|null} The matching page mode or null
+ */
+function getActivePageMode() {
+  const hash = window.location.hash;
+  return injectionPoint.pageModes.find((mode) => mode.urlPattern.test(hash)) || null;
+}
+
+/**
+ * Check if an element is visible in the DOM
+ * @param {HTMLElement} el
+ * @returns {boolean}
+ */
+function isElementVisible(el) {
+  return el.offsetParent !== null || el.offsetWidth > 0 || el.offsetHeight > 0;
+}
+
+/**
+ * Find the injection target element using per-page-mode selectors.
+ * Falls back to global selectors if no page mode matches.
+ * Filters out hidden elements when multiple matches exist.
  * @returns {HTMLElement|null}
  */
 function findInjectionTarget() {
-  for (const { selector } of injectionPoint.selectors) {
-    const el = document.querySelector(selector);
-    if (el) return el;
+  const pageMode = getActivePageMode();
+  const selectors = pageMode?.selectors?.length ? pageMode.selectors : injectionPoint.selectors;
+
+  for (const { selector } of selectors) {
+    const elements = document.querySelectorAll(selector);
+    if (elements.length === 0) continue;
+
+    // Prefer the first visible element
+    for (const el of elements) {
+      if (isElementVisible(el)) return el;
+    }
+
+    // Fallback: return first match even if visibility check fails
+    return elements[0];
   }
   return null;
 }
@@ -249,7 +289,8 @@ function createUIContainer() {
   // Insert after the target element
   target.parentNode.insertBefore(container, target.nextSibling);
 
-  debugLog('[MBNA] UI container created and inserted after', injectionPoint.selectors[0].selector);
+  const pageMode = getActivePageMode();
+  debugLog('[MBNA] UI container created and inserted after target on page mode:', pageMode?.id || 'unknown');
   return container;
 }
 
