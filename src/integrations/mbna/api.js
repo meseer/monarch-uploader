@@ -297,6 +297,8 @@ export function createApi(httpClient, _auth) {
      *
      * @param {string} accountId - MBNA account ID
      * @param {string} startDate - Start date (YYYY-MM-DD)
+     * @param {Object} [options] - Optional parameters
+     * @param {Function} [options.onProgress] - Progress callback: (current, total, closingDate) => void
      * @returns {Promise<Object>} Transaction result
      *   {
      *     currentCycle: { pending: [], settled: [] },
@@ -305,7 +307,7 @@ export function createApi(httpClient, _auth) {
      *     allPending: [],    // All pending transactions (current cycle only)
      *   }
      */
-    async getTransactions(accountId, startDate) {
+    async getTransactions(accountId, startDate, { onProgress } = {}) {
       if (!accountId) {
         throw new Error('Account ID is required');
       }
@@ -335,7 +337,13 @@ export function createApi(httpClient, _auth) {
 
       // Step 4: Fetch each relevant statement
       const statements = [];
-      for (const closingDate of relevantDates) {
+      for (let i = 0; i < relevantDates.length; i += 1) {
+        const closingDate = relevantDates[i];
+
+        if (onProgress) {
+          onProgress(i + 1, relevantDates.length, closingDate);
+        }
+
         const statement = await this.getStatementByClosingDate(accountId, closingDate);
         statements.push({
           closingDate,

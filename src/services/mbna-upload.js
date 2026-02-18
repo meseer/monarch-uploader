@@ -203,9 +203,16 @@ export async function syncMbnaAccount(account, monarchAccount, api, options = {}
     // ── STEP 2: Fetch & Upload Transactions ────────────────
     if (abortController.signal.aborted) throw new Error('Cancelled');
 
-    progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Fetching transactions...');
+    progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Fetching current cycle...');
 
-    const txResult = await api.getTransactions(accountId, fromDate);
+    const txResult = await api.getTransactions(accountId, fromDate, {
+      onProgress: (current, total) => {
+        progressDialog.updateStepStatus(
+          accountId, 'transactions', 'processing',
+          `Loading statement ${current}/${total}...`,
+        );
+      },
+    });
     const { allSettled: rawSettled, allPending: rawPending, statements, currentCycle } = txResult;
 
     debugLog(`[MBNA] Fetched ${rawSettled.length} settled, ${rawPending.length} pending transactions`);

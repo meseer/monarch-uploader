@@ -687,6 +687,37 @@ describe('MBNA API Client', () => {
       expect(result.statements[0].transactions).toHaveLength(3);
     });
 
+    it('should call onProgress callback for each statement fetched', async () => {
+      mockHttpClient = createRoutedMockHttpClient({
+        '/snapshot': { accountTransactions: { pendingTransactions: [], recentTransactions: [] } },
+        '/closingdatedropdown': { closingDate: { mostRecentTransactions: 'x', '2026-01-14': 'Jan', '2025-12-15': 'Dec' } },
+        '/closingdate/2026-01-14': SAMPLE_STATEMENT_RESPONSE,
+        '/closingdate/2025-12-15': {
+          statement: { statementBalance: 50, statementClosingDate: '2025-12-15', accountTransactions: [] },
+        },
+      });
+      api = createApi(mockHttpClient, mockAuth);
+
+      const onProgress = jest.fn();
+      await api.getTransactions('00240691635', '2025-11-01', { onProgress });
+
+      expect(onProgress).toHaveBeenCalledTimes(2);
+      expect(onProgress).toHaveBeenNthCalledWith(1, 1, 2, '2026-01-14');
+      expect(onProgress).toHaveBeenNthCalledWith(2, 2, 2, '2025-12-15');
+    });
+
+    it('should not fail when onProgress is not provided', async () => {
+      mockHttpClient = createRoutedMockHttpClient({
+        '/snapshot': { accountTransactions: { pendingTransactions: [], recentTransactions: [] } },
+        '/closingdatedropdown': { closingDate: { mostRecentTransactions: 'x', '2026-01-14': 'Jan' } },
+        '/closingdate/2026-01-14': SAMPLE_STATEMENT_RESPONSE,
+      });
+      api = createApi(mockHttpClient, mockAuth);
+
+      // Should not throw when no onProgress option is passed
+      await expect(api.getTransactions('00240691635', '2025-12-01')).resolves.toBeDefined();
+    });
+
     it('should handle no startDate (fetch all available)', async () => {
       mockHttpClient = createRoutedMockHttpClient({
         '/snapshot': { accountTransactions: { pendingTransactions: [], recentTransactions: [] } },
