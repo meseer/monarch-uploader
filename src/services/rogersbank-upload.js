@@ -745,7 +745,7 @@ export async function uploadRogersBankToMonarch() {
     // On regular sync, use fullHistory=false (500 transactions is sufficient)
     const useFullHistory = firstSync;
 
-    progressDialog.updateStepStatus(rogersAccountId, 'balance', 'processing', 'Fetching transactions...');
+    progressDialog.updateStepStatus(rogersAccountId, 'pendingReconciliation', 'processing', 'Fetching transactions...');
     const txResult = await fetchRogersBankTransactions(fromDate, toDate, useFullHistory);
 
     // Warn if we hit the API limit on first sync
