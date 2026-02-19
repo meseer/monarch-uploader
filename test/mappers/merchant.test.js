@@ -139,6 +139,36 @@ describe('Merchant Mapping Utilities', () => {
       expect(applyMerchantMapping('OF MICE AND MEN')).toBe('Of Mice and Men');
     });
 
+    test('should remove trailing QPS suffix', () => {
+      expect(applyMerchantMapping('SOME MERCHANT QPS')).toBe('Some Merchant');
+      expect(applyMerchantMapping('payment qps')).toBe('Payment');
+      expect(applyMerchantMapping('GROCERY STORE QPS')).toBe('Grocery Store');
+      // Mixed case
+      expect(applyMerchantMapping('RESTAURANT Qps')).toBe('Restaurant');
+    });
+
+    test('should not remove QPS when part of a word', () => {
+      expect(applyMerchantMapping('QPSTORE')).toBe('Qpstore');
+      expect(applyMerchantMapping('MYQPS SERVICE')).toBe('Myqps Service');
+    });
+
+    test('should handle QPS as the entire merchant name', () => {
+      expect(applyMerchantMapping('QPS')).toBe('');
+      expect(applyMerchantMapping('qps')).toBe('');
+    });
+
+    test('should transform DoorDash compact format to readable format', () => {
+      expect(applyMerchantMapping('DD/DOORDASHUNCLEFATIHS')).toBe('Door Dash - Unclefatihs');
+      expect(applyMerchantMapping('DD/DOORDASH UNCLE FATIHS')).toBe('Door Dash - Uncle Fatihs');
+      expect(applyMerchantMapping('dd/doordashpizzahut')).toBe('Door Dash - Pizzahut');
+      expect(applyMerchantMapping('DD/DOORDASH')).toBe('Door Dash');
+    });
+
+    test('should not transform merchants that are not DoorDash', () => {
+      expect(applyMerchantMapping('DD SOMETHING')).toBe('Dd Something');
+      expect(applyMerchantMapping('DOORDASH RESTAURANT')).toBe('Doordash Restaurant');
+    });
+
     test('should handle edge cases', () => {
       expect(applyMerchantMapping('   ')).toBe('');
       expect(applyMerchantMapping('A')).toBe('A');
@@ -250,6 +280,11 @@ describe('Merchant Mapping Utilities', () => {
         { input: 'NETFLIX.COM*ABC123 LOS GATOS CA', expected: 'Netflix.com*abc123 Los Gatos Ca' },
         // STR* prefix removed first, then no asterisk remains
         { input: 'STR*SOME ONLINE SERVICE', expected: 'Some Online Service' },
+        // DoorDash compact format
+        { input: 'DD/DOORDASHUNCLEFATIHS', expected: 'Door Dash - Unclefatihs' },
+        { input: 'DD/DOORDASH THAI EXPRESS', expected: 'Door Dash - Thai Express' },
+        // QPS suffix removal
+        { input: 'SOME RESTAURANT QPS', expected: 'Some Restaurant' },
       ];
 
       testCases.forEach(({ input, expected }) => {

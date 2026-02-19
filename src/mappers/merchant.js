@@ -38,6 +38,14 @@ const PREFIXES_TO_REMOVE = [
 ];
 
 /**
+ * Configuration for suffixes to remove from merchant names
+ * Each suffix should be lowercase for consistent matching
+ */
+const SUFFIXES_TO_REMOVE = [
+  { suffix: 'qps', description: 'QPS payment suffix' },
+];
+
+/**
  * Remove leading prefixes from merchant name
  * @param {string} merchantName - Merchant name to process
  * @returns {string} Merchant name with prefix removed (if found)
@@ -102,6 +110,57 @@ function stripStoreNumbers(merchantName, enabled = true) {
 }
 
 /**
+ * Remove trailing suffixes from merchant name
+ * @param {string} merchantName - Merchant name to process
+ * @returns {string} Merchant name with suffix removed (if found)
+ */
+function removeTrailingSuffixes(merchantName) {
+  let transformed = merchantName.trim();
+  const lowerTransformed = transformed.toLowerCase();
+
+  for (const { suffix, description } of SUFFIXES_TO_REMOVE) {
+    if (lowerTransformed.endsWith(suffix)) {
+      // Ensure it's a standalone suffix (preceded by space or is the whole string)
+      const beforeSuffix = transformed.substring(0, transformed.length - suffix.length);
+      if (beforeSuffix === '' || beforeSuffix.endsWith(' ')) {
+        transformed = beforeSuffix.trim();
+        debugLog(`Removed ${suffix.toUpperCase()} suffix from merchant (${description}):`, {
+          original: merchantName,
+          transformed,
+        });
+        break;
+      }
+    }
+  }
+
+  return transformed;
+}
+
+/**
+ * Transform DoorDash merchant names from compact format to readable format
+ * e.g., "DD/DOORDASHUNCLEFATIHS" -> "Door Dash - Unclefatihs"
+ * e.g., "DD/DOORDASH UNCLE FATIHS" -> "Door Dash - Uncle Fatihs"
+ * @param {string} merchantName - Merchant name to process
+ * @returns {{ transformed: string, matched: boolean }} Result with transformed name and match flag
+ */
+function transformDoorDash(merchantName) {
+  const match = merchantName.match(/^DD\/DOORDASH(.*)$/i);
+  if (!match) {
+    return { transformed: merchantName, matched: false };
+  }
+
+  const restaurantPart = match[1].trim();
+  const transformed = restaurantPart ? `Door Dash - ${restaurantPart}` : 'Door Dash';
+
+  debugLog('Transformed DoorDash merchant name:', {
+    original: merchantName,
+    transformed,
+  });
+
+  return { transformed, matched: true };
+}
+
+/**
  * Apply merchant name transformations
  * @param {string} merchantName - Original merchant name
  * @param {Object} options - Optional configuration
@@ -120,7 +179,10 @@ export function applyMerchantMapping(merchantName, options = {}) {
   // Rule 1: Remove leading prefixes (TST-, SQ *, LS, SP, STR*)
   transformed = removeLeadingPrefixes(transformed);
 
-  // Rule 1b: Strip asterisk suffix for Amazon/AMZN merchants only
+  // Rule 1b: Remove trailing suffixes (e.g., QPS)
+  transformed = removeTrailingSuffixes(transformed);
+
+  // Rule 1c: Strip asterisk suffix for Amazon/AMZN merchants only
   // e.g., "Amazon.ca*RA6HH70U3 TORONTO ON" -> "Amazon.ca"
   // e.g., "AMZN MKTP US*ABC123DEF" -> "AMZN MKTP US"
   // Only applies when the text before '*' starts with "amazon" or "amzn" (case-insensitive)
@@ -134,6 +196,12 @@ export function applyMerchantMapping(merchantName, options = {}) {
         transformed,
       });
     }
+  }
+
+  // Rule 1d: Transform DoorDash compact format to readable format
+  const doorDashResult = transformDoorDash(transformed);
+  if (doorDashResult.matched) {
+    transformed = doorDashResult.transformed;
   }
 
   // Rule 2: Transform Impark variants to standardized name

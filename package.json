@@ -1,6 +1,6 @@
 {
   "name": "monarch-uploader",
-  "version": "5.94.0",
+  "version": "5.95.0",
   "description": "Violentmonkey userscript for uploading Questrade, Wealthsimple, Canada Life, and Rogers Bank data to Monarch Money",
   "main": "dist/monarch-uploader.user.js",
   "scripts": {
