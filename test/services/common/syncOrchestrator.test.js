@@ -2,13 +2,36 @@
  * Tests for the generic sync orchestrator
  */
 
-import { syncAccount } from '../../../src/services/common/syncOrchestrator';
+import { syncAccount, prepareAndSyncAccount } from '../../../src/services/common/syncOrchestrator';
 
 // ── Mocks ───────────────────────────────────────────────────
 
 jest.mock('../../../src/core/utils', () => ({
   debugLog: jest.fn(),
   getTodayLocal: jest.fn(() => '2024-01-15'),
+  getLastUpdateDate: jest.fn(() => null),
+  calculateFromDateWithLookback: jest.fn(() => '2024-01-01'),
+}));
+
+jest.mock('../../../src/core/state', () => ({
+  __esModule: true,
+  default: {
+    setAccount: jest.fn(),
+  },
+}));
+
+jest.mock('../../../src/services/common/accountMappingResolver', () => ({
+  resolveAccountMapping: jest.fn(() => Promise.resolve({
+    monarchAccount: { id: 'monarch-1', displayName: 'Test Monarch Account' },
+  })),
+}));
+
+jest.mock('../../../src/ui/components/progressDialog', () => ({
+  showProgressDialog: jest.fn(),
+}));
+
+jest.mock('../../../src/ui/components/datePicker', () => ({
+  showDatePickerWithOptionsPromise: jest.fn(),
 }));
 
 jest.mock('../../../src/core/integrationCapabilities', () => ({
@@ -77,8 +100,13 @@ jest.mock('../../../src/utils/csv', () => ({
   convertToCSV: jest.fn(() => 'Date,Merchant\n2024-01-15,Amazon'),
 }));
 
-// Get reference to the mocked account service
+// Get references to the mocked modules
 const mockAccountService = require('../../../src/services/common/accountService').default;
+const { resolveAccountMapping } = require('../../../src/services/common/accountMappingResolver');
+const { getLastUpdateDate } = require('../../../src/core/utils');
+const { showProgressDialog } = require('../../../src/ui/components/progressDialog');
+const { showDatePickerWithOptionsPromise } = require('../../../src/ui/components/datePicker');
+const stateManager = require('../../../src/core/state').default;
 
 // ── Helpers ─────────────────────────────────────────────────
 
@@ -157,6 +185,18 @@ const defaultManifest = {
 };
 
 // ── Tests ───────────────────────────────────────────────────
+
+function createMockProgressDialogForPrepare() {
+  return {
+    initSteps: jest.fn(),
+    updateStepStatus: jest.fn(),
+    updateProgress: jest.fn(),
+    updateBalanceChange: jest.fn(),
+    onCancel: jest.fn(),
+    hideCancel: jest.fn(),
+    showSummary: jest.fn(),
+  };
+}
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -427,5 +467,222 @@ describe('syncAccount', () => {
     expect(progressDialog.updateStepStatus).toHaveBeenCalledWith(
       'acc-1', 'transactions', 'success', expect.any(String),
     );
+  });
+});
+
+describe('prepareAndSyncAccount', () => {
+  const prepareManifest = {
+    ...defaultManifest,
+    displayName: 'Test Integration',
+    accountKeyName: 'testAccount',
+    logoCloudinaryId: 'test-logo',
+    accountCreateDefaults: {
+      defaultType: 'credit',
+      defaultSubtype: 'credit_card',
+      accountType: 'credit',
+    },
+  };
+
+  beforeEach(() => {
+    const mockPD = createMockProgressDialogForPrepare();
+    showProgressDialog.mockReturnValue(mockPD);
+    getLastUpdateDate.mockReturnValue(null); // first sync by default
+    showDatePickerWithOptionsPromise.mockResolvedValue({ date: '2024-01-01', reconstructBalance: true });
+  });
+
+  it('should set state manager before resolving mapping', async () => {
+    const hooks = createMockHooks();
+    hooks.buildAccountEntry = jest.fn((a) => ({ id: a.accountId }));
+    const api = createMockApi();
+
+    await prepareAndSyncAccount({
+      integrationId: 'test',
+      manifest: prepareManifest,
+      hooks,
+      api,
+      account: { accountId: 'acc-1' },
+      accountDisplayName: 'Test Card',
+    });
+
+    expect(stateManager.setAccount).toHaveBeenCalledWith('acc-1', 'Test Card');
+  });
+
+  it('should return skipped when mapping is skipped', async () => {
+    resolveAccountMapping.mockResolvedValueOnce({ skipped: true });
+    const hooks = createMockHooks();
+    hooks.buildAccountEntry = jest.fn();
+    const api = createMockApi();
+
+    const result = await prepareAndSyncAccount({
+      integrationId: 'test',
+      manifest: prepareManifest,
+      hooks,
+      api,
+      account: { accountId: 'acc-1' },
+      accountDisplayName: 'Test Card',
+    });
+
+    expect(result).toEqual({ success: true, message: 'Skipped', skipped: true });
+    expect(showProgressDialog).not.toHaveBeenCalled();
+  });
+
+  it('should return cancelled when mapping is cancelled', async () => {
+    resolveAccountMapping.mockResolvedValueOnce({ cancelled: true });
+    const hooks = createMockHooks();
+    hooks.buildAccountEntry = jest.fn();
+    const api = createMockApi();
+
+    const result = await prepareAndSyncAccount({
+      integrationId: 'test',
+      manifest: prepareManifest,
+      hooks,
+      api,
+      account: { accountId: 'acc-1' },
+      accountDisplayName: 'Test Card',
+    });
+
+    expect(result).toEqual({ success: false, message: 'Cancelled' });
+    expect(showProgressDialog).not.toHaveBeenCalled();
+  });
+
+  it('should show date picker on first sync', async () => {
+    const hooks = createMockHooks();
+    hooks.buildAccountEntry = jest.fn((a) => ({ id: a.accountId }));
+    const api = createMockApi();
+
+    await prepareAndSyncAccount({
+      integrationId: 'test',
+      manifest: prepareManifest,
+      hooks,
+      api,
+      account: { accountId: 'acc-1' },
+      accountDisplayName: 'Test Card',
+    });
+
+    expect(showDatePickerWithOptionsPromise).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining('Test Card'),
+      expect.objectContaining({ showReconstructCheckbox: true }),
+    );
+  });
+
+  it('should return cancelled when date picker is cancelled', async () => {
+    showDatePickerWithOptionsPromise.mockResolvedValueOnce(null);
+    const hooks = createMockHooks();
+    hooks.buildAccountEntry = jest.fn((a) => ({ id: a.accountId }));
+    const api = createMockApi();
+
+    const result = await prepareAndSyncAccount({
+      integrationId: 'test',
+      manifest: prepareManifest,
+      hooks,
+      api,
+      account: { accountId: 'acc-1' },
+      accountDisplayName: 'Test Card',
+    });
+
+    expect(result).toEqual({ success: false, message: 'Date selection cancelled' });
+  });
+
+  it('should call suggestStartDate hook on first sync when available', async () => {
+    const hooks = createMockHooks();
+    hooks.buildAccountEntry = jest.fn((a) => ({ id: a.accountId }));
+    hooks.suggestStartDate = jest.fn(() => Promise.resolve({ date: '2023-10-01', description: 'test suggestion' }));
+    const api = createMockApi();
+
+    await prepareAndSyncAccount({
+      integrationId: 'test',
+      manifest: prepareManifest,
+      hooks,
+      api,
+      account: { accountId: 'acc-1' },
+      accountDisplayName: 'Test Card',
+    });
+
+    expect(hooks.suggestStartDate).toHaveBeenCalledWith(api, 'acc-1');
+    expect(showDatePickerWithOptionsPromise).toHaveBeenCalledWith(
+      '2023-10-01',
+      expect.any(String),
+      expect.any(Object),
+    );
+  });
+
+  it('should use 90-day fallback when suggestStartDate returns null', async () => {
+    const hooks = createMockHooks();
+    hooks.buildAccountEntry = jest.fn((a) => ({ id: a.accountId }));
+    hooks.suggestStartDate = jest.fn(() => Promise.resolve(null));
+    const api = createMockApi();
+
+    await prepareAndSyncAccount({
+      integrationId: 'test',
+      manifest: prepareManifest,
+      hooks,
+      api,
+      account: { accountId: 'acc-1' },
+      accountDisplayName: 'Test Card',
+    });
+
+    // Should have used a date ~90 days ago (not the hook's suggestion)
+    const calledDate = showDatePickerWithOptionsPromise.mock.calls[0][0];
+    expect(calledDate).toBeTruthy();
+    expect(calledDate).not.toBe('2023-10-01');
+  });
+
+  it('should skip date picker on subsequent sync and use lookback', async () => {
+    getLastUpdateDate.mockReturnValue('2024-01-10'); // not first sync
+    const hooks = createMockHooks();
+    hooks.buildAccountEntry = jest.fn((a) => ({ id: a.accountId }));
+    const api = createMockApi();
+
+    await prepareAndSyncAccount({
+      integrationId: 'test',
+      manifest: prepareManifest,
+      hooks,
+      api,
+      account: { accountId: 'acc-1' },
+      accountDisplayName: 'Test Card',
+    });
+
+    expect(showDatePickerWithOptionsPromise).not.toHaveBeenCalled();
+  });
+
+  it('should create progress dialog with manifest-driven title', async () => {
+    const hooks = createMockHooks();
+    hooks.buildAccountEntry = jest.fn((a) => ({ id: a.accountId }));
+    const api = createMockApi();
+
+    await prepareAndSyncAccount({
+      integrationId: 'test',
+      manifest: prepareManifest,
+      hooks,
+      api,
+      account: { accountId: 'acc-1' },
+      accountDisplayName: 'Test Card',
+    });
+
+    expect(showProgressDialog).toHaveBeenCalledWith(
+      [expect.objectContaining({ key: 'acc-1', nickname: 'Test Card', name: 'Test Integration Upload' })],
+      'Syncing Test Integration Data to Monarch Money',
+    );
+  });
+
+  it('should pass buildAccountEntry hook to resolveAccountMapping', async () => {
+    const hooks = createMockHooks();
+    const mockBuildEntry = jest.fn((a) => ({ id: a.accountId }));
+    hooks.buildAccountEntry = mockBuildEntry;
+    const api = createMockApi();
+
+    await prepareAndSyncAccount({
+      integrationId: 'test',
+      manifest: prepareManifest,
+      hooks,
+      api,
+      account: { accountId: 'acc-1' },
+      accountDisplayName: 'Test Card',
+    });
+
+    expect(resolveAccountMapping).toHaveBeenCalledWith(expect.objectContaining({
+      buildAccountEntry: mockBuildEntry,
+    }));
   });
 });

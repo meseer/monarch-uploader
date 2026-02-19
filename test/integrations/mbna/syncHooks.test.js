@@ -220,6 +220,79 @@ describe('MBNA SyncHooks', () => {
     });
   });
 
+  describe('suggestStartDate', () => {
+    it('should return date 30 days before oldest closing date', async () => {
+      const mockApi = {
+        getClosingDates: jest.fn(() => Promise.resolve([
+          '2024-03-15', '2024-02-15', '2024-01-15',
+        ])),
+      };
+
+      const result = await mbnaSyncHooks.suggestStartDate(mockApi, 'acc-1');
+
+      expect(result).not.toBeNull();
+      expect(result.date).toBe('2023-12-16');
+      expect(result.description).toBe('30 days before oldest statement');
+    });
+
+    it('should return null when no closing dates available', async () => {
+      const mockApi = {
+        getClosingDates: jest.fn(() => Promise.resolve([])),
+      };
+
+      const result = await mbnaSyncHooks.suggestStartDate(mockApi, 'acc-1');
+
+      expect(result).toBeNull();
+    });
+
+    it('should return null when API call fails', async () => {
+      const mockApi = {
+        getClosingDates: jest.fn(() => Promise.reject(new Error('API error'))),
+      };
+
+      const result = await mbnaSyncHooks.suggestStartDate(mockApi, 'acc-1');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('buildAccountEntry', () => {
+    it('should build account entry from raw account data', () => {
+      const account = {
+        accountId: '00240691635',
+        endingIn: '4201',
+        cardName: 'Amazon.ca Rewards Mastercard®',
+        displayName: 'Amazon.ca Rewards Mastercard® (4201)',
+      };
+
+      const result = mbnaSyncHooks.buildAccountEntry(account);
+
+      expect(result).toEqual({
+        id: '00240691635',
+        endingIn: '4201',
+        cardName: 'Amazon.ca Rewards Mastercard®',
+        nickname: 'Amazon.ca Rewards Mastercard® (4201)',
+      });
+    });
+
+    it('should use fallback nickname when displayName is missing', () => {
+      const account = {
+        accountId: '123',
+        endingIn: '9999',
+        cardName: 'Test Card',
+      };
+
+      const result = mbnaSyncHooks.buildAccountEntry(account);
+
+      expect(result).toEqual({
+        id: '123',
+        endingIn: '9999',
+        cardName: 'Test Card',
+        nickname: 'MBNA Card (9999)',
+      });
+    });
+  });
+
   describe('resolveCategories', () => {
     it('should resolve categories (with skipCategorization)', async () => {
       const transactions = [

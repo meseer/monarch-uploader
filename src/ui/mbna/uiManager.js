@@ -23,7 +23,8 @@ import { showSettingsModal } from '../components/settingsModal';
 import { createConnectionStatus, updateMbnaStatus, updateMonarchStatus } from './components/connectionStatus';
 import { createMbnaUploadButton } from './components/uploadButton';
 import { createMonarchLoginLink } from '../components/monarchLoginLink';
-import { uploadMbnaAccount } from '../../services/mbna-upload';
+import { prepareAndSyncAccount } from '../../services/common/syncOrchestrator';
+import { manifest as mbnaManifest, syncHooks as mbnaSyncHooks } from '../../integrations/mbna';
 
 const BRAND_COLOR = manifest.brandColor;
 const CONTAINER_ID = injectionPoint.containerId;
@@ -380,8 +381,16 @@ async function handleUploadClick(button) {
 
       button.textContent = `Processing ${account.displayName || account.endingIn || 'account'}...`;
 
-      // Delegate to upload service — handles mapping, icon upload, and sync
-      const result = await uploadMbnaAccount(account, api);
+      // Delegate to generic orchestrator — handles mapping, icon upload, and sync
+      const accountDisplayName = account.displayName || `MBNA Card (${account.endingIn})`;
+      const result = await prepareAndSyncAccount({
+        integrationId: 'mbna',
+        manifest: mbnaManifest,
+        hooks: mbnaSyncHooks,
+        api,
+        account,
+        accountDisplayName,
+      });
       debugLog('[MBNA] Upload result for', account.displayName, ':', result);
 
       if (!result.success && result.message === 'Cancelled') {

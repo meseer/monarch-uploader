@@ -139,6 +139,15 @@ describe('MBNA Manifest', () => {
     });
   });
 
+  describe('accountCreateDefaults', () => {
+    it('has credit card defaults for account creation', () => {
+      expect(manifest.accountCreateDefaults).toBeDefined();
+      expect(manifest.accountCreateDefaults.defaultType).toBe('credit');
+      expect(manifest.accountCreateDefaults.defaultSubtype).toBe('credit_card');
+      expect(manifest.accountCreateDefaults.accountType).toBe('credit');
+    });
+  });
+
   describe('brand theming', () => {
     it('has a brandColor', () => {
       expect(manifest.brandColor).toBe('#003087');

@@ -261,6 +261,8 @@
  * Optional hooks (capability-dependent):
  * @property {GetPendingIdFieldsHook} [getPendingIdFields] - Stable fields for pending transaction ID hashing
  * @property {BuildBalanceHistoryHook} [buildBalanceHistory] - Build balance history for first-sync reconstruction
+ * @property {SuggestStartDateHook} [suggestStartDate] - Suggest a default start date for first sync
+ * @property {BuildAccountEntryHook} [buildAccountEntry] - Build the institution-specific account storage shape
  */
 
 /**
@@ -370,6 +372,31 @@
  * @param {string} params.fromDate - Start date for reconstruction
  * @param {boolean} params.invertBalance - Whether invertBalance setting is enabled
  * @returns {Array<{date: string, amount: number}>|null} Balance history entries or null
+ */
+
+/**
+ * Suggest a start date for the first sync of an account.
+ *
+ * Called during prepareAndSyncAccount when no previous sync exists.
+ * Returns a suggested date and description, or null to fall back to the
+ * default (90 days ago).
+ *
+ * @callback SuggestStartDateHook
+ * @param {Object} api - Integration API client
+ * @param {string} accountId - Source account ID
+ * @returns {Promise<{date: string, description: string}|null>} Suggested start date or null
+ */
+
+/**
+ * Build the institution-specific portion of the account storage entry.
+ *
+ * Returns the object to store under manifest.accountKeyName in the
+ * consolidated accounts list. This shapes the source account data
+ * that the account service persists.
+ *
+ * @callback BuildAccountEntryHook
+ * @param {Object} account - Raw account from source API
+ * @returns {Object} Fields to store (e.g., { id, endingIn, cardName, nickname })
  */
 
 // This file is types-only — no runtime exports needed.

@@ -22,9 +22,11 @@
  * @module services/common/syncOrchestrator
  */
 
-import { debugLog, getTodayLocal } from '../../core/utils';
+import { debugLog, getTodayLocal, getLastUpdateDate, calculateFromDateWithLookback } from '../../core/utils';
 import { ACCOUNT_SETTINGS } from '../../core/integrationCapabilities';
+import stateManager from '../../core/state';
 import accountService from './accountService';
+import { resolveAccountMapping } from './accountMappingResolver';
 import { syncCreditLimit } from './creditLimitSync';
 import { executeBalanceUploadStep } from './balanceUpload';
 import { uploadTransactionsAndSaveRefs, formatTransactionUploadMessage } from './transactionUpload';
@@ -39,6 +41,8 @@ import {
   getRetentionSettingsFromAccount,
 } from '../../utils/transactionStorage';
 import { convertToCSV } from '../../utils/csv';
+import { showProgressDialog } from '../../ui/components/progressDialog';
+import { showDatePickerWithOptionsPromise } from '../../ui/components/datePicker';
 
 // ── Monarch CSV column definitions ──────────────────────────
 const MONARCH_CSV_COLUMNS = [
@@ -575,6 +579,110 @@ export async function syncAccount({
   }
 }
 
+/**
+ * Full upload flow: resolve mapping → determine dates → create progress dialog → sync.
+ *
+ * This is the top-level entry point that UI managers call. It replaces per-integration
+ * upload services by generically handling:
+ * 1. Account mapping resolution (via accountMappingResolver)
+ * 2. First-sync date suggestion (via optional suggestStartDate hook)
+ * 3. Date picker display with reconstruction option
+ * 4. Lookback calculation for subsequent syncs
+ * 5. Progress dialog creation
+ * 6. Delegation to syncAccount for the actual sync workflow
+ *
+ * @param {Object} params - Parameters
+ * @param {string} params.integrationId - Integration identifier
+ * @param {import('../../integrations/types').IntegrationManifest} params.manifest - Integration manifest
+ * @param {import('../../integrations/types').SyncHooks} params.hooks - Sync hooks
+ * @param {Object} params.api - Integration API client
+ * @param {Object} params.account - Raw source account with accountId
+ * @param {string} params.accountDisplayName - Display name for the account
+ * @returns {Promise<{success: boolean, message: string, skipped?: boolean}>}
+ */
+export async function prepareAndSyncAccount({
+  integrationId, manifest, hooks, api, account, accountDisplayName,
+}) {
+  const { accountId } = account;
+
+  stateManager.setAccount(accountId, accountDisplayName);
+
+  // 1. Resolve account mapping
+  const mappingResult = await resolveAccountMapping({
+    integrationId,
+    manifest,
+    account,
+    accountDisplayName,
+    buildAccountEntry: hooks.buildAccountEntry,
+  });
+
+  if (mappingResult.skipped) return { success: true, message: 'Skipped', skipped: true };
+  if (mappingResult.cancelled) return { success: false, message: 'Cancelled' };
+  const { monarchAccount } = mappingResult;
+
+  // 2. Determine date range
+  const firstSync = !getLastUpdateDate(accountId, integrationId);
+  let fromDate;
+  let reconstructBalance = false;
+
+  if (firstSync) {
+    // Get suggested start date from hook (if provided)
+    let defaultDate;
+    if (hooks.suggestStartDate) {
+      const suggestion = await hooks.suggestStartDate(api, accountId);
+      if (suggestion) {
+        defaultDate = suggestion.date;
+      }
+    }
+    if (!defaultDate) {
+      const d = new Date();
+      d.setDate(d.getDate() - 90);
+      defaultDate = d.toISOString().split('T')[0];
+    }
+
+    const showReconstruct = manifest.capabilities?.hasBalanceReconstruction === true;
+    const datePickerResult = await showDatePickerWithOptionsPromise(
+      defaultDate,
+      `Select the start date for syncing "${accountDisplayName}".`,
+      { showReconstructCheckbox: showReconstruct, reconstructCheckedByDefault: showReconstruct },
+    );
+
+    if (!datePickerResult) {
+      return { success: false, message: 'Date selection cancelled' };
+    }
+    fromDate = datePickerResult.date;
+    reconstructBalance = datePickerResult.reconstructBalance;
+  } else {
+    fromDate = calculateFromDateWithLookback(integrationId, accountId) || (() => {
+      const d = new Date();
+      d.setDate(d.getDate() - 14);
+      return d.toISOString().split('T')[0];
+    })();
+  }
+
+  // 3. Create progress dialog
+  const progressDialog = showProgressDialog(
+    [{ key: accountId, nickname: accountDisplayName, name: `${manifest.displayName} Upload` }],
+    `Syncing ${manifest.displayName} Data to Monarch Money`,
+  );
+
+  // 4. Run sync
+  return syncAccount({
+    integrationId,
+    manifest,
+    hooks,
+    api,
+    account,
+    accountDisplayName,
+    monarchAccount,
+    fromDate,
+    reconstructBalance,
+    firstSync,
+    progressDialog,
+  });
+}
+
 export default {
   syncAccount,
+  prepareAndSyncAccount,
 };

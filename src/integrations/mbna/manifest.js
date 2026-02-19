@@ -65,9 +65,24 @@ const manifest = {
     { key: 'skipCategorization', default: false },
   ],
 
+  // ── Account creation defaults ─────────────────────────────
+  accountCreateDefaults: {
+    defaultType: 'credit',
+    defaultSubtype: 'credit_card',
+    accountType: 'credit',
+  },
+
   // ── Brand theming ─────────────────────────────────────────
   brandColor: '#003087',
-  logoCloudinaryId: 'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/uyjbhlklztevwjlpmj0n',
+  logoCloudinaryId: 'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/mpyiskjxkwjoceqz00ll',
+
+  /*
+  // light MBNA: 'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/uyjbhlklztevwjlpmj0n',
+  // dark MBNA: 'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/mpyiskjxkwjoceqz00ll',
+  // light M only for MBNA: 'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/f0b14nmynprpkuncqpj0',
+  // dark M only for MBNA: 'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/kwpavqornhuljdo3kmg4',
+
+  */
 
   // ── UI extensions ─────────────────────────────────────────
   uiExtensions: {

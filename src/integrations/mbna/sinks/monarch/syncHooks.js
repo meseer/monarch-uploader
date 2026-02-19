@@ -186,6 +186,47 @@ function buildBalanceHistoryHook({ currentBalance, metadata, fromDate, invertBal
   return invertBalance ? rawHistory : formatBalanceHistoryForMonarch(rawHistory);
 }
 
+/**
+ * Suggest a start date for first sync based on MBNA statement closing dates.
+ *
+ * Fetches available closing dates and returns 30 days before the oldest one,
+ * giving users a reasonable default that covers their full statement history.
+ *
+ * @type {import('../../../types').SuggestStartDateHook}
+ */
+async function suggestStartDate(api, accountId) {
+  try {
+    const closingDates = await api.getClosingDates(accountId);
+    if (closingDates.length > 0) {
+      const oldest = closingDates[closingDates.length - 1]; // sorted newest-first
+      const d = new Date(`${oldest}T00:00:00`);
+      d.setDate(d.getDate() - 30);
+      debugLog(`[MBNA hooks] Suggested start date: ${d.toISOString().split('T')[0]} (30 days before oldest closing date ${oldest})`);
+      return { date: d.toISOString().split('T')[0], description: '30 days before oldest statement' };
+    }
+  } catch (error) {
+    debugLog('[MBNA hooks] Could not fetch closing dates for start date suggestion:', error.message);
+  }
+  return null;
+}
+
+/**
+ * Build the institution-specific portion of the account storage entry.
+ *
+ * Returns the fields stored under the manifest's `accountKeyName` ('mbnaAccount')
+ * in the consolidated accounts list.
+ *
+ * @type {import('../../../types').BuildAccountEntryHook}
+ */
+function buildAccountEntry(account) {
+  return {
+    id: account.accountId,
+    endingIn: account.endingIn,
+    cardName: account.cardName,
+    nickname: account.displayName || `MBNA Card (${account.endingIn})`,
+  };
+}
+
 /** @type {import('../../../types').SyncHooks} */
 const mbnaSyncHooks = {
   // Required hooks
@@ -200,6 +241,8 @@ const mbnaSyncHooks = {
   getPendingIdFields,
   getSettledAmount,
   buildBalanceHistory: buildBalanceHistoryHook,
+  suggestStartDate,
+  buildAccountEntry,
 };
 
 export default mbnaSyncHooks;
