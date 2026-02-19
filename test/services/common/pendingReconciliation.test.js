@@ -207,7 +207,13 @@ describe('reconcilePendingTransactions', () => {
 
     mockMonarchApi.getTagByName.mockResolvedValue({ id: 'tag-1', name: 'Pending' });
     mockMonarchApi.getTransactionsList.mockResolvedValue({
-      results: [{ id: 'mtx-1', notes: pendingId, amount: -42.50, ownedByUser: { id: 'user-1' } }],
+      results: [{
+        id: 'mtx-1',
+        notes: pendingId,
+        amount: -42.50,
+        tags: [{ id: 'tag-1', name: 'Pending' }],
+        ownedByUser: { id: 'user-1' },
+      }],
     });
     mockMonarchApi.updateTransaction.mockResolvedValue({});
     mockMonarchApi.setTransactionTags.mockResolvedValue({});
@@ -224,6 +230,75 @@ describe('reconcilePendingTransactions', () => {
 
     expect(result.settled).toBe(1);
     expect(result.cancelled).toBe(0);
+    expect(mockMonarchApi.setTransactionTags).toHaveBeenCalledWith('mtx-1', []);
+  });
+
+  it('should preserve other tags when removing Pending tag on settle', async () => {
+    const settledTx = { date: '2024-01-15', desc: 'Amazon', amt: 42.50 };
+    const pendingId = await generatePendingTransactionId('test-tx', getPendingIdFields(settledTx));
+
+    mockMonarchApi.getTagByName.mockResolvedValue({ id: 'tag-pending', name: 'Pending' });
+    mockMonarchApi.getTransactionsList.mockResolvedValue({
+      results: [{
+        id: 'mtx-1',
+        notes: pendingId,
+        amount: -42.50,
+        tags: [
+          { id: 'tag-pending', name: 'Pending' },
+          { id: 'tag-groceries', name: 'Groceries' },
+          { id: 'tag-shared', name: 'Shared' },
+        ],
+        ownedByUser: { id: 'user-1' },
+      }],
+    });
+    mockMonarchApi.updateTransaction.mockResolvedValue({});
+    mockMonarchApi.setTransactionTags.mockResolvedValue({});
+
+    const result = await reconcilePendingTransactions({
+      txIdPrefix: 'test-tx',
+      monarchAccountId: 'monarch-1',
+      rawPending: [],
+      rawSettled: [settledTx],
+      lookbackDays: 90,
+      getPendingIdFields,
+      getSettledAmount,
+    });
+
+    expect(result.settled).toBe(1);
+    expect(mockMonarchApi.setTransactionTags).toHaveBeenCalledWith(
+      'mtx-1',
+      ['tag-groceries', 'tag-shared'],
+    );
+  });
+
+  it('should handle transaction with no tags array when settling', async () => {
+    const settledTx = { date: '2024-01-15', desc: 'Amazon', amt: 42.50 };
+    const pendingId = await generatePendingTransactionId('test-tx', getPendingIdFields(settledTx));
+
+    mockMonarchApi.getTagByName.mockResolvedValue({ id: 'tag-1', name: 'Pending' });
+    mockMonarchApi.getTransactionsList.mockResolvedValue({
+      results: [{
+        id: 'mtx-1',
+        notes: pendingId,
+        amount: -42.50,
+        tags: undefined,
+        ownedByUser: null,
+      }],
+    });
+    mockMonarchApi.updateTransaction.mockResolvedValue({});
+    mockMonarchApi.setTransactionTags.mockResolvedValue({});
+
+    const result = await reconcilePendingTransactions({
+      txIdPrefix: 'test-tx',
+      monarchAccountId: 'monarch-1',
+      rawPending: [],
+      rawSettled: [settledTx],
+      lookbackDays: 90,
+      getPendingIdFields,
+      getSettledAmount,
+    });
+
+    expect(result.settled).toBe(1);
     expect(mockMonarchApi.setTransactionTags).toHaveBeenCalledWith('mtx-1', []);
   });
 

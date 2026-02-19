@@ -263,8 +263,11 @@ export async function reconcilePendingTransactions({
             });
           }
 
-          // Remove Pending tag
-          await monarchApi.setTransactionTags(monarchTxId, []);
+          // Remove Pending tag, preserving other tags
+          const remainingTagIds = (monarchTx.tags || [])
+            .filter((tag) => tag.id !== pendingTag.id)
+            .map((tag) => tag.id);
+          await monarchApi.setTransactionTags(monarchTxId, remainingTagIds);
 
           // Collect settled ref ID for dedup store
           if (getSettledRefId) {
