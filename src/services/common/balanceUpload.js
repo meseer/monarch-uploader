@@ -196,12 +196,19 @@ export async function executeBalanceUploadStep({
       accountService.updateAccountInList(integrationId, sourceAccountId, {
         lastSyncBalance: monarchBalance,
       });
+
+      // Compute actual calendar day span (data points only cover transaction/statement dates)
+      const firstDate = balanceHistory[0].date;
+      const lastDate = balanceHistory[balanceHistory.length - 1].date;
+      const daySpan = Math.round((new Date(lastDate) - new Date(firstDate)) / 86400000) + 1;
+      const dayLabel = `${daySpan} days`;
+
       if (progressDialog) {
-        progressDialog.updateStepStatus(sourceAccountId, 'balance', 'success', `${balanceHistory.length} days`);
+        progressDialog.updateStepStatus(sourceAccountId, 'balance', 'success', dayLabel);
         const balanceChangeData = extractBalanceChange(integrationId, sourceAccountId, monarchBalance);
         progressDialog.updateBalanceChange(sourceAccountId, balanceChangeData);
       }
-      return { success: true, message: `${balanceHistory.length} days`, monarchBalance };
+      return { success: true, message: dayLabel, monarchBalance };
     }
 
     if (progressDialog) {

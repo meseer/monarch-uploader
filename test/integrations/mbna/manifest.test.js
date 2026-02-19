@@ -155,7 +155,7 @@ describe('MBNA Manifest', () => {
 
     it('has logoCloudinaryId for MBNA logo', () => {
       expect(manifest.logoCloudinaryId).toBe(
-        'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/uyjbhlklztevwjlpmj0n',
+        'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/mpyiskjxkwjoceqz00ll',
       );
     });
   });

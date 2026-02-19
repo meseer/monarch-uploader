@@ -345,6 +345,36 @@ describe('Balance Upload Service', () => {
       expect(mockProgressDialog.updateBalanceChange).toHaveBeenCalled();
     });
 
+    it('should report calendar day span not data point count for balance history', async () => {
+      // Simulates real scenario: 5 data points spanning ~365 days
+      const history = [
+        { date: '2025-01-15', amount: -800 },
+        { date: '2025-04-15', amount: -900 },
+        { date: '2025-07-15', amount: -1000 },
+        { date: '2025-10-15', amount: -1100 },
+        { date: '2026-01-15', amount: -1200 },
+      ];
+
+      const result = await executeBalanceUploadStep({
+        integrationId: 'mbna',
+        sourceAccountId: 'acc-1',
+        monarchAccountId: 'monarch-1',
+        accountName: 'Card',
+        currentBalance: 1200,
+        reconstructBalance: true,
+        balanceHistory: history,
+        fromDate: '2025-01-15',
+        progressDialog: mockProgressDialog,
+      });
+
+      expect(result.success).toBe(true);
+      // Should be ~366 days (Jan 15 2025 ’ Jan 15 2026), NOT "5 days"
+      expect(result.message).toBe('366 days');
+      expect(mockProgressDialog.updateStepStatus).toHaveBeenCalledWith(
+        'acc-1', 'balance', 'success', '366 days',
+      );
+    });
+
     it('should upload balance history on subsequent sync when reconstructBalance is true', async () => {
       const history = [
         { date: '2025-02-14', amount: -110 },
