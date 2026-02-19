@@ -333,14 +333,14 @@ async function fetchRogersBankTransactions(fromDate, toDate, fullHistory = false
 
 /**
  * Build sync steps for progress dialog
- * Order: credit limit → transactions → pending reconciliation → balance
- * (Reconciliation before balance ensures deleted pending transactions don't affect balance)
+ * Order: credit limit → pending reconciliation → transactions → balance
+ * (Reconciliation before transactions prevents duplicate uploads of settled transactions)
  */
 function buildRogersBankSteps(hasTransactions = true, includeCreditLimit = true, includePendingReconciliation = true) {
   const steps = [];
   if (includeCreditLimit) steps.push({ key: 'creditLimit', name: 'Credit limit sync' });
-  if (hasTransactions) steps.push({ key: 'transactions', name: 'Transaction sync' });
   if (includePendingReconciliation) steps.push({ key: 'pendingReconciliation', name: 'Pending reconciliation' });
+  if (hasTransactions) steps.push({ key: 'transactions', name: 'Transaction sync' });
   steps.push({ key: 'balance', name: 'Balance upload' });
   return steps;
 }
@@ -758,7 +758,6 @@ export async function uploadRogersBankToMonarch() {
     // (removes pending duplicates when a settled version exists with the same hash)
     const allTransactions = txResult.transactions || [];
 
-    progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Separating transactions...');
     const separationResult = await separateAndDeduplicateTransactions(allTransactions);
     const { settled: allSettledTx, pending: allPendingTx } = separationResult;
 

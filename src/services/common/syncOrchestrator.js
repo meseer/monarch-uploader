@@ -68,12 +68,12 @@ function buildSyncSteps({ hasCreditLimit = false, includeTransactions = true, in
     steps.push({ key: 'creditLimit', name: 'Credit limit sync' });
   }
 
-  if (includeTransactions) {
-    steps.push({ key: 'transactions', name: 'Transaction sync' });
-  }
-
   if (includePending) {
     steps.push({ key: 'pending', name: 'Pending reconciliation' });
+  }
+
+  if (includeTransactions) {
+    steps.push({ key: 'transactions', name: 'Transaction sync' });
   }
 
   steps.push({ key: 'balance', name: 'Balance upload' });
@@ -174,22 +174,19 @@ async function executeCreditLimitStep({ integrationId, accountId, monarchAccount
  * @param {string} params.fromDate - Start date
  * @param {string} params.txIdPrefix - Pending transaction ID prefix
  * @param {import('../../integrations/types').SyncHooks} params.hooks - Sync hooks
- * @param {Object} params.progressDialog - Progress dialog instance
  * @param {AbortController} params.abortController - Abort controller
  * @returns {Promise<Object>} Fetched and separated data
  */
 async function fetchAndSeparateTransactions({
   accountId, api, fromDate, txIdPrefix, hooks,
-  progressDialog, abortController,
+  abortController,
 }) {
   if (abortController.signal.aborted) throw new Error('Cancelled');
 
-  progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Fetching...');
-
+  // Fetch silently — no progress updates on "transactions" step here,
+  // because reconciliation runs between fetch and transaction upload.
   const fetchResult = await hooks.fetchTransactions(api, accountId, fromDate, {
-    onProgress: (msg) => {
-      progressDialog.updateStepStatus(accountId, 'transactions', 'processing', msg);
-    },
+    onProgress: () => {},
   });
 
   const { settled: rawSettled, pending: rawPending, metadata } = fetchResult;
@@ -461,7 +458,7 @@ export async function syncAccount({
     if (capabilities.hasTransactions) {
       fetchData = await fetchAndSeparateTransactions({
         accountId, api, fromDate, txIdPrefix, hooks,
-        progressDialog, abortController,
+        abortController,
       });
     }
 
