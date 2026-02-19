@@ -10,6 +10,7 @@
 
 import { debugLog, getTodayLocal, saveLastUploadDate } from '../../core/utils';
 import monarchApi from '../../api/monarch';
+import accountService from './accountService';
 
 /**
  * Generate CSV content for a single-day balance upload.
@@ -93,6 +94,43 @@ export async function uploadBalanceHistory({ monarchAccountId, balanceHistory, a
 }
 
 /**
+ * Extract balance change data for progress dialog display.
+ *
+ * Reads the previously-stored balance from account data and computes
+ * the diff (dollar change, percentage change) against the current balance.
+ * Returns the full data object expected by progressDialog.updateBalanceChange().
+ *
+ * @param {string} integrationId - Integration identifier
+ * @param {string} accountId - Source account ID
+ * @param {number} monarchBalance - Current balance adjusted for Monarch sign convention
+ * @returns {Object} Balance change data for progressDialog.updateBalanceChange()
+ */
+function extractBalanceChange(integrationId, accountId, monarchBalance) {
+  const acctData = accountService.getAccountData(integrationId, accountId);
+  const lastSyncBalance = acctData?.lastSyncBalance;
+  const lastSyncDate = acctData?.lastSyncDate;
+
+  // Full diff available: we have a previous balance to compare against
+  if (lastSyncBalance !== undefined && lastSyncBalance !== null && lastSyncDate) {
+    const changePercent = lastSyncBalance !== 0
+      ? ((monarchBalance - lastSyncBalance) / Math.abs(lastSyncBalance)) * 100
+      : 0;
+
+    return {
+      oldBalance: lastSyncBalance,
+      newBalance: monarchBalance,
+      lastUploadDate: lastSyncDate,
+      changePercent,
+      accountType: 'credit',
+      debtAsPositive: false,
+    };
+  }
+
+  // No previous data — fallback to just current balance
+  return { newBalance: monarchBalance };
+}
+
+/**
  * Execute the full balance upload step for a credit-card-style integration.
  *
  * Handles both first-sync (with optional balance reconstruction) and
@@ -106,7 +144,6 @@ export async function uploadBalanceHistory({ monarchAccountId, balanceHistory, a
  * @param {string} params.accountName - Display name for CSV
  * @param {number|null} params.currentBalance - Current raw balance from source
  * @param {boolean} params.invertBalance - Whether invertBalance setting is on
- * @param {boolean} params.isFirstSync - Whether this is the first sync
  * @param {boolean} params.reconstructBalance - Whether to reconstruct balance history
  * @param {Array<{date: string, amount: number}>|null} params.balanceHistory - Pre-built history (if reconstructing)
  * @param {string} params.fromDate - Start date for reconstruction range
@@ -120,7 +157,6 @@ export async function executeBalanceUploadStep({
   accountName,
   currentBalance,
   invertBalance = false,
-  isFirstSync = false,
   reconstructBalance = false,
   balanceHistory = null,
   fromDate,
@@ -140,8 +176,8 @@ export async function executeBalanceUploadStep({
     debugLog(`[${integrationId}] Inverting balance (invertBalance setting enabled)`);
   }
 
-  // First sync with balance reconstruction
-  if (isFirstSync && reconstructBalance && balanceHistory && balanceHistory.length > 0) {
+  // Balance history upload (first sync with reconstruction, or subsequent sync with hook)
+  if (reconstructBalance && balanceHistory && balanceHistory.length > 0) {
     if (progressDialog) {
       progressDialog.updateStepStatus(sourceAccountId, 'balance', 'processing', 'Uploading...');
     }
@@ -156,9 +192,14 @@ export async function executeBalanceUploadStep({
 
     if (success) {
       saveLastUploadDate(sourceAccountId, todayFormatted, integrationId);
+      // Persist current balance for next sync's diff display
+      accountService.updateAccountInList(integrationId, sourceAccountId, {
+        lastSyncBalance: monarchBalance,
+      });
       if (progressDialog) {
         progressDialog.updateStepStatus(sourceAccountId, 'balance', 'success', `${balanceHistory.length} days`);
-        progressDialog.updateBalanceChange(sourceAccountId, { newBalance: monarchBalance });
+        const balanceChangeData = extractBalanceChange(integrationId, sourceAccountId, monarchBalance);
+        progressDialog.updateBalanceChange(sourceAccountId, balanceChangeData);
       }
       return { success: true, message: `${balanceHistory.length} days`, monarchBalance };
     }
@@ -169,8 +210,8 @@ export async function executeBalanceUploadStep({
     return { success: false, message: 'Upload failed', monarchBalance };
   }
 
-  // Empty balance history for first sync reconstruction
-  if (isFirstSync && reconstructBalance && (!balanceHistory || balanceHistory.length === 0)) {
+  // Empty balance history when reconstruction was requested but no data available
+  if (reconstructBalance && (!balanceHistory || balanceHistory.length === 0)) {
     if (progressDialog) {
       progressDialog.updateStepStatus(sourceAccountId, 'balance', 'skipped', 'No history data');
     }
@@ -188,9 +229,14 @@ export async function executeBalanceUploadStep({
   if (success) {
     const formatted = `$${Math.abs(currentBalance).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
     saveLastUploadDate(sourceAccountId, todayFormatted, integrationId);
+    // Persist current balance for next sync's diff display
+    accountService.updateAccountInList(integrationId, sourceAccountId, {
+      lastSyncBalance: monarchBalance,
+    });
     if (progressDialog) {
       progressDialog.updateStepStatus(sourceAccountId, 'balance', 'success', formatted);
-      progressDialog.updateBalanceChange(sourceAccountId, { newBalance: monarchBalance });
+      const balanceChangeData = extractBalanceChange(integrationId, sourceAccountId, monarchBalance);
+      progressDialog.updateBalanceChange(sourceAccountId, balanceChangeData);
     }
     return { success: true, message: formatted, monarchBalance };
   }
@@ -207,5 +253,6 @@ export default {
   applyBalanceSign,
   uploadSingleDayBalance,
   uploadBalanceHistory,
+  extractBalanceChange,
   executeBalanceUploadStep,
 };

@@ -503,9 +503,15 @@ export async function syncAccount({
       debugLog('[orchestrator] Error fetching balance:', error);
     }
 
-    // Build balance history if reconstructing
+    // Build balance history if reconstruction is possible.
+    // On first sync: only if user opted in (reconstructBalance flag from date picker).
+    // On subsequent syncs: always reconstruct when the hook and metadata are available,
+    // so Monarch gets multi-day balance coverage instead of just today's snapshot.
     let balanceHistory = null;
-    if (firstSync && reconstructBalance && hooks.buildBalanceHistory && fetchData?.metadata) {
+    const shouldReconstruct = !!(hooks.buildBalanceHistory && fetchData?.metadata
+      && (firstSync ? reconstructBalance : true));
+
+    if (shouldReconstruct) {
       progressDialog.updateStepStatus(accountId, 'balance', 'processing', 'Reconstructing...');
       balanceHistory = hooks.buildBalanceHistory({
         currentBalance,
@@ -523,8 +529,7 @@ export async function syncAccount({
       accountName: accountDisplayName,
       currentBalance,
       invertBalance,
-      isFirstSync: firstSync,
-      reconstructBalance,
+      reconstructBalance: shouldReconstruct,
       balanceHistory,
       fromDate,
       progressDialog,

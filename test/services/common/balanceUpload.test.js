@@ -11,6 +11,9 @@ import {
   executeBalanceUploadStep,
 } from '../../../src/services/common/balanceUpload';
 
+import balanceUploadDefault from '../../../src/services/common/balanceUpload';
+const { extractBalanceChange } = balanceUploadDefault;
+
 // Mock dependencies
 jest.mock('../../../src/core/utils', () => ({
   debugLog: jest.fn(),
@@ -25,12 +28,22 @@ jest.mock('../../../src/api/monarch', () => ({
   },
 }));
 
+jest.mock('../../../src/services/common/accountService', () => ({
+  __esModule: true,
+  default: {
+    getAccountData: jest.fn(() => null),
+    updateAccountInList: jest.fn(),
+  },
+}));
+
 import monarchApi from '../../../src/api/monarch';
 import { saveLastUploadDate } from '../../../src/core/utils';
+import accountService from '../../../src/services/common/accountService';
 
 describe('Balance Upload Service', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    accountService.getAccountData.mockReturnValue(null);
   });
 
   describe('generateBalanceCSV', () => {
@@ -214,6 +227,86 @@ describe('Balance Upload Service', () => {
       expect(saveLastUploadDate).toHaveBeenCalledWith('acc-1', '2025-02-17', 'mbna');
     });
 
+    it('should persist lastSyncBalance after successful single-day upload', async () => {
+      await executeBalanceUploadStep({
+        integrationId: 'mbna',
+        sourceAccountId: 'acc-1',
+        monarchAccountId: 'monarch-1',
+        accountName: 'Card',
+        currentBalance: 1500,
+        progressDialog: mockProgressDialog,
+      });
+
+      expect(accountService.updateAccountInList).toHaveBeenCalledWith('mbna', 'acc-1', {
+        lastSyncBalance: -1500,
+      });
+    });
+
+    it('should persist lastSyncBalance after successful history upload', async () => {
+      const history = [
+        { date: '2025-01-01', amount: -100 },
+        { date: '2025-01-02', amount: -200 },
+      ];
+
+      await executeBalanceUploadStep({
+        integrationId: 'mbna',
+        sourceAccountId: 'acc-1',
+        monarchAccountId: 'monarch-1',
+        accountName: 'Card',
+        currentBalance: 200,
+        reconstructBalance: true,
+        balanceHistory: history,
+        fromDate: '2025-01-01',
+        progressDialog: mockProgressDialog,
+      });
+
+      expect(accountService.updateAccountInList).toHaveBeenCalledWith('mbna', 'acc-1', {
+        lastSyncBalance: -200,
+      });
+    });
+
+    it('should pass full balance change data when previous sync data exists', async () => {
+      accountService.getAccountData.mockReturnValue({
+        lastSyncBalance: -1400,
+        lastSyncDate: '2025-02-15',
+      });
+
+      await executeBalanceUploadStep({
+        integrationId: 'mbna',
+        sourceAccountId: 'acc-1',
+        monarchAccountId: 'monarch-1',
+        accountName: 'Card',
+        currentBalance: 1500,
+        progressDialog: mockProgressDialog,
+      });
+
+      expect(mockProgressDialog.updateBalanceChange).toHaveBeenCalledWith('acc-1', expect.objectContaining({
+        oldBalance: -1400,
+        newBalance: -1500,
+        lastUploadDate: '2025-02-15',
+        changePercent: expect.any(Number),
+        accountType: 'credit',
+        debtAsPositive: false,
+      }));
+    });
+
+    it('should pass fallback balance change data when no previous sync data', async () => {
+      accountService.getAccountData.mockReturnValue(null);
+
+      await executeBalanceUploadStep({
+        integrationId: 'mbna',
+        sourceAccountId: 'acc-1',
+        monarchAccountId: 'monarch-1',
+        accountName: 'Card',
+        currentBalance: 1500,
+        progressDialog: mockProgressDialog,
+      });
+
+      expect(mockProgressDialog.updateBalanceChange).toHaveBeenCalledWith('acc-1', {
+        newBalance: -1500,
+      });
+    });
+
     it('should apply invertBalance on regular sync', async () => {
       const result = await executeBalanceUploadStep({
         integrationId: 'mbna',
@@ -252,7 +345,32 @@ describe('Balance Upload Service', () => {
       expect(mockProgressDialog.updateBalanceChange).toHaveBeenCalled();
     });
 
-    it('should skip when first sync reconstruction has empty history', async () => {
+    it('should upload balance history on subsequent sync when reconstructBalance is true', async () => {
+      const history = [
+        { date: '2025-02-14', amount: -110 },
+        { date: '2025-02-15', amount: -120 },
+        { date: '2025-02-16', amount: -130 },
+      ];
+
+      const result = await executeBalanceUploadStep({
+        integrationId: 'mbna',
+        sourceAccountId: 'acc-1',
+        monarchAccountId: 'monarch-1',
+        accountName: 'Card',
+        currentBalance: 130,
+        isFirstSync: false,
+        reconstructBalance: true,
+        balanceHistory: history,
+        fromDate: '2025-02-14',
+        progressDialog: mockProgressDialog,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.message).toBe('3 days');
+      expect(monarchApi.uploadBalance).toHaveBeenCalled();
+    });
+
+    it('should skip when reconstruction has empty history', async () => {
       const result = await executeBalanceUploadStep({
         integrationId: 'mbna',
         sourceAccountId: 'acc-1',
@@ -330,6 +448,97 @@ describe('Balance Upload Service', () => {
       });
 
       expect(result.message).toBe('$1,500.75');
+    });
+
+    it('should not persist lastSyncBalance on upload failure', async () => {
+      monarchApi.uploadBalance.mockResolvedValue(false);
+
+      await executeBalanceUploadStep({
+        integrationId: 'mbna',
+        sourceAccountId: 'acc-1',
+        monarchAccountId: 'monarch-1',
+        accountName: 'Card',
+        currentBalance: 1500,
+        progressDialog: mockProgressDialog,
+      });
+
+      expect(accountService.updateAccountInList).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('extractBalanceChange', () => {
+    it('should return full diff when previous sync data exists', () => {
+      accountService.getAccountData.mockReturnValue({
+        lastSyncBalance: -1000,
+        lastSyncDate: '2025-02-10',
+      });
+
+      const result = extractBalanceChange('mbna', 'acc-1', -1100);
+
+      expect(result).toEqual({
+        oldBalance: -1000,
+        newBalance: -1100,
+        lastUploadDate: '2025-02-10',
+        changePercent: expect.any(Number),
+        accountType: 'credit',
+        debtAsPositive: false,
+      });
+      // -1100 - (-1000) = -100; -100 / |-1000| * 100 = -10%
+      expect(result.changePercent).toBeCloseTo(-10, 1);
+    });
+
+    it('should return fallback when no previous data exists', () => {
+      accountService.getAccountData.mockReturnValue(null);
+
+      const result = extractBalanceChange('mbna', 'acc-1', -500);
+
+      expect(result).toEqual({ newBalance: -500 });
+    });
+
+    it('should return fallback when lastSyncBalance is null', () => {
+      accountService.getAccountData.mockReturnValue({
+        lastSyncBalance: null,
+        lastSyncDate: '2025-02-10',
+      });
+
+      const result = extractBalanceChange('mbna', 'acc-1', -500);
+
+      expect(result).toEqual({ newBalance: -500 });
+    });
+
+    it('should return fallback when lastSyncDate is missing', () => {
+      accountService.getAccountData.mockReturnValue({
+        lastSyncBalance: -1000,
+        lastSyncDate: null,
+      });
+
+      const result = extractBalanceChange('mbna', 'acc-1', -500);
+
+      expect(result).toEqual({ newBalance: -500 });
+    });
+
+    it('should handle zero previous balance', () => {
+      accountService.getAccountData.mockReturnValue({
+        lastSyncBalance: 0,
+        lastSyncDate: '2025-02-10',
+      });
+
+      const result = extractBalanceChange('mbna', 'acc-1', -500);
+
+      expect(result.changePercent).toBe(0);
+    });
+
+    it('should calculate positive change percentage correctly', () => {
+      accountService.getAccountData.mockReturnValue({
+        lastSyncBalance: -500,
+        lastSyncDate: '2025-02-10',
+      });
+
+      // Balance went from -500 to -400 (less debt = positive change)
+      const result = extractBalanceChange('mbna', 'acc-1', -400);
+
+      // (-400 - (-500)) / |-500| * 100 = 100/500 * 100 = 20%
+      expect(result.changePercent).toBeCloseTo(20, 1);
     });
   });
 });

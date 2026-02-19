@@ -313,6 +313,95 @@ describe('syncAccount', () => {
     expect(hooks.buildBalanceHistory).toHaveBeenCalled();
   });
 
+  it('should NOT call buildBalanceHistory on firstSync when reconstructBalance is false', async () => {
+    const progressDialog = createMockProgressDialog();
+    const hooks = createMockHooks();
+    const api = createMockApi();
+
+    await syncAccount({
+      integrationId: 'test',
+      manifest: defaultManifest,
+      hooks,
+      api,
+      account: { accountId: 'acc-1' },
+      accountDisplayName: 'Test Card',
+      monarchAccount: { id: 'monarch-1' },
+      fromDate: '2024-01-01',
+      reconstructBalance: false,
+      firstSync: true,
+      progressDialog,
+    });
+
+    expect(hooks.buildBalanceHistory).not.toHaveBeenCalled();
+  });
+
+  it('should call buildBalanceHistory on subsequent sync when hook and metadata are available', async () => {
+    const progressDialog = createMockProgressDialog();
+    const hooks = createMockHooks();
+    hooks.buildBalanceHistory.mockReturnValue([
+      { date: '2024-01-14', amount: -80 },
+      { date: '2024-01-15', amount: -100 },
+    ]);
+    const api = createMockApi();
+
+    const { executeBalanceUploadStep } = require('../../../src/services/common/balanceUpload');
+
+    await syncAccount({
+      integrationId: 'test',
+      manifest: defaultManifest,
+      hooks,
+      api,
+      account: { accountId: 'acc-1' },
+      accountDisplayName: 'Test Card',
+      monarchAccount: { id: 'monarch-1' },
+      fromDate: '2024-01-10',
+      reconstructBalance: false,
+      firstSync: false,
+      progressDialog,
+    });
+
+    expect(hooks.buildBalanceHistory).toHaveBeenCalledWith(expect.objectContaining({
+      currentBalance: 100,
+      fromDate: '2024-01-10',
+    }));
+
+    // Should pass reconstructBalance: true and the built history to balance upload
+    expect(executeBalanceUploadStep).toHaveBeenCalledWith(expect.objectContaining({
+      reconstructBalance: true,
+      balanceHistory: expect.arrayContaining([
+        expect.objectContaining({ date: '2024-01-14' }),
+      ]),
+    }));
+  });
+
+  it('should NOT reconstruct on subsequent sync when buildBalanceHistory hook is missing', async () => {
+    const progressDialog = createMockProgressDialog();
+    const hooks = createMockHooks();
+    hooks.buildBalanceHistory = undefined; // No reconstruction hook
+    const api = createMockApi();
+
+    const { executeBalanceUploadStep } = require('../../../src/services/common/balanceUpload');
+
+    await syncAccount({
+      integrationId: 'test',
+      manifest: defaultManifest,
+      hooks,
+      api,
+      account: { accountId: 'acc-1' },
+      accountDisplayName: 'Test Card',
+      monarchAccount: { id: 'monarch-1' },
+      fromDate: '2024-01-10',
+      firstSync: false,
+      progressDialog,
+    });
+
+    // Should pass reconstructBalance: false since no hook
+    expect(executeBalanceUploadStep).toHaveBeenCalledWith(expect.objectContaining({
+      reconstructBalance: false,
+      balanceHistory: null,
+    }));
+  });
+
   it('should handle all transactions being duplicates', async () => {
     const { filterDuplicateSettledTransactions } = require('../../../src/services/common/deduplication');
     filterDuplicateSettledTransactions.mockReturnValueOnce({ newTransactions: [], duplicateCount: 3 });
