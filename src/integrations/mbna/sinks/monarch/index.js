@@ -24,3 +24,6 @@ export {
 
 // Balance formatting (sign inversion for Monarch)
 export { formatBalanceHistoryForMonarch } from './balanceFormatter';
+
+// CSV formatting (Monarch CSV export)
+export { convertMbnaTransactionsToMonarchCSV } from './csvFormatter';

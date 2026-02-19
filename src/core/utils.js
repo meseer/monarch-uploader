@@ -230,11 +230,17 @@ export function getDefaultLookbackDays(institutionType) {
     return 7; // Current 7 day lookback behavior
   case 'wealthsimple':
     return 7; // 7 day lookback for balance checkpoints
-  case 'mbna':
-    return 7; // 7 day lookback for credit card deduplication overlap
-  default:
+  default: {
+    // Check registry for modular integrations (e.g. 'mbna').
+    // Lazy require to avoid circular dependency (integrationRegistry ’ utils).
+    const reg = require('./integrationRegistry');
+    const entry = reg.getIntegration ? reg.getIntegration(institutionType) : undefined;
+    if (entry?.manifest?.defaultLookbackDays !== undefined) {
+      return entry.manifest.defaultLookbackDays;
+    }
     debugLog(`Unknown institution type: ${institutionType}, using 0 days`);
     return 0;
+  }
   }
 }
 
@@ -253,10 +259,16 @@ function getIntegrationIdFromType(institutionType) {
     return 'rogersbank';
   case 'wealthsimple':
     return 'wealthsimple';
-  case 'mbna':
-    return 'mbna';
-  default:
+  default: {
+    // Check registry for modular integrations (e.g. 'mbna').
+    // Lazy require to avoid circular dependency (integrationRegistry ’ utils).
+    const reg = require('./integrationRegistry');
+    const isRegistered = reg.isRegistered ? reg.isRegistered(institutionType) : false;
+    if (isRegistered) {
+      return institutionType;
+    }
     return null;
+  }
   }
 }
 
