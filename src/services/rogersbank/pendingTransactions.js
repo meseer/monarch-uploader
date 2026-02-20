@@ -26,6 +26,45 @@ const ROGERS_TX_ID_PREFIX = 'rb-tx:';
 const ROGERS_TX_ID_PATTERN = /rb-tx:([a-f0-9]{16})/;
 
 /**
+ * Extract local date from a Rogers Bank pending transaction activityId
+ *
+ * Pending transactions have an activityId that is BASE64-encoded, decoding to
+ * format: "DT|2026-02-19T15:49:53-05:00"
+ *
+ * The ISO timestamp includes the correct UTC offset (EST=-05:00, EDT=-04:00),
+ * so daylight saving time is handled automatically. We parse the timestamp and
+ * extract the date in the user's local timezone.
+ *
+ * This conversion is critical because:
+ * - Pending transactions report .date in Eastern Time
+ * - Settled transactions report .date in the user's local timezone
+ * - Without conversion, cross-midnight transactions would have mismatched dates,
+ *   causing hash mismatches and duplicate transactions after settlement
+ *
+ * @param {string} activityId - BASE64-encoded activity ID from pending transaction
+ * @returns {string|null} Date "YYYY-MM-DD" in local timezone, or null if parsing fails
+ */
+export function getLocalDateFromActivityId(activityId) {
+  if (!activityId) return null;
+
+  try {
+    const decoded = atob(activityId);
+    const isoString = decoded.replace(/^DT\|/, '');
+    const dateObj = new Date(isoString);
+
+    if (Number.isNaN(dateObj.getTime())) return null;
+
+    const year = dateObj.getFullYear();
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const day = String(dateObj.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Generate a deterministic pending transaction ID by hashing stable transaction fields
  *
  * Fields used for hashing:
@@ -179,11 +218,19 @@ export async function separateAndDeduplicateTransactions(transactions) {
     settledIdMap.set(hashId, tx);
   }
 
-  // Step 3: Generate hash IDs for pending transactions and filter out duplicates
+  // Step 3: Convert pending transaction dates and generate hash IDs, then filter out duplicates
   const pendingIdMap = new Map();
   let duplicatesRemoved = 0;
 
   for (const tx of pending) {
+    // Convert pending transaction date from Eastern Time to local timezone
+    // using the timestamp encoded in activityId (handles EST/EDT automatically)
+    const localDate = getLocalDateFromActivityId(tx.activityId);
+    if (localDate) {
+      debugLog(`Pending transaction date converted: ${tx.date} → ${localDate} (from activityId)`);
+      tx.date = localDate;
+    }
+
     const hashId = await generatePendingTransactionId(tx);
 
     // Remove pending transaction if a settled version exists with the same hash
@@ -408,6 +455,7 @@ export function formatReconciliationMessage(result) {
 }
 
 export default {
+  getLocalDateFromActivityId,
   generatePendingTransactionId,
   isPendingTransaction,
   isSettledTransaction,

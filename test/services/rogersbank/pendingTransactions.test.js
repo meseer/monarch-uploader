@@ -4,6 +4,7 @@
  */
 
 import {
+  getLocalDateFromActivityId,
   generatePendingTransactionId,
   isPendingTransaction,
   isSettledTransaction,
@@ -63,6 +64,67 @@ beforeEach(() => {
 
 afterEach(() => {
   jest.clearAllMocks();
+});
+
+// ============================================================
+// Local date extraction from activityId
+// ============================================================
+
+describe('getLocalDateFromActivityId', () => {
+  // Helper to BASE64-encode a string (Node.js compatible)
+  const encode = (str) => Buffer.from(str).toString('base64');
+
+  it('extracts local date from a valid activityId', () => {
+    // "DT|2026-02-19T15:49:53-05:00"  3:49 PM EST = 12:49 PM PST, still Feb 19
+    const activityId = encode('DT|2026-02-19T15:49:53-05:00');
+    const result = getLocalDateFromActivityId(activityId);
+    expect(result).toBe('2026-02-19');
+  });
+
+  it('converts cross-midnight EST transaction to correct local date', () => {
+    // "DT|2026-02-20T01:30:00-05:00"  1:30 AM EST Feb 20 = 10:30 PM PST Feb 19
+    const activityId = encode('DT|2026-02-20T01:30:00-05:00');
+    const result = getLocalDateFromActivityId(activityId);
+    // In PST (UTC-8), this is Feb 19 at 22:30
+    expect(result).toBe('2026-02-19');
+  });
+
+  it('handles EDT offset correctly', () => {
+    // "DT|2026-07-15T23:30:00-04:00"  11:30 PM EDT Jul 15 = 8:30 PM PDT Jul 15
+    const activityId = encode('DT|2026-07-15T23:30:00-04:00');
+    const result = getLocalDateFromActivityId(activityId);
+    expect(result).toBe('2026-07-15');
+  });
+
+  it('handles EDT cross-midnight to different local date', () => {
+    // "DT|2026-07-16T02:00:00-04:00"  2:00 AM EDT Jul 16 = 11:00 PM PDT Jul 15
+    const activityId = encode('DT|2026-07-16T02:00:00-04:00');
+    const result = getLocalDateFromActivityId(activityId);
+    // In PDT (UTC-7), this is Jul 15 at 23:00
+    expect(result).toBe('2026-07-15');
+  });
+
+  it('returns null for null/undefined/empty input', () => {
+    expect(getLocalDateFromActivityId(null)).toBeNull();
+    expect(getLocalDateFromActivityId(undefined)).toBeNull();
+    expect(getLocalDateFromActivityId('')).toBeNull();
+  });
+
+  it('returns null for invalid base64', () => {
+    expect(getLocalDateFromActivityId('not-valid-base64!!!')).toBeNull();
+  });
+
+  it('returns null when decoded string has no valid date', () => {
+    const activityId = encode('DT|not-a-date');
+    expect(getLocalDateFromActivityId(activityId)).toBeNull();
+  });
+
+  it('handles decoded string without DT| prefix', () => {
+    // If the decoded string is just an ISO timestamp without prefix, it should still work
+    const activityId = encode('2026-02-19T15:49:53-05:00');
+    const result = getLocalDateFromActivityId(activityId);
+    expect(result).toBe('2026-02-19');
+  });
 });
 
 // ============================================================
@@ -337,6 +399,72 @@ describe('separateAndDeduplicateTransactions', () => {
     expect(result.settled).toHaveLength(0);
     expect(result.pending).toHaveLength(0);
     expect(result.duplicatesRemoved).toBe(0);
+  });
+
+  it('converts pending transaction date from activityId before hashing', async () => {
+    // Pending transaction at 1:30 AM EST Feb 20 = 10:30 PM PST Feb 19
+    // Settled version has local date Feb 19
+    const activityId = Buffer.from('DT|2026-02-20T01:30:00-05:00').toString('base64');
+
+    const pendingTx = {
+      activityStatus: 'PENDING',
+      activityId,
+      date: '2026-02-20', // EST date (wrong for PST user)
+      amount: { value: '5.50', currency: 'CAD' },
+      merchant: { name: 'STORE', categoryCode: '7523' },
+      cardNumber: '************8584',
+    };
+    const settledTx = {
+      activityStatus: 'APPROVED',
+      date: '2026-02-19', // Local date (correct)
+      amount: { value: '5.50', currency: 'CAD' },
+      merchant: { name: 'STORE', categoryCode: '7523' },
+      cardNumber: '************8584',
+      referenceNumber: '999',
+    };
+
+    const result = await separateAndDeduplicateTransactions([settledTx, pendingTx]);
+
+    // Pending should be removed because after date conversion, hashes match
+    expect(result.settled).toHaveLength(1);
+    expect(result.pending).toHaveLength(0);
+    expect(result.duplicatesRemoved).toBe(1);
+  });
+
+  it('updates pending transaction date in output after activityId conversion', async () => {
+    const activityId = Buffer.from('DT|2026-02-20T01:30:00-05:00').toString('base64');
+
+    const pendingTx = {
+      activityStatus: 'PENDING',
+      activityId,
+      date: '2026-02-20', // EST date
+      amount: { value: '25.00', currency: 'CAD' },
+      merchant: { name: 'UNIQUE_STORE', categoryCode: '5411' },
+      cardNumber: '************1111',
+    };
+
+    const result = await separateAndDeduplicateTransactions([pendingTx]);
+
+    // Pending transaction should have its date converted to local
+    expect(result.pending).toHaveLength(1);
+    expect(result.pending[0].date).toBe('2026-02-19');
+  });
+
+  it('preserves pending transaction date when activityId is absent', async () => {
+    const pendingTx = {
+      activityStatus: 'PENDING',
+      // No activityId
+      date: '2026-02-20',
+      amount: { value: '25.00', currency: 'CAD' },
+      merchant: { name: 'SOME_STORE', categoryCode: '5411' },
+      cardNumber: '************2222',
+    };
+
+    const result = await separateAndDeduplicateTransactions([pendingTx]);
+
+    // Date should remain unchanged when activityId is not available
+    expect(result.pending).toHaveLength(1);
+    expect(result.pending[0].date).toBe('2026-02-20');
   });
 
   it('handles non-CAD duplicate where amounts differ', async () => {
