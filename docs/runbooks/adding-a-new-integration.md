@@ -1219,5 +1219,13 @@ Before calling the integration done, verify every item:
 - [ ] `npm run build` — production build succeeds
 - [ ] `npm run build:full` — full build validation passes
 
+### README
+- [ ] Add the integration to the **Supported Institutions** table in `README.md`
+      - Transactions column: `manifest.capabilities.hasTransactions`
+      - Balance History column: `manifest.capabilities.hasBalanceHistory`
+      - Holdings column: `manifest.capabilities.hasHoldings`
+      - Notes column: account type (credit card, investment, etc.) and any notable constraints
+- [ ] Update the **Multi-institution Support** feature bullet to include the new institution name
+
 ### Version bump
 - [ ] `npm run version:bump -- X.Y.Z` (new integration = minor version bump)
