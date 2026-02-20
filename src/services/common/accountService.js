@@ -47,12 +47,22 @@ const LEGACY_UPLOADED_TRANSACTIONS_PREFIXES = {
 };
 
 /**
- * Get the storage key for an integration's account list
+ * Get the storage key for an integration's account list.
+ * Checks hardcoded ACCOUNT_LIST_STORAGE_KEYS first, then falls back to
+ * the modular integration registry manifest.
+ *
  * @param {string} integrationId - Integration identifier
  * @returns {string|null} Storage key or null if not found
  */
 export function getStorageKey(integrationId) {
-  return ACCOUNT_LIST_STORAGE_KEYS[integrationId] || null;
+  if (ACCOUNT_LIST_STORAGE_KEYS[integrationId]) {
+    return ACCOUNT_LIST_STORAGE_KEYS[integrationId];
+  }
+
+  // Fall back to modular integration registry manifest (lazy require to avoid circular dependency)
+  const { getManifest } = require('../../core/integrationRegistry');
+  const manifest = getManifest(integrationId);
+  return manifest?.storageKeys?.accountsList || null;
 }
 
 /**

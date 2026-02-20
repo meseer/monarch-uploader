@@ -184,12 +184,63 @@ export const INTEGRATION_CAPABILITIES = {
 };
 
 /**
- * Get capabilities for a specific integration
+ * Build a legacy-compatible capabilities object from a modular integration manifest.
+ * This bridges the gap between the new registry-based manifests and legacy code
+ * that expects INTEGRATION_CAPABILITIES entries.
+ *
+ * @param {Object} manifest - Integration manifest from the registry
+ * @returns {IntegrationCapabilities} Capabilities object compatible with legacy consumers
+ */
+function buildCapabilitiesFromManifest(manifest) {
+  const settingKeys = (manifest.settings || []).map((s) => s.key);
+  const settingDefaults = {};
+  (manifest.settings || []).forEach((s) => {
+    settingDefaults[s.key] = s.default;
+  });
+
+  return {
+    id: manifest.id,
+    displayName: manifest.displayName,
+    accountKeyName: manifest.accountKeyName,
+    configStorageKey: manifest.storageKeys?.config || null,
+    hasTransactions: manifest.capabilities?.hasTransactions || false,
+    hasDeduplication: manifest.capabilities?.hasDeduplication || false,
+    hasBalanceHistory: manifest.capabilities?.hasBalanceHistory || false,
+    hasCreditLimit: manifest.capabilities?.hasCreditLimit || false,
+    hasHoldings: manifest.capabilities?.hasHoldings || false,
+    hasBalanceReconstruction: manifest.capabilities?.hasBalanceReconstruction || false,
+    hasCategorization: manifest.capabilities?.hasCategorization || false,
+    categoryMappingsStorageKey: manifest.capabilities?.hasCategorization
+      ? (manifest.storageKeys?.config || null) : null,
+    categorySourceLabel: manifest.categoryConfig?.sourceLabel || null,
+    settings: settingKeys,
+    settingDefaults,
+  };
+}
+
+/**
+ * Get capabilities for a specific integration.
+ * Checks the hardcoded INTEGRATION_CAPABILITIES first, then falls back to
+ * building capabilities from the modular integration registry manifest.
+ *
  * @param {string} integrationId - Integration identifier
  * @returns {IntegrationCapabilities|null} Capabilities object or null if not found
  */
 export function getCapabilities(integrationId) {
-  return INTEGRATION_CAPABILITIES[integrationId] || null;
+  // Check hardcoded legacy capabilities first
+  if (INTEGRATION_CAPABILITIES[integrationId]) {
+    return INTEGRATION_CAPABILITIES[integrationId];
+  }
+
+  // Fall back to modular integration registry manifest (lazy require to avoid circular dependency)
+  // Chain: integrationCapabilities ’ integrationRegistry ’ utils ’ configStore ’ integrationCapabilities
+  const { getManifest } = require('./integrationRegistry');
+  const manifest = getManifest(integrationId);
+  if (manifest) {
+    return buildCapabilitiesFromManifest(manifest);
+  }
+
+  return null;
 }
 
 /**
@@ -298,13 +349,20 @@ export function getCategoryMappingsConfig(integrationId) {
 }
 
 /**
- * Get favicon domain for an integration
- * Used to fetch logos via Google Favicon API
+ * Get favicon domain for an integration.
+ * Checks hardcoded FAVICON_DOMAINS first, then falls back to registry manifest.
  * @param {string} integrationId - Integration identifier
  * @returns {string|null} Domain for favicon URL or null if not found
  */
 export function getFaviconDomain(integrationId) {
-  return FAVICON_DOMAINS[integrationId] || null;
+  if (FAVICON_DOMAINS[integrationId]) {
+    return FAVICON_DOMAINS[integrationId];
+  }
+
+  // Fall back to modular integration registry manifest (lazy require to avoid circular dependency)
+  const { getManifest } = require('./integrationRegistry');
+  const manifest = getManifest(integrationId);
+  return manifest?.faviconDomain || null;
 }
 
 /**
