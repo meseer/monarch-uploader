@@ -27,7 +27,6 @@ export const FAVICON_DOMAINS = {
   [INTEGRATIONS.QUESTRADE]: 'questrade.com',
   [INTEGRATIONS.CANADALIFE]: 'canadalife.com',
   [INTEGRATIONS.ROGERSBANK]: 'rogersbank.com',
-  [INTEGRATIONS.MBNA]: 'mbna.ca',
 };
 
 /**
@@ -180,38 +179,6 @@ export const INTEGRATION_CAPABILITIES = {
       [ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS]: true,
       [ACCOUNT_SETTINGS.INVERT_BALANCE]: false,
       [ACCOUNT_SETTINGS.SKIP_CATEGORIZATION]: false,
-    },
-  },
-
-  [INTEGRATIONS.MBNA]: {
-    id: INTEGRATIONS.MBNA,
-    displayName: 'MBNA',
-    accountKeyName: 'mbnaAccount',
-    configStorageKey: STORAGE.MBNA_CONFIG,
-    hasTransactions: true,
-    hasDeduplication: true,
-    hasBalanceHistory: true,
-    hasCreditLimit: true,
-    hasHoldings: false, // Credit card only
-    hasBalanceReconstruction: true,
-    hasCategorization: true, // Merchant name to Monarch category mappings
-    categoryMappingsStorageKey: STORAGE.MBNA_CONFIG,
-    categorySourceLabel: 'Merchant Name',
-    settings: [
-      ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES,
-      ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS,
-      ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT,
-      ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS,
-      ACCOUNT_SETTINGS.INVERT_BALANCE,
-      ACCOUNT_SETTINGS.SKIP_CATEGORIZATION,
-    ],
-    settingDefaults: {
-      [ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES]: false,
-      [ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS]: TRANSACTION_RETENTION_DEFAULTS.DAYS,
-      [ACCOUNT_SETTINGS.TRANSACTION_RETENTION_COUNT]: TRANSACTION_RETENTION_DEFAULTS.COUNT,
-      [ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS]: true,
-      [ACCOUNT_SETTINGS.INVERT_BALANCE]: false,
-      [ACCOUNT_SETTINGS.SKIP_CATEGORIZATION]: true,
     },
   },
 };

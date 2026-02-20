@@ -22,6 +22,7 @@ import { debugLog } from './utils';
  * @property {Object|null} enrichment - Instantiated enrichment fetcher (null if not applicable)
  * @property {Object} injectionPoint - UI injection point configuration
  * @property {Object|null} monarchMapper - Monarch data mapper (null if not applicable)
+ * @property {import('../integrations/types').SyncHooks|null} syncHooks - Sync hooks for the orchestrator (null if not applicable)
  */
 
 /**
@@ -43,6 +44,7 @@ const registry = new Map();
  * @param {Object} [params.enrichment=null] - Instantiated enrichment fetcher
  * @param {Object} params.injectionPoint - UI injection point configuration
  * @param {Object} [params.monarchMapper=null] - Monarch data mapper
+ * @param {import('../integrations/types').SyncHooks} [params.syncHooks=null] - Sync hooks for the orchestrator
  * @returns {boolean} True if registration succeeded
  */
 export function registerIntegration({
@@ -52,6 +54,7 @@ export function registerIntegration({
   enrichment = null,
   injectionPoint,
   monarchMapper = null,
+  syncHooks = null,
 }) {
   if (!manifest || !manifest.id) {
     debugLog('[integrationRegistry] Cannot register integration: missing manifest or manifest.id');
@@ -69,6 +72,7 @@ export function registerIntegration({
     enrichment,
     injectionPoint,
     monarchMapper,
+    syncHooks,
   });
 
   debugLog(`[integrationRegistry] Registered integration: ${manifest.id} (${manifest.displayName})`);

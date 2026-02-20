@@ -36,7 +36,7 @@ import { initUI, updateStatusIndicators } from './ui/questrade/uiManager';
 import { initCanadaLifeUI } from './ui/canadalife/uiManager';
 import { initRogersBankUI } from './ui/rogersbank/uiManager';
 import { initWealthsimpleUI } from './ui/wealthsimple/uiManager';
-import { initMbnaUI } from './ui/mbna/uiManager';
+import { initGenericUI } from './ui/generic/uiManager';
 import { loadCurrentAccountInfo } from './services/questrade/account';
 
 // Main IIFE - application entry point
@@ -65,6 +65,7 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
       auth: integration.createAuth(storage),
       injectionPoint: integration.injectionPoint,
       monarchMapper: integration.monarchMapper || null,
+      syncHooks: integration.syncHooks || null,
     });
   });
 
@@ -142,15 +143,12 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
       return;
     }
 
-    // When running on MBNA, initialize MBNA application
-    if (window.location.hostname.includes('service.mbna.ca')
-        || window.location.hostname.includes('mbna.ca')) {
-      debugLog('Running on MBNA site');
-
-      // Initialize MBNA components
-      initializeMbnaApp();
-
-      // Initialize Monarch token monitoring (event-driven, no polling)
+    // Modular integrations (registry-driven)  detected via manifest matchDomains
+    const { getIntegrationForHostname } = require('./core/integrationRegistry');
+    const modularMatch = getIntegrationForHostname(window.location.hostname);
+    if (modularMatch) {
+      debugLog(`Running on modular integration site: ${modularMatch.manifest.displayName}`);
+      initializeModularIntegrationApp(modularMatch.manifest.id);
       initializeMonarchTokenMonitoring();
       return;
     }
@@ -348,18 +346,28 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
   }
 
   /**
-     * Initialize MBNA application components
+     * Initialize a modular integration (registry-driven).
+     * Detects the integration via manifest matchDomains, then bootstraps
+     * the generic UI manager with the registered integration data.
+     * @param {string} integrationId - The integration ID from the registry
      */
-  function initializeMbnaApp() {
+  function initializeModularIntegrationApp(integrationId) {
     try {
-      debugLog('Initializing MBNA application components...');
+      debugLog(`Initializing modular integration: ${integrationId}...`);
 
-      // Initialize MBNA UI
-      initMbnaUI()
-        .then(() => debugLog('MBNA UI initialized successfully'))
-        .catch((err) => debugLog('Error initializing MBNA UI:', err));
+      const { getIntegration } = require('./core/integrationRegistry');
+      const reg = getIntegration(integrationId);
+      if (!reg) {
+        debugLog(`Integration ${integrationId} not found in registry`);
+        return;
+      }
+
+      // Use the generic UI manager  all institution-specific data comes from the registry entry
+      initGenericUI(reg)
+        .then(() => debugLog(`${integrationId} UI initialized successfully`))
+        .catch((err) => debugLog(`Error initializing ${integrationId} UI:`, err));
     } catch (error) {
-      debugLog('Error initializing MBNA application:', error);
+      debugLog(`Error initializing modular integration ${integrationId}:`, error);
     }
   }
 

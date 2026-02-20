@@ -1,21 +1,21 @@
 /**
- * MBNA Connection Status Component
+ * Generic Connection Status Component
  *
- * Displays connection status indicators for MBNA and Monarch.
- * Follows the same pattern as Rogers Bank connectionStatus.js
- * but uses MBNA branding.
+ * Displays connection status indicators for any institution and Monarch.
+ * Parameterized by institution name — no institution-specific logic.
  *
- * @module ui/mbna/components/connectionStatus
+ * @module ui/generic/components/connectionStatus
  */
 
 /**
  * Creates connection status indicators container
+ * @param {string} institutionName - Display name of the institution (e.g., 'MBNA')
  * @returns {HTMLElement} Connection status container
  */
-export function createConnectionStatus() {
+export function createConnectionStatus(institutionName) {
   const container = document.createElement('div');
   container.className = 'connection-status-container';
-  container.id = 'mbna-connection-status';
+  container.id = 'generic-connection-status';
   container.style.cssText = `
     display: flex;
     flex-wrap: wrap;
@@ -32,12 +32,12 @@ export function createConnectionStatus() {
     overflow: hidden;
   `;
 
-  // Create MBNA status indicator
-  const mbnaStatus = document.createElement('div');
-  mbnaStatus.className = 'mbna-status';
-  mbnaStatus.id = 'mbna-status-indicator';
-  mbnaStatus.textContent = 'MBNA: Checking...';
-  mbnaStatus.style.cssText = `
+  // Institution status indicator
+  const institutionStatus = document.createElement('div');
+  institutionStatus.className = 'institution-status';
+  institutionStatus.id = 'institution-status-indicator';
+  institutionStatus.textContent = `${institutionName}: Checking...`;
+  institutionStatus.style.cssText = `
     display: flex;
     align-items: center;
     gap: 6px;
@@ -45,17 +45,17 @@ export function createConnectionStatus() {
     color: #666;
   `;
 
-  const mbnaIcon = document.createElement('span');
-  mbnaIcon.textContent = '●';
-  mbnaIcon.style.cssText = 'color: inherit;';
-  mbnaStatus.insertBefore(mbnaIcon, mbnaStatus.firstChild);
+  const institutionIcon = document.createElement('span');
+  institutionIcon.textContent = '●';
+  institutionIcon.style.cssText = 'color: inherit;';
+  institutionStatus.insertBefore(institutionIcon, institutionStatus.firstChild);
 
-  container.appendChild(mbnaStatus);
+  container.appendChild(institutionStatus);
 
-  // Create Monarch status indicator
+  // Monarch status indicator
   const monarchStatus = document.createElement('div');
   monarchStatus.className = 'monarch-status';
-  monarchStatus.id = 'mbna-monarch-status-indicator';
+  monarchStatus.id = 'monarch-status-indicator';
   monarchStatus.textContent = 'Monarch: Checking...';
   monarchStatus.style.cssText = `
     display: flex;
@@ -76,19 +76,20 @@ export function createConnectionStatus() {
 }
 
 /**
- * Update MBNA connection status indicator
+ * Update institution connection status indicator
  * @param {HTMLElement} container - Connection status container
- * @param {boolean} authenticated - Whether MBNA session is active
+ * @param {string} institutionName - Display name of the institution
+ * @param {boolean} authenticated - Whether the institution session is active
  */
-export function updateMbnaStatus(container, authenticated) {
-  const indicator = container.querySelector('.mbna-status');
+export function updateInstitutionStatus(container, institutionName, authenticated) {
+  const indicator = container.querySelector('.institution-status');
   if (!indicator) return;
 
   if (authenticated) {
-    indicator.textContent = 'MBNA: Connected';
+    indicator.textContent = `${institutionName}: Connected`;
     indicator.style.color = '#28a745';
   } else {
-    indicator.textContent = 'MBNA: Not connected';
+    indicator.textContent = `${institutionName}: Not connected`;
     indicator.style.color = '#dc3545';
   }
 
@@ -143,6 +144,6 @@ export function updateMonarchStatus(container, connected, onLoginClick) {
 
 export default {
   createConnectionStatus,
-  updateMbnaStatus,
+  updateInstitutionStatus,
   updateMonarchStatus,
 };

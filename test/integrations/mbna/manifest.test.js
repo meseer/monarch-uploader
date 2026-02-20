@@ -1,13 +1,13 @@
 /**
  * Tests for MBNA Integration Manifest
  *
- * Validates that the manifest conforms to the IntegrationManifest contract
- * and aligns with the system-wide integration configuration.
+ * Validates that the manifest conforms to the IntegrationManifest contract.
+ * MBNA is a modular integration — its capabilities come from the manifest,
+ * not from INTEGRATION_CAPABILITIES.
  */
 
 import manifest from '../../../src/integrations/mbna/manifest';
-import { STORAGE } from '../../../src/core/config';
-import { INTEGRATIONS, INTEGRATION_CAPABILITIES } from '../../../src/core/integrationCapabilities';
+import { INTEGRATIONS } from '../../../src/core/integrationCapabilities';
 
 describe('MBNA Manifest', () => {
   describe('identity', () => {
@@ -36,14 +36,12 @@ describe('MBNA Manifest', () => {
   });
 
   describe('storage keys', () => {
-    it('has accountsList matching STORAGE constant', () => {
+    it('has accountsList key', () => {
       expect(manifest.storageKeys.accountsList).toBe('mbna_accounts_list');
-      expect(manifest.storageKeys.accountsList).toBe(STORAGE.MBNA_ACCOUNTS_LIST);
     });
 
-    it('has config matching STORAGE constant', () => {
+    it('has config key', () => {
       expect(manifest.storageKeys.config).toBe('mbna_config');
-      expect(manifest.storageKeys.config).toBe(STORAGE.MBNA_CONFIG);
     });
 
     it('has cache set to null (no separate cache key)', () => {
@@ -157,40 +155,6 @@ describe('MBNA Manifest', () => {
       expect(manifest.logoCloudinaryId).toBe(
         'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/mpyiskjxkwjoceqz00ll',
       );
-    });
-  });
-
-  describe('alignment with INTEGRATION_CAPABILITIES', () => {
-    const caps = INTEGRATION_CAPABILITIES[INTEGRATIONS.MBNA];
-
-    it('capabilities entry exists in INTEGRATION_CAPABILITIES', () => {
-      expect(caps).toBeDefined();
-    });
-
-    it('manifest id matches capabilities id', () => {
-      expect(manifest.id).toBe(caps.id);
-    });
-
-    it('manifest displayName matches capabilities displayName', () => {
-      expect(manifest.displayName).toBe(caps.displayName);
-    });
-
-    it('manifest accountKeyName matches capabilities accountKeyName', () => {
-      expect(manifest.accountKeyName).toBe(caps.accountKeyName);
-    });
-
-    it('capability flags are consistent', () => {
-      expect(manifest.capabilities.hasTransactions).toBe(caps.hasTransactions);
-      expect(manifest.capabilities.hasDeduplication).toBe(caps.hasDeduplication);
-      expect(manifest.capabilities.hasBalanceHistory).toBe(caps.hasBalanceHistory);
-      expect(manifest.capabilities.hasCreditLimit).toBe(caps.hasCreditLimit);
-      expect(manifest.capabilities.hasHoldings).toBe(caps.hasHoldings);
-      expect(manifest.capabilities.hasBalanceReconstruction).toBe(caps.hasBalanceReconstruction);
-      expect(manifest.capabilities.hasCategorization).toBe(caps.hasCategorization);
-    });
-
-    it('configStorageKey matches manifest storageKeys.config', () => {
-      expect(caps.configStorageKey).toBe(manifest.storageKeys.config);
     });
   });
 });

@@ -234,6 +234,7 @@
  * @property {CreateEnrichmentFunction} [createEnrichment] - Factory for enrichment fetcher (optional)
  * @property {IntegrationInjectionPoint} injectionPoint - UI injection point config
  * @property {IntegrationMonarchMapper} [monarchMapper] - Monarch data mapper (optional)
+ * @property {SyncHooks} [syncHooks] - Sync hooks for the generic syncOrchestrator (optional)
  */
 
 // ============================================================
