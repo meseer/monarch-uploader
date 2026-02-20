@@ -1,3 +1,5 @@
+process.env.TZ = 'America/Vancouver';
+
 module.exports = {
   // The root directory that Jest should scan for tests
   rootDir: '.',
