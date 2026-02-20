@@ -11,7 +11,7 @@
  * @module integrations/mbna/source/balanceReconstruction
  */
 
-import { debugLog } from '../../../core/utils';
+import { debugLog, getTodayLocal } from '../../../core/utils';
 
 /**
  * Build balance history from statement data and current balance.
@@ -74,7 +74,7 @@ export function buildBalanceHistory({ currentBalance, statements, currentCycleSe
 
   // Step 3: Reconstruct current cycle balances (from last statement to today)
   if (currentBalance !== null && currentBalance !== undefined && currentCycleSettled) {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayLocal();
     balanceEntries.set(today, currentBalance);
 
     const lastStatementDate = sortedStatements.length > 0

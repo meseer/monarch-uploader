@@ -3,6 +3,7 @@
  */
 
 import { buildBalanceHistory } from '../../../src/integrations/mbna/source/balanceReconstruction';
+import * as utils from '../../../src/core/utils';
 
 describe('MBNA Balance Reconstruction', () => {
   describe('buildBalanceHistory', () => {
@@ -65,8 +66,8 @@ describe('MBNA Balance Reconstruction', () => {
       expect(closing.balance).toBe(100);
     });
 
-    it('should include current balance as today entry', () => {
-      const today = new Date().toISOString().split('T')[0];
+    it('should include current balance as today entry using local timezone', () => {
+      jest.spyOn(utils, 'getTodayLocal').mockReturnValue('2026-02-19');
 
       const result = buildBalanceHistory({
         currentBalance: 93.12,
@@ -75,9 +76,49 @@ describe('MBNA Balance Reconstruction', () => {
         startDate: '2025-12-01',
       });
 
-      const todayEntry = result.find((e) => e.date === today);
+      const todayEntry = result.find((e) => e.date === '2026-02-19');
       expect(todayEntry).toBeDefined();
       expect(todayEntry.balance).toBe(93.12);
+
+      // Should NOT contain a future date from UTC conversion
+      const tomorrowEntry = result.find((e) => e.date === '2026-02-20');
+      expect(tomorrowEntry).toBeUndefined();
+
+      utils.getTodayLocal.mockRestore();
+    });
+
+    it('should use local timezone date, not UTC, for current cycle reconstruction', () => {
+      // Simulate a scenario where UTC date differs from local date
+      // e.g., 8 PM PST on Feb 19 = 4 AM UTC on Feb 20
+      jest.spyOn(utils, 'getTodayLocal').mockReturnValue('2026-02-19');
+
+      const result = buildBalanceHistory({
+        currentBalance: 84.55,
+        statements: [
+          {
+            closingDate: '2026-01-14',
+            statementBalance: 100,
+            transactions: [
+              { transactionDate: '2026-01-10', amount: 50 },
+            ],
+          },
+        ],
+        currentCycleSettled: [
+          { transactionDate: '2026-02-15', amount: 25 },
+        ],
+        startDate: '2026-01-01',
+      });
+
+      // "Today" entry should use local date (2026-02-19), not UTC (2026-02-20)
+      const todayEntry = result.find((e) => e.date === '2026-02-19');
+      expect(todayEntry).toBeDefined();
+      expect(todayEntry.balance).toBe(84.55);
+
+      // No entry should exist for the UTC "tomorrow" date
+      const allDates = result.map((e) => e.date);
+      expect(allDates.every((d) => d <= '2026-02-19')).toBe(true);
+
+      utils.getTodayLocal.mockRestore();
     });
 
     it('should handle empty statements', () => {
