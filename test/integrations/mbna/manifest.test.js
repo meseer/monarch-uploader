@@ -137,6 +137,12 @@ describe('MBNA Manifest', () => {
     });
   });
 
+  describe('defaultLookbackDays', () => {
+    it('defaults to 7 days', () => {
+      expect(manifest.defaultLookbackDays).toBe(7);
+    });
+  });
+
   describe('accountCreateDefaults', () => {
     it('has credit card defaults for account creation', () => {
       expect(manifest.accountCreateDefaults).toBeDefined();

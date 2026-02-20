@@ -27,6 +27,9 @@ const manifest = {
     cache: null,
   },
 
+  // ── Default lookback period ───────────────────────────────
+  defaultLookbackDays: 7,
+
   // ── Config schema ─────────────────────────────────────────
   configSchema: {
     auth: ['sessionActive', 'accountNumber', 'lastChecked'],
