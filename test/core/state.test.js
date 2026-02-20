@@ -57,9 +57,6 @@ describe('StateManager', () => {
           identityId: null,
           expiresAt: null,
         },
-        mbna: {
-          authenticated: false,
-        },
       });
     });
 
