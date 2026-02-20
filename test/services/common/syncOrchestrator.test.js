@@ -11,6 +11,11 @@ jest.mock('../../../src/core/utils', () => ({
   getTodayLocal: jest.fn(() => '2024-01-15'),
   getLastUpdateDate: jest.fn(() => null),
   calculateFromDateWithLookback: jest.fn(() => '2024-01-01'),
+  formatDaysAgoLocal: jest.fn((days) => {
+    const d = new Date(2024, 0, 15); // matches getTodayLocal mock
+    d.setDate(d.getDate() - days);
+    return d.toISOString().split('T')[0];
+  }),
 }));
 
 jest.mock('../../../src/core/state', () => ({

@@ -5,7 +5,7 @@
 
 import {
   debugLog, getTodayLocal, calculateFromDateWithLookback, saveLastUploadDate, formatDate, parseLocalDate,
-  getLastUpdateDate,
+  getLastUpdateDate, formatDaysAgoLocal,
 } from '../core/utils';
 import toast from '../ui/toast';
 import { LOGO_CLOUDINARY_IDS } from '../core/config';
@@ -66,7 +66,7 @@ function isFirstSync(rogersAccountId) {
 function getEndOfCurrentMonth() {
   const now = new Date();
   const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  return lastDay.toISOString().split('T')[0];
+  return formatDate(lastDay);
 }
 
 /**
@@ -623,11 +623,7 @@ export async function uploadRogersBankToMonarch() {
     let reconstructBalance = false;
 
     if (firstSync) {
-      const defaultDate = openedDate || (() => {
-        const d = new Date();
-        d.setDate(d.getDate() - 14);
-        return d.toISOString().split('T')[0];
-      })();
+      const defaultDate = openedDate || formatDaysAgoLocal(14);
 
       const datePickerResult = await showDatePickerWithOptionsPromise(
         defaultDate,
@@ -643,11 +639,7 @@ export async function uploadRogersBankToMonarch() {
       fromDate = datePickerResult.date;
       reconstructBalance = datePickerResult.reconstructBalance;
     } else {
-      fromDate = calculateFromDateWithLookback('rogersbank', rogersAccountId) || (() => {
-        const d = new Date();
-        d.setDate(d.getDate() - 14);
-        return d.toISOString().split('T')[0];
-      })();
+      fromDate = calculateFromDateWithLookback('rogersbank', rogersAccountId) || formatDaysAgoLocal(14);
     }
 
     const toDate = getEndOfCurrentMonth();

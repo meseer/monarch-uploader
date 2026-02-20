@@ -3,7 +3,7 @@
  * Per-account settings, transaction management, holdings mappings, and debug sections
  */
 
-import { debugLog, getLookbackForInstitution, validateLookbackVsRetention } from '../../core/utils';
+import { debugLog, getLookbackForInstitution, validateLookbackVsRetention, getTodayLocal } from '../../core/utils';
 import toast from '../toast';
 import {
   ACCOUNT_SETTINGS,
@@ -672,7 +672,7 @@ export function renderTransactionsManagementSection(integrationId, accountEntry,
       }
 
       // Add new transactions with today's date
-      const today = new Date().toISOString().split('T')[0];
+      const today = getTodayLocal();
       const newTransactions = uniqueNewIds.map((id) => ({ id, date: today }));
       const updatedTransactions = [...uploadedTransactions, ...newTransactions];
 

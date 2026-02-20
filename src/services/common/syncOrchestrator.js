@@ -22,7 +22,7 @@
  * @module services/common/syncOrchestrator
  */
 
-import { debugLog, getTodayLocal, getLastUpdateDate, calculateFromDateWithLookback } from '../../core/utils';
+import { debugLog, getTodayLocal, getLastUpdateDate, calculateFromDateWithLookback, formatDaysAgoLocal } from '../../core/utils';
 import { ACCOUNT_SETTINGS } from '../../core/integrationCapabilities';
 import stateManager from '../../core/state';
 import accountService from './accountService';
@@ -635,9 +635,7 @@ export async function prepareAndSyncAccount({
       }
     }
     if (!defaultDate) {
-      const d = new Date();
-      d.setDate(d.getDate() - 90);
-      defaultDate = d.toISOString().split('T')[0];
+      defaultDate = formatDaysAgoLocal(90);
     }
 
     const showReconstruct = manifest.capabilities?.hasBalanceReconstruction === true;
@@ -653,11 +651,7 @@ export async function prepareAndSyncAccount({
     fromDate = datePickerResult.date;
     reconstructBalance = datePickerResult.reconstructBalance;
   } else {
-    fromDate = calculateFromDateWithLookback(integrationId, accountId) || (() => {
-      const d = new Date();
-      d.setDate(d.getDate() - 14);
-      return d.toISOString().split('T')[0];
-    })();
+    fromDate = calculateFromDateWithLookback(integrationId, accountId) || formatDaysAgoLocal(14);
   }
 
   // 3. Create progress dialog

@@ -9,7 +9,7 @@
  * @module integrations/mbna/sinks/monarch/syncHooks
  */
 
-import { debugLog } from '../../../../core/utils';
+import { debugLog, formatDate } from '../../../../core/utils';
 import { processMbnaTransactions, resolveMbnaCategories } from './transactions';
 import { buildBalanceHistory } from '../../source/balanceReconstruction';
 import { formatBalanceHistoryForMonarch } from './balanceFormatter';
@@ -201,8 +201,9 @@ async function suggestStartDate(api, accountId) {
       const oldest = closingDates[closingDates.length - 1]; // sorted newest-first
       const d = new Date(`${oldest}T00:00:00`);
       d.setDate(d.getDate() - 30);
-      debugLog(`[MBNA hooks] Suggested start date: ${d.toISOString().split('T')[0]} (30 days before oldest closing date ${oldest})`);
-      return { date: d.toISOString().split('T')[0], description: '30 days before oldest statement' };
+      const suggestedDate = formatDate(d);
+      debugLog(`[MBNA hooks] Suggested start date: ${suggestedDate} (30 days before oldest closing date ${oldest})`);
+      return { date: suggestedDate, description: '30 days before oldest statement' };
     }
   } catch (error) {
     debugLog('[MBNA hooks] Could not fetch closing dates for start date suggestion:', error.message);
