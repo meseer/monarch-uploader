@@ -192,11 +192,13 @@ export default [
     ignores: [
       'dist/**',
       'node_modules/**',
-      '*.config.js',
+      '*.config.cjs',
+      '*.config.mjs',
       'webpack.config.cjs',
       'jest.config.cjs',
+      'eslint.config.mjs',
       '.eslintrc.js',
-      'src/userscript-metadata.js', // Has specific CommonJS exports
+      'src/userscript-metadata.cjs',
     ],
   },
 ];
