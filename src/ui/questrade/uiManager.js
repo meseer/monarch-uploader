@@ -304,23 +304,23 @@ export async function initSingleAccountUI() {
       container = createButtonContainer();
       isNewContainer = true;
 
-      // Find the sidebar content (original working approach)
-      let targetContainer = document.querySelector('.sidebar__content');
+      // Find the general account sidebar (injection point)
+      let targetContainer = document.querySelector('app-general-account-sidebar');
 
       // If not found immediately, wait for it with MutationObserver
       if (!targetContainer) {
-        debugLog('Sidebar content not found, setting up observer to wait for it...');
-        targetContainer = await waitForTargetElement('.sidebar__content', 30000);
+        debugLog('app-general-account-sidebar not found, setting up observer to wait for it...');
+        targetContainer = await waitForTargetElement('app-general-account-sidebar', 30000);
 
         if (!targetContainer) {
-          debugLog('Could not find .sidebar__content insertion point after waiting');
+          debugLog('Could not find app-general-account-sidebar insertion point after waiting');
           toast.show('UI element not found - please refresh the page', 'warning');
           return;
         }
       }
 
-      debugLog('Adding button container to the .sidebar__content insertion point');
-      targetContainer.appendChild(container);
+      debugLog('Adding button container as first element of app-general-account-sidebar');
+      targetContainer.insertBefore(container, targetContainer.firstElementChild);
     }
 
     // Clear existing dynamic content if reusing container
@@ -449,23 +449,23 @@ export async function initAllAccountsUI() {
       container = createButtonContainer();
       isNewContainer = true;
 
-      // Find the sidebar content (original working approach)
-      let targetContainer = document.querySelector('.sidebar__content');
+      // Find the general account sidebar (injection point)
+      let targetContainer = document.querySelector('app-general-account-sidebar');
 
       // If not found immediately, wait for it with MutationObserver
       if (!targetContainer) {
-        debugLog('Sidebar content not found, setting up observer to wait for it...');
-        targetContainer = await waitForTargetElement('.sidebar__content', 30000);
+        debugLog('app-general-account-sidebar not found, setting up observer to wait for it...');
+        targetContainer = await waitForTargetElement('app-general-account-sidebar', 30000);
 
         if (!targetContainer) {
-          debugLog('Could not find .sidebar__content insertion point after waiting');
+          debugLog('Could not find app-general-account-sidebar insertion point after waiting');
           toast.show('UI element not found - please refresh the page', 'warning');
           return;
         }
       }
 
-      debugLog('Adding button container to the .sidebar__content insertion point');
-      targetContainer.appendChild(container);
+      debugLog('Adding button container as first element of app-general-account-sidebar');
+      targetContainer.insertBefore(container, targetContainer.firstElementChild);
     }
 
     // Now that we know the SPA has loaded (sidebar exists), fetch accounts with retries
