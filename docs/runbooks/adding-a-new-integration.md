@@ -1220,12 +1220,13 @@ Before calling the integration done, verify every item:
 - [ ] `npm run build:full` — full build validation passes
 
 ### README
-- [ ] Add the integration to the **Supported Institutions** table in `README.md`
-      - Transactions column: `manifest.capabilities.hasTransactions`
+- [ ] Add the integration to the **Supported Institutions** table in `README.md` in **alphabetical order**
       - Balance History column: `manifest.capabilities.hasBalanceHistory`
+      - Transactions column: `manifest.capabilities.hasTransactions`
       - Holdings column: `manifest.capabilities.hasHoldings`
+      - Credit Limit column: `manifest.capabilities.hasCreditLimit`
+      - Category Mappings column: `manifest.capabilities.hasCategorization`
       - Notes column: account type (credit card, investment, etc.) and any notable constraints
-- [ ] Update the **Multi-institution Support** feature bullet to include the new institution name
 
 ### Version bump
 - [ ] `npm run version:bump -- X.Y.Z` (new integration = minor version bump)

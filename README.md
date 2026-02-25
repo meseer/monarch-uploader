@@ -12,11 +12,11 @@ A [Violentmonkey](https://violentmonkey.github.io/) userscript that automaticall
 
 | Institution | Balance History | Transactions | Holdings | Credit Limit | Category Mappings | Notes |
 |---|:---:|:---:|:---:|:---:|:---:|---|
-| Questrade | ✅ | ✅ | ✅ | ❌ | ❌ | Investment accounts (TFSA, RRSP, margin, etc.) |
-| Wealthsimple | ✅ | ✅ | ✅ | ✅ | ✅ | Investment, Cash, and Credit Card accounts |
 | Canada Life | ✅ | ✅ | ❌ | ❌ | ❌ | Group retirement and pension plans |
-| Rogers Bank | ✅ | ✅ | ❌ | ✅ | ✅ | Credit cards |
 | MBNA | ✅ | ✅ | ❌ | ✅ | ✅ | Credit cards |
+| Questrade | ✅ | ✅ | ✅ | ❌ | ❌ | Investment accounts (TFSA, RRSP, margin, etc.) |
+| Rogers Bank | ✅ | ✅ | ❌ | ✅ | ✅ | Credit cards |
+| Wealthsimple | ✅ | ✅ | ✅ | ✅ | ✅ | Investment, Cash, and Credit Card accounts |
 
 ## Installation
 
