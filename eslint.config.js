@@ -193,8 +193,8 @@ export default [
       'dist/**',
       'node_modules/**',
       '*.config.js',
-      'webpack.config.js',
-      'jest.config.js',
+      'webpack.config.cjs',
+      'jest.config.cjs',
       '.eslintrc.js',
       'src/userscript-metadata.js', // Has specific CommonJS exports
     ],
