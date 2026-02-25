@@ -133,7 +133,7 @@ export function updateStatusIndicators(indicators) {
       indicators.monarch.style.color = '#28a745';
     } else {
       // Create clickable login link
-      const loginLink = createMonarchLoginLink('Monarch: Not connected', () => {
+      const loginLink = createMonarchLoginLink('Monarch: Connect', () => {
         // Callback to update status after successful login
         updateStatusIndicators(indicators);
       });

@@ -621,7 +621,7 @@ function updateConnectionStatus(connectionStatus) {
       } else {
         // Clear and add login link
         monarchIndicator.textContent = '';
-        const loginLink = createMonarchLoginLink('Monarch: Not connected', () => {
+        const loginLink = createMonarchLoginLink('Monarch: Connect', () => {
           // Callback to update status after successful login
           updateConnectionStatus(connectionStatus);
         });

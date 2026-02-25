@@ -14,7 +14,7 @@ import toast from '../toast';
  * @param {Function} onSuccess - Callback function to execute after successful login
  * @returns {HTMLElement} Clickable link element
  */
-export function createMonarchLoginLink(text = 'Monarch: Not connected', onSuccess = null) {
+export function createMonarchLoginLink(text = 'Monarch: Connect', onSuccess = null) {
   const link = document.createElement('span');
   link.textContent = text;
   link.style.cssText = `

@@ -617,7 +617,7 @@ function renderMonarchTab(container) {
     statusText.textContent = 'Connected to Monarch Money';
   } else {
     // Create clickable login link for non-authenticated state
-    const loginLink = createMonarchLoginLink('Not connected to Monarch Money', () => {
+    const loginLink = createMonarchLoginLink('Connect to Monarch Money', () => {
       // Callback to refresh the tab after successful login using proper tab rendering
       const tabContainer = document.querySelector('.settings-tab-content');
       if (tabContainer) {

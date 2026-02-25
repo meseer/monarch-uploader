@@ -65,7 +65,7 @@ describe('Monarch Login Link Component', () => {
       const link = createMonarchLoginLink();
 
       expect(link.tagName).toBe('SPAN');
-      expect(link.textContent).toBe('Monarch: Not connected');
+      expect(link.textContent).toBe('Monarch: Connect');
       expect(link.style.color).toBe('rgb(220, 53, 69)');
       expect(link.style.cursor).toBe('pointer');
       expect(link.style.textDecoration).toBe('underline');

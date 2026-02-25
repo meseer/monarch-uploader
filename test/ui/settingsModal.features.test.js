@@ -254,9 +254,9 @@ describe('Settings Modal Component', () => {
       monarchTab.click();
 
       const tabContent = modal.querySelector('.settings-tab-content');
-      expect(tabContent.textContent).toContain('Not connected to Monarch Money');
+      expect(tabContent.textContent).toContain('Connect to Monarch Money');
       expect(createMonarchLoginLink).toHaveBeenCalledWith(
-        'Not connected to Monarch Money',
+        'Connect to Monarch Money',
         expect.any(Function),
       );
     });

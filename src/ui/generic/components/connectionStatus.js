@@ -127,7 +127,7 @@ export function updateMonarchStatus(container, connected, onLoginClick) {
 
     if (onLoginClick) {
       const link = document.createElement('a');
-      link.textContent = ' Monarch: Not connected (click to login)';
+      link.textContent = ' Monarch: Connect';
       link.href = '#';
       link.style.cssText = 'color: inherit; text-decoration: underline; cursor: pointer;';
       link.addEventListener('click', (e) => {
@@ -137,7 +137,7 @@ export function updateMonarchStatus(container, connected, onLoginClick) {
       });
       indicator.appendChild(link);
     } else {
-      indicator.appendChild(document.createTextNode(' Monarch: Not connected'));
+      indicator.appendChild(document.createTextNode(' Monarch: Connect'));
     }
   }
 }

@@ -90,7 +90,7 @@ describe('Generic Connection Status Component', () => {
       updateMonarchStatus(container, false);
 
       const indicator = container.querySelector('.monarch-status');
-      expect(indicator.textContent).toContain('Monarch: Not connected');
+      expect(indicator.textContent).toContain('Monarch: Connect');
       expect(indicator.style.color).toBe('rgb(220, 53, 69)'); // #dc3545
     });
 
@@ -101,7 +101,7 @@ describe('Generic Connection Status Component', () => {
       const indicator = container.querySelector('.monarch-status');
       const link = indicator.querySelector('a');
       expect(link).not.toBeNull();
-      expect(link.textContent).toContain('click to login');
+      expect(link.textContent).toContain('Monarch: Connect');
 
       // Simulate click
       link.click();
