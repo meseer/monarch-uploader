@@ -1,7 +1,6 @@
 /**
  * Questrade UI Manager Tests
- * Focused on injection point behavior: inserting the container as the
- * first element of <app-general-account-sidebar>.
+ * Focused on injection point behavior: appending the container to .sidebar__content.
  */
 
 import { initSingleAccountUI, initAllAccountsUI } from '../../../src/ui/questrade/uiManager';
@@ -97,8 +96,9 @@ describe('Questrade UI Manager — injection point', () => {
   // ── initSingleAccountUI ────────────────────────────────────────────────────
 
   describe('initSingleAccountUI', () => {
-    test('injects #balance-uploader-container inside app-general-account-sidebar', async () => {
-      const sidebar = document.createElement('app-general-account-sidebar');
+    test('injects #balance-uploader-container inside .sidebar__content', async () => {
+      const sidebar = document.createElement('div');
+      sidebar.className = 'sidebar__content';
       document.body.appendChild(sidebar);
 
       await initSingleAccountUI();
@@ -108,8 +108,9 @@ describe('Questrade UI Manager — injection point', () => {
       expect(sidebar.contains(container)).toBe(true);
     });
 
-    test('inserts container as the first child of app-general-account-sidebar', async () => {
-      const sidebar = document.createElement('app-general-account-sidebar');
+    test('appends container as the last child of .sidebar__content', async () => {
+      const sidebar = document.createElement('div');
+      sidebar.className = 'sidebar__content';
       const existingChild = document.createElement('div');
       existingChild.id = 'pre-existing';
       sidebar.appendChild(existingChild);
@@ -118,13 +119,13 @@ describe('Questrade UI Manager — injection point', () => {
       await initSingleAccountUI();
 
       const container = document.getElementById('balance-uploader-container');
-      expect(sidebar.firstElementChild).toBe(container);
-      // Pre-existing child is pushed to second position
-      expect(sidebar.children[1]).toBe(existingChild);
+      expect(sidebar.lastElementChild).toBe(container);
+      expect(sidebar.firstElementChild).toBe(existingChild);
     });
 
-    test('inserts as first child even when sidebar has multiple pre-existing children', async () => {
-      const sidebar = document.createElement('app-general-account-sidebar');
+    test('appends after multiple pre-existing children', async () => {
+      const sidebar = document.createElement('div');
+      sidebar.className = 'sidebar__content';
       ['a', 'b', 'c'].forEach((id) => {
         const el = document.createElement('div');
         el.id = id;
@@ -135,25 +136,17 @@ describe('Questrade UI Manager — injection point', () => {
       await initSingleAccountUI();
 
       const container = document.getElementById('balance-uploader-container');
-      expect(sidebar.firstElementChild).toBe(container);
+      expect(sidebar.lastElementChild).toBe(container);
       expect(sidebar.children).toHaveLength(4);
     });
 
-    test('shows toast and returns early when app-general-account-sidebar is never found', async () => {
-      // No sidebar in DOM; override waitForTargetElement timeout to resolve null quickly
-      // by not adding the element at all and relying on the real observer timing out —
-      // but that's 30 s, so we fake it by ensuring querySelector always returns null.
+    test('shows toast and returns early when .sidebar__content is never found', async () => {
       const toast = jest.requireMock('../../../src/ui/toast').default;
 
-      // Use a very short fake timeout: replace the real observer by mocking MutationObserver
       const OriginalMutationObserver = global.MutationObserver;
       global.MutationObserver = class {
         constructor(cb) { this._cb = cb; }
-        observe() {
-          // Immediately trigger timeout path by doing nothing — the real setTimeout
-          // inside waitForTargetElement will fire, but it's 30 s. Instead, advance
-          // timers after registering.
-        }
+        observe() {}
         disconnect() {}
       };
 
@@ -175,7 +168,8 @@ describe('Questrade UI Manager — injection point', () => {
     test('does nothing when URL has no account ID', async () => {
       setPathname('/dashboard');
 
-      const sidebar = document.createElement('app-general-account-sidebar');
+      const sidebar = document.createElement('div');
+      sidebar.className = 'sidebar__content';
       document.body.appendChild(sidebar);
 
       await initSingleAccountUI();
@@ -184,7 +178,8 @@ describe('Questrade UI Manager — injection point', () => {
     });
 
     test('reuses existing container without re-injecting', async () => {
-      const sidebar = document.createElement('app-general-account-sidebar');
+      const sidebar = document.createElement('div');
+      sidebar.className = 'sidebar__content';
       document.body.appendChild(sidebar);
 
       // First call — creates and injects
@@ -205,8 +200,9 @@ describe('Questrade UI Manager — injection point', () => {
       isQuestradeAllAccountsPage.mockReturnValue(true);
     });
 
-    test('injects #balance-uploader-container inside app-general-account-sidebar', async () => {
-      const sidebar = document.createElement('app-general-account-sidebar');
+    test('injects #balance-uploader-container inside .sidebar__content', async () => {
+      const sidebar = document.createElement('div');
+      sidebar.className = 'sidebar__content';
       document.body.appendChild(sidebar);
 
       await initAllAccountsUI();
@@ -216,8 +212,9 @@ describe('Questrade UI Manager — injection point', () => {
       expect(sidebar.contains(container)).toBe(true);
     });
 
-    test('inserts container as the first child of app-general-account-sidebar', async () => {
-      const sidebar = document.createElement('app-general-account-sidebar');
+    test('appends container as the last child of .sidebar__content', async () => {
+      const sidebar = document.createElement('div');
+      sidebar.className = 'sidebar__content';
       const existingChild = document.createElement('div');
       existingChild.id = 'pre-existing';
       sidebar.appendChild(existingChild);
@@ -226,15 +223,16 @@ describe('Questrade UI Manager — injection point', () => {
       await initAllAccountsUI();
 
       const container = document.getElementById('balance-uploader-container');
-      expect(sidebar.firstElementChild).toBe(container);
-      expect(sidebar.children[1]).toBe(existingChild);
+      expect(sidebar.lastElementChild).toBe(container);
+      expect(sidebar.firstElementChild).toBe(existingChild);
     });
 
     test('does nothing when isQuestradeAllAccountsPage returns false', async () => {
       const { isQuestradeAllAccountsPage } = jest.requireMock('../../../src/core/utils');
       isQuestradeAllAccountsPage.mockReturnValue(false);
 
-      const sidebar = document.createElement('app-general-account-sidebar');
+      const sidebar = document.createElement('div');
+      sidebar.className = 'sidebar__content';
       document.body.appendChild(sidebar);
 
       await initAllAccountsUI();
@@ -242,7 +240,7 @@ describe('Questrade UI Manager — injection point', () => {
       expect(document.getElementById('balance-uploader-container')).toBeNull();
     });
 
-    test('shows toast and returns early when app-general-account-sidebar is never found', async () => {
+    test('shows toast and returns early when .sidebar__content is never found', async () => {
       const toast = jest.requireMock('../../../src/ui/toast').default;
 
       const OriginalMutationObserver = global.MutationObserver;
