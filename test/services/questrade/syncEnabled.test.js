@@ -232,6 +232,12 @@ describe('uploadAllAccountsToMonarch — syncEnabled skip', () => {
 
   test('skips account with syncEnabled: false and updates progress as skipped', async () => {
     questradeApi.fetchAccounts.mockResolvedValue([makeApiAccount('acc1', false)]);
+    // Mock getAccountData to return the account with syncEnabled: false
+    accountService.getAccountData.mockReturnValue({
+      questradeAccount: { id: 'acc1', key: 'acc1' },
+      monarchAccount: { id: 'monarch-acc1', displayName: 'M Acc' },
+      syncEnabled: false,
+    });
     const dialog = makeProgressDialog();
     showProgressDialog.mockReturnValue(dialog);
 
@@ -260,6 +266,21 @@ describe('uploadAllAccountsToMonarch — syncEnabled skip', () => {
       makeApiAccount('disabled1', false),
       makeApiAccount('enabled2', true),
     ]);
+    // Mock getAccountData to return proper syncEnabled state for each account
+    accountService.getAccountData.mockImplementation((integration, accountId) => {
+      if (accountId === 'disabled1') {
+        return {
+          questradeAccount: { id: 'disabled1', key: 'disabled1' },
+          monarchAccount: { id: 'monarch-disabled1', displayName: 'M Acc' },
+          syncEnabled: false,
+        };
+      }
+      return {
+        questradeAccount: { id: accountId, key: accountId },
+        monarchAccount: { id: `monarch-${accountId}`, displayName: 'M Acc' },
+        syncEnabled: true,
+      };
+    });
     accountService.getMonarchAccountMapping.mockReturnValue({ id: 'monarch-enabled2', displayName: 'M Acc' });
     const dialog = makeProgressDialog();
     showProgressDialog.mockReturnValue(dialog);
@@ -324,6 +345,12 @@ describe('syncAllAccountsToMonarch — syncEnabled skip', () => {
 
   test('skips account with syncEnabled: false and updates progress as skipped', async () => {
     questradeApi.fetchAccounts.mockResolvedValue([makeApiAccount('acc1', false)]);
+    // Mock getAccountData to return the account with syncEnabled: false
+    accountService.getAccountData.mockReturnValue({
+      questradeAccount: { id: 'acc1', key: 'acc1' },
+      monarchAccount: { id: 'monarch-acc1', displayName: 'M Acc' },
+      syncEnabled: false,
+    });
     const dialog = makeProgressDialog();
     showProgressDialog.mockReturnValue(dialog);
 
@@ -348,10 +375,21 @@ describe('syncAllAccountsToMonarch — syncEnabled skip', () => {
       makeApiAccount('disabled1', false),
       makeApiAccount('enabled2', true),
     ]);
-    accountService.getAccountData
-      .mockImplementation((integration, accountId) => ({
-        monarchAccount: { id: `monarch-${accountId}` },
-      }));
+    // Mock getAccountData to return proper syncEnabled state for each account
+    accountService.getAccountData.mockImplementation((integration, accountId) => {
+      if (accountId === 'disabled1') {
+        return {
+          questradeAccount: { id: 'disabled1', key: 'disabled1' },
+          monarchAccount: { id: 'monarch-disabled1', displayName: 'M Acc' },
+          syncEnabled: false,
+        };
+      }
+      return {
+        questradeAccount: { id: accountId, key: accountId },
+        monarchAccount: { id: `monarch-${accountId}`, displayName: `M ${accountId}` },
+        syncEnabled: true,
+      };
+    });
     accountService.getMonarchAccountMapping
       .mockImplementation((integration, accountId) => ({ id: `monarch-${accountId}`, displayName: `M ${accountId}` }));
 

@@ -5,18 +5,16 @@
  */
 
 import { debugLog, getTodayLocal, formatDate, getLastUpdateDate } from '../../core/utils';
-import { LOGO_CLOUDINARY_IDS } from '../../core/config';
 import { INTEGRATIONS } from '../../core/integrationCapabilities';
 import stateManager from '../../core/state';
-import monarchApi from '../../api/monarch';
 import accountService from '../common/accountService';
 import balanceService, { fetchBalanceHistory, extractBalanceChange, getAccountsForSync, markAccountAsClosed } from './balance';
 import positionsService from './positions';
 import transactionsService from './transactions';
 import toast from '../../ui/toast';
 import { showProgressDialog } from '../../ui/components/progressDialog';
-import { showMonarchAccountSelectorWithCreate } from '../../ui/components/accountSelectorWithCreate';
 import { ensureMonarchAuthentication } from '../../ui/components/monarchLoginLink';
+import { ensureAllAccountMappings as ensureQuestradeAccountMappings } from './accountMapping';
 
 /**
  * Build the list of sync steps for a Questrade account
@@ -269,6 +267,9 @@ function calculateDaysBetween(fromDate, toDate) {
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 }
 
+// Use the shared account mapping module
+const ensureAllAccountMappings = ensureQuestradeAccountMappings;
+
 /**
  * Sync all Questrade accounts to Monarch
  * Based on uploadAllAccountsToMonarch but extended for full sync
@@ -348,8 +349,9 @@ export async function syncAllAccountsToMonarch() {
         }
         processedAccounts.push(account.key);
 
-        // Skip accounts where sync has been disabled by the user
-        if (account.syncEnabled === false) {
+        // Check if account was skipped during mapping (re-check from storage, not stale array)
+        const accountData = accountService.getAccountData(INTEGRATIONS.QUESTRADE, account.key);
+        if (accountData?.syncEnabled === false) {
           stats.skipped = (stats.skipped || 0) + 1;
           progressDialog.updateProgress(account.key, 'skipped', 'Sync disabled');
           debugLog(`Skipped account ${account.key} - sync disabled by user`);
@@ -414,141 +416,6 @@ export async function syncAllAccountsToMonarch() {
   } catch (error) {
     toast.show(`Failed to start sync process: ${error.message}`, 'error');
   }
-}
-
-/**
- * Ensure all accounts have Monarch account mappings
- * Checks consolidated storage only (legacy migration completed)
- * @param {Array} accounts - List of Questrade accounts
- * @param {Object} progressDialog - Progress dialog instance
- * @returns {Promise<boolean>} True if all accounts are mapped, false if cancelled
- */
-async function ensureAllAccountMappings(accounts, progressDialog) {
-  const unmappedAccounts = [];
-
-  // Check each account for mapping in consolidated storage
-  for (let i = 0; i < accounts.length; i += 1) {
-    const account = accounts[i];
-
-    // Check consolidated storage via accountService
-    const accountData = accountService.getAccountData(INTEGRATIONS.QUESTRADE, account.key);
-    if (accountData?.monarchAccount) {
-      continue; // Already mapped in consolidated storage
-    }
-
-    unmappedAccounts.push(account);
-  }
-
-  // Return early if all accounts are mapped
-  if (unmappedAccounts.length === 0) {
-    return true;
-  }
-
-  // Show message about missing mappings
-  toast.show(`${unmappedAccounts.length} accounts need to be mapped to Monarch`, 'info');
-
-  // Get Monarch accounts for mapping
-  const investmentAccounts = await monarchApi.listAccounts();
-
-  if (!investmentAccounts.length) {
-    toast.show('No investment accounts found in Monarch.', 'error');
-    return false;
-  }
-
-  // Map each unmapped account
-  for (let i = 0; i < unmappedAccounts.length; i += 1) {
-    const account = unmappedAccounts[i];
-    // Update progress if dialog exists
-    if (progressDialog) {
-      progressDialog.updateProgress(account.key, 'processing', 'Mapping account...');
-    }
-
-    // Set current account context for the selector
-    const accountName = account.nickname || account.name || 'Account';
-    stateManager.setAccount(account.key, accountName);
-
-    // Prepare createDefaults for account creation
-    const createDefaults = {
-      defaultName: accountName,
-      defaultType: 'brokerage',
-      defaultSubtype: 'brokerage',
-      currentBalance: null,
-      accountType: 'Investment',
-    };
-
-    // Show account selector for this Questrade account
-    const monarchAccount = await new Promise((resolve) => {
-      showMonarchAccountSelectorWithCreate(
-        investmentAccounts,
-        resolve,
-        null,
-        'brokerage',
-        createDefaults,
-      );
-    });
-
-    if (!monarchAccount) {
-      // User cancelled
-      return false;
-    }
-
-    // Handle skip case - set monarchAccount to null and disable sync
-    if (monarchAccount.skipped) {
-      const upsertSuccess = accountService.upsertAccount(INTEGRATIONS.QUESTRADE, {
-        questradeAccount: {
-          id: account.key,
-          nickname: accountName,
-          number: account.number,
-          type: account.type,
-        },
-        monarchAccount: null,
-        syncEnabled: false,
-      });
-
-      debugLog(`Account ${accountName} skipped by user, consolidated: ${upsertSuccess}`);
-
-      // Update progress if dialog exists
-      if (progressDialog) {
-        progressDialog.updateProgress(account.key, 'skipped', 'Account skipped');
-      }
-
-      continue; // Skip to next account
-    }
-
-    // If this is a newly created account, set the Questrade logo
-    if (monarchAccount.newlyCreated) {
-      try {
-        debugLog(`Setting Questrade logo for newly created account ${monarchAccount.id}`);
-        await monarchApi.setAccountLogo(monarchAccount.id, LOGO_CLOUDINARY_IDS.QUESTRADE);
-        debugLog(`Successfully set Questrade logo for account ${monarchAccount.displayName}`);
-        toast.show(`Set Questrade logo for ${monarchAccount.displayName}`, 'debug');
-      } catch (logoError) {
-        // Logo setting failed, but account creation succeeded - continue with warning
-        debugLog('Failed to set Questrade logo for account:', logoError);
-        toast.show(`Warning: Failed to set logo for ${monarchAccount.displayName}`, 'warning');
-      }
-    }
-
-    // Save the mapping to consolidated storage (only for non-skipped accounts)
-    const upsertSuccess = accountService.upsertAccount(INTEGRATIONS.QUESTRADE, {
-      questradeAccount: {
-        id: account.key,
-        nickname: accountName,
-        number: account.number,
-        type: account.type,
-      },
-      monarchAccount,
-    });
-
-    debugLog(`Saved account mapping for ${accountName}, consolidated: ${upsertSuccess}`);
-
-    // Update progress if dialog exists
-    if (progressDialog) {
-      progressDialog.updateProgress(account.key, 'success', 'Mapping complete');
-    }
-  }
-
-  return true;
 }
 
 /**

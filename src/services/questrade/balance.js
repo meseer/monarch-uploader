@@ -16,8 +16,11 @@ import { INTEGRATIONS } from '../../core/integrationCapabilities';
 import toast from '../../ui/toast';
 import { showProgressDialog } from '../../ui/components/progressDialog';
 import { showDatePickerPromise } from '../../ui/components/datePicker';
-import { showMonarchAccountSelectorWithCreate } from '../../ui/components/accountSelectorWithCreate';
 import { ensureMonarchAuthentication } from '../../ui/components/monarchLoginLink';
+import { ensureAccountMapping, ensureAllAccountMappings as ensureQuestradeAccountMappings } from './accountMapping';
+
+// Use the shared account mapping module
+const ensureAllAccountMappings = ensureQuestradeAccountMappings;
 
 /**
  * Custom balance error class
@@ -355,61 +358,24 @@ export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDat
     // Get account name from state
     const accountName = stateManager.getState().currentAccount.nickname || 'Unknown Account';
 
-    // Check consolidated storage first, then fall back to legacy (migration path)
+    // Check for existing mapping, or prompt for mapping if not found
     let monarchAccount = accountService.getMonarchAccountMapping(INTEGRATIONS.QUESTRADE, accountId);
 
-    // If no mapping found, prompt user to select/create one
+    // If no mapping found, use the shared mapping module to resolve it
     if (!monarchAccount) {
-      debugLog(`No mapping found for account ${accountId}, prompting user to select`);
+      debugLog(`No mapping found for account ${accountId}, using shared mapping resolver`);
 
-      // Get Monarch accounts for selector
-      const investmentAccounts = await monarchApi.listAccounts();
-      if (!investmentAccounts.length) {
-        throw new BalanceError('No investment accounts found in Monarch', accountId);
-      }
+      const result = await ensureAccountMapping(accountId, accountName);
 
-      // Prepare createDefaults for account creation
-      const createDefaults = {
-        defaultName: accountName,
-        defaultType: 'brokerage',
-        defaultSubtype: 'brokerage',
-        currentBalance: null,
-        accountType: 'Investment',
-      };
-
-      // Show account selector with create option
-      const selectedAccount = await new Promise((resolve) => {
-        showMonarchAccountSelectorWithCreate(
-          investmentAccounts,
-          resolve,
-          null,
-          'brokerage',
-          createDefaults,
-        );
-      });
-
-      if (!selectedAccount) {
+      if (!result) {
         throw new BalanceError('Account mapping cancelled by user', accountId);
       }
 
-      // Handle skip case - set monarchAccount to null and disable sync
-      if (selectedAccount.skipped) {
-        accountService.upsertAccount(INTEGRATIONS.QUESTRADE, {
-          questradeAccount: { id: accountId, nickname: accountName },
-          monarchAccount: null,
-          syncEnabled: false,
-        });
-        debugLog(`Account ${accountName} skipped by user`);
+      if (result.skipped) {
         throw new BalanceError('Account skipped by user', accountId);
       }
 
-      // Save the mapping to consolidated storage using upsertAccount (only for non-skipped accounts)
-      accountService.upsertAccount(INTEGRATIONS.QUESTRADE, {
-        questradeAccount: { id: accountId, nickname: accountName },
-        monarchAccount: selectedAccount,
-      });
-      monarchAccount = selectedAccount;
-      debugLog(`Saved new mapping for ${accountId} -> ${selectedAccount.displayName}`);
+      monarchAccount = result.monarchAccount;
     }
 
     // Upload using Monarch API with resolved account ID
@@ -843,110 +809,6 @@ export async function uploadAllAccountsToMonarch() {
   } catch (error) {
     toast.show(`Failed to start upload process: ${error.message}`, 'error');
   }
-}
-
-/**
- * Ensure all accounts have Monarch account mappings
- * @param {Array} accounts - List of Questrade accounts
- * @param {Object} progressDialog - Progress dialog instance
- * @returns {Promise<boolean>} True if all accounts are mapped, false if cancelled
- */
-async function ensureAllAccountMappings(accounts, progressDialog) {
-  const unmappedAccounts = [];
-
-  // Check each account for mapping using accountService (checks consolidated first, then legacy)
-  for (let i = 0; i < accounts.length; i += 1) {
-    const account = accounts[i];
-    const monarchAccount = accountService.getMonarchAccountMapping(INTEGRATIONS.QUESTRADE, account.key);
-    if (!monarchAccount) {
-      unmappedAccounts.push(account);
-    }
-  }
-
-  // Return early if all accounts are mapped
-  if (unmappedAccounts.length === 0) {
-    return true;
-  }
-
-  // Show message about missing mappings
-  toast.show(`${unmappedAccounts.length} accounts need to be mapped to Monarch`, 'info');
-
-  // Get Monarch accounts for mapping
-  const investmentAccounts = await monarchApi.listAccounts();
-
-  if (!investmentAccounts.length) {
-    toast.show('No investment accounts found in Monarch.', 'error');
-    return false;
-  }
-
-  // Map each unmapped account
-  for (let i = 0; i < unmappedAccounts.length; i += 1) {
-    const account = unmappedAccounts[i];
-    // Update progress if dialog exists
-    if (progressDialog) {
-      progressDialog.updateProgress(account.key, 'processing', 'Mapping account...');
-    }
-
-    // Set current account context for the selector
-    const accountName = account.nickname || account.name || 'Account';
-    stateManager.setAccount(account.key, accountName);
-
-    // Prepare createDefaults for account creation
-    const createDefaults = {
-      defaultName: accountName,
-      defaultType: 'brokerage',
-      defaultSubtype: 'brokerage',
-      currentBalance: null, // Balance not yet available at mapping time
-      accountType: 'Investment',
-    };
-
-    // Show enhanced account selector with create option (both balance and holdings tracking)
-    const selectedAccount = await new Promise((resolve) => {
-      showMonarchAccountSelectorWithCreate(
-        investmentAccounts,
-        resolve,
-        null,
-        'brokerage',
-        createDefaults,
-      );
-    });
-
-    if (!selectedAccount) {
-      // User cancelled
-      return false;
-    }
-
-    // Handle skip case - set monarchAccount to null and disable sync
-    if (selectedAccount.skipped) {
-      accountService.upsertAccount(INTEGRATIONS.QUESTRADE, {
-        questradeAccount: { id: account.key, nickname: accountName },
-        monarchAccount: null,
-        syncEnabled: false,
-      });
-      debugLog(`Account ${accountName} skipped by user`);
-
-      // Update progress if dialog exists
-      if (progressDialog) {
-        progressDialog.updateProgress(account.key, 'skipped', 'Account skipped');
-      }
-
-      continue; // Skip to next account
-    }
-
-    // Save the mapping to consolidated storage using upsertAccount (only for non-skipped accounts)
-    accountService.upsertAccount(INTEGRATIONS.QUESTRADE, {
-      questradeAccount: { id: account.key, nickname: accountName },
-      monarchAccount: selectedAccount,
-    });
-    debugLog(`Saved new mapping for ${account.key} -> ${selectedAccount.displayName}`);
-
-    // Update progress if dialog exists
-    if (progressDialog) {
-      progressDialog.updateProgress(account.key, 'success', 'Mapping complete');
-    }
-  }
-
-  return true;
 }
 
 /**
