@@ -1,6 +1,5 @@
 import js from '@eslint/js';
 import globals from 'globals';
-import importPlugin from 'eslint-plugin-import';
 
 export default [
   // Base configuration
@@ -33,32 +32,7 @@ export default [
       },
     },
     
-    plugins: {
-      import: importPlugin,
-    },
-    
     rules: {
-      // Import plugin rules (subset of Airbnb rules)
-      'import/order': ['error', { groups: [['builtin', 'external', 'internal']] }],
-      'import/no-mutable-exports': 'error',
-      'import/no-commonjs': 'off',
-      'import/no-amd': 'error',
-      'import/first': 'error',
-      'import/no-duplicates': 'error',
-      'import/extensions': ['error', 'ignorePackages', {
-        js: 'never',
-        mjs: 'never',
-        jsx: 'never',
-      }],
-      'import/newline-after-import': 'error',
-      'import/no-absolute-path': 'error',
-      'import/no-dynamic-require': 'error',
-      'import/no-webpack-loader-syntax': 'error',
-      'import/no-named-default': 'error',
-      'import/no-self-import': 'error',
-      'import/no-useless-path-segments': 'error',
-      'import/prefer-default-export': 'off',
-      
       // Best practices (similar to Airbnb)
       'array-callback-return': 'error',
       'block-scoped-var': 'error',
@@ -203,8 +177,6 @@ export default [
       
       // Relaxed rules for userscript development
       'max-classes-per-file': 'off', // Allow multiple classes per file
-      'import/no-named-as-default-member': 'off', // Allow named imports from default exports
-      'import/no-cycle': 'off', // Allow circular dependencies (common in userscripts)
       'no-await-in-loop': 'off', // Allow await in loops for sequential processing
       'no-restricted-syntax': 'off', // Allow for/of loops and other syntax
       'class-methods-use-this': 'off', // Allow methods that don't use this
