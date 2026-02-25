@@ -1,6 +1,24 @@
 import js from '@eslint/js';
 import globals from 'globals';
 
+// TODO: Monitor eslint-plugin-import for ESLint v10 support
+// Once eslint-plugin-import officially supports ESLint v10, install it and restore import linting rules
+// Track support status at: https://github.com/import-js/eslint-plugin-import/issues
+// Previous rules to restore when available:
+//   - import/order (enforce import order)
+//   - import/no-mutable-exports (prevent mutable exports)
+//   - import/no-amd (disallow AMD require/define)
+//   - import/first (ensure imports are at top)
+//   - import/no-duplicates (prevent duplicate imports)
+//   - import/extensions (enforce file extensions in imports)
+//   - import/newline-after-import (require newline after imports)
+//   - import/no-absolute-path (prevent absolute paths)
+//   - import/no-dynamic-require (disallow dynamic require)
+//   - import/no-webpack-loader-syntax (disallow webpack loader syntax)
+//   - import/no-named-default (prevent importing default as named)
+//   - import/no-self-import (prevent self imports)
+//   - import/no-useless-path-segments (prevent unnecessary path segments)
+
 export default [
   // Base configuration
   js.configs.recommended,
