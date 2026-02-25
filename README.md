@@ -10,17 +10,13 @@ A [Violentmonkey](https://violentmonkey.github.io/) userscript that automaticall
 
 ## Supported Institutions
 
-- **Questrade** — Investment accounts (TFSA, RRSP, margin, etc.)
-- **Wealthsimple** — Investment, Cash, and Credit Card accounts
-- **Canada Life** — Group retirement and pension plans
-- **Rogers Bank** — Credit cards
-
-| Institution | Balance History | Transactions | Holdings | Credit Limit | Category Mappings |
-|---|:---:|:---:|:---:|:---:|:---:|
-| Questrade | ✅ | ✅ | ✅ | ❌ | ❌ |
-| Wealthsimple | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Canada Life | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Rogers Bank | ✅ | ✅ | ❌ | ✅ | ✅ |
+| Institution | Balance History | Transactions | Holdings | Credit Limit | Category Mappings | Notes |
+|---|:---:|:---:|:---:|:---:|:---:|---|
+| Questrade | ✅ | ✅ | ✅ | ❌ | ❌ | Investment accounts (TFSA, RRSP, margin, etc.) |
+| Wealthsimple | ✅ | ✅ | ✅ | ✅ | ✅ | Investment, Cash, and Credit Card accounts |
+| Canada Life | ✅ | ✅ | ❌ | ❌ | ❌ | Group retirement and pension plans |
+| Rogers Bank | ✅ | ✅ | ❌ | ✅ | ✅ | Credit cards |
+| MBNA | ✅ | ✅ | ❌ | ✅ | ✅ | Credit cards |
 
 ## Installation
 
@@ -41,7 +37,7 @@ Violentmonkey will open an installation prompt — click **Confirm installation*
 ### Usage
 
 1. Log in to [Monarch Money](https://app.monarch.com/) in your browser so the session is active.
-2. Navigate to any of the supported institution websites (Questrade, Wealthsimple, Canada Life, or Rogers Bank).
+2. Navigate to any of the supported institution websites (Questrade, Wealthsimple, Canada Life, Rogers Bank, or MBNA).
 3. The script will inject an **Upload to Monarch** button into the page.
 4. Click the button to sync your data. Use the ⚙️ settings gear to configure account mappings, sync preferences, and category mappings.
 
