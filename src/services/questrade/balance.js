@@ -392,7 +392,18 @@ export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDat
         throw new BalanceError('Account mapping cancelled by user', accountId);
       }
 
-      // Save the mapping to consolidated storage using upsertAccount
+      // Handle skip case - set monarchAccount to null and disable sync
+      if (selectedAccount.skipped) {
+        accountService.upsertAccount(INTEGRATIONS.QUESTRADE, {
+          questradeAccount: { id: accountId, nickname: accountName },
+          monarchAccount: null,
+          syncEnabled: false,
+        });
+        debugLog(`Account ${accountName} skipped by user`);
+        throw new BalanceError('Account skipped by user', accountId);
+      }
+
+      // Save the mapping to consolidated storage using upsertAccount (only for non-skipped accounts)
       accountService.upsertAccount(INTEGRATIONS.QUESTRADE, {
         questradeAccount: { id: accountId, nickname: accountName },
         monarchAccount: selectedAccount,
@@ -905,7 +916,24 @@ async function ensureAllAccountMappings(accounts, progressDialog) {
       return false;
     }
 
-    // Save the mapping to consolidated storage using upsertAccount
+    // Handle skip case - set monarchAccount to null and disable sync
+    if (selectedAccount.skipped) {
+      accountService.upsertAccount(INTEGRATIONS.QUESTRADE, {
+        questradeAccount: { id: account.key, nickname: accountName },
+        monarchAccount: null,
+        syncEnabled: false,
+      });
+      debugLog(`Account ${accountName} skipped by user`);
+
+      // Update progress if dialog exists
+      if (progressDialog) {
+        progressDialog.updateProgress(account.key, 'skipped', 'Account skipped');
+      }
+
+      continue; // Skip to next account
+    }
+
+    // Save the mapping to consolidated storage using upsertAccount (only for non-skipped accounts)
     accountService.upsertAccount(INTEGRATIONS.QUESTRADE, {
       questradeAccount: { id: account.key, nickname: accountName },
       monarchAccount: selectedAccount,

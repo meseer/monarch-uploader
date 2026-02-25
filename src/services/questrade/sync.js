@@ -492,6 +492,29 @@ async function ensureAllAccountMappings(accounts, progressDialog) {
       return false;
     }
 
+    // Handle skip case - set monarchAccount to null and disable sync
+    if (monarchAccount.skipped) {
+      const upsertSuccess = accountService.upsertAccount(INTEGRATIONS.QUESTRADE, {
+        questradeAccount: {
+          id: account.key,
+          nickname: accountName,
+          number: account.number,
+          type: account.type,
+        },
+        monarchAccount: null,
+        syncEnabled: false,
+      });
+
+      debugLog(`Account ${accountName} skipped by user, consolidated: ${upsertSuccess}`);
+
+      // Update progress if dialog exists
+      if (progressDialog) {
+        progressDialog.updateProgress(account.key, 'skipped', 'Account skipped');
+      }
+
+      continue; // Skip to next account
+    }
+
     // If this is a newly created account, set the Questrade logo
     if (monarchAccount.newlyCreated) {
       try {
@@ -506,7 +529,7 @@ async function ensureAllAccountMappings(accounts, progressDialog) {
       }
     }
 
-    // Save the mapping to consolidated storage
+    // Save the mapping to consolidated storage (only for non-skipped accounts)
     const upsertSuccess = accountService.upsertAccount(INTEGRATIONS.QUESTRADE, {
       questradeAccount: {
         id: account.key,
