@@ -90,6 +90,7 @@ export async function getAccountsForSync(options = { includeClosed: false }) {
         ...apiAccount.questradeAccount,
         status: ACCOUNT_STATUS.ACTIVE,
         source: 'api',
+        syncEnabled: apiAccount.syncEnabled ?? true,
       });
     }
 
@@ -118,6 +119,7 @@ export async function getAccountsForSync(options = { includeClosed: false }) {
         status: isAlreadyMarkedClosed ? ACCOUNT_STATUS.CLOSED : 'pending_close',
         source: 'storage',
         closedDate: storedAccount.closedDate || null,
+        syncEnabled: storedAccount.syncEnabled ?? true,
       };
 
       if (isAlreadyMarkedClosed) {
@@ -694,6 +696,14 @@ export async function uploadAllAccountsToMonarch() {
           continue;
         }
         processedAccounts.push(account.key);
+
+        // Skip accounts where sync has been disabled by the user
+        if (account.syncEnabled === false) {
+          stats.skipped += 1;
+          progressDialog.updateProgress(account.key, 'skipped', 'Sync disabled');
+          debugLog(`Skipped account ${account.key} - sync disabled by user`);
+          continue;
+        }
 
         try {
           // Set current account for UI updates

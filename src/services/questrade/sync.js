@@ -348,6 +348,14 @@ export async function syncAllAccountsToMonarch() {
         }
         processedAccounts.push(account.key);
 
+        // Skip accounts where sync has been disabled by the user
+        if (account.syncEnabled === false) {
+          stats.skipped = (stats.skipped || 0) + 1;
+          progressDialog.updateProgress(account.key, 'skipped', 'Sync disabled');
+          debugLog(`Skipped account ${account.key} - sync disabled by user`);
+          continue;
+        }
+
         try {
           // Update progress
           progressDialog.updateProgress(account.key, 'processing', 'Starting sync...');

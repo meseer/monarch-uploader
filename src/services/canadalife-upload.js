@@ -813,6 +813,15 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
       const sourceAccount = extractSourceAccount(consolidated);
       const accountId = sourceAccount.agreementId;
 
+      // Skip accounts where sync has been disabled by the user
+      if (consolidated.syncEnabled === false) {
+        stats.success += 0; // no change to success
+        stats.total -= 1; // exclude from total so summary is accurate
+        progressDialog.updateProgress(accountId, 'skipped', 'Sync disabled');
+        debugLog(`Skipped Canada Life account ${accountId} - sync disabled by user`);
+        continue;
+      }
+
       try {
         // Update progress
         progressDialog.updateProgress(accountId, 'processing', 'Getting start date...');
