@@ -109,7 +109,7 @@ export async function syncAccountToMonarch(accountId, accountName, fromDate, toD
     }
 
     try {
-      // Get Monarch account mapping from consolidated storage (or legacy fallback)
+      // Get Monarch account mapping from consolidated storage
       const monarchAccount = accountService.getMonarchAccountMapping(INTEGRATIONS.QUESTRADE, accountId);
 
       if (!monarchAccount) {
@@ -246,19 +246,6 @@ export async function syncAccountToMonarch(accountId, accountName, fromDate, toD
       debugLog('Error syncing activity (non-fatal):', activityError);
       if (progressDialog) {
         progressDialog.updateStepStatus(accountId, 'activity', 'error', activityError.message);
-      }
-    }
-
-    // Post-sync: Increment sync count and attempt legacy cleanup
-    // Cleanup only happens after 2+ successful syncs (safety measure)
-    const newSyncCount = accountService.incrementSyncCount(INTEGRATIONS.QUESTRADE, accountId);
-    debugLog(`Questrade account ${accountId} sync count: ${newSyncCount}`);
-
-    // Try to clean up legacy storage if ready (2+ successful syncs)
-    if (accountService.isReadyForLegacyCleanup(INTEGRATIONS.QUESTRADE, accountId)) {
-      const cleanupResult = accountService.cleanupLegacyStorage(INTEGRATIONS.QUESTRADE, accountId);
-      if (cleanupResult.cleaned && cleanupResult.keysDeleted > 0) {
-        debugLog(`Cleaned up ${cleanupResult.keysDeleted} legacy keys for account ${accountId}:`, cleanupResult.keys);
       }
     }
 
@@ -535,7 +522,6 @@ async function ensureAllAccountMappings(accounts, progressDialog) {
 
 /**
  * Get start dates for all accounts
- * Uses consolidated storage first, then falls back to legacy storage
  * For accounts without lastUsedDate (first sync), automatically uses account's createdOn date
  * @param {Array} accounts - List of accounts
  * @returns {Promise<Object|null>} Object mapping account keys to start dates, or null if cancelled

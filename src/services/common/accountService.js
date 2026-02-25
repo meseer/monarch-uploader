@@ -66,28 +66,6 @@ export function getStorageKey(integrationId) {
 }
 
 /**
- * Detect if stored data is stale raw cache from old Questrade API format
- * Before v5.58.2, Questrade API incorrectly wrote raw account cache to ACCOUNTS_LIST.
- * Raw cache format: [{key, number, type, ...}] - has 'key' at root, no 'questradeAccount'
- * Consolidated format: [{questradeAccount: {...}, monarchAccount: {...}}]
- * @param {Array} accounts - Parsed accounts array
- * @param {string} integrationId - Integration identifier
- * @returns {boolean} True if this is stale raw cache that should be cleared
- */
-function isStaleRawCache(accounts, integrationId) {
-  if (integrationId !== INTEGRATIONS.QUESTRADE) {
-    return false;
-  }
-  if (!Array.isArray(accounts) || accounts.length === 0) {
-    return false;
-  }
-
-  // Check first item - if it has 'key' at root but no 'questradeAccount', it's stale cache
-  const firstAccount = accounts[0];
-  return Boolean(firstAccount.key && !firstAccount.questradeAccount);
-}
-
-/**
  * Get all accounts for an integration
  * Attempts to read from consolidated storage first, then migrates from legacy if needed
  * @param {string} integrationId - Integration identifier
@@ -115,14 +93,6 @@ export function getAccounts(integrationId) {
       debugLog(`[accountService.getAccounts] Parsed ${accounts?.length || 0} accounts`);
     } catch (e) {
       debugLog(`[accountService.getAccounts] Error parsing accounts for ${integrationId}:`, e);
-      accounts = [];
-    }
-
-    // Detect and clear stale raw cache data (from pre-v5.58.2 bug)
-    // This was caused by Questrade API writing raw cache to ACCOUNTS_LIST key
-    if (isStaleRawCache(accounts, integrationId)) {
-      debugLog(`Detected stale raw cache in ${storageKey}, clearing to trigger migration...`);
-      GM_setValue(storageKey, '[]');
       accounts = [];
     }
 
@@ -493,11 +463,6 @@ function isSourceAccountData(data, integrationId) {
     return false;
   }
 
-  // Questrade accounts have distinctive fields like 'number', 'accountDetailType', 'productType'
-  if (integrationId === INTEGRATIONS.QUESTRADE) {
-    return Boolean(data.number || data.accountDetailType || data.productType || data.accountStatus);
-  }
-
   // CanadaLife accounts have 'id' and usually 'nickname' but no 'displayName' at root
   if (integrationId === INTEGRATIONS.CANADALIFE) {
     // If it has canadalifeAccount nested, it's already in consolidated format
@@ -594,7 +559,7 @@ export function migrateFromLegacyStorage(integrationId) {
 
         // Detect if stored data is source account data or Monarch mapping
         if (isSourceAccountData(storedData, integrationId)) {
-          // Stored data is the raw source account (e.g., Questrade account)
+          // Stored data is the raw source account
           // Use stored data as the source account, no Monarch mapping yet
           debugLog(`Detected source account data for ${accountId} in ${integrationId}`);
 
