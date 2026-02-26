@@ -316,9 +316,9 @@ function processInvestmentTransaction(transaction, enrichmentMap = null) {
       const finalAmount = isNegative ? -Math.abs(transaction.amount) : Math.abs(transaction.amount);
 
       // Determine pending status based on transaction type
-      // Buy/sell transactions use unifiedStatus, others use status
+      // Most investment transactions use unifiedStatus; only INTERNAL_TRANSFER uses status
       let isPending;
-      if (isInvestmentBuySellTransaction(transaction)) {
+      if (usesUnifiedStatus(transaction)) {
         isPending = transaction.unifiedStatus === 'IN_PROGRESS' || transaction.unifiedStatus === 'PENDING';
       } else {
         isPending = transaction.status === 'authorized';
@@ -414,15 +414,14 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
     }
 
     // Step 3: Filter out already-uploaded completed transactions
-    // For buy/sell: COMPLETED status means done
-    // For internal transfers: settled/completed status means done
+    // Most investment transactions use unifiedStatus; only INTERNAL_TRANSFER uses status
     const notYetUploadedTransactions = syncableTransactions.filter((tx) => {
       const txId = getTransactionId(tx);
       const isAlreadyUploaded = uploadedTransactionIds.has(txId);
 
       // Determine if transaction is completed based on type
       let isCompleted;
-      if (isInvestmentBuySellTransaction(tx)) {
+      if (usesUnifiedStatus(tx)) {
         isCompleted = tx.unifiedStatus === 'COMPLETED';
       } else {
         isCompleted = tx.status === 'settled' || tx.status === 'completed';
@@ -669,7 +668,7 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
           const finalAmount = isNegative ? -Math.abs(rawTransaction.amount) : Math.abs(rawTransaction.amount);
 
           let isPending;
-          if (isInvestmentBuySellTransaction(rawTransaction)) {
+          if (usesUnifiedStatus(rawTransaction)) {
             isPending = rawTransaction.unifiedStatus === 'IN_PROGRESS' || rawTransaction.unifiedStatus === 'PENDING';
           } else {
             isPending = rawTransaction.status === 'authorized';
@@ -730,8 +729,9 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
           const finalAmount = isNegative ? -Math.abs(rawTransaction.amount) : Math.abs(rawTransaction.amount);
 
           // Determine pending status based on transaction type
+          // Most investment transactions use unifiedStatus; only INTERNAL_TRANSFER uses status
           let isPending;
-          if (isInvestmentBuySellTransaction(rawTransaction)) {
+          if (usesUnifiedStatus(rawTransaction)) {
             isPending = rawTransaction.unifiedStatus === 'IN_PROGRESS' || rawTransaction.unifiedStatus === 'PENDING';
           } else {
             isPending = rawTransaction.status === 'authorized';

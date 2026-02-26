@@ -233,7 +233,7 @@ describe('Wealthsimple Transaction Rules Engine - Investment Dividends & Deposit
         expect(result.notes).toBe('Dividend on XAW: CAD$15');
       });
 
-      it('should handle missing amount with 0 fallback', () => {
+      it('should treat null amount as pending (Upcoming dividend)', () => {
         const transaction = {
           externalCanonicalId: 'dividend-no-amount',
           type: 'DIVIDEND',
@@ -247,10 +247,11 @@ describe('Wealthsimple Transaction Rules Engine - Investment Dividends & Deposit
         const result = rule.process(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.notes).toBe('Dividend on VFV: CAD$0');
+        // amount:null means pending (not yet paid out) ’ "Upcoming dividend on {symbol}"
+        expect(result.notes).toBe('Upcoming dividend on VFV');
       });
 
-      it('should handle undefined amount with 0 fallback', () => {
+      it('should treat undefined amount as pending (Upcoming dividend)', () => {
         const transaction = {
           externalCanonicalId: 'dividend-undefined-amount',
           type: 'DIVIDEND',
@@ -263,7 +264,8 @@ describe('Wealthsimple Transaction Rules Engine - Investment Dividends & Deposit
         const result = rule.process(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.notes).toBe('Dividend on AAPL: USD$0');
+        // amount:undefined means pending (not yet paid out) ’ "Upcoming dividend on {symbol}"
+        expect(result.notes).toBe('Upcoming dividend on AAPL');
       });
 
       it('should handle amount of 0 correctly', () => {
@@ -283,7 +285,7 @@ describe('Wealthsimple Transaction Rules Engine - Investment Dividends & Deposit
         expect(result.notes).toBe('Dividend on VFV: CAD$0');
       });
 
-      it('should handle all fields missing with appropriate fallbacks', () => {
+      it('should handle all fields missing with appropriate fallbacks (no amount = pending)', () => {
         const transaction = {
           externalCanonicalId: 'dividend-all-missing',
           type: 'DIVIDEND',
@@ -297,11 +299,12 @@ describe('Wealthsimple Transaction Rules Engine - Investment Dividends & Deposit
         expect(result.category).toBe('Dividends & Capital Gains');
         expect(result.merchant).toBe('Unknown');
         expect(result.originalStatement).toBe('DIVIDEND::Unknown');
-        expect(result.notes).toBe('Dividend on Unknown: CAD$0');
+        // No amount field (undefined) ’ treated as pending ’ "Upcoming dividend on Unknown"
+        expect(result.notes).toBe('Upcoming dividend on Unknown');
         expect(result.technicalDetails).toBe('');
       });
 
-      it('should handle MANUFACTURED_DIVIDEND with all fields missing', () => {
+      it('should handle MANUFACTURED_DIVIDEND with all fields missing (no amount = pending)', () => {
         const transaction = {
           externalCanonicalId: 'dividend-manufactured-missing',
           type: 'DIVIDEND',
@@ -315,7 +318,8 @@ describe('Wealthsimple Transaction Rules Engine - Investment Dividends & Deposit
         expect(result.category).toBe('Dividends & Capital Gains');
         expect(result.merchant).toBe('Unknown');
         expect(result.originalStatement).toBe('DIVIDEND:MANUFACTURED_DIVIDEND:Unknown');
-        expect(result.notes).toBe('Dividend on lended Unknown shares: CAD$0');
+        // No amount field (undefined) ’ treated as pending ’ "Upcoming dividend on Unknown"
+        expect(result.notes).toBe('Upcoming dividend on Unknown');
       });
 
       it('should handle decimal amounts correctly', () => {
@@ -351,6 +355,88 @@ describe('Wealthsimple Transaction Rules Engine - Investment Dividends & Deposit
         expect(result).not.toBeNull();
         // formatAmount removes trailing zeros, so 10.50 becomes 10.5
         expect(result.notes).toBe('Dividend on VFV: CAD$10.5');
+      });
+    });
+
+    describe('PENDING dividend (unifiedStatus=PENDING, amount=null)', () => {
+      // Real-world example: MANAGED_RESP dividend declared but not yet paid out.
+      // The API returns amount:null and unifiedStatus:'PENDING' before payable date.
+      const pendingDividendTx = {
+        externalCanonicalId: 'E002025340589',
+        type: 'DIVIDEND',
+        subType: 'CASH_DIVIDEND',
+        amount: null,
+        amountSign: null,
+        assetQuantity: '34.3537',
+        assetSymbol: 'ZHY',
+        canonicalId: 'E002025340589:resp-gjp2y-3a',
+        currency: 'CAD',
+        status: null,
+        unifiedStatus: 'PENDING',
+        announcementDate: '2026-02-19',
+        recordDate: '2026-02-26',
+        payableDate: '2026-03-03',
+        grossDividendRate: '0.060000',
+        withholdingTaxAmount: '0',
+        occurredAt: '2026-02-26T05:00:00.000000+00:00',
+      };
+
+      it('should produce "Upcoming dividend on {symbol}" as first notes line when amount is null', () => {
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const result = rule.process(pendingDividendTx);
+
+        expect(result).not.toBeNull();
+        const firstLine = result.notes.split('\n')[0];
+        expect(firstLine).toBe('Upcoming dividend on ZHY');
+      });
+
+      it('should still include enhanced details (holdings, rate, dates) for pending dividends', () => {
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const result = rule.process(pendingDividendTx);
+
+        expect(result.notes).toContain('Holdings on record date: 34.3537 shares');
+        expect(result.notes).toContain('Gross dividend rate: CAD$0.06 per share');
+        expect(result.notes).toContain('Announcement date: Feb 19, 2026');
+        expect(result.notes).toContain('Record date: Feb 26, 2026');
+        expect(result.notes).toContain('Payable date: Mar 3, 2026');
+      });
+
+      it('should NOT include withholding tax line when withholdingTaxAmount is 0', () => {
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const result = rule.process(pendingDividendTx);
+
+        expect(result.notes).not.toContain('Withholding tax');
+      });
+
+      it('should set correct category and merchant for pending dividend', () => {
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const result = rule.process(pendingDividendTx);
+
+        expect(result.category).toBe('Dividends & Capital Gains');
+        expect(result.merchant).toBe('ZHY');
+        expect(result.originalStatement).toBe('DIVIDEND:CASH_DIVIDEND:ZHY');
+      });
+
+      it('should produce "Upcoming dividend on {symbol}" for any null amount regardless of subType', () => {
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+
+        const nullSubType = rule.process({ type: 'DIVIDEND', subType: null, assetSymbol: 'VFV', amount: null, currency: 'CAD' });
+        const diySubType = rule.process({ type: 'DIVIDEND', subType: 'DIY_DIVIDEND', assetSymbol: 'AAPL', amount: null, currency: 'USD' });
+        const manufacturedSubType = rule.process({ type: 'DIVIDEND', subType: 'MANUFACTURED_DIVIDEND', assetSymbol: 'GME', amount: null, currency: 'CAD' });
+        const cashSubType = rule.process({ type: 'DIVIDEND', subType: 'CASH_DIVIDEND', assetSymbol: 'ZHY', amount: null, currency: 'CAD' });
+
+        expect(nullSubType.notes.split('\n')[0]).toBe('Upcoming dividend on VFV');
+        expect(diySubType.notes.split('\n')[0]).toBe('Upcoming dividend on AAPL');
+        expect(manufacturedSubType.notes.split('\n')[0]).toBe('Upcoming dividend on GME');
+        expect(cashSubType.notes.split('\n')[0]).toBe('Upcoming dividend on ZHY');
+      });
+
+      it('should NOT produce "Upcoming dividend" when amount is 0 (settled with zero payout)', () => {
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const result = rule.process({ type: 'DIVIDEND', subType: null, assetSymbol: 'VFV', amount: 0, currency: 'CAD' });
+
+        // amount:0 is a settled transaction (different from null/undefined)
+        expect(result.notes.split('\n')[0]).toBe('Dividend on VFV: CAD$0');
       });
     });
 

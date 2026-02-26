@@ -851,7 +851,7 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
         progressDialog.updateBalanceChange(account.id, {
           ...balanceChange,
           accountType: summaryAccountType,
-          transactionCount: !isInvestment ? transactionCount : undefined,
+          transactionCount,
         });
       } else {
         // Fallback: just show the new balance if no old data available
@@ -859,7 +859,7 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
           newBalance: currentBalance?.amount,
           daysUploaded,
           accountType: summaryAccountType,
-          transactionCount: !isInvestment ? transactionCount : undefined,
+          transactionCount,
         });
       }
     } else {

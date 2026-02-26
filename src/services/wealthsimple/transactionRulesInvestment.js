@@ -216,8 +216,11 @@ export function formatDividendNotes(tx) {
 
   const noteLines = [];
 
-  // Line 1: Main dividend info (different for manufactured dividends)
-  if (tx.subType === 'MANUFACTURED_DIVIDEND') {
+  // Line 1: Main dividend info
+  // For pending dividends, amount is null (not yet paid out)
+  if (tx.amount === null || tx.amount === undefined) {
+    noteLines.push(`Upcoming dividend on ${symbol}`);
+  } else if (tx.subType === 'MANUFACTURED_DIVIDEND') {
     noteLines.push(`Dividend on lended ${symbol} shares: ${currency}$${amount}`);
   } else {
     noteLines.push(`Dividend on ${symbol}: ${currency}$${amount}`);

@@ -126,7 +126,7 @@ function formatCollapsedBalanceSummary(balanceChangeData) {
     transactionCount, debtAsPositive,
   } = balanceChangeData;
 
-  // Investment accounts: show dollar change and percentage
+  // Investment accounts: show transaction count (if any), dollar change and percentage
   if (accountType === 'investment') {
     if (oldBalance !== undefined && oldBalance !== null
         && newBalance !== undefined && newBalance !== null) {
@@ -145,7 +145,11 @@ function formatCollapsedBalanceSummary(balanceChangeData) {
         color = 'var(--mu-text-muted, #666)'; // Grey for no change
       }
 
-      return { text: `${formattedDollarChange} / ${formattedPercent}`, color };
+      const balanceText = `${formattedDollarChange} / ${formattedPercent}`;
+      const txPrefix = (transactionCount !== null && transactionCount !== undefined && transactionCount > 0)
+        ? `${transactionCount} new • `
+        : '';
+      return { text: `${txPrefix}${balanceText}`, color };
     }
     return { text: 'Complete', color: null };
   }

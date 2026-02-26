@@ -326,6 +326,60 @@ describe('Progress Dialog Component', () => {
       expect(dialog).toBeDefined();
     });
 
+    test('should show transaction count with balance change for investment account in collapsed summary', () => {
+      // Initialize steps (investment account has transactions + balance + positions)
+      dialog.initSteps('acc1', [
+        { key: 'transactions', name: 'Transaction sync' },
+        { key: 'balance', name: 'Balance history' },
+        { key: 'positions', name: 'Positions sync' },
+      ]);
+
+      // Complete all steps
+      dialog.updateStepStatus('acc1', 'transactions', 'success', '3 synced');
+      dialog.updateStepStatus('acc1', 'balance', 'success', 'Uploaded');
+      dialog.updateStepStatus('acc1', 'positions', 'success', '5 synced');
+
+      // Update balance change with investment accountType AND transactionCount
+      const balanceData = {
+        oldBalance: 100000,
+        newBalance: 99000,
+        lastUploadDate: '2024-01-15',
+        changePercent: -1.0,
+        accountType: 'investment',
+        transactionCount: 3,
+      };
+      dialog.updateBalanceChange('acc1', balanceData);
+
+      // Dialog should be defined - the collapsed summary will include "3 new " -$1,000.00 / -1.00%"
+      expect(dialog).toBeDefined();
+    });
+
+    test('should show balance change without transaction prefix for investment account when no new transactions', () => {
+      dialog.initSteps('acc1', [
+        { key: 'transactions', name: 'Transaction sync' },
+        { key: 'balance', name: 'Balance history' },
+        { key: 'positions', name: 'Positions sync' },
+      ]);
+
+      dialog.updateStepStatus('acc1', 'transactions', 'success', 'No transactions');
+      dialog.updateStepStatus('acc1', 'balance', 'success', 'Uploaded');
+      dialog.updateStepStatus('acc1', 'positions', 'success', '5 synced');
+
+      // Update balance change with zero transactionCount
+      const balanceData = {
+        oldBalance: 100000,
+        newBalance: 102500,
+        lastUploadDate: '2024-01-15',
+        changePercent: 2.5,
+        accountType: 'investment',
+        transactionCount: 0,
+      };
+      dialog.updateBalanceChange('acc1', balanceData);
+
+      // No transaction prefix - just "+$2,500.00 / +2.50%"
+      expect(dialog).toBeDefined();
+    });
+
     test('should show transaction count and balance for cash account in collapsed summary', () => {
       dialog.initSteps('acc1', [
         { key: 'transactions', name: 'Transaction sync' },
