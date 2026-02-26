@@ -359,7 +359,7 @@ describe('formatReconciliationMessage', () => {
     expect(formatReconciliationMessage({ settled: 1, cancelled: 2, failed: 0 })).toBe('1 settled, 2 cancelled');
   });
 
-  it('should format all zeros as "No pending transactions"', () => {
-    expect(formatReconciliationMessage({ settled: 0, cancelled: 0, failed: 0 })).toBe('No pending transactions');
+  it('should format all zeros as "Nothing settled or cancelled"', () => {
+    expect(formatReconciliationMessage({ settled: 0, cancelled: 0, failed: 0 })).toBe('Nothing settled or cancelled');
   });
 });

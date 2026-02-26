@@ -448,7 +448,7 @@ export function formatReconciliationMessage(result) {
   }
 
   if (parts.length === 0) {
-    return 'No pending transactions';
+    return 'Nothing settled or cancelled';
   }
 
   return parts.join(', ');

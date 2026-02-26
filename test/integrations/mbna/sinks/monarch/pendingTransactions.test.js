@@ -204,7 +204,7 @@ describe('MBNA Pending Transactions', () => {
     });
 
     it('should return no pending message for zero counts', () => {
-      expect(formatReconciliationMessage({ settled: 0, cancelled: 0, failed: 0 })).toBe('No pending transactions');
+      expect(formatReconciliationMessage({ settled: 0, cancelled: 0, failed: 0 })).toBe('Nothing settled or cancelled');
     });
   });
 });

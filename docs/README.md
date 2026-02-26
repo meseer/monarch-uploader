@@ -21,6 +21,10 @@ Architecture reference documents. These explain *how* the system works and *why*
 | [Settings UI Unification Plan](design/settings-unification-plan.md) | Implemented | Consolidated account storage design (now live) |
 | [Skip Categorization Plan](design/skip-categorization-plan.md) | Draft | Per-account option to skip category mapping |
 | [MBNA Integration Plan](design/integration/mbna-integration-plan.md) | Implemented | Planning document for the MBNA reference implementation |
+| **Mobile App** | | |
+| [Mobile App Architecture](design/mobile-app/architecture.md) | Draft | High-level design: on-device API calls, WebView auth, background sync, backend, phased roadmap |
+| [Mobile App — WebView Auth](design/mobile-app/webview-auth.md) | Draft | Token/cookie capture mechanics, per-integration strategy, silent re-login, network allowlist |
+| [Mobile App — Backend](design/mobile-app/backend.md) | Draft | Settings/state backend: API surface, data model, multi-device sync, Phase 2 data ownership |
 
 ---
 

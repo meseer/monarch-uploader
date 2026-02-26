@@ -996,9 +996,9 @@ describe('Wealthsimple Transaction Service - Crypto, Skip & Format', () => {
       expect(result).toBe('No pending transactions');
     });
 
-    it('should return "No pending transactions" when all counts are 0', () => {
+    it('should return "Nothing settled or cancelled" when all counts are 0', () => {
       const result = formatReconciliationMessage({ settled: 0, cancelled: 0, failed: 0 });
-      expect(result).toBe('No pending transactions');
+      expect(result).toBe('Nothing settled or cancelled');
     });
 
     it('should format message with only settled count', () => {

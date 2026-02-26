@@ -654,6 +654,6 @@ describe('formatReconciliationMessage', () => {
   });
 
   it('shows no pending when all counts are zero', () => {
-    expect(formatReconciliationMessage({ settled: 0, cancelled: 0, failed: 0 })).toBe('No pending transactions');
+    expect(formatReconciliationMessage({ settled: 0, cancelled: 0, failed: 0 })).toBe('Nothing settled or cancelled');
   });
 });
