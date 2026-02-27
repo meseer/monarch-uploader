@@ -144,7 +144,7 @@ function generateActivityNotes(activity) {
 
   // For pending activities, Units is null — skip Units/price; show amount and target investment
   if (isPendingActivity(activityType)) {
-    return `${activityType} of ${activity.Amount} into ${activity.InvestmentVehicleAndAccountLongName}`;
+    return `${activityType} of $${activity.Amount} into ${activity.InvestmentVehicleAndAccountLongName}`;
   }
 
   const units = activity.Units || 0;
