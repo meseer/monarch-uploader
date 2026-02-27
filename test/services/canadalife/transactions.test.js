@@ -248,7 +248,7 @@ describe('Canada Life Transaction Service', () => {
       expect(transaction.category).toBe('Buy');
       expect(transaction.id).toMatch(/^cl-tx:[a-f0-9]{16}$/);
       expect(transaction.pendingId).toBe(transaction.id);
-      expect(transaction.notes).toContain('Pending - awaiting investment');
+      expect(transaction.notes).toContain('of 200 into Canadian Equity Index (TDAM)-Member');
       // Should NOT contain unit/price info for pending
       expect(transaction.notes).not.toContain('Bought');
       expect(transaction.notes).not.toContain('Sold');
@@ -265,7 +265,7 @@ describe('Canada Life Transaction Service', () => {
       };
 
       const transaction = await processCanadaLifeActivity(activity, 'Account');
-      expect(transaction.notes).toBe('New contribution  - awaiting investment: Pending - awaiting investment');
+      expect(transaction.notes).toBe('New contribution  - awaiting investment of 100 into Test Fund-Member');
     });
 
     test('unknown activity appends activity type to notes', async () => {

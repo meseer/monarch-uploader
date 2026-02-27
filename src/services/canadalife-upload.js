@@ -5,7 +5,7 @@
 
 import {
   debugLog, formatDate, getTodayLocal, getYesterdayLocal, formatDaysAgoLocal, parseLocalDate,
-  calculateFromDateWithLookback, saveLastUploadDate, getLastUpdateDate,
+  calculateFromDateWithLookback, saveLastUploadDate, getLastUpdateDate, getLookbackForInstitution,
 } from '../core/utils';
 import { LOGO_CLOUDINARY_IDS } from '../core/config';
 import stateManager from '../core/state';
@@ -653,10 +653,11 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
     // Runs before transaction upload so removed pending entries don't affect dedup store
     try {
       progressDialog?.updateStepStatus(accountId, 'pendingReconciliation', 'processing', 'Reconciling...');
+      const lookbackDays = getLookbackForInstitution('canadalife');
       const reconciliationResult = await reconcileCanadaLifePendingTransactions(
         monarchAccount.id,
         rawActivities,
-        90,
+        lookbackDays,
       );
       const reconciliationMsg = formatReconciliationMessage(reconciliationResult);
       const reconciliationStatus = reconciliationResult.success !== false ? 'success' : 'error';

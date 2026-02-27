@@ -142,9 +142,9 @@ function generateActivityNotes(activity) {
   const activityType = activity.Activity || 'Unknown activity';
   const category = mapActivityToCategory(activityType);
 
-  // For pending activities, Units is null — skip Units/price
+  // For pending activities, Units is null — skip Units/price; show amount and target investment
   if (isPendingActivity(activityType)) {
-    return `${activityType}: Pending - awaiting investment`;
+    return `${activityType} of ${activity.Amount} into ${activity.InvestmentVehicleAndAccountLongName}`;
   }
 
   const units = activity.Units || 0;
