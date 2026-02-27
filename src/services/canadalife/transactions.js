@@ -14,11 +14,41 @@ import toast from '../../ui/toast';
 const ACTIVITY_CATEGORY_MAP = {
   'New contribution': 'Buy',
   'New contribution (reversed)': 'Sell',
+  'New contribution  - awaiting investment': 'Buy', // Pending activity - no Units yet
   'You switched from another subgroup/plan': 'Buy',
   'You switched to another subgroup/plan': 'Sell',
   'You switched from another investment': 'Buy',
   'You switched to another investment': 'Sell',
 };
+
+/**
+ * Activity types that represent pending (not yet settled) transactions.
+ * Pending activities have Units = null as the purchase hasn't happened yet.
+ *
+ * Trade-off: Canada Life pending activities produce a different hash than their
+ * settled counterpart because both activity.Activity and activity.Units change
+ * on settlement. Therefore reconciliation cannot detect settlement — when a
+ * pending activity disappears from the Canada Life API (either settled or
+ * cancelled), the Monarch pending transaction is always deleted. The settled
+ * transaction is uploaded as a new independent entry. User tags and notes on
+ * the pending entry are lost. This is an accepted trade-off since Canada Life
+ * provides no stable ID linking pending to settled.
+ */
+const PENDING_ACTIVITY_TYPES = new Set([
+  'New contribution  - awaiting investment',
+]);
+
+/**
+ * Check if an activity type represents a pending transaction
+ * @param {string} activityType - Canada Life activity type
+ * @returns {boolean} True if the activity is pending
+ */
+export function isPendingActivity(activityType) {
+  if (!activityType || typeof activityType !== 'string') {
+    return false;
+  }
+  return PENDING_ACTIVITY_TYPES.has(activityType);
+}
 
 /**
  * Sanitize investment vehicle name by removing trailing suffixes like "-Member" or "-Employer"
@@ -59,7 +89,7 @@ export function mapActivityToCategory(activityType) {
  * Generate a unique hash ID for an activity to enable deduplication
  * Uses SHA-256 hash of concatenated activity fields
  * @param {Object} activity - Canada Life activity object
- * @returns {Promise<string>} Hash ID string
+ * @returns {Promise<string>} Hash ID string in format cl-tx:{16 hex chars}
  */
 export async function generateActivityHash(activity) {
   // Concatenate key fields that uniquely identify an activity
@@ -81,7 +111,8 @@ export async function generateActivityHash(activity) {
   const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
 
   // Return first 16 characters for a shorter but still unique ID
-  return `cl-${hashHex.substring(0, 16)}`;
+  // Format: cl-tx:{hash16} — colon separator required for extractPendingIdFromNotes regex compatibility
+  return `cl-tx:${hashHex.substring(0, 16)}`;
 }
 
 /**
@@ -108,15 +139,29 @@ function convertToLocalDate(isoTimestamp) {
  */
 function generateActivityNotes(activity) {
   const sanitizedName = sanitizeInvestmentVehicleName(activity.InvestmentVehicleAndAccountLongName);
+  const activityType = activity.Activity || 'Unknown activity';
+  const category = mapActivityToCategory(activityType);
+
+  // For pending activities, Units is null — skip Units/price
+  if (isPendingActivity(activityType)) {
+    return `${activityType}: Pending - awaiting investment`;
+  }
+
   const units = activity.Units || 0;
   const price = activity.InterestRateOrUnitPrice || 0;
-  const activityType = activity.Activity || 'Unknown activity';
 
   // Determine if this is a buy or sell based on amount sign
   const amount = activity.Amount || 0;
   const action = amount >= 0 ? 'Bought' : 'Sold';
 
-  return `${activityType}: ${action} ${Math.abs(units).toFixed(6)} of ${sanitizedName} @ ${price.toFixed(6)}`;
+  let notes = `${activityType}: ${action} ${Math.abs(units).toFixed(6)} of ${sanitizedName} @ ${price.toFixed(6)}`;
+
+  // For unknown activities, append the raw activity type for reference
+  if (category === 'Uncategorized' && activityType) {
+    notes += `\n'${activityType}'`;
+  }
+
+  return notes;
 }
 
 /**
@@ -130,6 +175,7 @@ export async function processCanadaLifeActivity(activity, accountName) {
   const sanitizedMerchant = sanitizeInvestmentVehicleName(activity.InvestmentVehicleAndAccountLongName);
   const category = mapActivityToCategory(activity.Activity);
   const notes = generateActivityNotes(activity);
+  const pending = isPendingActivity(activity.Activity);
 
   return {
     id: transactionId,
@@ -140,6 +186,8 @@ export async function processCanadaLifeActivity(activity, accountName) {
     category,
     notes,
     account: accountName,
+    isPending: pending,
+    pendingId: transactionId, // cl-tx:{hash} — used by CSV formatter for reconciliation notes
     // Raw activity data for reference
     rawActivity: activity,
   };
@@ -251,50 +299,36 @@ export async function fetchActivitiesForDateRange(account, startDate, endDate, o
 }
 
 /**
- * Fetch and process all transactions for a Canada Life account
- * @param {Object} account - Canada Life account object
- * @param {string} startDate - Start date in YYYY-MM-DD format
- * @param {string} endDate - End date in YYYY-MM-DD format
+ * Process raw activities into transaction objects
+ * @param {Array} activities - Raw activities from Canada Life API
+ * @param {string} accountName - Name of the account being synced
  * @param {Object} options - Processing options
- * @param {Function} options.onProgress - Progress callback
- * @param {AbortSignal} options.signal - Abort signal
  * @param {Set<string>} options.uploadedTransactionIds - Set of already uploaded transaction IDs
- * @returns {Promise<Array>} Array of processed transaction objects
+ * @param {boolean} options.includePendingTransactions - Whether to include pending transactions (default: true)
+ * @returns {Promise<Array>} Array of processed transaction objects, sorted oldest first
  */
-export async function fetchAndProcessTransactions(account, startDate, endDate, options = {}) {
-  const { onProgress, signal, uploadedTransactionIds = new Set() } = options;
-  const accountName = account.LongNameEnglish || account.EnglishShortName;
+export async function processActivities(activities, accountName, options = {}) {
+  const { uploadedTransactionIds = new Set(), includePendingTransactions = true } = options;
 
-  debugLog(`Processing transactions for ${accountName} from ${startDate} to ${endDate}`);
-
-  // Fetch all activities for the date range
-  const activities = await fetchActivitiesForDateRange(account, startDate, endDate, {
-    onProgress: (chunk, total, count) => {
-      if (onProgress) {
-        onProgress(`Fetching activities (${chunk}/${total}): ${count} found`);
-      }
-    },
-    signal,
-  });
-
-  if (activities.length === 0) {
-    debugLog('No activities found in the date range');
+  if (!activities || activities.length === 0) {
     return [];
   }
 
-  // Process each activity into a transaction
   const transactions = [];
   let skippedCount = 0;
 
-  for (let i = 0; i < activities.length; i++) {
-    const activity = activities[i];
-
-    // Process the activity
+  for (const activity of activities) {
     const transaction = await processCanadaLifeActivity(activity, accountName);
 
     // Skip if already uploaded
     if (uploadedTransactionIds.has(transaction.id)) {
       skippedCount++;
+      continue;
+    }
+
+    // Skip pending transactions if disabled by user setting
+    if (transaction.isPending && !includePendingTransactions) {
+      debugLog(`Skipping pending transaction ${transaction.id} (includePendingTransactions=false)`);
       continue;
     }
 
@@ -310,44 +344,51 @@ export async function fetchAndProcessTransactions(account, startDate, endDate, o
 }
 
 /**
- * Convert processed transactions to Monarch CSV format
- * @param {Array} transactions - Array of processed transaction objects
- * @returns {string} CSV formatted string for Monarch upload
+ * Fetch and process all transactions for a Canada Life account
+ * @param {Object} account - Canada Life account object
+ * @param {string} startDate - Start date in YYYY-MM-DD format
+ * @param {string} endDate - End date in YYYY-MM-DD format
+ * @param {Object} options - Processing options
+ * @param {Function} options.onProgress - Progress callback
+ * @param {AbortSignal} options.signal - Abort signal
+ * @param {Set<string>} options.uploadedTransactionIds - Set of already uploaded transaction IDs
+ * @param {boolean} options.includePendingTransactions - Whether to include pending transactions (default: true)
+ * @returns {Promise<Array>} Array of processed transaction objects
  */
-export function convertTransactionsToCSV(transactions) {
-  if (!transactions || transactions.length === 0) {
-    throw new Error('No transactions to convert');
-  }
+export async function fetchAndProcessTransactions(account, startDate, endDate, options = {}) {
+  const {
+    onProgress,
+    signal,
+    uploadedTransactionIds = new Set(),
+    includePendingTransactions = true,
+  } = options;
+  const accountName = account.LongNameEnglish || account.EnglishShortName;
 
-  // Monarch transaction CSV format
-  // Date, Merchant, Category, Account, Original Statement, Notes, Amount
-  let csv = '"Date","Merchant","Category","Account","Original Statement","Notes","Amount"\n';
+  debugLog(`Processing transactions for ${accountName} from ${startDate} to ${endDate}`);
 
-  for (const tx of transactions) {
-    const row = [
-      tx.date,
-      tx.merchant,
-      tx.category,
-      tx.account,
-      tx.originalMerchant,
-      tx.notes,
-      tx.amount.toFixed(2),
-    ].map((field) => `"${String(field).replace(/"/g, '""')}"`).join(',');
+  // Fetch all activities for the date range
+  const activities = await fetchActivitiesForDateRange(account, startDate, endDate, {
+    onProgress: (chunk, total, count) => {
+      if (onProgress) {
+        onProgress(`Fetching activities (${chunk}/${total}): ${count} found`);
+      }
+    },
+    signal,
+  });
 
-    csv += `${row}\n`;
-  }
-
-  return csv;
+  return processActivities(activities, accountName, { uploadedTransactionIds, includePendingTransactions });
 }
 
 export default {
+  isPendingActivity,
   sanitizeInvestmentVehicleName,
   mapActivityToCategory,
   generateActivityHash,
   processCanadaLifeActivity,
+  processActivities,
   generateDateChunks,
   fetchActivitiesForDateRange,
   fetchAndProcessTransactions,
-  convertTransactionsToCSV,
   ACTIVITY_CATEGORY_MAP,
+  PENDING_ACTIVITY_TYPES,
 };

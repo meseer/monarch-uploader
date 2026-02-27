@@ -3,15 +3,41 @@
  */
 
 import {
+  isPendingActivity,
   sanitizeInvestmentVehicleName,
   mapActivityToCategory,
   generateActivityHash,
   processCanadaLifeActivity,
+  processActivities,
   generateDateChunks,
-  convertTransactionsToCSV,
 } from '../../../src/services/canadalife/transactions';
 
 describe('Canada Life Transaction Service', () => {
+  describe('isPendingActivity', () => {
+    test('returns true for known pending activity type', () => {
+      expect(isPendingActivity('New contribution  - awaiting investment')).toBe(true);
+    });
+
+    test('returns false for known settled activity types', () => {
+      expect(isPendingActivity('New contribution')).toBe(false);
+      expect(isPendingActivity('New contribution (reversed)')).toBe(false);
+      expect(isPendingActivity('You switched from another subgroup/plan')).toBe(false);
+      expect(isPendingActivity('You switched to another subgroup/plan')).toBe(false);
+      expect(isPendingActivity('You switched from another investment')).toBe(false);
+      expect(isPendingActivity('You switched to another investment')).toBe(false);
+    });
+
+    test('returns false for unknown activity types', () => {
+      expect(isPendingActivity('Unknown Activity')).toBe(false);
+      expect(isPendingActivity('')).toBe(false);
+    });
+
+    test('returns false for null/undefined', () => {
+      expect(isPendingActivity(null)).toBe(false);
+      expect(isPendingActivity(undefined)).toBe(false);
+    });
+  });
+
   describe('sanitizeInvestmentVehicleName', () => {
     test('removes -Member suffix from investment name', () => {
       expect(sanitizeInvestmentVehicleName('Sun Life MFS Global Growth Fund-Member')).toBe('Sun Life MFS Global Growth Fund');
@@ -40,7 +66,6 @@ describe('Canada Life Transaction Service', () => {
     });
 
     test('handles case sensitivity for suffix', () => {
-      // The implementation uses lowercase comparison
       expect(sanitizeInvestmentVehicleName('Fund Name-member')).toBe('Fund Name');
       expect(sanitizeInvestmentVehicleName('Fund Name-MEMBER')).toBe('Fund Name');
     });
@@ -53,6 +78,10 @@ describe('Canada Life Transaction Service', () => {
 
     test('maps New contribution (reversed) to Sell', () => {
       expect(mapActivityToCategory('New contribution (reversed)')).toBe('Sell');
+    });
+
+    test('maps pending activity to Buy', () => {
+      expect(mapActivityToCategory('New contribution  - awaiting investment')).toBe('Buy');
     });
 
     test('maps switch from another subgroup/plan to Buy', () => {
@@ -84,8 +113,7 @@ describe('Canada Life Transaction Service', () => {
   });
 
   describe('generateActivityHash', () => {
-    test('generates hash with cl- prefix', async () => {
-      // Use correct field names matching the implementation
+    test('generates hash with cl-tx: prefix', async () => {
       const activity = {
         Date: '2024-01-15',
         Activity: 'New contribution',
@@ -95,7 +123,20 @@ describe('Canada Life Transaction Service', () => {
       };
 
       const hash = await generateActivityHash(activity);
-      expect(hash).toMatch(/^cl-[a-f0-9]{16}$/);
+      expect(hash).toMatch(/^cl-tx:[a-f0-9]{16}$/);
+    });
+
+    test('does NOT use old cl- prefix format', async () => {
+      const activity = {
+        Date: '2024-01-15',
+        Activity: 'New contribution',
+        Amount: 100.50,
+        Units: 5.123,
+        InvestmentVehicleAndAccountLongName: 'Test Fund',
+      };
+
+      const hash = await generateActivityHash(activity);
+      expect(hash).not.toMatch(/^cl-[a-f0-9]{16}$/);
     });
 
     test('generates consistent hash for same activity', async () => {
@@ -140,13 +181,34 @@ describe('Canada Life Transaction Service', () => {
       };
 
       const hash = await generateActivityHash(activity);
-      expect(hash).toMatch(/^cl-[a-f0-9]{16}$/);
+      expect(hash).toMatch(/^cl-tx:[a-f0-9]{16}$/);
+    });
+
+    test('pending activity (Units=null) generates different hash than settled', async () => {
+      const pendingActivity = {
+        Date: '2024-01-15',
+        Activity: 'New contribution  - awaiting investment',
+        Amount: 100.50,
+        Units: null,
+        InvestmentVehicleAndAccountLongName: 'Test Fund',
+      };
+
+      const settledActivity = {
+        Date: '2024-01-15',
+        Activity: 'New contribution',
+        Amount: 100.50,
+        Units: 5.123,
+        InvestmentVehicleAndAccountLongName: 'Test Fund',
+      };
+
+      const pendingHash = await generateActivityHash(pendingActivity);
+      const settledHash = await generateActivityHash(settledActivity);
+      expect(pendingHash).not.toBe(settledHash);
     });
   });
 
   describe('processCanadaLifeActivity', () => {
-    test('processes a valid activity correctly', async () => {
-      // Use correct field names matching the implementation
+    test('processes a settled activity correctly', async () => {
       const activity = {
         Date: '2024-01-15T00:00:00',
         Activity: 'New contribution',
@@ -165,7 +227,61 @@ describe('Canada Life Transaction Service', () => {
       expect(transaction.notes).toContain('New contribution');
       expect(transaction.notes).toContain('Sun Life MFS Global Growth Fund');
       expect(transaction.account).toBe('Test Account');
-      expect(transaction.id).toMatch(/^cl-[a-f0-9]{16}$/);
+      expect(transaction.id).toMatch(/^cl-tx:[a-f0-9]{16}$/);
+      expect(transaction.isPending).toBe(false);
+      expect(transaction.pendingId).toMatch(/^cl-tx:[a-f0-9]{16}$/);
+    });
+
+    test('processes a pending activity correctly', async () => {
+      const activity = {
+        Date: '2024-01-15T00:00:00',
+        Activity: 'New contribution  - awaiting investment',
+        Amount: 200.00,
+        Units: null,
+        InterestRateOrUnitPrice: null,
+        InvestmentVehicleAndAccountLongName: 'Canadian Equity Index (TDAM)-Member',
+      };
+
+      const transaction = await processCanadaLifeActivity(activity, 'Test Account');
+
+      expect(transaction.isPending).toBe(true);
+      expect(transaction.category).toBe('Buy');
+      expect(transaction.id).toMatch(/^cl-tx:[a-f0-9]{16}$/);
+      expect(transaction.pendingId).toBe(transaction.id);
+      expect(transaction.notes).toContain('Pending - awaiting investment');
+      // Should NOT contain unit/price info for pending
+      expect(transaction.notes).not.toContain('Bought');
+      expect(transaction.notes).not.toContain('Sold');
+    });
+
+    test('pending activity notes do not include Units or price', async () => {
+      const activity = {
+        Date: '2024-01-15',
+        Activity: 'New contribution  - awaiting investment',
+        Amount: 100.00,
+        Units: null,
+        InterestRateOrUnitPrice: null,
+        InvestmentVehicleAndAccountLongName: 'Test Fund-Member',
+      };
+
+      const transaction = await processCanadaLifeActivity(activity, 'Account');
+      expect(transaction.notes).toBe('New contribution  - awaiting investment: Pending - awaiting investment');
+    });
+
+    test('unknown activity appends activity type to notes', async () => {
+      const activity = {
+        Date: '2024-01-15',
+        Activity: 'Some Unknown Activity Type',
+        Amount: 50.00,
+        Units: 1.5,
+        InterestRateOrUnitPrice: 33.33,
+        InvestmentVehicleAndAccountLongName: 'Test Fund',
+      };
+
+      const transaction = await processCanadaLifeActivity(activity, 'Account');
+
+      expect(transaction.category).toBe('Uncategorized');
+      expect(transaction.notes).toContain("'Some Unknown Activity Type'");
     });
 
     test('handles date-only format', async () => {
@@ -205,6 +321,114 @@ describe('Canada Life Transaction Service', () => {
       expect(transaction.category).toBe('Uncategorized');
       expect(transaction.amount).toBe(0);
       expect(transaction.merchant).toBe('');
+      expect(transaction.isPending).toBe(false);
+    });
+  });
+
+  describe('processActivities', () => {
+    test('processes multiple activities and returns sorted transactions', async () => {
+      const activities = [
+        {
+          Date: '2024-01-20',
+          Activity: 'New contribution',
+          Amount: 200,
+          Units: 10,
+          InvestmentVehicleAndAccountLongName: 'Fund A',
+        },
+        {
+          Date: '2024-01-15',
+          Activity: 'New contribution',
+          Amount: 100,
+          Units: 5,
+          InvestmentVehicleAndAccountLongName: 'Fund A',
+        },
+      ];
+
+      const transactions = await processActivities(activities, 'Test Account');
+      expect(transactions).toHaveLength(2);
+      // Should be sorted oldest first
+      expect(transactions[0].date).toBe('2024-01-15');
+      expect(transactions[1].date).toBe('2024-01-20');
+    });
+
+    test('skips already uploaded transactions', async () => {
+      const activity = {
+        Date: '2024-01-15',
+        Activity: 'New contribution',
+        Amount: 100,
+        Units: 5,
+        InvestmentVehicleAndAccountLongName: 'Fund A',
+      };
+
+      // First, get the hash to use as an uploaded ID
+      const { generateActivityHash: getHash } = await import('../../../src/services/canadalife/transactions');
+      const hash = await getHash(activity);
+
+      const transactions = await processActivities([activity], 'Account', {
+        uploadedTransactionIds: new Set([hash]),
+      });
+
+      expect(transactions).toHaveLength(0);
+    });
+
+    test('skips pending transactions when includePendingTransactions is false', async () => {
+      const activities = [
+        {
+          Date: '2024-01-15',
+          Activity: 'New contribution  - awaiting investment',
+          Amount: 100,
+          Units: null,
+          InvestmentVehicleAndAccountLongName: 'Fund A',
+        },
+        {
+          Date: '2024-01-16',
+          Activity: 'New contribution',
+          Amount: 200,
+          Units: 10,
+          InvestmentVehicleAndAccountLongName: 'Fund A',
+        },
+      ];
+
+      const transactions = await processActivities(activities, 'Account', {
+        includePendingTransactions: false,
+      });
+
+      expect(transactions).toHaveLength(1);
+      expect(transactions[0].isPending).toBe(false);
+    });
+
+    test('includes pending transactions when includePendingTransactions is true (default)', async () => {
+      const activities = [
+        {
+          Date: '2024-01-15',
+          Activity: 'New contribution  - awaiting investment',
+          Amount: 100,
+          Units: null,
+          InvestmentVehicleAndAccountLongName: 'Fund A',
+        },
+        {
+          Date: '2024-01-16',
+          Activity: 'New contribution',
+          Amount: 200,
+          Units: 10,
+          InvestmentVehicleAndAccountLongName: 'Fund A',
+        },
+      ];
+
+      const transactions = await processActivities(activities, 'Account');
+
+      expect(transactions).toHaveLength(2);
+      expect(transactions.some((t) => t.isPending)).toBe(true);
+    });
+
+    test('returns empty array for empty activities', async () => {
+      const transactions = await processActivities([], 'Account');
+      expect(transactions).toHaveLength(0);
+    });
+
+    test('returns empty array for null activities', async () => {
+      const transactions = await processActivities(null, 'Account');
+      expect(transactions).toHaveLength(0);
     });
   });
 
@@ -212,7 +436,6 @@ describe('Canada Life Transaction Service', () => {
     test('returns single chunk for period under 365 days', () => {
       const chunks = generateDateChunks('2024-01-01', '2024-06-01');
       expect(chunks).toHaveLength(1);
-      // Implementation uses 'start' and 'end' not 'startDate' and 'endDate'
       expect(chunks[0]).toEqual({
         start: '2024-01-01',
         end: '2024-06-01',
@@ -258,118 +481,12 @@ describe('Canada Life Transaction Service', () => {
     });
 
     test('handles start date before end date with single day', () => {
-      // When start equals end (same day), the while loop condition (currentStart < end) is false
-      // so no chunks are generated. This is edge case behavior.
       const chunks = generateDateChunks('2024-01-15', '2024-01-16');
       expect(chunks).toHaveLength(1);
       expect(chunks[0]).toEqual({
         start: '2024-01-15',
         end: '2024-01-16',
       });
-    });
-  });
-
-  describe('convertTransactionsToCSV', () => {
-    test('converts transactions to CSV format with header', () => {
-      const transactions = [
-        {
-          date: '2024-01-15',
-          merchant: 'Test Fund',
-          category: 'Buy',
-          amount: 100.50,
-          notes: 'Test note',
-          account: 'Test Account',
-          originalMerchant: 'Test Fund-Member',
-        },
-      ];
-
-      const csv = convertTransactionsToCSV(transactions);
-      const lines = csv.trim().split('\n');
-
-      // Implementation uses this column order
-      expect(lines[0]).toBe('"Date","Merchant","Category","Account","Original Statement","Notes","Amount"');
-      expect(lines[1]).toBe('"2024-01-15","Test Fund","Buy","Test Account","Test Fund-Member","Test note","100.50"');
-    });
-
-    test('escapes double quotes in values', () => {
-      const transactions = [
-        {
-          date: '2024-01-15',
-          merchant: 'Fund "Special" Edition',
-          category: 'Buy',
-          amount: 100,
-          notes: 'Note with "quotes"',
-          account: 'Account',
-          originalMerchant: 'Original',
-        },
-      ];
-
-      const csv = convertTransactionsToCSV(transactions);
-      expect(csv).toContain('Fund ""Special"" Edition');
-      expect(csv).toContain('Note with ""quotes""');
-    });
-
-    test('handles multiple transactions', () => {
-      const transactions = [
-        {
-          date: '2024-01-15',
-          merchant: 'Fund A',
-          category: 'Buy',
-          amount: 100,
-          notes: 'Note 1',
-          account: 'Account',
-          originalMerchant: 'Fund A',
-        },
-        {
-          date: '2024-01-16',
-          merchant: 'Fund B',
-          category: 'Sell',
-          amount: 50,
-          notes: 'Note 2',
-          account: 'Account',
-          originalMerchant: 'Fund B',
-        },
-      ];
-
-      const csv = convertTransactionsToCSV(transactions);
-      const lines = csv.trim().split('\n');
-
-      expect(lines).toHaveLength(3); // Header + 2 transactions
-    });
-
-    test('throws error for empty transaction array', () => {
-      expect(() => convertTransactionsToCSV([])).toThrow('No transactions to convert');
-    });
-
-    test('throws error for null transactions', () => {
-      expect(() => convertTransactionsToCSV(null)).toThrow('No transactions to convert');
-    });
-
-    test('formats amount with 2 decimal places', () => {
-      const transactions = [
-        {
-          date: '2024-01-15',
-          merchant: 'Fund',
-          category: 'Buy',
-          amount: 100,
-          notes: '',
-          account: 'Account',
-          originalMerchant: 'Fund',
-        },
-        {
-          date: '2024-01-16',
-          merchant: 'Fund',
-          category: 'Buy',
-          amount: 99.994, // Should round to 99.99
-          notes: '',
-          account: 'Account',
-          originalMerchant: 'Fund',
-        },
-      ];
-
-      const csv = convertTransactionsToCSV(transactions);
-      expect(csv).toContain('"100.00"');
-      expect(csv).toContain('"99.99"');
     });
   });
 });

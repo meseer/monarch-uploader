@@ -17,8 +17,17 @@ import { showDatePickerPromise } from '../ui/components/datePicker';
 import { showMonarchAccountSelectorWithCreate } from '../ui/components/accountSelectorWithCreate';
 import { ensureMonarchAuthentication } from '../ui/components/monarchLoginLink';
 import accountService from './common/accountService';
-import { INTEGRATIONS } from '../core/integrationCapabilities';
-import { fetchAndProcessTransactions, convertTransactionsToCSV } from './canadalife/transactions';
+import { INTEGRATIONS, ACCOUNT_SETTINGS } from '../core/integrationCapabilities';
+import {
+  fetchActivitiesForDateRange,
+  processActivities,
+  fetchAndProcessTransactions,
+} from './canadalife/transactions';
+import { convertCanadaLifeTransactionsToMonarchCSV } from './canadalife/csvFormatter';
+import {
+  reconcileCanadaLifePendingTransactions,
+  formatReconciliationMessage,
+} from './canadalife/pendingReconciliation';
 
 /**
  * Custom Canada Life upload error class
@@ -427,6 +436,7 @@ function buildCanadaLifeSteps() {
   return [
     { key: 'fetchHistory', name: 'Fetch balance history' },
     { key: 'uploadBalance', name: 'Upload balance to Monarch' },
+    { key: 'pendingReconciliation', name: 'Pending reconciliation' },
     { key: 'uploadTransactions', name: 'Upload transactions' },
   ];
 }
@@ -615,25 +625,72 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
       throw new Error('Operation cancelled by user');
     }
 
-    // ===== STEP 3: Upload Transactions =====
+    // ===== STEP 3: Fetch activities (shared between reconciliation and transaction upload) =====
     if (progressDialog) {
-      progressDialog.updateStepStatus(accountId, 'uploadTransactions', 'processing', 'Fetching...');
+      progressDialog.updateStepStatus(accountId, 'pendingReconciliation', 'processing', 'Fetching activities...');
     }
+
+    const rawActivities = await fetchActivitiesForDateRange(canadalifeAccount, startDate, endDate, {
+      onProgress: (chunk, total, count) => {
+        if (progressDialog) {
+          progressDialog.updateStepStatus(
+            accountId,
+            'pendingReconciliation',
+            'processing',
+            `Fetching (${chunk}/${total}): ${count} found`,
+          );
+        }
+      },
+      signal,
+    });
+
+    // Check for cancellation
+    if (signal?.aborted) {
+      throw new Error('Operation cancelled by user');
+    }
+
+    // ===== STEP 3a: Pending reconciliation =====
+    // Runs before transaction upload so removed pending entries don't affect dedup store
+    try {
+      progressDialog?.updateStepStatus(accountId, 'pendingReconciliation', 'processing', 'Reconciling...');
+      const reconciliationResult = await reconcileCanadaLifePendingTransactions(
+        monarchAccount.id,
+        rawActivities,
+        90,
+      );
+      const reconciliationMsg = formatReconciliationMessage(reconciliationResult);
+      const reconciliationStatus = reconciliationResult.success !== false ? 'success' : 'error';
+      progressDialog?.updateStepStatus(accountId, 'pendingReconciliation', reconciliationStatus, reconciliationMsg);
+      debugLog('Canada Life pending reconciliation result:', reconciliationResult);
+    } catch (reconciliationError) {
+      debugLog('Error during Canada Life pending reconciliation:', reconciliationError);
+      progressDialog?.updateStepStatus(accountId, 'pendingReconciliation', 'error', reconciliationError.message);
+    }
+
+    // Check for cancellation
+    if (signal?.aborted) {
+      throw new Error('Operation cancelled by user');
+    }
+
+    // ===== STEP 3b: Process and upload transactions =====
+    if (progressDialog) {
+      progressDialog.updateStepStatus(accountId, 'uploadTransactions', 'processing', 'Processing...');
+    }
+
+    // Read includePendingTransactions account setting (default: true)
+    const accountDataForPending = accountService.getAccountData(INTEGRATIONS.CANADALIFE, accountId);
+    const includePendingTransactions = accountDataForPending?.[ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS] !== false;
 
     // Get previously uploaded transaction IDs for deduplication
     const uploadedTransactionIds = getUploadedTransactionIds(accountId);
 
-    // Fetch and process transactions for the date range
-    const transactions = await fetchAndProcessTransactions(canadalifeAccount, startDate, endDate, {
-      onProgress: progressDialog ? (msg) => {
-        progressDialog.updateStepStatus(accountId, 'uploadTransactions', 'processing', msg);
-      } : null,
-      signal,
+    // Process raw activities into transactions (already fetched above)
+    const transactions = await processActivities(rawActivities, accountName, {
       uploadedTransactionIds,
+      includePendingTransactions,
     });
 
     // Calculate how many were skipped
-    // The transactions returned are already filtered (not in uploadedTransactionIds)
     result.transactionsSkipped = uploadedTransactionIds.size > 0 ? uploadedTransactionIds.size : 0;
 
     // Check for cancellation
@@ -648,7 +705,7 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
       }
 
       // Convert to CSV format
-      const transactionCsvData = convertTransactionsToCSV(transactions);
+      const transactionCsvData = convertCanadaLifeTransactionsToMonarchCSV(transactions, accountName);
 
       // Upload to Monarch
       const txSuccess = await monarchApi.uploadTransactions(monarchAccount.id, transactionCsvData);
@@ -661,6 +718,7 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
         debugLog(`Failed to upload transactions for ${accountName}, but balance upload succeeded`);
       } else {
         // Save uploaded transaction IDs for future deduplication
+        // For pending transactions, save the pendingId (cl-tx:{hash}); for settled, save the id
         saveUploadedTransactionIds(accountId, transactions);
         result.transactionsUploaded = transactions.length;
 
@@ -1267,7 +1325,7 @@ export async function uploadTransactionHistory(canadalifeAccount, startDate, end
 
     // Convert to CSV format
     if (onProgress) onProgress(`Converting ${transactions.length} transactions...`);
-    const csvData = convertTransactionsToCSV(transactions);
+    const csvData = convertCanadaLifeTransactionsToMonarchCSV(transactions, accountName);
 
     // Upload to Monarch
     if (onProgress) onProgress(`Uploading ${transactions.length} transactions...`);
