@@ -8,7 +8,7 @@
     "build:dev": "webpack --mode development",
     "build:stable": "npm run clean && BUILD_TYPE=stable webpack --mode production",
     "build:dev-release": "npm run clean && BUILD_TYPE=dev webpack --mode production",
-    "build:full": "npm run clean && npm run lint && npm run test && webpack --mode production",
+    "build:full": "npm run clean && npm run lint && npm run typecheck && npm run test && webpack --mode production",
     "watch": "webpack --mode development --watch",
     "watch:dev": "BUILD_TYPE=dev webpack --mode development --watch",
     "lint": "eslint src/",
@@ -19,6 +19,7 @@
     "clean": "rm -rf dist/",
     "postbuild": "echo 'Build complete! Output in dist/'",
     "build:quick": "npm run clean && npm run build:dev",
+    "typecheck": "tsc --noEmit",
     "version:bump": "node scripts/bump-version.cjs"
   },
   "keywords": [
@@ -38,7 +39,9 @@
   "devDependencies": {
     "@babel/core": "^7.29.0",
     "@babel/preset-env": "^7.29.0",
+    "@babel/preset-typescript": "^7.28.5",
     "@eslint/js": "^9.39.2",
+    "@types/tampermonkey": "^5.0.5",
     "babel-loader": "^10.0.0",
     "c8": "^10.1.3",
     "eslint": "^10.0.1",
@@ -46,6 +49,8 @@
     "jest": "^30.2.0",
     "jest-environment-jsdom": "^30.2.0",
     "terser-webpack-plugin": "^5.3.16",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.1",
     "webpack": "^5.105.2",
     "webpack-cli": "^6.0.1"
   },

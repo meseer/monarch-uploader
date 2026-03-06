@@ -23,15 +23,18 @@ module.exports = (env, argv) => {
       path: path.resolve(__dirname, 'dist'),
       filename: 'monarch-uploader.user.js',
     },
+    resolve: {
+      extensions: ['.ts', '.js', '.json'],
+    },
     module: {
       rules: [
         {
-          test: /\.js$/,
+          test: /\.[jt]s$/,
           exclude: /node_modules/,
           use: {
             loader: 'babel-loader',
             options: {
-              presets: ['@babel/preset-env'],
+              presets: ['@babel/preset-env', '@babel/preset-typescript'],
             },
           },
         },
