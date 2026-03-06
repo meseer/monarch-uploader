@@ -11,6 +11,7 @@ import {
   CASH_TRANSACTION_RULES,
   applyTransactionRule,
   hasRuleForTransaction,
+  extractStatusSummaryAnnotation,
   extractInteracMemo,
   extractOutgoingETransferDetails,
   formatOutgoingETransferDetails,
@@ -947,6 +948,50 @@ describe('Wealthsimple Transaction Rules Engine - Cash E-Transfer', () => {
     });
   });
 
+  describe('extractStatusSummaryAnnotation', () => {
+    it('should return empty string for null status summary', () => {
+      expect(extractStatusSummaryAnnotation(null)).toBe('');
+    });
+
+    it('should return empty string for undefined status summary', () => {
+      expect(extractStatusSummaryAnnotation(undefined)).toBe('');
+    });
+
+    it('should return empty string when annotation is null', () => {
+      const statusSummary = {
+        id: 'funding_intent-123',
+        annotation: null,
+        activityFrequency: 'one_time',
+      };
+      expect(extractStatusSummaryAnnotation(statusSummary)).toBe('');
+    });
+
+    it('should return empty string when annotation is empty string', () => {
+      const statusSummary = {
+        id: 'funding_intent-123',
+        annotation: '',
+      };
+      expect(extractStatusSummaryAnnotation(statusSummary)).toBe('');
+    });
+
+    it('should extract annotation from status summary', () => {
+      const statusSummary = {
+        id: 'funding_intent-XlVAMs38eHXAMyBguEFOdMArAKZ',
+        annotation: 'For mom\'s medical screening',
+        activityFrequency: 'one_time',
+        isCancellable: false,
+      };
+      expect(extractStatusSummaryAnnotation(statusSummary)).toBe('For mom\'s medical screening');
+    });
+
+    it('should return annotation when other fields are missing', () => {
+      const statusSummary = {
+        annotation: 'Rent payment',
+      };
+      expect(extractStatusSummaryAnnotation(statusSummary)).toBe('Rent payment');
+    });
+  });
+
   describe('extractInteracMemo', () => {
     it('should return empty string for null funding intent', () => {
       expect(extractInteracMemo(null)).toBe('');
@@ -1019,8 +1064,171 @@ describe('Wealthsimple Transaction Rules Engine - Cash E-Transfer', () => {
     });
   });
 
-  describe('E_TRANSFER rule with funding intent memo', () => {
-    it('should include memo in notes when fundingIntentMap is provided', () => {
+  describe('E_TRANSFER rule with status summary annotation (primary source)', () => {
+    it('should use status summary annotation as primary source for notes', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-abc123',
+        type: 'DEPOSIT',
+        subType: 'E_TRANSFER',
+        eTransferName: 'John Doe',
+        eTransferEmail: 'john@example.com',
+      };
+
+      const enrichmentMap = new Map();
+      enrichmentMap.set('status-summary:funding_intent-abc123', {
+        id: 'funding_intent-abc123',
+        annotation: 'For mom\'s medical screening',
+        activityFrequency: 'one_time',
+      });
+
+      const result = applyTransactionRule(transaction, enrichmentMap);
+
+      expect(result).not.toBeNull();
+      expect(result.notes).toBe('For mom\'s medical screening');
+      expect(result.technicalDetails).toBe('');
+    });
+
+    it('should prefer status summary annotation over funding intent memo', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-abc123',
+        type: 'DEPOSIT',
+        subType: 'E_TRANSFER',
+        eTransferName: 'John Doe',
+        eTransferEmail: 'john@example.com',
+      };
+
+      const enrichmentMap = new Map();
+      // Both sources present  status summary should win
+      enrichmentMap.set('status-summary:funding_intent-abc123', {
+        annotation: 'Status summary annotation',
+      });
+      enrichmentMap.set('funding_intent-abc123', {
+        id: 'funding_intent-abc123',
+        transferMetadata: {
+          memo: 'Old funding intent memo',
+        },
+      });
+
+      const result = applyTransactionRule(transaction, enrichmentMap);
+
+      expect(result).not.toBeNull();
+      expect(result.notes).toBe('Status summary annotation');
+    });
+
+    it('should fall back to funding intent memo when status summary has no annotation', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-abc123',
+        type: 'DEPOSIT',
+        subType: 'E_TRANSFER',
+        eTransferName: 'John Doe',
+        eTransferEmail: 'john@example.com',
+      };
+
+      const enrichmentMap = new Map();
+      // Status summary present but no annotation
+      enrichmentMap.set('status-summary:funding_intent-abc123', {
+        annotation: null,
+      });
+      // Funding intent has memo (deprecated path)
+      enrichmentMap.set('funding_intent-abc123', {
+        id: 'funding_intent-abc123',
+        transferMetadata: {
+          memo: 'Fallback memo from FundingIntent',
+        },
+      });
+
+      const result = applyTransactionRule(transaction, enrichmentMap);
+
+      expect(result).not.toBeNull();
+      expect(result.notes).toBe('Fallback memo from FundingIntent');
+    });
+
+    it('should fall back to funding intent memo when status summary is missing', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-abc123',
+        type: 'DEPOSIT',
+        subType: 'E_TRANSFER',
+        eTransferName: 'John Doe',
+        eTransferEmail: 'john@example.com',
+      };
+
+      const enrichmentMap = new Map();
+      // No status summary entry  only FundingIntent data
+      enrichmentMap.set('funding_intent-abc123', {
+        id: 'funding_intent-abc123',
+        transferMetadata: {
+          memo: 'Oven for Unit 202 Trinity',
+          paymentType: 'ACCOUNT_ALIAS_PAYMENT',
+        },
+      });
+
+      const result = applyTransactionRule(transaction, enrichmentMap);
+
+      expect(result).not.toBeNull();
+      expect(result.notes).toBe('Oven for Unit 202 Trinity');
+    });
+
+    it('should use status summary annotation for outgoing e-transfers and still get technical details', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-out789',
+        type: 'WITHDRAWAL',
+        subType: 'E_TRANSFER',
+        eTransferName: 'Jane Smith',
+        eTransferEmail: 'jane@example.com',
+      };
+
+      const enrichmentMap = new Map();
+      enrichmentMap.set('status-summary:funding_intent-out789', {
+        annotation: 'Rent for March',
+      });
+      enrichmentMap.set('funding_intent-out789', {
+        id: 'funding_intent-out789',
+        transferMetadata: {
+          autoDeposit: true,
+          networkPaymentRefId: 'REF123',
+          memo: 'Old memo',
+        },
+      });
+
+      const result = applyTransactionRule(transaction, enrichmentMap);
+
+      expect(result).not.toBeNull();
+      // Status summary annotation should be used (not old memo)
+      expect(result.notes).toBe('Rent for March');
+      // Technical details should still come from FundingIntent
+      expect(result.technicalDetails).toBe('Auto Deposit: Yes; Reference Number: REF123');
+    });
+
+    it('should return empty notes when both sources have no annotation/memo', () => {
+      const transaction = {
+        externalCanonicalId: 'funding_intent-empty',
+        type: 'DEPOSIT',
+        subType: 'E_TRANSFER',
+        eTransferName: 'John Doe',
+        eTransferEmail: 'john@example.com',
+      };
+
+      const enrichmentMap = new Map();
+      enrichmentMap.set('status-summary:funding_intent-empty', {
+        annotation: null,
+      });
+      enrichmentMap.set('funding_intent-empty', {
+        id: 'funding_intent-empty',
+        transferMetadata: {
+          paymentType: 'ACCOUNT_ALIAS_PAYMENT',
+          // No memo or message
+        },
+      });
+
+      const result = applyTransactionRule(transaction, enrichmentMap);
+
+      expect(result).not.toBeNull();
+      expect(result.notes).toBe('');
+    });
+  });
+
+  describe('E_TRANSFER rule with funding intent memo (deprecated fallback)', () => {
+    it('should include memo in notes when only fundingIntentMap is provided', () => {
       const transaction = {
         externalCanonicalId: 'funding_intent-abc123',
         type: 'DEPOSIT',

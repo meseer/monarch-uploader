@@ -518,6 +518,8 @@ export async function fetchAndProcessCashTransactions(consolidatedAccount, fromD
     const enrichmentMap = new Map();
 
     // Fetch funding intent data for e-transfers (batch API - single call)
+    // Deprecated (2026-03-06): The memo field in FetchFundingIntent.transferMetadata is no longer
+    // populated by the Wealthsimple API. Kept as fallback; see status summary fetch below.
     if (eTransferIds.length > 0) {
       debugLog(`Fetching ${eTransferIds.length} funding intent(s) for e-transfer memos...`);
       const fundingIntentMap = await wealthsimpleApi.fetchFundingIntents(eTransferIds);
@@ -527,6 +529,27 @@ export async function fetchAndProcessCashTransactions(consolidatedAccount, fromD
       for (const [id, data] of fundingIntentMap) {
         enrichmentMap.set(id, data);
       }
+    }
+
+    // Fetch FundingIntentStatusSummary for e-transfers (individual calls)
+    // Primary source for e-transfer annotations/messages as of 2026-03-06
+    if (eTransferIds.length > 0) {
+      debugLog(`Fetching ${eTransferIds.length} status summary(ies) for e-transfer annotations...`);
+      for (let i = 0; i < eTransferIds.length; i++) {
+        const id = eTransferIds[i];
+        const progressNum = i + 1;
+        debugLog(`Fetching e-transfer status summary (${progressNum}/${eTransferIds.length}): ${id}`);
+
+        if (onProgress) {
+          onProgress(`E-transfer annotations (${progressNum}/${eTransferIds.length})`);
+        }
+
+        const statusSummary = await wealthsimpleApi.fetchFundingIntentStatusSummary(id);
+        if (statusSummary) {
+          enrichmentMap.set(`status-summary:${id}`, statusSummary);
+        }
+      }
+      debugLog(`Fetched status summaries for ${eTransferIds.length} e-transfer(s)`);
     }
 
     // Fetch internal transfer data for annotations (individual calls with progress)

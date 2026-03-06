@@ -12,6 +12,7 @@ import { getAccountTypeDisplayName } from '../mappers/wealthsimple-account-types
 import { fetchBalanceHistory, fetchIdentityPositions } from './wealthsimplePositions';
 import {
   fetchFundingIntents,
+  fetchFundingIntentStatusSummary,
   fetchCreditCardAccountSummary,
   fetchInternalTransfer,
   fetchFundsTransfer,
@@ -271,7 +272,7 @@ export async function makeGraphQLQuery(operationName, query, variables = {}) {
 
   // Inject identity ID into variables if not present
   // Note: FetchFundingIntent, FetchInternalTransfer, FetchFundsTransfer, FetchSoOrdersExtendedOrder, and FetchActivityByOrdersServiceOrderId don't accept identityId and return 403 if it's passed
-  const skipIdentityInjection = ['FetchFundingIntent', 'FetchInternalTransfer', 'FetchFundsTransfer', 'FetchSoOrdersExtendedOrder', 'FetchActivityByOrdersServiceOrderId', 'FetchCryptoOrder'];
+  const skipIdentityInjection = ['FetchFundingIntent', 'FetchFundingIntentStatusSummary', 'FetchInternalTransfer', 'FetchFundsTransfer', 'FetchSoOrdersExtendedOrder', 'FetchActivityByOrdersServiceOrderId', 'FetchCryptoOrder'];
   if (!variables.identityId && authStatus.identityId && !skipIdentityInjection.includes(operationName)) {
     variables.identityId = authStatus.identityId;
   }
@@ -995,6 +996,7 @@ export {
 
 export {
   fetchFundingIntents,
+  fetchFundingIntentStatusSummary,
   fetchCreditCardAccountSummary,
   fetchInternalTransfer,
   fetchFundsTransfer,
@@ -1024,6 +1026,7 @@ export default {
   fetchManagedPortfolioPositions,
   fetchCreditCardAccountSummary,
   fetchFundingIntents,
+  fetchFundingIntentStatusSummary,
   fetchInternalTransfer,
   fetchFundsTransfer,
   fetchExtendedOrder,

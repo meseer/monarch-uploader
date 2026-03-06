@@ -29,6 +29,7 @@ import {
   getAftCategoryKey,
   getAftCategory,
   getETransferDisplayName,
+  extractStatusSummaryAnnotation,
   extractInteracMemo,
   extractOutgoingETransferDetails,
   formatOutgoingETransferDetails,
@@ -72,6 +73,7 @@ export {
   formatAftOriginalStatement,
   getAccountNameById,
   getAccountNameByType,
+  extractStatusSummaryAnnotation,
   extractInteracMemo,
   extractOutgoingETransferDetails,
   formatOutgoingETransferDetails,
@@ -106,7 +108,7 @@ export const CASH_TRANSACTION_RULES = [
     id: 'e-transfer',
     description: 'Interac e-Transfer transactions (incoming and outgoing)',
     match: (tx) => tx.subType === 'E_TRANSFER',
-    process: (tx, fundingIntentMap) => {
+    process: (tx, enrichmentMap) => {
       const displayName = getETransferDisplayName(tx);
       const email = tx.eTransferEmail || '';
 
@@ -127,21 +129,40 @@ export const CASH_TRANSACTION_RULES = [
           : `Interac e-Transfer from ${displayName}`;
       }
 
-      // Extract Interac memo and additional details from funding intent data if available
+      // Extract annotation/memo from enrichment data
+      // Priority:
+      // 1. FetchFundingIntentStatusSummary annotation (primary, added 2026-03-06)
+      // 2. FetchFundingIntent transferMetadata memo (deprecated fallback, see extractInteracMemo)
       let notes = '';
       let technicalDetails = '';
-      if (fundingIntentMap && tx.externalCanonicalId) {
-        const fundingIntent = fundingIntentMap.get(tx.externalCanonicalId);
-        if (fundingIntent) {
-          // Extract memo for all e-transfers
-          const memo = extractInteracMemo(fundingIntent);
-          if (memo) {
-            debugLog(`Found Interac memo for ${tx.externalCanonicalId}: "${memo}"`);
-            notes = memo;
-          }
+      if (enrichmentMap && tx.externalCanonicalId) {
+        // 2026-03-06: Primary source — FetchFundingIntentStatusSummary annotation
+        const statusSummary = enrichmentMap.get(`status-summary:${tx.externalCanonicalId}`);
+        const statusAnnotation = extractStatusSummaryAnnotation(statusSummary);
+        if (statusAnnotation) {
+          debugLog(`Found status summary annotation for ${tx.externalCanonicalId}: "${statusAnnotation}"`);
+          notes = statusAnnotation;
+        }
 
-          // For outgoing transfers, also extract auto-deposit and reference number
-          if (tx.type === 'WITHDRAWAL') {
+        // Deprecated fallback (2026-03-06): FetchFundingIntent transferMetadata memo
+        // The memo field is no longer populated by the Wealthsimple API.
+        // Kept for backward compatibility; marked for removal in a future version.
+        if (!notes) {
+          const fundingIntent = enrichmentMap.get(tx.externalCanonicalId);
+          if (fundingIntent) {
+            const memo = extractInteracMemo(fundingIntent);
+            if (memo) {
+              debugLog(`Found Interac memo (deprecated path) for ${tx.externalCanonicalId}: "${memo}"`);
+              notes = memo;
+            }
+          }
+        }
+
+        // For outgoing transfers, also extract auto-deposit and reference number
+        // from the FetchFundingIntent data (these fields are still populated)
+        if (tx.type === 'WITHDRAWAL') {
+          const fundingIntent = enrichmentMap.get(tx.externalCanonicalId);
+          if (fundingIntent) {
             const outgoingDetails = extractOutgoingETransferDetails(fundingIntent);
             const formattedDetails = formatOutgoingETransferDetails(outgoingDetails);
 

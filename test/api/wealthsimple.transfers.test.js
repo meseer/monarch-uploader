@@ -990,6 +990,169 @@ describe('Wealthsimple API Client - Transfers & Positions', () => {
     });
   });
 
+  describe('fetchFundingIntentStatusSummary', () => {
+    beforeEach(() => {
+      const futureDate = new Date(Date.now() + 3600000).toISOString();
+      setupConfigStoreAuth({
+        accessToken: 'test-token',
+        identityId: 'identity-123',
+        expiresAt: futureDate,
+      });
+    });
+
+    it('should return null for null input', async () => {
+      const result = await wealthsimpleApi.fetchFundingIntentStatusSummary(null);
+      expect(result).toBeNull();
+      expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
+    });
+
+    it('should return null for empty string input', async () => {
+      const result = await wealthsimpleApi.fetchFundingIntentStatusSummary('');
+      expect(result).toBeNull();
+      expect(GM_xmlhttpRequest).not.toHaveBeenCalled();
+    });
+
+    it('should fetch funding intent status summary successfully', async () => {
+      const mockResponse = {
+        fundingIntentStatusSummary: {
+          id: 'funding_intent-XlVAMs38eHXAMyBguEFOdMArAKZ',
+          postDated: false,
+          estimatedCompletionDate: null,
+          actorIdentityId: 'identity-123',
+          activityFrequency: 'one_time',
+          annotation: 'For mom\'s medical screening',
+          isCancellable: false,
+          sourceFundingPoint: {
+            fundingPointId: 'ca-cash-msb-iusfagkx',
+            fundingPointType: 'ws_account',
+            fundingPointSubType: null,
+          },
+          destinationFundingPoint: {
+            fundingPointId: 'jane@example.com',
+            fundingPointType: 'e_transfer',
+            fundingPointSubType: null,
+          },
+          timeline: [
+            { occurredAt: '2026-03-05T18:00:00.000Z', __typename: 'TimelineEventSubmitted' },
+            { occurredAt: '2026-03-05T18:00:05.000Z', __typename: 'TimelineEventCompleted' },
+          ],
+          __typename: 'FundingIntentStatusSummary',
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchFundingIntentStatusSummary('funding_intent-XlVAMs38eHXAMyBguEFOdMArAKZ');
+
+      expect(result).not.toBeNull();
+      expect(result.id).toBe('funding_intent-XlVAMs38eHXAMyBguEFOdMArAKZ');
+      expect(result.annotation).toBe('For mom\'s medical screening');
+      expect(result.activityFrequency).toBe('one_time');
+      expect(result.isCancellable).toBe(false);
+    });
+
+    it('should NOT inject identity ID into request', async () => {
+      const mockResponse = {
+        fundingIntentStatusSummary: {
+          id: 'funding_intent-test123',
+          annotation: 'test annotation',
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ data, onload }) => {
+        const parsedData = JSON.parse(data);
+        expect(parsedData.operationName).toBe('FetchFundingIntentStatusSummary');
+        // FetchFundingIntentStatusSummary should NOT have identityId injected
+        expect(parsedData.variables.identityId).toBeUndefined();
+        expect(parsedData.variables.fundingIntentId).toBe('funding_intent-test123');
+        expect(parsedData.variables.timelineVersion).toBe(2);
+
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      await wealthsimpleApi.fetchFundingIntentStatusSummary('funding_intent-test123');
+    });
+
+    it('should return null when no fundingIntentStatusSummary in response', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: {} }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchFundingIntentStatusSummary('funding_intent-abc123');
+      expect(result).toBeNull();
+    });
+
+    it('should return null on API error without failing', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({ status: 500 });
+      });
+
+      const result = await wealthsimpleApi.fetchFundingIntentStatusSummary('funding_intent-abc123');
+      expect(result).toBeNull();
+    });
+
+    it('should return null on network error without failing', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onerror }) => {
+        onerror(new Error('Network failure'));
+      });
+
+      const result = await wealthsimpleApi.fetchFundingIntentStatusSummary('funding_intent-abc123');
+      expect(result).toBeNull();
+    });
+
+    it('should handle status summary without annotation', async () => {
+      const mockResponse = {
+        fundingIntentStatusSummary: {
+          id: 'funding_intent-no-annotation',
+          annotation: null,
+          activityFrequency: 'one_time',
+          isCancellable: false,
+        },
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: mockResponse }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchFundingIntentStatusSummary('funding_intent-no-annotation');
+
+      expect(result).not.toBeNull();
+      expect(result.annotation).toBeNull();
+    });
+
+    it('should handle GraphQL errors gracefully', async () => {
+      const errorResponse = {
+        errors: [
+          { message: 'Funding intent not found' },
+        ],
+      };
+
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify(errorResponse),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchFundingIntentStatusSummary('funding_intent-not-found');
+      expect(result).toBeNull();
+    });
+  });
+
   describe('fetchExtendedOrder', () => {
     beforeEach(() => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();

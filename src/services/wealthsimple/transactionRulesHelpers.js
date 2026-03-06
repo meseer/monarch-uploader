@@ -436,9 +436,32 @@ export function getETransferDisplayName(transaction) {
 }
 
 /**
+ * Extract annotation from FundingIntentStatusSummary response
+ * This is the primary source for e-transfer messages as of 2026-03-06.
+ *
+ * The FetchFundingIntentStatusSummary API returns an `annotation` field that contains
+ * the user-entered message for the transfer (e.g., "For mom's medical screening").
+ *
+ * @param {Object|null} statusSummary - Status summary data from FetchFundingIntentStatusSummary API
+ * @returns {string} Annotation text or empty string if not found
+ */
+export function extractStatusSummaryAnnotation(statusSummary) {
+  if (!statusSummary) {
+    return '';
+  }
+
+  return statusSummary.annotation || '';
+}
+
+/**
  * Extract Interac memo from funding intent data
  * For incoming transfers (e_transfer_receive): memo is in transferMetadata.memo
  * For outgoing transfers (e_transfer_send): memo is in transferMetadata.message or transferMetadata.memo
+ *
+ * @deprecated As of 2026-03-06, the memo field in FetchFundingIntent.transferMetadata is no longer
+ * populated by the Wealthsimple API. Use extractStatusSummaryAnnotation() with data from
+ * FetchFundingIntentStatusSummary instead. This function is kept as a fallback for backward
+ * compatibility and is marked for removal in a future version.
  *
  * @param {Object|null} fundingIntent - Funding intent data from FetchFundingIntent API
  * @returns {string} Memo text or empty string if not found

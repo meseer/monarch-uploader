@@ -1367,6 +1367,231 @@ fragment SpendTransaction on SpendTransaction {
 }
 
 /**
+ * Fetch funding intent status summary for a single funding intent
+ * Used to get the annotation (user note/message) for funding intent transactions.
+ *
+ * As of 2026-03-06, this replaces the memo field from FetchFundingIntent.transferMetadata
+ * which is no longer populated by the Wealthsimple API. The annotation field on the
+ * status summary is now the primary source for e-transfer messages.
+ *
+ * @param {string} fundingIntentId - Funding intent ID (e.g., "funding_intent-XlVAMs38eHXAMyBguEFOdMArAKZ")
+ * @returns {Promise<Object|null>} Status summary object (with annotation, timeline, etc.) or null if not found
+ */
+export async function fetchFundingIntentStatusSummary(fundingIntentId) {
+  try {
+    if (!fundingIntentId) {
+      debugLog('No funding intent ID provided for fetchFundingIntentStatusSummary');
+      return null;
+    }
+
+    debugLog(`Fetching funding intent status summary for ${fundingIntentId}...`);
+
+    const query = `query FetchFundingIntentStatusSummary($fundingIntentId: ID!, $returnScheduledStatus: Boolean, $timelineVersion: Int) {
+  fundingIntentStatusSummary: funding_intent_status_summary(
+    funding_intent_id: $fundingIntentId
+    return_scheduled_status: $returnScheduledStatus
+    timeline_version: $timelineVersion
+  ) {
+    ...FundingIntentStatusSummary
+    __typename
+  }
+}
+
+fragment FundingIntentStatusSummary on FundingIntentStatusSummary {
+  id
+  postDated
+  estimatedCompletionDate
+  actorIdentityId
+  activityFrequency
+  sourceFundingPoint {
+    fundingPointId
+    fundingPointType
+    fundingPointSubType
+    __typename
+  }
+  destinationFundingPoint {
+    fundingPointId
+    fundingPointType
+    fundingPointSubType
+    __typename
+  }
+  details {
+    ...FundingIntentStatusSummaryDepositDetails
+    ...FundingIntentStatusSummaryInternalTransferDetails
+    __typename
+  }
+  isCancellable: is_cancellable
+  unsuccessfulRequirementFailureCodes
+  annotation
+  contributionDate
+  transactionTypeActivityDetails {
+    ...FundingIntentStatusSummaryEftDepositActivityDetails
+    ...FundingIntentStatusSummaryEftWithdrawalActivityDetails
+    ...FundingIntentStatusSummaryChequeDepositActivityDetails
+    __typename
+  }
+  timeline {
+    ... on TimelineEventActionRequired {
+      occurredAt
+      actionRequiredReason: reason
+      __typename
+    }
+    ... on TimelineEventAssetsSold {
+      occurredAt
+      __typename
+    }
+    ... on TimelineEventCancelled {
+      occurredAt
+      nextRecurringDate
+      __typename
+    }
+    ... on TimelineEventCompleted {
+      occurredAt
+      estimatedOccurrenceDate
+      __typename
+    }
+    ... on TimelineEventDeclined {
+      occurredAt
+      __typename
+    }
+    ... on TimelineEventExpired {
+      occurredAt
+      __typename
+    }
+    ... on TimelineEventFailed {
+      occurredAt
+      __typename
+    }
+    ... on TimelineEventInstantAmountApplied {
+      occurredAt
+      __typename
+    }
+    ... on TimelineEventMoneyMoved {
+      occurredAt
+      __typename
+    }
+    ... on TimelineEventProcessed {
+      occurredAt
+      __typename
+    }
+    ... on TimelineEventReceivedFunds {
+      occurredAt
+      __typename
+    }
+    ... on TimelineEventRejected {
+      occurredAt
+      rejectedReason: reason
+      __typename
+    }
+    ... on TimelineEventRequestAccepted {
+      occurredAt
+      __typename
+    }
+    ... on TimelineEventReversed {
+      occurredAt
+      reversedReason: reason
+      __typename
+    }
+    ... on TimelineEventReviewed {
+      occurredAt
+      __typename
+    }
+    ... on TimelineEventScheduled {
+      occurredAt
+      __typename
+    }
+    ... on TimelineEventSubmitted {
+      occurredAt
+      estimatedOccurrenceDate
+      __typename
+    }
+    __typename
+  }
+  __typename
+}
+
+fragment Money on Money {
+  amount
+  cents
+  currency
+  __typename
+}
+
+fragment FundingIntentStatusSummaryDepositDetails on FundingIntentStatusSummaryDepositDetails {
+  provisionalCreditAmount {
+    ...Money
+    __typename
+  }
+  totalAmount {
+    ...Money
+    __typename
+  }
+  __typename
+}
+
+fragment FundingIntentStatusSummaryInternalTransferDetails on FundingIntentStatusSummaryInternalTransferDetails {
+  destinationAccountFundsAvailable: destination_account_funds_available {
+    ...Money
+    __typename
+  }
+  __typename
+}
+
+fragment FundingIntentStatusSummaryEftDepositActivityDetails on EftDepositActivityDetails {
+  institutionShortName
+  lastBankAccountNumberDigits
+  unsuccessfulFundingIntentCallToAction
+  __typename
+}
+
+fragment FundingIntentStatusSummaryEftWithdrawalActivityDetails on EftWithdrawalActivityDetails {
+  institutionShortName
+  lastBankAccountNumberDigits
+  __typename
+}
+
+fragment FundingIntentStatusSummaryChequeDepositActivityDetails on ChequeDepositActivityDetails {
+  rejectionReason
+  failureDetails {
+    failureCode
+    title
+    description
+    ctaLabel
+    closeFlowCtaLabel
+    suggestions
+    __typename
+  }
+  __typename
+}`;
+
+    const variables = {
+      fundingIntentId,
+      timelineVersion: 2,
+    };
+
+    const response = await makeGraphQLQuery('FetchFundingIntentStatusSummary', query, variables);
+
+    if (!response || !response.fundingIntentStatusSummary) {
+      debugLog(`No funding intent status summary data found for ${fundingIntentId}`);
+      return null;
+    }
+
+    const statusSummary = response.fundingIntentStatusSummary;
+    debugLog(`Fetched funding intent status summary ${fundingIntentId}:`, {
+      hasAnnotation: Boolean(statusSummary.annotation),
+      activityFrequency: statusSummary.activityFrequency,
+      isCancellable: statusSummary.isCancellable,
+    });
+
+    return statusSummary;
+  } catch (error) {
+    debugLog(`Error fetching funding intent status summary ${fundingIntentId}:`, error);
+    // Return null on error - don't fail the entire sync
+    return null;
+  }
+}
+
+/**
  * Fetch crypto order details for a single crypto buy/sell order
  * Used to get detailed fill information, fees, and pricing for crypto orders
  *
