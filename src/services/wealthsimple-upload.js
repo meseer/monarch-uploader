@@ -4,6 +4,7 @@
  */
 
 import { debugLog, getLookbackForInstitution, getTodayLocal } from '../core/utils';
+import { WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES, WEALTHSIMPLE_PENDING_RECONCILIATION_TYPES } from '../core/config';
 import toast from '../ui/toast';
 import wealthsimpleApi from '../api/wealthsimple';
 import {
@@ -352,54 +353,14 @@ export function buildSyncStepsForAccount(consolidatedAccount) {
   const steps = [];
   const accountType = consolidatedAccount.wealthsimpleAccount?.type || '';
 
-  // Account types that support transaction sync
-  // Includes credit cards, CASH accounts, line of credit, and investment accounts
-  const transactionSupportedTypes = [
-    'CREDIT_CARD',
-    'PORTFOLIO_LINE_OF_CREDIT',
-    'CASH',
-    'CASH_USD',
-    // Investment accounts - Managed
-    'MANAGED_RESP_FAMILY',
-    'MANAGED_RESP',
-    'MANAGED_NON_REGISTERED',
-    'MANAGED_TFSA',
-    'MANAGED_RRSP',
-    // Investment accounts - Self-directed
-    'SELF_DIRECTED_RESP_FAMILY',
-    'SELF_DIRECTED_RESP',
-    'SELF_DIRECTED_NON_REGISTERED',
-    'SELF_DIRECTED_TFSA',
-    'SELF_DIRECTED_RRSP',
-    'SELF_DIRECTED_CRYPTO',
-    'SELF_DIRECTED_NON_REGISTERED_MARGIN',
-  ];
-  if (transactionSupportedTypes.includes(accountType)) {
+  // Account types that support transaction sync  sourced from config to stay in sync with account.js runtime gate
+  if (WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType)) {
     steps.push({ key: 'transactions', name: 'Transaction sync' });
   }
 
   // Pending transaction reconciliation for credit card, CASH, and investment accounts
   // Deleting cancelled transactions may adjust balance in Monarch
-  const pendingReconciliationTypes = [
-    'CREDIT_CARD',
-    'CASH',
-    'CASH_USD',
-    // Investment accounts - Managed
-    'MANAGED_RESP_FAMILY',
-    'MANAGED_RESP',
-    'MANAGED_NON_REGISTERED',
-    'MANAGED_TFSA',
-    'MANAGED_RRSP',
-    // Investment accounts - Self-directed
-    'SELF_DIRECTED_RESP_FAMILY',
-    'SELF_DIRECTED_RESP',
-    'SELF_DIRECTED_NON_REGISTERED',
-    'SELF_DIRECTED_TFSA',
-    'SELF_DIRECTED_RRSP',
-    'SELF_DIRECTED_CRYPTO',
-    'SELF_DIRECTED_NON_REGISTERED_MARGIN',
-  ];
-  if (pendingReconciliationTypes.includes(accountType)) {
+  if (WEALTHSIMPLE_PENDING_RECONCILIATION_TYPES.has(accountType)) {
     steps.push({ key: 'pendingReconciliation', name: 'Pending reconciliation' });
   }
 
@@ -614,34 +575,12 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
     // Resolve account mapping first (shows selector with create option)
     const mappingResult = await resolveWealthsimpleAccountMapping(consolidatedAccount, currentBalance);
 
-    // Account types that support transaction sync (same as buildSyncStepsForAccount)
-    const transactionSupportedTypes = [
-      'CREDIT_CARD',
-      'PORTFOLIO_LINE_OF_CREDIT',
-      'CASH',
-      'CASH_USD',
-      // Investment accounts - Managed
-      'MANAGED_RESP_FAMILY',
-      'MANAGED_RESP',
-      'MANAGED_NON_REGISTERED',
-      'MANAGED_TFSA',
-      'MANAGED_RRSP',
-      // Investment accounts - Self-directed
-      'SELF_DIRECTED_RESP_FAMILY',
-      'SELF_DIRECTED_RESP',
-      'SELF_DIRECTED_NON_REGISTERED',
-      'SELF_DIRECTED_TFSA',
-      'SELF_DIRECTED_RRSP',
-      'SELF_DIRECTED_CRYPTO',
-      'SELF_DIRECTED_NON_REGISTERED_MARGIN',
-    ];
-
     // Handle skip signal
     if (mappingResult && mappingResult.skipped) {
       debugLog(`User skipped account ${account.id}`);
       markAccountAsSkipped(account.id, true);
       // Update first visible step
-      const firstStep = transactionSupportedTypes.includes(accountType) ? 'transactions' : 'balance';
+      const firstStep = WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType) ? 'transactions' : 'balance';
       progressDialog.updateStepStatus(account.id, firstStep, 'skipped', 'Skipped by user');
       return { success: false, skipped: true };
     }
@@ -649,7 +588,7 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
     // Handle cancel signal
     if (mappingResult && mappingResult.cancelled) {
       debugLog('User cancelled sync');
-      const firstStep = transactionSupportedTypes.includes(accountType) ? 'transactions' : 'balance';
+      const firstStep = WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType) ? 'transactions' : 'balance';
       progressDialog.updateStepStatus(account.id, firstStep, 'error', 'Cancelled');
       return { success: false, cancelled: true };
     }
@@ -657,7 +596,7 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
     // Handle null (user closed without action)
     if (!mappingResult) {
       debugLog('Account mapping cancelled by user');
-      const firstStep = transactionSupportedTypes.includes(accountType) ? 'transactions' : 'balance';
+      const firstStep = WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType) ? 'transactions' : 'balance';
       progressDialog.updateStepStatus(account.id, firstStep, 'error', 'Cancelled');
       return { success: false, cancelled: true };
     }
@@ -693,7 +632,7 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
 
       if (!datePickerResult) {
         debugLog('User cancelled date selection');
-        const firstStep = transactionSupportedTypes.includes(accountType) ? 'transactions' : 'balance';
+        const firstStep = WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType) ? 'transactions' : 'balance';
         progressDialog.updateStepStatus(account.id, firstStep, 'error', 'Date selection cancelled');
         return { success: false, cancelled: true };
       }
@@ -708,7 +647,7 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
     let rawWealthsimpleTransactions = null; // Store for pending reconciliation
     let transactionsSyncedCount = 0; // Track synced count for collapsed summary display
 
-    if (transactionSupportedTypes.includes(accountType)) {
+    if (WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType)) {
       progressDialog.updateStepStatus(account.id, 'transactions', 'processing', 'Fetching from WS...');
 
       // Fetch raw transactions from Wealthsimple API ONCE
@@ -755,26 +694,7 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
 
     // Step 2: Pending transaction reconciliation (for credit card, CASH, and investment accounts)
     // Deleting cancelled transactions may implicitly adjust the balance in Monarch
-    const pendingReconciliationTypes = [
-      'CREDIT_CARD',
-      'CASH',
-      'CASH_USD',
-      // Investment accounts - Managed
-      'MANAGED_RESP_FAMILY',
-      'MANAGED_RESP',
-      'MANAGED_NON_REGISTERED',
-      'MANAGED_TFSA',
-      'MANAGED_RRSP',
-      // Investment accounts - Self-directed
-      'SELF_DIRECTED_RESP_FAMILY',
-      'SELF_DIRECTED_RESP',
-      'SELF_DIRECTED_NON_REGISTERED',
-      'SELF_DIRECTED_TFSA',
-      'SELF_DIRECTED_RRSP',
-      'SELF_DIRECTED_CRYPTO',
-      'SELF_DIRECTED_NON_REGISTERED_MARGIN',
-    ];
-    if (pendingReconciliationTypes.includes(accountType)) {
+    if (WEALTHSIMPLE_PENDING_RECONCILIATION_TYPES.has(accountType)) {
       progressDialog.updateStepStatus(account.id, 'pendingReconciliation', 'processing', 'Reconciling pending');
 
       try {

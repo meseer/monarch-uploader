@@ -88,6 +88,29 @@ export const WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES = new Set([
   'SELF_DIRECTED_TFSA',
   'SELF_DIRECTED_RRSP',
   'SELF_DIRECTED_CRYPTO',
+  'SELF_DIRECTED_NON_REGISTERED_MARGIN',
+]);
+
+// Wealthsimple account types that support pending transaction reconciliation
+// Subset of WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES (excludes PORTFOLIO_LINE_OF_CREDIT)
+export const WEALTHSIMPLE_PENDING_RECONCILIATION_TYPES = new Set([
+  'CREDIT_CARD',
+  'CASH',
+  'CASH_USD',
+  // Investment accounts - Managed
+  'MANAGED_RESP_FAMILY',
+  'MANAGED_RESP',
+  'MANAGED_NON_REGISTERED',
+  'MANAGED_TFSA',
+  'MANAGED_RRSP',
+  // Investment accounts - Self-directed
+  'SELF_DIRECTED_RESP_FAMILY',
+  'SELF_DIRECTED_RESP',
+  'SELF_DIRECTED_NON_REGISTERED',
+  'SELF_DIRECTED_TFSA',
+  'SELF_DIRECTED_RRSP',
+  'SELF_DIRECTED_CRYPTO',
+  'SELF_DIRECTED_NON_REGISTERED_MARGIN',
 ]);
 
 // Wealthsimple account types that require balance reconstruction from transactions
