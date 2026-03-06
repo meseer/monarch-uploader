@@ -467,6 +467,45 @@ describe('Monarch API - Core', () => {
       expect(debugLog).toHaveBeenCalledWith('Starting Monarch transactions upload process');
     });
 
+    test('includes importPriority all_transactions in parse request', async () => {
+      mockGMXmlHttpRequest
+        .mockImplementationOnce((options) => {
+          setTimeout(() => options.onload({
+            status: 200,
+            responseText: JSON.stringify(mockUploadResponse),
+          }), 0);
+        })
+        .mockImplementation((options) => {
+          const data = JSON.parse(options.data);
+          if (data.operationName === 'Web_ParseUploadStatementSession') {
+            expect(data.variables.input.importPriority).toBe('all_transactions');
+            setTimeout(() => options.onload({
+              status: 200,
+              responseText: JSON.stringify({ data: {} }),
+            }), 0);
+          } else if (data.operationName === 'Web_GetUploadStatementSession') {
+            setTimeout(() => options.onload({
+              status: 200,
+              responseText: JSON.stringify({
+                data: {
+                  uploadStatementSession: {
+                    status: 'completed',
+                    uploadedStatement: { transactionCount: 2 },
+                  },
+                },
+              }),
+            }), 0);
+          }
+        });
+
+      const result = await uploadTransactionsToMonarch(
+        'monarch123',
+        'date,description,amount\n2024-01-01,Test,100',
+      );
+
+      expect(result).toBe(true);
+    });
+
     test('handles transaction upload with custom options', async () => {
       // Mock successful responses
       mockGMXmlHttpRequest
@@ -482,6 +521,7 @@ describe('Monarch API - Core', () => {
             // Verify the options were passed correctly
             expect(data.variables.input.skipCheckForDuplicates).toBe(true);
             expect(data.variables.input.shouldUpdateBalance).toBe(true);
+            expect(data.variables.input.importPriority).toBe('all_transactions');
             setTimeout(() => options.onload({
               status: 200,
               responseText: JSON.stringify({ data: {} }),

@@ -422,8 +422,10 @@ export async function uploadTransactionsToMonarch(
       }`,
       {
         input: {
-          parserName: 'monarch_csv',
+          parserName: 'mint_csv',
+          columnMapping: '{"date":0,"amount":6,"merchant_name":1,"data_provider_description":4,"category":2,"tags":7,"notes":5}',
           sessionKey: response.session_key,
+          importPriority: 'all_transactions',
           accountId: monarchAccountId,
           skipCheckForDuplicates,
           shouldUpdateBalance,
@@ -474,7 +476,7 @@ export async function uploadTransactionsToMonarch(
           debugLog(successMsg);
           return true;
         }
-        if (uploadStatementSession.status === 'failed') {
+        if (uploadStatementSession.status === 'failed' || uploadStatementSession.status === 'errored') {
           const errorMsg = uploadStatementSession.errorMessage || 'Unknown error';
           throw new Error(`Monarch transaction upload processing failed: ${errorMsg}`);
         }
