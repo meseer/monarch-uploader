@@ -331,14 +331,14 @@ describe('Wealthsimple Transaction Rules Engine - Cash Payments', () => {
 
         expect(result).not.toBeNull();
         expect(result.ruleId).toBe('promotion-incentive-bonus');
-        expect(result.category).toBeNull(); // Needs category mapping
+        expect(result.category).toBe('Promotion');
         expect(result.merchant).toBe('Wealthsimple Incentive Bonus');
         expect(result.originalStatement).toBe('PROMOTION:INCENTIVE_BONUS:Wealthsimple Incentive Bonus');
-        expect(result.needsCategoryMapping).toBe(true);
-        expect(result.categoryKey).toBe('PROMOTION:INCENTIVE_BONUS:Wealthsimple Incentive Bonus');
+        expect(result.needsCategoryMapping).toBeFalsy();
+        expect(result.categoryKey).toBeUndefined();
       });
 
-      it('should include promotionDetails for category selector display', () => {
+      it('should not include promotionDetails (no longer needed)', () => {
         const transaction = {
           externalCanonicalId: '9898300',
           type: 'PROMOTION',
@@ -348,9 +348,7 @@ describe('Wealthsimple Transaction Rules Engine - Cash Payments', () => {
         const result = applyTransactionRule(transaction);
 
         expect(result).not.toBeNull();
-        expect(result.promotionDetails).toBeDefined();
-        expect(result.promotionDetails.type).toBe('PROMOTION');
-        expect(result.promotionDetails.subType).toBe('INCENTIVE_BONUS');
+        expect(result.promotionDetails).toBeUndefined();
       });
 
       it('should have empty notes and technicalDetails', () => {

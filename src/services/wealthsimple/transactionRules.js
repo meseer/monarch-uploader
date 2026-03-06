@@ -484,31 +484,19 @@ export const CASH_TRANSACTION_RULES = [
     /**
      * Process PROMOTION/INCENTIVE_BONUS transactions
      * These are promotional bonuses (e.g., sign-up bonuses, referral bonuses).
-     * Category is determined by user via category mapper.
+     * Applies to all account types (cash and investment).
+     * Category is auto-assigned to "Promotion".
      *
      * @param {Object} tx - Raw transaction
      * @returns {Object} Processed transaction fields
      */
-    process: (tx) => {
-      const merchant = 'Wealthsimple Incentive Bonus';
-      // Build categoryKey: "type:subType:merchantName"
-      const categoryKey = `${tx.type}:${tx.subType}:${merchant}`;
-
-      return {
-        category: null, // User selects via category mapper
-        merchant,
-        originalStatement: formatOriginalStatement(tx.type, tx.subType, merchant),
-        notes: '',
-        technicalDetails: '',
-        needsCategoryMapping: true,
-        categoryKey,
-        // Store promotion details for category selector display
-        promotionDetails: {
-          type: tx.type,
-          subType: tx.subType,
-        },
-      };
-    },
+    process: (tx) => ({
+      category: 'Promotion',
+      merchant: 'Wealthsimple Incentive Bonus',
+      originalStatement: formatOriginalStatement(tx.type, tx.subType, 'Wealthsimple Incentive Bonus'),
+      notes: '',
+      technicalDetails: '',
+    }),
   },
   {
     id: 'reimbursement-cashback',

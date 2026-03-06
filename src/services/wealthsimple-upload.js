@@ -372,6 +372,7 @@ export function buildSyncStepsForAccount(consolidatedAccount) {
     'SELF_DIRECTED_TFSA',
     'SELF_DIRECTED_RRSP',
     'SELF_DIRECTED_CRYPTO',
+    'SELF_DIRECTED_NON_REGISTERED_MARGIN',
   ];
   if (transactionSupportedTypes.includes(accountType)) {
     steps.push({ key: 'transactions', name: 'Transaction sync' });
@@ -396,6 +397,7 @@ export function buildSyncStepsForAccount(consolidatedAccount) {
     'SELF_DIRECTED_TFSA',
     'SELF_DIRECTED_RRSP',
     'SELF_DIRECTED_CRYPTO',
+    'SELF_DIRECTED_NON_REGISTERED_MARGIN',
   ];
   if (pendingReconciliationTypes.includes(accountType)) {
     steps.push({ key: 'pendingReconciliation', name: 'Pending reconciliation' });
@@ -631,6 +633,7 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
       'SELF_DIRECTED_TFSA',
       'SELF_DIRECTED_RRSP',
       'SELF_DIRECTED_CRYPTO',
+      'SELF_DIRECTED_NON_REGISTERED_MARGIN',
     ];
 
     // Handle skip signal
@@ -769,6 +772,7 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAc
       'SELF_DIRECTED_TFSA',
       'SELF_DIRECTED_RRSP',
       'SELF_DIRECTED_CRYPTO',
+      'SELF_DIRECTED_NON_REGISTERED_MARGIN',
     ];
     if (pendingReconciliationTypes.includes(accountType)) {
       progressDialog.updateStepStatus(account.id, 'pendingReconciliation', 'processing', 'Reconciling pending');

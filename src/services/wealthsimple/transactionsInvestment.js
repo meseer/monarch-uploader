@@ -48,6 +48,8 @@ const INVESTMENT_TRANSACTION_RULES = [
   ...CASH_TRANSACTION_RULES.filter((rule) => rule.id === 'eft-transfer'),
   // Internal transfer rule (same as CASH accounts)
   ...CASH_TRANSACTION_RULES.filter((rule) => rule.id === 'internal-transfer'),
+  // Promotional incentive bonus rule (applies to all account types)
+  ...CASH_TRANSACTION_RULES.filter((rule) => rule.id === 'promotion-incentive-bonus'),
   // Institutional transfer rules (transfers to/from external institutions)
   ...INVESTMENT_INSTITUTIONAL_TRANSFER_RULES,
   // Generic deposit rules (catches non-EFT deposits like recurring contributions)

@@ -94,6 +94,10 @@ describe('Wealthsimple Positions Service', () => {
       expect(isInvestmentAccount('SELF_DIRECTED_NON_REGISTERED')).toBe(true);
     });
 
+    test('returns true for SELF_DIRECTED_NON_REGISTERED_MARGIN', () => {
+      expect(isInvestmentAccount('SELF_DIRECTED_NON_REGISTERED_MARGIN')).toBe(true);
+    });
+
     test('returns false for CREDIT_CARD', () => {
       expect(isInvestmentAccount('CREDIT_CARD')).toBe(false);
     });

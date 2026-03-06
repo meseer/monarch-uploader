@@ -4,6 +4,7 @@
 
 import {
   uploadAllWealthsimpleAccountsToMonarch,
+  buildSyncStepsForAccount,
   getLastUploadDate,
   clearLastUploadDate,
 } from '../../src/services/wealthsimple-upload';
@@ -491,6 +492,69 @@ describe('Wealthsimple Upload Service', () => {
       const result = getLastUploadDate('acc-1');
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe('buildSyncStepsForAccount', () => {
+    const { isInvestmentAccount } = require('../../src/services/wealthsimple/positions');
+
+    it('includes all steps for SELF_DIRECTED_NON_REGISTERED_MARGIN', () => {
+      isInvestmentAccount.mockReturnValue(true);
+
+      const consolidatedAccount = {
+        wealthsimpleAccount: { id: 'margin-1', type: 'SELF_DIRECTED_NON_REGISTERED_MARGIN' },
+      };
+      const steps = buildSyncStepsForAccount(consolidatedAccount);
+      const stepKeys = steps.map((s) => s.key);
+
+      expect(stepKeys).toContain('transactions');
+      expect(stepKeys).toContain('pendingReconciliation');
+      expect(stepKeys).toContain('balance');
+      expect(stepKeys).toContain('positions');
+      expect(stepKeys).toContain('cashSync');
+      expect(stepKeys).not.toContain('creditLimit');
+    });
+
+    it('includes all steps for SELF_DIRECTED_NON_REGISTERED (parity check)', () => {
+      isInvestmentAccount.mockReturnValue(true);
+
+      const consolidatedAccount = {
+        wealthsimpleAccount: { id: 'nonreg-1', type: 'SELF_DIRECTED_NON_REGISTERED' },
+      };
+      const steps = buildSyncStepsForAccount(consolidatedAccount);
+      const stepKeys = steps.map((s) => s.key);
+
+      expect(stepKeys).toContain('transactions');
+      expect(stepKeys).toContain('pendingReconciliation');
+      expect(stepKeys).toContain('balance');
+      expect(stepKeys).toContain('positions');
+      expect(stepKeys).toContain('cashSync');
+    });
+
+    it('includes only balance step for unknown account type', () => {
+      isInvestmentAccount.mockReturnValue(false);
+
+      const consolidatedAccount = {
+        wealthsimpleAccount: { id: 'unknown-1', type: 'UNKNOWN_TYPE' },
+      };
+      const steps = buildSyncStepsForAccount(consolidatedAccount);
+      const stepKeys = steps.map((s) => s.key);
+
+      expect(stepKeys).toEqual(['balance']);
+    });
+
+    it('includes creditLimit step only for CREDIT_CARD', () => {
+      isInvestmentAccount.mockReturnValue(false);
+
+      const consolidatedAccount = {
+        wealthsimpleAccount: { id: 'cc-1', type: 'CREDIT_CARD' },
+      };
+      const steps = buildSyncStepsForAccount(consolidatedAccount);
+      const stepKeys = steps.map((s) => s.key);
+
+      expect(stepKeys).toContain('creditLimit');
+      expect(stepKeys).not.toContain('positions');
+      expect(stepKeys).not.toContain('cashSync');
     });
   });
 
