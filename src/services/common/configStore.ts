@@ -20,6 +20,13 @@ import { debugLog } from '../../core/utils';
 import { STORAGE } from '../../core/config';
 import { INTEGRATIONS } from '../../core/integrationCapabilities';
 
+/** Shape of a single holding mapping entry */
+interface HoldingMappingData {
+  securityId: string | null;
+  holdingId: string | null;
+  symbol: string | null;
+}
+
 // ============================================
 // CONFIG STORAGE KEY MAPPING
 // ============================================
@@ -43,7 +50,7 @@ const CONFIG_STORAGE_KEYS = {
  * @param {string} integrationId - Integration identifier
  * @returns {string|null} Storage key or null if not found
  */
-export function getConfigStorageKey(integrationId) {
+export function getConfigStorageKey(integrationId: string): string | null {
   return CONFIG_STORAGE_KEYS[integrationId] || null;
 }
 
@@ -52,7 +59,7 @@ export function getConfigStorageKey(integrationId) {
  * @param {string} integrationId - Integration identifier
  * @returns {Object} Config object (empty object if not found)
  */
-export function getConfig(integrationId) {
+export function getConfig(integrationId: string): Record<string, unknown> {
   const storageKey = getConfigStorageKey(integrationId);
   if (!storageKey) {
     debugLog(`[configStore.getConfig] Unknown integration: ${integrationId}`);
@@ -74,7 +81,7 @@ export function getConfig(integrationId) {
  * @param {Object} config - Full config object
  * @returns {boolean} Success status
  */
-export function saveConfig(integrationId, config) {
+export function saveConfig(integrationId: string, config: Record<string, unknown>): boolean {
   const storageKey = getConfigStorageKey(integrationId);
   if (!storageKey) {
     debugLog(`[configStore.saveConfig] Unknown integration: ${integrationId}`);
@@ -97,10 +104,11 @@ export function saveConfig(integrationId, config) {
  * @param {Object} updates - Properties to merge into the section
  * @returns {boolean} Success status
  */
-export function updateConfigSection(integrationId, section, updates) {
+export function updateConfigSection(integrationId: string, section: string, updates: Record<string, unknown>): boolean {
   const config = getConfig(integrationId);
+  const existing = (config[section] && typeof config[section] === 'object') ? config[section] as Record<string, unknown> : {};
   config[section] = {
-    ...(config[section] || {}),
+    ...existing,
     ...updates,
   };
   return saveConfig(integrationId, config);
@@ -115,9 +123,9 @@ export function updateConfigSection(integrationId, section, updates) {
  * @param {string} integrationId - Integration identifier
  * @returns {Object} Auth data (empty object if not found)
  */
-export function getAuth(integrationId) {
+export function getAuth(integrationId: string): Record<string, unknown> {
   const config = getConfig(integrationId);
-  return config.auth || {};
+  return (config.auth as Record<string, unknown>) || {};
 }
 
 /**
@@ -126,7 +134,7 @@ export function getAuth(integrationId) {
  * @param {Object} authData - Auth data to save
  * @returns {boolean} Success status
  */
-export function setAuth(integrationId, authData) {
+export function setAuth(integrationId: string, authData: Record<string, unknown>): boolean {
   return updateConfigSection(integrationId, 'auth', authData);
 }
 
@@ -135,7 +143,7 @@ export function setAuth(integrationId, authData) {
  * @param {string} integrationId - Integration identifier
  * @returns {boolean} Success status
  */
-export function clearAuth(integrationId) {
+export function clearAuth(integrationId: string): boolean {
   const config = getConfig(integrationId);
   delete config.auth;
   return saveConfig(integrationId, config);
@@ -150,9 +158,9 @@ export function clearAuth(integrationId) {
  * @param {string} integrationId - Integration identifier
  * @returns {Object} Settings object (empty object if not found)
  */
-export function getSettings(integrationId) {
+export function getSettings(integrationId: string): Record<string, unknown> {
   const config = getConfig(integrationId);
-  return config.settings || {};
+  return (config.settings as Record<string, unknown>) || {};
 }
 
 /**
@@ -162,7 +170,7 @@ export function getSettings(integrationId) {
  * @param {*} defaultValue - Default value if not found
  * @returns {*} Setting value
  */
-export function getSetting(integrationId, key, defaultValue) {
+export function getSetting(integrationId: string, key: string, defaultValue?: unknown): unknown {
   const settings = getSettings(integrationId);
   return settings[key] !== undefined ? settings[key] : defaultValue;
 }
@@ -174,7 +182,7 @@ export function getSetting(integrationId, key, defaultValue) {
  * @param {*} value - Value to set
  * @returns {boolean} Success status
  */
-export function setSetting(integrationId, key, value) {
+export function setSetting(integrationId: string, key: string, value: unknown): boolean {
   return updateConfigSection(integrationId, 'settings', { [key]: value });
 }
 
@@ -187,9 +195,9 @@ export function setSetting(integrationId, key, value) {
  * @param {string} integrationId - Integration identifier
  * @returns {Object} Category mappings (empty object if not found)
  */
-export function getCategoryMappings(integrationId) {
+export function getCategoryMappings(integrationId: string): Record<string, string> {
   const config = getConfig(integrationId);
-  return config.categoryMappings || {};
+  return (config.categoryMappings as Record<string, string>) || {};
 }
 
 /**
@@ -198,7 +206,7 @@ export function getCategoryMappings(integrationId) {
  * @param {Object} mappings - Full category mappings object
  * @returns {boolean} Success status
  */
-export function saveCategoryMappings(integrationId, mappings) {
+export function saveCategoryMappings(integrationId: string, mappings: Record<string, string>): boolean {
   const config = getConfig(integrationId);
   config.categoryMappings = mappings;
   return saveConfig(integrationId, config);
@@ -210,7 +218,7 @@ export function saveCategoryMappings(integrationId, mappings) {
  * @param {string} sourceKey - Source category/merchant key
  * @returns {string|null} Monarch category name or null
  */
-export function getCategoryMapping(integrationId, sourceKey) {
+export function getCategoryMapping(integrationId: string, sourceKey: string): string | null {
   const mappings = getCategoryMappings(integrationId);
   return mappings[sourceKey] || null;
 }
@@ -222,7 +230,7 @@ export function getCategoryMapping(integrationId, sourceKey) {
  * @param {string} monarchCategory - Monarch category name
  * @returns {boolean} Success status
  */
-export function setCategoryMapping(integrationId, sourceKey, monarchCategory) {
+export function setCategoryMapping(integrationId: string, sourceKey: string, monarchCategory: string): boolean {
   const mappings = getCategoryMappings(integrationId);
   mappings[sourceKey] = monarchCategory;
   return saveCategoryMappings(integrationId, mappings);
@@ -234,7 +242,7 @@ export function setCategoryMapping(integrationId, sourceKey, monarchCategory) {
  * @param {string} sourceKey - Source category/merchant key
  * @returns {boolean} Success status
  */
-export function deleteCategoryMapping(integrationId, sourceKey) {
+export function deleteCategoryMapping(integrationId: string, sourceKey: string): boolean {
   const mappings = getCategoryMappings(integrationId);
   delete mappings[sourceKey];
   return saveCategoryMappings(integrationId, mappings);
@@ -245,7 +253,7 @@ export function deleteCategoryMapping(integrationId, sourceKey) {
  * @param {string} integrationId - Integration identifier
  * @returns {boolean} Success status
  */
-export function clearCategoryMappings(integrationId) {
+export function clearCategoryMappings(integrationId: string): boolean {
   return saveCategoryMappings(integrationId, {});
 }
 
@@ -261,9 +269,9 @@ export function clearCategoryMappings(integrationId) {
  * @param {string} integrationId - Integration identifier
  * @returns {Object} Holdings mappings { sourceSecurityKey: { securityId, holdingId, symbol } }
  */
-export function getHoldingsMappings(integrationId) {
+export function getHoldingsMappings(integrationId: string): Record<string, HoldingMappingData> {
   const config = getConfig(integrationId);
-  return config.holdingsMappings || {};
+  return (config.holdingsMappings as Record<string, HoldingMappingData>) || {};
 }
 
 /**
@@ -272,7 +280,7 @@ export function getHoldingsMappings(integrationId) {
  * @param {Object} mappings - Full holdings mappings object
  * @returns {boolean} Success status
  */
-export function saveHoldingsMappings(integrationId, mappings) {
+export function saveHoldingsMappings(integrationId: string, mappings: Record<string, HoldingMappingData>): boolean {
   const config = getConfig(integrationId);
   config.holdingsMappings = mappings;
   return saveConfig(integrationId, config);
@@ -284,7 +292,7 @@ export function saveHoldingsMappings(integrationId, mappings) {
  * @param {string} sourceSecurityKey - Source security key/ID
  * @returns {Object|null} Mapping data { securityId, holdingId, symbol } or null
  */
-export function getHoldingMapping(integrationId, sourceSecurityKey) {
+export function getHoldingMapping(integrationId: string, sourceSecurityKey: string): HoldingMappingData | null {
   const mappings = getHoldingsMappings(integrationId);
   return mappings[sourceSecurityKey] || null;
 }
@@ -296,7 +304,7 @@ export function getHoldingMapping(integrationId, sourceSecurityKey) {
  * @param {Object} mappingData - { securityId, holdingId, symbol }
  * @returns {boolean} Success status
  */
-export function saveHoldingMapping(integrationId, sourceSecurityKey, mappingData) {
+export function saveHoldingMapping(integrationId: string, sourceSecurityKey: string, mappingData: HoldingMappingData): boolean {
   const mappings = getHoldingsMappings(integrationId);
   mappings[sourceSecurityKey] = {
     securityId: mappingData.securityId || null,
@@ -312,7 +320,7 @@ export function saveHoldingMapping(integrationId, sourceSecurityKey, mappingData
  * @param {string} sourceSecurityKey - Source security key/ID
  * @returns {boolean} Success status
  */
-export function deleteHoldingMapping(integrationId, sourceSecurityKey) {
+export function deleteHoldingMapping(integrationId: string, sourceSecurityKey: string): boolean {
   const mappings = getHoldingsMappings(integrationId);
   if (!mappings[sourceSecurityKey]) {
     return false;
@@ -326,7 +334,7 @@ export function deleteHoldingMapping(integrationId, sourceSecurityKey) {
  * @param {string} integrationId - Integration identifier
  * @returns {boolean} Success status
  */
-export function clearHoldingsMappings(integrationId) {
+export function clearHoldingsMappings(integrationId: string): boolean {
   return saveHoldingsMappings(integrationId, {});
 }
 
@@ -340,7 +348,7 @@ export function clearHoldingsMappings(integrationId) {
  * @param {string} integrationId - Integration identifier
  * @returns {boolean} True if config exists
  */
-export function hasConfig(integrationId) {
+export function hasConfig(integrationId: string): boolean {
   const config = getConfig(integrationId);
   return Object.keys(config).length > 0;
 }
@@ -349,7 +357,7 @@ export function hasConfig(integrationId) {
  * Delete legacy individual storage keys after migration
  * @param {string[]} keys - Array of legacy storage keys to delete
  */
-export function deleteLegacyKeys(keys) {
+export function deleteLegacyKeys(keys: string[]): void {
   for (const key of keys) {
     try {
       GM_deleteValue(key);

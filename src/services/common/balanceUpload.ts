@@ -20,7 +20,7 @@ import accountService from './accountService';
  * @param {string} [date] - Date in YYYY-MM-DD format (defaults to today)
  * @returns {string} CSV content ready for Monarch upload
  */
-export function generateBalanceCSV(balance, accountName, date) {
+export function generateBalanceCSV(balance: number, accountName: string, date?: string): string {
   const dateStr = date || getTodayLocal();
   let csvContent = '"Date","Total Equity","Account Name"\n';
   csvContent += `"${dateStr}","${balance}","${accountName}"\n`;
@@ -34,7 +34,7 @@ export function generateBalanceCSV(balance, accountName, date) {
  * @param {string} accountName - Account display name for the CSV
  * @returns {string} CSV content ready for Monarch upload
  */
-export function generateBalanceHistoryCSV(balanceHistory, accountName) {
+export function generateBalanceHistoryCSV(balanceHistory: Array<{ date: string; amount: number }>, accountName: string): string {
   let csvContent = '"Date","Total Equity","Account Name"\n';
   balanceHistory.forEach((entry) => {
     csvContent += `"${entry.date}","${entry.amount}","${accountName}"\n`;
@@ -54,7 +54,7 @@ export function generateBalanceHistoryCSV(balanceHistory, accountName) {
  * @param {boolean} invertBalance - Whether the invertBalance setting is enabled
  * @returns {number} Balance adjusted for Monarch's sign convention
  */
-export function applyBalanceSign(rawBalance, invertBalance = false) {
+export function applyBalanceSign(rawBalance: number | null | undefined, invertBalance: boolean = false): number | null {
   if (rawBalance === null || rawBalance === undefined) return null;
   // Default: negate (positive owed → Monarch negative liability)
   // invertBalance=true: additional negate cancels default → stays positive
@@ -71,7 +71,12 @@ export function applyBalanceSign(rawBalance, invertBalance = false) {
  * @param {string} [params.date] - Date in YYYY-MM-DD format (defaults to today)
  * @returns {Promise<boolean>} True if upload succeeded
  */
-export async function uploadSingleDayBalance({ monarchAccountId, balance, accountName, date }) {
+export async function uploadSingleDayBalance({ monarchAccountId, balance, accountName, date }: {
+  monarchAccountId: string;
+  balance: number;
+  accountName: string;
+  date?: string;
+}): Promise<boolean> {
   const dateStr = date || getTodayLocal();
   const balanceCSV = generateBalanceCSV(balance, accountName, dateStr);
   return monarchApi.uploadBalance(monarchAccountId, balanceCSV, dateStr, dateStr);
@@ -88,7 +93,13 @@ export async function uploadSingleDayBalance({ monarchAccountId, balance, accoun
  * @param {string} params.toDate - End date for the upload range
  * @returns {Promise<boolean>} True if upload succeeded
  */
-export async function uploadBalanceHistory({ monarchAccountId, balanceHistory, accountName, fromDate, toDate }) {
+export async function uploadBalanceHistory({ monarchAccountId, balanceHistory, accountName, fromDate, toDate }: {
+  monarchAccountId: string;
+  balanceHistory: Array<{ date: string; amount: number }>;
+  accountName: string;
+  fromDate: string;
+  toDate: string;
+}): Promise<boolean> {
   const balanceCSV = generateBalanceHistoryCSV(balanceHistory, accountName);
   return monarchApi.uploadBalance(monarchAccountId, balanceCSV, fromDate, toDate);
 }
@@ -105,10 +116,19 @@ export async function uploadBalanceHistory({ monarchAccountId, balanceHistory, a
  * @param {number} monarchBalance - Current balance adjusted for Monarch sign convention
  * @returns {Object} Balance change data for progressDialog.updateBalanceChange()
  */
-function extractBalanceChange(integrationId, accountId, monarchBalance) {
+interface BalanceChangeData {
+  oldBalance?: number;
+  newBalance: number;
+  lastUploadDate?: string;
+  changePercent?: number;
+  accountType?: string;
+  debtAsPositive?: boolean;
+}
+
+function extractBalanceChange(integrationId: string, accountId: string, monarchBalance: number): BalanceChangeData {
   const acctData = accountService.getAccountData(integrationId, accountId);
-  const lastSyncBalance = acctData?.lastSyncBalance;
-  const lastSyncDate = acctData?.lastSyncDate;
+  const lastSyncBalance = acctData?.lastSyncBalance as number | undefined | null;
+  const lastSyncDate = acctData?.lastSyncDate as string | undefined | null;
 
   // Full diff available: we have a previous balance to compare against
   if (lastSyncBalance !== undefined && lastSyncBalance !== null && lastSyncDate) {
@@ -150,6 +170,25 @@ function extractBalanceChange(integrationId, accountId, monarchBalance) {
  * @param {Object} [params.progressDialog] - Optional progress dialog
  * @returns {Promise<{success: boolean, message: string, monarchBalance: number|null}>} Upload result
  */
+interface ExecuteBalanceUploadParams {
+  integrationId: string;
+  sourceAccountId: string;
+  monarchAccountId: string;
+  accountName: string;
+  currentBalance: number | null | undefined;
+  invertBalance?: boolean;
+  reconstructBalance?: boolean;
+  balanceHistory?: Array<{ date: string; amount: number }> | null;
+  fromDate?: string;
+  progressDialog?: { updateStepStatus: (...args: unknown[]) => void; updateBalanceChange: (...args: unknown[]) => void } | null;
+}
+
+interface BalanceUploadResult {
+  success: boolean;
+  message: string;
+  monarchBalance: number | null;
+}
+
 export async function executeBalanceUploadStep({
   integrationId,
   sourceAccountId,
@@ -161,7 +200,7 @@ export async function executeBalanceUploadStep({
   balanceHistory = null,
   fromDate,
   progressDialog,
-}) {
+}: ExecuteBalanceUploadParams): Promise<BalanceUploadResult> {
   const todayFormatted = getTodayLocal();
   const monarchBalance = applyBalanceSign(currentBalance, invertBalance);
 
@@ -200,7 +239,7 @@ export async function executeBalanceUploadStep({
       // Compute actual calendar day span (data points only cover transaction/statement dates)
       const firstDate = balanceHistory[0].date;
       const lastDate = balanceHistory[balanceHistory.length - 1].date;
-      const daySpan = Math.round((new Date(lastDate) - new Date(firstDate)) / 86400000) + 1;
+      const daySpan = Math.round((new Date(lastDate).getTime() - new Date(firstDate).getTime()) / 86400000) + 1;
       const dayLabel = `${daySpan} days`;
 
       if (progressDialog) {

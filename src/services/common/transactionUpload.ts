@@ -32,6 +32,16 @@ import {
  * @param {Array} params.transactions - Transactions (used to determine latest date)
  * @returns {Promise<boolean>} True if upload succeeded
  */
+interface UploadTransactionsParams {
+  integrationId: string;
+  sourceAccountId: string;
+  monarchAccountId: string;
+  csvData: string;
+  filename: string;
+  transactionRefs: string[];
+  transactions: Array<{ date?: string; [key: string]: unknown }>;
+}
+
 export async function uploadTransactionsAndSaveRefs({
   integrationId,
   sourceAccountId,
@@ -40,7 +50,7 @@ export async function uploadTransactionsAndSaveRefs({
   filename,
   transactionRefs,
   transactions,
-}) {
+}: UploadTransactionsParams): Promise<boolean> {
   const uploadSuccess = await monarchApi.uploadTransactions(monarchAccountId, csvData, filename, false, false);
 
   if (!uploadSuccess) {
@@ -57,7 +67,7 @@ export async function uploadTransactionsAndSaveRefs({
     }
 
     const accountData = accountService.getAccountData(integrationId, sourceAccountId);
-    const existingTransactions = accountData?.uploadedTransactions || [];
+    const existingTransactions = (accountData?.uploadedTransactions as unknown[]) || [];
     const retentionSettings = getRetentionSettingsFromAccount(accountData);
     const updatedTransactions = mergeAndRetainTransactions(
       existingTransactions,
@@ -84,7 +94,7 @@ export async function uploadTransactionsAndSaveRefs({
  * @param {number} duplicateCount - Number of transactions skipped (already uploaded)
  * @returns {string} Formatted message
  */
-export function formatTransactionUploadMessage(settledCount, pendingCount, duplicateCount) {
+export function formatTransactionUploadMessage(settledCount: number, pendingCount: number, duplicateCount: number): string {
   const parts = [];
   if (settledCount > 0) parts.push(`${settledCount} settled`);
   if (pendingCount > 0) parts.push(`${pendingCount} pending`);

@@ -58,7 +58,7 @@ const CATEGORY_MAPPINGS_LEGACY_KEYS = [
  * Safely delete a legacy GM storage key
  * @param {string} key - Storage key to delete
  */
-function safeDelete(key) {
+function safeDelete(key: string): void {
   try {
     GM_deleteValue(key);
   } catch (error) {
@@ -70,7 +70,7 @@ function safeDelete(key) {
  * Migrate Rogers Bank auth from legacy individual keys to configStore
  * @returns {number} Number of legacy keys deleted
  */
-export function migrateRogersBankAuth() {
+export function migrateRogersBankAuth(): number {
   let deleted = 0;
 
   try {
@@ -112,7 +112,7 @@ export function migrateRogersBankAuth() {
  * Migrate lookback days from legacy individual keys to configStore
  * @returns {number} Number of legacy keys deleted
  */
-export function migrateLookbackDays() {
+export function migrateLookbackDays(): number {
   let deleted = 0;
 
   for (const { id, legacyKey } of LOOKBACK_LEGACY_KEYS) {
@@ -145,7 +145,7 @@ export function migrateLookbackDays() {
  * Migrate category mappings from legacy individual keys to configStore
  * @returns {number} Number of legacy keys deleted
  */
-export function migrateCategoryMappings() {
+export function migrateCategoryMappings(): number {
   let deleted = 0;
 
   for (const { id, legacyKey } of CATEGORY_MAPPINGS_LEGACY_KEYS) {
@@ -192,7 +192,7 @@ export function migrateCategoryMappings() {
  * Each migration is idempotent and safe to run multiple times.
  * @returns {number} Total number of legacy keys deleted
  */
-export function migrateAllLegacyStorage() {
+export function migrateAllLegacyStorage(): number {
   debugLog('[legacyMigration] Starting eager legacy storage migration...');
 
   let totalDeleted = 0;

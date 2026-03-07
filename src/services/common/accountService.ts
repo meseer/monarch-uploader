@@ -15,6 +15,22 @@ import {
 } from '../../core/integrationCapabilities';
 
 /**
+ * Safely access the source account sub-object from a consolidated account
+ * using a dynamic key name.  Returns the value cast to Record so that
+ * property accesses like `.id` type-check.
+ */
+function getSourceAccountObj(
+  account: Record<string, unknown>,
+  keyName: string,
+): Record<string, unknown> | undefined {
+  const value = account[keyName];
+  if (value && typeof value === 'object') {
+    return value as Record<string, unknown>;
+  }
+  return undefined;
+}
+
+/**
  * Storage key mapping for each integration's consolidated account list
  */
 const ACCOUNT_LIST_STORAGE_KEYS = {
@@ -54,7 +70,7 @@ const LEGACY_UPLOADED_TRANSACTIONS_PREFIXES = {
  * @param {string} integrationId - Integration identifier
  * @returns {string|null} Storage key or null if not found
  */
-export function getStorageKey(integrationId) {
+export function getStorageKey(integrationId: string): string | null {
   if (ACCOUNT_LIST_STORAGE_KEYS[integrationId]) {
     return ACCOUNT_LIST_STORAGE_KEYS[integrationId];
   }
@@ -71,7 +87,7 @@ export function getStorageKey(integrationId) {
  * @param {string} integrationId - Integration identifier
  * @returns {Array} Array of consolidated account objects
  */
-export function getAccounts(integrationId) {
+export function getAccounts(integrationId: string): Record<string, unknown>[] {
   try {
     const storageKey = getStorageKey(integrationId);
     debugLog(`[accountService.getAccounts] integrationId=${integrationId}, storageKey=${storageKey}`);
@@ -115,7 +131,8 @@ export function getAccounts(integrationId) {
           return account;
         }
 
-        const accountId = account[accountKeyName]?.id;
+        const sourceAcct = getSourceAccountObj(account, accountKeyName);
+        const accountId = sourceAcct?.id;
         if (!accountId) {
           return account;
         }
@@ -162,7 +179,7 @@ export function getAccounts(integrationId) {
       let needsRepair = false;
 
       accounts = accounts.map((account) => {
-        const sourceAccount = account[accountKeyName];
+        const sourceAccount = getSourceAccountObj(account, accountKeyName);
         if (!sourceAccount) {
           return account;
         }
@@ -203,7 +220,7 @@ export function getAccounts(integrationId) {
  * @param {string} accountId - Account ID
  * @returns {Object|null} Consolidated account object or null
  */
-export function getAccountData(integrationId, accountId) {
+export function getAccountData(integrationId: string, accountId: string): Record<string, unknown> | null {
   debugLog(`[accountService.getAccountData] integrationId=${integrationId}, accountId=${accountId}`);
 
   const accounts = getAccounts(integrationId);
@@ -216,11 +233,11 @@ export function getAccountData(integrationId, accountId) {
   }
 
   // Log all account IDs for debugging
-  const accountIds = accounts.map((acc) => acc[accountKeyName]?.id);
+  const accountIds = accounts.map((acc) => getSourceAccountObj(acc, accountKeyName)?.id);
   debugLog('[accountService.getAccountData] Available account IDs:', accountIds);
 
-  const foundAccount = accounts.find((acc) => acc[accountKeyName]?.id === accountId);
-  debugLog(`[accountService.getAccountData] Found account: ${foundAccount ? 'YES' : 'NO'}`, foundAccount ? `monarchAccount.id=${foundAccount.monarchAccount?.id}` : '');
+  const foundAccount = accounts.find((acc) => getSourceAccountObj(acc, accountKeyName)?.id === accountId);
+  debugLog(`[accountService.getAccountData] Found account: ${foundAccount ? 'YES' : 'NO'}`, foundAccount ? `monarchAccount.id=${(foundAccount.monarchAccount as Record<string, unknown>)?.id}` : '');
 
   return foundAccount || null;
 }
@@ -231,7 +248,7 @@ export function getAccountData(integrationId, accountId) {
  * @param {Array} accounts - Array of consolidated account objects
  * @returns {boolean} Success status
  */
-export function saveAccounts(integrationId, accounts) {
+export function saveAccounts(integrationId: string, accounts: Record<string, unknown>[]): boolean {
   try {
     const storageKey = getStorageKey(integrationId);
     if (!storageKey) {
@@ -255,7 +272,7 @@ export function saveAccounts(integrationId, accounts) {
  * @param {Object} updates - Properties to update
  * @returns {boolean} Success status
  */
-export function updateAccountInList(integrationId, accountId, updates) {
+export function updateAccountInList(integrationId: string, accountId: string, updates: Record<string, unknown>): boolean {
   try {
     const accounts = getAccounts(integrationId);
     const accountKeyName = getAccountKeyName(integrationId);
@@ -266,7 +283,7 @@ export function updateAccountInList(integrationId, accountId, updates) {
     }
 
     const accountIndex = accounts.findIndex(
-      (acc) => acc[accountKeyName]?.id === accountId,
+      (acc) => getSourceAccountObj(acc, accountKeyName)?.id === accountId,
     );
 
     if (accountIndex === -1) {
@@ -294,7 +311,7 @@ export function updateAccountInList(integrationId, accountId, updates) {
  * @param {Object} accountData - Full account data object
  * @returns {boolean} Success status
  */
-export function upsertAccount(integrationId, accountData) {
+export function upsertAccount(integrationId: string, accountData: Record<string, unknown>): boolean {
   try {
     const accounts = getAccounts(integrationId);
     const accountKeyName = getAccountKeyName(integrationId);
@@ -303,14 +320,14 @@ export function upsertAccount(integrationId, accountData) {
       return false;
     }
 
-    const accountId = accountData[accountKeyName]?.id;
+    const accountId = getSourceAccountObj(accountData, accountKeyName)?.id;
     if (!accountId) {
       debugLog('Account data missing ID');
       return false;
     }
 
     const existingIndex = accounts.findIndex(
-      (acc) => acc[accountKeyName]?.id === accountId,
+      (acc) => getSourceAccountObj(acc, accountKeyName)?.id === accountId,
     );
 
     if (existingIndex >= 0) {
@@ -342,7 +359,7 @@ export function upsertAccount(integrationId, accountData) {
  * @param {string} accountId - Account ID to remove
  * @returns {boolean} Success status
  */
-export function removeAccount(integrationId, accountId) {
+export function removeAccount(integrationId: string, accountId: string): boolean {
   try {
     const accounts = getAccounts(integrationId);
     const accountKeyName = getAccountKeyName(integrationId);
@@ -352,7 +369,7 @@ export function removeAccount(integrationId, accountId) {
     }
 
     const filteredAccounts = accounts.filter(
-      (acc) => acc[accountKeyName]?.id !== accountId,
+      (acc) => getSourceAccountObj(acc, accountKeyName)?.id !== accountId,
     );
 
     if (filteredAccounts.length === accounts.length) {
@@ -374,7 +391,7 @@ export function removeAccount(integrationId, accountId) {
  * @param {boolean} skipped - Whether to skip this account (inverts to syncEnabled)
  * @returns {boolean} Success status
  */
-export function markAccountAsSkipped(integrationId, accountId, skipped = true) {
+export function markAccountAsSkipped(integrationId: string, accountId: string, skipped: boolean = true): boolean {
   const success = updateAccountInList(integrationId, accountId, {
     syncEnabled: !skipped,
   });
@@ -391,7 +408,7 @@ export function markAccountAsSkipped(integrationId, accountId, skipped = true) {
  * @param {string} accountId - Account ID
  * @returns {boolean} True if account sync is disabled
  */
-export function isAccountSkipped(integrationId, accountId) {
+export function isAccountSkipped(integrationId: string, accountId: string): boolean {
   const accountData = getAccountData(integrationId, accountId);
   return accountData ? !accountData.syncEnabled : false;
 }
@@ -403,7 +420,7 @@ export function isAccountSkipped(integrationId, accountId) {
  * @param {string} settingKey - Setting key
  * @returns {*} Setting value or undefined
  */
-export function getAccountSetting(integrationId, accountId, settingKey) {
+export function getAccountSetting(integrationId: string, accountId: string, settingKey: string): unknown {
   const accountData = getAccountData(integrationId, accountId);
   if (!accountData) {
     return undefined;
@@ -426,7 +443,7 @@ export function getAccountSetting(integrationId, accountId, settingKey) {
  * @param {*} value - Value to set
  * @returns {boolean} Success status
  */
-export function setAccountSetting(integrationId, accountId, settingKey, value) {
+export function setAccountSetting(integrationId: string, accountId: string, settingKey: string, value: unknown): boolean {
   return updateAccountInList(integrationId, accountId, {
     [settingKey]: value,
   });
@@ -437,7 +454,7 @@ export function setAccountSetting(integrationId, accountId, settingKey, value) {
  * @param {string} integrationId - Integration identifier
  * @returns {boolean} True if legacy data exists
  */
-export function hasLegacyData(integrationId) {
+export function hasLegacyData(integrationId: string): boolean {
   const prefix = LEGACY_MAPPING_PREFIXES[integrationId];
   if (!prefix) {
     return false;
@@ -458,7 +475,7 @@ export function hasLegacyData(integrationId) {
  * @param {string} integrationId - Integration identifier
  * @returns {boolean} True if this is raw source account data
  */
-function isSourceAccountData(data, integrationId) {
+function isSourceAccountData(data: Record<string, unknown>, integrationId: string): boolean {
   if (!data || typeof data !== 'object') {
     return false;
   }
@@ -470,17 +487,17 @@ function isSourceAccountData(data, integrationId) {
       return false;
     }
     // If it has displayName at root, it's likely a Monarch mapping
-    return !data.displayName && (data.id || data.nickname);
+    return !data.displayName && !!(data.id || data.nickname);
   }
 
   // Rogers Bank similar pattern
   if (integrationId === INTEGRATIONS.ROGERSBANK) {
     // Monarch accounts have displayName, source accounts might have accountNumber
-    return !data.displayName && (data.accountNumber || data.accountId);
+    return !data.displayName && !!(data.accountNumber || data.accountId);
   }
 
   // Default: assume Monarch mapping if it has displayName
-  return !data.displayName;
+  return !data.displayName as boolean;
 }
 
 /**
@@ -489,7 +506,7 @@ function isSourceAccountData(data, integrationId) {
  * @param {string} integrationId - Integration identifier
  * @returns {Array} Migrated accounts array
  */
-export function migrateFromLegacyStorage(integrationId) {
+export function migrateFromLegacyStorage(integrationId: string): Record<string, unknown>[] {
   const prefix = LEGACY_MAPPING_PREFIXES[integrationId];
   const lastUploadPrefix = LEGACY_LAST_UPLOAD_PREFIXES[integrationId];
   const uploadedTransactionsPrefix = LEGACY_UPLOADED_TRANSACTIONS_PREFIXES[integrationId];
@@ -591,7 +608,7 @@ export function migrateFromLegacyStorage(integrationId) {
           // This is the original expected format
           debugLog(`Detected Monarch mapping data for ${accountId} in ${integrationId}`);
 
-          const sourceAccount = {
+          const sourceAccount: Record<string, unknown> = {
             id: accountId,
             nickname: storedData.displayName || accountId,
           };
@@ -641,7 +658,7 @@ export function migrateFromLegacyStorage(integrationId) {
  * @param {string} integrationId - Integration identifier
  * @returns {Object} Migration status {hasConsolidated, hasLegacy, needsMigration}
  */
-export function getMigrationStatus(integrationId) {
+export function getMigrationStatus(integrationId: string): { hasConsolidated: boolean; hasLegacy: boolean; needsMigration: boolean } {
   const storageKey = getStorageKey(integrationId);
   let hasConsolidated = false;
 
@@ -677,14 +694,15 @@ const MIN_SYNCS_BEFORE_CLEANUP = 2;
  * @param {string} accountId - Source account ID
  * @returns {Object|null} Monarch account object or null if not mapped
  */
-export function getMonarchAccountMapping(integrationId, accountId) {
+export function getMonarchAccountMapping(integrationId: string, accountId: string): Record<string, unknown> | null {
   debugLog(`[accountService.getMonarchAccountMapping] integrationId=${integrationId}, accountId=${accountId}`);
 
   // Check consolidated storage first
   const accountData = getAccountData(integrationId, accountId);
   if (accountData?.monarchAccount) {
-    debugLog(`[accountService.getMonarchAccountMapping] Found in consolidated storage: ${accountData.monarchAccount.displayName}`);
-    return accountData.monarchAccount;
+    const monarch = accountData.monarchAccount as Record<string, unknown>;
+    debugLog(`[accountService.getMonarchAccountMapping] Found in consolidated storage: ${monarch.displayName}`);
+    return monarch;
   }
 
   // Fall back to legacy storage (migration path only)
@@ -715,14 +733,14 @@ export function getMonarchAccountMapping(integrationId, accountId) {
  * @param {string} accountId - Account ID
  * @returns {number} New sync count
  */
-export function incrementSyncCount(integrationId, accountId) {
+export function incrementSyncCount(integrationId: string, accountId: string): number {
   const accountData = getAccountData(integrationId, accountId);
   if (!accountData) {
     debugLog(`Cannot increment sync count: account ${accountId} not found`);
     return 0;
   }
 
-  const currentCount = accountData.successfulSyncCount || 0;
+  const currentCount = (accountData.successfulSyncCount as number) || 0;
   const newCount = currentCount + 1;
 
   updateAccountInList(integrationId, accountId, {
@@ -739,9 +757,9 @@ export function incrementSyncCount(integrationId, accountId) {
  * @param {string} accountId - Account ID
  * @returns {number} Sync count
  */
-export function getSyncCount(integrationId, accountId) {
+export function getSyncCount(integrationId: string, accountId: string): number {
   const accountData = getAccountData(integrationId, accountId);
-  return accountData?.successfulSyncCount || 0;
+  return (accountData?.successfulSyncCount as number) || 0;
 }
 
 /**
@@ -751,7 +769,7 @@ export function getSyncCount(integrationId, accountId) {
  * @param {string} accountId - Account ID
  * @returns {boolean} True if ready for cleanup
  */
-export function isReadyForLegacyCleanup(integrationId, accountId) {
+export function isReadyForLegacyCleanup(integrationId: string, accountId: string): boolean {
   const syncCount = getSyncCount(integrationId, accountId);
   return syncCount >= MIN_SYNCS_BEFORE_CLEANUP;
 }
@@ -764,7 +782,7 @@ export function isReadyForLegacyCleanup(integrationId, accountId) {
  * @param {string} accountId - Specific account ID to clean up legacy data for
  * @returns {Object} Cleanup result {cleaned: boolean, keysDeleted: number, keys: string[]}
  */
-export function cleanupLegacyStorage(integrationId, accountId) {
+export function cleanupLegacyStorage(integrationId: string, accountId: string): { cleaned: boolean; keysDeleted: number; keys: string[]; reason?: string } {
   try {
     // Safety check: only clean up if consolidated data exists
     const accountData = getAccountData(integrationId, accountId);
@@ -780,7 +798,7 @@ export function cleanupLegacyStorage(integrationId, accountId) {
     }
 
     // Safety check: require minimum successful syncs before cleanup
-    const syncCount = accountData.successfulSyncCount || 0;
+    const syncCount = (accountData.successfulSyncCount as number) || 0;
     if (syncCount < MIN_SYNCS_BEFORE_CLEANUP) {
       debugLog(`Cannot cleanup legacy storage: account ${accountId} has only ${syncCount}/${MIN_SYNCS_BEFORE_CLEANUP} successful syncs`);
       return {
@@ -852,7 +870,7 @@ export function cleanupLegacyStorage(integrationId, accountId) {
     return { cleaned: true, keysDeleted: keysToDelete.length, keys: keysToDelete };
   } catch (error) {
     debugLog(`Error cleaning up legacy storage for ${integrationId} account ${accountId}:`, error);
-    return { cleaned: false, keysDeleted: 0, keys: [], reason: error.message };
+    return { cleaned: false, keysDeleted: 0, keys: [], reason: (error as Error).message };
   }
 }
 
@@ -862,7 +880,7 @@ export function cleanupLegacyStorage(integrationId, accountId) {
  * @param {string} integrationId - Integration identifier
  * @returns {Object} Cleanup result {cleaned: boolean, totalKeysDeleted: number, accountsProcessed: number}
  */
-export function cleanupAllLegacyStorage(integrationId) {
+export function cleanupAllLegacyStorage(integrationId: string): { cleaned: boolean; totalKeysDeleted: number; accountsProcessed: number; keys?: string[]; reason?: string } {
   try {
     const accounts = getAccounts(integrationId);
     const accountKeyName = getAccountKeyName(integrationId);
@@ -877,7 +895,7 @@ export function cleanupAllLegacyStorage(integrationId) {
     const allDeletedKeys = [];
 
     for (const account of accounts) {
-      const accountId = account[accountKeyName]?.id;
+      const accountId = getSourceAccountObj(account, accountKeyName)?.id as string | undefined;
       if (!accountId) continue;
 
       // Only cleanup accounts that have Monarch mapping (successfully synced)
@@ -903,7 +921,7 @@ export function cleanupAllLegacyStorage(integrationId) {
     };
   } catch (error) {
     debugLog(`Error cleaning up all legacy storage for ${integrationId}:`, error);
-    return { cleaned: false, totalKeysDeleted: 0, accountsProcessed: 0, reason: error.message };
+    return { cleaned: false, totalKeysDeleted: 0, accountsProcessed: 0, reason: (error as Error).message };
   }
 }
 
@@ -918,13 +936,13 @@ export function cleanupAllLegacyStorage(integrationId) {
  * @param {Object} mappingData - Raw mapping data
  * @returns {Object} Normalized mapping data with { securityId, holdingId, symbol }
  */
-function normalizeHoldingMapping(mappingData) {
+function normalizeHoldingMapping(mappingData: Record<string, unknown> | null): { securityId: string | null; holdingId: string | null; symbol: string | null } | null {
   if (!mappingData) return null;
 
   return {
-    securityId: mappingData.securityId || null,
-    holdingId: mappingData.holdingId || null,
-    symbol: mappingData.symbol || null,
+    securityId: (mappingData.securityId as string) || null,
+    holdingId: (mappingData.holdingId as string) || null,
+    symbol: (mappingData.symbol as string) || null,
   };
 }
 
@@ -933,14 +951,17 @@ function normalizeHoldingMapping(mappingData) {
  * @param {Object} holdingsMappings - Raw holdings mappings object
  * @returns {Object} Normalized mappings object
  */
-function normalizeAllHoldingsMappings(holdingsMappings) {
+function normalizeAllHoldingsMappings(holdingsMappings: Record<string, unknown>): Record<string, { securityId: string | null; holdingId: string | null; symbol: string | null }> {
   if (!holdingsMappings || typeof holdingsMappings !== 'object') {
     return {};
   }
 
-  const normalized = {};
+  const normalized: Record<string, { securityId: string | null; holdingId: string | null; symbol: string | null }> = {};
   for (const [key, value] of Object.entries(holdingsMappings)) {
-    normalized[key] = normalizeHoldingMapping(value);
+    const result = normalizeHoldingMapping(value as Record<string, unknown>);
+    if (result) {
+      normalized[key] = result;
+    }
   }
   return normalized;
 }
@@ -951,14 +972,14 @@ function normalizeAllHoldingsMappings(holdingsMappings) {
  * @param {string} accountId - Account ID
  * @returns {Object} Mappings object { sourceSecurityKey: { securityId, holdingId, symbol } }
  */
-export function getHoldingsMappings(integrationId, accountId) {
+export function getHoldingsMappings(integrationId: string, accountId: string): Record<string, { securityId: string | null; holdingId: string | null; symbol: string | null }> {
   const accountData = getAccountData(integrationId, accountId);
   if (!accountData || !accountData.holdingsMappings) {
     debugLog(`[accountService.getHoldingsMappings] No holdings mappings for ${integrationId}/${accountId}`);
     return {};
   }
 
-  const mappings = normalizeAllHoldingsMappings(accountData.holdingsMappings);
+  const mappings = normalizeAllHoldingsMappings(accountData.holdingsMappings as Record<string, unknown>);
   debugLog(`[accountService.getHoldingsMappings] Loaded ${Object.keys(mappings).length} mappings for ${integrationId}/${accountId}`);
   return mappings;
 }
@@ -970,7 +991,7 @@ export function getHoldingsMappings(integrationId, accountId) {
  * @param {string} sourceSecurityKey - Source security key/ID
  * @returns {Object|null} Mapping data { securityId, holdingId, symbol } or null
  */
-export function getHoldingMapping(integrationId, accountId, sourceSecurityKey) {
+export function getHoldingMapping(integrationId: string, accountId: string, sourceSecurityKey: string): { securityId: string | null; holdingId: string | null; symbol: string | null } | null {
   const mappings = getHoldingsMappings(integrationId, accountId);
   const mapping = mappings[sourceSecurityKey];
   if (mapping) {
@@ -988,7 +1009,7 @@ export function getHoldingMapping(integrationId, accountId, sourceSecurityKey) {
  * @param {Object} mappingData - Mapping data { securityId, holdingId, symbol }
  * @returns {boolean} Success status
  */
-export function saveHoldingMapping(integrationId, accountId, sourceSecurityKey, mappingData) {
+export function saveHoldingMapping(integrationId: string, accountId: string, sourceSecurityKey: string, mappingData: Record<string, unknown>): boolean {
   try {
     const accountData = getAccountData(integrationId, accountId);
     if (!accountData) {
@@ -997,7 +1018,7 @@ export function saveHoldingMapping(integrationId, accountId, sourceSecurityKey, 
     }
 
     // Get existing mappings or initialize empty object
-    const currentMappings = accountData.holdingsMappings || {};
+    const currentMappings = (accountData.holdingsMappings || {}) as Record<string, unknown>;
 
     // Normalize the new mapping data to unified structure
     const normalizedMapping = normalizeHoldingMapping(mappingData);
@@ -1030,7 +1051,7 @@ export function saveHoldingMapping(integrationId, accountId, sourceSecurityKey, 
  * @param {string} sourceSecurityKey - Source security key/ID
  * @returns {boolean} Success status
  */
-export function deleteHoldingMapping(integrationId, accountId, sourceSecurityKey) {
+export function deleteHoldingMapping(integrationId: string, accountId: string, sourceSecurityKey: string): boolean {
   try {
     const accountData = getAccountData(integrationId, accountId);
     if (!accountData) {
@@ -1038,7 +1059,7 @@ export function deleteHoldingMapping(integrationId, accountId, sourceSecurityKey
       return false;
     }
 
-    const currentMappings = accountData.holdingsMappings || {};
+    const currentMappings = (accountData.holdingsMappings || {}) as Record<string, unknown>;
     if (!currentMappings[sourceSecurityKey]) {
       debugLog(`[accountService.deleteHoldingMapping] Mapping ${sourceSecurityKey} not found`);
       return false;
@@ -1051,7 +1072,7 @@ export function deleteHoldingMapping(integrationId, accountId, sourceSecurityKey
     });
 
     if (success) {
-      debugLog(`[accountService.deleteHoldingMapping] Deleted mapping for ${removed?.symbol || sourceSecurityKey}`);
+      debugLog(`[accountService.deleteHoldingMapping] Deleted mapping for ${(removed as Record<string, unknown>)?.symbol || sourceSecurityKey}`);
     }
 
     return success;
@@ -1067,7 +1088,7 @@ export function deleteHoldingMapping(integrationId, accountId, sourceSecurityKey
  * @param {string} accountId - Account ID
  * @returns {boolean} Success status
  */
-export function clearHoldingsMappings(integrationId, accountId) {
+export function clearHoldingsMappings(integrationId: string, accountId: string): boolean {
   try {
     const success = updateAccountInList(integrationId, accountId, {
       holdingsMappings: {},
@@ -1090,7 +1111,7 @@ export function clearHoldingsMappings(integrationId, accountId) {
  * @param {boolean} includeLegacy - Also clear legacy data
  * @returns {boolean} Success status
  */
-export function clearAllAccounts(integrationId, includeLegacy = false) {
+export function clearAllAccounts(integrationId: string, includeLegacy: boolean = false): boolean {
   try {
     // Clear consolidated storage
     const storageKey = getStorageKey(integrationId);

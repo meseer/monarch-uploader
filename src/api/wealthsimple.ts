@@ -197,11 +197,11 @@ function getStoredTokenData(): WealthsimpleTokenData | null {
   const configAuth = getAuth(INTEGRATIONS.WEALTHSIMPLE);
   if (configAuth.accessToken && configAuth.identityId) {
     return {
-      accessToken: configAuth.accessToken,
-      identityId: configAuth.identityId,
-      expiresAt: configAuth.expiresAt,
-      investProfile: configAuth.investProfile || null,
-      tradeProfile: configAuth.tradeProfile || null,
+      accessToken: configAuth.accessToken as string,
+      identityId: configAuth.identityId as string,
+      expiresAt: configAuth.expiresAt as string,
+      investProfile: (configAuth.investProfile as string) || null,
+      tradeProfile: (configAuth.tradeProfile as string) || null,
     };
   }
 

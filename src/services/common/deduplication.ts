@@ -26,9 +26,14 @@ import { getTransactionIdsFromArray } from '../../utils/transactionStorage';
  * @param {Function} getRefId - Function to extract the reference ID from a transaction
  * @returns {{newTransactions: Array, duplicateCount: number}} Filtered result
  */
-export function filterDuplicateSettledTransactions(integrationId, accountId, transactions, getRefId) {
+export function filterDuplicateSettledTransactions(
+  integrationId: string,
+  accountId: string,
+  transactions: unknown[],
+  getRefId: (tx: unknown) => string,
+): { newTransactions: unknown[]; duplicateCount: number } {
   const accountData = accountService.getAccountData(integrationId, accountId);
-  const uploadedRefs = getTransactionIdsFromArray(accountData?.uploadedTransactions || []);
+  const uploadedRefs = getTransactionIdsFromArray((accountData?.uploadedTransactions as unknown[]) || []);
   const originalCount = transactions.length;
 
   debugLog(`[${integrationId}] Dedup: checking ${originalCount} settled transactions against ${uploadedRefs.size} stored IDs`);
@@ -59,9 +64,14 @@ export function filterDuplicateSettledTransactions(integrationId, accountId, tra
  * @param {Function} getRefId - Function to extract the hash/reference ID from a pending transaction
  * @returns {{newTransactions: Array, duplicateCount: number}} Filtered result
  */
-export function filterDuplicatePendingTransactions(integrationId, accountId, transactions, getRefId) {
+export function filterDuplicatePendingTransactions(
+  integrationId: string,
+  accountId: string,
+  transactions: unknown[],
+  getRefId: (tx: unknown) => string | null,
+): { newTransactions: unknown[]; duplicateCount: number } {
   const accountData = accountService.getAccountData(integrationId, accountId);
-  const uploadedRefs = getTransactionIdsFromArray(accountData?.uploadedTransactions || []);
+  const uploadedRefs = getTransactionIdsFromArray((accountData?.uploadedTransactions as unknown[]) || []);
   const originalCount = transactions.length;
 
   const newTransactions = transactions.filter((tx) => {
@@ -88,9 +98,9 @@ export function filterDuplicatePendingTransactions(integrationId, accountId, tra
  * @param {string} accountId - Source account ID
  * @returns {Set<string>} Set of uploaded transaction IDs
  */
-export function getUploadedTransactionIds(integrationId, accountId) {
+export function getUploadedTransactionIds(integrationId: string, accountId: string): Set<string> {
   const accountData = accountService.getAccountData(integrationId, accountId);
-  return getTransactionIdsFromArray(accountData?.uploadedTransactions || []);
+  return getTransactionIdsFromArray((accountData?.uploadedTransactions as unknown[]) || []);
 }
 
 export default {

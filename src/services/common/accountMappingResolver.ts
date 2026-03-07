@@ -17,6 +17,26 @@ import accountService from './accountService';
 import toast from '../../ui/toast';
 import { showMonarchAccountSelectorWithCreate } from '../../ui/components/accountSelectorWithCreate';
 
+/** Parameters for resolveAccountMapping */
+interface ResolveAccountMappingParams {
+  integrationId: string;
+  manifest: {
+    accountKeyName: string;
+    accountCreateDefaults?: Record<string, unknown>;
+    logoCloudinaryId?: string | null;
+  };
+  account: { accountId: string; [key: string]: unknown };
+  accountDisplayName: string;
+  buildAccountEntry: (account: unknown) => Record<string, unknown>;
+}
+
+/** Result of resolveAccountMapping */
+interface ResolveAccountMappingResult {
+  monarchAccount?: Record<string, unknown>;
+  skipped?: boolean;
+  cancelled?: boolean;
+}
+
 /**
  * Resolve the Monarch account mapping for a source account.
  *
@@ -38,7 +58,7 @@ import { showMonarchAccountSelectorWithCreate } from '../../ui/components/accoun
  */
 export async function resolveAccountMapping({
   integrationId, manifest, account, accountDisplayName, buildAccountEntry,
-}) {
+}: ResolveAccountMappingParams): Promise<ResolveAccountMappingResult> {
   const accountId = account.accountId;
 
   // 1. Check existing mapping
@@ -61,23 +81,25 @@ export async function resolveAccountMapping({
   const createDefaults = {
     defaultName: accountDisplayName,
     ...(manifest.accountCreateDefaults || {}),
-  };
+  } as Record<string, unknown>;
 
-  const monarchAccount = await new Promise((resolve) => {
+  const monarchAccountRaw = await new Promise((resolve) => {
     showMonarchAccountSelectorWithCreate(
       [],
       (selectedAccount) => resolve(selectedAccount),
       null,
-      manifest.accountCreateDefaults?.accountType || 'credit',
-      createDefaults,
+      (manifest.accountCreateDefaults?.accountType as string) || 'credit',
+      createDefaults as Parameters<typeof showMonarchAccountSelectorWithCreate>[4],
     );
   });
 
   // 4. Handle cancel
-  if (!monarchAccount) {
+  if (!monarchAccountRaw) {
     toast.show('Account mapping cancelled', 'info', 2000);
     return { cancelled: true };
   }
+
+  const monarchAccount = monarchAccountRaw as Record<string, unknown>;
 
   if (monarchAccount.cancelled) {
     return { cancelled: true };
@@ -114,10 +136,10 @@ export async function resolveAccountMapping({
   // 7. Set logo on newly created accounts
   if (monarchAccount.newlyCreated && manifest.logoCloudinaryId) {
     try {
-      await monarchApi.setAccountLogo(monarchAccount.id, manifest.logoCloudinaryId);
+      await monarchApi.setAccountLogo(monarchAccount.id as string, manifest.logoCloudinaryId);
       debugLog(`[${integrationId}] Account logo set for newly created account`);
     } catch (error) {
-      debugLog(`[${integrationId}] Failed to set account logo:`, error.message);
+      debugLog(`[${integrationId}] Failed to set account logo:`, (error as Error).message);
     }
   }
 

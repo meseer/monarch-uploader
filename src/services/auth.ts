@@ -12,7 +12,9 @@ import toast from '../ui/toast';
  * Custom authentication error class
  */
 export class AuthError extends Error {
-  constructor(message, provider) {
+  provider: string;
+
+  constructor(message: string, provider: string) {
     super(message);
     this.name = 'AuthError';
     this.provider = provider;
@@ -23,7 +25,7 @@ export class AuthError extends Error {
  * Get Monarch authentication token
  * @returns {string|null} Token or null if not found
  */
-export function getMonarchToken() {
+export function getMonarchToken(): string | null {
   const token = GM_getValue(STORAGE.MONARCH_TOKEN);
 
   // Update state manager
@@ -36,7 +38,7 @@ export function getMonarchToken() {
  * Check Monarch authentication status
  * @returns {Object} Auth status information
  */
-export function checkMonarchAuth() {
+export function checkMonarchAuth(): { authenticated: boolean; message: string; token?: string } {
   const token = getMonarchToken();
 
   if (!token) {
@@ -57,7 +59,7 @@ export function checkMonarchAuth() {
  * Set up Monarch token capture by monitoring localStorage
  * Should be called when on Monarch's site
  */
-export function setupMonarchTokenCapture() {
+export function setupMonarchTokenCapture(): void {
   if (window.location.hostname.includes('monarch.com')) {
     debugLog('Running on Monarch site. Setting up token capture.');
 
@@ -88,7 +90,7 @@ export function setupMonarchTokenCapture() {
  * Save a token for Monarch
  * @param {string} token - Token to save
  */
-export function saveMonarchToken(token) {
+export function saveMonarchToken(token: string): void {
   if (!token) return;
 
   try {

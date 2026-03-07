@@ -14,6 +14,31 @@
 import { debugLog } from '../../core/utils';
 import { convertToCSV } from '../../utils/csv';
 
+/** Processed Canada Life transaction from processCanadaLifeActivity */
+interface CanadaLifeTransaction {
+  date?: string;
+  merchant?: string;
+  category?: string;
+  originalMerchant?: string;
+  notes?: string;
+  amount?: number;
+  isPending?: boolean;
+  pendingId?: string;
+}
+
+/** Row formatted for Monarch CSV output */
+interface MonarchCSVRow {
+  [key: string]: string | number;
+  Date: string;
+  Merchant: string;
+  Category: string;
+  Account: string;
+  'Original Statement': string;
+  Notes: string;
+  Amount: number;
+  Tags: string;
+}
+
 /**
  * Convert Canada Life transactions to Monarch CSV format
  *
@@ -28,7 +53,7 @@ import { convertToCSV } from '../../utils/csv';
  * @param {string} accountName - Canada Life account name for the Account column
  * @returns {string} CSV string formatted for Monarch
  */
-export function convertCanadaLifeTransactionsToMonarchCSV(transactions, accountName) {
+export function convertCanadaLifeTransactionsToMonarchCSV(transactions: CanadaLifeTransaction[], accountName: string): string {
   if (!transactions || transactions.length === 0) {
     return '';
   }
@@ -46,7 +71,7 @@ export function convertCanadaLifeTransactionsToMonarchCSV(transactions, accountN
   ];
 
   // Transform transactions to Monarch format
-  const monarchRows = transactions.map((transaction) => {
+  const monarchRows: MonarchCSVRow[] = transactions.map((transaction) => {
     const isPending = transaction.isPending === true;
 
     // Build notes: start with the activity notes, then append pending ID for reconciliation

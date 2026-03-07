@@ -39,6 +39,7 @@ import {
 import {
   mergeAndRetainTransactions,
   getRetentionSettingsFromAccount,
+  StoredTransaction,
 } from '../../utils/transactionStorage';
 import { convertToCSV } from '../../utils/csv';
 import { showProgressDialog } from '../../ui/components/progressDialog';
@@ -97,7 +98,7 @@ function buildSyncSteps({ hasCreditLimit = false, includeTransactions = true, in
  * @param {boolean} options.storeTransactionDetailsInNotes - User setting
  * @returns {string} CSV string
  */
-function convertTransactionsToMonarchCSV(transactions, accountName, buildTransactionNotes, options = {}) {
+function convertTransactionsToMonarchCSV(transactions, accountName, buildTransactionNotes, options: Record<string, unknown> = {}) {
   if (!transactions || transactions.length === 0) {
     return '';
   }
@@ -298,8 +299,8 @@ async function executeTransactionStep({
     const today = getTodayLocal();
     const filename = `${integrationId}_transactions_${fromDate || 'all'}_to_${today}.csv`;
 
-    const settledRefs = newSettled.map((tx) => hooks.getSettledRefId(tx)).filter(Boolean);
-    const pendingRefs = newPending.map((tx) => hooks.getPendingRefId(tx)).filter(Boolean);
+    const settledRefs = newSettled.map((tx) => hooks.getSettledRefId(tx)).filter(Boolean) as string[];
+    const pendingRefs = newPending.map((tx) => hooks.getPendingRefId(tx)).filter(Boolean) as string[];
 
     const uploadSuccess = await uploadTransactionsAndSaveRefs({
       integrationId,
@@ -308,7 +309,7 @@ async function executeTransactionStep({
       csvData,
       filename,
       transactionRefs: [...settledRefs, ...pendingRefs],
-      transactions: allNewTransactions,
+      transactions: allNewTransactions as Array<{ date?: string; [key: string]: unknown }>,
     });
 
     if (uploadSuccess) {
@@ -362,11 +363,11 @@ async function executePendingReconciliationStep({
     });
 
     // Save settled ref IDs to dedup store so transaction upload skips them
-    const settledRefIds = result.settledRefIds || [];
+    const settledRefIds = (result.settledRefIds || []) as (string | StoredTransaction)[];
     if (settledRefIds.length > 0) {
       debugLog(`[orchestrator] Saving ${settledRefIds.length} reconciled settled ref IDs to dedup store`);
       const acctData = accountService.getAccountData(integrationId, accountId);
-      const existingTransactions = acctData?.uploadedTransactions || [];
+      const existingTransactions = (acctData?.uploadedTransactions || []) as StoredTransaction[];
       const retentionSettings = getRetentionSettingsFromAccount(acctData);
       const updatedTransactions = mergeAndRetainTransactions(
         existingTransactions, settledRefIds, retentionSettings, getTodayLocal(),

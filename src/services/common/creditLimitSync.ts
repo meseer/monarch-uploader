@@ -24,7 +24,12 @@ import accountService from './accountService';
  * @param {number|null} creditLimit - Credit limit value from source institution
  * @returns {Promise<{success: boolean, message: string, skipped: boolean}>} Sync result
  */
-export async function syncCreditLimit(integrationId, sourceAccountId, monarchAccountId, creditLimit) {
+export async function syncCreditLimit(
+  integrationId: string,
+  sourceAccountId: string,
+  monarchAccountId: string,
+  creditLimit: number | null | undefined,
+): Promise<{ success: boolean; message: string; skipped: boolean }> {
   if (creditLimit === null || creditLimit === undefined) {
     return { success: true, message: 'Not available', skipped: true };
   }

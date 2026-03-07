@@ -16,6 +16,47 @@
 import { debugLog, formatDate } from '../../core/utils';
 import monarchApi from '../../api/monarch';
 
+/** Result of the reconciliation process */
+interface ReconciliationResult {
+  success: boolean;
+  settled: number;
+  cancelled: number;
+  failed: number;
+  error: string | null;
+  settledRefIds: string[];
+  noPendingTag?: boolean;
+  noPendingTransactions?: boolean;
+}
+
+/** Parameters for reconcilePendingTransactions */
+interface ReconcileParams {
+  txIdPrefix: string;
+  monarchAccountId: string;
+  rawPending: unknown[];
+  rawSettled: unknown[];
+  lookbackDays: number;
+  getPendingIdFields: (tx: unknown) => string[];
+  getSettledAmount: (tx: unknown) => number;
+  getSettledRefId?: (tx: unknown) => string | null;
+}
+
+/** Parameters for separateAndDeduplicateTransactions */
+interface SeparateParams {
+  txIdPrefix: string;
+  getPendingIdFields: (tx: unknown) => string[];
+  pending: unknown[];
+  settled: unknown[];
+}
+
+/** Result of separateAndDeduplicateTransactions */
+interface SeparateResult {
+  settled: unknown[];
+  pending: Array<unknown & { generatedId: string; isPending: true }>;
+  pendingIdMap: Map<string, unknown>;
+  settledIdMap: Map<string, unknown>;
+  duplicatesRemoved: number;
+}
+
 /**
  * Generate a deterministic pending transaction ID by hashing stable fields.
  *
@@ -26,7 +67,7 @@ import monarchApi from '../../api/monarch';
  * @param {Array<string>} fieldValues - Ordered stable field values from getPendingIdFields hook
  * @returns {Promise<string>} Generated ID in format {prefix}:{hash16}
  */
-export async function generatePendingTransactionId(txIdPrefix, fieldValues) {
+export async function generatePendingTransactionId(txIdPrefix: string, fieldValues: string[]): Promise<string> {
   const hashInput = fieldValues.join('|');
 
   const encoder = new TextEncoder();
@@ -45,7 +86,7 @@ export async function generatePendingTransactionId(txIdPrefix, fieldValues) {
  * @param {string} txIdPrefix - Integration prefix (e.g., 'mbna-tx')
  * @returns {RegExp} Pattern matching {prefix}:{16 hex chars}
  */
-function buildIdPattern(txIdPrefix) {
+function buildIdPattern(txIdPrefix: string): RegExp {
   // Escape any regex-special characters in the prefix
   const escaped = txIdPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`${escaped}:([a-f0-9]{16})`);
@@ -58,7 +99,7 @@ function buildIdPattern(txIdPrefix) {
  * @param {string} notes - Transaction notes from Monarch
  * @returns {string|null} Full pending ID (e.g., 'mbna-tx:abc123...') or null
  */
-export function extractPendingIdFromNotes(txIdPrefix, notes) {
+export function extractPendingIdFromNotes(txIdPrefix: string, notes: string): string | null {
   if (!notes || typeof notes !== 'string') {
     return null;
   }
@@ -79,7 +120,7 @@ export function extractPendingIdFromNotes(txIdPrefix, notes) {
  * @param {string} notes - Transaction notes
  * @returns {string} Cleaned notes
  */
-export function cleanPendingIdFromNotes(txIdPrefix, notes) {
+export function cleanPendingIdFromNotes(txIdPrefix: string, notes: string): string {
   if (!notes || typeof notes !== 'string') {
     return '';
   }
@@ -107,7 +148,12 @@ export function cleanPendingIdFromNotes(txIdPrefix, notes) {
  * @param {Array} pending - Raw pending transactions
  * @returns {Promise<{settledIdMap: Map, pendingIdMap: Map, duplicatesRemoved: number}>}
  */
-async function buildHashMaps(txIdPrefix, getPendingIdFields, settled, pending) {
+async function buildHashMaps(
+  txIdPrefix: string,
+  getPendingIdFields: (tx: unknown) => string[],
+  settled: unknown[],
+  pending: unknown[],
+): Promise<{ settledIdMap: Map<string, unknown>; pendingIdMap: Map<string, unknown>; duplicatesRemoved: number }> {
   const settledIdMap = new Map();
   for (const tx of settled) {
     const fields = getPendingIdFields(tx);
@@ -166,8 +212,8 @@ export async function reconcilePendingTransactions({
   getPendingIdFields,
   getSettledAmount,
   getSettledRefId,
-}) {
-  const result = { success: true, settled: 0, cancelled: 0, failed: 0, error: null, settledRefIds: [] };
+}: ReconcileParams): Promise<ReconciliationResult> {
+  const result: ReconciliationResult = { success: true, settled: 0, cancelled: 0, failed: 0, error: null, settledRefIds: [] };
 
   try {
     debugLog(`[reconciliation] Starting pending reconciliation for ${txIdPrefix}`, {
@@ -325,7 +371,7 @@ export async function reconcilePendingTransactions({
  * @returns {Promise<{settled: Array, pending: Array, pendingIdMap: Map, settledIdMap: Map, duplicatesRemoved: number}>}
  *   pending array entries have `generatedId` and `isPending: true` attached
  */
-export async function separateAndDeduplicateTransactions({ txIdPrefix, getPendingIdFields, pending, settled }) {
+export async function separateAndDeduplicateTransactions({ txIdPrefix, getPendingIdFields, pending, settled }: SeparateParams): Promise<SeparateResult> {
   debugLog(`[reconciliation] Separation: ${settled.length} settled, ${pending.length} pending`);
 
   const { settledIdMap, pendingIdMap, duplicatesRemoved } = await buildHashMaps(
@@ -341,9 +387,9 @@ export async function separateAndDeduplicateTransactions({ txIdPrefix, getPendin
 
   // Convert pendingIdMap back to array with IDs attached
   const dedupedPending = Array.from(pendingIdMap.entries()).map(([hashId, tx]) => ({
-    ...tx,
+    ...(tx as Record<string, unknown>),
     generatedId: hashId,
-    isPending: true,
+    isPending: true as const,
   }));
 
   return {
@@ -361,7 +407,7 @@ export async function separateAndDeduplicateTransactions({ txIdPrefix, getPendin
  * @param {Object} result - Reconciliation result
  * @returns {string} Formatted message
  */
-export function formatReconciliationMessage(result) {
+export function formatReconciliationMessage(result: ReconciliationResult): string {
   if (result.noPendingTag || result.noPendingTransactions) {
     return 'No pending transactions';
   }

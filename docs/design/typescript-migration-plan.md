@@ -15,11 +15,17 @@
 | 3 | Mappers & Utils | ✅ Complete | 5/5 src / 0 test |
 | 4 | MBNA Integration | ✅ Complete | 12/12 src / 0 test |
 | 5 | API Layer | ✅ Complete | 9/9 src / 0 test |
-| 6 | Services Layer | ⬜ Not Started | 0/36 src / 0 test |
-| 7 | UI Layer | ⬜ Not Started | 0/32 src / 0 test |
-| 8 | Strictness Ramp-up | ⬜ Not Started | — |
+| 6 | Common Services Foundation | ✅ Complete | 12/12 src / 0 test |
+| 7 | CanadaLife Services | ⬜ Not Started | 0/3 src / 0 test |
+| 8 | Rogers Bank Services | ⬜ Not Started | 0/2 src / 0 test |
+| 9 | Questrade Services | ⬜ Not Started | 0/8 src / 0 test |
+| 10 | WS Transaction Rules | ⬜ Not Started | 0/3 src / 0 test |
+| 11 | WS Core Services | ⬜ Not Started | 0/5 src / 0 test |
+| 12 | WS Top-Level Services | ⬜ Not Started | 0/3 src / 0 test |
+| 13 | UI Layer | ⬜ Not Started | 0/32 src / 0 test |
+| 14 | Strictness Ramp-up | ⬜ Not Started | — |
 
-**Overall:** 36/106 source files converted (~34%)
+**Overall:** 48/106 source files converted (~45%)
 
 ## Overview
 
@@ -199,24 +205,62 @@ Highest-value phase — API response shapes are where most runtime bugs originat
 
 **Tests:** ~10 corresponding test files.
 
-### Phase 6: Services Layer (5–8 days)
+### Phase 6: Common Services Foundation (2–3 days)
 
-Largest and most complex layer.
+Shared infrastructure all institution services depend on. Three batches.
 
-**Files (36):**
-- `src/services/auth.js`
-- `src/services/canadalife-upload.js` (1,359 lines)
-- `src/services/wealthsimple-upload.js` (1,048 lines)
-- `src/services/rogersbank-upload.js` (1,040 lines)
-- `src/services/canadalife/*.js` (3 files)
-- `src/services/common/*.js` (10 files — accountService, syncOrchestrator, deduplication, etc.)
-- `src/services/questrade/*.js` (8 files)
-- `src/services/rogersbank/*.js` (1 file)
-- `src/services/wealthsimple/*.js` (10 files)
+**Batch A — Leaves (5 files, ~1,233 lines):**
+- `src/services/auth.js` (111) — core only
+- `src/services/common/configStore.js` (398) — core only
+- `src/services/common/legacyMigration.js` (217) — core only
+- `src/services/common/pendingReconciliation.js` (396) — api/monarch, core
+- `src/services/canadalife/csvFormatter.js` (90) — core, utils/csv
 
-**Tests:** ~30 corresponding test files.
+**Batch B — accountService cluster (6 files, ~1,830 lines):**
+- `src/services/common/accountService.js` (1,170) — core only
+- `src/services/common/deduplication.js` (99) — accountService
+- `src/services/common/balanceUpload.js` (265) — accountService, api/monarch
+- `src/services/common/creditLimitSync.js` (61) — accountService, api/monarch
+- `src/services/common/transactionUpload.js` (107) — accountService, api/monarch
+- `src/services/common/accountMappingResolver.js` (128) — accountService, api/monarch, ui/*
 
-### Phase 7: UI Layer (5–8 days)
+**Batch C — syncOrchestrator (1 file, 682 lines):**
+- `src/services/common/syncOrchestrator.js` — depends on Batch B files + ui/*
+
+**Tests:** ~10 corresponding test files.
+
+### Phase 7: CanadaLife Services (1–2 days)
+
+**Files (3, ~1,938 lines):**
+- `src/services/canadalife/transactions.js` (393) — api/canadalife, core
+- `src/services/canadalife/pendingReconciliation.js` (186) — common/pendingReconciliation, CL/transactions
+- `src/services/canadalife-upload.js` (1,359) — api/*, core/*, ui/*, common/accountService
+
+### Phase 8: Rogers Bank Services (1 day)
+
+**Files (2, ~1,507 lines):**
+- `src/services/rogersbank/pendingTransactions.js` (467) — api/monarch, core
+- `src/services/rogersbank-upload.js` (1,040) — api/*, core/*, mappers/*, ui/*, common/accountService
+
+### Phase 9: Questrade Services (2–3 days)
+
+**Batch A (4 files, ~1,468 lines):** auth, transactionRules, accountMapping, account
+**Batch B (4 files, ~3,249 lines):** transactions, balance, positions, sync
+
+### Phase 10: WS Transaction Rules (1–2 days)
+
+**Files (3, ~2,577 lines):** transactionRulesHelpers, transactionRules, transactionRulesInvestment
+
+### Phase 11: WS Core Services (2–3 days)
+
+**Batch A (3 files, ~1,626 lines):** transactionsReconciliation, transactionsHelpers, balance
+**Batch B (2 files, ~1,846 lines):** transactionsInvestment, transactions
+
+### Phase 12: WS Top-Level Services (1–2 days)
+
+**Files (3, ~2,891 lines):** positions, account, wealthsimple-upload
+
+### Phase 13: UI Layer (5–8 days)
 
 Hardest layer to type — framework-less DOM manipulation.
 
@@ -234,7 +278,7 @@ Hardest layer to type — framework-less DOM manipulation.
 
 **Tests:** ~18 corresponding test files.
 
-### Phase 8: Strictness Ramp-up (2–3 days)
+### Phase 14: Strictness Ramp-up (2–3 days)
 
 Enable full strict mode once all files are `.ts`.
 
@@ -258,10 +302,16 @@ Enable full strict mode once all files are `.ts`.
 | 3 — Mappers/Utils | 5 | ~4 | 1–2 days |
 | 4 — MBNA Integration | 12 | ~8 | 2–3 days |
 | 5 — API | 9 | ~10 | 3–5 days |
-| 6 — Services | 36 | ~30 | 5–8 days |
-| 7 — UI | 32 | ~18 | 5–8 days |
-| 8 — Strictness | all | all | 2–3 days |
-| **Total** | **~106** | **~92** | **23–38 days** |
+| 6 — Common Services | 12 | ~10 | 2–3 days |
+| 7 — CanadaLife Services | 3 | ~3 | 1–2 days |
+| 8 — Rogers Bank Services | 2 | ~4 | 1 day |
+| 9 — Questrade Services | 8 | ~5 | 2–3 days |
+| 10 — WS Transaction Rules | 3 | ~6 | 1–2 days |
+| 11 — WS Core Services | 5 | ~6 | 2–3 days |
+| 12 — WS Top-Level Services | 3 | ~3 | 1–2 days |
+| 13 — UI | 32 | ~18 | 5–8 days |
+| 14 — Strictness | all | all | 2–3 days |
+| **Total** | **~106** | **~92** | **28–45 days** |
 
 **Realistic calendar estimate:** 6–10 weeks for a single developer.
 
