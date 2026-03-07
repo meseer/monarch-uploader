@@ -6,19 +6,148 @@
 import { debugLog, formatAmount } from '../../core/utils';
 import { STORAGE } from '../../core/config';
 
+// ── Interfaces ────────────────────────────────────────────────────────────────
+
+export interface WealthsimpleTransaction {
+  externalCanonicalId?: string | null;
+  canonicalId?: string | null;
+  accountId?: string | null;
+  opposingAccountId?: string | null;
+  occurredAt?: string | null;
+  type?: string | null;
+  subType?: string | null;
+  amount?: number | null;
+  currency?: string | null;
+  eTransferName?: string | null;
+  eTransferEmail?: string | null;
+  assetSymbol?: string | null;
+  assetName?: string | null;
+  assetQuantity?: number | null;
+  strikePrice?: number | null;
+  contractType?: string | null;
+  expiryDate?: string | null;
+  // AFT fields
+  aftOriginatorName?: string | null;
+  aftTransactionType?: string | null;
+  aftTransactionCategory?: string | null;
+  // Bill pay fields
+  billPayCompanyName?: string | null;
+  billPayPayeeNickname?: string | null;
+  redactedExternalAccountNumber?: string | null;
+  // P2P fields
+  p2pHandle?: string | null;
+  p2pMessage?: string | null;
+  // EFT fields
+  frequency?: string | null;
+  // Crypto fields
+  counterAssetSymbol?: string | null;
+  // Investment fields
+  grossDividendRate?: number | null;
+  withholdingTaxAmount?: number | null;
+  announcementDate?: string | null;
+  recordDate?: string | null;
+  payableDate?: string | null;
+  institutionName?: string | null;
+  rewardProgram?: string | null;
+  [key: string]: unknown;
+}
+
+export interface SpendDetails {
+  isForeign?: boolean | null;
+  foreignAmount?: number | string | null;
+  foreignCurrency?: string | null;
+  foreignExchangeRate?: number | string | null;
+  hasReward?: boolean | null;
+  rewardAmount?: number | null;
+  [key: string]: unknown;
+}
+
+export interface ExtendedOrder {
+  isManagedOrderData?: boolean;
+  isCryptoOrderData?: boolean;
+  orderType?: string | null;
+  submittedQuantity?: number | null;
+  filledQuantity?: number | null;
+  averageFilledPrice?: number | null;
+  filledTotalFee?: number | null;
+  limitPrice?: number | null;
+  timeInForce?: string | null;
+  optionMultiplier?: number | null;
+  quantity?: number | null;
+  executedQuantity?: number | null;
+  price?: number | null;
+  fee?: number | null;
+  swapFee?: number | null;
+  totalCost?: number | null;
+  executedValue?: number | null;
+  commissionBps?: number | null;
+  currency?: string | null;
+  marketPrice?: { amount?: number | null; currency?: string | null } | null;
+  [key: string]: unknown;
+}
+
+export interface FundingIntent {
+  transferMetadata?: {
+    memo?: string | null;
+    message?: string | null;
+    autoDeposit?: boolean | null;
+    networkPaymentRefId?: string | null;
+    [key: string]: unknown;
+  } | null;
+  [key: string]: unknown;
+}
+
+export interface StatusSummary {
+  annotation?: string | null;
+  [key: string]: unknown;
+}
+
+export interface InternalTransfer {
+  annotation?: string | null;
+  [key: string]: unknown;
+}
+
+export interface FundsTransfer {
+  annotation?: string | null;
+  [key: string]: unknown;
+}
+
+export interface BankAccount {
+  nickname?: string | null;
+  accountNumber?: string | null;
+  [key: string]: unknown;
+}
+
+export interface OutgoingETransferDetails {
+  autoDeposit: string | null;
+  networkPaymentRefId: string | null;
+}
+
+export interface WealthsimpleAccountEntry {
+  wealthsimpleAccount?: {
+    id?: string;
+    nickname?: string;
+    type?: string;
+    [key: string]: unknown;
+  } | null;
+  [key: string]: unknown;
+}
+
+// ── Functions ─────────────────────────────────────────────────────────────────
+
 /**
  * Format spend transaction notes from spend details
  * Adds foreign currency info and reward info if applicable
  *
- * @param {Object|null} spendDetails - Spend transaction details from FetchSpendTransactions API
- * @returns {string} Formatted notes string or empty string if no relevant details
+ * @param spendDetails - Spend transaction details from FetchSpendTransactions API
+ * @returns Formatted notes string or empty string if no relevant details
  */
-export function formatSpendNotes(spendDetails) {
+export function formatSpendNotes(spendDetails: SpendDetails | null | undefined): string {
   if (!spendDetails) {
     return '';
   }
 
-  const notes = [];
+  const notes: string[] = [];
 
   // Add foreign currency details if applicable
   if (spendDetails.isForeign === true) {
@@ -39,11 +168,11 @@ export function formatSpendNotes(spendDetails) {
 
 /**
  * Format transfer notes with currency and amount
- * @param {Object} transaction - Raw transaction from Wealthsimple API
- * @param {string} existingNote - Any existing annotation/note to append
- * @returns {string} Formatted notes string
+ * @param transaction - Raw transaction from Wealthsimple API
+ * @param existingNote - Any existing annotation/note to append
+ * @returns Formatted notes string
  */
-export function formatTransferNotes(transaction, existingNote = '') {
+export function formatTransferNotes(transaction: WealthsimpleTransaction, existingNote: string = ''): string {
   const currency = transaction.currency || 'CAD';
   const amount = formatAmount(transaction.amount ?? 0);
 
@@ -58,10 +187,10 @@ export function formatTransferNotes(transaction, existingNote = '') {
 
 /**
  * Format a date string from "2026-01-16" to "Jan 16, 2026"
- * @param {string} dateString - Date in YYYY-MM-DD format
- * @returns {string} Formatted date (e.g., "Jan 16, 2026") or empty string if invalid
+ * @param dateString - Date in YYYY-MM-DD format
+ * @returns Formatted date (e.g., "Jan 16, 2026") or empty string if invalid
  */
-export function formatPrettyDate(dateString) {
+export function formatPrettyDate(dateString: string | null | undefined): string {
   if (!dateString) return '';
 
   try {
@@ -83,10 +212,10 @@ export function formatPrettyDate(dateString) {
 /**
  * Convert a string to sentence case (capitalize first letter, lowercase rest)
  * Handles UPPER_CASE_STRINGS by replacing underscores with spaces
- * @param {string} str - Input string (e.g., "MARKET_ORDER", "DIY_BUY")
- * @returns {string} Sentence case string (e.g., "Market order", "Diy buy")
+ * @param str - Input string (e.g., "MARKET_ORDER", "DIY_BUY")
+ * @returns Sentence case string (e.g., "Market order", "Diy buy")
  */
-export function toSentenceCase(str) {
+export function toSentenceCase(str: string | null | undefined): string {
   if (!str) return '';
   // Replace underscores with spaces and convert to lowercase
   const normalized = str.replace(/_/g, ' ').toLowerCase();
@@ -100,11 +229,14 @@ export function toSentenceCase(str) {
  * 1. FetchSoOrdersExtendedOrder (DIY orders) - Full data including orderType, fees, limitPrice, etc.
  * 2. FetchActivityByOrdersServiceOrderId (Managed orders) - Limited data: quantity, fxRate, marketPrice
  *
- * @param {Object} activity - Raw transaction from Wealthsimple API
- * @param {Object|null} extendedOrder - Extended order details (from either API)
- * @returns {string} Formatted notes string
+ * @param activity - Raw transaction from Wealthsimple API
+ * @param extendedOrder - Extended order details (from either API)
+ * @returns Formatted notes string
  */
-export function formatInvestmentOrderNotes(activity, extendedOrder) {
+export function formatInvestmentOrderNotes(
+  activity: WealthsimpleTransaction,
+  extendedOrder: ExtendedOrder | null | undefined,
+): string {
   if (!activity) return '';
 
   const currency = activity.currency || 'CAD';
@@ -149,17 +281,16 @@ export function formatInvestmentOrderNotes(activity, extendedOrder) {
  * Format notes for managed orders (from FetchActivityByOrdersServiceOrderId)
  * These orders have limited data: quantity, fxRate, marketPrice
  *
- * Format:
- * "Managed buy 0.8257 VEQT
- * Filled at CAD$11.165
- * FX rate: 1.35" (only if fxRate !== "1.0")
- * "Total CAD$9.22"
- *
- * @param {Object} activity - Raw transaction from Wealthsimple API
- * @param {Object} managedOrderData - Data from FetchActivityByOrdersServiceOrderId
- * @returns {string} Formatted notes string
+ * @param activity - Raw transaction from Wealthsimple API
+ * @param managedOrderData - Data from FetchActivityByOrdersServiceOrderId
+ * @param isSell - True for sell orders
+ * @returns Formatted notes string
  */
-export function formatManagedOrderNotes(activity, managedOrderData, isSell = false) {
+export function formatManagedOrderNotes(
+  activity: WealthsimpleTransaction,
+  managedOrderData: ExtendedOrder | null | undefined,
+  isSell: boolean = false,
+): string {
   if (!activity) return '';
 
   const symbol = activity.assetSymbol || 'N/A';
@@ -190,7 +321,7 @@ export function formatManagedOrderNotes(activity, managedOrderData, isSell = fal
   const action = isSell ? 'Sold' : 'Bought';
 
   // Build a descriptive name string
-  const assetName = activity.assetName;
+  const assetName = activity.assetName as string | undefined;
   const assetDescription = assetName ? `${assetName} (${symbol})` : symbol;
 
   // Line 1: "Bought 0.8257 shares of iShares Edge MSCI Min Vol Emerging Mkt ETF (EEMV) at CAD$11.165 per share"
@@ -209,12 +340,16 @@ export function formatManagedOrderNotes(activity, managedOrderData, isSell = fal
  * Format options order notes from activity and extended order data
  * Handles both OPTIONS_BUY and OPTIONS_SELL transactions with LIMIT_ORDER and other subtypes
  *
- * @param {Object} activity - Raw transaction from Wealthsimple API
- * @param {Object|null} extendedOrder - Extended order details from FetchSoOrdersExtendedOrder
- * @param {boolean} isSell - True for OPTIONS_SELL, false for OPTIONS_BUY
- * @returns {string} Formatted notes string
+ * @param activity - Raw transaction from Wealthsimple API
+ * @param extendedOrder - Extended order details from FetchSoOrdersExtendedOrder
+ * @param isSell - True for OPTIONS_SELL, false for OPTIONS_BUY
+ * @returns Formatted notes string
  */
-export function formatOptionsOrderNotes(activity, extendedOrder, isSell) {
+export function formatOptionsOrderNotes(
+  activity: WealthsimpleTransaction,
+  extendedOrder: ExtendedOrder | null | undefined,
+  isSell: boolean,
+): string {
   if (!activity) return '';
 
   const currency = activity.currency || 'CAD';
@@ -246,17 +381,9 @@ export function formatOptionsOrderNotes(activity, extendedOrder, isSell) {
   const isLimitOrder = subType === 'LIMIT_ORDER';
 
   if (isLimitOrder) {
-    // LIMIT_ORDER format:
-    // "Limit Sell 5 AAPL 200.00 CALL contracts (100 share lots at CAD$2.50 per share) with expiry date 2026-01-16 (Good til cancelled order)
-    // Filled 5 contracts at CAD$2.45, fees: CAD$4.95
-    // Total CAD$1220.05"
     return `Limit ${action} ${assetQuantity} ${assetSymbol} ${strikePrice} ${contractType} contracts (${optionMultiplier} share lots at ${currency}$${limitPrice} per share) with expiry date ${expiryDate} (${timeInForceDisplay})\nFilled ${filledQuantity} contracts at ${currency}$${averageFilledPrice}, fees: ${currency}$${filledTotalFee}\nTotal ${currency}$${amount}`;
   }
 
-  // Non-LIMIT_ORDER format (e.g., MARKET_ORDER):
-  // "Market order: Sell 5 AAPL 200.00 CALL contracts (100 share lots) with expiry date 2026-01-16 (Good til cancelled order)
-  // Filled 5 contracts at CAD$2.45, fees: CAD$4.95
-  // Total CAD$1220.05"
   return `${toSentenceCase(subType)}: ${action} ${assetQuantity} ${assetSymbol} ${strikePrice} ${contractType} contracts (${optionMultiplier} share lots) with expiry date ${expiryDate} (${timeInForceDisplay})\nFilled ${filledQuantity} contracts at ${currency}$${averageFilledPrice}, fees: ${currency}$${filledTotalFee}\nTotal ${currency}$${amount}`;
 }
 
@@ -267,10 +394,10 @@ export function formatOptionsOrderNotes(activity, extendedOrder, isSell) {
  * 2. canonicalId (e.g., interest transactions)
  * 3. Generated deterministic ID based on transaction properties
  *
- * @param {Object} transaction - Raw transaction from Wealthsimple API
- * @returns {string} Unique transaction identifier
+ * @param transaction - Raw transaction from Wealthsimple API
+ * @returns Unique transaction identifier
  */
-export function getTransactionId(transaction) {
+export function getTransactionId(transaction: WealthsimpleTransaction): string {
   // Prefer externalCanonicalId (most transactions)
   if (transaction.externalCanonicalId) {
     return transaction.externalCanonicalId;
@@ -296,12 +423,16 @@ export function getTransactionId(transaction) {
 /**
  * Format original statement with type:subType: prefix
  * Converts null values to empty strings
- * @param {string|null} type - Transaction type
- * @param {string|null} subType - Transaction subType
- * @param {string} statement - Original statement text
- * @returns {string} Formatted statement with "type:subType:" prefix
+ * @param type - Transaction type
+ * @param subType - Transaction subType
+ * @param statement - Original statement text
+ * @returns Formatted statement with "type:subType:" prefix
  */
-export function formatOriginalStatement(type, subType, statement) {
+export function formatOriginalStatement(
+  type: string | null | undefined,
+  subType: string | null | undefined,
+  statement: string,
+): string {
   const typeStr = type || '';
   const subTypeStr = subType || '';
   return `${typeStr}:${subTypeStr}:${statement}`;
@@ -310,15 +441,20 @@ export function formatOriginalStatement(type, subType, statement) {
 /**
  * Format original statement for AFT transactions with enhanced metadata
  * Format: type:subType:aftTransactionCategory:aftTransactionType:statementText
- * Converts null values to empty strings
- * @param {string|null} type - Transaction type (e.g., DEPOSIT, WITHDRAWAL)
- * @param {string|null} subType - Transaction subType (e.g., AFT)
- * @param {string|null} aftTransactionCategory - AFT transaction category (e.g., payroll, insurance)
- * @param {string|null} aftTransactionType - AFT transaction type (e.g., payroll_deposit, insurance)
- * @param {string} statement - Original statement text (typically the originator name)
- * @returns {string} Formatted statement with all AFT metadata
+ * @param type - Transaction type (e.g., DEPOSIT, WITHDRAWAL)
+ * @param subType - Transaction subType (e.g., AFT)
+ * @param aftTransactionCategory - AFT transaction category (e.g., payroll, insurance)
+ * @param aftTransactionType - AFT transaction type (e.g., payroll_deposit, insurance)
+ * @param statement - Original statement text (typically the originator name)
+ * @returns Formatted statement with all AFT metadata
  */
-export function formatAftOriginalStatement(type, subType, aftTransactionCategory, aftTransactionType, statement) {
+export function formatAftOriginalStatement(
+  type: string | null | undefined,
+  subType: string | null | undefined,
+  aftTransactionCategory: string | null | undefined,
+  aftTransactionType: string | null | undefined,
+  statement: string,
+): string {
   const typeStr = type || '';
   const subTypeStr = subType || '';
   const aftCategoryStr = aftTransactionCategory || '';
@@ -329,17 +465,17 @@ export function formatAftOriginalStatement(type, subType, aftTransactionCategory
 /**
  * Get account name from the cached Wealthsimple accounts list by account ID
  * Used for looking up opposing account names in internal transfers
- * @param {string} accountId - Wealthsimple account ID
- * @returns {string} Account nickname or 'Unknown Account' if not found
+ * @param accountId - Wealthsimple account ID
+ * @returns Account nickname or 'Unknown Account' if not found
  */
-export function getAccountNameById(accountId) {
+export function getAccountNameById(accountId: string | null | undefined): string {
   if (!accountId) {
     return 'Unknown Account';
   }
 
   try {
-    const accountsJson = GM_getValue(STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST, '[]');
-    const accounts = JSON.parse(accountsJson);
+    const accountsJson = GM_getValue(STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST, '[]') as string;
+    const accounts: WealthsimpleAccountEntry[] = JSON.parse(accountsJson);
 
     const account = accounts.find((acc) => acc.wealthsimpleAccount?.id === accountId);
     if (account && account.wealthsimpleAccount?.nickname) {
@@ -356,17 +492,17 @@ export function getAccountNameById(accountId) {
 /**
  * Get account name from the cached Wealthsimple accounts list by account type
  * Used for looking up account names when only the type is known (e.g., credit card payments)
- * @param {string} accountType - Wealthsimple account type (e.g., 'CREDIT_CARD')
- * @returns {string|null} Account nickname or null if not found
+ * @param accountType - Wealthsimple account type (e.g., 'CREDIT_CARD')
+ * @returns Account nickname or null if not found
  */
-export function getAccountNameByType(accountType) {
+export function getAccountNameByType(accountType: string | null | undefined): string | null {
   if (!accountType) {
     return null;
   }
 
   try {
-    const accountsJson = GM_getValue(STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST, '[]');
-    const accounts = JSON.parse(accountsJson);
+    const accountsJson = GM_getValue(STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST, '[]') as string;
+    const accounts: WealthsimpleAccountEntry[] = JSON.parse(accountsJson);
 
     const account = accounts.find((acc) => acc.wealthsimpleAccount?.type === accountType);
     if (account && account.wealthsimpleAccount?.nickname) {
@@ -385,22 +521,25 @@ export function getAccountNameByType(accountType) {
  * Only payroll_deposit is statically mapped - other types require manual categorization
  * based on the specific originator
  */
-const AFT_TYPE_CATEGORY_MAP = {
+const AFT_TYPE_CATEGORY_MAP: Record<string, string> = {
   payroll_deposit: 'Paychecks',
 };
 
 /**
  * Generate the category key for AFT transactions
  * Format: "type:subType:aftTransactionType:aftOriginatorName"
- * This allows different originators with the same AFT type to have different categories
- * When aftTransactionType is missing, uses empty string in that position
- * @param {string} type - Transaction type (e.g., DEPOSIT, WITHDRAWAL)
- * @param {string} subType - Transaction subType (e.g., AFT)
- * @param {string} aftTransactionType - The AFT transaction type (e.g., payroll_deposit, insurance)
- * @param {string} aftOriginatorName - The AFT originator name
- * @returns {string} Category key for mapping
+ * @param type - Transaction type (e.g., DEPOSIT, WITHDRAWAL)
+ * @param subType - Transaction subType (e.g., AFT)
+ * @param aftTransactionType - The AFT transaction type (e.g., payroll_deposit, insurance)
+ * @param aftOriginatorName - The AFT originator name
+ * @returns Category key for mapping
  */
-export function getAftCategoryKey(type, subType, aftTransactionType, aftOriginatorName) {
+export function getAftCategoryKey(
+  type: string,
+  subType: string,
+  aftTransactionType: string | null | undefined,
+  aftOriginatorName: string | null | undefined,
+): string {
   const originator = aftOriginatorName || 'Unknown AFT';
   const aftType = aftTransactionType || '';
 
@@ -409,10 +548,10 @@ export function getAftCategoryKey(type, subType, aftTransactionType, aftOriginat
 
 /**
  * Get category for AFT transaction based on aftTransactionType
- * @param {string} aftTransactionType - The AFT transaction type from Wealthsimple
- * @returns {string|null} Monarch category name or null if needs mapping
+ * @param aftTransactionType - The AFT transaction type from Wealthsimple
+ * @returns Monarch category name or null if needs mapping
  */
-export function getAftCategory(aftTransactionType) {
+export function getAftCategory(aftTransactionType: string | null | undefined): string | null {
   if (!aftTransactionType) {
     return null;
   }
@@ -422,10 +561,10 @@ export function getAftCategory(aftTransactionType) {
 /**
  * Get display name for e-transfer participant
  * Falls back to email, then "Unknown" if both are missing
- * @param {Object} transaction - Raw transaction object
- * @returns {string} Display name
+ * @param transaction - Raw transaction object
+ * @returns Display name
  */
-export function getETransferDisplayName(transaction) {
+export function getETransferDisplayName(transaction: WealthsimpleTransaction): string {
   if (transaction.eTransferName) {
     return transaction.eTransferName;
   }
@@ -439,13 +578,10 @@ export function getETransferDisplayName(transaction) {
  * Extract annotation from FundingIntentStatusSummary response
  * This is the primary source for e-transfer messages as of 2026-03-06.
  *
- * The FetchFundingIntentStatusSummary API returns an `annotation` field that contains
- * the user-entered message for the transfer (e.g., "For mom's medical screening").
- *
- * @param {Object|null} statusSummary - Status summary data from FetchFundingIntentStatusSummary API
- * @returns {string} Annotation text or empty string if not found
+ * @param statusSummary - Status summary data from FetchFundingIntentStatusSummary API
+ * @returns Annotation text or empty string if not found
  */
-export function extractStatusSummaryAnnotation(statusSummary) {
+export function extractStatusSummaryAnnotation(statusSummary: StatusSummary | null | undefined): string {
   if (!statusSummary) {
     return '';
   }
@@ -455,18 +591,14 @@ export function extractStatusSummaryAnnotation(statusSummary) {
 
 /**
  * Extract Interac memo from funding intent data
- * For incoming transfers (e_transfer_receive): memo is in transferMetadata.memo
- * For outgoing transfers (e_transfer_send): memo is in transferMetadata.message or transferMetadata.memo
  *
  * @deprecated As of 2026-03-06, the memo field in FetchFundingIntent.transferMetadata is no longer
- * populated by the Wealthsimple API. Use extractStatusSummaryAnnotation() with data from
- * FetchFundingIntentStatusSummary instead. This function is kept as a fallback for backward
- * compatibility and is marked for removal in a future version.
+ * populated by the Wealthsimple API. Use extractStatusSummaryAnnotation() instead.
  *
- * @param {Object|null} fundingIntent - Funding intent data from FetchFundingIntent API
- * @returns {string} Memo text or empty string if not found
+ * @param fundingIntent - Funding intent data from FetchFundingIntent API
+ * @returns Memo text or empty string if not found
  */
-export function extractInteracMemo(fundingIntent) {
+export function extractInteracMemo(fundingIntent: FundingIntent | null | undefined): string {
   if (!fundingIntent || !fundingIntent.transferMetadata) {
     return '';
   }
@@ -488,13 +620,11 @@ export function extractInteracMemo(fundingIntent) {
 
 /**
  * Extract outgoing e-transfer details from funding intent data
- * For outgoing transfers: extracts autoDeposit status and network payment reference ID
- *
- * @param {Object|null} fundingIntent - Funding intent data from FetchFundingIntent API
- * @returns {Object} Object with { autoDeposit: string|null, networkPaymentRefId: string|null }
+ * @param fundingIntent - Funding intent data from FetchFundingIntent API
+ * @returns Object with { autoDeposit, networkPaymentRefId }
  */
-export function extractOutgoingETransferDetails(fundingIntent) {
-  const result = {
+export function extractOutgoingETransferDetails(fundingIntent: FundingIntent | null | undefined): OutgoingETransferDetails {
+  const result: OutgoingETransferDetails = {
     autoDeposit: null,
     networkPaymentRefId: null,
   };
@@ -520,17 +650,15 @@ export function extractOutgoingETransferDetails(fundingIntent) {
 
 /**
  * Format outgoing e-transfer details as a string for notes
- * Format: "Auto Deposit: Yes; Reference Number: CAkJgEwf"
- *
- * @param {Object} details - Object from extractOutgoingETransferDetails
- * @returns {string} Formatted string or empty if no details available
+ * @param details - Object from extractOutgoingETransferDetails
+ * @returns Formatted string or empty if no details available
  */
-export function formatOutgoingETransferDetails(details) {
+export function formatOutgoingETransferDetails(details: OutgoingETransferDetails | null | undefined): string {
   if (!details) {
     return '';
   }
 
-  const parts = [];
+  const parts: string[] = [];
 
   if (details.autoDeposit !== null) {
     parts.push(`Auto Deposit: ${details.autoDeposit}`);
@@ -545,11 +673,10 @@ export function formatOutgoingETransferDetails(details) {
 
 /**
  * Extract annotation (user note) from internal transfer data
- *
- * @param {Object|null} internalTransfer - Internal transfer data from FetchInternalTransfer API
- * @returns {string} Annotation text or empty string if not found
+ * @param internalTransfer - Internal transfer data from FetchInternalTransfer API
+ * @returns Annotation text or empty string if not found
  */
-export function extractInternalTransferAnnotation(internalTransfer) {
+export function extractInternalTransferAnnotation(internalTransfer: InternalTransfer | null | undefined): string {
   if (!internalTransfer) {
     return '';
   }
@@ -559,11 +686,10 @@ export function extractInternalTransferAnnotation(internalTransfer) {
 
 /**
  * Extract annotation (user note) from funds transfer data
- *
- * @param {Object|null} fundsTransfer - Funds transfer data from FetchFundsTransfer API
- * @returns {string} Annotation text or empty string if not found
+ * @param fundsTransfer - Funds transfer data from FetchFundsTransfer API
+ * @returns Annotation text or empty string if not found
  */
-export function extractFundsTransferAnnotation(fundsTransfer) {
+export function extractFundsTransferAnnotation(fundsTransfer: FundsTransfer | null | undefined): string {
   if (!fundsTransfer) {
     return '';
   }
@@ -573,12 +699,10 @@ export function extractFundsTransferAnnotation(fundsTransfer) {
 
 /**
  * Get display name for external bank account
- * Falls back to accountNumber, then "Unknown Account" if both nickname and accountNumber are missing
- *
- * @param {Object|null} bankAccount - Bank account object from FetchFundsTransfer API
- * @returns {string} Display name (nickname, accountNumber, or "Unknown Account")
+ * @param bankAccount - Bank account object from FetchFundsTransfer API
+ * @returns Display name (nickname, accountNumber, or "Unknown Account")
  */
-export function getExternalBankAccountDisplayName(bankAccount) {
+export function getExternalBankAccountDisplayName(bankAccount: BankAccount | null | undefined): string {
   if (!bankAccount) {
     return 'Unknown Account';
   }
@@ -595,4 +719,3 @@ export function getExternalBankAccountDisplayName(bankAccount) {
 
   return 'Unknown Account';
 }
-
