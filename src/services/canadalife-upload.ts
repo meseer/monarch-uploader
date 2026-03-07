@@ -33,7 +33,9 @@ import {
  * Custom Canada Life upload error class
  */
 export class CanadaLifeUploadError extends Error {
-  constructor(message, accountId) {
+  accountId: string;
+
+  constructor(message: string, accountId: string) {
     super(message);
     this.name = 'CanadaLifeUploadError';
     this.accountId = accountId;
@@ -245,7 +247,7 @@ async function getStartDateForAccount(accountId, account = null) {
 
   // Fallback: If no EnrollmentDate available, prompt user for initial start date
   const stateAccount = stateManager.getState().currentAccount;
-  const accountName = stateAccount?.nickname || stateAccount?.name || account?.EnglishShortName || 'Account';
+  const accountName = stateAccount?.nickname || account?.EnglishShortName || 'Account';
 
   const defaultDate = formatDaysAgoLocal(90); // 90 days ago
   const selectedDate = await showDatePickerPromise(
@@ -272,9 +274,9 @@ async function getOrCreateMonarchAccountMapping(canadalifeAccount) {
   if (existingMapping) {
     // Validate and refresh the stored account mapping
     const validation = await monarchApi.validateAndRefreshAccountMapping(
-      existingMapping.id,
+      existingMapping.id as string,
       null, // No storage key needed - we'll update via accountService
-      existingMapping.displayName,
+      existingMapping.displayName as string,
     );
 
     if (validation.valid) {
@@ -327,17 +329,18 @@ async function getOrCreateMonarchAccountMapping(canadalifeAccount) {
     return null; // User cancelled
   }
 
+  const monarchAccountObj = monarchAccount as Record<string, unknown>;
   // If this is a newly created account, set the Canada Life logo
-  if (monarchAccount.newlyCreated) {
+  if (monarchAccountObj.newlyCreated) {
     try {
-      debugLog(`Setting Canada Life logo for newly created account ${monarchAccount.id}`);
-      await monarchApi.setAccountLogo(monarchAccount.id, LOGO_CLOUDINARY_IDS.CANADALIFE);
-      debugLog(`Successfully set Canada Life logo for account ${monarchAccount.displayName}`);
-      toast.show(`Set Canada Life logo for ${monarchAccount.displayName}`, 'debug');
+      debugLog(`Setting Canada Life logo for newly created account ${monarchAccountObj.id}`);
+      await monarchApi.setAccountLogo(monarchAccountObj.id as string, LOGO_CLOUDINARY_IDS.CANADALIFE);
+      debugLog(`Successfully set Canada Life logo for account ${monarchAccountObj.displayName}`);
+      toast.show(`Set Canada Life logo for ${monarchAccountObj.displayName}`, 'debug');
     } catch (logoError) {
       // Logo setting failed, but account creation succeeded - continue with warning
       debugLog('Failed to set Canada Life logo for account:', logoError);
-      toast.show(`Warning: Failed to set logo for ${monarchAccount.displayName}`, 'warning');
+      toast.show(`Warning: Failed to set logo for ${monarchAccountObj.displayName}`, 'warning');
     }
   }
 
@@ -351,14 +354,14 @@ async function getOrCreateMonarchAccountMapping(canadalifeAccount) {
       LongNameEnglish: canadalifeAccount.LongNameEnglish,
       EnrollmentDate: canadalifeAccount.EnrollmentDate,
     },
-    monarchAccount,
+    monarchAccount: monarchAccountObj,
     syncEnabled: true,
   });
 
-  debugLog(`Saved Canada Life account mapping: ${accountName} -> ${monarchAccount.displayName}`);
-  toast.show(`Mapped ${accountName} to ${monarchAccount.displayName} in Monarch`, 'info');
+  debugLog(`Saved Canada Life account mapping: ${accountName} -> ${monarchAccountObj.displayName}`);
+  toast.show(`Mapped ${accountName} to ${monarchAccountObj.displayName} in Monarch`, 'info');
 
-  return monarchAccount;
+  return monarchAccountObj;
 }
 
 /**
@@ -450,7 +453,7 @@ function buildCanadaLifeSteps() {
 function calculateDaysBetween(startDate, endDate) {
   const from = new Date(startDate);
   const to = new Date(endDate);
-  const diffTime = Math.abs(to - from);
+  const diffTime = Math.abs(to.getTime() - from.getTime());
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 }
 
@@ -459,9 +462,9 @@ function calculateDaysBetween(startDate, endDate) {
  * @param {string} accountId - Account ID
  * @returns {Set<string>} Set of uploaded transaction IDs
  */
-function getUploadedTransactionIds(accountId) {
+function getUploadedTransactionIds(accountId: string): Set<string> {
   const accountData = accountService.getAccountData(INTEGRATIONS.CANADALIFE, accountId);
-  const uploadedTransactions = accountData?.uploadedTransactions || [];
+  const uploadedTransactions = (accountData?.uploadedTransactions || []) as Array<{ id: string; date: string }>;
   return new Set(uploadedTransactions.map((tx) => tx.id));
 }
 
@@ -470,9 +473,9 @@ function getUploadedTransactionIds(accountId) {
  * @param {string} accountId - Account ID
  * @param {Array<Object>} transactions - Array of transaction objects with id and date
  */
-function saveUploadedTransactionIds(accountId, transactions) {
+function saveUploadedTransactionIds(accountId: string, transactions: Array<{ id: string; date: string }>) {
   const accountData = accountService.getAccountData(INTEGRATIONS.CANADALIFE, accountId);
-  const existingTransactions = accountData?.uploadedTransactions || [];
+  const existingTransactions = (accountData?.uploadedTransactions || []) as Array<{ id: string; date: string }>;
 
   // Add new transaction IDs with their actual transaction dates (not sync date)
   const newEntries = transactions.map((tx) => ({ id: tx.id, date: tx.date }));
@@ -588,7 +591,8 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
       }
 
       // Upload to Monarch
-      const balanceSuccess = await monarchApi.uploadBalance(monarchAccount.id, csvData, startDate, endDate);
+      const monarchAccountObj2 = monarchAccount as Record<string, unknown>;
+      const balanceSuccess = await monarchApi.uploadBalance(monarchAccountObj2.id as string, csvData, startDate, endDate);
 
       if (!balanceSuccess) {
         if (progressDialog) {
@@ -606,8 +610,7 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
         // Extract and display balance change information (must happen before saveLastUploadDate)
         const balanceChange = extractCanadaLifeBalanceChange(accountId, historicalData);
         if (balanceChange) {
-          balanceChange.accountType = 'investment';
-          progressDialog.updateBalanceChange(accountId, balanceChange);
+          progressDialog.updateBalanceChange(accountId, { ...balanceChange, accountType: 'investment' });
         }
       }
     } else {
@@ -654,8 +657,9 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
     try {
       progressDialog?.updateStepStatus(accountId, 'pendingReconciliation', 'processing', 'Reconciling...');
       const lookbackDays = getLookbackForInstitution('canadalife');
+      const monarchAccountObj3 = monarchAccount as Record<string, unknown>;
       const reconciliationResult = await reconcileCanadaLifePendingTransactions(
-        monarchAccount.id,
+        monarchAccountObj3.id as string,
         rawActivities,
         lookbackDays,
       );
@@ -709,7 +713,7 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
       const transactionCsvData = convertCanadaLifeTransactionsToMonarchCSV(transactions, accountName);
 
       // Upload to Monarch
-      const txSuccess = await monarchApi.uploadTransactions(monarchAccount.id, transactionCsvData);
+      const txSuccess = await monarchApi.uploadTransactions((monarchAccount as Record<string, unknown>).id as string, transactionCsvData);
 
       if (!txSuccess) {
         if (progressDialog) {
@@ -984,7 +988,8 @@ export async function uploadCanadaLifeAccountWithDateRange() {
     }
 
     // Validate date range, allow today
-    validateDateRange(dateRange.startDate, dateRange.endDate, true);
+    const dateRangeObj = dateRange as { startDate: string; endDate: string };
+    validateDateRange(dateRangeObj.startDate, dateRangeObj.endDate, true);
 
     // Create progress dialog for single account
     const accountForDialog = {
@@ -1000,7 +1005,7 @@ export async function uploadCanadaLifeAccountWithDateRange() {
 
     try {
       // Upload the account with progress tracking (not auto upload, so no today allowance)
-      const result = await uploadSingleAccount(selectedAccount, dateRange.startDate, dateRange.endDate, progressDialog, false);
+      const result = await uploadSingleAccount(selectedAccount, dateRangeObj.startDate, dateRangeObj.endDate, progressDialog, false);
 
       // Hide cancel button and show close button when upload completes
       progressDialog.hideCancel();
@@ -1290,7 +1295,12 @@ async function selectDateRange() {
  * @param {AbortSignal} options.signal - Abort signal
  * @returns {Promise<Object>} Upload result with transaction count
  */
-export async function uploadTransactionHistory(canadalifeAccount, startDate, endDate, options = {}) {
+interface UploadTransactionHistoryOptions {
+  onProgress?: (message: string) => void;
+  signal?: AbortSignal;
+}
+
+export async function uploadTransactionHistory(canadalifeAccount, startDate: string, endDate: string, options: UploadTransactionHistoryOptions = {}) {
   const { onProgress, signal } = options;
   const accountId = canadalifeAccount.agreementId;
   const accountName = canadalifeAccount.LongNameEnglish || canadalifeAccount.EnglishShortName;
@@ -1330,7 +1340,7 @@ export async function uploadTransactionHistory(canadalifeAccount, startDate, end
 
     // Upload to Monarch
     if (onProgress) onProgress(`Uploading ${transactions.length} transactions...`);
-    const success = await monarchApi.uploadTransactions(monarchAccount.id, csvData);
+    const success = await monarchApi.uploadTransactions((monarchAccount as Record<string, unknown>).id as string, csvData);
 
     if (!success) {
       throw new CanadaLifeUploadError('Failed to upload transactions to Monarch', accountId);

@@ -16,7 +16,7 @@
 | 4 | MBNA Integration | ✅ Complete | 12/12 src / 0 test |
 | 5 | API Layer | ✅ Complete | 9/9 src / 0 test |
 | 6 | Common Services Foundation | ✅ Complete | 12/12 src / 0 test |
-| 7 | CanadaLife Services | ⬜ Not Started | 0/3 src / 0 test |
+| 7 | CanadaLife Services | ✅ Complete | 3/3 src / 0 test |
 | 8 | Rogers Bank Services | ⬜ Not Started | 0/2 src / 0 test |
 | 9 | Questrade Services | ⬜ Not Started | 0/8 src / 0 test |
 | 10 | WS Transaction Rules | ⬜ Not Started | 0/3 src / 0 test |
@@ -25,7 +25,7 @@
 | 13 | UI Layer | ⬜ Not Started | 0/32 src / 0 test |
 | 14 | Strictness Ramp-up | ⬜ Not Started | — |
 
-**Overall:** 48/106 source files converted (~45%)
+**Overall:** 51/106 source files converted (~48%)
 
 ## Overview
 

@@ -240,7 +240,12 @@ export function generateDateChunks(startDate, endDate) {
  * @param {AbortSignal} options.signal - Abort signal for cancellation
  * @returns {Promise<Array>} Array of all activities in the date range
  */
-export async function fetchActivitiesForDateRange(account, startDate, endDate, options = {}) {
+interface FetchActivitiesOptions {
+  onProgress?: (chunkIndex: number, totalChunks: number, chunkActivities: number) => void;
+  signal?: AbortSignal;
+}
+
+export async function fetchActivitiesForDateRange(account, startDate: string, endDate: string, options: FetchActivitiesOptions = {}) {
   const { onProgress, signal } = options;
 
   // Generate date chunks (max 1 year each)
@@ -307,8 +312,13 @@ export async function fetchActivitiesForDateRange(account, startDate, endDate, o
  * @param {boolean} options.includePendingTransactions - Whether to include pending transactions (default: true)
  * @returns {Promise<Array>} Array of processed transaction objects, sorted oldest first
  */
-export async function processActivities(activities, accountName, options = {}) {
-  const { uploadedTransactionIds = new Set(), includePendingTransactions = true } = options;
+interface ProcessActivitiesOptions {
+  uploadedTransactionIds?: Set<string>;
+  includePendingTransactions?: boolean;
+}
+
+export async function processActivities(activities, accountName: string, options: ProcessActivitiesOptions = {}) {
+  const { uploadedTransactionIds = new Set<string>(), includePendingTransactions = true } = options;
 
   if (!activities || activities.length === 0) {
     return [];
@@ -338,7 +348,7 @@ export async function processActivities(activities, accountName, options = {}) {
   debugLog(`Processed ${transactions.length} transactions (${skippedCount} already uploaded)`);
 
   // Sort by date (oldest first)
-  transactions.sort((a, b) => new Date(a.date) - new Date(b.date));
+  transactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
   return transactions;
 }
@@ -355,11 +365,18 @@ export async function processActivities(activities, accountName, options = {}) {
  * @param {boolean} options.includePendingTransactions - Whether to include pending transactions (default: true)
  * @returns {Promise<Array>} Array of processed transaction objects
  */
-export async function fetchAndProcessTransactions(account, startDate, endDate, options = {}) {
+interface FetchAndProcessOptions {
+  onProgress?: (message: string) => void;
+  signal?: AbortSignal;
+  uploadedTransactionIds?: Set<string>;
+  includePendingTransactions?: boolean;
+}
+
+export async function fetchAndProcessTransactions(account, startDate: string, endDate: string, options: FetchAndProcessOptions = {}) {
   const {
     onProgress,
     signal,
-    uploadedTransactionIds = new Set(),
+    uploadedTransactionIds = new Set<string>(),
     includePendingTransactions = true,
   } = options;
   const accountName = account.LongNameEnglish || account.EnglishShortName;
