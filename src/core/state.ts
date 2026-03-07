@@ -46,7 +46,7 @@ interface RogersBankAuth {
 interface WealthsimpleAuth {
   authenticated: boolean;
   identityId: string | null;
-  expiresAt: number | null;
+  expiresAt: string | null;
 }
 
 interface AuthState {

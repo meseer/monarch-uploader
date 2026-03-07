@@ -6,14 +6,185 @@
 import { debugLog } from '../core/utils';
 import { makeGraphQLQuery } from './wealthsimple';
 
+//    Interfaces
+
+export interface FundingIntentNode {
+  id: string;
+  state?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  transactionType?: string;
+  fundableType?: string;
+  transferMetadata?: {
+    memo?: string;
+    [key: string]: unknown;
+  };
+  transactionMetadata?: {
+    memo?: string;
+    recipientName?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+export interface CreditCardAccountSummary {
+  id: string;
+  balance?: {
+    current: number;
+    [key: string]: unknown;
+  };
+  creditRegistrationStatus?: string;
+  creditLimit?: number;
+  currentCards?: Array<{
+    id: string;
+    cardNumberLast4Digits?: string;
+    cardVariant?: string;
+    [key: string]: unknown;
+  }>;
+  [key: string]: unknown;
+}
+
+export interface InternalTransferDetails {
+  id?: string;
+  amount?: number;
+  currency?: string;
+  status?: string;
+  transferType?: string;
+  annotation?: string;
+  reason?: string;
+  source_account?: { id: string; unifiedAccountType?: string };
+  [key: string]: unknown;
+}
+
+export interface FundsTransferDetails {
+  id?: string;
+  status?: string;
+  annotation?: string;
+  source?: { bankAccount?: Record<string, unknown> };
+  destination?: { bankAccount?: Record<string, unknown> };
+  [key: string]: unknown;
+}
+
+export interface ActivityByOrderData {
+  id?: string;
+  quantity?: number;
+  fxRate?: number;
+  marketPrice?: { amount: number; currency: string };
+  [key: string]: unknown;
+}
+
+export interface ExtendedOrderData {
+  status?: string;
+  orderType?: string;
+  filledQuantity?: number;
+  averageFilledPrice?: number;
+  filledExchangeRate?: number;
+  filledCommissionFee?: number;
+  filledTotalFee?: number;
+  optionMultiplier?: number;
+  securityCurrency?: string;
+  [key: string]: unknown;
+}
+
+export interface CorporateActionChildActivity {
+  canonicalId?: string;
+  activityCanonicalId?: string;
+  assetName?: string;
+  assetSymbol?: string;
+  assetType?: string;
+  entitlementType?: string;
+  quantity?: number;
+  currency?: string;
+  price?: number;
+  recordDate?: string;
+  [key: string]: unknown;
+}
+
+export interface ShortOptionExpiryDetail {
+  id?: string;
+  decision?: string;
+  reason?: string;
+  fxRate?: number;
+  securityCurrency?: string;
+  deliverables?: Array<{ quantity: number; securityId: string }>;
+  [key: string]: unknown;
+}
+
+export interface SecurityDetails {
+  id?: string;
+  currency?: string;
+  securityType?: string;
+  stock?: { name?: string; symbol?: string };
+  [key: string]: unknown;
+}
+
+export interface ManagedPortfolioPosition {
+  id?: string;
+  allocation?: number;
+  className?: string;
+  currency?: string;
+  description?: string;
+  fee?: number;
+  name?: string;
+  performance?: number;
+  symbol?: string;
+  type?: string;
+  value?: number;
+  category?: string;
+  quantity?: number;
+  [key: string]: unknown;
+}
+
+export interface AccountCashBalances {
+  cad: number | null;
+  usd: number | null;
+}
+
+export interface SpendTransactionDetails {
+  id: string;
+  hasReward?: boolean;
+  rewardAmount?: number;
+  foreignAmount?: number;
+  foreignCurrency?: string;
+  foreignExchangeRate?: number;
+  isForeign?: boolean;
+  [key: string]: unknown;
+}
+
+export interface FundingIntentStatusSummaryData {
+  id?: string;
+  annotation?: string;
+  activityFrequency?: string;
+  isCancellable?: boolean;
+  [key: string]: unknown;
+}
+
+export interface CryptoOrderDetails {
+  id?: string;
+  quantity?: number;
+  executedQuantity?: number;
+  price?: number;
+  executedValue?: number;
+  fee?: number;
+  swapFee?: number;
+  totalCost?: number;
+  limitPrice?: number | null;
+  currency?: string;
+  filledAt?: string;
+  timeInForce?: string;
+  [key: string]: unknown;
+}
+
+//    Functions
+
 /**
  * Fetch funding intent details for multiple transactions
  * Used to get additional transaction metadata like Interac transfer memos
  *
- * @param {Array<string>} ids - Array of funding intent IDs (e.g., ["funding_intent-xxx", "funding_intent-yyy"])
- * @returns {Promise<Map<string, Object>>} Map of funding intent ID to details
+ * @param ids - Array of funding intent IDs (e.g., ["funding_intent-xxx", "funding_intent-yyy"])
+ * @returns Map of funding intent ID to details
  */
-export async function fetchFundingIntents(ids) {
+export async function fetchFundingIntents(ids: string[]): Promise<Map<string, FundingIntentNode>> {
   try {
     if (!ids || ids.length === 0) {
       debugLog('No funding intent IDs provided');
@@ -296,7 +467,7 @@ fragment FundingPoint on FundingPoint {
     const { edges, pageInfo } = response.searchFundingIntents;
 
     // Build map of ID to funding intent details
-    const fundingIntentMap = new Map();
+    const fundingIntentMap = new Map<string, FundingIntentNode>();
 
     if (edges && Array.isArray(edges)) {
       edges.forEach((edge) => {
@@ -324,16 +495,10 @@ fragment FundingPoint on FundingPoint {
 /**
  * Fetch credit card account summary from Wealthsimple
  * Returns credit limit, current balance, and card details
- * @param {string} accountId - Credit card account ID (e.g., 'ca-credit-card-FYPcSZJeLA')
- * @returns {Promise<Object>} Credit card account summary
- * @property {string} id - Account ID
- * @property {Object} balance - Balance information
- * @property {number} balance.current - Current balance amount
- * @property {string} creditRegistrationStatus - Credit registration status
- * @property {number} creditLimit - Credit limit amount
- * @property {Array} currentCards - Array of current cards
+ * @param accountId - Credit card account ID (e.g., 'ca-credit-card-FYPcSZJeLA')
+ * @returns Credit card account summary
  */
-export async function fetchCreditCardAccountSummary(accountId) {
+export async function fetchCreditCardAccountSummary(accountId: string): Promise<CreditCardAccountSummary> {
   try {
     if (!accountId) {
       throw new Error('Account ID is required');
@@ -389,10 +554,10 @@ fragment CreditCardAccountSummary on CreditCardAccount {
  * Fetch internal transfer details for a single transfer
  * Used to get the annotation (user note) for internal transfers between Wealthsimple accounts
  *
- * @param {string} id - Internal transfer ID (e.g., "funding_intent-RHgNxU9iOg99IbPmQwSErvXLL0n")
- * @returns {Promise<Object|null>} Internal transfer details or null if not found
+ * @param id - Internal transfer ID (e.g., "funding_intent-RHgNxU9iOg99IbPmQwSErvXLL0n")
+ * @returns Internal transfer details or null if not found
  */
-export async function fetchInternalTransfer(id) {
+export async function fetchInternalTransfer(id: string): Promise<InternalTransferDetails | null> {
   try {
     if (!id) {
       debugLog('No internal transfer ID provided');
@@ -474,10 +639,10 @@ fragment InternalTransfer on InternalTransfer {
  * - annotation: User note on the transfer
  * - source/destination bank account details (institutionName, nickname, accountNumber, currency)
  *
- * @param {string} id - Funds transfer ID (e.g., "funding_intent-OJbdrSdcFlCIPm3hagqmOM0sNhV")
- * @returns {Promise<Object|null>} Funds transfer details or null if not found
+ * @param id - Funds transfer ID (e.g., "funding_intent-OJbdrSdcFlCIPm3hagqmOM0sNhV")
+ * @returns Funds transfer details or null if not found
  */
-export async function fetchFundsTransfer(id) {
+export async function fetchFundsTransfer(id: string): Promise<FundsTransferDetails | null> {
   try {
     if (!id) {
       debugLog('No funds transfer ID provided');
@@ -720,7 +885,7 @@ fragment CustodianAccount on CustodianAccount {
       return null;
     }
 
-    const fundsTransfer = response.fundsTransfer;
+    const fundsTransfer: FundsTransferDetails = response.fundsTransfer;
     debugLog(`Fetched funds transfer ${id}:`, {
       status: fundsTransfer.status,
       hasAnnotation: Boolean(fundsTransfer.annotation),
@@ -741,16 +906,11 @@ fragment CustodianAccount on CustodianAccount {
  * Used for MANAGED_BUY and MANAGED_SELL transactions with order IDs prefixed with "order-"
  * These orders cannot be fetched via FetchSoOrdersExtendedOrder
  *
- * Returns limited data compared to FetchSoOrdersExtendedOrder:
- * - quantity: Filled quantity
- * - fxRate: Exchange rate
- * - marketPrice: { amount, currency } - Fill price
- *
- * @param {string} accountId - Wealthsimple account ID (e.g., "resp-gjp2y-3a")
- * @param {string} ordersServiceOrderId - Order ID (e.g., "order-00YDx9aoiwh1")
- * @returns {Promise<Object|null>} Activity data or null if not found
+ * @param accountId - Wealthsimple account ID (e.g., "resp-gjp2y-3a")
+ * @param ordersServiceOrderId - Order ID (e.g., "order-00YDx9aoiwh1")
+ * @returns Activity data or null if not found
  */
-export async function fetchActivityByOrdersServiceOrderId(accountId, ordersServiceOrderId) {
+export async function fetchActivityByOrdersServiceOrderId(accountId: string, ordersServiceOrderId: string): Promise<ActivityByOrderData | null> {
   try {
     if (!accountId) {
       debugLog('No account ID provided for fetchActivityByOrdersServiceOrderId');
@@ -816,10 +976,10 @@ fragment ActivityByOrdersServiceOrderId on PaginatedActivity {
  * Fetch extended order details for a stock/options order
  * Used to get detailed fill information, fees, exchange rates, and timestamps for orders
  *
- * @param {string} externalId - Order ID (e.g., "order-3f73016b-5af3-4f03-ba22-9ef5e45fbb3d")
- * @returns {Promise<Object|null>} Extended order details or null if not found
+ * @param externalId - Order ID (e.g., "order-3f73016b-5af3-4f03-ba22-9ef5e45fbb3d")
+ * @returns Extended order details or null if not found
  */
-export async function fetchExtendedOrder(externalId) {
+export async function fetchExtendedOrder(externalId: string): Promise<ExtendedOrderData | null> {
   try {
     if (!externalId) {
       debugLog('No external ID provided for extended order fetch');
@@ -879,7 +1039,7 @@ fragment SoOrdersExtendedOrder on SoOrders_ExtendedOrderResponse {
       return null;
     }
 
-    const extendedOrder = response.soOrdersExtendedOrder;
+    const extendedOrder: ExtendedOrderData = response.soOrdersExtendedOrder;
     debugLog(`Fetched extended order ${externalId}:`, {
       status: extendedOrder.status,
       orderType: extendedOrder.orderType,
@@ -900,10 +1060,10 @@ fragment SoOrdersExtendedOrder on SoOrders_ExtendedOrderResponse {
  * Fetch corporate action child activities for a corporate action transaction
  * Used to get details about stock splits, consolidations, mergers, and other corporate actions
  *
- * @param {string} activityCanonicalId - Corporate action activity canonical ID (e.g., "US7311052010:2025-12-09:H10739748CAD")
- * @returns {Promise<Array>} Array of child activity nodes with entitlementType, quantity, assetSymbol, assetName, etc.
+ * @param activityCanonicalId - Corporate action activity canonical ID
+ * @returns Array of child activity nodes
  */
-export async function fetchCorporateActionChildActivities(activityCanonicalId) {
+export async function fetchCorporateActionChildActivities(activityCanonicalId: string): Promise<CorporateActionChildActivity[]> {
   try {
     if (!activityCanonicalId) {
       debugLog('No activity canonical ID provided for corporate action fetch');
@@ -947,7 +1107,7 @@ fragment CorporateActionChildActivity on CorporateActionChildActivity {
       return [];
     }
 
-    const childActivities = response.corporateActionChildActivities.nodes || [];
+    const childActivities: CorporateActionChildActivity[] = response.corporateActionChildActivities.nodes || [];
     debugLog(`Fetched ${childActivities.length} corporate action child activities for ${activityCanonicalId}:`, {
       activities: childActivities.map((a) => ({
         entitlementType: a.entitlementType,
@@ -966,17 +1126,12 @@ fragment CorporateActionChildActivity on CorporateActionChildActivity {
 
 /**
  * Fetch short option position expiry details
- * Used to get details about expired/expiring short option positions, including:
- * - decision: The decision made (e.g., "EXPIRE", "ASSIGN")
- * - reason: The reason for the decision
- * - fxRate: Foreign exchange rate applied
- * - deliverables: Array of securities and quantities involved
- * - securityCurrency: Currency of the security
+ * Used to get details about expired/expiring short option positions
  *
- * @param {string} id - Short option position expiry detail ID (e.g., "oe-c8861ccc2c9905f176b8946b5bedfaae4b0b2cde")
- * @returns {Promise<Object|null>} Short option expiry details or null if not found
+ * @param id - Short option position expiry detail ID
+ * @returns Short option expiry details or null if not found
  */
-export async function fetchShortOptionPositionExpiryDetail(id) {
+export async function fetchShortOptionPositionExpiryDetail(id: string): Promise<ShortOptionExpiryDetail | null> {
   try {
     if (!id) {
       debugLog('No short option position expiry detail ID provided');
@@ -1015,7 +1170,7 @@ fragment ShortOptionPositionExpiryDetail on ShortPositionExpiryDetail {
       return null;
     }
 
-    const expiryDetail = response.shortOptionPositionExpiryDetail;
+    const expiryDetail: ShortOptionExpiryDetail = response.shortOptionPositionExpiryDetail;
     debugLog(`Fetched short option position expiry detail ${id}:`, {
       decision: expiryDetail.decision,
       reason: expiryDetail.reason,
@@ -1036,10 +1191,10 @@ fragment ShortOptionPositionExpiryDetail on ShortPositionExpiryDetail {
  * Fetch security details by security ID
  * Used to look up security names for deliverables in short option expiry details
  *
- * @param {string} securityId - Security ID (e.g., "sec-o-977d51d56c9a40e58ead71785a412b3d")
- * @returns {Promise<Object|null>} Security details or null if not found
+ * @param securityId - Security ID (e.g., "sec-o-977d51d56c9a40e58ead71785a412b3d")
+ * @returns Security details or null if not found
  */
-export async function fetchSecurity(securityId) {
+export async function fetchSecurity(securityId: string): Promise<SecurityDetails | null> {
   try {
     if (!securityId) {
       debugLog('No security ID provided');
@@ -1069,7 +1224,7 @@ export async function fetchSecurity(securityId) {
       return null;
     }
 
-    const security = response.security;
+    const security: SecurityDetails = response.security;
     debugLog(`Fetched security ${securityId}:`, {
       symbol: security.stock?.symbol,
       name: security.stock?.name,
@@ -1088,10 +1243,10 @@ export async function fetchSecurity(securityId) {
 /**
  * Fetch positions for a managed portfolio account using FetchAccountManagedPortfolioPositions
  * This API is used for MANAGED_* account types which have a different data structure
- * @param {string} accountId - Wealthsimple account ID
- * @returns {Promise<Array>} Array of position objects with full details from the API
+ * @param accountId - Wealthsimple account ID
+ * @returns Array of position objects with full details from the API
  */
-export async function fetchManagedPortfolioPositions(accountId) {
+export async function fetchManagedPortfolioPositions(accountId: string): Promise<ManagedPortfolioPosition[]> {
   try {
     if (!accountId) {
       throw new Error('Account ID is required');
@@ -1139,7 +1294,7 @@ fragment ManagedPortfolioPosition on Position {
       return [];
     }
 
-    const positions = response.account.positions;
+    const positions: ManagedPortfolioPosition[] = response.account.positions;
     debugLog(`Fetched ${positions.length} managed portfolio positions for account ${accountId}`);
 
     return positions;
@@ -1153,14 +1308,10 @@ fragment ManagedPortfolioPosition on Position {
  * Fetch cash balances for investment accounts using FetchAccountsWithBalance
  * Returns CAD and USD cash balances from the account's custodian financials
  *
- * @param {Array<string>} accountIds - Array of Wealthsimple account IDs
- * @returns {Promise<Object>} Object mapping accountId to cash balances { cad, usd }
- *
- * @example
- * const balances = await fetchAccountsWithBalance(['rrsp-qthtmh-s']);
- * // Returns: { 'rrsp-qthtmh-s': { cad: 0.01, usd: 0.46 } }
+ * @param accountIds - Array of Wealthsimple account IDs
+ * @returns Object mapping accountId to cash balances { cad, usd }
  */
-export async function fetchAccountsWithBalance(accountIds) {
+export async function fetchAccountsWithBalance(accountIds: string[]): Promise<Record<string, AccountCashBalances>> {
   try {
     if (!accountIds || accountIds.length === 0) {
       debugLog('No account IDs provided for cash balance fetch');
@@ -1221,7 +1372,7 @@ fragment Balance on Balance {
     }
 
     // Process response to extract CAD and USD cash balances
-    const result = {};
+    const result: Record<string, AccountCashBalances> = {};
 
     for (const account of response.accounts) {
       const accountId = account.id;
@@ -1264,11 +1415,11 @@ fragment Balance on Balance {
  * Fetch spend transaction details for multiple transactions
  * Used to get foreign currency exchange details and reward information for CASH and CREDIT_CARD transactions
  *
- * @param {string} accountId - Wealthsimple account ID (e.g., "ca-cash-msb-iusfagkx" or "ca-credit-card-xxx")
- * @param {Array<string>} transactionIds - Array of transaction IDs to fetch details for
- * @returns {Promise<Map<string, Object>>} Map of transaction ID to spend details
+ * @param accountId - Wealthsimple account ID
+ * @param transactionIds - Array of transaction IDs to fetch details for
+ * @returns Map of transaction ID to spend details
  */
-export async function fetchSpendTransactions(accountId, transactionIds) {
+export async function fetchSpendTransactions(accountId: string, transactionIds: string[]): Promise<Map<string, SpendTransactionDetails>> {
   try {
     if (!accountId) {
       debugLog('No account ID provided for fetchSpendTransactions');
@@ -1335,7 +1486,7 @@ fragment SpendTransaction on SpendTransaction {
     const { edges, pageInfo } = response.spendTransactions;
 
     // Build map of ID to spend transaction details
-    const spendTransactionMap = new Map();
+    const spendTransactionMap = new Map<string, SpendTransactionDetails>();
 
     if (edges && Array.isArray(edges)) {
       edges.forEach((edge) => {
@@ -1370,14 +1521,10 @@ fragment SpendTransaction on SpendTransaction {
  * Fetch funding intent status summary for a single funding intent
  * Used to get the annotation (user note/message) for funding intent transactions.
  *
- * As of 2026-03-06, this replaces the memo field from FetchFundingIntent.transferMetadata
- * which is no longer populated by the Wealthsimple API. The annotation field on the
- * status summary is now the primary source for e-transfer messages.
- *
- * @param {string} fundingIntentId - Funding intent ID (e.g., "funding_intent-XlVAMs38eHXAMyBguEFOdMArAKZ")
- * @returns {Promise<Object|null>} Status summary object (with annotation, timeline, etc.) or null if not found
+ * @param fundingIntentId - Funding intent ID (e.g., "funding_intent-XlVAMs38eHXAMyBguEFOdMArAKZ")
+ * @returns Status summary object or null if not found
  */
-export async function fetchFundingIntentStatusSummary(fundingIntentId) {
+export async function fetchFundingIntentStatusSummary(fundingIntentId: string): Promise<FundingIntentStatusSummaryData | null> {
   try {
     if (!fundingIntentId) {
       debugLog('No funding intent ID provided for fetchFundingIntentStatusSummary');
@@ -1576,7 +1723,7 @@ fragment FundingIntentStatusSummaryChequeDepositActivityDetails on ChequeDeposit
       return null;
     }
 
-    const statusSummary = response.fundingIntentStatusSummary;
+    const statusSummary: FundingIntentStatusSummaryData = response.fundingIntentStatusSummary;
     debugLog(`Fetched funding intent status summary ${fundingIntentId}:`, {
       hasAnnotation: Boolean(statusSummary.annotation),
       activityFrequency: statusSummary.activityFrequency,
@@ -1595,23 +1742,10 @@ fragment FundingIntentStatusSummaryChequeDepositActivityDetails on ChequeDeposit
  * Fetch crypto order details for a single crypto buy/sell order
  * Used to get detailed fill information, fees, and pricing for crypto orders
  *
- * Returns:
- * - quantity: Requested quantity
- * - executedQuantity: Actually filled quantity
- * - price: Price per unit at fill time
- * - executedValue: Total value of filled portion (excl. fees)
- * - fee: Trading commission fee
- * - swapFee: Crypto-specific swap fee
- * - totalCost: Total cost including all fees
- * - limitPrice: Limit price (null for market orders)
- * - timeInForce: Order time in force (e.g., "day")
- * - currency: Order currency
- * - filledAt: Fill timestamp
- *
- * @param {string} id - Crypto order ID (e.g., "order-sqXS6HQQ0uJra3R7W9Zof2GgGRJ")
- * @returns {Promise<Object|null>} Crypto order details or null if not found
+ * @param id - Crypto order ID (e.g., "order-sqXS6HQQ0uJra3R7W9Zof2GgGRJ")
+ * @returns Crypto order details or null if not found
  */
-export async function fetchCryptoOrder(id) {
+export async function fetchCryptoOrder(id: string): Promise<CryptoOrderDetails | null> {
   try {
     if (!id) {
       debugLog('No crypto order ID provided');
@@ -1654,7 +1788,7 @@ fragment CryptoOrder on Crypto_Order {
       return null;
     }
 
-    const cryptoOrder = response.cryptoOrder;
+    const cryptoOrder: CryptoOrderDetails = response.cryptoOrder;
     debugLog(`Fetched crypto order ${id}:`, {
       quantity: cryptoOrder.quantity,
       executedQuantity: cryptoOrder.executedQuantity,

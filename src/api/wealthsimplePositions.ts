@@ -6,15 +6,51 @@
 import { debugLog } from '../core/utils';
 import { makeGraphQLQuery, checkAuth } from './wealthsimple';
 
+//    Interfaces
+
+export interface BalanceHistoryRecord {
+  date: string;
+  amount: number;
+  currency: string;
+}
+
+export interface PositionNode {
+  id?: string;
+  quantity?: number;
+  percentageOfAccount?: number;
+  positionDirection?: string;
+  bookValue?: { amount: string; currency: string };
+  averagePrice?: { amount: string; currency: string };
+  totalValue?: { amount: string; currency: string };
+  unrealizedReturns?: { amount: string; currency: string };
+  security?: {
+    id: string;
+    currency?: string;
+    securityType?: string;
+    stock?: { name?: string; symbol?: string; primaryExchange?: string };
+    [key: string]: unknown;
+  };
+  strategyType?: string;
+  legs?: Array<Record<string, unknown>>;
+  [key: string]: unknown;
+}
+
+//    Functions
+
 /**
  * Fetch balance history for an account
- * @param {Array<string>} accountIds - Array of account IDs (typically single account)
- * @param {string} currency - Currency code (e.g., 'CAD')
- * @param {string} startDate - Start date in YYYY-MM-DD format
- * @param {string} endDate - End date in YYYY-MM-DD format (optional, defaults to today)
- * @returns {Promise<Array>} Array of balance history objects with {date, amount}
+ * @param accountIds - Array of account IDs (typically single account)
+ * @param currency - Currency code (e.g., 'CAD')
+ * @param startDate - Start date in YYYY-MM-DD format
+ * @param endDate - End date in YYYY-MM-DD format (optional, defaults to today)
+ * @returns Array of balance history objects with {date, amount}
  */
-export async function fetchBalanceHistory(accountIds, currency, startDate, endDate = null) {
+export async function fetchBalanceHistory(
+  accountIds: string[],
+  currency: string,
+  startDate: string,
+  endDate: string | null = null,
+): Promise<BalanceHistoryRecord[]> {
   try {
     if (!accountIds || accountIds.length === 0) {
       throw new Error('No account IDs provided');
@@ -98,7 +134,7 @@ fragment Money on Money {
   __typename
 }`;
 
-    const variables = {
+    const variables: Record<string, unknown> = {
       includeSimpleReturns: false,
       accountIds,
       currency,
@@ -123,7 +159,8 @@ fragment Money on Money {
     }
 
     // Extract balance history
-    const balanceHistory = historicalData.edges.map((edge) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const balanceHistory: BalanceHistoryRecord[] = historicalData.edges.map((edge: any) => {
       const node = edge.node;
       return {
         date: node.date,
@@ -142,7 +179,8 @@ fragment Money on Money {
 
       const nextPageData = await makeGraphQLQuery('FetchIdentityHistoricalFinancials', query, nextPageVariables);
       if (nextPageData?.identity?.financials?.historicalDaily?.edges) {
-        const nextPageHistory = nextPageData.identity.financials.historicalDaily.edges.map((edge) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const nextPageHistory: BalanceHistoryRecord[] = nextPageData.identity.financials.historicalDaily.edges.map((edge: any) => {
           const node = edge.node;
           return {
             date: node.date,
@@ -165,10 +203,10 @@ fragment Money on Money {
 /**
  * Fetch investment positions for a specific account
  * Uses the FetchIdentityPositions GraphQL query
- * @param {string} accountId - Wealthsimple account ID
- * @returns {Promise<Array>} Array of position objects with full security details
+ * @param accountId - Wealthsimple account ID
+ * @returns Array of position objects with full security details
  */
-export async function fetchIdentityPositions(accountId) {
+export async function fetchIdentityPositions(accountId: string): Promise<PositionNode[]> {
   try {
     if (!accountId) {
       throw new Error('Account ID is required');
@@ -469,7 +507,7 @@ fragment PositionV2 on PositionV2 {
       throw new Error('Not authenticated with Wealthsimple');
     }
 
-    const variables = {
+    const variables: Record<string, unknown> = {
       includeSecurity: true,
       includeAccountData: true,
       includeOneDayReturnsBaseline: false,
@@ -481,8 +519,8 @@ fragment PositionV2 on PositionV2 {
       first: 50,
     };
 
-    const allPositions = [];
-    let cursor = null;
+    const allPositions: PositionNode[] = [];
+    let cursor: string | null = null;
     let hasNextPage = true;
     let pageCount = 0;
 

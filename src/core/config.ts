@@ -47,6 +47,8 @@ export const STORAGE = {
   // Rogers Bank specific storage keys
   ROGERSBANK_AUTH_TOKEN: 'rogersbank_auth_token',
   ROGERSBANK_ACCOUNT_ID: 'rogersbank_account_id',
+  ROGERSBANK_CUSTOMER_ID: 'rogersbank_customer_id',
+  ROGERSBANK_ACCOUNT_ID_ENCODED: 'rogersbank_account_id_encoded',
   ROGERSBANK_CUSTOMER_ID_ENCODED: 'rogersbank_customer_id_encoded',
   ROGERSBANK_DEVICE_ID: 'rogersbank_device_id',
   ROGERSBANK_LAST_UPDATED: 'rogersbank_last_updated',

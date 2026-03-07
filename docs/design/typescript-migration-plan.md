@@ -14,12 +14,12 @@
 | 2 | Core Layer | ✅ Complete | 8/8 src / 0 test |
 | 3 | Mappers & Utils | ✅ Complete | 5/5 src / 0 test |
 | 4 | MBNA Integration | ✅ Complete | 12/12 src / 0 test |
-| 5 | API Layer | ⬜ Not Started | 0/9 src / 0 test |
+| 5 | API Layer | ✅ Complete | 9/9 src / 0 test |
 | 6 | Services Layer | ⬜ Not Started | 0/36 src / 0 test |
 | 7 | UI Layer | ⬜ Not Started | 0/32 src / 0 test |
 | 8 | Strictness Ramp-up | ⬜ Not Started | — |
 
-**Overall:** 27/106 source files converted (~25%)
+**Overall:** 36/106 source files converted (~34%)
 
 ## Overview
 

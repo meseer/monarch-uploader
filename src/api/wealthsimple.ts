@@ -9,7 +9,10 @@ import { INTEGRATIONS } from '../core/integrationCapabilities';
 import { getAuth, setAuth, clearAuth as clearConfigAuth } from '../services/common/configStore';
 import stateManager from '../core/state';
 import { getAccountTypeDisplayName } from '../mappers/wealthsimple-account-types';
-import { fetchBalanceHistory, fetchIdentityPositions } from './wealthsimplePositions';
+import {
+  fetchBalanceHistory,
+  fetchIdentityPositions,
+} from './wealthsimplePositions';
 import {
   fetchFundingIntents,
   fetchFundingIntentStatusSummary,
@@ -27,11 +30,87 @@ import {
   fetchCryptoOrder,
 } from './wealthsimpleQueries';
 
+//    Interfaces
+
+export interface WealthsimpleTokenData {
+  accessToken: string;
+  identityId: string;
+  expiresAt: string;
+  investProfile?: string | null;
+  tradeProfile?: string | null;
+  email?: string | null;
+}
+
+export interface WealthsimpleAuthStatus {
+  authenticated: boolean;
+  token?: string | null;
+  identityId?: string | null;
+  expiresAt?: string | null;
+  expired?: boolean;
+  investProfile?: string | null;
+  tradeProfile?: string | null;
+}
+
+export interface WealthsimpleApiAccount {
+  id: string;
+  type: string;
+  nickname: string;
+  needsNicknameEnrichment: boolean;
+  currency: string;
+  branch?: string;
+  rawType?: string;
+  createdAt?: string;
+}
+
+export interface WealthsimpleConsolidatedAccount {
+  wealthsimpleAccount: WealthsimpleApiAccount;
+  monarchAccount: Record<string, unknown> | null;
+  syncEnabled: boolean;
+  lastSyncDate: string | null;
+  uploadedTransactions: Array<{ id: string; date?: string }>;
+  stripStoreNumbers: boolean;
+  holdingsMappings: Record<string, unknown>;
+  lastSyncedCreditLimit: number | null;
+  balanceCheckpoint: Record<string, unknown> | null;
+  storeTransactionDetailsInNotes: boolean;
+  transactionRetentionDays: number | null;
+  transactionRetentionCount: number | null;
+}
+
+export interface WealthsimpleBalanceResult {
+  amount: number;
+  currency: string;
+}
+
+export interface WealthsimpleBalancesResponse {
+  success: boolean;
+  balances: Map<string, WealthsimpleBalanceResult | null>;
+  error?: string;
+}
+
+export interface WealthsimpleTransaction {
+  accountId?: string;
+  canonicalId?: string;
+  amount?: string;
+  currency?: string;
+  type?: string;
+  subType?: string;
+  status?: string;
+  occurredAt?: string;
+  spendMerchant?: string;
+  assetSymbol?: string;
+  assetQuantity?: string;
+  securityId?: string;
+  [key: string]: unknown;
+}
+
+//    Functions
+
 /**
  * Parse Wealthsimple OAuth cookie and extract token data
- * @returns {Object|null} Parsed token data or null
+ * @returns Parsed token data or null
  */
-function parseOAuthCookie() {
+function parseOAuthCookie(): WealthsimpleTokenData | null {
   try {
     const cookies = document.cookie.split(';');
     const oauthCookie = cookies.find((cookie) => cookie.trim().startsWith('_oauth2_access_v2='));
@@ -62,11 +141,11 @@ function parseOAuthCookie() {
 /**
  * Save Wealthsimple token data to storage
  * Writes to configStore only
- * @param {Object} tokenData - Token data to save
+ * @param tokenData - Token data to save
  */
-function saveTokenData(tokenData) {
+function saveTokenData(tokenData: WealthsimpleTokenData | null): void {
   if (tokenData) {
-    const authData = {
+    const authData: Record<string, unknown> = {
       accessToken: tokenData.accessToken,
       identityId: tokenData.identityId,
       expiresAt: tokenData.expiresAt,
@@ -100,7 +179,7 @@ function saveTokenData(tokenData) {
 /**
  * Clear all Wealthsimple token data from storage
  */
-function clearTokenData() {
+function clearTokenData(): void {
   clearConfigAuth(INTEGRATIONS.WEALTHSIMPLE);
 
   debugLog('Wealthsimple token data cleared');
@@ -112,9 +191,9 @@ function clearTokenData() {
 /**
  * Get stored Wealthsimple token data
  * Reads from configStore only
- * @returns {Object|null} Token data or null
+ * @returns Token data or null
  */
-function getStoredTokenData() {
+function getStoredTokenData(): WealthsimpleTokenData | null {
   const configAuth = getAuth(INTEGRATIONS.WEALTHSIMPLE);
   if (configAuth.accessToken && configAuth.identityId) {
     return {
@@ -131,10 +210,10 @@ function getStoredTokenData() {
 
 /**
  * Check if token is expired
- * @param {string} expiresAt - ISO timestamp
- * @returns {boolean} True if expired
+ * @param expiresAt - ISO timestamp
+ * @returns True if expired
  */
-function isTokenExpired(expiresAt) {
+function isTokenExpired(expiresAt: string | undefined): boolean {
   if (!expiresAt) return true;
 
   try {
@@ -149,9 +228,9 @@ function isTokenExpired(expiresAt) {
 
 /**
  * Check if user is authenticated with Wealthsimple
- * @returns {Object} Authentication status
+ * @returns Authentication status
  */
-export function checkAuth() {
+export function checkAuth(): WealthsimpleAuthStatus {
   const tokenData = getStoredTokenData();
 
   if (!tokenData) {
@@ -189,7 +268,7 @@ export function checkAuth() {
 /**
  * Token monitoring state
  */
-let tokenCheckIntervalId = null;
+let tokenCheckIntervalId: ReturnType<typeof setInterval> | null = null;
 let tokenFound = false;
 
 /**
@@ -197,7 +276,7 @@ let tokenFound = false;
  * Uses fast polling (1 second) initially until token is found,
  * then switches to slower maintenance polling (30 seconds)
  */
-export function setupTokenMonitoring() {
+export function setupTokenMonitoring(): void {
   debugLog('Setting up Wealthsimple token monitoring...');
 
   // Function to check and capture token from cookie
@@ -258,12 +337,13 @@ export function setupTokenMonitoring() {
 
 /**
  * Make a GraphQL query to Wealthsimple API
- * @param {string} operationName - GraphQL operation name
- * @param {string} query - GraphQL query string
- * @param {Object} variables - Query variables
- * @returns {Promise<Object>} API response data
+ * @param operationName - GraphQL operation name
+ * @param query - GraphQL query string
+ * @param variables - Query variables
+ * @returns API response data
  */
-export async function makeGraphQLQuery(operationName, query, variables = {}) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function makeGraphQLQuery(operationName: string, query: string, variables: Record<string, any> = {}): Promise<any> {
   const authStatus = checkAuth();
 
   if (!authStatus.authenticated) {
@@ -318,7 +398,7 @@ export async function makeGraphQLQuery(operationName, query, variables = {}) {
               resolve(data.data);
             }
           } catch (error) {
-            reject(new Error(`Failed to parse response: ${error.message}`));
+            reject(new Error(`Failed to parse response: ${(error as Error).message}`));
           }
         } else {
           reject(new Error(`API Error: Received status ${response.status}`));
@@ -334,9 +414,10 @@ export async function makeGraphQLQuery(operationName, query, variables = {}) {
 
 /**
  * Validate token with Wealthsimple token info endpoint
- * @returns {Promise<Object>} Token info
+ * @returns Token info
  */
-export async function validateToken() {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function validateToken(): Promise<any> {
   const authStatus = checkAuth();
 
   if (!authStatus.authenticated) {
@@ -359,7 +440,7 @@ export async function validateToken() {
             debugLog('Token validation successful:', data);
             resolve(data);
           } catch (error) {
-            reject(new Error(`Failed to parse token info: ${error.message}`));
+            reject(new Error(`Failed to parse token info: ${(error as Error).message}`));
           }
         } else if (response.status === 401) {
           debugLog('Token validation failed (401)');
@@ -385,11 +466,11 @@ export async function validateToken() {
  * Note: For credit cards, the last4 should be from cardNumberLast4Digits (API).
  * For other accounts, it's the last 4 characters of the account ID.
  *
- * @param {string} unifiedType - Unified account type (e.g., 'CREDIT_CARD', 'MANAGED_TFSA')
- * @param {string} last4 - Last 4 digits/characters to display
- * @returns {string} Generated account name
+ * @param unifiedType - Unified account type (e.g., 'CREDIT_CARD', 'MANAGED_TFSA')
+ * @param last4 - Last 4 digits/characters to display
+ * @returns Generated account name
  */
-function generateAccountName(unifiedType, last4) {
+function generateAccountName(unifiedType: string, last4: string): string {
   const displayName = getAccountTypeDisplayName(unifiedType);
   return `Wealthsimple ${displayName} (${last4})`;
 }
@@ -398,9 +479,9 @@ function generateAccountName(unifiedType, last4) {
  * Fetch and cache Wealthsimple accounts list with consolidated structure
  * Merges with existing cached list to preserve monarch mappings, sync settings, and transaction history
  * For credit cards without user nicknames, enriches the name with actual card last 4 digits
- * @returns {Promise<Array>} Array of consolidated account objects
+ * @returns Array of consolidated account objects
  */
-export async function fetchAndCacheWealthsimpleAccounts() {
+export async function fetchAndCacheWealthsimpleAccounts(): Promise<WealthsimpleConsolidatedAccount[]> {
   try {
     debugLog('Fetching and caching Wealthsimple accounts...');
 
@@ -477,11 +558,11 @@ export async function fetchAndCacheWealthsimpleAccounts() {
  * Enrich credit card account nicknames with actual card last 4 digits
  * For credit cards that need nickname enrichment (no user-set nickname),
  * fetches the credit card summary to get the actual card's last 4 digits
- * @param {Array} accounts - Array of account objects from fetchAccounts
- * @returns {Promise<Array>} Array of accounts with enriched nicknames
+ * @param accounts - Array of account objects from fetchAccounts
+ * @returns Array of accounts with enriched nicknames
  */
-async function enrichCreditCardNicknames(accounts) {
-  const enrichedAccounts = [];
+async function enrichCreditCardNicknames(accounts: WealthsimpleApiAccount[]): Promise<WealthsimpleApiAccount[]> {
+  const enrichedAccounts: WealthsimpleApiAccount[] = [];
 
   for (const account of accounts) {
     if (account.needsNicknameEnrichment) {
@@ -522,9 +603,9 @@ async function enrichCreditCardNicknames(accounts) {
 
 /**
  * Fetch all Wealthsimple accounts using GraphQL
- * @returns {Promise<Array>} Array of account objects
+ * @returns Array of account objects
  */
-export async function fetchAccounts() {
+export async function fetchAccounts(): Promise<WealthsimpleApiAccount[]> {
   try {
     debugLog('Fetching Wealthsimple accounts via GraphQL...');
 
@@ -614,10 +695,10 @@ export async function fetchAccounts() {
  * Handles credit cards separately using FetchCreditCardAccountSummary API
  * since FetchAccountCombinedFinancialsPreload doesn't work for credit cards
  *
- * @param {Array<Object>} accounts - Array of account objects with {id, type} properties
- * @returns {Promise<Object>} Object with success status and balances map
+ * @param accounts - Array of account objects with {id, type} properties
+ * @returns Object with success status and balances map
  */
-export async function fetchAccountBalances(accounts) {
+export async function fetchAccountBalances(accounts: Array<{ id: string; type?: string | null; currency?: string }>): Promise<WealthsimpleBalancesResponse> {
   try {
     if (!accounts || accounts.length === 0) {
       debugLog('No accounts provided for balance fetch');
@@ -643,7 +724,7 @@ export async function fetchAccountBalances(accounts) {
           const summary = await fetchCreditCardAccountSummary(creditCard.id);
 
           if (summary?.balance?.current !== undefined) {
-            const amount = parseFloat(summary.balance.current);
+            const amount = typeof summary.balance.current === 'string' ? parseFloat(summary.balance.current) : summary.balance.current;
 
             if (!isNaN(amount)) {
               // Negate credit card balance: Wealthsimple returns positive (amount owed),
@@ -759,18 +840,18 @@ fragment Returns on SimpleReturns {
     return { success: true, balances };
   } catch (error) {
     debugLog('Error fetching account balances:', error);
-    return { success: false, balances: new Map(), error: error.message };
+    return { success: false, balances: new Map(), error: (error as Error).message };
   }
 }
 
 /**
  * Fetch account balance for a specific account
- * @param {string} accountId - Account ID
- * @param {string} accountType - Account type (e.g., 'CREDIT_CARD', 'MANAGED_TFSA')
- * @param {string} currency - Account currency (e.g., 'CAD')
- * @returns {Promise<Object>} Account balance data
+ * @param accountId - Account ID
+ * @param accountType - Account type (e.g., 'CREDIT_CARD', 'MANAGED_TFSA')
+ * @param currency - Account currency (e.g., 'CAD')
+ * @returns Account balance data
  */
-export async function fetchAccountBalance(accountId, accountType = null, currency = 'CAD') {
+export async function fetchAccountBalance(accountId: string, accountType: string | null = null, currency: string = 'CAD'): Promise<WealthsimpleBalanceResult> {
   try {
     debugLog(`Fetching balance for Wealthsimple account ${accountId}...`);
 
@@ -801,11 +882,11 @@ export async function fetchAccountBalance(accountId, accountType = null, currenc
 /**
  * Fetch account transactions using paginated GraphQL operation
  * Loads all pages until reaching transactions older than startDate
- * @param {string} accountId - Account ID
- * @param {string} startDate - Start date in YYYY-MM-DD format (local timezone)
- * @returns {Promise<Array>} Array of transaction objects with all Activity fields
+ * @param accountId - Account ID
+ * @param startDate - Start date in YYYY-MM-DD format (local timezone)
+ * @returns Array of transaction objects with all Activity fields
  */
-export async function fetchTransactions(accountId, startDate) {
+export async function fetchTransactions(accountId: string, startDate: string): Promise<WealthsimpleTransaction[]> {
   try {
     if (!accountId) {
       throw new Error('Account ID is required');
@@ -904,8 +985,8 @@ fragment Activity on ActivityFeedItem {
   __typename
 }`;
 
-    const allTransactions = [];
-    let cursor = null;
+    const allTransactions: WealthsimpleTransaction[] = [];
+    let cursor: string | null = null;
     let hasNextPage = true;
     let pageCount = 0;
 
@@ -916,7 +997,7 @@ fragment Activity on ActivityFeedItem {
       pageCount += 1;
       debugLog(`Fetching page ${pageCount} of transactions...`);
 
-      const variables = {
+      const variables: Record<string, unknown> = {
         first: 50, // Maximum page size
         orderBy: 'OCCURRED_AT_DESC',
         condition: {
@@ -988,13 +1069,29 @@ fragment Activity on ActivityFeedItem {
   }
 }
 
-// Re-export functions from sub-modules for named import consumers
+// Re-export types and functions from sub-modules for named import consumers
 export {
+  type BalanceHistoryRecord,
+  type PositionNode,
   fetchBalanceHistory,
   fetchIdentityPositions,
 } from './wealthsimplePositions';
 
 export {
+  type FundingIntentNode,
+  type CreditCardAccountSummary,
+  type InternalTransferDetails,
+  type FundsTransferDetails,
+  type ActivityByOrderData,
+  type ExtendedOrderData,
+  type CorporateActionChildActivity,
+  type ShortOptionExpiryDetail,
+  type SecurityDetails,
+  type ManagedPortfolioPosition,
+  type AccountCashBalances,
+  type SpendTransactionDetails,
+  type FundingIntentStatusSummaryData,
+  type CryptoOrderDetails,
   fetchFundingIntents,
   fetchFundingIntentStatusSummary,
   fetchCreditCardAccountSummary,
