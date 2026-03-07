@@ -6,6 +6,7 @@
  */
 
 import { STORAGE, TRANSACTION_RETENTION_DEFAULTS } from './config';
+import type { IntegrationManifest } from '../integrations/types';
 
 /**
  * Integration identifiers
@@ -16,13 +17,13 @@ export const INTEGRATIONS = {
   CANADALIFE: 'canadalife',
   ROGERSBANK: 'rogersbank',
   MBNA: 'mbna',
-};
+} as const;
 
 /**
  * Favicon domains for each integration
  * Used to fetch logos via Google Favicon API
  */
-export const FAVICON_DOMAINS = {
+export const FAVICON_DOMAINS: Record<string, string> = {
   [INTEGRATIONS.WEALTHSIMPLE]: 'wealthsimple.com',
   [INTEGRATIONS.QUESTRADE]: 'questrade.com',
   [INTEGRATIONS.CANADALIFE]: 'canadalife.com',
@@ -40,32 +41,33 @@ export const ACCOUNT_SETTINGS = {
   INCLUDE_PENDING_TRANSACTIONS: 'includePendingTransactions',
   INVERT_BALANCE: 'invertBalance',
   SKIP_CATEGORIZATION: 'skipCategorization',
-};
+} as const;
 
 /**
  * Capabilities configuration for each integration
- *
- * @typedef {Object} IntegrationCapabilities
- * @property {string} id - Integration identifier
- * @property {string} displayName - Human-readable name
- * @property {string} accountKeyName - Key name for the source account in consolidated structure
- * @property {boolean} hasTransactions - Whether the integration supports transaction upload
- * @property {boolean} hasDeduplication - Whether the integration needs transaction deduplication
- * @property {boolean} hasBalanceHistory - Whether the integration supports balance history
- * @property {boolean} hasCreditLimit - Whether the integration supports credit limit sync
- * @property {boolean} hasHoldings - Whether the integration supports holdings/positions
- * @property {boolean} hasBalanceReconstruction - Whether balance can be reconstructed from transactions
- * @property {boolean} hasCategorization - Whether the integration supports category mappings
- * @property {string|null} categoryMappingsStorageKey - Storage key for category mappings (null if no categorization)
- * @property {string|null} categorySourceLabel - Label for the source column in category UI (null if no categorization)
- * @property {string[]} settings - List of available per-account settings
- * @property {Object} settingDefaults - Default values for per-account settings
  */
+export interface LegacyIntegrationCapabilities {
+  id: string;
+  displayName: string;
+  accountKeyName: string;
+  configStorageKey: string | null;
+  hasTransactions: boolean;
+  hasDeduplication: boolean;
+  hasBalanceHistory: boolean;
+  hasCreditLimit: boolean;
+  hasHoldings: boolean;
+  hasBalanceReconstruction: boolean;
+  hasCategorization: boolean;
+  categoryMappingsStorageKey: string | null;
+  categorySourceLabel: string | null;
+  settings: string[];
+  settingDefaults: Record<string, unknown>;
+}
 
 /**
  * Integration capabilities definitions
  */
-export const INTEGRATION_CAPABILITIES = {
+export const INTEGRATION_CAPABILITIES: Record<string, LegacyIntegrationCapabilities> = {
   [INTEGRATIONS.WEALTHSIMPLE]: {
     id: INTEGRATIONS.WEALTHSIMPLE,
     displayName: 'Wealthsimple',
@@ -187,13 +189,10 @@ export const INTEGRATION_CAPABILITIES = {
  * Build a legacy-compatible capabilities object from a modular integration manifest.
  * This bridges the gap between the new registry-based manifests and legacy code
  * that expects INTEGRATION_CAPABILITIES entries.
- *
- * @param {Object} manifest - Integration manifest from the registry
- * @returns {IntegrationCapabilities} Capabilities object compatible with legacy consumers
  */
-function buildCapabilitiesFromManifest(manifest) {
+function buildCapabilitiesFromManifest(manifest: IntegrationManifest): LegacyIntegrationCapabilities {
   const settingKeys = (manifest.settings || []).map((s) => s.key);
-  const settingDefaults = {};
+  const settingDefaults: Record<string, unknown> = {};
   (manifest.settings || []).forEach((s) => {
     settingDefaults[s.key] = s.default;
   });
@@ -222,18 +221,15 @@ function buildCapabilitiesFromManifest(manifest) {
  * Get capabilities for a specific integration.
  * Checks the hardcoded INTEGRATION_CAPABILITIES first, then falls back to
  * building capabilities from the modular integration registry manifest.
- *
- * @param {string} integrationId - Integration identifier
- * @returns {IntegrationCapabilities|null} Capabilities object or null if not found
  */
-export function getCapabilities(integrationId) {
+export function getCapabilities(integrationId: string): LegacyIntegrationCapabilities | null {
   // Check hardcoded legacy capabilities first
   if (INTEGRATION_CAPABILITIES[integrationId]) {
     return INTEGRATION_CAPABILITIES[integrationId];
   }
 
   // Fall back to modular integration registry manifest (lazy require to avoid circular dependency)
-  // Chain: integrationCapabilities ’ integrationRegistry ’ utils ’ configStore ’ integrationCapabilities
+  // Chain: integrationCapabilities â†’ integrationRegistry â†’ utils â†’ configStore â†’ integrationCapabilities
   const { getManifest } = require('./integrationRegistry');
   const manifest = getManifest(integrationId);
   if (manifest) {
@@ -245,33 +241,24 @@ export function getCapabilities(integrationId) {
 
 /**
  * Check if an integration supports a specific capability
- * @param {string} integrationId - Integration identifier
- * @param {string} capability - Capability name (e.g., 'hasTransactions', 'hasDeduplication')
- * @returns {boolean} True if the integration has the capability
  */
-export function hasCapability(integrationId, capability) {
+export function hasCapability(integrationId: string, capability: string): boolean {
   const capabilities = getCapabilities(integrationId);
-  return capabilities ? Boolean(capabilities[capability]) : false;
+  return capabilities ? Boolean((capabilities as unknown as Record<string, unknown>)[capability]) : false;
 }
 
 /**
  * Check if an integration supports a specific setting
- * @param {string} integrationId - Integration identifier
- * @param {string} settingKey - Setting key from ACCOUNT_SETTINGS
- * @returns {boolean} True if the integration supports the setting
  */
-export function hasSetting(integrationId, settingKey) {
+export function hasSetting(integrationId: string, settingKey: string): boolean {
   const capabilities = getCapabilities(integrationId);
   return capabilities ? capabilities.settings.includes(settingKey) : false;
 }
 
 /**
  * Get default value for a specific setting
- * @param {string} integrationId - Integration identifier
- * @param {string} settingKey - Setting key from ACCOUNT_SETTINGS
- * @returns {*} Default value for the setting, or undefined if not found
  */
-export function getSettingDefault(integrationId, settingKey) {
+export function getSettingDefault(integrationId: string, settingKey: string): unknown {
   const capabilities = getCapabilities(integrationId);
   if (!capabilities || !capabilities.settingDefaults) {
     return undefined;
@@ -281,10 +268,8 @@ export function getSettingDefault(integrationId, settingKey) {
 
 /**
  * Get all settings with their defaults for an integration
- * @param {string} integrationId - Integration identifier
- * @returns {Object} Object with setting keys and default values
  */
-export function getDefaultSettings(integrationId) {
+export function getDefaultSettings(integrationId: string): Record<string, unknown> {
   const capabilities = getCapabilities(integrationId);
   return capabilities?.settingDefaults || {};
 }
@@ -292,31 +277,25 @@ export function getDefaultSettings(integrationId) {
 /**
  * Get the account key name for an integration
  * Used to access the source account data in consolidated structure
- * @param {string} integrationId - Integration identifier
- * @returns {string|null} Account key name (e.g., 'wealthsimpleAccount')
  */
-export function getAccountKeyName(integrationId) {
+export function getAccountKeyName(integrationId: string): string | null {
   const capabilities = getCapabilities(integrationId);
   return capabilities?.accountKeyName || null;
 }
 
 /**
  * Get all integrations that support a specific capability
- * @param {string} capability - Capability name
- * @returns {string[]} Array of integration IDs that have the capability
  */
-export function getIntegrationsWithCapability(capability) {
+export function getIntegrationsWithCapability(capability: string): string[] {
   return Object.keys(INTEGRATION_CAPABILITIES).filter(
-    (id) => INTEGRATION_CAPABILITIES[id][capability],
+    (id) => (INTEGRATION_CAPABILITIES[id] as unknown as Record<string, unknown>)[capability],
   );
 }
 
 /**
  * Get all integrations that support a specific setting
- * @param {string} settingKey - Setting key from ACCOUNT_SETTINGS
- * @returns {string[]} Array of integration IDs that support the setting
  */
-export function getIntegrationsWithSetting(settingKey) {
+export function getIntegrationsWithSetting(settingKey: string): string[] {
   return Object.keys(INTEGRATION_CAPABILITIES).filter(
     (id) => INTEGRATION_CAPABILITIES[id].settings.includes(settingKey),
   );
@@ -324,20 +303,16 @@ export function getIntegrationsWithSetting(settingKey) {
 
 /**
  * Get display name for an integration
- * @param {string} integrationId - Integration identifier
- * @returns {string} Display name or the ID if not found
  */
-export function getDisplayName(integrationId) {
+export function getDisplayName(integrationId: string): string {
   const capabilities = getCapabilities(integrationId);
   return capabilities?.displayName || integrationId;
 }
 
 /**
  * Get category mappings configuration for an integration
- * @param {string} integrationId - Integration identifier
- * @returns {{storageKey: string|null, sourceLabel: string|null}|null} Category config or null
  */
-export function getCategoryMappingsConfig(integrationId) {
+export function getCategoryMappingsConfig(integrationId: string): { storageKey: string | null; sourceLabel: string | null } | null {
   const capabilities = getCapabilities(integrationId);
   if (!capabilities || !capabilities.hasCategorization) {
     return null;
@@ -351,10 +326,8 @@ export function getCategoryMappingsConfig(integrationId) {
 /**
  * Get favicon domain for an integration.
  * Checks hardcoded FAVICON_DOMAINS first, then falls back to registry manifest.
- * @param {string} integrationId - Integration identifier
- * @returns {string|null} Domain for favicon URL or null if not found
  */
-export function getFaviconDomain(integrationId) {
+export function getFaviconDomain(integrationId: string): string | null {
   if (FAVICON_DOMAINS[integrationId]) {
     return FAVICON_DOMAINS[integrationId];
   }
@@ -367,11 +340,8 @@ export function getFaviconDomain(integrationId) {
 
 /**
  * Get full Google Favicon API URL for an integration
- * @param {string} integrationId - Integration identifier
- * @param {number} size - Icon size (default 128)
- * @returns {string|null} Full favicon URL or null if domain not found
  */
-export function getFaviconUrl(integrationId, size = 128) {
+export function getFaviconUrl(integrationId: string, size: number = 128): string | null {
   const domain = getFaviconDomain(integrationId);
   if (!domain) return null;
   return `https://www.google.com/s2/favicons?domain=${domain}&sz=${size}`;

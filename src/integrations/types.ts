@@ -13,38 +13,14 @@
  */
 
 // ============================================================
-// FORWARD-DECLARED ADAPTER INTERFACES
+// ADAPTER INTERFACES (re-exported from canonical core locations)
 // ============================================================
-// Minimal shapes for core adapters. These will be replaced by
-// direct imports once the core layer is converted in Phase 2.
 
-/** Minimal HttpClient shape (full definition in core/httpClient) */
-export interface HttpClient {
-  request(options: HttpRequestOptions): Promise<HttpResponse>;
-}
+import type { HttpClient, HttpRequestOptions, HttpResponse } from '../core/httpClient';
+import type { StorageAdapter } from '../core/storageAdapter';
 
-export interface HttpRequestOptions {
-  method: string;
-  url: string;
-  headers?: Record<string, string>;
-  data?: string | object;
-  responseType?: string;
-}
-
-export interface HttpResponse {
-  status: number;
-  responseText: string;
-  responseHeaders: string;
-  response: unknown;
-}
-
-/** Minimal StorageAdapter shape (full definition in core/storageAdapter) */
-export interface StorageAdapter {
-  get(key: string, defaultValue?: unknown): unknown;
-  set(key: string, value: unknown): void;
-  delete(key: string): void;
-  listKeys(): string[];
-}
+export type { HttpClient, HttpRequestOptions, HttpResponse };
+export type { StorageAdapter };
 
 // ============================================================
 // MANIFEST

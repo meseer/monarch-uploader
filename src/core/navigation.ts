@@ -12,10 +12,16 @@ import uiManager from '../ui/questrade/uiManager';
  * Navigation manager class to handle URL changes
  */
 class NavigationManager {
+  private currentUrl: string;
+  private currentAccountId: string | null;
+  private currentPageType: string | null;
+  private isInitialized: boolean;
+  private urlCheckInterval: ReturnType<typeof setInterval> | null;
+
   constructor() {
     this.currentUrl = window.location.href;
     this.currentAccountId = null;
-    this.currentPageType = null; // Track page type (all-accounts, account, other)
+    this.currentPageType = null;
     this.isInitialized = false;
     this.urlCheckInterval = null;
 
@@ -25,7 +31,7 @@ class NavigationManager {
   /**
    * Start monitoring URL changes
    */
-  startMonitoring() {
+  startMonitoring(): void {
     if (this.isInitialized) return;
 
     // Set initial state from current URL
@@ -50,7 +56,7 @@ class NavigationManager {
   /**
    * Stop monitoring URL changes
    */
-  stopMonitoring() {
+  stopMonitoring(): void {
     if (this.urlCheckInterval) {
       clearInterval(this.urlCheckInterval);
       this.urlCheckInterval = null;
@@ -62,7 +68,7 @@ class NavigationManager {
   /**
    * Check if URL has changed and handle it
    */
-  checkUrlChange() {
+  checkUrlChange(): void {
     const newUrl = window.location.href;
     if (newUrl !== this.currentUrl) {
       this.currentUrl = newUrl;
@@ -73,7 +79,7 @@ class NavigationManager {
   /**
    * Handle URL change event
    */
-  async handleUrlChange() {
+  async handleUrlChange(): Promise<void> {
     try {
       debugLog('URL changed to:', window.location.href);
 
@@ -101,18 +107,16 @@ class NavigationManager {
 
   /**
    * Extract account ID from current URL
-   * @returns {string|null} Account ID or null if not on account page
    */
-  extractAccountIdFromUrl() {
+  extractAccountIdFromUrl(): string | null {
     const matches = window.location.pathname.match(/\/accounts\/([^/]+)/);
     return matches?.[1] || null;
   }
 
   /**
    * Get the current page type
-   * @returns {string} Page type: 'all-accounts', 'account', or 'other'
    */
-  getCurrentPageType() {
+  getCurrentPageType(): string {
     if (isQuestradeAllAccountsPage()) {
       return 'all-accounts';
     } if (this.extractAccountIdFromUrl()) {
@@ -123,10 +127,8 @@ class NavigationManager {
 
   /**
    * Handle page transitions based on page type
-   * @param {string} pageType - New page type ('all-accounts', 'account', 'other')
-   * @param {string} accountId - New account ID (if on account page)
    */
-  async handlePageTransition(pageType, accountId) {
+  async handlePageTransition(pageType: string, accountId: string | null): Promise<void> {
     try {
       // Update state based on page type
       if (pageType === 'account' && accountId) {
@@ -151,7 +153,7 @@ class NavigationManager {
   /**
    * Reinitialize UI components for the current page
    */
-  async reinitializeUI() {
+  async reinitializeUI(): Promise<void> {
     try {
       // Call the general UI initialization which detects page type
       await uiManager.initUI();
@@ -163,16 +165,15 @@ class NavigationManager {
 
   /**
    * Get current account ID
-   * @returns {string|null} Current account ID
    */
-  getCurrentAccountId() {
+  getCurrentAccountId(): string | null {
     return this.currentAccountId;
   }
 
   /**
    * Force refresh of current account context
    */
-  async forceRefresh() {
+  async forceRefresh(): Promise<void> {
     const accountId = this.extractAccountIdFromUrl();
     const pageType = this.getCurrentPageType();
 

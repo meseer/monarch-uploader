@@ -5,10 +5,77 @@
 
 import { debugLog } from './utils';
 
+// ============================================================
+// State shape interfaces
+// ============================================================
+
+interface AccountState {
+  id: string | null;
+  nickname: string;
+}
+
+interface UIIndicators {
+  questrade: HTMLElement | null;
+  questradeExpiry: HTMLElement | null;
+  monarch: HTMLElement | null;
+  lastDownloadedNote: HTMLElement | null;
+}
+
+interface UIState {
+  buttonContainer: HTMLElement | null;
+  indicators: UIIndicators;
+}
+
+interface QuestradeAuth {
+  token: string | null;
+  expiresAt: number;
+}
+
+interface MonarchAuth {
+  token: string | null;
+}
+
+interface CanadaLifeAuth {
+  token: string | null;
+}
+
+interface RogersBankAuth {
+  credentials: Record<string, unknown> | null;
+}
+
+interface WealthsimpleAuth {
+  authenticated: boolean;
+  identityId: string | null;
+  expiresAt: number | null;
+}
+
+interface AuthState {
+  questrade: QuestradeAuth;
+  monarch: MonarchAuth;
+  canadalife: CanadaLifeAuth;
+  rogersbank: RogersBankAuth;
+  wealthsimple: WealthsimpleAuth;
+}
+
+interface AppState {
+  currentAccount: AccountState;
+  ui: UIState;
+  auth: AuthState;
+}
+
+type StateChangeCallback = (newState: AppState, prevState: AppState) => void;
+
+// ============================================================
+// StateManager class
+// ============================================================
+
 /**
  * Central state manager to maintain application state
  */
 class StateManager {
+  private state: AppState;
+  private listeners: Record<string, StateChangeCallback[]>;
+
   constructor() {
     this.state = {
       // Current account context
@@ -59,41 +126,36 @@ class StateManager {
 
   /**
    * Get current state
-   * @returns {Object} Current state object
    */
-  getState() {
+  getState(): AppState {
     return { ...this.state };
   }
 
   /**
    * Update account information
-   * @param {string} id - Account ID
-   * @param {string} nickname - Account nickname
    */
-  setAccount(id, nickname) {
+  setAccount(id: string | null, nickname: string): void {
     const prevState = { ...this.state };
     this.state.currentAccount = { id, nickname };
 
     // During transition, keep global variables in sync
     // This can be removed once refactoring is complete
-    window.currentAccountId = id;
-    window.currentAccountName = nickname;
+    (window as unknown as Record<string, unknown>).currentAccountId = id;
+    (window as unknown as Record<string, unknown>).currentAccountName = nickname;
 
     this.notifyListeners('account', prevState, this.state);
   }
 
   /**
    * Update UI elements references
-   * @param {string} elementName - Name of the UI element
-   * @param {HTMLElement} element - DOM element reference
    */
-  setUiElement(elementName, element) {
+  setUiElement(elementName: string, element: HTMLElement): void {
     const prevState = { ...this.state };
 
     if (elementName === 'buttonContainer') {
       this.state.ui.buttonContainer = element;
     } else if (Object.keys(this.state.ui.indicators).includes(elementName)) {
-      this.state.ui.indicators[elementName] = element;
+      (this.state.ui.indicators as unknown as Record<string, HTMLElement | null>)[elementName] = element;
     } else {
       debugLog(`Warning: Unknown UI element "${elementName}"`);
     }
@@ -103,11 +165,8 @@ class StateManager {
 
   /**
    * Update Questrade authentication token
-   * @param {Object} tokenInfo - Token information object
-   * @param {string} tokenInfo.token - The auth token
-   * @param {number} tokenInfo.expires_at - Expiry timestamp
    */
-  setQuestradeAuth(tokenInfo) {
+  setQuestradeAuth(tokenInfo: { token: string; expires_at: number } | null): void {
     const prevState = { ...this.state };
     this.state.auth.questrade = {
       token: tokenInfo ? tokenInfo.token : null,
@@ -119,9 +178,8 @@ class StateManager {
 
   /**
    * Update Monarch authentication token
-   * @param {string} token - Monarch auth token
    */
-  setMonarchAuth(token) {
+  setMonarchAuth(token: string | null): void {
     const prevState = { ...this.state };
     this.state.auth.monarch = { token };
 
@@ -130,9 +188,8 @@ class StateManager {
 
   /**
    * Update CanadaLife authentication token
-   * @param {string} token - CanadaLife auth token
    */
-  setCanadaLifeAuth(token) {
+  setCanadaLifeAuth(token: string | null): void {
     const prevState = { ...this.state };
     this.state.auth.canadalife = { token };
 
@@ -141,9 +198,8 @@ class StateManager {
 
   /**
    * Update Rogers Bank authentication credentials
-   * @param {Object} credentials - Rogers Bank credentials object
    */
-  setRogersBankAuth(credentials) {
+  setRogersBankAuth(credentials: Record<string, unknown> | null): void {
     const prevState = { ...this.state };
     this.state.auth.rogersbank = { credentials };
 
@@ -152,9 +208,8 @@ class StateManager {
 
   /**
    * Update Wealthsimple authentication status
-   * @param {Object} authInfo - Wealthsimple auth information
    */
-  setWealthsimpleAuth(authInfo) {
+  setWealthsimpleAuth(authInfo: WealthsimpleAuth | null): void {
     const prevState = { ...this.state };
     this.state.auth.wealthsimple = authInfo || {
       authenticated: false,
@@ -167,11 +222,9 @@ class StateManager {
 
   /**
    * Add listener for state changes
-   * @param {string} type - State type to listen for (e.g., 'account', 'auth', 'ui', or '*' for all)
-   * @param {Function} callback - Callback function
-   * @returns {Function} Function to remove the listener
+   * @returns Function to remove the listener
    */
-  addListener(type, callback) {
+  addListener(type: string, callback: StateChangeCallback): () => void {
     if (!this.listeners[type]) {
       this.listeners[type] = [];
     }
@@ -186,12 +239,8 @@ class StateManager {
 
   /**
    * Notify all registered listeners about state changes
-   * @param {string} type - Type of state change
-   * @param {Object} prevState - Previous state
-   * @param {Object} newState - New state
-   * @private
    */
-  notifyListeners(type, prevState, newState) {
+  private notifyListeners(type: string, prevState: AppState, newState: AppState): void {
     // Call specific listeners
     if (this.listeners[type]) {
       this.listeners[type].forEach((callback) => callback(newState, prevState));
@@ -212,3 +261,6 @@ export default stateManager;
 
 // Also export the StateManager class for testing
 export { StateManager };
+
+// Export state interfaces for external use
+export type { AppState, AccountState, AuthState, WealthsimpleAuth, UIState, StateChangeCallback };

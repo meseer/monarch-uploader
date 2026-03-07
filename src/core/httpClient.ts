@@ -12,27 +12,32 @@
  * @module core/httpClient
  */
 
-/**
- * @typedef {Object} HttpRequestOptions
- * @property {string} method - HTTP method (GET, POST, PUT, DELETE, etc.)
- * @property {string} url - Request URL
- * @property {Object} [headers] - Request headers as key-value pairs
- * @property {string|Object} [data] - Request body (string or object to be serialized)
- * @property {string} [responseType] - Expected response type ('json', 'text', 'blob', etc.)
- */
+// ============================================================
+// Canonical interface definitions
+// ============================================================
 
-/**
- * @typedef {Object} HttpResponse
- * @property {number} status - HTTP status code
- * @property {string} responseText - Response body as text
- * @property {string} responseHeaders - Raw response headers
- * @property {*} response - Parsed response (type depends on responseType)
- */
+export interface HttpRequestOptions {
+  method: string;
+  url: string;
+  headers?: Record<string, string>;
+  data?: string | object;
+  responseType?: string;
+}
 
-/**
- * @typedef {Object} HttpClient
- * @property {function(HttpRequestOptions): Promise<HttpResponse>} request - Execute an HTTP request
- */
+export interface HttpResponse {
+  status: number;
+  responseText: string;
+  responseHeaders: string;
+  response: unknown;
+}
+
+export interface HttpClient {
+  request(options: HttpRequestOptions): Promise<HttpResponse>;
+}
+
+// ============================================================
+// Implementations
+// ============================================================
 
 /**
  * Create an HTTP client backed by Tampermonkey's GM_xmlhttpRequest.
@@ -40,24 +45,17 @@
  * This is the default client used in the userscript environment.
  * GM_xmlhttpRequest enables cross-origin requests that are not possible
  * with the standard fetch API due to CORS restrictions.
- *
- * @returns {HttpClient} An HTTP client instance
  */
-export function createGMHttpClient() {
+export function createGMHttpClient(): HttpClient {
   return {
-    /**
-     * Execute an HTTP request using GM_xmlhttpRequest
-     * @param {HttpRequestOptions} options - Request options
-     * @returns {Promise<HttpResponse>} Response promise
-     */
-    request({ method, url, headers, data, responseType }) {
+    request({ method, url, headers, data, responseType }: HttpRequestOptions): Promise<HttpResponse> {
       return new Promise((resolve, reject) => {
         GM_xmlhttpRequest({
-          method: method || 'GET',
+          method: (method || 'GET') as Tampermonkey.Request['method'],
           url,
           headers: headers || {},
-          data,
-          responseType,
+          data: data as string | undefined,
+          responseType: responseType as XMLHttpRequestResponseType | undefined,
           onload: (response) => resolve({
             status: response.status,
             responseText: response.responseText,
@@ -76,20 +74,24 @@ export function createGMHttpClient() {
   };
 }
 
+/** Mock HTTP client with request recording for tests */
+export interface MockHttpClient extends HttpClient {
+  requests: HttpRequestOptions[];
+  setHandler(newHandler: (request: HttpRequestOptions) => HttpResponse | Promise<HttpResponse>): void;
+}
+
 /**
  * Create a mock HTTP client for testing purposes.
  *
  * Records all requests and returns configurable responses.
  * Useful for unit tests that need to verify API calls without
  * making real network requests.
- *
- * @param {Object} [options] - Mock options
- * @param {function} [options.handler] - Custom handler: (request) => response or Promise<response>
- * @returns {HttpClient & {requests: Array, setHandler: function}} Mock client with inspection capabilities
  */
-export function createMockHttpClient(options = {}) {
-  const requests = [];
-  let handler = options.handler || (() => ({
+export function createMockHttpClient(options: {
+  handler?: (request: HttpRequestOptions) => HttpResponse | Promise<HttpResponse>;
+} = {}): MockHttpClient {
+  const requests: HttpRequestOptions[] = [];
+  let handler = options.handler || ((): HttpResponse => ({
     status: 200,
     responseText: '{}',
     responseHeaders: '',
@@ -97,12 +99,7 @@ export function createMockHttpClient(options = {}) {
   }));
 
   return {
-    /**
-     * Execute a mock HTTP request
-     * @param {HttpRequestOptions} requestOptions - Request options
-     * @returns {Promise<HttpResponse>} Response promise
-     */
-    async request(requestOptions) {
+    async request(requestOptions: HttpRequestOptions): Promise<HttpResponse> {
       requests.push({ ...requestOptions });
       const response = await handler(requestOptions);
       return response;
@@ -113,9 +110,8 @@ export function createMockHttpClient(options = {}) {
 
     /**
      * Set a custom handler for mock responses
-     * @param {function} newHandler - Handler function: (request) => response
      */
-    setHandler(newHandler) {
+    setHandler(newHandler: (request: HttpRequestOptions) => HttpResponse | Promise<HttpResponse>): void {
       handler = newHandler;
     },
   };

@@ -5,6 +5,22 @@
 > **Author:** @meseer  
 > **Note:** See [ADR-005](../decisions/005-typescript-migration.md) for the decision record.
 
+## Progress Tracker
+
+| Phase | Description | Status | Files Converted |
+|-------|-------------|--------|-----------------|
+| 0 | Infrastructure Setup | ✅ Complete | 0 src / 0 test |
+| 1 | Type Foundation | ✅ Complete | 2 src / 0 test |
+| 2 | Core Layer | ✅ Complete | 8/8 src / 0 test |
+| 3 | Mappers & Utils | ⬜ Not Started | 0/5 src / 0 test |
+| 4 | MBNA Integration | ⬜ Not Started | 0/12 src / 0 test |
+| 5 | API Layer | ⬜ Not Started | 0/9 src / 0 test |
+| 6 | Services Layer | ⬜ Not Started | 0/36 src / 0 test |
+| 7 | UI Layer | ⬜ Not Started | 0/32 src / 0 test |
+| 8 | Strictness Ramp-up | ⬜ Not Started | — |
+
+**Overall:** 10/106 source files converted (~9%)
+
 ## Overview
 
 Migrate the monarch-uploader codebase from JavaScript (with JSDoc type annotations) to TypeScript. The project currently has **106 source files (~52,300 lines)** and **92 test files (~61,600 lines)** across a well-structured layered architecture.

@@ -11,17 +11,15 @@ import accountService from '../services/common/accountService';
 
 /**
  * Gets the current date in local timezone
- * @returns {Date} Current date in local timezone
  */
-export function getLocalToday() {
+export function getLocalToday(): Date {
   return new Date();
 }
 
 /**
  * Formats the current time as a timestamp string
- * @returns {string} Timestamp in HH:MM:SS.mmm format
  */
-function formatTimestamp() {
+function formatTimestamp(): string {
   const now = new Date();
   const hours = String(now.getHours()).padStart(2, '0');
   const minutes = String(now.getMinutes()).padStart(2, '0');
@@ -30,18 +28,18 @@ function formatTimestamp() {
   return `${hours}:${minutes}:${seconds}.${ms}`;
 }
 
+type LogLevel = 'debug' | 'info' | 'warning' | 'error';
+
 /**
  * Debug logging function
- * @param {...any} args - Arguments to log
- * @param {string} level - Log level (debug, info, warning, error)
  */
-export function debugLog(...args) {
-  const level = args.length > 0 && typeof args[args.length - 1] === 'string'
-    && ['debug', 'info', 'warning', 'error'].includes(args[args.length - 1])
-    ? args.pop() : 'debug';
+export function debugLog(...args: unknown[]): void {
+  const level: LogLevel = args.length > 0 && typeof args[args.length - 1] === 'string'
+    && ['debug', 'info', 'warning', 'error'].includes(args[args.length - 1] as string)
+    ? args.pop() as LogLevel : 'debug';
 
-  const currentLogLevel = GM_getValue('debug_log_level', 'info');
-  const logLevels = {
+  const currentLogLevel = GM_getValue('debug_log_level', 'info') as string;
+  const logLevels: Record<string, number> = {
     debug: 0, info: 1, warning: 2, error: 3,
   };
 
@@ -65,16 +63,14 @@ export function debugLog(...args) {
 /**
  * Helper functions for specific log levels
  */
-export const logInfo = (...args) => debugLog(...args, 'info');
-export const logWarning = (...args) => debugLog(...args, 'warning');
-export const logError = (...args) => debugLog(...args, 'error');
+export const logInfo = (...args: unknown[]): void => debugLog(...args, 'info');
+export const logWarning = (...args: unknown[]): void => debugLog(...args, 'warning');
+export const logError = (...args: unknown[]): void => debugLog(...args, 'error');
 
 /**
  * Formats a date object to YYYY-MM-DD string format using local timezone
- * @param {Date} date - The date to format
- * @returns {string} Formatted date string in local timezone
  */
-export function formatDate(date) {
+export function formatDate(date: Date): string {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
     debugLog('Invalid date passed to formatDate:', date);
     const fallbackDate = new Date(Date.now() - 12096e5); // Fallback to 2 weeks ago
@@ -90,10 +86,8 @@ export function formatDate(date) {
 
 /**
  * Creates a Date object from YYYY-MM-DD string in local timezone
- * @param {string} dateString - Date string in YYYY-MM-DD format
- * @returns {Date} Date object in local timezone
  */
-export function parseLocalDate(dateString) {
+export function parseLocalDate(dateString: string): Date {
   if (!dateString || !/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
     debugLog('Invalid date string passed to parseLocalDate:', dateString);
     return getLocalToday();
@@ -108,15 +102,13 @@ export function parseLocalDate(dateString) {
  * Gets the current lookback period for an institution.
  * Reads from configStore. Rogers Bank still has legacy migrate-on-read;
  * Questrade, Canada Life, and Wealthsimple migration is complete.
- * @param {string} institutionType - Institution type
- * @returns {number} Current lookback days
  */
-export function getLookbackForInstitution(institutionType) {
+export function getLookbackForInstitution(institutionType: string): number {
   const defaultLookback = getDefaultLookbackDays(institutionType);
 
   // Integration ID mapping for legacy integrations.
   // Modular integrations (e.g., 'mbna') use their ID directly.
-  const legacyIntegrationIdMap = {
+  const legacyIntegrationIdMap: Record<string, string> = {
     wealthsimple: INTEGRATIONS.WEALTHSIMPLE,
     questrade: INTEGRATIONS.QUESTRADE,
     canadalife: INTEGRATIONS.CANADALIFE,
@@ -128,7 +120,7 @@ export function getLookbackForInstitution(institutionType) {
   // Read from configStore
   const configValue = getSetting(integrationId, 'lookbackDays', undefined);
   if (configValue !== undefined) {
-    return configValue;
+    return configValue as number;
   }
 
   // Rogers Bank: migrate-on-read from legacy key
@@ -139,28 +131,26 @@ export function getLookbackForInstitution(institutionType) {
       setSetting(INTEGRATIONS.ROGERSBANK, 'lookbackDays', legacyValue);
       GM_deleteValue(STORAGE.ROGERSBANK_LOOKBACK_DAYS);
       debugLog(`getLookbackForInstitution: Deleted legacy key ${STORAGE.ROGERSBANK_LOOKBACK_DAYS}`);
-      return legacyValue;
+      return legacyValue as number;
     }
   }
 
-  // No value found  save default to configStore so the key is created
+  // No value found  save default to configStore so the key is created
   setSetting(integrationId, 'lookbackDays', defaultLookback);
   return defaultLookback;
 }
 
 /**
  * Gets today's date formatted as YYYY-MM-DD in local timezone
- * @returns {string} Today's date string
  */
-export function getTodayLocal() {
+export function getTodayLocal(): string {
   return formatDate(getLocalToday());
 }
 
 /**
  * Gets yesterday's date in local timezone
- * @returns {Date} Yesterday's date in local timezone
  */
-export function getLocalYesterday() {
+export function getLocalYesterday(): Date {
   const date = getLocalToday();
   date.setDate(date.getDate() - 1);
   return date;
@@ -168,18 +158,15 @@ export function getLocalYesterday() {
 
 /**
  * Gets yesterday's date formatted as YYYY-MM-DD in local timezone
- * @returns {string} Yesterday's date string
  */
-export function getYesterdayLocal() {
+export function getYesterdayLocal(): string {
   return formatDate(getLocalYesterday());
 }
 
 /**
  * Creates a date N days ago from today in local timezone
- * @param {number} days - Number of days to go back
- * @returns {Date} Date object N days ago
  */
-export function getDaysAgoLocal(days) {
+export function getDaysAgoLocal(days: number): Date {
   const date = getLocalToday();
   date.setDate(date.getDate() - days);
   return date;
@@ -187,21 +174,16 @@ export function getDaysAgoLocal(days) {
 
 /**
  * Formats a date N days ago as YYYY-MM-DD string
- * @param {number} days - Number of days to go back
- * @returns {string} Formatted date string N days ago
  */
-export function formatDaysAgoLocal(days) {
+export function formatDaysAgoLocal(days: number): string {
   return formatDate(getDaysAgoLocal(days));
 }
 
 /**
  * Creates a date N days before a specific date
- * @param {string|Date} baseDate - Base date (string in YYYY-MM-DD format or Date object)
- * @param {number} days - Number of days to go back
- * @returns {string} Date N days before baseDate in YYYY-MM-DD format
  */
-export function formatDaysBeforeDate(baseDate, days) {
-  let date;
+export function formatDaysBeforeDate(baseDate: string | Date, days: number): string {
+  let date: Date;
   if (typeof baseDate === 'string') {
     date = parseLocalDate(baseDate);
   } else if (baseDate instanceof Date) {
@@ -217,10 +199,8 @@ export function formatDaysBeforeDate(baseDate, days) {
 
 /**
  * Gets the default lookback period for an institution
- * @param {string} institutionType - Institution type ('questrade', 'canadalife', 'rogersbank')
- * @returns {number} Default lookback days
  */
-export function getDefaultLookbackDays(institutionType) {
+export function getDefaultLookbackDays(institutionType: string): number {
   switch (institutionType) {
   case 'questrade':
     return 0; // Uses exact last upload date
@@ -232,7 +212,7 @@ export function getDefaultLookbackDays(institutionType) {
     return 7; // 7 day lookback for balance checkpoints
   default: {
     // Check registry for modular integrations (e.g. 'mbna').
-    // Lazy require to avoid circular dependency (integrationRegistry ’ utils).
+    // Lazy require to avoid circular dependency (integrationRegistry â†’ utils).
     const reg = require('./integrationRegistry');
     const entry = reg.getIntegration ? reg.getIntegration(institutionType) : undefined;
     if (entry?.manifest?.defaultLookbackDays !== undefined) {
@@ -246,10 +226,8 @@ export function getDefaultLookbackDays(institutionType) {
 
 /**
  * Maps institution type string to integration ID for accountService
- * @param {string} institutionType - Institution type string ('questrade', 'canadalife', etc.)
- * @returns {string|null} Integration ID or null
  */
-function getIntegrationIdFromType(institutionType) {
+function getIntegrationIdFromType(institutionType: string): string | null {
   switch (institutionType) {
   case 'questrade':
     return 'questrade';
@@ -261,7 +239,7 @@ function getIntegrationIdFromType(institutionType) {
     return 'wealthsimple';
   default: {
     // Check registry for modular integrations (e.g. 'mbna').
-    // Lazy require to avoid circular dependency (integrationRegistry ’ utils).
+    // Lazy require to avoid circular dependency (integrationRegistry â†’ utils).
     const reg = require('./integrationRegistry');
     const isRegistered = reg.isRegistered ? reg.isRegistered(institutionType) : false;
     if (isRegistered) {
@@ -276,19 +254,16 @@ function getIntegrationIdFromType(institutionType) {
  * Gets the last update date for an account based on institution type.
  * Checks consolidated storage (accountService) first.
  * Falls back to legacy keys only for Rogers Bank (still dual-writing).
- * Questrade and Canada Life have completed migration  no legacy fallback.
- * @param {string} accountId - Account ID
- * @param {string} institutionType - Institution type ('questrade', 'canadalife', 'rogersbank')
- * @returns {string|null} Last update date in YYYY-MM-DD format or null if not found
+ * Questrade and Canada Life have completed migration â€” no legacy fallback.
  */
-export function getLastUpdateDate(accountId, institutionType) {
+export function getLastUpdateDate(accountId: string, institutionType: string): string | null {
   // First try consolidated storage
   const integrationId = getIntegrationIdFromType(institutionType);
   if (integrationId) {
     const accountData = accountService.getAccountData(integrationId, accountId);
     if (accountData?.lastSyncDate) {
       debugLog(`getLastUpdateDate: Found lastSyncDate in consolidated storage for ${institutionType}/${accountId}: ${accountData.lastSyncDate}`);
-      return accountData.lastSyncDate;
+      return accountData.lastSyncDate as string;
     }
   }
 
@@ -300,11 +275,8 @@ export function getLastUpdateDate(accountId, institutionType) {
 
 /**
  * Calculates the from date for an upload based on last upload date and configurable lookback
- * @param {string} institutionType - Institution type ('questrade', 'canadalife', 'rogersbank')
- * @param {string} accountId - Account ID
- * @returns {string|null} From date in YYYY-MM-DD format, or null if no last upload date exists
  */
-export function calculateFromDateWithLookback(institutionType, accountId) {
+export function calculateFromDateWithLookback(institutionType: string, accountId: string): string | null {
   const lastUploadDate = getLastUpdateDate(accountId, institutionType);
 
   if (!lastUploadDate) {
@@ -327,11 +299,8 @@ export function calculateFromDateWithLookback(institutionType, accountId) {
 /**
  * Saves the last upload date for an account based on institution type.
  * Saves to consolidated storage first, then also to legacy keys for backward compatibility.
- * @param {string} accountId - Account ID
- * @param {string} uploadDate - Upload date in YYYY-MM-DD format
- * @param {string} institutionType - Institution type ('questrade', 'canadalife', 'rogersbank')
  */
-export function saveLastUploadDate(accountId, uploadDate, institutionType) {
+export function saveLastUploadDate(accountId: string, uploadDate: string, institutionType: string): void {
   // Save to consolidated storage first
   const integrationId = getIntegrationIdFromType(institutionType);
   if (integrationId) {
@@ -347,10 +316,8 @@ export function saveLastUploadDate(accountId, uploadDate, institutionType) {
 }
 /**
  * Extracts domain from a URL
- * @param {string} url - The URL to extract domain from
- * @returns {string} Extracted domain (e.g., amazon.com from subdomain.amazon.com)
  */
-export function extractDomain(url) {
+export function extractDomain(url: string): string {
   if (!url) return '';
 
   try {
@@ -363,7 +330,7 @@ export function extractDomain(url) {
       return `${parts[parts.length - 2]}.${parts[parts.length - 1]}`.toLowerCase();
     }
     return hostname.toLowerCase();
-  } catch (e) {
+  } catch {
     return '';
   }
 }
@@ -372,7 +339,7 @@ export function extractDomain(url) {
  * Semantic keyword groups for category matching
  * Each group contains related terms that should be considered similar
  */
-const SEMANTIC_KEYWORDS = {
+const SEMANTIC_KEYWORDS: Record<string, string[]> = {
   grocery: ['grocery', 'groceries', 'supermarket', 'food', 'market', 'store'],
   restaurant: ['restaurant', 'restaurants', 'dining', 'eatery', 'food', 'bar', 'bars', 'cafe', 'coffee'],
   gas: ['gas', 'fuel', 'petroleum', 'station', 'gasoline', 'petrol'],
@@ -396,7 +363,7 @@ const STOP_WORDS = new Set([
 /**
  * Common abbreviations and their expansions
  */
-const ABBREVIATIONS = {
+const ABBREVIATIONS: Record<string, string> = {
   st: 'street',
   ave: 'avenue',
   blvd: 'boulevard',
@@ -416,10 +383,8 @@ const ABBREVIATIONS = {
 
 /**
  * Normalize and clean a string for comparison
- * @param {string} str - String to normalize
- * @returns {string} Normalized string
  */
-function normalizeString(str) {
+function normalizeString(str: string): string {
   if (!str) return '';
 
   return str
@@ -434,10 +399,8 @@ function normalizeString(str) {
 
 /**
  * Tokenize a string into words with preprocessing
- * @param {string} str - String to tokenize
- * @returns {Array<string>} Array of processed word tokens
  */
-function tokenizeString(str) {
+function tokenizeString(str: string): string[] {
   if (!str) return [];
 
   const normalized = normalizeString(str);
@@ -467,10 +430,8 @@ function tokenizeString(str) {
 
 /**
  * Expand word tokens with semantic synonyms
- * @param {Array<string>} words - Word tokens to expand
- * @returns {Set<string>} Expanded set of words including synonyms
  */
-function expandWithSynonyms(words) {
+function expandWithSynonyms(words: string[]): Set<string> {
   const expandedWords = new Set(words);
 
   // For each word, check if it belongs to any semantic group
@@ -488,11 +449,8 @@ function expandWithSynonyms(words) {
 
 /**
  * Calculate Jaccard similarity between two sets
- * @param {Set} set1 - First set
- * @param {Set} set2 - Second set
- * @returns {number} Jaccard similarity coefficient (0-1)
  */
-function calculateJaccardSimilarity(set1, set2) {
+function calculateJaccardSimilarity(set1: Set<string>, set2: Set<string>): number {
   if (set1.size === 0 && set2.size === 0) return 1;
   if (set1.size === 0 || set2.size === 0) return 0;
 
@@ -505,11 +463,8 @@ function calculateJaccardSimilarity(set1, set2) {
 /**
  * Calculate enhanced similarity between two strings using Jaccard similarity with semantic expansion
  * Returns a score from 0 (no similarity) to 1 (identical)
- * @param {string} str1 - First string
- * @param {string} str2 - Second string
- * @returns {number} Similarity score (0-1)
  */
-export function stringSimilarity(str1, str2) {
+export function stringSimilarity(str1: string, str2: string): number {
   if (!str1 && !str2) return 1; // Both empty = identical
   if (!str1 || !str2) return 0; // One empty = no similarity
 
@@ -540,7 +495,7 @@ export function stringSimilarity(str1, str2) {
   const exactWordMatches = [...baseSet1].filter((word) => baseSet2.has(word)).length;
   const hasExactMatches = exactWordMatches > 0;
 
-  let finalSimilarity;
+  let finalSimilarity: number;
   if (hasExactMatches) {
     // If we have exact word matches, prioritize base similarity but boost with semantic expansion
     finalSimilarity = Math.max(baseSimilarity, expandedSimilarity * 0.8);
@@ -559,7 +514,7 @@ export function stringSimilarity(str1, str2) {
   }
 
   // Only log detailed similarity calculations in debug mode
-  const currentLogLevel = GM_getValue('debug_log_level', 'info');
+  const currentLogLevel = GM_getValue('debug_log_level', 'info') as string;
   if (currentLogLevel === 'debug') {
     debugLog(`Similarity calculation for "${str1}" vs "${str2}":`, {
       words1,
@@ -576,20 +531,16 @@ export function stringSimilarity(str1, str2) {
 
 /**
  * Gets account ID from URL
- * @param {Location} location - Location object (defaults to window.location)
- * @returns {string|null} Account ID from URL or null if not found
  */
-export function getAccountIdFromUrl(location = window.location) {
+export function getAccountIdFromUrl(location: Location = window.location): string | null {
   const matches = location.pathname.match(/\/accounts\/([^/]+)/);
   return matches ? matches[1] : null;
 }
 
 /**
  * Checks if page is the Questrade all accounts page
- * @param {Location} location - Location object (defaults to window.location)
- * @returns {boolean} True if on all accounts page
  */
-export function isQuestradeAllAccountsPage(location = window.location) {
+export function isQuestradeAllAccountsPage(location: Location = window.location): boolean {
   // Check that we're on the Questrade domain
   const isQuestradeDomain = location.hostname.endsWith('questrade.com');
   // Match the 'all accounts' page URL path (with or without trailing slash)
@@ -599,7 +550,7 @@ export function isQuestradeAllAccountsPage(location = window.location) {
   return isQuestradeDomain && isAllAccountsPath;
 }
 
-export async function clearAllGmStorage() {
+export async function clearAllGmStorage(): Promise<void> {
   try {
     const keys = await GM_listValues();
     await Promise.all(keys.map((key) => GM_deleteValue(key)));
@@ -613,10 +564,8 @@ export async function clearAllGmStorage() {
 
 /**
  * Gets the financial institution from hostname
- * @param {Location} location - Location object (defaults to window.location)
- * @returns {string} Institution name or 'unknown'
  */
-export function getCurrentInstitution(location = window.location) {
+export function getCurrentInstitution(location: Location = window.location): string {
   const { hostname } = location;
   if (hostname.includes('questrade.com')) return 'questrade';
   if (hostname.includes('canadalife.com')) return 'canadalife';
@@ -628,9 +577,8 @@ export function getCurrentInstitution(location = window.location) {
 
 /**
  * Clears transaction upload history (currently only Rogers Bank has this)
- * @param {Location} location - Location object (defaults to window.location)
  */
-export async function clearTransactionUploadHistory(location = window.location) {
+export async function clearTransactionUploadHistory(location: Location = window.location): Promise<void> {
   try {
     const institution = getCurrentInstitution(location);
     const keys = await GM_listValues();
@@ -652,9 +600,8 @@ export async function clearTransactionUploadHistory(location = window.location) 
 
 /**
  * Clears category mappings for the financial institution
- * @param {Location} location - Location object (defaults to window.location)
  */
-export async function clearCategoryMappings(location = window.location) {
+export async function clearCategoryMappings(location: Location = window.location): Promise<void> {
   try {
     const institution = getCurrentInstitution(location);
     let institutionName = '';
@@ -669,7 +616,7 @@ export async function clearCategoryMappings(location = window.location) {
       break;
     }
     case 'wealthsimple': {
-      // Clear from configStore only  legacy migration completed
+      // Clear from configStore only  legacy migration completed
       const { saveCategoryMappings } = await import('../services/common/configStore');
       saveCategoryMappings(INTEGRATIONS.WEALTHSIMPLE, {});
       institutionName = 'Wealthsimple';
@@ -691,13 +638,12 @@ export async function clearCategoryMappings(location = window.location) {
 
 /**
  * Clears account mapping for the financial institution
- * @param {Location} location - Location object (defaults to window.location)
  */
-export async function clearAccountMapping(location = window.location) {
+export async function clearAccountMapping(location: Location = window.location): Promise<void> {
   try {
     const institution = getCurrentInstitution(location);
     const keys = await GM_listValues();
-    let prefix = null;
+    let prefix: string | null = null;
     let institutionName = '';
 
     switch (institution) {
@@ -724,13 +670,12 @@ export async function clearAccountMapping(location = window.location) {
 
 /**
  * Clears last uploaded date for the financial institution
- * @param {Location} location - Location object (defaults to window.location)
  */
-export async function clearLastUploadedDate(location = window.location) {
+export async function clearLastUploadedDate(location: Location = window.location): Promise<void> {
   try {
     const institution = getCurrentInstitution(location);
     const keys = await GM_listValues();
-    const keysToDelete = [];
+    const keysToDelete: string[] = [];
     let institutionName = '';
 
     switch (institution) {
@@ -756,10 +701,8 @@ export async function clearLastUploadedDate(location = window.location) {
 
 /**
  * Format a numeric amount by removing trailing zeros
- * @param {number|string} amount - Amount to format
- * @returns {string} Formatted amount without trailing zeros (e.g., "1" not "1.0000", "0.05" not "0.0500")
  */
-export function formatAmount(amount) {
+export function formatAmount(amount: number | string | null | undefined): string {
   if (amount === null || amount === undefined) return '0';
 
   // Convert to number if string
@@ -775,22 +718,23 @@ export function formatAmount(amount) {
 
 /**
  * Format currency amount with proper thousands separators
- * @param {number} amount - Amount to format
- * @returns {string} Formatted amount (e.g., "96,780.95")
  */
-export function formatCurrencyAmount(amount) {
+export function formatCurrencyAmount(amount: number): string {
   return new Intl.NumberFormat('en-CA', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(amount);
 }
 
+interface BalanceInfo {
+  amount: number | null | undefined;
+  currency: string;
+}
+
 /**
  * Format balance with currency and amount
- * @param {Object|null} balance - Balance object with amount and currency
- * @returns {string} Formatted balance string (e.g., "CAD $96,780.95" or "Unknown")
  */
-export function formatBalance(balance) {
+export function formatBalance(balance: BalanceInfo | null): string {
   if (!balance || balance.amount === null || balance.amount === undefined) {
     return 'Unknown';
   }
@@ -801,12 +745,8 @@ export function formatBalance(balance) {
  * Validates that the lookback period is less than the retention period.
  * The lookback period must be smaller than retention to avoid losing transaction IDs
  * that were recently uploaded but haven't been evicted yet.
- *
- * @param {number} lookbackDays - Proposed lookback period in days
- * @param {number} retentionDays - Retention period in days (0 = unlimited)
- * @returns {Object} Validation result with { valid: boolean, error?: string }
  */
-export function validateLookbackVsRetention(lookbackDays, retentionDays) {
+export function validateLookbackVsRetention(lookbackDays: number, retentionDays: number): { valid: boolean; error?: string } {
   // If retention is 0 (unlimited), any lookback value is valid
   if (retentionDays === 0) {
     return { valid: true };
@@ -828,18 +768,15 @@ export function validateLookbackVsRetention(lookbackDays, retentionDays) {
  * Gets the minimum retention period across all accounts for an institution.
  * Used to validate that global lookback doesn't exceed any account's retention.
  * Reads from consolidated accounts_list storage for all integrations.
- *
- * @param {string} institutionType - Institution type ('wealthsimple', 'questrade', 'rogersbank')
- * @returns {number} Minimum retention days across all accounts (0 = unlimited)
  */
-export function getMinRetentionForInstitution(institutionType) {
-  const storageKeyMap = {
+export function getMinRetentionForInstitution(institutionType: string): number {
+  const storageKeyMap: Record<string, string> = {
     wealthsimple: STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST,
     questrade: STORAGE.ACCOUNTS_LIST,
     rogersbank: STORAGE.ROGERSBANK_ACCOUNTS_LIST,
   };
 
-  const accountKeyMap = {
+  const accountKeyMap: Record<string, string> = {
     wealthsimple: 'wealthsimpleAccount',
     questrade: 'questradeAccount',
     rogersbank: 'rogersbankAccount',
@@ -851,7 +788,7 @@ export function getMinRetentionForInstitution(institutionType) {
   }
 
   try {
-    const accounts = JSON.parse(GM_getValue(storageKey, '[]'));
+    const accounts = JSON.parse(GM_getValue(storageKey, '[]') as string) as Record<string, unknown>[];
     if (accounts.length === 0) {
       return TRANSACTION_RETENTION_DEFAULTS.DAYS;
     }
@@ -863,14 +800,14 @@ export function getMinRetentionForInstitution(institutionType) {
     accounts.forEach((account) => {
       // For Wealthsimple, only credit card accounts have transaction dedup
       if (institutionType === 'wealthsimple') {
-        const accountType = account[accountKey]?.type || '';
+        const accountType = ((account[accountKey] as Record<string, unknown>)?.type || '') as string;
         if (!accountType.includes('CREDIT')) {
           return;
         }
       }
 
       hasRelevantAccounts = true;
-      const retention = account.transactionRetentionDays ?? TRANSACTION_RETENTION_DEFAULTS.DAYS;
+      const retention = (account.transactionRetentionDays as number | undefined) ?? TRANSACTION_RETENTION_DEFAULTS.DAYS;
       // 0 means unlimited, so skip it when finding minimum
       if (retention > 0 && retention < minRetention) {
         minRetention = retention;

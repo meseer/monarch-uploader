@@ -8,9 +8,8 @@ export const DEBUG_LOG = true;
 
 /**
  * Get the Monarch domain
- * @returns {string} The Monarch domain to use
  */
-function getMonarchApiDomain() {
+function getMonarchApiDomain(): string {
   return 'monarch.com';
 }
 
@@ -26,7 +25,7 @@ export const API = {
   MONARCH_TRANSACTIONS_UPLOAD_URL: `https://api.${monarchDomain}/statements/upload-async/`,
   MONARCH_BALANCE_UPLOAD_URL: `https://api.${monarchDomain}/account-balance-history/upload/`,
   MONARCH_APP_URL: `https://app.${monarchDomain}`,
-};
+} as const;
 
 // Storage keys
 export const STORAGE = {
@@ -59,14 +58,14 @@ export const STORAGE = {
   ROGERSBANK_BALANCE_CHECKPOINT_PREFIX: 'rogersbank_balance_checkpoint_', // Store balance checkpoint for reconstruction
   // Lookback period storage keys (days to look back from last upload date)
   ROGERSBANK_LOOKBACK_DAYS: 'rogersbank_lookback_days',
-};
+} as const;
 
 // Transaction retention defaults (for deduplication storage)
 // Used for both legacy per-key storage and consolidated account structures
 export const TRANSACTION_RETENTION_DEFAULTS = {
   DAYS: 91, // Keep transactions from last 91 days (must be > default lookback period)
   COUNT: 1000, // Keep last 1000 transactions
-};
+} as const;
 
 // Wealthsimple account types that support transaction upload
 // These accounts have transactions that can be synced to Monarch
@@ -125,7 +124,7 @@ export const WEALTHSIMPLE_BALANCE_RECONSTRUCTION_TYPES = new Set([
 export const ACCOUNT_STATUS = {
   ACTIVE: 'active', // Account is active and returned by API
   CLOSED: 'closed', // Account is closed (in storage but not in API)
-};
+} as const;
 
 // Brand colors
 export const COLORS = {
@@ -133,7 +132,7 @@ export const COLORS = {
   QUESTRADE_BRAND: '#0073b1',
   ROGERSBANK_BRAND: '#DA291C', // Rogers red
   WEALTHSIMPLE_BRAND: 'rgb(50, 48, 47)', // Wealthsimple dark gray
-};
+} as const;
 
 // Cloudinary public IDs for institution logos (pre-uploaded to Monarch)
 // These are used to set logos for manually created accounts
@@ -142,14 +141,14 @@ export const LOGO_CLOUDINARY_IDS = {
   ROGERS: 'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/bqobv1ada0bjpyg5gnio',
   CANADALIFE: 'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/pvkztvf863k4btje6tal',
   QUESTRADE: 'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/dyk2dqsh5q8txe76duml',
-};
+} as const;
 
 // UI settings
 export const UI = {
   TOAST_DURATION: 5000, // 5 seconds for toast notifications
   TOKEN_CACHE_DURATION: 5000, // 5 seconds for token cache
   ANIMATION_DURATION: 200, // Duration for UI animations (ms)
-};
+} as const;
 
 /**
  * Wealthsimple UI injection settings
@@ -169,7 +168,7 @@ export const WEALTHSIMPLE_UI = {
   INJECTION_POINTS: [{ selector: '.kOjAGq', insertMethod: 'prepend' },
     { selector: '.bZQXKE', insertMethod: 'prepend' },
   ],
-};
+} as const;
 
 // Default export with all config values
 export default {

@@ -13,39 +13,39 @@
  */
 
 import { debugLog } from './utils';
+import type {
+  IntegrationManifest,
+  IntegrationApi,
+  IntegrationAuth,
+  IntegrationEnrichment,
+  IntegrationInjectionPoint,
+  IntegrationMonarchMapper,
+  SyncHooks,
+} from '../integrations/types';
 
 /**
- * @typedef {Object} RegisteredIntegration
- * @property {IntegrationManifest} manifest - Integration manifest with capabilities, settings, etc.
- * @property {Object} api - Instantiated API client for this integration
- * @property {Object} auth - Instantiated auth handler for this integration
- * @property {Object|null} enrichment - Instantiated enrichment fetcher (null if not applicable)
- * @property {Object} injectionPoint - UI injection point configuration
- * @property {Object|null} monarchMapper - Monarch data mapper (null if not applicable)
- * @property {import('../integrations/types').SyncHooks|null} syncHooks - Sync hooks for the orchestrator (null if not applicable)
+ * Shape of a fully registered integration in the runtime registry.
  */
+export interface RegisteredIntegration {
+  manifest: IntegrationManifest;
+  api: IntegrationApi;
+  auth: IntegrationAuth;
+  enrichment: IntegrationEnrichment | null;
+  injectionPoint: IntegrationInjectionPoint;
+  monarchMapper: IntegrationMonarchMapper | null;
+  syncHooks: SyncHooks | null;
+}
 
 /**
  * Internal registry map: integrationId → RegisteredIntegration
- * @type {Map<string, RegisteredIntegration>}
  */
-const registry = new Map();
+const registry = new Map<string, RegisteredIntegration>();
 
 /**
  * Register an integration module in the runtime registry.
  *
  * Should be called during application bootstrap for each integration
  * that is included in the build.
- *
- * @param {Object} params - Integration components to register
- * @param {IntegrationManifest} params.manifest - Integration manifest
- * @param {Object} params.api - Instantiated API client
- * @param {Object} params.auth - Instantiated auth handler
- * @param {Object} [params.enrichment=null] - Instantiated enrichment fetcher
- * @param {Object} params.injectionPoint - UI injection point configuration
- * @param {Object} [params.monarchMapper=null] - Monarch data mapper
- * @param {import('../integrations/types').SyncHooks} [params.syncHooks=null] - Sync hooks for the orchestrator
- * @returns {boolean} True if registration succeeded
  */
 export function registerIntegration({
   manifest,
@@ -55,7 +55,15 @@ export function registerIntegration({
   injectionPoint,
   monarchMapper = null,
   syncHooks = null,
-}) {
+}: {
+  manifest: IntegrationManifest;
+  api: IntegrationApi;
+  auth: IntegrationAuth;
+  enrichment?: IntegrationEnrichment | null;
+  injectionPoint: IntegrationInjectionPoint;
+  monarchMapper?: IntegrationMonarchMapper | null;
+  syncHooks?: SyncHooks | null;
+}): boolean {
   if (!manifest || !manifest.id) {
     debugLog('[integrationRegistry] Cannot register integration: missing manifest or manifest.id');
     return false;
@@ -81,29 +89,22 @@ export function registerIntegration({
 
 /**
  * Get a registered integration by ID.
- *
- * @param {string} integrationId - Integration identifier
- * @returns {RegisteredIntegration|null} Registered integration or null if not found
  */
-export function getIntegration(integrationId) {
+export function getIntegration(integrationId: string): RegisteredIntegration | null {
   return registry.get(integrationId) || null;
 }
 
 /**
  * Get all registered integrations.
- *
- * @returns {RegisteredIntegration[]} Array of all registered integrations
  */
-export function getAllIntegrations() {
+export function getAllIntegrations(): RegisteredIntegration[] {
   return [...registry.values()];
 }
 
 /**
  * Get all registered integration IDs.
- *
- * @returns {string[]} Array of integration IDs
  */
-export function getAllIntegrationIds() {
+export function getAllIntegrationIds(): string[] {
   return [...registry.keys()];
 }
 
@@ -112,11 +113,8 @@ export function getAllIntegrationIds() {
  *
  * Used during site detection to determine which integration (if any)
  * should be activated for the current page.
- *
- * @param {string} hostname - The hostname to match (e.g., 'my.wealthsimple.com')
- * @returns {RegisteredIntegration|null} Matching integration or null
  */
-export function getIntegrationForHostname(hostname) {
+export function getIntegrationForHostname(hostname: string): RegisteredIntegration | null {
   if (!hostname) return null;
 
   for (const integration of registry.values()) {
@@ -134,52 +132,39 @@ export function getIntegrationForHostname(hostname) {
  *
  * Useful for the settings UI to enumerate available integrations
  * and their capabilities without needing the full registration object.
- *
- * @returns {IntegrationManifest[]} Array of all integration manifests
  */
-export function getAllManifests() {
+export function getAllManifests(): IntegrationManifest[] {
   return [...registry.values()].map((entry) => entry.manifest);
 }
 
 /**
  * Get manifest for a specific integration.
- *
- * @param {string} integrationId - Integration identifier
- * @returns {IntegrationManifest|null} Manifest or null if not found
  */
-export function getManifest(integrationId) {
+export function getManifest(integrationId: string): IntegrationManifest | null {
   const integration = registry.get(integrationId);
   return integration ? integration.manifest : null;
 }
 
 /**
  * Check if an integration is registered.
- *
- * @param {string} integrationId - Integration identifier
- * @returns {boolean} True if registered
  */
-export function isRegistered(integrationId) {
+export function isRegistered(integrationId: string): boolean {
   return registry.has(integrationId);
 }
 
 /**
  * Get integrations that support a specific capability.
- *
- * @param {string} capability - Capability name (e.g., 'hasTransactions', 'hasHoldings')
- * @returns {RegisteredIntegration[]} Array of integrations with the capability
  */
-export function getIntegrationsWithCapability(capability) {
+export function getIntegrationsWithCapability(capability: string): RegisteredIntegration[] {
   return [...registry.values()].filter(
-    ({ manifest }) => manifest.capabilities && manifest.capabilities[capability],
+    ({ manifest }) => manifest.capabilities && (manifest.capabilities as unknown as Record<string, unknown>)[capability],
   );
 }
 
 /**
  * Get the total number of registered integrations.
- *
- * @returns {number} Count of registered integrations
  */
-export function getIntegrationCount() {
+export function getIntegrationCount(): number {
   return registry.size;
 }
 
@@ -188,11 +173,8 @@ export function getIntegrationCount() {
  *
  * Primarily useful for testing. In production, integrations are
  * registered once at startup and never removed.
- *
- * @param {string} integrationId - Integration identifier to remove
- * @returns {boolean} True if the integration was found and removed
  */
-export function unregisterIntegration(integrationId) {
+export function unregisterIntegration(integrationId: string): boolean {
   const existed = registry.has(integrationId);
   if (existed) {
     registry.delete(integrationId);
@@ -206,7 +188,7 @@ export function unregisterIntegration(integrationId) {
  *
  * Only for testing purposes. Should not be called in production.
  */
-export function clearRegistry() {
+export function clearRegistry(): void {
   registry.clear();
   debugLog('[integrationRegistry] Registry cleared');
 }
