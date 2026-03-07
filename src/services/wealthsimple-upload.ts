@@ -14,8 +14,10 @@ import {
   markAccountAsSkipped,
   syncAccountListWithAPI,
   getAccountData,
+  updateAccountInList,
   applyTransactionRetentionEviction,
   syncCreditLimit,
+  type ConsolidatedAccount,
 } from './wealthsimple/account';
 import {
   getDefaultDateRange,
@@ -27,19 +29,49 @@ import {
 } from './wealthsimple/balance';
 import { isInvestmentAccount, processAccountPositions, processCashPositions } from './wealthsimple/positions';
 import { fetchAndProcessTransactions, reconcilePendingTransactions, formatReconciliationMessage } from './wealthsimple/transactions';
+import { type ReconciliationResult } from './wealthsimple/transactionsReconciliation';
 import { showDatePickerWithOptionsPromise } from '../ui/components/datePicker';
 import { showProgressDialog } from '../ui/components/progressDialog';
 
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface CurrentBalance {
+  amount: number;
+  currency?: string;
+}
+
+interface SyncResult {
+  success: boolean;
+  skipped?: boolean;
+  cancelled?: boolean;
+}
+
+interface ProgressDialog {
+  updateStepStatus: (accountId: string, step: string, status: string, message: string) => void;
+  updateBalanceChange: (accountId: string, data: Record<string, unknown>) => void;
+  initSteps: (accountId: string, steps: Array<{ key: string; name: string }>) => void;
+  onCancel: (cb: () => void) => void;
+  showSummary: (stats: { success: number; failed: number; skipped: number }) => void;
+  hideCancel: () => void;
+  close: () => void;
+}
+
+interface BalanceChangeResult {
+  oldBalance: number;
+  newBalance: number;
+  lastUploadDate: string;
+  changePercent: number;
+  accountType?: string;
+  transactionCount?: number;
+  daysUploaded?: number;
+}
+
+// ── Private helpers ───────────────────────────────────────────────────────────
+
 /**
  * Create a balance checkpoint after first sync with reconstruction
- * The checkpoint date is set to toDate - lookbackDays so it aligns with the next sync's transaction fetch window
- *
- * @param {string} accountId - Wealthsimple account ID
- * @param {string} fromDate - Start date of the sync (YYYY-MM-DD)
- * @param {string} toDate - End date of the sync (YYYY-MM-DD)
- * @returns {Promise<boolean>} Success status
  */
-async function createBalanceCheckpoint(accountId, fromDate, toDate) {
+async function createBalanceCheckpoint(accountId: string, fromDate: string, toDate: string): Promise<boolean> {
   try {
     const accountData = getAccountData(accountId);
     if (!accountData) {
@@ -48,33 +80,26 @@ async function createBalanceCheckpoint(accountId, fromDate, toDate) {
     }
 
     const account = accountData.wealthsimpleAccount;
-    const lookbackDays = getLookbackForInstitution('wealthsimple');
+    const lookbackDays = getLookbackForInstitution('wealthsimple') as number;
 
-    // Calculate checkpoint date: toDate - lookbackDays
-    const checkpointDate = calculateCheckpointDate(toDate, lookbackDays, account.createdAt);
+    const checkpointDate = calculateCheckpointDate(toDate, lookbackDays, account.createdAt as string | undefined) as string | null;
 
     if (!checkpointDate) {
       debugLog('Failed to calculate checkpoint date');
       return false;
     }
 
-    // Fetch transactions from fromDate to toDate to calculate checkpoint balance
-    // Skip categorization since checkpoint calculation only needs dates and amounts
-    const transactions = await fetchAndProcessTransactions(accountData, fromDate, toDate, { skipCategorization: true });
+    const transactions = await fetchAndProcessTransactions(accountData, fromDate, toDate, { skipCategorization: true }) as Array<{ date: string; amount: number }> | null;
 
-    // Reconstruct balance history to get the balance at checkpoint date
-    const balanceHistory = reconstructBalanceFromTransactions(transactions || [], fromDate, toDate, 0);
+    const balanceHistory = reconstructBalanceFromTransactions(transactions || [], fromDate, toDate, 0) as Array<{ date: string; amount: number }>;
 
-    // Get the balance at checkpoint date
-    const checkpointBalance = getBalanceAtDate(balanceHistory, checkpointDate);
+    const checkpointBalance = getBalanceAtDate(balanceHistory, checkpointDate) as number | null;
 
     if (checkpointBalance === null) {
       debugLog(`Could not find balance at checkpoint date ${checkpointDate}`);
       return false;
     }
 
-    // Store the checkpoint
-    const { updateAccountInList } = await import('./wealthsimple/account');
     updateAccountInList(accountId, {
       balanceCheckpoint: {
         date: checkpointDate,
@@ -84,7 +109,7 @@ async function createBalanceCheckpoint(accountId, fromDate, toDate) {
 
     debugLog(`Created balance checkpoint for account ${accountId}: ${checkpointDate} = ${checkpointBalance}`);
     return true;
-  } catch (error) {
+  } catch (error: unknown) {
     debugLog('Error creating balance checkpoint:', error);
     return false;
   }
@@ -92,14 +117,8 @@ async function createBalanceCheckpoint(accountId, fromDate, toDate) {
 
 /**
  * Update balance checkpoint after subsequent sync
- * The new checkpoint is set to toDate - lookbackDays for the next sync
- *
- * @param {string} accountId - Wealthsimple account ID
- * @param {string} toDate - End date of the sync (YYYY-MM-DD)
- * @param {Object} currentBalance - Current balance object {amount, currency}
- * @returns {Promise<boolean>} Success status
  */
-async function updateBalanceCheckpoint(accountId, toDate, _currentBalance) {
+async function updateBalanceCheckpoint(accountId: string, toDate: string, _currentBalance: CurrentBalance | null): Promise<boolean> {
   try {
     const accountData = getAccountData(accountId);
     if (!accountData) {
@@ -115,35 +134,28 @@ async function updateBalanceCheckpoint(accountId, toDate, _currentBalance) {
       return false;
     }
 
-    const lookbackDays = getLookbackForInstitution('wealthsimple');
+    const lookbackDays = getLookbackForInstitution('wealthsimple') as number;
 
-    // Calculate new checkpoint date: toDate - lookbackDays
-    const newCheckpointDate = calculateCheckpointDate(toDate, lookbackDays, account.createdAt);
+    const newCheckpointDate = calculateCheckpointDate(toDate, lookbackDays, account.createdAt as string | undefined) as string | null;
 
     if (!newCheckpointDate) {
       debugLog('Failed to calculate new checkpoint date');
       return false;
     }
 
-    // Fetch transactions from existing checkpoint date to today
-    // Skip categorization since checkpoint calculation only needs dates and amounts
-    const transactions = await fetchAndProcessTransactions(accountData, existingCheckpoint.date, toDate, { skipCategorization: true });
+    const transactions = await fetchAndProcessTransactions(accountData, existingCheckpoint.date, toDate, { skipCategorization: true }) as Array<{ date: string; amount: number }> | null;
 
-    // Reconstruct balance history from existing checkpoint
     const balanceHistory = reconstructBalanceFromTransactions(
       transactions || [],
       existingCheckpoint.date,
       toDate,
       existingCheckpoint.amount,
-    );
+    ) as Array<{ date: string; amount: number }>;
 
-    // Get the balance at new checkpoint date
-    let newCheckpointBalance = getBalanceAtDate(balanceHistory, newCheckpointDate);
+    let newCheckpointBalance = getBalanceAtDate(balanceHistory, newCheckpointDate) as number | null;
 
-    // If we couldn't calculate, use reconstructed value or fallback
     if (newCheckpointBalance === null) {
       debugLog(`Could not find balance at new checkpoint date ${newCheckpointDate}, using last reconstructed value`);
-      // Try to find the closest available date
       if (balanceHistory && balanceHistory.length > 0) {
         const closestEntry = balanceHistory.find((entry) => entry.date <= newCheckpointDate);
         if (closestEntry) {
@@ -157,8 +169,6 @@ async function updateBalanceCheckpoint(accountId, toDate, _currentBalance) {
       return false;
     }
 
-    // Store the updated checkpoint
-    const { updateAccountInList } = await import('./wealthsimple/account');
     updateAccountInList(accountId, {
       balanceCheckpoint: {
         date: newCheckpointDate,
@@ -168,7 +178,7 @@ async function updateBalanceCheckpoint(accountId, toDate, _currentBalance) {
 
     debugLog(`Updated balance checkpoint for account ${accountId}: ${newCheckpointDate} = ${newCheckpointBalance}`);
     return true;
-  } catch (error) {
+  } catch (error: unknown) {
     debugLog('Error updating balance checkpoint:', error);
     return false;
   }
@@ -176,21 +186,15 @@ async function updateBalanceCheckpoint(accountId, toDate, _currentBalance) {
 
 /**
  * Check if this is the first sync for an account that needs balance reconstruction
- * These are accounts where the FetchIdentityHistoricalFinancials API doesn't work
- * (credit cards and cash accounts)
- * @param {Object} consolidatedAccount - Consolidated account object
- * @returns {boolean} True if first sync for non-investment account
  */
-function isFirstSyncNonInvestment(consolidatedAccount) {
+function isFirstSyncNonInvestment(consolidatedAccount: ConsolidatedAccount): boolean {
   const account = consolidatedAccount.wealthsimpleAccount;
   const accountType = account?.type || '';
 
-  // Only apply to accounts that need balance reconstruction
   if (!accountNeedsBalanceReconstruction(accountType)) {
     return false;
   }
 
-  // First sync if no lastSyncDate and no uploaded transactions
   const hasLastSyncDate = Boolean(consolidatedAccount.lastSyncDate);
   const hasUploadedTransactions = consolidatedAccount.uploadedTransactions && consolidatedAccount.uploadedTransactions.length > 0;
 
@@ -198,745 +202,25 @@ function isFirstSyncNonInvestment(consolidatedAccount) {
 }
 
 /**
- * Upload a single Wealthsimple account to Monarch
- * @param {Object} consolidatedAccount - Consolidated account object with wealthsimpleAccount property
- * @param {string} fromDate - Start date (YYYY-MM-DD)
- * @param {string} toDate - End date (YYYY-MM-DD)
- * @param {Object|null} currentBalance - Current balance object {amount, currency}
- * @returns {Promise<Object>} Result object with success status and optional signals
- */
-export async function uploadWealthsimpleAccountToMonarch(consolidatedAccount, fromDate, toDate, currentBalance = null) {
-  try {
-    const account = consolidatedAccount.wealthsimpleAccount;
-    debugLog(`Uploading Wealthsimple account ${account.id} to Monarch...`);
-
-    // Resolve account mapping (shows selector with create option)
-    const result = await resolveWealthsimpleAccountMapping(consolidatedAccount, currentBalance);
-
-    // Handle skip signal
-    if (result && result.skipped) {
-      debugLog(`User skipped account ${account.id}`);
-      markAccountAsSkipped(account.id, true);
-      toast.show(`Skipped ${account.nickname || account.id}`, 'debug');
-      return { success: false, skipped: true };
-    }
-
-    // Handle cancel signal
-    if (result && result.cancelled) {
-      debugLog('User cancelled sync');
-      return { success: false, cancelled: true };
-    }
-
-    // Handle null (user closed without action)
-    if (!result) {
-      debugLog('Account mapping cancelled by user');
-      return { success: false, cancelled: true };
-    }
-
-    const monarchAccount = result;
-
-    // Determine the actual from date and whether to reconstruct balance
-    let actualFromDate = fromDate;
-    let reconstructBalance = false;
-
-    // For first sync of non-investment accounts (credit cards, cash), show date picker with reconstruction option
-    if (isFirstSyncNonInvestment(consolidatedAccount)) {
-      debugLog('First sync for non-investment account detected, showing date picker with reconstruction option');
-
-      // Get account creation date as default
-      const accountCreatedAt = account.createdAt;
-      let defaultDate = fromDate; // Fallback to provided fromDate
-
-      if (accountCreatedAt) {
-        const createdDateStr = extractDateFromISO(accountCreatedAt);
-        if (createdDateStr) {
-          defaultDate = createdDateStr;
-          debugLog(`Using account creation date as default: ${defaultDate} (from ${accountCreatedAt})`);
-        }
-      }
-
-      // Show date picker with reconstruction checkbox
-      const datePickerResult = await showDatePickerWithOptionsPromise(
-        defaultDate,
-        `Select the start date for syncing "${account.nickname || account.id}". Default is the account creation date.`,
-        {
-          showReconstructCheckbox: true,
-          reconstructCheckedByDefault: true,
-        },
-      );
-
-      if (!datePickerResult) {
-        debugLog('User cancelled date selection');
-        toast.show('Sync cancelled', 'info');
-        return { success: false, cancelled: true };
-      }
-
-      actualFromDate = datePickerResult.date;
-      reconstructBalance = datePickerResult.reconstructBalance;
-      debugLog(`User selected start date: ${actualFromDate}, reconstruct balance: ${reconstructBalance}`);
-    }
-
-    // Upload balance with current balance and reconstruction flag
-    const balanceSuccess = await uploadWealthsimpleBalance(
-      account.id,
-      monarchAccount.id,
-      actualFromDate,
-      toDate,
-      currentBalance,
-      reconstructBalance,
-    );
-
-    // Upload transactions
-    const transactionsSuccess = await uploadWealthsimpleTransactions(
-      account.id,
-      monarchAccount.id,
-      actualFromDate,
-      toDate,
-    );
-
-    const success = balanceSuccess || transactionsSuccess;
-
-    if (success) {
-      // Only update lastSyncDate if BOTH balance and transactions were successful
-      // This ensures first sync detection works properly for transactions
-      if (balanceSuccess && transactionsSuccess) {
-        // Update lastSyncDate in consolidated account data
-        const { updateAccountInList } = await import('./wealthsimple/account');
-        updateAccountInList(account.id, { lastSyncDate: toDate });
-
-        debugLog(`Updated lastSyncDate for account ${account.id} to ${toDate}`);
-
-        // Create balance checkpoint for accounts that need balance reconstruction
-        // This enables ongoing balance reconstruction for subsequent syncs
-        if (accountNeedsBalanceReconstruction(account.type) && reconstructBalance) {
-          // For first sync with reconstruction, calculate and store the checkpoint
-          await createBalanceCheckpoint(account.id, actualFromDate, toDate);
-        } else if (accountNeedsBalanceReconstruction(account.type) && consolidatedAccount.balanceCheckpoint) {
-          // For subsequent syncs with existing checkpoint, update the checkpoint
-          await updateBalanceCheckpoint(account.id, toDate, currentBalance);
-        }
-      }
-
-      // Sync credit limit for credit card accounts
-      // This runs after balance/transaction sync to ensure account mapping is established
-      // Re-fetch the consolidated account to get the latest data
-      const updatedConsolidatedAccount = getAccountData(account.id);
-      if (updatedConsolidatedAccount) {
-        await syncCreditLimit(updatedConsolidatedAccount, monarchAccount.id);
-      }
-
-      // Apply time-based eviction to clean up old transaction IDs
-      // This is performed after each successful account sync
-      applyTransactionRetentionEviction(account.id);
-
-      toast.show(`Processed ${account.nickname || account.id}`, 'debug');
-    }
-
-    return success;
-  } catch (error) {
-    const account = consolidatedAccount.wealthsimpleAccount;
-    debugLog(`Error uploading Wealthsimple account ${account.id}:`, error);
-    toast.show(`Error uploading account: ${error.message}`, 'error');
-    return false;
-  }
-}
-
-/**
- * Build the list of sync steps for a Wealthsimple account
- * Steps are dynamically determined based on account type
- * Order is important: transaction sync and reconciliation happen before balance upload
- * because deleting pending transactions may implicitly adjust the balance in Monarch
- * @param {Object} consolidatedAccount - Consolidated account object
- * @returns {Array} Array of step definitions [{key, name}]
- */
-export function buildSyncStepsForAccount(consolidatedAccount) {
-  const steps = [];
-  const accountType = consolidatedAccount.wealthsimpleAccount?.type || '';
-
-  // Account types that support transaction sync  sourced from config to stay in sync with account.js runtime gate
-  if (WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType)) {
-    steps.push({ key: 'transactions', name: 'Transaction sync' });
-  }
-
-  // Pending transaction reconciliation for credit card, CASH, and investment accounts
-  // Deleting cancelled transactions may adjust balance in Monarch
-  if (WEALTHSIMPLE_PENDING_RECONCILIATION_TYPES.has(accountType)) {
-    steps.push({ key: 'pendingReconciliation', name: 'Pending reconciliation' });
-  }
-
-  // Credit limit sync only for credit card accounts
-  if (accountType === 'CREDIT_CARD') {
-    steps.push({ key: 'creditLimit', name: 'Credit limit sync' });
-  }
-
-  // Balance upload is always a step
-  steps.push({ key: 'balance', name: 'Balance upload' });
-
-  // Position sync for investment accounts (after balance, as it's additive)
-  if (isInvestmentAccount(accountType)) {
-    steps.push({ key: 'positions', name: 'Position sync' });
-  }
-
-  // Cash sync for investment accounts (syncs CAD/USD cash holdings)
-  if (isInvestmentAccount(accountType)) {
-    steps.push({ key: 'cashSync', name: 'Cash sync' });
-  }
-
-  return steps;
-}
-
-/**
- * Upload all Wealthsimple accounts to Monarch
- * Uses progress dialog to show per-account status and summary with step-by-step tracking
- * @returns {Promise<void>}
- */
-export async function uploadAllWealthsimpleAccountsToMonarch() {
-  let progressDialog = null;
-  let isCancelled = false;
-
-  try {
-    debugLog('Starting fetch of all Wealthsimple accounts...');
-
-    // Sync account list with API (merges with cached settings like skip flags)
-    const accounts = await syncAccountListWithAPI();
-
-    if (!accounts || accounts.length === 0) {
-      toast.show('No Wealthsimple accounts found', 'debug');
-      return;
-    }
-
-    // Filter out disabled accounts
-    const accountsToSync = accounts.filter((acc) => acc.syncEnabled !== false);
-    const skippedCount = accounts.length - accountsToSync.length;
-
-    if (skippedCount > 0) {
-      debugLog(`Skipping ${skippedCount} account(s) marked as skipped`);
-    }
-
-    if (accountsToSync.length === 0) {
-      toast.show('All accounts are marked as skipped', 'debug');
-      return;
-    }
-
-    debugLog(`Processing ${accountsToSync.length} Wealthsimple account(s):`, accountsToSync);
-
-    // Prepare accounts for progress dialog
-    const accountsForDialog = accountsToSync.map((acc) => ({
-      key: acc.wealthsimpleAccount.id,
-      nickname: acc.wealthsimpleAccount.nickname,
-      name: acc.wealthsimpleAccount.nickname || acc.wealthsimpleAccount.id,
-    }));
-
-    // Create progress dialog
-    progressDialog = showProgressDialog(accountsForDialog, 'Uploading Wealthsimple Accounts to Monarch');
-
-    // Set up cancel callback
-    progressDialog.onCancel(() => {
-      debugLog('Upload cancellation requested');
-      isCancelled = true;
-      toast.show('Upload cancelled by user', 'info');
-    });
-
-    // Fetch all account balances upfront
-    // Pass account objects with id, type, and currency for proper API selection
-    const accountsForBalanceFetch = accountsToSync.map((acc) => ({
-      id: acc.wealthsimpleAccount.id,
-      type: acc.wealthsimpleAccount.type,
-      currency: acc.wealthsimpleAccount.currency,
-    }));
-    debugLog('Fetching balances for all accounts...');
-    const balanceResult = await wealthsimpleApi.fetchAccountBalances(accountsForBalanceFetch);
-
-    if (!balanceResult.success) {
-      debugLog('Failed to fetch account balances:', balanceResult.error);
-      toast.show('Failed to fetch account balances. Please try again.', 'error');
-      progressDialog.hideCancel();
-      progressDialog.close();
-      return;
-    }
-
-    // Initialize stats
-    const stats = { success: 0, failed: 0, total: accountsToSync.length };
-    let skippedDuringSync = 0;
-    let balanceUnavailableCount = 0;
-
-    // Process all non-skipped accounts
-    for (const consolidatedAccount of accountsToSync) {
-      // Check for cancellation before processing each account
-      if (isCancelled) {
-        debugLog('Upload cancelled, stopping account processing');
-        break;
-      }
-
-      const account = consolidatedAccount.wealthsimpleAccount;
-
-      // Initialize steps for this account
-      const steps = buildSyncStepsForAccount(consolidatedAccount);
-      progressDialog.initSteps(account.id, steps);
-
-      // Get balance for this account
-      const currentBalance = balanceResult.balances.get(account.id);
-
-      // Skip if balance is unavailable
-      if (currentBalance === null || currentBalance === undefined) {
-        debugLog(`Skipping account ${account.id} (${account.nickname}) - balance unavailable`);
-        progressDialog.updateStepStatus(account.id, 'balance', 'error', 'Balance unavailable');
-        balanceUnavailableCount += 1;
-        continue;
-      }
-
-      // Get date range for this account (respects account creation date and last sync)
-      const { fromDate, toDate } = getDefaultDateRange(consolidatedAccount);
-      debugLog(`Using date range for ${account.nickname}: ${fromDate} to ${toDate}`);
-
-      // Check cancellation before upload
-      if (isCancelled) break;
-
-      // Process the account with step-by-step progress tracking
-      const result = await uploadWealthsimpleAccountToMonarchWithSteps(
-        consolidatedAccount,
-        fromDate,
-        toDate,
-        currentBalance,
-        progressDialog,
-      );
-
-      // Check if user cancelled the entire sync
-      if (result && result.cancelled) {
-        debugLog('Sync cancelled by user, stopping processing');
-        isCancelled = true;
-        break;
-      }
-
-      // Check if user skipped this account
-      if (result && result.skipped) {
-        skippedDuringSync += 1;
-        continue;
-      }
-
-      // Check success
-      if (result && result.success) {
-        stats.success += 1;
-      } else {
-        stats.failed += 1;
-      }
-    }
-
-    // Show final summary in progress dialog
-    const totalSkipped = skippedCount + skippedDuringSync;
-    const totalFailed = stats.failed + balanceUnavailableCount;
-    progressDialog.showSummary({
-      success: stats.success,
-      failed: totalFailed,
-      skipped: totalSkipped,
-    });
-    progressDialog.hideCancel();
-
-    // Show final summary toast
-    if (isCancelled) {
-      toast.show('Upload process was cancelled', 'info');
-    } else if (totalFailed === 0 && totalSkipped === 0) {
-      toast.show(`Successfully uploaded all ${stats.success} Wealthsimple account(s)`, 'info');
-    } else if (stats.success > 0) {
-      const parts = [];
-      if (stats.success > 0) parts.push(`${stats.success} uploaded`);
-      if (stats.failed > 0) parts.push(`${stats.failed} failed`);
-      if (balanceUnavailableCount > 0) parts.push(`${balanceUnavailableCount} balance unavailable`);
-      if (totalSkipped > 0) parts.push(`${totalSkipped} skipped`);
-      toast.show(parts.join(', '), totalFailed > 0 ? 'warning' : 'info');
-    }
-  } catch (error) {
-    debugLog('Error fetching Wealthsimple accounts:', error);
-    toast.show(`Error fetching accounts: ${error.message}`, 'error');
-
-    // Clean up progress dialog on error
-    if (progressDialog) {
-      progressDialog.hideCancel();
-    }
-  }
-}
-
-/**
- * Upload a single Wealthsimple account to Monarch with step-by-step progress tracking
- * @param {Object} consolidatedAccount - Consolidated account object
- * @param {string} fromDate - Start date (YYYY-MM-DD)
- * @param {string} toDate - End date (YYYY-MM-DD)
- * @param {Object} currentBalance - Current balance object {amount, currency}
- * @param {Object} progressDialog - Progress dialog instance
- * @returns {Promise<Object>} Result object with success status
- */
-export async function uploadWealthsimpleAccountToMonarchWithSteps(consolidatedAccount, fromDate, toDate, currentBalance, progressDialog) {
-  const account = consolidatedAccount.wealthsimpleAccount;
-  const accountType = account?.type || '';
-
-  try {
-    debugLog(`Uploading Wealthsimple account ${account.id} to Monarch with step tracking...`);
-
-    // Resolve account mapping first (shows selector with create option)
-    const mappingResult = await resolveWealthsimpleAccountMapping(consolidatedAccount, currentBalance);
-
-    // Handle skip signal
-    if (mappingResult && mappingResult.skipped) {
-      debugLog(`User skipped account ${account.id}`);
-      markAccountAsSkipped(account.id, true);
-      // Update first visible step
-      const firstStep = WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType) ? 'transactions' : 'balance';
-      progressDialog.updateStepStatus(account.id, firstStep, 'skipped', 'Skipped by user');
-      return { success: false, skipped: true };
-    }
-
-    // Handle cancel signal
-    if (mappingResult && mappingResult.cancelled) {
-      debugLog('User cancelled sync');
-      const firstStep = WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType) ? 'transactions' : 'balance';
-      progressDialog.updateStepStatus(account.id, firstStep, 'error', 'Cancelled');
-      return { success: false, cancelled: true };
-    }
-
-    // Handle null (user closed without action)
-    if (!mappingResult) {
-      debugLog('Account mapping cancelled by user');
-      const firstStep = WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType) ? 'transactions' : 'balance';
-      progressDialog.updateStepStatus(account.id, firstStep, 'error', 'Cancelled');
-      return { success: false, cancelled: true };
-    }
-
-    const monarchAccount = mappingResult;
-
-    // Determine the actual from date and whether to reconstruct balance
-    let actualFromDate = fromDate;
-    let reconstructBalance = false;
-
-    // For first sync of non-investment accounts, show date picker with reconstruction option
-    if (isFirstSyncNonInvestment(consolidatedAccount)) {
-      debugLog('First sync for non-investment account detected, showing date picker with reconstruction option');
-
-      const accountCreatedAt = account.createdAt;
-      let defaultDate = fromDate;
-
-      if (accountCreatedAt) {
-        const createdDateStr = extractDateFromISO(accountCreatedAt);
-        if (createdDateStr) {
-          defaultDate = createdDateStr;
-        }
-      }
-
-      const datePickerResult = await showDatePickerWithOptionsPromise(
-        defaultDate,
-        `Select the start date for syncing "${account.nickname || account.id}". Default is the account creation date.`,
-        {
-          showReconstructCheckbox: true,
-          reconstructCheckedByDefault: true,
-        },
-      );
-
-      if (!datePickerResult) {
-        debugLog('User cancelled date selection');
-        const firstStep = WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType) ? 'transactions' : 'balance';
-        progressDialog.updateStepStatus(account.id, firstStep, 'error', 'Date selection cancelled');
-        return { success: false, cancelled: true };
-      }
-
-      actualFromDate = datePickerResult.date;
-      reconstructBalance = datePickerResult.reconstructBalance;
-    }
-
-    // Step 1: Transaction sync (for supported account types)
-    // Transactions are synced first so pending reconciliation can delete cancelled transactions
-    // before balance upload captures any implicit balance adjustments
-    let rawWealthsimpleTransactions = null; // Store for pending reconciliation
-    let transactionsSyncedCount = 0; // Track synced count for collapsed summary display
-
-    if (WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType)) {
-      progressDialog.updateStepStatus(account.id, 'transactions', 'processing', 'Fetching from WS...');
-
-      // Fetch raw transactions from Wealthsimple API ONCE
-      // These are passed to both transaction sync (for early filtering) and pending reconciliation
-      try {
-        rawWealthsimpleTransactions = await wealthsimpleApi.fetchTransactions(account.id, actualFromDate);
-        const fetchedCount = rawWealthsimpleTransactions?.length || 0;
-        debugLog(`Fetched ${fetchedCount} raw transactions for account ${account.id}`);
-
-        // Update progress with fetched count
-        progressDialog.updateStepStatus(account.id, 'transactions', 'processing', `Fetched ${fetchedCount}`);
-      } catch (fetchError) {
-        debugLog('Error fetching raw transactions:', fetchError);
-        rawWealthsimpleTransactions = [];
-      }
-
-      // Create progress callback for transaction upload stages
-      const onTransactionProgress = (stage) => {
-        progressDialog.updateStepStatus(account.id, 'transactions', 'processing', stage);
-      };
-
-      // Pass raw transactions to avoid duplicate fetch
-      const transactionsResult = await uploadWealthsimpleTransactions(
-        account.id,
-        monarchAccount.id,
-        actualFromDate,
-        toDate,
-        { rawTransactions: rawWealthsimpleTransactions, onProgress: onTransactionProgress },
-      );
-
-      if (transactionsResult && transactionsResult.success) {
-        // Track synced count for collapsed summary display
-        transactionsSyncedCount = transactionsResult.synced || 0;
-        // Format transaction count message
-        const txMessage = formatTransactionCountMessage(transactionsResult.synced, transactionsResult.skipped);
-        progressDialog.updateStepStatus(account.id, 'transactions', 'success', txMessage);
-      } else if (transactionsResult && transactionsResult.unsupported) {
-        progressDialog.updateStepStatus(account.id, 'transactions', 'skipped', 'Not supported');
-      } else {
-        const errorMsg = transactionsResult?.error || 'Sync failed';
-        progressDialog.updateStepStatus(account.id, 'transactions', 'error', errorMsg);
-      }
-    }
-
-    // Step 2: Pending transaction reconciliation (for credit card, CASH, and investment accounts)
-    // Deleting cancelled transactions may implicitly adjust the balance in Monarch
-    if (WEALTHSIMPLE_PENDING_RECONCILIATION_TYPES.has(accountType)) {
-      progressDialog.updateStepStatus(account.id, 'pendingReconciliation', 'processing', 'Reconciling pending');
-
-      try {
-        // Get lookback days from settings
-        const lookbackDays = getLookbackForInstitution('wealthsimple');
-
-        // Run pending transaction reconciliation
-        // Pass account type so reconciliation can handle different status fields
-        const reconciliationResult = await reconcilePendingTransactions(
-          monarchAccount.id,
-          rawWealthsimpleTransactions || [],
-          lookbackDays,
-          accountType,
-        );
-
-        // Format and display the result
-        const reconciliationMessage = formatReconciliationMessage(reconciliationResult);
-        const reconciliationStatus = reconciliationResult.success ? 'success' : 'error';
-
-        progressDialog.updateStepStatus(account.id, 'pendingReconciliation', reconciliationStatus, reconciliationMessage);
-        debugLog(`Pending reconciliation completed for ${account.id}:`, reconciliationResult);
-      } catch (reconciliationError) {
-        debugLog('Error during pending transaction reconciliation:', reconciliationError);
-        progressDialog.updateStepStatus(account.id, 'pendingReconciliation', 'error', reconciliationError.message);
-      }
-    }
-
-    // Step 3: Credit limit sync (for credit cards only)
-    if (accountType === 'CREDIT_CARD') {
-      progressDialog.updateStepStatus(account.id, 'creditLimit', 'processing', 'Syncing credit limit');
-
-      // Re-fetch the consolidated account to get the latest data
-      const updatedConsolidatedAccount = getAccountData(account.id);
-      if (updatedConsolidatedAccount) {
-        const creditLimitSuccess = await syncCreditLimit(updatedConsolidatedAccount, monarchAccount.id);
-        if (creditLimitSuccess) {
-          // Get the synced credit limit for display
-          const refreshedAccount = getAccountData(account.id);
-          const creditLimit = refreshedAccount?.lastSyncedCreditLimit;
-          const message = creditLimit ? `$${creditLimit.toLocaleString()}` : 'Synced';
-          progressDialog.updateStepStatus(account.id, 'creditLimit', 'success', message);
-        } else {
-          progressDialog.updateStepStatus(account.id, 'creditLimit', 'error', 'Sync failed');
-        }
-      } else {
-        progressDialog.updateStepStatus(account.id, 'creditLimit', 'skipped', 'Account data unavailable');
-      }
-    }
-
-    // Step 4: Balance upload (last, to capture any implicit balance adjustments from transaction deletion)
-    progressDialog.updateStepStatus(account.id, 'balance', 'processing', 'Uploading balance');
-
-    const balanceSuccess = await uploadWealthsimpleBalance(
-      account.id,
-      monarchAccount.id,
-      actualFromDate,
-      toDate,
-      currentBalance,
-      reconstructBalance,
-    );
-
-    if (balanceSuccess) {
-      // Calculate balance info for display
-      const daysUploaded = calculateDaysBetween(actualFromDate, toDate);
-      const balanceMessage = formatBalanceMessage(currentBalance?.amount, daysUploaded);
-      progressDialog.updateStepStatus(account.id, 'balance', 'success', balanceMessage);
-
-      // Determine account type for collapsed summary display
-      const isInvestment = isInvestmentAccount(accountType);
-      const summaryAccountType = isInvestment ? 'investment' : (accountType === 'CREDIT_CARD' ? 'credit' : 'cash');
-
-      // Get transaction count from the transactions step result (stored earlier in the flow)
-      const transactionCount = transactionsSyncedCount;
-
-      // Extract and display balance change (using checkpoint data BEFORE updating it)
-      const balanceChange = extractWealthsimpleBalanceChange(consolidatedAccount, currentBalance);
-      if (balanceChange) {
-        progressDialog.updateBalanceChange(account.id, {
-          ...balanceChange,
-          accountType: summaryAccountType,
-          transactionCount,
-        });
-      } else {
-        // Fallback: just show the new balance if no old data available
-        progressDialog.updateBalanceChange(account.id, {
-          newBalance: currentBalance?.amount,
-          daysUploaded,
-          accountType: summaryAccountType,
-          transactionCount,
-        });
-      }
-    } else {
-      progressDialog.updateStepStatus(account.id, 'balance', 'error', 'Upload failed');
-      return { success: false };
-    }
-
-    // Step 5: Position sync (for investment accounts only)
-    if (isInvestmentAccount(accountType)) {
-      // Skip position sync for manual Monarch accounts that don't use holdings tracking
-      // Manual investment accounts with manualInvestmentsTrackingMethod: 'holdings' DO support holdings sync
-      if (monarchAccount.isManual && monarchAccount.manualInvestmentsTrackingMethod !== 'holdings') {
-        progressDialog.updateStepStatus(account.id, 'positions', 'skipped', 'Manual accounts without holdings tracking');
-        debugLog(`Skipping position sync for ${account.id} - Monarch account is manual without holdings tracking`);
-      } else {
-        progressDialog.updateStepStatus(account.id, 'positions', 'processing', 'Syncing positions...');
-
-        try {
-          const positionsResult = await processAccountPositions(
-            account.id,
-            account.nickname || account.id,
-            monarchAccount.id,
-            progressDialog,
-            accountType,
-          );
-
-          if (positionsResult.success) {
-            // Build status message
-            let statusMsg = `${positionsResult.positionsProcessed} synced`;
-            if (positionsResult.mappingsAutoRepaired > 0) {
-              statusMsg += `, ${positionsResult.mappingsAutoRepaired} repaired`;
-            }
-            if (positionsResult.holdingsRemoved > 0) {
-              statusMsg += `, ${positionsResult.holdingsRemoved} deleted`;
-            }
-            progressDialog.updateStepStatus(account.id, 'positions', 'success', statusMsg);
-          } else {
-            const errorMsg = positionsResult.error || 'Sync failed';
-            progressDialog.updateStepStatus(account.id, 'positions', 'error', errorMsg);
-          }
-        } catch (positionsError) {
-          debugLog('Error during position sync:', positionsError);
-          progressDialog.updateStepStatus(account.id, 'positions', 'error', positionsError.message);
-        }
-      }
-    }
-
-    // Step 6: Cash sync (for investment accounts only)
-    // Syncs CAD and USD cash balances to Monarch holdings
-    if (isInvestmentAccount(accountType)) {
-      // Skip cash sync for manual Monarch accounts that don't use holdings tracking
-      // Manual investment accounts with manualInvestmentsTrackingMethod: 'holdings' DO support holdings sync
-      if (monarchAccount.isManual && monarchAccount.manualInvestmentsTrackingMethod !== 'holdings') {
-        progressDialog.updateStepStatus(account.id, 'cashSync', 'skipped', 'Manual accounts without holdings tracking');
-        debugLog(`Skipping cash sync for ${account.id} - Monarch account is manual without holdings tracking`);
-      } else {
-        progressDialog.updateStepStatus(account.id, 'cashSync', 'processing', 'Syncing cash balances...');
-
-        try {
-          const cashResult = await processCashPositions(
-            account.id,
-            account.nickname || account.id,
-            monarchAccount.id,
-            progressDialog,
-          );
-
-          if (cashResult.success) {
-            // Build status message
-            let statusMsg;
-            if (cashResult.cashSynced === 0 && cashResult.cashSkipped === 0) {
-              statusMsg = 'No cash balances';
-            } else if (cashResult.cashSkipped === 0) {
-              statusMsg = `${cashResult.cashSynced} currency synced`;
-            } else {
-              statusMsg = `${cashResult.cashSynced} synced, ${cashResult.cashSkipped} skipped`;
-            }
-            progressDialog.updateStepStatus(account.id, 'cashSync', 'success', statusMsg);
-          } else {
-            const errorMsg = cashResult.error || 'Sync failed';
-            progressDialog.updateStepStatus(account.id, 'cashSync', 'error', errorMsg);
-          }
-        } catch (cashError) {
-          debugLog('Error during cash sync:', cashError);
-          progressDialog.updateStepStatus(account.id, 'cashSync', 'error', cashError.message);
-        }
-      }
-    }
-
-    // Update lastSyncDate after successful sync
-    if (balanceSuccess) {
-      const { updateAccountInList } = await import('./wealthsimple/account');
-
-      // Get today's date for checkpoint (use local timezone)
-      const todayDate = getTodayLocal();
-
-      // Always store a simple balance checkpoint for balance change display
-      // This is stored with today's date and current balance for comparing on next sync
-      updateAccountInList(account.id, {
-        lastSyncDate: toDate,
-        // Store simple checkpoint for balance change display (separate from reconstruction checkpoint)
-        balanceCheckpoint: {
-          date: todayDate,
-          amount: currentBalance?.amount,
-        },
-      });
-      debugLog(`Updated lastSyncDate and balance checkpoint for account ${account.id} to ${toDate}`);
-
-      // Handle detailed balance checkpoint for accounts that need ongoing balance reconstruction
-      // This is a more sophisticated checkpoint with calculated historical balance
-      if (accountNeedsBalanceReconstruction(accountType) && reconstructBalance) {
-        await createBalanceCheckpoint(account.id, actualFromDate, toDate);
-      } else if (accountNeedsBalanceReconstruction(accountType) && consolidatedAccount.balanceCheckpoint) {
-        await updateBalanceCheckpoint(account.id, toDate, currentBalance);
-      }
-
-      // Apply time-based eviction
-      applyTransactionRetentionEviction(account.id);
-    }
-
-    return { success: true };
-  } catch (error) {
-    debugLog(`Error uploading Wealthsimple account ${account.id}:`, error);
-    const errorSupportedTypes = ['CREDIT_CARD', 'PORTFOLIO_LINE_OF_CREDIT', 'CASH', 'CASH_USD'];
-    const firstStep = errorSupportedTypes.includes(accountType) ? 'transactions' : 'balance';
-    progressDialog.updateStepStatus(account.id, firstStep, 'error', error.message);
-    return { success: false };
-  }
-}
-
-/**
  * Extract balance change information for a Wealthsimple account
- * Uses the stored balance checkpoint for comparison
- * @param {Object} consolidatedAccount - Consolidated account object
- * @param {Object} currentBalance - Current balance object {amount, currency}
- * @returns {Object|null} Balance change data or null if not available
  */
-function extractWealthsimpleBalanceChange(consolidatedAccount, currentBalance) {
+function extractWealthsimpleBalanceChange(
+  consolidatedAccount: ConsolidatedAccount,
+  currentBalance: CurrentBalance | null,
+): BalanceChangeResult | null {
   try {
     if (!currentBalance || currentBalance.amount === undefined || currentBalance.amount === null) {
       debugLog(`No current balance found for Wealthsimple account ${consolidatedAccount.wealthsimpleAccount?.id}`);
       return null;
     }
 
-    // Get the balance checkpoint (stores old balance and date)
     const checkpoint = consolidatedAccount.balanceCheckpoint;
     if (!checkpoint || checkpoint.amount === undefined || checkpoint.amount === null) {
-      // Try lastSyncDate as fallback
       const lastSyncDate = consolidatedAccount.lastSyncDate;
       if (!lastSyncDate) {
         debugLog(`No balance checkpoint or lastSyncDate found for Wealthsimple account ${consolidatedAccount.wealthsimpleAccount?.id}`);
         return null;
       }
-      // No old balance available, but we have a date - can't calculate change
       return null;
     }
 
@@ -944,7 +228,6 @@ function extractWealthsimpleBalanceChange(consolidatedAccount, currentBalance) {
     const compareDate = checkpoint.date;
     const newBalance = currentBalance.amount;
 
-    // Calculate percentage change
     const changePercent = oldBalance !== 0
       ? ((newBalance - oldBalance) / Math.abs(oldBalance)) * 100
       : 0;
@@ -957,7 +240,7 @@ function extractWealthsimpleBalanceChange(consolidatedAccount, currentBalance) {
       lastUploadDate: compareDate,
       changePercent,
     };
-  } catch (error) {
+  } catch (error: unknown) {
     debugLog('Error extracting balance change for Wealthsimple account:', error);
     return null;
   }
@@ -965,25 +248,19 @@ function extractWealthsimpleBalanceChange(consolidatedAccount, currentBalance) {
 
 /**
  * Calculate number of days between two dates
- * @param {string} fromDate - Start date (YYYY-MM-DD)
- * @param {string} toDate - End date (YYYY-MM-DD)
- * @returns {number} Number of days
  */
-function calculateDaysBetween(fromDate, toDate) {
+function calculateDaysBetween(fromDate: string, toDate: string): number {
   const from = new Date(fromDate);
   const to = new Date(toDate);
-  const diffTime = Math.abs(to - from);
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include both start and end dates
+  const diffTime = Math.abs(to.getTime() - from.getTime());
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 }
 
 /**
  * Format transaction count message for display in step status
- * @param {number} synced - Number of transactions synced
- * @param {number} skipped - Number of transactions skipped (duplicates)
- * @returns {string} Formatted message
  */
-function formatTransactionCountMessage(synced, skipped) {
-  const parts = [];
+function formatTransactionCountMessage(synced: number, skipped: number): string {
+  const parts: string[] = [];
 
   if (synced > 0) {
     parts.push(`${synced} synced`);
@@ -1002,12 +279,9 @@ function formatTransactionCountMessage(synced, skipped) {
 
 /**
  * Format balance message for display in step status
- * @param {number} balance - Current balance amount
- * @param {number} daysUploaded - Number of days uploaded
- * @returns {string} Formatted message
  */
-function formatBalanceMessage(balance, daysUploaded) {
-  const parts = [];
+function formatBalanceMessage(balance: number | undefined | null, daysUploaded: number): string {
+  const parts: string[] = [];
 
   if (balance !== undefined && balance !== null) {
     const formattedBalance = `$${Math.abs(balance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -1021,22 +295,627 @@ function formatBalanceMessage(balance, daysUploaded) {
   return parts.length > 0 ? parts.join(' | ') : 'Uploaded';
 }
 
+// ── Public API ────────────────────────────────────────────────────────────────
+
+/**
+ * Upload a single Wealthsimple account to Monarch
+ */
+export async function uploadWealthsimpleAccountToMonarch(
+  consolidatedAccount: ConsolidatedAccount,
+  fromDate: string,
+  toDate: string,
+  currentBalance: CurrentBalance | null = null,
+): Promise<SyncResult | boolean> {
+  try {
+    const account = consolidatedAccount.wealthsimpleAccount;
+    debugLog(`Uploading Wealthsimple account ${account.id} to Monarch...`);
+
+    const result = await resolveWealthsimpleAccountMapping(consolidatedAccount, currentBalance);
+
+    if (result && (result as { skipped?: boolean }).skipped) {
+      debugLog(`User skipped account ${account.id}`);
+      markAccountAsSkipped(account.id, true);
+      toast.show(`Skipped ${account.nickname || account.id}`, 'debug');
+      return { success: false, skipped: true };
+    }
+
+    if (result && (result as { cancelled?: boolean }).cancelled) {
+      debugLog('User cancelled sync');
+      return { success: false, cancelled: true };
+    }
+
+    if (!result) {
+      debugLog('Account mapping cancelled by user');
+      return { success: false, cancelled: true };
+    }
+
+    const monarchAccount = result as { id: string; displayName: string; [key: string]: unknown };
+
+    let actualFromDate = fromDate;
+    let reconstructBalance = false;
+
+    if (isFirstSyncNonInvestment(consolidatedAccount)) {
+      debugLog('First sync for non-investment account detected, showing date picker with reconstruction option');
+
+      const accountCreatedAt = account.createdAt as string | undefined;
+      let defaultDate = fromDate;
+
+      if (accountCreatedAt) {
+        const createdDateStr = extractDateFromISO(accountCreatedAt) as string | null;
+        if (createdDateStr) {
+          defaultDate = createdDateStr;
+          debugLog(`Using account creation date as default: ${defaultDate} (from ${accountCreatedAt})`);
+        }
+      }
+
+      const datePickerResult = await showDatePickerWithOptionsPromise(
+        defaultDate,
+        `Select the start date for syncing "${account.nickname || account.id}". Default is the account creation date.`,
+        {
+          showReconstructCheckbox: true,
+          reconstructCheckedByDefault: true,
+        },
+      ) as { date: string; reconstructBalance: boolean } | null;
+
+      if (!datePickerResult) {
+        debugLog('User cancelled date selection');
+        toast.show('Sync cancelled', 'info');
+        return { success: false, cancelled: true };
+      }
+
+      actualFromDate = datePickerResult.date;
+      reconstructBalance = datePickerResult.reconstructBalance;
+      debugLog(`User selected start date: ${actualFromDate}, reconstruct balance: ${reconstructBalance}`);
+    }
+
+    const balanceSuccess = await uploadWealthsimpleBalance(
+      account.id,
+      monarchAccount.id,
+      actualFromDate,
+      toDate,
+      currentBalance,
+      reconstructBalance,
+    );
+
+    const transactionsSuccess = await uploadWealthsimpleTransactions(
+      account.id,
+      monarchAccount.id,
+      actualFromDate,
+      toDate,
+    );
+
+    const success = balanceSuccess || (transactionsSuccess as { success?: boolean })?.success;
+
+    if (success) {
+      if (balanceSuccess && (transactionsSuccess as { success?: boolean })?.success) {
+        updateAccountInList(account.id, { lastSyncDate: toDate });
+        debugLog(`Updated lastSyncDate for account ${account.id} to ${toDate}`);
+
+        if (accountNeedsBalanceReconstruction(account.type as string) && reconstructBalance) {
+          await createBalanceCheckpoint(account.id, actualFromDate, toDate);
+        } else if (accountNeedsBalanceReconstruction(account.type as string) && consolidatedAccount.balanceCheckpoint) {
+          await updateBalanceCheckpoint(account.id, toDate, currentBalance);
+        }
+      }
+
+      const updatedConsolidatedAccount = getAccountData(account.id);
+      if (updatedConsolidatedAccount) {
+        await syncCreditLimit(updatedConsolidatedAccount, monarchAccount.id);
+      }
+
+      applyTransactionRetentionEviction(account.id);
+
+      toast.show(`Processed ${account.nickname || account.id}`, 'debug');
+    }
+
+    return success ? true : false;
+  } catch (error: unknown) {
+    const account = consolidatedAccount.wealthsimpleAccount;
+    debugLog(`Error uploading Wealthsimple account ${account.id}:`, error);
+    toast.show(`Error uploading account: ${(error as Error).message}`, 'error');
+    return false;
+  }
+}
+
+/**
+ * Build the list of sync steps for a Wealthsimple account
+ */
+export function buildSyncStepsForAccount(consolidatedAccount: ConsolidatedAccount): Array<{ key: string; name: string }> {
+  const steps: Array<{ key: string; name: string }> = [];
+  const accountType = consolidatedAccount.wealthsimpleAccount?.type || '';
+
+  if (WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType)) {
+    steps.push({ key: 'transactions', name: 'Transaction sync' });
+  }
+
+  if (WEALTHSIMPLE_PENDING_RECONCILIATION_TYPES.has(accountType)) {
+    steps.push({ key: 'pendingReconciliation', name: 'Pending reconciliation' });
+  }
+
+  if (accountType === 'CREDIT_CARD') {
+    steps.push({ key: 'creditLimit', name: 'Credit limit sync' });
+  }
+
+  steps.push({ key: 'balance', name: 'Balance upload' });
+
+  if (isInvestmentAccount(accountType)) {
+    steps.push({ key: 'positions', name: 'Position sync' });
+  }
+
+  if (isInvestmentAccount(accountType)) {
+    steps.push({ key: 'cashSync', name: 'Cash sync' });
+  }
+
+  return steps;
+}
+
+/**
+ * Upload all Wealthsimple accounts to Monarch
+ */
+export async function uploadAllWealthsimpleAccountsToMonarch(): Promise<void> {
+  let progressDialog: ProgressDialog | null = null;
+  let isCancelled = false;
+
+  try {
+    debugLog('Starting fetch of all Wealthsimple accounts...');
+
+    const accounts = await syncAccountListWithAPI();
+
+    if (!accounts || accounts.length === 0) {
+      toast.show('No Wealthsimple accounts found', 'debug');
+      return;
+    }
+
+    const accountsToSync = accounts.filter((acc) => acc.syncEnabled !== false);
+    const skippedCount = accounts.length - accountsToSync.length;
+
+    if (skippedCount > 0) {
+      debugLog(`Skipping ${skippedCount} account(s) marked as skipped`);
+    }
+
+    if (accountsToSync.length === 0) {
+      toast.show('All accounts are marked as skipped', 'debug');
+      return;
+    }
+
+    debugLog(`Processing ${accountsToSync.length} Wealthsimple account(s):`, accountsToSync);
+
+    const accountsForDialog = accountsToSync.map((acc) => ({
+      key: acc.wealthsimpleAccount.id,
+      nickname: acc.wealthsimpleAccount.nickname,
+      name: acc.wealthsimpleAccount.nickname || acc.wealthsimpleAccount.id,
+    }));
+
+    progressDialog = showProgressDialog(accountsForDialog, 'Uploading Wealthsimple Accounts to Monarch') as ProgressDialog;
+
+    progressDialog.onCancel(() => {
+      debugLog('Upload cancellation requested');
+      isCancelled = true;
+      toast.show('Upload cancelled by user', 'info');
+    });
+
+    const accountsForBalanceFetch = accountsToSync.map((acc) => ({
+      id: acc.wealthsimpleAccount.id,
+      type: acc.wealthsimpleAccount.type,
+      currency: (acc.wealthsimpleAccount as { currency?: string }).currency,
+    }));
+    debugLog('Fetching balances for all accounts...');
+    const balanceResult = (await wealthsimpleApi.fetchAccountBalances(accountsForBalanceFetch)) as {
+      success: boolean;
+      error?: string;
+      balances: Map<string, CurrentBalance | null>;
+    };
+
+    if (!balanceResult.success) {
+      debugLog('Failed to fetch account balances:', balanceResult.error);
+      toast.show('Failed to fetch account balances. Please try again.', 'error');
+      progressDialog.hideCancel();
+      progressDialog.close();
+      return;
+    }
+
+    const stats = { success: 0, failed: 0, total: accountsToSync.length };
+    let skippedDuringSync = 0;
+    let balanceUnavailableCount = 0;
+
+    for (const consolidatedAccount of accountsToSync) {
+      if (isCancelled) {
+        debugLog('Upload cancelled, stopping account processing');
+        break;
+      }
+
+      const account = consolidatedAccount.wealthsimpleAccount;
+
+      const steps = buildSyncStepsForAccount(consolidatedAccount);
+      progressDialog.initSteps(account.id, steps);
+
+      const currentBalance = balanceResult.balances.get(account.id);
+
+      if (currentBalance === null || currentBalance === undefined) {
+        debugLog(`Skipping account ${account.id} (${account.nickname}) - balance unavailable`);
+        progressDialog.updateStepStatus(account.id, 'balance', 'error', 'Balance unavailable');
+        balanceUnavailableCount += 1;
+        continue;
+      }
+
+      const { fromDate, toDate } = getDefaultDateRange(consolidatedAccount) as { fromDate: string; toDate: string };
+      debugLog(`Using date range for ${account.nickname}: ${fromDate} to ${toDate}`);
+
+      if (isCancelled) break;
+
+      const result = await uploadWealthsimpleAccountToMonarchWithSteps(
+        consolidatedAccount,
+        fromDate,
+        toDate,
+        currentBalance,
+        progressDialog,
+      );
+
+      if (result && result.cancelled) {
+        debugLog('Sync cancelled by user, stopping processing');
+        isCancelled = true;
+        break;
+      }
+
+      if (result && result.skipped) {
+        skippedDuringSync += 1;
+        continue;
+      }
+
+      if (result && result.success) {
+        stats.success += 1;
+      } else {
+        stats.failed += 1;
+      }
+    }
+
+    const totalSkipped = skippedCount + skippedDuringSync;
+    const totalFailed = stats.failed + balanceUnavailableCount;
+    progressDialog.showSummary({
+      success: stats.success,
+      failed: totalFailed,
+      skipped: totalSkipped,
+    });
+    progressDialog.hideCancel();
+
+    if (isCancelled) {
+      toast.show('Upload process was cancelled', 'info');
+    } else if (totalFailed === 0 && totalSkipped === 0) {
+      toast.show(`Successfully uploaded all ${stats.success} Wealthsimple account(s)`, 'info');
+    } else if (stats.success > 0) {
+      const parts: string[] = [];
+      if (stats.success > 0) parts.push(`${stats.success} uploaded`);
+      if (stats.failed > 0) parts.push(`${stats.failed} failed`);
+      if (balanceUnavailableCount > 0) parts.push(`${balanceUnavailableCount} balance unavailable`);
+      if (totalSkipped > 0) parts.push(`${totalSkipped} skipped`);
+      toast.show(parts.join(', '), totalFailed > 0 ? 'warning' : 'info');
+    }
+  } catch (error: unknown) {
+    debugLog('Error fetching Wealthsimple accounts:', error);
+    toast.show(`Error fetching accounts: ${(error as Error).message}`, 'error');
+
+    if (progressDialog) {
+      progressDialog.hideCancel();
+    }
+  }
+}
+
+/**
+ * Upload a single Wealthsimple account to Monarch with step-by-step progress tracking
+ */
+export async function uploadWealthsimpleAccountToMonarchWithSteps(
+  consolidatedAccount: ConsolidatedAccount,
+  fromDate: string,
+  toDate: string,
+  currentBalance: CurrentBalance,
+  progressDialog: ProgressDialog,
+): Promise<SyncResult> {
+  const account = consolidatedAccount.wealthsimpleAccount;
+  const accountType = account?.type || '';
+
+  try {
+    debugLog(`Uploading Wealthsimple account ${account.id} to Monarch with step tracking...`);
+
+    const mappingResult = await resolveWealthsimpleAccountMapping(consolidatedAccount, currentBalance);
+
+    if (mappingResult && (mappingResult as { skipped?: boolean }).skipped) {
+      debugLog(`User skipped account ${account.id}`);
+      markAccountAsSkipped(account.id, true);
+      const firstStep = WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType) ? 'transactions' : 'balance';
+      progressDialog.updateStepStatus(account.id, firstStep, 'skipped', 'Skipped by user');
+      return { success: false, skipped: true };
+    }
+
+    if (mappingResult && (mappingResult as { cancelled?: boolean }).cancelled) {
+      debugLog('User cancelled sync');
+      const firstStep = WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType) ? 'transactions' : 'balance';
+      progressDialog.updateStepStatus(account.id, firstStep, 'error', 'Cancelled');
+      return { success: false, cancelled: true };
+    }
+
+    if (!mappingResult) {
+      debugLog('Account mapping cancelled by user');
+      const firstStep = WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType) ? 'transactions' : 'balance';
+      progressDialog.updateStepStatus(account.id, firstStep, 'error', 'Cancelled');
+      return { success: false, cancelled: true };
+    }
+
+    const monarchAccount = mappingResult as { id: string; displayName: string; isManual?: boolean; manualInvestmentsTrackingMethod?: string; [key: string]: unknown };
+
+    let actualFromDate = fromDate;
+    let reconstructBalance = false;
+
+    if (isFirstSyncNonInvestment(consolidatedAccount)) {
+      debugLog('First sync for non-investment account detected, showing date picker with reconstruction option');
+
+      const accountCreatedAt = account.createdAt as string | undefined;
+      let defaultDate = fromDate;
+
+      if (accountCreatedAt) {
+        const createdDateStr = extractDateFromISO(accountCreatedAt) as string | null;
+        if (createdDateStr) {
+          defaultDate = createdDateStr;
+        }
+      }
+
+      const datePickerResult = await showDatePickerWithOptionsPromise(
+        defaultDate,
+        `Select the start date for syncing "${account.nickname || account.id}". Default is the account creation date.`,
+        {
+          showReconstructCheckbox: true,
+          reconstructCheckedByDefault: true,
+        },
+      ) as { date: string; reconstructBalance: boolean } | null;
+
+      if (!datePickerResult) {
+        debugLog('User cancelled date selection');
+        const firstStep = WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType) ? 'transactions' : 'balance';
+        progressDialog.updateStepStatus(account.id, firstStep, 'error', 'Date selection cancelled');
+        return { success: false, cancelled: true };
+      }
+
+      actualFromDate = datePickerResult.date;
+      reconstructBalance = datePickerResult.reconstructBalance;
+    }
+
+    // Step 1: Transaction sync
+    let rawWealthsimpleTransactions: unknown[] | null = null;
+    let transactionsSyncedCount = 0;
+
+    if (WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType)) {
+      progressDialog.updateStepStatus(account.id, 'transactions', 'processing', 'Fetching from WS...');
+
+      try {
+        rawWealthsimpleTransactions = (await wealthsimpleApi.fetchTransactions(account.id, actualFromDate)) as unknown[];
+        const fetchedCount = rawWealthsimpleTransactions?.length || 0;
+        debugLog(`Fetched ${fetchedCount} raw transactions for account ${account.id}`);
+        progressDialog.updateStepStatus(account.id, 'transactions', 'processing', `Fetched ${fetchedCount}`);
+      } catch (fetchError: unknown) {
+        debugLog('Error fetching raw transactions:', fetchError);
+        rawWealthsimpleTransactions = [];
+      }
+
+      const onTransactionProgress = (stage: string) => {
+        progressDialog.updateStepStatus(account.id, 'transactions', 'processing', stage);
+      };
+
+      const transactionsResult = await uploadWealthsimpleTransactions(
+        account.id,
+        monarchAccount.id,
+        actualFromDate,
+        toDate,
+        { rawTransactions: rawWealthsimpleTransactions, onProgress: onTransactionProgress },
+      );
+
+      if (transactionsResult && transactionsResult.success) {
+        transactionsSyncedCount = transactionsResult.synced || 0;
+        const txMessage = formatTransactionCountMessage(transactionsResult.synced, transactionsResult.skipped);
+        progressDialog.updateStepStatus(account.id, 'transactions', 'success', txMessage);
+      } else if (transactionsResult && transactionsResult.unsupported) {
+        progressDialog.updateStepStatus(account.id, 'transactions', 'skipped', 'Not supported');
+      } else {
+        const errorMsg = transactionsResult?.error || 'Sync failed';
+        progressDialog.updateStepStatus(account.id, 'transactions', 'error', errorMsg);
+      }
+    }
+
+    // Step 2: Pending transaction reconciliation
+    if (WEALTHSIMPLE_PENDING_RECONCILIATION_TYPES.has(accountType)) {
+      progressDialog.updateStepStatus(account.id, 'pendingReconciliation', 'processing', 'Reconciling pending');
+
+      try {
+        const lookbackDays = getLookbackForInstitution('wealthsimple') as number;
+
+        const reconciliationResult = await reconcilePendingTransactions(
+          monarchAccount.id,
+          (rawWealthsimpleTransactions || []) as Record<string, unknown>[],
+          lookbackDays,
+          accountType,
+        );
+
+        const reconciliationMessage = formatReconciliationMessage(reconciliationResult as ReconciliationResult) as string;
+        const reconciliationStatus = reconciliationResult.success ? 'success' : 'error';
+
+        progressDialog.updateStepStatus(account.id, 'pendingReconciliation', reconciliationStatus, reconciliationMessage);
+        debugLog(`Pending reconciliation completed for ${account.id}:`, reconciliationResult);
+      } catch (reconciliationError: unknown) {
+        debugLog('Error during pending transaction reconciliation:', reconciliationError);
+        progressDialog.updateStepStatus(account.id, 'pendingReconciliation', 'error', (reconciliationError as Error).message);
+      }
+    }
+
+    // Step 3: Credit limit sync
+    if (accountType === 'CREDIT_CARD') {
+      progressDialog.updateStepStatus(account.id, 'creditLimit', 'processing', 'Syncing credit limit');
+
+      const updatedConsolidatedAccount = getAccountData(account.id);
+      if (updatedConsolidatedAccount) {
+        const creditLimitSuccess = await syncCreditLimit(updatedConsolidatedAccount, monarchAccount.id);
+        if (creditLimitSuccess) {
+          const refreshedAccount = getAccountData(account.id);
+          const creditLimit = refreshedAccount?.lastSyncedCreditLimit;
+          const message = creditLimit ? `$${(creditLimit as number).toLocaleString()}` : 'Synced';
+          progressDialog.updateStepStatus(account.id, 'creditLimit', 'success', message);
+        } else {
+          progressDialog.updateStepStatus(account.id, 'creditLimit', 'error', 'Sync failed');
+        }
+      } else {
+        progressDialog.updateStepStatus(account.id, 'creditLimit', 'skipped', 'Account data unavailable');
+      }
+    }
+
+    // Step 4: Balance upload
+    progressDialog.updateStepStatus(account.id, 'balance', 'processing', 'Uploading balance');
+
+    const balanceSuccess = await uploadWealthsimpleBalance(
+      account.id,
+      monarchAccount.id,
+      actualFromDate,
+      toDate,
+      currentBalance,
+      reconstructBalance,
+    );
+
+    if (balanceSuccess) {
+      const daysUploaded = calculateDaysBetween(actualFromDate, toDate);
+      const balanceMessage = formatBalanceMessage(currentBalance?.amount, daysUploaded);
+      progressDialog.updateStepStatus(account.id, 'balance', 'success', balanceMessage);
+
+      const isInvestment = isInvestmentAccount(accountType);
+      const summaryAccountType = isInvestment ? 'investment' : (accountType === 'CREDIT_CARD' ? 'credit' : 'cash');
+
+      const transactionCount = transactionsSyncedCount;
+
+      const balanceChange = extractWealthsimpleBalanceChange(consolidatedAccount, currentBalance);
+      if (balanceChange) {
+        progressDialog.updateBalanceChange(account.id, {
+          ...balanceChange,
+          accountType: summaryAccountType,
+          transactionCount,
+        });
+      } else {
+        progressDialog.updateBalanceChange(account.id, {
+          newBalance: currentBalance?.amount,
+          daysUploaded,
+          accountType: summaryAccountType,
+          transactionCount,
+        });
+      }
+    } else {
+      progressDialog.updateStepStatus(account.id, 'balance', 'error', 'Upload failed');
+      return { success: false };
+    }
+
+    // Step 5: Position sync (for investment accounts only)
+    if (isInvestmentAccount(accountType)) {
+      if (monarchAccount.isManual && monarchAccount.manualInvestmentsTrackingMethod !== 'holdings') {
+        progressDialog.updateStepStatus(account.id, 'positions', 'skipped', 'Manual accounts without holdings tracking');
+        debugLog(`Skipping position sync for ${account.id} - Monarch account is manual without holdings tracking`);
+      } else {
+        progressDialog.updateStepStatus(account.id, 'positions', 'processing', 'Syncing positions...');
+
+        try {
+          const positionsResult = await processAccountPositions(
+            account.id,
+            account.nickname || account.id,
+            monarchAccount.id,
+            progressDialog,
+            accountType,
+          );
+
+          if (positionsResult.success) {
+            let statusMsg = `${positionsResult.positionsProcessed} synced`;
+            if (positionsResult.mappingsAutoRepaired > 0) statusMsg += `, ${positionsResult.mappingsAutoRepaired} repaired`;
+            if (positionsResult.holdingsRemoved > 0) statusMsg += `, ${positionsResult.holdingsRemoved} deleted`;
+            progressDialog.updateStepStatus(account.id, 'positions', 'success', statusMsg);
+          } else {
+            const errorMsg = positionsResult.error || 'Sync failed';
+            progressDialog.updateStepStatus(account.id, 'positions', 'error', errorMsg);
+          }
+        } catch (positionsError: unknown) {
+          debugLog('Error during position sync:', positionsError);
+          progressDialog.updateStepStatus(account.id, 'positions', 'error', (positionsError as Error).message);
+        }
+      }
+    }
+
+    // Step 6: Cash sync (for investment accounts only)
+    if (isInvestmentAccount(accountType)) {
+      if (monarchAccount.isManual && monarchAccount.manualInvestmentsTrackingMethod !== 'holdings') {
+        progressDialog.updateStepStatus(account.id, 'cashSync', 'skipped', 'Manual accounts without holdings tracking');
+        debugLog(`Skipping cash sync for ${account.id} - Monarch account is manual without holdings tracking`);
+      } else {
+        progressDialog.updateStepStatus(account.id, 'cashSync', 'processing', 'Syncing cash balances...');
+
+        try {
+          const cashResult = await processCashPositions(
+            account.id,
+            account.nickname || account.id,
+            monarchAccount.id,
+            progressDialog,
+          );
+
+          if (cashResult.success) {
+            let statusMsg: string;
+            if (cashResult.cashSynced === 0 && cashResult.cashSkipped === 0) statusMsg = 'No cash balances';
+            else if (cashResult.cashSkipped === 0) statusMsg = `${cashResult.cashSynced} currency synced`;
+            else statusMsg = `${cashResult.cashSynced} synced, ${cashResult.cashSkipped} skipped`;
+            progressDialog.updateStepStatus(account.id, 'cashSync', 'success', statusMsg);
+          } else {
+            const errorMsg = cashResult.error || 'Sync failed';
+            progressDialog.updateStepStatus(account.id, 'cashSync', 'error', errorMsg);
+          }
+        } catch (cashError: unknown) {
+          debugLog('Error during cash sync:', cashError);
+          progressDialog.updateStepStatus(account.id, 'cashSync', 'error', (cashError as Error).message);
+        }
+      }
+    }
+
+    // Update lastSyncDate after successful sync
+    if (balanceSuccess) {
+      const todayDate = getTodayLocal() as string;
+
+      updateAccountInList(account.id, {
+        lastSyncDate: toDate,
+        balanceCheckpoint: {
+          date: todayDate,
+          amount: currentBalance?.amount,
+        },
+      });
+      debugLog(`Updated lastSyncDate and balance checkpoint for account ${account.id} to ${toDate}`);
+
+      if (accountNeedsBalanceReconstruction(accountType) && reconstructBalance) {
+        await createBalanceCheckpoint(account.id, actualFromDate, toDate);
+      } else if (accountNeedsBalanceReconstruction(accountType) && consolidatedAccount.balanceCheckpoint) {
+        await updateBalanceCheckpoint(account.id, toDate, currentBalance);
+      }
+
+      applyTransactionRetentionEviction(account.id);
+    }
+
+    return { success: true };
+  } catch (error: unknown) {
+    debugLog(`Error uploading Wealthsimple account ${account.id}:`, error);
+    const errorSupportedTypes = ['CREDIT_CARD', 'PORTFOLIO_LINE_OF_CREDIT', 'CASH', 'CASH_USD'];
+    const firstStep = errorSupportedTypes.includes(accountType) ? 'transactions' : 'balance';
+    progressDialog.updateStepStatus(account.id, firstStep, 'error', (error as Error).message);
+    return { success: false };
+  }
+}
+
 /**
  * Get the last upload date for an account
- * @param {string} accountId - Account ID
- * @returns {string|null} Last upload date or null
  */
-export function getLastUploadDate(accountId) {
+export function getLastUploadDate(accountId: string): string | null {
   const accountData = getAccountData(accountId);
   return accountData?.lastSyncDate || null;
 }
 
 /**
  * Clear last upload date for an account
- * @param {string} accountId - Account ID
  */
-export function clearLastUploadDate(accountId) {
-  const { updateAccountInList } = require('./wealthsimple/account');
+export function clearLastUploadDate(accountId: string): void {
   updateAccountInList(accountId, { lastSyncDate: null });
 }
 

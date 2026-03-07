@@ -1,7 +1,7 @@
 # TypeScript Migration Plan
 
 > **Status:** Draft  
-> **Updated:** 2026-03-07 (Phase 11 in progress)  
+> **Updated:** 2026-03-07 (Phase 12 complete)
 > **Author:** @meseer  
 > **Note:** See [ADR-005](../decisions/005-typescript-migration.md) for the decision record.
 
@@ -20,12 +20,12 @@
 | 8 | Rogers Bank Services | ✅ Complete | 2/2 src / 0 test |
 | 9 | Questrade Services | ✅ Complete | 8/8 src / 0 test |
 | 10 | WS Transaction Rules | ✅ Complete | 3/3 src / 0 test |
-| 11 | WS Core Services | 🔄 In Progress | 0/5 src / 0 test |
-| 12 | WS Top-Level Services | ⬜ Not Started | 0/3 src / 0 test |
+| 11 | WS Core Services | ✅ Complete | 5/5 src / 0 test |
+| 12 | WS Top-Level Services | ✅ Complete | 3/3 src / 0 test |
 | 13 | UI Layer | ⬜ Not Started | 0/32 src / 0 test |
 | 14 | Strictness Ramp-up | ⬜ Not Started | — |
 
-**Overall:** 64/106 source files converted (~60%)
+**Overall:** 69/106 source files converted (~65%)
 
 ## Overview
 
@@ -257,9 +257,11 @@ Added full `WealthsimpleTransaction` interface, `ExtendedOrder`, `SpendDetails`,
 **Batch A (3 files, ~1,626 lines):** transactionsReconciliation, transactionsHelpers, balance
 **Batch B (2 files, ~1,846 lines):** transactionsInvestment, transactions
 
-### Phase 12: WS Top-Level Services (1–2 days)
+### Phase 12: WS Top-Level Services ✅ Complete
 
 **Files (3, ~2,891 lines):** positions, account, wealthsimple-upload
+
+Completed in Phase 12: `src/services/wealthsimple/positions.ts`, `src/services/wealthsimple/account.ts`, `src/services/wealthsimple-upload.ts`. All originals deleted.
 
 ### Phase 13: UI Layer (5–8 days)
 

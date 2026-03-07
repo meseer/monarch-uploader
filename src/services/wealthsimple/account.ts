@@ -22,6 +22,7 @@ import {
   uploadBalanceToMonarch,
 } from './balance';
 import { fetchAndProcessTransactions } from './transactions';
+import { type WealthsimpleTransaction } from './transactionRulesHelpers';
 import { convertWealthsimpleTransactionsToMonarchCSV } from '../../utils/csv';
 import {
   migrateLegacyTransactions,
@@ -31,18 +32,91 @@ import {
   getTransactionIdsFromArray,
 } from '../../utils/transactionStorage';
 
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface WealthsimpleAccount {
+  id: string;
+  nickname?: string;
+  type?: string;
+  [key: string]: unknown;
+}
+
+interface MonarchAccount {
+  id: string;
+  displayName: string;
+  skipped?: boolean;
+  newlyCreated?: boolean;
+  [key: string]: unknown;
+}
+
+interface BalanceCheckpoint {
+  date: string;
+  amount: number;
+}
+
+interface StoredTransaction {
+  id: string;
+  date?: string;
+}
+
+export interface ConsolidatedAccount {
+  wealthsimpleAccount: WealthsimpleAccount;
+  monarchAccount?: MonarchAccount | null;
+  syncEnabled?: boolean;
+  lastSyncDate?: string;
+  uploadedTransactions?: StoredTransaction[];
+  storeTransactionDetailsInNotes?: boolean;
+  stripStoreNumbers?: boolean;
+  transactionRetentionDays?: number;
+  transactionRetentionCount?: number;
+  balanceCheckpoint?: BalanceCheckpoint;
+  lastSyncedCreditLimit?: number | null;
+  [key: string]: unknown;
+}
+
+interface CurrentBalance {
+  amount: number;
+  currency?: string;
+}
+
+interface UploadTransactionOptions {
+  rawTransactions?: unknown[];
+  onProgress?: (message: string) => void;
+}
+
+interface TransactionUploadResult {
+  success: boolean;
+  synced: number;
+  skipped: number;
+  total: number;
+  unsupported?: boolean;
+  error?: string;
+}
+
+interface DefaultAccountSettings {
+  syncEnabled: boolean;
+  storeTransactionDetailsInNotes: boolean;
+  stripStoreNumbers: boolean;
+  transactionRetentionDays: number;
+  transactionRetentionCount: number;
+}
+
+interface ProcessedTransaction {
+  id: string;
+  date: string;
+  [key: string]: unknown;
+}
+
+// ── Functions ─────────────────────────────────────────────────────────────────
+
 /**
  * Resolve Monarch account mapping for a Wealthsimple account
  * Shows account selector with create option, with pre-filled values based on Wealthsimple account type
- * @param {Object} consolidatedAccount - Consolidated account object with wealthsimpleAccount property
- * @param {Object} consolidatedAccount.wealthsimpleAccount - Wealthsimple account object
- * @param {string} consolidatedAccount.wealthsimpleAccount.id - Account ID
- * @param {string} consolidatedAccount.wealthsimpleAccount.nickname - Account nickname
- * @param {string} consolidatedAccount.wealthsimpleAccount.type - Account type (e.g., 'MANAGED_TFSA')
- * @param {Object} currentBalance - Current balance object {amount, currency} or null
- * @returns {Promise<Object|null>} Monarch account object, or null if cancelled
  */
-export async function resolveWealthsimpleAccountMapping(consolidatedAccount, currentBalance = null) {
+export async function resolveWealthsimpleAccountMapping(
+  consolidatedAccount: ConsolidatedAccount,
+  currentBalance: CurrentBalance | null = null,
+): Promise<MonarchAccount | null> {
   try {
     const { id: accountId, nickname, type } = consolidatedAccount.wealthsimpleAccount;
 
@@ -53,19 +127,19 @@ export async function resolveWealthsimpleAccountMapping(consolidatedAccount, cur
 
     // Check for existing mapping in consolidated structure
     const accountData = getAccountData(accountId);
-    let warningMessage = null;
+    let warningMessage: string | null = null;
 
     if (accountData?.monarchAccount) {
       debugLog(`Found existing mapping: ${nickname} -> ${accountData.monarchAccount.displayName}`);
 
       // Validate that the Monarch account still exists
       try {
-        const allAccounts = await monarchApi.getFilteredAccounts({});
-        const freshMonarchAccount = allAccounts.find((acc) => acc.id === accountData.monarchAccount.id);
+        const allAccounts = (await monarchApi.getFilteredAccounts({})) as unknown as MonarchAccount[];
+        const freshMonarchAccount = allAccounts.find((acc) => acc.id === accountData.monarchAccount!.id);
 
         if (freshMonarchAccount) {
           // Account still exists - update with fresh data and return
-          const updatedMonarchAccount = {
+          const updatedMonarchAccount: MonarchAccount = {
             ...accountData.monarchAccount,
             ...freshMonarchAccount,
           };
@@ -91,7 +165,7 @@ export async function resolveWealthsimpleAccountMapping(consolidatedAccount, cur
     debugLog('No existing mapping found, showing account selector with create option');
 
     // Get Monarch account type mapping for this Wealthsimple account type
-    const typeMapping = getMonarchAccountTypeMapping(type);
+    const typeMapping = getMonarchAccountTypeMapping(type as string);
     debugLog('Account type mapping:', { wealthsimpleType: type, monarchMapping: typeMapping });
 
     // Prepare defaults for account creation
@@ -101,25 +175,26 @@ export async function resolveWealthsimpleAccountMapping(consolidatedAccount, cur
       defaultSubtype: typeMapping?.subtype || 'brokerage',
       defaultBalance: currentBalance ? currentBalance.amount : 0,
       defaultIncludeInNetWorth: true,
-      currentBalance, // Pass balance for display in UI
-      accountType: type, // Pass raw account type for display
-      warningMessage, // Pass warning if previous mapping was invalid
+      balanceOnlyTracking: false,
+      currentBalance,
+      accountType: type,
+      warningMessage,
     };
 
     // Determine account type for filtering Monarch accounts
     const accountType = typeMapping?.type || 'brokerage';
 
     // Fetch Monarch accounts of the appropriate type
-    const monarchAccounts = await monarchApi.listAccounts(accountType);
+    const monarchAccounts = (await monarchApi.listAccounts(accountType)) as unknown as MonarchAccount[];
     if (!monarchAccounts || monarchAccounts.length === 0) {
       debugLog(`No ${accountType} accounts found in Monarch, showing create dialog directly`);
     }
 
     // Show enhanced account selector with create option
-    const monarchAccount = await new Promise((resolve) => {
+    const monarchAccount = await new Promise<MonarchAccount | null>((resolve) => {
       showMonarchAccountSelectorWithCreate(
         monarchAccounts,
-        resolve,
+        resolve as (result: unknown) => void,
         null,
         accountType,
         createDefaults,
@@ -167,9 +242,9 @@ export async function resolveWealthsimpleAccountMapping(consolidatedAccount, cur
     toast.show(`Mapped ${nickname} to ${monarchAccount.displayName} in Monarch`, 'debug');
 
     return monarchAccount;
-  } catch (error) {
+  } catch (error: unknown) {
     debugLog('Error resolving Wealthsimple account mapping:', error);
-    toast.show(`Error mapping account: ${error.message}`, 'error');
+    toast.show(`Error mapping account: ${(error as Error).message}`, 'error');
     throw error;
   }
 }
@@ -180,16 +255,15 @@ export async function resolveWealthsimpleAccountMapping(consolidatedAccount, cur
  * 1. Investment accounts: Fetch balance history from API
  * 2. Credit/Cash accounts - first sync with reconstruction: Build balance from transactions
  * 3. Credit/Cash accounts - subsequent sync: Upload current balance for today only
- *
- * @param {string} wealthsimpleAccountId - Wealthsimple account ID
- * @param {string} monarchAccountId - Monarch account ID
- * @param {string} fromDate - Start date (YYYY-MM-DD)
- * @param {string} toDate - End date (YYYY-MM-DD)
- * @param {Object} currentBalance - Current balance object {amount, currency}
- * @param {boolean} reconstructBalance - Whether to reconstruct balance from transactions (first sync)
- * @returns {Promise<boolean>} Success status
  */
-export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAccountId, fromDate, toDate, currentBalance = null, reconstructBalance = false) {
+export async function uploadWealthsimpleBalance(
+  wealthsimpleAccountId: string,
+  monarchAccountId: string,
+  fromDate: string,
+  toDate: string,
+  currentBalance: CurrentBalance | null = null,
+  reconstructBalance: boolean = false,
+): Promise<boolean> {
   try {
     debugLog('Starting Wealthsimple balance history upload', {
       wealthsimpleAccountId,
@@ -230,9 +304,9 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
         monarchAccountId,
         actualFromDate,
         actualToDate,
-        currentBalance, // Pass current balance for today's balance correction
+        currentBalance,
       );
-      return success;
+      return success as boolean;
     }
 
     // Scenario 2: Credit/Cash accounts - first sync with reconstruction enabled
@@ -241,7 +315,7 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
 
       // Fetch and process transactions to use for balance reconstruction
       // Skip categorization since balance reconstruction only needs dates and amounts
-      const processedTransactions = await fetchAndProcessTransactions(accountData, actualFromDate, actualToDate, { skipCategorization: true });
+      const processedTransactions = await fetchAndProcessTransactions(accountData, actualFromDate, actualToDate, { skipCategorization: true }) as Array<{ date: string; amount: number }> | null;
 
       const hasTransactions = processedTransactions && processedTransactions.length > 0;
 
@@ -259,7 +333,7 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
       // Only go up to yesterday - we'll add today's current balance separately
       const reconstructionEndDate = actualToDate <= yesterdayDate ? actualToDate : yesterdayDate;
 
-      let balanceHistory = [];
+      let balanceHistory: Array<{ date: string; amount: number }> = [];
 
       // Only reconstruct if there's at least one day before today to reconstruct
       if (actualFromDate <= reconstructionEndDate) {
@@ -267,7 +341,7 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
           processedTransactions || [],
           actualFromDate,
           reconstructionEndDate,
-        );
+        ) as Array<{ date: string; amount: number }>;
       }
 
       // Add today's current balance (if available and toDate includes today)
@@ -304,7 +378,7 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
         toast.show(message, 'debug');
       }
 
-      return success;
+      return success as boolean;
     }
 
     // Scenario 3: Credit/Cash accounts - subsequent sync (has lastSyncDate)
@@ -326,7 +400,7 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
 
       // Fetch and process transactions from checkpoint date to today
       // Skip categorization since balance reconstruction only needs dates and amounts
-      const processedTransactions = await fetchAndProcessTransactions(accountData, checkpoint.date, todayDate, { skipCategorization: true });
+      const processedTransactions = await fetchAndProcessTransactions(accountData, checkpoint.date, todayDate, { skipCategorization: true }) as Array<{ date: string; amount: number }> | null;
 
       // Reconstruct balance from checkpoint to today
       const balanceHistory = reconstructBalanceFromCheckpoint(
@@ -334,7 +408,7 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
         checkpoint,
         todayDate,
         currentBalance,
-      );
+      ) as Array<{ date: string; amount: number }> | null;
 
       if (!balanceHistory || balanceHistory.length === 0) {
         debugLog('Failed to reconstruct balance from checkpoint, falling back to current balance only');
@@ -356,14 +430,14 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
           toast.show(`Reconstructed and uploaded ${balanceHistory.length} days of balance for ${wealthsimpleAccountName}`, 'debug');
         }
 
-        return success;
+        return success as boolean;
       }
     } else {
       debugLog('No checkpoint available - uploading current balance only');
     }
 
     // Scenario 3b: No checkpoint - upload current balance only
-    const balanceHistory = createCurrentBalanceOnly(currentBalance, todayDate);
+    const balanceHistory = createCurrentBalanceOnly(currentBalance, todayDate) as Array<{ date: string; amount: number }> | null;
 
     if (!balanceHistory || balanceHistory.length === 0) {
       debugLog('Failed to create current balance entry');
@@ -386,10 +460,10 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
       toast.show(`Updated today's balance for ${wealthsimpleAccountName}`, 'debug');
     }
 
-    return success;
-  } catch (error) {
+    return success as boolean;
+  } catch (error: unknown) {
     debugLog('Error uploading Wealthsimple balance:', error);
-    toast.show(`Balance upload failed: ${error.message}`, 'error');
+    toast.show(`Balance upload failed: ${(error as Error).message}`, 'error');
     return false;
   }
 }
@@ -400,21 +474,14 @@ export async function uploadWealthsimpleBalance(wealthsimpleAccountId, monarchAc
  *
  * Optimized: Accepts pre-fetched raw transactions to avoid duplicate API calls,
  * and passes uploadedTransactionIds to processing for early filtering.
- *
- * @param {string} wealthsimpleAccountId - Wealthsimple account ID
- * @param {string} monarchAccountId - Monarch account ID
- * @param {string} fromDate - Start date (YYYY-MM-DD)
- * @param {string} toDate - End date (YYYY-MM-DD)
- * @param {Object} options - Upload options
- * @param {Array} options.rawTransactions - Pre-fetched raw transactions (optional)
- * @param {Function} options.onProgress - Callback for progress updates (optional)
- * @returns {Promise<Object>} Result object with success status and counts
- *   - success: boolean - Whether the upload succeeded
- *   - synced: number - Number of transactions synced (uploaded)
- *   - skipped: number - Number of duplicate transactions skipped
- *   - total: number - Total transactions found
  */
-export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, monarchAccountId, fromDate, toDate, options = {}) {
+export async function uploadWealthsimpleTransactions(
+  wealthsimpleAccountId: string,
+  monarchAccountId: string,
+  fromDate: string,
+  toDate: string,
+  options: UploadTransactionOptions = {},
+): Promise<TransactionUploadResult> {
   try {
     const { rawTransactions, onProgress } = options;
 
@@ -436,28 +503,25 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
     const accountType = accountData.wealthsimpleAccount.type;
 
     // Check if this account type supports transactions
-    if (!WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType)) {
+    if (!WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType as string)) {
       debugLog(`Transaction upload not supported for account type: ${accountType}`);
       return { success: false, synced: 0, skipped: 0, total: 0, unsupported: true };
     }
 
-    // Note: First sync date picker is handled in wealthsimple-upload.js
-    // The fromDate passed here is already the correct date (either user-selected or default)
-
     // Get existing uploaded transactions and migrate if needed
     // Build the Set BEFORE processing so we can pass it for early filtering
-    const existingTransactions = migrateLegacyTransactions(accountData.uploadedTransactions || []);
-    const uploadedTransactionIds = getTransactionIdsFromArray(existingTransactions);
+    const existingTransactions = migrateLegacyTransactions(accountData.uploadedTransactions || []) as StoredTransaction[];
+    const uploadedTransactionIds = getTransactionIdsFromArray(existingTransactions) as Set<string>;
 
     debugLog(`Account has ${uploadedTransactionIds.size} previously uploaded transaction IDs`);
 
     // Fetch and process transactions with early duplicate filtering
     // Pass raw transactions if provided, uploadedTransactionIds for early filtering, and onProgress for UI updates
     const processedTransactions = await fetchAndProcessTransactions(accountData, fromDate, toDate, {
-      rawTransactions,
+      rawTransactions: rawTransactions as WealthsimpleTransaction[] | undefined,
       uploadedTransactionIds,
       onProgress,
-    });
+    }) as unknown as ProcessedTransaction[] | null;
 
     if (!processedTransactions || processedTransactions.length === 0) {
       debugLog('No transactions to upload');
@@ -493,7 +557,7 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
     const csvOptions = {
       storeTransactionDetailsInNotes: accountData.storeTransactionDetailsInNotes ?? false,
     };
-    const csvData = convertWealthsimpleTransactionsToMonarchCSV(newTransactions, accountName, csvOptions);
+    const csvData = convertWealthsimpleTransactionsToMonarchCSV(newTransactions as unknown as WealthsimpleTransaction[], accountName as string, csvOptions);
 
     if (!csvData) {
       throw new Error('Failed to convert transactions to CSV');
@@ -515,7 +579,7 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
         .filter((transaction) => transaction.id)
         .map((transaction) => ({
           id: transaction.id,
-          date: transaction.date, // Use the transaction's actual date
+          date: transaction.date,
         }));
 
       if (transactionsToStore.length > 0) {
@@ -527,7 +591,7 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
           existingTransactions,
           transactionsToStore,
           retentionSettings,
-        );
+        ) as StoredTransaction[];
 
         // Update account with new uploaded transactions
         // Note: lastSyncDate is NOT updated here - it's only updated when BOTH balance and transactions succeed
@@ -550,20 +614,18 @@ export async function uploadWealthsimpleTransactions(wealthsimpleAccountId, mona
     }
 
     throw new Error('Transaction upload failed');
-  } catch (error) {
+  } catch (error: unknown) {
     debugLog('Error uploading Wealthsimple transactions:', error);
-    toast.show(`Transaction upload failed: ${error.message}`, 'error');
-    return { success: false, synced: 0, skipped: 0, total: 0, error: error.message };
+    toast.show(`Transaction upload failed: ${(error as Error).message}`, 'error');
+    return { success: false, synced: 0, skipped: 0, total: 0, error: (error as Error).message };
   }
 }
 
 /**
  * Apply transaction retention eviction for an account
  * Should be called after each successful sync to clean up old transaction IDs
- * @param {string} accountId - Wealthsimple account ID
- * @returns {boolean} True if eviction was performed
  */
-export function applyTransactionRetentionEviction(accountId) {
+export function applyTransactionRetentionEviction(accountId: string): boolean {
   try {
     const accountData = getAccountData(accountId);
     if (!accountData) {
@@ -577,13 +639,13 @@ export function applyTransactionRetentionEviction(accountId) {
     }
 
     // Migrate legacy format if needed
-    const migrated = migrateLegacyTransactions(existingTransactions);
+    const migrated = migrateLegacyTransactions(existingTransactions) as StoredTransaction[];
 
     // Get retention settings from account
     const retentionSettings = getRetentionSettingsFromAccount(accountData);
 
     // Apply retention limits
-    const retained = applyRetentionLimits(migrated, retentionSettings);
+    const retained = applyRetentionLimits(migrated as import('../../utils/transactionStorage').StoredTransaction[], retentionSettings) as StoredTransaction[];
 
     // Only update if something changed
     if (retained.length !== migrated.length) {
@@ -594,7 +656,7 @@ export function applyTransactionRetentionEviction(accountId) {
     }
 
     return true;
-  } catch (error) {
+  } catch (error: unknown) {
     debugLog('Error applying transaction retention eviction:', error);
     return false;
   }
@@ -602,13 +664,12 @@ export function applyTransactionRetentionEviction(accountId) {
 
 /**
  * Get default account settings for new accounts
- * @returns {Object} Default settings object
  */
-export function getDefaultAccountSettings() {
+export function getDefaultAccountSettings(): DefaultAccountSettings {
   return {
     syncEnabled: true,
-    storeTransactionDetailsInNotes: false, // Default: don't store transaction details in notes
-    stripStoreNumbers: true, // Default: strip store numbers from merchant names
+    storeTransactionDetailsInNotes: false,
+    stripStoreNumbers: true,
     transactionRetentionDays: TRANSACTION_RETENTION_DEFAULTS.DAYS,
     transactionRetentionCount: TRANSACTION_RETENTION_DEFAULTS.COUNT,
   };
@@ -616,13 +677,12 @@ export function getDefaultAccountSettings() {
 
 /**
  * Get cached Wealthsimple accounts list (consolidated structure)
- * @returns {Array} Array of consolidated account objects
  */
-export function getWealthsimpleAccounts() {
+export function getWealthsimpleAccounts(): ConsolidatedAccount[] {
   try {
     const accounts = JSON.parse(GM_getValue(STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST, '[]'));
     return accounts;
-  } catch (error) {
+  } catch (error: unknown) {
     debugLog('Error getting Wealthsimple accounts list:', error);
     return [];
   }
@@ -630,29 +690,23 @@ export function getWealthsimpleAccounts() {
 
 /**
  * Save Wealthsimple accounts list
- * @param {Array} accounts - Array of consolidated account objects
  */
-function saveWealthsimpleAccounts(accounts) {
+function saveWealthsimpleAccounts(accounts: ConsolidatedAccount[]): void {
   GM_setValue(STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST, JSON.stringify(accounts));
 }
 
 /**
  * Get single account data from consolidated list
- * @param {string} accountId - Wealthsimple account ID
- * @returns {Object|null} Consolidated account object or null
  */
-export function getAccountData(accountId) {
+export function getAccountData(accountId: string): ConsolidatedAccount | null {
   const accounts = getWealthsimpleAccounts();
   return accounts.find((acc) => acc.wealthsimpleAccount?.id === accountId) || null;
 }
 
 /**
  * Update specific account properties in the consolidated list
- * @param {string} accountId - Wealthsimple account ID
- * @param {Object} updates - Properties to update
- * @returns {boolean} Success status
  */
-export function updateAccountInList(accountId, updates) {
+export function updateAccountInList(accountId: string, updates: Partial<ConsolidatedAccount>): boolean {
   try {
     const accounts = getWealthsimpleAccounts();
     const accountIndex = accounts.findIndex((acc) => acc.wealthsimpleAccount?.id === accountId);
@@ -672,7 +726,7 @@ export function updateAccountInList(accountId, updates) {
     saveWealthsimpleAccounts(accounts);
     debugLog(`Updated account ${accountId} in list`, updates);
     return true;
-  } catch (error) {
+  } catch (error: unknown) {
     debugLog('Error updating account in list:', error);
     return false;
   }
@@ -680,11 +734,8 @@ export function updateAccountInList(accountId, updates) {
 
 /**
  * Mark account as skipped or unskip it (updates syncEnabled flag)
- * @param {string} accountId - Wealthsimple account ID
- * @param {boolean} skipped - Whether to skip this account (inverts to syncEnabled)
- * @returns {boolean} Success status
  */
-export function markAccountAsSkipped(accountId, skipped = true) {
+export function markAccountAsSkipped(accountId: string, skipped: boolean = true): boolean {
   const success = updateAccountInList(accountId, { syncEnabled: !skipped });
   if (success) {
     const action = skipped ? 'disabled' : 'enabled';
@@ -695,10 +746,8 @@ export function markAccountAsSkipped(accountId, skipped = true) {
 
 /**
  * Check if an account is marked as skipped (checks syncEnabled flag)
- * @param {string} accountId - Wealthsimple account ID
- * @returns {boolean} True if account sync is disabled
  */
-export function isAccountSkipped(accountId) {
+export function isAccountSkipped(accountId: string): boolean {
   const accountData = getAccountData(accountId);
   return accountData ? !accountData.syncEnabled : false;
 }
@@ -706,12 +755,11 @@ export function isAccountSkipped(accountId) {
 /**
  * Sync account list with API data
  * Fetches fresh accounts from API and merges with cached settings
- * @returns {Promise<Array>} Updated accounts list with settings
  */
-export async function syncAccountListWithAPI() {
+export async function syncAccountListWithAPI(): Promise<ConsolidatedAccount[]> {
   try {
-    return await wealthsimpleApi.fetchAndCacheAccounts();
-  } catch (error) {
+    return await wealthsimpleApi.fetchAndCacheAccounts() as unknown as ConsolidatedAccount[];
+  } catch (error: unknown) {
     debugLog('Error syncing account list with API:', error);
     // Return cached list if API fails
     return getWealthsimpleAccounts();
@@ -720,17 +768,11 @@ export async function syncAccountListWithAPI() {
 
 /**
  * Sync credit limit from Wealthsimple to Monarch for credit card accounts
- * This function:
- * 1. Fetches the current credit limit from Wealthsimple
- * 2. Compares with stored limit (or fetches from Monarch if no stored limit)
- * 3. Updates Monarch if limits differ
- * 4. Stores the synced limit for future comparisons
- *
- * @param {Object} consolidatedAccount - Consolidated account object
- * @param {string} monarchAccountId - Monarch account ID
- * @returns {Promise<boolean>} True if sync was successful (or skipped for non-credit accounts)
  */
-export async function syncCreditLimit(consolidatedAccount, monarchAccountId) {
+export async function syncCreditLimit(
+  consolidatedAccount: ConsolidatedAccount,
+  monarchAccountId: string,
+): Promise<boolean> {
   try {
     const account = consolidatedAccount.wealthsimpleAccount;
     const accountType = account?.type || '';
@@ -744,10 +786,10 @@ export async function syncCreditLimit(consolidatedAccount, monarchAccountId) {
     debugLog(`Starting credit limit sync for account ${account.id} (${account.nickname})`);
 
     // Step 1: Fetch credit limit from Wealthsimple
-    let wsCreditLimit;
+    let wsCreditLimit: number | null = null;
     try {
-      const creditCardSummary = await wealthsimpleApi.fetchCreditCardAccountSummary(account.id);
-      wsCreditLimit = creditCardSummary.creditLimit;
+      const creditCardSummary = (await wealthsimpleApi.fetchCreditCardAccountSummary(account.id)) as { creditLimit?: number | null };
+      wsCreditLimit = creditCardSummary.creditLimit ?? null;
 
       if (wsCreditLimit === null || wsCreditLimit === undefined) {
         debugLog(`No credit limit found in Wealthsimple for account ${account.id}`);
@@ -755,23 +797,23 @@ export async function syncCreditLimit(consolidatedAccount, monarchAccountId) {
       }
 
       debugLog(`Wealthsimple credit limit for ${account.nickname}: ${wsCreditLimit}`);
-    } catch (error) {
+    } catch (error: unknown) {
       debugLog(`Failed to fetch Wealthsimple credit card summary for ${account.id}:`, error);
       toast.show('Warning: Could not fetch credit limit from Wealthsimple', 'warning');
       return false;
     }
 
     // Step 2: Determine the comparison limit (stored or from Monarch)
-    let comparisonLimit = consolidatedAccount.lastSyncedCreditLimit;
+    let comparisonLimit: number | null = consolidatedAccount.lastSyncedCreditLimit ?? null;
     const needsMonarchFetch = comparisonLimit === null || comparisonLimit === undefined;
 
     if (needsMonarchFetch) {
       // First sync or no stored limit - fetch from Monarch
       debugLog(`No stored credit limit, fetching from Monarch for account ${monarchAccountId}`);
       try {
-        comparisonLimit = await monarchApi.getCreditLimit(monarchAccountId);
+        comparisonLimit = (await monarchApi.getCreditLimit(monarchAccountId)) as number | null;
         debugLog(`Monarch credit limit: ${comparisonLimit}`);
-      } catch (error) {
+      } catch (error: unknown) {
         debugLog(`Failed to fetch Monarch credit limit for ${monarchAccountId}:`, error);
         // Continue with null - we'll update Monarch with WS limit
         comparisonLimit = null;
@@ -788,7 +830,7 @@ export async function syncCreditLimit(consolidatedAccount, monarchAccountId) {
         await monarchApi.setCreditLimit(monarchAccountId, wsCreditLimit);
         debugLog(`Successfully updated Monarch credit limit to ${wsCreditLimit}`);
         toast.show(`Updated credit limit for ${account.nickname} to $${wsCreditLimit}`, 'debug');
-      } catch (error) {
+      } catch (error: unknown) {
         debugLog('Failed to update Monarch credit limit:', error);
         toast.show('Warning: Could not update credit limit in Monarch', 'warning');
         return false;
@@ -804,7 +846,7 @@ export async function syncCreditLimit(consolidatedAccount, monarchAccountId) {
 
     debugLog(`Credit limit sync completed for ${account.nickname}`);
     return true;
-  } catch (error) {
+  } catch (error: unknown) {
     debugLog('Error during credit limit sync:', error);
     // Don't show error toast here - credit limit sync is not critical
     return false;
