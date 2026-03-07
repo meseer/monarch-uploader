@@ -1,7 +1,7 @@
 # TypeScript Migration Plan
 
 > **Status:** Draft  
-> **Updated:** 2026-03-07 (Phase 9 complete)  
+> **Updated:** 2026-03-07 (Phase 11 in progress)  
 > **Author:** @meseer  
 > **Note:** See [ADR-005](../decisions/005-typescript-migration.md) for the decision record.
 
@@ -19,13 +19,13 @@
 | 7 | CanadaLife Services | ✅ Complete | 3/3 src / 0 test |
 | 8 | Rogers Bank Services | ✅ Complete | 2/2 src / 0 test |
 | 9 | Questrade Services | ✅ Complete | 8/8 src / 0 test |
-| 10 | WS Transaction Rules | ⬜ Not Started | 0/3 src / 0 test |
-| 11 | WS Core Services | ⬜ Not Started | 0/5 src / 0 test |
+| 10 | WS Transaction Rules | ✅ Complete | 3/3 src / 0 test |
+| 11 | WS Core Services | 🔄 In Progress | 0/5 src / 0 test |
 | 12 | WS Top-Level Services | ⬜ Not Started | 0/3 src / 0 test |
 | 13 | UI Layer | ⬜ Not Started | 0/32 src / 0 test |
 | 14 | Strictness Ramp-up | ⬜ Not Started | — |
 
-**Overall:** 61/106 source files converted (~58%)
+**Overall:** 64/106 source files converted (~60%)
 
 ## Overview
 
@@ -247,9 +247,10 @@ Shared infrastructure all institution services depend on. Three batches.
 **Batch A (4 files):** auth.ts, transactionRules.ts, accountMapping.ts, account.ts  
 **Batch B (4 files):** transactions.ts, balance.ts, positions.ts, sync.ts
 
-### Phase 10: WS Transaction Rules (1–2 days)
+### Phase 10: WS Transaction Rules ✅ Complete
 
-**Files (3, ~2,577 lines):** transactionRulesHelpers, transactionRules, transactionRulesInvestment
+**Files (3):** transactionRulesHelpers.ts, transactionRulesInvestment.ts, transactionRules.ts  
+Added full `WealthsimpleTransaction` interface, `ExtendedOrder`, `SpendDetails`, and other shared types to `transactionRulesHelpers.ts`.
 
 ### Phase 11: WS Core Services (2–3 days)
 

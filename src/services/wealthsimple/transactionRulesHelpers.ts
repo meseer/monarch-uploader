@@ -16,6 +16,8 @@ export interface WealthsimpleTransaction {
   occurredAt?: string | null;
   type?: string | null;
   subType?: string | null;
+  status?: string | null;
+  amountSign?: string | null;
   amount?: number | null;
   currency?: string | null;
   eTransferName?: string | null;

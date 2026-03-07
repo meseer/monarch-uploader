@@ -3,7 +3,7 @@
 <!-- Badge section -->
 [![CI](https://github.com/meseer/monarch-uploader/actions/workflows/ci.yml/badge.svg)](https://github.com/meseer/monarch-uploader/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/meseer/monarch-uploader/branch/main/graph/badge.svg)](https://codecov.io/gh/meseer/monarch-uploader)
-[![Version](https://img.shields.io/badge/version-6.6.1-blue)](https://github.com/meseer/monarch-uploader)
+[![Version](https://img.shields.io/badge/version-6.6.2-blue)](https://github.com/meseer/monarch-uploader)
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 
 A [Violentmonkey](https://violentmonkey.github.io/) userscript that automatically syncs balance history, transactions, holdings, and more from Canadian financial institutions to [Monarch Money](https://www.monarchmoney.com/).

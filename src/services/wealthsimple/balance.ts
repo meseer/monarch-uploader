@@ -10,11 +10,47 @@ import wealthsimpleApi from '../../api/wealthsimple';
 import monarchApi from '../../api/monarch';
 import toast from '../../ui/toast';
 
+export interface BalanceHistory {
+  date: string;
+  amount: number;
+}
+
+export interface BalanceCheckpoint {
+  date: string;
+  amount: number;
+}
+
+export interface CurrentBalance {
+  amount: number;
+  currency?: string;
+}
+
+interface WealthsimpleAccountData {
+  id: string;
+  nickname?: string;
+  type?: string;
+  currency?: string;
+  createdAt?: string;
+}
+
+interface ConsolidatedAccount {
+  wealthsimpleAccount: WealthsimpleAccountData;
+  monarchAccount?: { displayName?: string } | null;
+  lastSyncDate?: string;
+}
+
+interface ProcessedTransactionForBalance {
+  date?: string;
+  amount?: number | null;
+}
+
 /**
  * Custom balance error class
  */
 export class BalanceError extends Error {
-  constructor(message, accountId) {
+  accountId: string | undefined;
+
+  constructor(message: string, accountId?: string) {
     super(message);
     this.name = 'BalanceError';
     this.accountId = accountId;
@@ -25,10 +61,10 @@ export class BalanceError extends Error {
  * Check if an account type requires balance reconstruction instead of API fetch
  * These account types don't support the FetchIdentityHistoricalFinancials API
  * Note: CASH accounts support transactions but get balance from API (no reconstruction needed)
- * @param {string} accountType - Wealthsimple account type
- * @returns {boolean} True if account needs balance reconstruction
+ * @param accountType - Wealthsimple account type
+ * @returns True if account needs balance reconstruction
  */
-export function accountNeedsBalanceReconstruction(accountType) {
+export function accountNeedsBalanceReconstruction(accountType: string): boolean {
   if (!accountType) return false;
   return WEALTHSIMPLE_BALANCE_RECONSTRUCTION_TYPES.has(accountType);
 }
@@ -38,13 +74,18 @@ export function accountNeedsBalanceReconstruction(accountType) {
  * Calculates daily ending balance by accumulating transaction amounts
  * Starting with specified balance (default 0) on fromDate
  *
- * @param {Array} transactions - Array of processed transactions with date and amount
- * @param {string} fromDate - Start date in YYYY-MM-DD format
- * @param {string} toDate - End date in YYYY-MM-DD format
- * @param {number} startingBalance - Initial balance to start reconstruction from (default 0)
- * @returns {Array} Array of balance history objects {date, amount}
+ * @param transactions - Array of processed transactions with date and amount
+ * @param fromDate - Start date in YYYY-MM-DD format
+ * @param toDate - End date in YYYY-MM-DD format
+ * @param startingBalance - Initial balance to start reconstruction from (default 0)
+ * @returns Array of balance history objects {date, amount}
  */
-export function reconstructBalanceFromTransactions(transactions, fromDate, toDate, startingBalance = 0) {
+export function reconstructBalanceFromTransactions(
+  transactions: ProcessedTransactionForBalance[],
+  fromDate: string,
+  toDate: string,
+  startingBalance = 0,
+): BalanceHistory[] {
   if (!transactions || !Array.isArray(transactions)) {
     debugLog('No transactions provided for balance reconstruction');
     return [];
@@ -58,7 +99,7 @@ export function reconstructBalanceFromTransactions(transactions, fromDate, toDat
   debugLog(`Reconstructing balance from ${transactions.length} transactions (${fromDate} to ${toDate}), starting balance: ${startingBalance}`);
 
   // Group transactions by date
-  const transactionsByDate = new Map();
+  const transactionsByDate = new Map<string, ProcessedTransactionForBalance[]>();
   transactions.forEach((tx) => {
     if (!tx.date || tx.amount === undefined || tx.amount === null) return;
 
@@ -66,13 +107,13 @@ export function reconstructBalanceFromTransactions(transactions, fromDate, toDat
     if (!transactionsByDate.has(dateKey)) {
       transactionsByDate.set(dateKey, []);
     }
-    transactionsByDate.get(dateKey).push(tx);
+    transactionsByDate.get(dateKey)!.push(tx);
   });
 
   debugLog(`Transactions grouped into ${transactionsByDate.size} unique dates`);
 
   // Generate all dates from fromDate to toDate
-  const balanceHistory = [];
+  const balanceHistory: BalanceHistory[] = [];
   let runningBalance = startingBalance;
 
   const fromDateObj = parseLocalDate(fromDate);
@@ -84,7 +125,7 @@ export function reconstructBalanceFromTransactions(transactions, fromDate, toDat
 
     // Add all transactions for this date to the balance
     const dayTransactions = transactionsByDate.get(dateStr) || [];
-    const dayTotal = dayTransactions.reduce((sum, tx) => sum + tx.amount, 0);
+    const dayTotal = dayTransactions.reduce((sum, tx) => sum + (tx.amount ?? 0), 0);
     runningBalance += dayTotal;
 
     // Record the end-of-day balance
@@ -112,13 +153,18 @@ export function reconstructBalanceFromTransactions(transactions, fromDate, toDat
  * Reconstruct balance history from a checkpoint
  * Uses checkpoint as starting point, applies transactions, and uses current balance for today
  *
- * @param {Array} transactions - Array of processed transactions with date and amount
- * @param {Object} checkpoint - Balance checkpoint {date, amount}
- * @param {string} toDate - End date in YYYY-MM-DD format (today)
- * @param {Object} currentBalance - Current balance object {amount} for today
- * @returns {Array} Array of balance history objects {date, amount}
+ * @param transactions - Array of processed transactions with date and amount
+ * @param checkpoint - Balance checkpoint {date, amount}
+ * @param toDate - End date in YYYY-MM-DD format (today)
+ * @param currentBalance - Current balance object {amount} for today
+ * @returns Array of balance history objects {date, amount}
  */
-export function reconstructBalanceFromCheckpoint(transactions, checkpoint, toDate, currentBalance) {
+export function reconstructBalanceFromCheckpoint(
+  transactions: ProcessedTransactionForBalance[],
+  checkpoint: BalanceCheckpoint,
+  toDate: string,
+  currentBalance: CurrentBalance | null | undefined,
+): BalanceHistory[] {
   if (!checkpoint || !checkpoint.date || checkpoint.amount === undefined) {
     debugLog('Invalid checkpoint provided for balance reconstruction');
     return [];
@@ -152,7 +198,7 @@ export function reconstructBalanceFromCheckpoint(transactions, checkpoint, toDat
   // If checkpoint date is yesterday, we only need checkpoint and today's balance
   if (checkpoint.date === yesterday) {
     debugLog('Checkpoint is from yesterday, returning checkpoint and current balance');
-    const result = [];
+    const result: BalanceHistory[] = [];
 
     // Include checkpoint date balance
     result.push({
@@ -201,12 +247,16 @@ export function reconstructBalanceFromCheckpoint(transactions, checkpoint, toDat
  * Calculate the checkpoint date based on lastSyncDate and lookback days
  * Ensures the date is not before account creation
  *
- * @param {string} lastSyncDate - Last sync date in YYYY-MM-DD format
- * @param {number} lookbackDays - Number of days to look back
- * @param {string} accountCreatedAt - Account creation date (ISO timestamp or YYYY-MM-DD)
- * @returns {string} Checkpoint date in YYYY-MM-DD format
+ * @param lastSyncDate - Last sync date in YYYY-MM-DD format
+ * @param lookbackDays - Number of days to look back
+ * @param accountCreatedAt - Account creation date (ISO timestamp or YYYY-MM-DD)
+ * @returns Checkpoint date in YYYY-MM-DD format, or null
  */
-export function calculateCheckpointDate(lastSyncDate, lookbackDays, accountCreatedAt) {
+export function calculateCheckpointDate(
+  lastSyncDate: string,
+  lookbackDays: number,
+  accountCreatedAt?: string | null,
+): string | null {
   if (!lastSyncDate) {
     debugLog('No lastSyncDate provided for checkpoint calculation');
     return null;
@@ -237,11 +287,14 @@ export function calculateCheckpointDate(lastSyncDate, lookbackDays, accountCreat
 /**
  * Extract balance at a specific date from balance history array
  *
- * @param {Array} balanceHistory - Array of balance history objects {date, amount}
- * @param {string} targetDate - Date to find balance for (YYYY-MM-DD)
- * @returns {number|null} Balance amount at target date, or null if not found
+ * @param balanceHistory - Array of balance history objects {date, amount}
+ * @param targetDate - Date to find balance for (YYYY-MM-DD)
+ * @returns Balance amount at target date, or null if not found
  */
-export function getBalanceAtDate(balanceHistory, targetDate) {
+export function getBalanceAtDate(
+  balanceHistory: BalanceHistory[],
+  targetDate: string,
+): number | null {
   if (!balanceHistory || !Array.isArray(balanceHistory) || !targetDate) {
     return null;
   }
@@ -254,11 +307,14 @@ export function getBalanceAtDate(balanceHistory, targetDate) {
  * Create a single balance entry for the current day only
  * Used for subsequent syncs of credit card/cash accounts
  *
- * @param {Object} currentBalance - Current balance object {amount, currency}
- * @param {string} toDate - Date in YYYY-MM-DD format
- * @returns {Array} Array with single balance history object {date, amount}
+ * @param currentBalance - Current balance object {amount, currency}
+ * @param toDate - Date in YYYY-MM-DD format
+ * @returns Array with single balance history object {date, amount}
  */
-export function createCurrentBalanceOnly(currentBalance, toDate) {
+export function createCurrentBalanceOnly(
+  currentBalance: CurrentBalance | null | undefined,
+  toDate: string,
+): BalanceHistory[] {
   if (!currentBalance || currentBalance.amount === undefined) {
     debugLog('No current balance provided for single-day balance');
     return [];
@@ -269,7 +325,7 @@ export function createCurrentBalanceOnly(currentBalance, toDate) {
     return [];
   }
 
-  const balanceHistory = [{
+  const balanceHistory: BalanceHistory[] = [{
     date: toDate,
     amount: currentBalance.amount,
   }];
@@ -281,18 +337,17 @@ export function createCurrentBalanceOnly(currentBalance, toDate) {
 /**
  * Get default lookback days from settings
  * Reads from configStore first, falls back to legacy storage key
- * @returns {number} Number of days to look back
  */
-function getLookbackDays() {
+function getLookbackDays(): number {
   return getLookbackForInstitution('wealthsimple');
 }
 
 /**
  * Extract YYYY-MM-DD date from ISO timestamp or date string
- * @param {string} dateString - ISO timestamp or YYYY-MM-DD string
- * @returns {string} YYYY-MM-DD formatted date
+ * @param dateString - ISO timestamp or YYYY-MM-DD string
+ * @returns YYYY-MM-DD formatted date, or null
  */
-export function extractDateFromISO(dateString) {
+export function extractDateFromISO(dateString: string | null | undefined): string | null {
   if (!dateString) return null;
 
   // If already in YYYY-MM-DD format, return as-is
@@ -307,10 +362,10 @@ export function extractDateFromISO(dateString) {
 
 /**
  * Get the appropriate date range for balance history
- * @param {Object} accountData - Consolidated account data
- * @returns {Object} Object with fromDate and toDate in YYYY-MM-DD format
+ * @param accountData - Consolidated account data
+ * @returns Object with fromDate and toDate in YYYY-MM-DD format
  */
-export function getDefaultDateRange(accountData) {
+export function getDefaultDateRange(accountData: ConsolidatedAccount): { fromDate: string; toDate: string } {
   const today = new Date();
   const toDate = formatDate(today);
 
@@ -318,7 +373,7 @@ export function getDefaultDateRange(accountData) {
   const lastSyncDate = accountData.lastSyncDate;
 
   // Determine start date
-  let fromDate;
+  let fromDate: string;
 
   if (lastSyncDate) {
     // Subsequent sync: use last sync date minus lookback days
@@ -367,15 +422,15 @@ export function getDefaultDateRange(accountData) {
 
 /**
  * Merge balance history arrays, with newer data taking precedence
- * @param {Array} olderData - Array of balance history from older period (weekly data)
- * @param {Array} newerData - Array of balance history from recent period (daily data)
- * @returns {Array} Merged and sorted balance history
+ * @param olderData - Array of balance history from older period (weekly data)
+ * @param newerData - Array of balance history from recent period (daily data)
+ * @returns Merged and sorted balance history
  */
-function mergeBalanceData(olderData, newerData) {
+function mergeBalanceData(olderData: BalanceHistory[], newerData: BalanceHistory[]): BalanceHistory[] {
   debugLog(`Merging balance data: ${olderData.length} older records + ${newerData.length} newer records`);
 
   // Use Map for O(1) lookup and automatic deduplication
-  const balanceMap = new Map();
+  const balanceMap = new Map<string, BalanceHistory>();
 
   // Add older data first (weekly granularity)
   olderData.forEach((item) => {
@@ -402,13 +457,18 @@ function mergeBalanceData(olderData, newerData) {
  * 2. Fetch recent year (returns daily data)
  * 3. Merge with daily data taking precedence
  *
- * @param {string} accountId - Account ID to fetch balance for
- * @param {string} currency - Currency code (e.g., 'CAD')
- * @param {string} fromDate - Start date in YYYY-MM-DD format
- * @param {string} toDate - End date in YYYY-MM-DD format
- * @returns {Promise<Array>} Array of balance history objects
+ * @param accountId - Account ID to fetch balance for
+ * @param currency - Currency code (e.g., 'CAD')
+ * @param fromDate - Start date in YYYY-MM-DD format
+ * @param toDate - End date in YYYY-MM-DD format
+ * @returns Array of balance history objects
  */
-export async function fetchBalanceHistory(accountId, currency, fromDate, toDate) {
+export async function fetchBalanceHistory(
+  accountId: string,
+  currency: string,
+  fromDate: string,
+  toDate: string,
+): Promise<BalanceHistory[]> {
   try {
     debugLog(`Fetching balance history for account ${accountId} from ${fromDate} to ${toDate}`);
 
@@ -428,7 +488,7 @@ export async function fetchBalanceHistory(accountId, currency, fromDate, toDate)
     // Calculate date range span in days
     const fromDateObj = parseLocalDate(fromDate);
     const toDateObj = parseLocalDate(toDate);
-    const daysDifference = Math.floor((toDateObj - fromDateObj) / (1000 * 60 * 60 * 24));
+    const daysDifference = Math.floor((toDateObj.getTime() - fromDateObj.getTime()) / (1000 * 60 * 60 * 24));
 
     debugLog(`Date range span: ${daysDifference} days`);
 
@@ -442,7 +502,7 @@ export async function fetchBalanceHistory(accountId, currency, fromDate, toDate)
       const oneYearAgoDate = formatDate(oneYearAgo);
 
       debugLog(`Step 1: Fetching older data (weekly) from ${fromDate} to ${oneYearAgoDate}`);
-      const olderData = await wealthsimpleApi.fetchBalanceHistory(
+      const olderData: BalanceHistory[] = await wealthsimpleApi.fetchBalanceHistory(
         [accountId],
         currency,
         fromDate,
@@ -451,7 +511,7 @@ export async function fetchBalanceHistory(accountId, currency, fromDate, toDate)
       debugLog(`Received ${olderData.length} older balance records (weekly granularity)`);
 
       debugLog(`Step 2: Fetching recent data (daily) from ${oneYearAgoDate} to ${toDate}`);
-      const recentData = await wealthsimpleApi.fetchBalanceHistory(
+      const recentData: BalanceHistory[] = await wealthsimpleApi.fetchBalanceHistory(
         [accountId],
         currency,
         oneYearAgoDate,
@@ -473,7 +533,7 @@ export async function fetchBalanceHistory(accountId, currency, fromDate, toDate)
 
     // For ranges <= 1 year, use single fetch (daily data)
     debugLog('Range <= 1 year, using single fetch (daily data)');
-    const balanceHistory = await wealthsimpleApi.fetchBalanceHistory(
+    const balanceHistory: BalanceHistory[] = await wealthsimpleApi.fetchBalanceHistory(
       [accountId],
       currency,
       fromDate,
@@ -487,22 +547,23 @@ export async function fetchBalanceHistory(accountId, currency, fromDate, toDate)
 
     debugLog(`Received ${balanceHistory.length} balance history records`);
     return balanceHistory;
-  } catch (error) {
+  } catch (error: unknown) {
     debugLog(`Error fetching balance history for account ${accountId}:`, error);
     if (error instanceof BalanceError) {
       throw error;
     }
-    throw new BalanceError(`Failed to fetch balance history: ${error.message}`, accountId);
+    const msg = error instanceof Error ? error.message : String(error);
+    throw new BalanceError(`Failed to fetch balance history: ${msg}`, accountId);
   }
 }
 
 /**
  * Process balance data into CSV format for Monarch
- * @param {Array} balanceHistory - Array of balance history objects
- * @param {string} accountName - Account name for CSV output
- * @returns {string} CSV formatted data
+ * @param balanceHistory - Array of balance history objects
+ * @param accountName - Account name for CSV output
+ * @returns CSV formatted data
  */
-export function processBalanceData(balanceHistory, accountName) {
+export function processBalanceData(balanceHistory: BalanceHistory[], accountName: string): string {
   try {
     if (!balanceHistory || !Array.isArray(balanceHistory)) {
       throw new Error('Invalid balance history data provided');
@@ -524,9 +585,10 @@ export function processBalanceData(balanceHistory, accountName) {
     });
 
     return csvContent;
-  } catch (error) {
+  } catch (error: unknown) {
     debugLog('Error processing balance data:', error);
-    throw new Error(`Failed to process balance data: ${error.message}`);
+    const msg = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to process balance data: ${msg}`);
   }
 }
 
@@ -534,14 +596,20 @@ export function processBalanceData(balanceHistory, accountName) {
  * Upload balance history to Monarch
  * Note: lastSyncDate is NOT updated here - it's only updated in wealthsimple-upload.js
  * when BOTH balance and transactions succeed.
- * @param {string} accountId - Wealthsimple account ID
- * @param {string} monarchAccountId - Monarch account ID
- * @param {string} csvData - CSV data to upload
- * @param {string} fromDate - Start date in YYYY-MM-DD format
- * @param {string} toDate - End date in YYYY-MM-DD format
- * @returns {Promise<boolean>} Success status
+ * @param accountId - Wealthsimple account ID
+ * @param monarchAccountId - Monarch account ID
+ * @param csvData - CSV data to upload
+ * @param fromDate - Start date in YYYY-MM-DD format
+ * @param toDate - End date in YYYY-MM-DD format
+ * @returns Success status
  */
-export async function uploadBalanceToMonarch(accountId, monarchAccountId, csvData, fromDate, toDate) {
+export async function uploadBalanceToMonarch(
+  accountId: string,
+  monarchAccountId: string,
+  csvData: string,
+  fromDate: string,
+  toDate: string,
+): Promise<boolean> {
   try {
     debugLog(`Uploading balance for account ${accountId} from ${fromDate} to ${toDate}`);
 
@@ -560,12 +628,13 @@ export async function uploadBalanceToMonarch(accountId, monarchAccountId, csvDat
     }
 
     return success;
-  } catch (error) {
+  } catch (error: unknown) {
     debugLog(`Error uploading balance for account ${accountId}:`, error);
     if (error instanceof BalanceError) {
       throw error;
     }
-    throw new BalanceError(`Failed to upload balance: ${error.message}`, accountId);
+    const msg = error instanceof Error ? error.message : String(error);
+    throw new BalanceError(`Failed to upload balance: ${msg}`, accountId);
   }
 }
 
@@ -578,13 +647,18 @@ const NON_NEGATIVE_BALANCE_ACCOUNT_TYPES = new Set(['CASH', 'CASH_USD']);
 /**
  * Filter out invalid balance entries for account types that cannot have negative balances
  * Also ensures today's balance uses the actual current balance from API
- * @param {Array} balanceHistory - Array of balance history objects {date, amount}
- * @param {string} accountType - Account type (e.g., 'CASH', 'CASH_USD')
- * @param {Object} currentBalance - Current balance object {amount, currency} for today
- * @param {string} toDate - End date (today) in YYYY-MM-DD format
- * @returns {Array} Filtered balance history
+ * @param balanceHistory - Array of balance history objects {date, amount}
+ * @param accountType - Account type (e.g., 'CASH', 'CASH_USD')
+ * @param currentBalance - Current balance object {amount, currency} for today
+ * @param toDate - End date (today) in YYYY-MM-DD format
+ * @returns Filtered balance history
  */
-export function filterInvalidBalanceEntries(balanceHistory, accountType, currentBalance, toDate) {
+export function filterInvalidBalanceEntries(
+  balanceHistory: BalanceHistory[],
+  accountType: string,
+  currentBalance: CurrentBalance | null | undefined,
+  toDate: string,
+): BalanceHistory[] {
   if (!balanceHistory || !Array.isArray(balanceHistory)) {
     return [];
   }
@@ -620,12 +694,16 @@ export function filterInvalidBalanceEntries(balanceHistory, accountType, current
 
 /**
  * Ensure today's balance entry uses the correct current balance from API
- * @param {Array} balanceHistory - Array of balance history objects
- * @param {Object} currentBalance - Current balance object {amount, currency}
- * @param {string} toDate - Today's date in YYYY-MM-DD format
- * @returns {Array} Balance history with correct today's balance
+ * @param balanceHistory - Array of balance history objects
+ * @param currentBalance - Current balance object {amount, currency}
+ * @param toDate - Today's date in YYYY-MM-DD format
+ * @returns Balance history with correct today's balance
  */
-function ensureTodayBalance(balanceHistory, currentBalance, toDate) {
+function ensureTodayBalance(
+  balanceHistory: BalanceHistory[],
+  currentBalance: CurrentBalance,
+  toDate: string,
+): BalanceHistory[] {
   if (!balanceHistory || !currentBalance || currentBalance.amount === undefined || !toDate) {
     return balanceHistory || [];
   }
@@ -659,14 +737,20 @@ function ensureTodayBalance(balanceHistory, currentBalance, toDate) {
 
 /**
  * Complete process to fetch, process and upload balance history for an account
- * @param {Object} consolidatedAccount - Consolidated account object
- * @param {string} monarchAccountId - Monarch account ID
- * @param {string} fromDate - Start date in YYYY-MM-DD format
- * @param {string} toDate - End date in YYYY-MM-DD format
- * @param {Object} currentBalance - Current balance from FetchAccountCombinedFinancialsPreload (optional)
- * @returns {Promise<boolean>} Success status
+ * @param consolidatedAccount - Consolidated account object
+ * @param monarchAccountId - Monarch account ID
+ * @param fromDate - Start date in YYYY-MM-DD format
+ * @param toDate - End date in YYYY-MM-DD format
+ * @param currentBalance - Current balance from FetchAccountCombinedFinancialsPreload (optional)
+ * @returns Success status
  */
-export async function processAndUploadBalance(consolidatedAccount, monarchAccountId, fromDate, toDate, currentBalance = null) {
+export async function processAndUploadBalance(
+  consolidatedAccount: ConsolidatedAccount,
+  monarchAccountId: string,
+  fromDate: string,
+  toDate: string,
+  currentBalance: CurrentBalance | null = null,
+): Promise<boolean> {
   try {
     const account = consolidatedAccount.wealthsimpleAccount;
     const accountId = account.id;
@@ -686,7 +770,7 @@ export async function processAndUploadBalance(consolidatedAccount, monarchAccoun
     debugLog(`Fetching balance history for ${wealthsimpleAccountName} (Monarch: ${monarchAccountName})...`);
     let balanceHistory = await fetchBalanceHistory(
       accountId,
-      account.currency,
+      account.currency!,
       fromDate,
       toDate,
     );
@@ -734,11 +818,11 @@ export async function processAndUploadBalance(consolidatedAccount, monarchAccoun
 
     toast.show(`Failed to upload ${wealthsimpleAccountName} balance history to Monarch`, 'error');
     return false;
-  } catch (error) {
+  } catch (error: unknown) {
     const account = consolidatedAccount.wealthsimpleAccount;
     const errorMessage = error instanceof BalanceError
       ? error.message
-      : `Error processing account: ${error.message}`;
+      : `Error processing account: ${error instanceof Error ? error.message : String(error)}`;
     toast.show(errorMessage, 'error');
     debugLog(`Error in processAndUploadBalance for ${account.id}:`, error);
     return false;

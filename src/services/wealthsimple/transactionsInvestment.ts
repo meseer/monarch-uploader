@@ -23,7 +23,49 @@ import {
   formatOriginalStatement,
   getTransactionId,
 } from './transactionRules';
-import { collectEftTransferIds, convertToLocalDate } from './transactionsHelpers';
+import { type WealthsimpleTransaction } from './transactionRulesHelpers';
+import { collectEftTransferIds, convertToLocalDate, type ProcessedTransaction } from './transactionsHelpers';
+
+// ── Types ────────────────────────────────────────────────────────────────────
+
+interface WealthsimpleAccountData {
+  id: string;
+  nickname?: string;
+  type?: string;
+  currency?: string;
+}
+
+interface ConsolidatedAccountForInvestment {
+  wealthsimpleAccount: WealthsimpleAccountData;
+  includePendingTransactions?: boolean;
+  skipCategorization?: boolean;
+  uploadedTransactions?: Array<{ id: string; date?: string }>;
+}
+
+interface FetchInvestmentOptions {
+  rawTransactions?: WealthsimpleTransaction[];
+  uploadedTransactionIds?: Set<string>;
+  onProgress?: (message: string) => void;
+  skipCategorization?: boolean;
+}
+
+interface ManagedOrder {
+  id: string;
+  accountId: string;
+}
+
+interface BuySellOrderIds {
+  managedOrders: ManagedOrder[];
+  diyOrderIds: string[];
+  cryptoOrderIds: string[];
+}
+
+interface ManualCategorizationResult {
+  merchant: string;
+  category: { name: string };
+}
+
+// ── Investment transaction rules ─────────────────────────────────────────────
 
 /**
  * Investment account transaction rules
@@ -74,14 +116,14 @@ const INVESTMENT_TRANSACTION_RULES = [
   ...INVESTMENT_BUY_SELL_TRANSACTION_RULES,
 ];
 
+// ── Helper functions ─────────────────────────────────────────────────────────
+
 /**
  * Check if a transaction is a buy/sell order that uses unifiedStatus
- * @param {Object} transaction - Raw transaction from API
- * @returns {boolean} True if buy/sell transaction type
  */
-function isInvestmentBuySellTransaction(transaction) {
+function isInvestmentBuySellTransaction(transaction: WealthsimpleTransaction): boolean {
   const buySellTypes = ['MANAGED_BUY', 'DIY_BUY', 'MANAGED_SELL', 'DIY_SELL', 'OPTIONS_BUY', 'OPTIONS_SELL', 'CRYPTO_BUY', 'CRYPTO_SELL'];
-  return buySellTypes.includes(transaction.type);
+  return buySellTypes.includes(transaction.type ?? '');
 }
 
 /**
@@ -93,18 +135,15 @@ function isInvestmentBuySellTransaction(transaction) {
  * - Interest (INTEREST)
  * - Institutional transfers (INSTITUTIONAL_TRANSFER_INTENT)
  * - Any transaction with null status field (e.g., REFUND)
- *
- * @param {Object} transaction - Raw transaction from API
- * @returns {boolean} True if transaction uses unifiedStatus
  */
-function usesUnifiedStatus(transaction) {
+function usesUnifiedStatus(transaction: WealthsimpleTransaction): boolean {
   const unifiedStatusTypes = [
     'MANAGED_BUY', 'DIY_BUY', 'MANAGED_SELL', 'DIY_SELL', 'OPTIONS_BUY', 'OPTIONS_SELL', 'OPTIONS_SHORT_EXPIRY',
     'CRYPTO_BUY', 'CRYPTO_SELL',
     'DEPOSIT', 'DIVIDEND', 'INTEREST', 'INSTITUTIONAL_TRANSFER_INTENT',
   ];
   // Known types that use unifiedStatus, OR any transaction with null status field
-  return unifiedStatusTypes.includes(transaction.type) || transaction.status === null;
+  return unifiedStatusTypes.includes(transaction.type ?? '') || transaction.status === null;
 }
 
 /**
@@ -122,21 +161,20 @@ function usesUnifiedStatus(transaction) {
  * Transactions using status field:
  * - Internal transfers (INTERNAL_TRANSFER)
  * Status values: 'settled'/'completed' = sync, 'authorized' = pending
- *
- * @param {Array} transactions - Raw transactions from API
- * @param {boolean} includePending - Whether to include pending transactions
- * @returns {Array} Filtered transactions ready for processing
  */
-function filterInvestmentSyncableTransactions(transactions, includePending = true) {
-  const includedTransactions = [];
-  const excludedTransactions = [];
+function filterInvestmentSyncableTransactions(
+  transactions: WealthsimpleTransaction[],
+  includePending = true,
+): WealthsimpleTransaction[] {
+  const includedTransactions: WealthsimpleTransaction[] = [];
+  const excludedTransactions: WealthsimpleTransaction[] = [];
 
   for (const transaction of transactions) {
     let included = false;
 
     // Transactions that use unifiedStatus field
     if (usesUnifiedStatus(transaction)) {
-      const status = transaction.unifiedStatus;
+      const status = transaction.unifiedStatus as string | null | undefined;
       if (status === 'COMPLETED') {
         included = true;
       } else if (includePending && (status === 'IN_PROGRESS' || status === 'PENDING')) {
@@ -163,18 +201,19 @@ function filterInvestmentSyncableTransactions(transactions, includePending = tru
   if (excludedTransactions.length > 0) {
     debugLog(`Filtered out ${excludedTransactions.length} investment transaction(s) (will NOT sync):`);
     excludedTransactions.forEach((tx, index) => {
+      const uStatus = (tx as Record<string, unknown>).unifiedStatus;
       debugLog(`  Excluded ${index + 1}:`, {
         externalCanonicalId: tx.externalCanonicalId,
         type: tx.type,
         subType: tx.subType,
         status: tx.status,
-        unifiedStatus: tx.unifiedStatus,
+        unifiedStatus: uStatus,
         amount: tx.amount,
         amountSign: tx.amountSign,
         occurredAt: tx.occurredAt,
         assetSymbol: tx.assetSymbol,
         reason: usesUnifiedStatus(tx)
-          ? `unifiedStatus="${tx.unifiedStatus}" not in [COMPLETED${includePending ? ', IN_PROGRESS, PENDING' : ''}]`
+          ? `unifiedStatus="${uStatus}" not in [COMPLETED${includePending ? ', IN_PROGRESS, PENDING' : ''}]`
           : `status="${tx.status}" not in [settled, completed${includePending ? ', authorized' : ''}]`,
       });
     });
@@ -185,17 +224,14 @@ function filterInvestmentSyncableTransactions(transactions, includePending = tru
 
 /**
  * Collect corporate action canonical IDs from transactions that need child activities
- * Returns only canonicalIds from CORPORATE_ACTION transactions
- *
- * @param {Array} transactions - Raw transactions from Wealthsimple API
- * @returns {Array<string>} Array of canonical IDs for fetchCorporateActionChildActivities
  */
-function collectCorporateActionIds(transactions) {
-  const corporateActionIds = [];
+function collectCorporateActionIds(transactions: WealthsimpleTransaction[]): string[] {
+  const corporateActionIds: string[] = [];
 
   for (const tx of transactions) {
-    if (tx.type === 'CORPORATE_ACTION' && tx.canonicalId) {
-      corporateActionIds.push(tx.canonicalId);
+    const canonicalId = (tx as Record<string, unknown>).canonicalId as string | undefined;
+    if (tx.type === 'CORPORATE_ACTION' && canonicalId) {
+      corporateActionIds.push(canonicalId);
     }
   }
 
@@ -204,13 +240,9 @@ function collectCorporateActionIds(transactions) {
 
 /**
  * Collect short option expiry IDs from transactions that need expiry details
- * Returns externalCanonicalIds from OPTIONS_SHORT_EXPIRY transactions
- *
- * @param {Array} transactions - Raw transactions from Wealthsimple API
- * @returns {Array<string>} Array of expiry detail IDs for fetchShortOptionPositionExpiryDetail
  */
-function collectShortOptionExpiryIds(transactions) {
-  const expiryIds = [];
+function collectShortOptionExpiryIds(transactions: WealthsimpleTransaction[]): string[] {
+  const expiryIds: string[] = [];
 
   for (const tx of transactions) {
     if (tx.type === 'OPTIONS_SHORT_EXPIRY' && tx.externalCanonicalId) {
@@ -224,21 +256,15 @@ function collectShortOptionExpiryIds(transactions) {
 /**
  * Check if an external order ID is an Orders Service order ID
  * Orders Service order IDs start with "order-" prefix
- * These orders use the FetchActivityByOrdersServiceOrderId API instead of FetchSoOrdersExtendedOrder
- *
- * @param {string} externalId - External canonical ID
- * @returns {boolean} True if starts with "order-"
  */
-function isOrdersServiceOrderId(externalId) {
-  return externalId && externalId.startsWith('order-');
+function isOrdersServiceOrderId(externalId: string | null | undefined): boolean {
+  return !!(externalId && externalId.startsWith('order-'));
 }
 
 /**
  * Check if a transaction is a crypto buy/sell order
- * @param {Object} transaction - Raw transaction from API
- * @returns {boolean} True if crypto buy/sell transaction type
  */
-function isCryptoBuySellTransaction(transaction) {
+function isCryptoBuySellTransaction(transaction: WealthsimpleTransaction): boolean {
   return transaction.type === 'CRYPTO_BUY' || transaction.type === 'CRYPTO_SELL';
 }
 
@@ -248,14 +274,11 @@ function isCryptoBuySellTransaction(transaction) {
  * - Managed orders (MANAGED_BUY/SELL with order- prefix) → FetchActivityByOrdersServiceOrderId
  * - Crypto orders (CRYPTO_BUY/SELL with order- prefix) → FetchCryptoOrder
  * - DIY orders (all others) → FetchSoOrdersExtendedOrder
- *
- * @param {Array} transactions - Raw transactions from Wealthsimple API
- * @returns {Object} Object with { managedOrders: Array<{id, accountId}>, diyOrderIds: Array<string>, cryptoOrderIds: Array<string> }
  */
-function collectBuySellOrderIds(transactions) {
-  const managedOrders = [];
-  const diyOrderIds = [];
-  const cryptoOrderIds = [];
+function collectBuySellOrderIds(transactions: WealthsimpleTransaction[]): BuySellOrderIds {
+  const managedOrders: ManagedOrder[] = [];
+  const diyOrderIds: string[] = [];
+  const cryptoOrderIds: string[] = [];
 
   for (const tx of transactions) {
     if (isInvestmentBuySellTransaction(tx) && tx.externalCanonicalId) {
@@ -263,7 +286,7 @@ function collectBuySellOrderIds(transactions) {
       if ((tx.type === 'MANAGED_BUY' || tx.type === 'MANAGED_SELL') && isOrdersServiceOrderId(tx.externalCanonicalId)) {
         managedOrders.push({
           id: tx.externalCanonicalId,
-          accountId: tx.accountId,
+          accountId: (tx as Record<string, unknown>).accountId as string,
         });
       } else if (isCryptoBuySellTransaction(tx) && isOrdersServiceOrderId(tx.externalCanonicalId)) {
         // Crypto orders with "order-" prefix need the FetchCryptoOrder API
@@ -280,11 +303,9 @@ function collectBuySellOrderIds(transactions) {
 
 /**
  * Collect internal transfer IDs from investment transactions that need enrichment
- * @param {Array} transactions - Raw transactions from Wealthsimple API
- * @returns {Array<string>} Array of internal transfer IDs
  */
-function collectInvestmentInternalTransferIds(transactions) {
-  const internalTransferIds = [];
+function collectInvestmentInternalTransferIds(transactions: WealthsimpleTransaction[]): string[] {
+  const internalTransferIds: string[] = [];
 
   for (const tx of transactions) {
     if (
@@ -302,11 +323,11 @@ function collectInvestmentInternalTransferIds(transactions) {
 
 /**
  * Process an investment account transaction using the rules engine
- * @param {Object} transaction - Raw transaction from Wealthsimple API
- * @param {Map<string, Object>} enrichmentMap - Optional map of enrichment data (internal transfers, extended orders, etc.)
- * @returns {Object} Processed transaction object (may include needsManualCategorization flag)
  */
-function processInvestmentTransaction(transaction, enrichmentMap = null) {
+function processInvestmentTransaction(
+  transaction: WealthsimpleTransaction,
+  enrichmentMap: Map<string, unknown> | null = null,
+): ProcessedTransaction | null {
   // Try to apply a matching rule from the investment rules
   for (const rule of INVESTMENT_TRANSACTION_RULES) {
     if (rule.match(transaction)) {
@@ -315,16 +336,19 @@ function processInvestmentTransaction(transaction, enrichmentMap = null) {
 
       // Determine amount sign
       const isNegative = transaction.amountSign === 'negative';
-      const finalAmount = isNegative ? -Math.abs(transaction.amount) : Math.abs(transaction.amount);
+      const finalAmount = isNegative ? -Math.abs(transaction.amount ?? 0) : Math.abs(transaction.amount ?? 0);
 
       // Determine pending status based on transaction type
       // Most investment transactions use unifiedStatus; only INTERNAL_TRANSFER uses status
-      let isPending;
+      let isPending: boolean;
       if (usesUnifiedStatus(transaction)) {
-        isPending = transaction.unifiedStatus === 'IN_PROGRESS' || transaction.unifiedStatus === 'PENDING';
+        const uStatus = (transaction as Record<string, unknown>).unifiedStatus as string | undefined;
+        isPending = uStatus === 'IN_PROGRESS' || uStatus === 'PENDING';
       } else {
         isPending = transaction.status === 'authorized';
       }
+
+      const uStatus = (transaction as Record<string, unknown>).unifiedStatus as string | null | undefined;
 
       return {
         id: getTransactionId(transaction),
@@ -335,14 +359,14 @@ function processInvestmentTransaction(transaction, enrichmentMap = null) {
         type: transaction.type,
         subType: transaction.subType,
         status: transaction.status,
-        unifiedStatus: transaction.unifiedStatus,
+        unifiedStatus: uStatus,
         isPending,
         resolvedMonarchCategory: ruleResult.category,
-        ruleId: ruleResult.ruleId || rule.id,
+        ruleId: rule.id,
         notes: ruleResult.notes || '',
         technicalDetails: ruleResult.technicalDetails || '',
-        needsCategoryMapping: ruleResult.needsCategoryMapping || false,
-        categoryKey: ruleResult.categoryKey || ruleResult.merchant,
+        needsCategoryMapping: false,
+        categoryKey: ruleResult.merchant,
         // Include asset symbol for investment context
         assetSymbol: transaction.assetSymbol || null,
       };
@@ -353,25 +377,29 @@ function processInvestmentTransaction(transaction, enrichmentMap = null) {
   return null;
 }
 
+// ── Exported function ────────────────────────────────────────────────────────
+
 /**
  * Fetch and process transactions for an investment account
  * Uses rules engine for INTERNAL_TRANSFER transactions (auto-categorized as "Transfer"),
  * and manual categorization for all other unknown transaction types.
  *
- * @param {Object} consolidatedAccount - Consolidated account object
- * @param {string} fromDate - Start date (YYYY-MM-DD)
- * @param {string} toDate - End date (YYYY-MM-DD)
- * @param {Object} options - Processing options
- * @param {Array} options.rawTransactions - Pre-fetched raw transactions (optional, will fetch if not provided)
- * @param {Set<string>} options.uploadedTransactionIds - Set of already-uploaded transaction IDs to skip
- * @param {Function} options.onProgress - Callback for progress updates (optional)
- * @returns {Promise<Array>} Processed transactions ready for upload
+ * @param consolidatedAccount - Consolidated account object
+ * @param fromDate - Start date (YYYY-MM-DD)
+ * @param toDate - End date (YYYY-MM-DD)
+ * @param options - Processing options
+ * @returns Processed transactions ready for upload
  */
-export async function fetchAndProcessInvestmentTransactions(consolidatedAccount, fromDate, toDate, options = {}) {
+export async function fetchAndProcessInvestmentTransactions(
+  consolidatedAccount: ConsolidatedAccountForInvestment,
+  fromDate: string,
+  toDate: string,
+  options: FetchInvestmentOptions = {},
+): Promise<ProcessedTransaction[]> {
   try {
     const accountId = consolidatedAccount.wealthsimpleAccount.id;
     const accountName = consolidatedAccount.wealthsimpleAccount.nickname;
-    const { rawTransactions: providedTransactions, uploadedTransactionIds = new Set(), onProgress } = options;
+    const { rawTransactions: providedTransactions, uploadedTransactionIds = new Set<string>(), onProgress } = options;
 
     // Get pending transactions setting (default true)
     const includePendingTransactions = consolidatedAccount.includePendingTransactions !== false;
@@ -381,12 +409,12 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
     debugLog(`Already uploaded transactions to skip: ${uploadedTransactionIds.size}`);
 
     // Step 1: Use provided transactions or fetch from API
-    let rawTransactions;
+    let rawTransactions: WealthsimpleTransaction[];
     if (providedTransactions && Array.isArray(providedTransactions)) {
       rawTransactions = providedTransactions;
       debugLog(`Using ${rawTransactions.length} pre-fetched transactions`);
     } else {
-      rawTransactions = await wealthsimpleApi.fetchTransactions(accountId, fromDate);
+      rawTransactions = (await wealthsimpleApi.fetchTransactions(accountId, fromDate)) as unknown as WealthsimpleTransaction[];
       debugLog(`Fetched ${rawTransactions.length} total transactions from API`);
     }
 
@@ -398,7 +426,7 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
         type: tx.type,
         subType: tx.subType,
         status: tx.status,
-        unifiedStatus: tx.unifiedStatus,
+        unifiedStatus: (tx as Record<string, unknown>).unifiedStatus,
         amount: tx.amount,
         amountSign: tx.amountSign,
         occurredAt: tx.occurredAt,
@@ -422,9 +450,9 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
       const isAlreadyUploaded = uploadedTransactionIds.has(txId);
 
       // Determine if transaction is completed based on type
-      let isCompleted;
+      let isCompleted: boolean;
       if (usesUnifiedStatus(tx)) {
-        isCompleted = tx.unifiedStatus === 'COMPLETED';
+        isCompleted = (tx as Record<string, unknown>).unifiedStatus === 'COMPLETED';
       } else {
         isCompleted = tx.status === 'settled' || tx.status === 'completed';
       }
@@ -448,8 +476,8 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
 
     // Step 4: Separate transactions with/without rules
     // Transactions with rules get auto-categorized, those without need manual categorization
-    const transactionsWithRules = [];
-    const transactionsWithoutRules = [];
+    const transactionsWithRules: WealthsimpleTransaction[] = [];
+    const transactionsWithoutRules: WealthsimpleTransaction[] = [];
 
     notYetUploadedTransactions.forEach((tx) => {
       if (INVESTMENT_TRANSACTION_RULES.some((rule) => rule.match(tx))) {
@@ -477,7 +505,7 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
     const corporateActionIds = collectCorporateActionIds(transactionsWithRules);
 
     // Create enrichment map for the rules engine
-    const enrichmentMap = new Map();
+    const enrichmentMap = new Map<string, unknown>();
 
     // Fetch internal transfer data for annotations (individual calls with progress)
     if (internalTransferIds.length > 0) {
@@ -487,7 +515,6 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
         const progressNum = i + 1;
         debugLog(`Fetching internal transfer details (${progressNum}/${internalTransferIds.length}): ${id}`);
 
-        // Update progress callback for UI
         if (onProgress) {
           onProgress(`Internal transfers (${progressNum}/${internalTransferIds.length})`);
         }
@@ -500,34 +527,32 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
       debugLog(`Fetched ${internalTransferIds.length} internal transfer(s)`);
     }
 
-    // Fetch EFT funds transfer data for bank account details (individual calls with progress)
+    // Fetch EFT transfer data for bank account details (individual calls)
     if (eftTransferIds.length > 0) {
       debugLog(`Fetching ${eftTransferIds.length} EFT transfer(s) for bank account details...`);
       for (let i = 0; i < eftTransferIds.length; i++) {
-        const id = eftTransferIds[i];
+        const eftId = eftTransferIds[i];
         const progressNum = i + 1;
-        debugLog(`Fetching EFT transfer details (${progressNum}/${eftTransferIds.length}): ${id}`);
+        debugLog(`Fetching EFT transfer details (${progressNum}/${eftTransferIds.length}): ${eftId}`);
 
-        // Update progress callback for UI
         if (onProgress) {
           onProgress(`EFT transfers (${progressNum}/${eftTransferIds.length})`);
         }
 
-        const fundsTransfer = await wealthsimpleApi.fetchFundsTransfer(id);
+        const fundsTransfer = await wealthsimpleApi.fetchFundsTransfer(eftId);
         if (fundsTransfer) {
-          enrichmentMap.set(id, fundsTransfer);
+          enrichmentMap.set(eftId, fundsTransfer);
         }
       }
       debugLog(`Fetched ${eftTransferIds.length} EFT transfer(s)`);
     }
 
-    // Fetch extended order data for buy/sell transactions
-    // Managed orders use fetchActivityByOrdersServiceOrderId, DIY orders use fetchExtendedOrder, crypto orders use fetchCryptoOrder
+    // Fetch buy/sell order enrichment data
     const { managedOrders, diyOrderIds, cryptoOrderIds } = buySellOrderIds;
     const totalOrderCount = managedOrders.length + diyOrderIds.length + cryptoOrderIds.length;
 
     if (totalOrderCount > 0) {
-      debugLog(`Fetching order details: ${managedOrders.length} managed, ${diyOrderIds.length} DIY, ${cryptoOrderIds.length} crypto order(s)...`);
+      debugLog(`Fetching ${totalOrderCount} order(s) (${managedOrders.length} managed, ${diyOrderIds.length} DIY, ${cryptoOrderIds.length} crypto)...`);
       let orderProgressNum = 0;
 
       // Fetch managed orders using FetchActivityByOrdersServiceOrderId API
@@ -542,7 +567,7 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
 
         const activityData = await wealthsimpleApi.fetchActivityByOrdersServiceOrderId(orderAccountId, orderId);
         if (activityData) {
-          enrichmentMap.set(orderId, { ...activityData, isManagedOrderData: true });
+          enrichmentMap.set(orderId, { ...(activityData as object), isManagedOrderData: true });
         }
       }
 
@@ -575,7 +600,7 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
         const cryptoOrder = await wealthsimpleApi.fetchCryptoOrder(orderId);
         if (cryptoOrder) {
           // Store with isCryptoOrderData marker for the rules engine
-          enrichmentMap.set(orderId, { ...cryptoOrder, isCryptoOrderData: true });
+          enrichmentMap.set(orderId, { ...(cryptoOrder as object), isCryptoOrderData: true });
         }
       }
 
@@ -590,7 +615,6 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
         const progressNum = i + 1;
         debugLog(`Fetching corporate action details (${progressNum}/${corporateActionIds.length}): ${canonicalId}`);
 
-        // Update progress callback for UI
         if (onProgress) {
           onProgress(`Corporate actions (${progressNum}/${corporateActionIds.length})`);
         }
@@ -612,7 +636,6 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
         const progressNum = i + 1;
         debugLog(`Fetching short option expiry details (${progressNum}/${shortOptionExpiryIds.length}): ${expiryId}`);
 
-        // Update progress callback for UI
         if (onProgress) {
           onProgress(`Option expiries (${progressNum}/${shortOptionExpiryIds.length})`);
         }
@@ -620,12 +643,13 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
         const expiryDetail = await wealthsimpleApi.fetchShortOptionPositionExpiryDetail(expiryId);
         if (expiryDetail) {
           // Fetch security names for deliverables
-          const securityCache = new Map();
+          const securityCache = new Map<string, unknown>();
           // Static security IDs that don't need to be fetched (cash currencies)
           const STATIC_SECURITY_IDS = new Set(['sec-s-cad', 'sec-s-usd']);
-          if (expiryDetail.deliverables && Array.isArray(expiryDetail.deliverables)) {
-            for (const deliverable of expiryDetail.deliverables) {
-              const secId = deliverable.securityId;
+          const deliverables = (expiryDetail as Record<string, unknown>).deliverables;
+          if (deliverables && Array.isArray(deliverables)) {
+            for (const deliverable of deliverables) {
+              const secId = (deliverable as Record<string, unknown>).securityId as string | undefined;
               // Skip only static cash security mappings (sec-s-cad, sec-s-usd)
               if (secId && !STATIC_SECURITY_IDS.has(secId)) {
                 const security = await wealthsimpleApi.fetchSecurity(secId);
@@ -644,7 +668,7 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
     debugLog(`Enrichment map has ${enrichmentMap.size} entries`);
 
     // Step 6: Process transactions with rules through the rules engine
-    const processedTransactions = [];
+    const processedTransactions: ProcessedTransaction[] = [];
 
     for (const transaction of transactionsWithRules) {
       const processed = processInvestmentTransaction(transaction, enrichmentMap);
@@ -667,18 +691,20 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
         debugLog(`Skip categorization enabled - auto-assigning ${transactionsWithoutRules.length} investment transactions without rules`);
         for (const rawTransaction of transactionsWithoutRules) {
           const isNegative = rawTransaction.amountSign === 'negative';
-          const finalAmount = isNegative ? -Math.abs(rawTransaction.amount) : Math.abs(rawTransaction.amount);
+          const finalAmount = isNegative ? -Math.abs(rawTransaction.amount ?? 0) : Math.abs(rawTransaction.amount ?? 0);
 
-          let isPending;
+          let isPending: boolean;
           if (usesUnifiedStatus(rawTransaction)) {
-            isPending = rawTransaction.unifiedStatus === 'IN_PROGRESS' || rawTransaction.unifiedStatus === 'PENDING';
+            const uStatus = (rawTransaction as Record<string, unknown>).unifiedStatus as string | undefined;
+            isPending = uStatus === 'IN_PROGRESS' || uStatus === 'PENDING';
           } else {
             isPending = rawTransaction.status === 'authorized';
           }
 
           const transactionId = getTransactionId(rawTransaction);
+          const uStatus = (rawTransaction as Record<string, unknown>).unifiedStatus as string | null | undefined;
 
-          const skippedTransaction = {
+          const skippedTransaction: ProcessedTransaction = {
             id: transactionId,
             date: convertToLocalDate(rawTransaction.occurredAt),
             merchant: formatOriginalStatement(rawTransaction.type, rawTransaction.subType, rawTransaction.assetSymbol || 'Unknown'),
@@ -687,7 +713,7 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
             type: rawTransaction.type,
             subType: rawTransaction.subType,
             status: rawTransaction.status,
-            unifiedStatus: rawTransaction.unifiedStatus,
+            unifiedStatus: uStatus,
             isPending,
             resolvedMonarchCategory: 'Uncategorized',
             ruleId: 'skip-categorization',
@@ -717,8 +743,8 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
           toast.show(`Manual categorization ${progressNum}/${transactionsWithoutRules.length}`, 'debug');
 
           // Show the manual categorization dialog
-          const manualResult = await new Promise((resolve) => {
-            showManualTransactionCategorization(rawTransaction, resolve);
+          const manualResult = await new Promise<ManualCategorizationResult | null>((resolve) => {
+            showManualTransactionCategorization(rawTransaction, resolve as (result: unknown) => void);
           });
 
           if (!manualResult) {
@@ -728,22 +754,24 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
 
           // Determine amount sign
           const isNegative = rawTransaction.amountSign === 'negative';
-          const finalAmount = isNegative ? -Math.abs(rawTransaction.amount) : Math.abs(rawTransaction.amount);
+          const finalAmount = isNegative ? -Math.abs(rawTransaction.amount ?? 0) : Math.abs(rawTransaction.amount ?? 0);
 
           // Determine pending status based on transaction type
           // Most investment transactions use unifiedStatus; only INTERNAL_TRANSFER uses status
-          let isPending;
+          let isPending: boolean;
           if (usesUnifiedStatus(rawTransaction)) {
-            isPending = rawTransaction.unifiedStatus === 'IN_PROGRESS' || rawTransaction.unifiedStatus === 'PENDING';
+            const uStatus = (rawTransaction as Record<string, unknown>).unifiedStatus as string | undefined;
+            isPending = uStatus === 'IN_PROGRESS' || uStatus === 'PENDING';
           } else {
             isPending = rawTransaction.status === 'authorized';
           }
 
           // Get transaction ID (handles null externalCanonicalId)
           const transactionId = getTransactionId(rawTransaction);
+          const uStatus = (rawTransaction as Record<string, unknown>).unifiedStatus as string | null | undefined;
 
           // Create processed transaction with user-provided data
-          const manuallyProcessed = {
+          const manuallyProcessed: ProcessedTransaction = {
             id: transactionId,
             date: convertToLocalDate(rawTransaction.occurredAt),
             merchant: manualResult.merchant,
@@ -752,7 +780,7 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
             type: rawTransaction.type,
             subType: rawTransaction.subType,
             status: rawTransaction.status,
-            unifiedStatus: rawTransaction.unifiedStatus,
+            unifiedStatus: uStatus,
             isPending,
             resolvedMonarchCategory: manualResult.category.name,
             ruleId: 'manual',
@@ -774,7 +802,7 @@ export async function fetchAndProcessInvestmentTransactions(consolidatedAccount,
 
     debugLog(`Processed ${processedTransactions.length} total investment transactions (${uploadedSkipCount} already uploaded)`);
     return processedTransactions;
-  } catch (error) {
+  } catch (error: unknown) {
     debugLog('Error fetching and processing investment transactions:', error);
     throw error;
   }
