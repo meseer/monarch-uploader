@@ -13,6 +13,26 @@
 
 import { debugLog } from '../../../../core/utils';
 import { convertToCSV } from '../../../../utils/csv';
+import type { ProcessedMbnaTransaction } from './transactions';
+
+/** Options for MBNA CSV conversion */
+export interface MbnaCSVOptions {
+  /** Whether to include referenceNumber in notes (default: false) */
+  storeTransactionDetailsInNotes?: boolean;
+}
+
+/** Monarch CSV row shape */
+interface MonarchCSVRow {
+  Date: string;
+  Merchant: string;
+  Category: string;
+  Account: string;
+  'Original Statement': string;
+  Notes: string;
+  Amount: number;
+  Tags: string;
+  [key: string]: string | number;
+}
 
 /**
  * Convert MBNA transactions to Monarch CSV format
@@ -21,13 +41,16 @@ import { convertToCSV } from '../../../../utils/csv';
  * - Settled transactions: standard CSV row with no tags
  * - Pending transactions: "Pending" tag and generated hash ID in notes (for reconciliation)
  *
- * @param {Array} transactions - Array of processed MBNA transaction objects (from processMbnaTransactions)
- * @param {string} accountName - MBNA account name for the Account column
- * @param {Object} options - Conversion options
- * @param {boolean} options.storeTransactionDetailsInNotes - Whether to include referenceNumber in notes (default: false)
- * @returns {string} CSV string formatted for Monarch
+ * @param transactions - Array of processed MBNA transaction objects (from processMbnaTransactions)
+ * @param accountName - MBNA account name for the Account column
+ * @param options - Conversion options
+ * @returns CSV string formatted for Monarch
  */
-export function convertMbnaTransactionsToMonarchCSV(transactions, accountName, options = {}) {
+export function convertMbnaTransactionsToMonarchCSV(
+  transactions: ProcessedMbnaTransaction[],
+  accountName: string,
+  options: MbnaCSVOptions = {},
+): string {
   if (!transactions || transactions.length === 0) {
     return '';
   }
@@ -47,11 +70,11 @@ export function convertMbnaTransactionsToMonarchCSV(transactions, accountName, o
   ];
 
   // Transform transactions to Monarch format
-  const monarchRows = transactions.map((transaction) => {
+  const monarchRows: MonarchCSVRow[] = transactions.map((transaction) => {
     const isPending = transaction.isPending === true;
 
     // Build notes field
-    const notesParts = [];
+    const notesParts: string[] = [];
 
     // Include reference number if setting is enabled (for settled transactions)
     if (storeTransactionDetailsInNotes && !isPending && transaction.referenceNumber) {

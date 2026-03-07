@@ -2,10 +2,9 @@
  * MBNA Integration Module — Barrel Export
  *
  * Exports the standard IntegrationModule shape as defined in
- * src/integrations/types.js. This is the reference implementation.
+ * src/integrations/types.ts. This is the reference implementation.
  *
  * @module integrations/mbna
- * @type {import('../types').IntegrationModule}
  */
 
 import * as monarchMapperNs from './sinks/monarch';
@@ -29,6 +28,5 @@ export const monarchMapper = monarchMapperNs;
 
 /**
  * Sync hooks for the generic syncOrchestrator.
- * @type {import('../types').SyncHooks}
  */
 export { default as syncHooks } from './sinks/monarch/syncHooks';

@@ -27,3 +27,9 @@ export { formatBalanceHistoryForMonarch } from './balanceFormatter';
 
 // CSV formatting (Monarch CSV export)
 export { convertMbnaTransactionsToMonarchCSV } from './csvFormatter';
+
+// Re-export types
+export type { ProcessedMbnaTransaction, ProcessedTransactionsResult, DuplicateFilterResult } from './transactions';
+export type { MbnaPendingWithId, DeduplicationResult, ReconciliationResult } from './pendingTransactions';
+export type { MonarchBalanceEntry } from './balanceFormatter';
+export type { MbnaCSVOptions } from './csvFormatter';

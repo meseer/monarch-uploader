@@ -5,14 +5,49 @@
  * These hooks provide the institution-specific logic that the generic
  * syncOrchestrator calls during the sync workflow.
  *
- * @type {import('../../../types').SyncHooks}
  * @module integrations/mbna/sinks/monarch/syncHooks
  */
 
 import { debugLog, formatDate } from '../../../../core/utils';
-import { processMbnaTransactions, resolveMbnaCategories } from './transactions';
-import { buildBalanceHistory } from '../../source/balanceReconstruction';
-import { formatBalanceHistoryForMonarch } from './balanceFormatter';
+import { processMbnaTransactions, resolveMbnaCategories, type ProcessedMbnaTransaction } from './transactions';
+import { buildBalanceHistory, type MbnaRawTransaction, type MbnaStatementData } from '../../source/balanceReconstruction';
+import { formatBalanceHistoryForMonarch, type MonarchBalanceEntry } from './balanceFormatter';
+import type { SyncHooks, SyncCallbacks } from '../../../types';
+import type { MbnaApiClient, MbnaTransactionResult } from '../../source/api';
+
+// ── Interfaces ──────────────────────────────────────────────
+
+/** Metadata returned alongside fetched transactions */
+interface FetchMetadata {
+  statements: MbnaStatementData[];
+  currentCycle: MbnaTransactionResult['currentCycle'];
+}
+
+/** Result of fetchTransactions hook */
+interface FetchTransactionsResult {
+  settled: MbnaRawTransaction[];
+  pending: MbnaRawTransaction[];
+  metadata: FetchMetadata;
+}
+
+/** Parameters for buildBalanceHistory hook */
+interface BuildBalanceHistoryParams {
+  currentBalance: number;
+  metadata: Record<string, unknown>;
+  fromDate: string;
+  invertBalance: boolean;
+}
+
+/** Account data passed to buildAccountEntry */
+interface MbnaAccountData {
+  accountId?: string;
+  endingIn?: string;
+  cardName?: string;
+  displayName?: string;
+  [key: string]: unknown;
+}
+
+// ── Hook Implementations ────────────────────────────────────
 
 /**
  * Fetch raw transactions from the MBNA API.
@@ -20,14 +55,17 @@ import { formatBalanceHistoryForMonarch } from './balanceFormatter';
  * Aggregates transactions from the current cycle and past statements,
  * returns them as separate settled and pending arrays along with
  * metadata needed for balance reconstruction.
- *
- * @type {import('../../../types').FetchTransactionsHook}
  */
-async function fetchTransactions(api, accountId, fromDate, { onProgress }) {
+async function fetchTransactions(
+  api: MbnaApiClient,
+  accountId: string,
+  fromDate: string,
+  { onProgress }: SyncCallbacks,
+): Promise<FetchTransactionsResult> {
   onProgress('Fetching current cycle...');
 
   const txResult = await api.getTransactions(accountId, fromDate, {
-    onProgress: (current, total) => {
+    onProgress: (current: number, total: number) => {
       onProgress(`Loading statement ${current}/${total}...`);
     },
   });
@@ -36,10 +74,17 @@ async function fetchTransactions(api, accountId, fromDate, { onProgress }) {
 
   debugLog(`[MBNA hooks] Fetched ${allSettled.length} settled, ${allPending.length} pending transactions`);
 
+  // Map statement summaries to MbnaStatementData shape for balance reconstruction
+  const statementData: MbnaStatementData[] = statements.map((s) => ({
+    closingDate: s.closingDate,
+    statementBalance: s.statementBalance,
+    transactions: s.transactions,
+  }));
+
   return {
     settled: allSettled,
     pending: allPending,
-    metadata: { statements, currentCycle },
+    metadata: { statements: statementData, currentCycle },
   };
 }
 
@@ -51,10 +96,12 @@ async function fetchTransactions(api, accountId, fromDate, { onProgress }) {
  * - Amount sign inversion (MBNA positive charges → negative for Monarch)
  * - Auto-categorization (e.g., PAYMENT → Credit Card Payment)
  * - Pending ID attachment from generatedId
- *
- * @type {import('../../../types').ProcessTransactionsHook}
  */
-function processTransactions(settled, pending, options) {
+function processTransactions(
+  settled: MbnaRawTransaction[],
+  pending: Array<MbnaRawTransaction & { generatedId?: string }>,
+  options: { includePending: boolean },
+): { settled: ProcessedMbnaTransaction[]; pending: ProcessedMbnaTransaction[] } {
   const result = processMbnaTransactions(settled, pending, options);
   return {
     settled: result.settled,
@@ -64,20 +111,16 @@ function processTransactions(settled, pending, options) {
 
 /**
  * Extract dedup reference ID from a settled MBNA transaction.
- *
- * @type {import('../../../types').GetSettledRefIdHook}
  */
-function getSettledRefId(tx) {
-  return tx.referenceNumber;
+function getSettledRefId(tx: Record<string, unknown>): string {
+  return (tx.referenceNumber as string) || '';
 }
 
 /**
  * Extract dedup reference ID from a pending MBNA transaction.
- *
- * @type {import('../../../types').GetPendingRefIdHook}
  */
-function getPendingRefId(tx) {
-  return tx.pendingId;
+function getPendingRefId(tx: Record<string, unknown>): string {
+  return (tx.pendingId as string) || '';
 }
 
 /**
@@ -89,10 +132,11 @@ function getPendingRefId(tx) {
  * - High-confidence similarity auto-matching
  * - Manual prompt for unresolved merchants
  * - skipCategorization per-account setting
- *
- * @type {import('../../../types').ResolveCategoriesHook}
  */
-async function resolveCategories(transactions, accountId) {
+async function resolveCategories(
+  transactions: ProcessedMbnaTransaction[],
+  accountId: string,
+): Promise<ProcessedMbnaTransaction[]> {
   return resolveMbnaCategories(transactions, accountId);
 }
 
@@ -101,20 +145,21 @@ async function resolveCategories(transactions, accountId) {
  *
  * For settled transactions: includes referenceNumber if storeTransactionDetailsInNotes is enabled.
  * For pending transactions: always includes the generated pendingId for reconciliation.
- *
- * @type {import('../../../types').BuildTransactionNotesHook}
  */
-function buildTransactionNotes(tx, { storeTransactionDetailsInNotes = false } = {}) {
-  const notesParts = [];
+function buildTransactionNotes(
+  tx: Record<string, unknown>,
+  { storeTransactionDetailsInNotes = false }: { storeTransactionDetailsInNotes: boolean } = { storeTransactionDetailsInNotes: false },
+): string {
+  const notesParts: string[] = [];
 
   // Include reference number if setting is enabled (for settled transactions)
   if (storeTransactionDetailsInNotes && !tx.isPending && tx.referenceNumber) {
-    notesParts.push(tx.referenceNumber);
+    notesParts.push(tx.referenceNumber as string);
   }
 
   // For pending transactions, always include the generated hash ID for reconciliation
   if (tx.isPending && tx.pendingId) {
-    notesParts.push(tx.pendingId);
+    notesParts.push(tx.pendingId as string);
   }
 
   return notesParts.join('\n');
@@ -128,23 +173,21 @@ function buildTransactionNotes(tx, { storeTransactionDetailsInNotes = false } = 
  * - description: Sanitized merchant name (asterisk suffix stripped)
  * - amount: Transaction amount
  * - endingIn: Card last 4 digits
- *
- * @type {import('../../../types').GetPendingIdFieldsHook}
  */
-function getPendingIdFields(tx) {
+function getPendingIdFields(tx: Record<string, unknown>): string[] {
   // Strip asterisk suffix from description for consistent hashing
   // "Amazon.ca*RA6HH70U3 TORONTO ON" → "Amazon.ca"
-  let sanitizedDescription = (tx.description || '').trim();
+  let sanitizedDescription = ((tx.description as string) || '').trim();
   const asteriskIndex = sanitizedDescription.indexOf('*');
   if (asteriskIndex > 0) {
     sanitizedDescription = sanitizedDescription.substring(0, asteriskIndex).trim();
   }
 
   return [
-    tx.transactionDate || '',
+    (tx.transactionDate as string) || '',
     sanitizedDescription,
     tx.amount !== undefined && tx.amount !== null ? String(tx.amount) : '',
-    tx.endingIn || '',
+    (tx.endingIn as string) || '',
   ];
 }
 
@@ -154,12 +197,9 @@ function getPendingIdFields(tx) {
  * MBNA amounts: positive = charge, negative = payment
  * Monarch expects: negative = charge, positive = payment
  * So we negate.
- *
- * @param {Object} settledTx - Raw settled MBNA transaction
- * @returns {number} Monarch-normalized amount
  */
-function getSettledAmount(settledTx) {
-  const rawAmount = parseFloat(settledTx.amount) || 0;
+function getSettledAmount(settledTx: Record<string, unknown>): number {
+  const rawAmount = parseFloat(String(settledTx.amount)) || 0;
   return -rawAmount;
 }
 
@@ -169,21 +209,22 @@ function getSettledAmount(settledTx) {
  * Uses the MBNA balance reconstruction module to compute daily balances
  * from statement data, then formats for Monarch (negates by default
  * for credit card liability convention; skips negation if invertBalance is on).
- *
- * @type {import('../../../types').BuildBalanceHistoryHook}
  */
-function buildBalanceHistoryHook({ currentBalance, metadata, fromDate, invertBalance }) {
+function buildBalanceHistoryHook({ currentBalance, metadata, fromDate, invertBalance }: BuildBalanceHistoryParams): MonarchBalanceEntry[] | null {
+  const typedMetadata = metadata as unknown as FetchMetadata;
   const rawHistory = buildBalanceHistory({
     currentBalance,
-    statements: metadata.statements,
-    currentCycleSettled: metadata.currentCycle?.settled || [],
+    statements: typedMetadata.statements,
+    currentCycleSettled: typedMetadata.currentCycle?.settled || [],
     startDate: fromDate,
   });
 
   if (!rawHistory || rawHistory.length === 0) return null;
 
   // formatBalanceHistoryForMonarch negates by default; if invertBalance is on, skip that negation
-  return invertBalance ? rawHistory : formatBalanceHistoryForMonarch(rawHistory);
+  return invertBalance
+    ? rawHistory.map((e) => ({ date: e.date, amount: e.balance }))
+    : formatBalanceHistoryForMonarch(rawHistory);
 }
 
 /**
@@ -191,10 +232,11 @@ function buildBalanceHistoryHook({ currentBalance, metadata, fromDate, invertBal
  *
  * Fetches available closing dates and returns 30 days before the oldest one,
  * giving users a reasonable default that covers their full statement history.
- *
- * @type {import('../../../types').SuggestStartDateHook}
  */
-async function suggestStartDate(api, accountId) {
+async function suggestStartDate(
+  api: MbnaApiClient,
+  accountId: string,
+): Promise<{ date: string; description: string } | null> {
   try {
     const closingDates = await api.getClosingDates(accountId);
     if (closingDates.length > 0) {
@@ -206,7 +248,7 @@ async function suggestStartDate(api, accountId) {
       return { date: suggestedDate, description: '30 days before oldest statement' };
     }
   } catch (error) {
-    debugLog('[MBNA hooks] Could not fetch closing dates for start date suggestion:', error.message);
+    debugLog('[MBNA hooks] Could not fetch closing dates for start date suggestion:', (error as Error).message);
   }
   return null;
 }
@@ -216,33 +258,32 @@ async function suggestStartDate(api, accountId) {
  *
  * Returns the fields stored under the manifest's `accountKeyName` ('mbnaAccount')
  * in the consolidated accounts list.
- *
- * @type {import('../../../types').BuildAccountEntryHook}
  */
-function buildAccountEntry(account) {
+function buildAccountEntry(account: Record<string, unknown>): Record<string, unknown> {
+  const acct = account as unknown as MbnaAccountData;
   return {
-    id: account.accountId,
-    endingIn: account.endingIn,
-    cardName: account.cardName,
-    nickname: account.displayName || `MBNA Card (${account.endingIn})`,
+    id: acct.accountId,
+    endingIn: acct.endingIn,
+    cardName: acct.cardName,
+    nickname: acct.displayName || `MBNA Card (${acct.endingIn})`,
   };
 }
 
-/** @type {import('../../../types').SyncHooks} */
-const mbnaSyncHooks = {
+/** MBNA sync hooks implementation */
+const mbnaSyncHooks: SyncHooks = {
   // Required hooks
-  fetchTransactions,
-  processTransactions,
+  fetchTransactions: fetchTransactions as unknown as SyncHooks['fetchTransactions'],
+  processTransactions: processTransactions as unknown as SyncHooks['processTransactions'],
   getSettledRefId,
   getPendingRefId,
-  resolveCategories,
+  resolveCategories: resolveCategories as unknown as SyncHooks['resolveCategories'],
   buildTransactionNotes,
 
   // Optional hooks
   getPendingIdFields,
   getSettledAmount,
-  buildBalanceHistory: buildBalanceHistoryHook,
-  suggestStartDate,
+  buildBalanceHistory: buildBalanceHistoryHook as SyncHooks['buildBalanceHistory'],
+  suggestStartDate: suggestStartDate as unknown as SyncHooks['suggestStartDate'],
   buildAccountEntry,
 };
 

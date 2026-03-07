@@ -14,6 +14,22 @@
  * @module integrations/mbna/source/auth
  */
 
+/** Auth status returned by checkStatus() */
+interface MbnaAuthStatus {
+  authenticated: boolean;
+}
+
+/** Credentials marker returned by getCredentials() */
+interface MbnaCredentials {
+  autoManaged: boolean;
+}
+
+/** MBNA auth handler shape (subset of IntegrationAuth) */
+export interface MbnaAuth {
+  checkStatus(): MbnaAuthStatus;
+  getCredentials(): MbnaCredentials;
+}
+
 /**
  * Create an auth handler for MBNA
  *
@@ -25,9 +41,9 @@
  * The actual auth validation happens when the API probe call
  * succeeds or fails with 401/403.
  *
- * @returns {import('../../types').IntegrationAuth} Auth handler instance
+ * @returns MBNA auth handler instance
  */
-export function createAuth() {
+export function createAuth(): MbnaAuth {
   return {
     /**
      * Check current authentication status.
@@ -35,10 +51,8 @@ export function createAuth() {
      * Since JSESSIONID is HttpOnly, we can't read it from JS.
      * We assume the user is authenticated (they're on the MBNA site)
      * and let the API probe confirm or deny.
-     *
-     * @returns {{ authenticated: boolean }}
      */
-    checkStatus() {
+    checkStatus(): MbnaAuthStatus {
       // Can't read HttpOnly cookies — assume authenticated,
       // actual validation happens via API probe
       return {
@@ -51,10 +65,8 @@ export function createAuth() {
      *
      * GM_xmlhttpRequest automatically sends browser cookies (including
      * HttpOnly ones) for same-origin requests. No manual Cookie header needed.
-     *
-     * @returns {{ autoManaged: boolean }} Always returns a truthy object
      */
-    getCredentials() {
+    getCredentials(): MbnaCredentials {
       // GM_xmlhttpRequest handles cookie forwarding automatically
       return {
         autoManaged: true,

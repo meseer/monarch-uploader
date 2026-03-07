@@ -7,16 +7,24 @@
  * @module integrations/mbna/sinks/monarch/balanceFormatter
  */
 
+import type { BalanceEntry } from '../../source/balanceReconstruction';
+
+/** Balance entry formatted for Monarch API upload */
+export interface MonarchBalanceEntry {
+  date: string;
+  amount: number;
+}
+
 /**
  * Format balance history for Monarch API upload
  *
  * MBNA balances are inverted for Monarch: MBNA positive (owed) → Monarch negative (liability),
  * MBNA negative (credit/overpayment) → Monarch positive.
  *
- * @param {Array<{date: string, balance: number}>} balanceHistory - Balance entries (raw MBNA values)
- * @returns {Array<{date: string, amount: number}>} Formatted for Monarch API (negated)
+ * @param balanceHistory - Balance entries (raw MBNA values)
+ * @returns Formatted for Monarch API (negated)
  */
-export function formatBalanceHistoryForMonarch(balanceHistory) {
+export function formatBalanceHistoryForMonarch(balanceHistory: BalanceEntry[]): MonarchBalanceEntry[] {
   return balanceHistory.map((entry) => ({
     date: entry.date,
     amount: -entry.balance,

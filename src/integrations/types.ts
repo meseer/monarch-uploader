@@ -61,6 +61,12 @@ export interface IntegrationManifest {
   /** Per-account settings with defaults */
   settings: IntegrationSettingDefinition[];
 
+  /** Default lookback period in days */
+  defaultLookbackDays?: number;
+
+  /** Account creation defaults for new Monarch accounts */
+  accountCreateDefaults?: IntegrationAccountCreateDefaults;
+
   /** CSS color for brand theming */
   brandColor: string;
   /** Cloudinary public ID for institution logo (null if none) */
@@ -125,6 +131,13 @@ export interface IntegrationSettingDefinition {
   default: unknown;
 }
 
+/** Defaults used when creating new Monarch accounts for this integration. */
+export interface IntegrationAccountCreateDefaults {
+  defaultType: string;
+  defaultSubtype: string;
+  accountType: string;
+}
+
 /** Optional flags for UI features beyond the standard panel. */
 export interface IntegrationUIExtensions {
   /** Show token expiry countdown in status */
@@ -172,6 +185,8 @@ export interface PageMode {
   extractAccountId?: (match: RegExpMatchArray) => string;
   /** UI type to render: 'single-account' or 'all-accounts' */
   uiType: string;
+  /** Per-page-mode CSS selectors (overrides global selectors) */
+  selectors?: InjectionSelector[];
 }
 
 // ============================================================
@@ -339,6 +354,8 @@ export interface SyncHooks {
   // Optional hooks (capability-dependent)
   /** Stable fields for pending transaction ID hashing */
   getPendingIdFields?: GetPendingIdFieldsHook;
+  /** Get Monarch-normalized settled amount from a raw institution transaction */
+  getSettledAmount?: (settledTx: Record<string, unknown>) => number;
   /** Build balance history for first-sync reconstruction */
   buildBalanceHistory?: BuildBalanceHistoryHook;
   /** Suggest a default start date for first sync */

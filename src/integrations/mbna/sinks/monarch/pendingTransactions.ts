@@ -18,6 +18,45 @@
 
 import { debugLog, formatDate } from '../../../../core/utils';
 import monarchApi from '../../../../api/monarch';
+import type { MbnaRawTransaction } from '../../source/balanceReconstruction';
+
+// ── Interfaces ──────────────────────────────────────────────
+
+/** A pending transaction with its generated hash ID attached */
+export interface MbnaPendingWithId extends MbnaRawTransaction {
+  generatedId: string;
+  isPending: true;
+}
+
+/** Result of the separate-and-deduplicate operation */
+export interface DeduplicationResult {
+  settled: MbnaRawTransaction[];
+  pending: MbnaPendingWithId[];
+  pendingIdMap: Map<string, MbnaRawTransaction>;
+  settledIdMap: Map<string, MbnaRawTransaction>;
+  duplicatesRemoved: number;
+}
+
+/** Result of the pending transaction reconciliation */
+export interface ReconciliationResult {
+  success: boolean;
+  settled: number;
+  cancelled: number;
+  failed: number;
+  error: string | null;
+  noPendingTag?: boolean;
+  noPendingTransactions?: boolean;
+}
+
+/** Monarch transaction shape (subset of fields used during reconciliation) */
+interface MonarchTransaction {
+  id: string;
+  notes?: string;
+  amount?: number;
+  ownedByUser?: { id: string } | null;
+}
+
+// ── Constants ───────────────────────────────────────────────
 
 /**
  * Prefix for MBNA generated transaction IDs stored in Monarch notes
@@ -31,6 +70,8 @@ const MBNA_TX_ID_PREFIX = 'mbna-tx:';
  */
 const MBNA_TX_ID_PATTERN = /mbna-tx:([a-f0-9]{16})/;
 
+// ── Public Functions ────────────────────────────────────────
+
 /**
  * Generate a deterministic pending transaction ID by hashing stable transaction fields
  *
@@ -40,10 +81,10 @@ const MBNA_TX_ID_PATTERN = /mbna-tx:([a-f0-9]{16})/;
  * - amount: Transaction amount
  * - endingIn: Card last 4 digits
  *
- * @param {Object} tx - MBNA transaction object from API
- * @returns {Promise<string>} Generated ID in format mbna-tx:{hash16}
+ * @param tx - MBNA transaction object from API
+ * @returns Generated ID in format mbna-tx:{hash16}
  */
-export async function generatePendingTransactionId(tx) {
+export async function generatePendingTransactionId(tx: MbnaRawTransaction): Promise<string> {
   // Strip asterisk suffix from description for consistent hashing
   // "Amazon.ca*RA6HH70U3 TORONTO ON" → "Amazon.ca"
   let sanitizedDescription = (tx.description || '').trim();
@@ -74,37 +115,37 @@ export async function generatePendingTransactionId(tx) {
 
 /**
  * Check if a transaction is pending (referenceNumber is "TEMP")
- * @param {Object} tx - MBNA transaction from API
- * @returns {boolean} True if pending
+ * @param tx - MBNA transaction from API
+ * @returns True if pending
  */
-export function isPendingTransaction(tx) {
+export function isPendingTransaction(tx: MbnaRawTransaction): boolean {
   return tx.referenceNumber === 'TEMP';
 }
 
 /**
  * Check if a transaction is settled (has a real referenceNumber)
- * @param {Object} tx - MBNA transaction from API
- * @returns {boolean} True if settled
+ * @param tx - MBNA transaction from API
+ * @returns True if settled
  */
-export function isSettledTransaction(tx) {
+export function isSettledTransaction(tx: MbnaRawTransaction): boolean {
   return !!tx.referenceNumber && tx.referenceNumber !== 'TEMP';
 }
 
 /**
  * Format an MBNA pending transaction ID for storage in Monarch notes
- * @param {string} pendingId - Generated pending transaction ID (mbna-tx:xxx format)
- * @returns {string} The ID string (already in correct format)
+ * @param pendingId - Generated pending transaction ID (mbna-tx:xxx format)
+ * @returns The ID string (already in correct format)
  */
-export function formatPendingIdForNotes(pendingId) {
+export function formatPendingIdForNotes(pendingId: string | null): string {
   return pendingId || '';
 }
 
 /**
  * Extract MBNA pending transaction ID from Monarch transaction notes
- * @param {string} notes - Transaction notes from Monarch
- * @returns {string|null} Full pending ID (mbna-tx:xxx) or null if not found
+ * @param notes - Transaction notes from Monarch
+ * @returns Full pending ID (mbna-tx:xxx) or null if not found
  */
-export function extractPendingIdFromNotes(notes) {
+export function extractPendingIdFromNotes(notes: string | null | undefined): string | null {
   if (!notes || typeof notes !== 'string') {
     return null;
   }
@@ -120,10 +161,10 @@ export function extractPendingIdFromNotes(notes) {
 /**
  * Remove MBNA system notes (pending transaction ID) from notes
  * Preserves any user-added notes or other content
- * @param {string} notes - Transaction notes
- * @returns {string} Cleaned notes
+ * @param notes - Transaction notes
+ * @returns Cleaned notes
  */
-function cleanPendingIdFromNotes(notes) {
+function cleanPendingIdFromNotes(notes: string | null | undefined): string {
   if (!notes || typeof notes !== 'string') {
     return '';
   }
@@ -152,22 +193,25 @@ function cleanPendingIdFromNotes(notes) {
  * 4. Removes pending transactions whose hash matches a settled transaction
  *    (the settled version takes precedence)
  *
- * @param {Array} pendingTransactions - Pending transactions (referenceNumber="TEMP")
- * @param {Array} settledTransactions - Settled transactions (real referenceNumber)
- * @returns {Promise<Object>} Result with settled, pending arrays and metadata
+ * @param pendingTransactions - Pending transactions (referenceNumber="TEMP")
+ * @param settledTransactions - Settled transactions (real referenceNumber)
+ * @returns Result with settled, pending arrays and metadata
  */
-export async function separateAndDeduplicateTransactions(pendingTransactions, settledTransactions) {
+export async function separateAndDeduplicateTransactions(
+  pendingTransactions: MbnaRawTransaction[],
+  settledTransactions: MbnaRawTransaction[],
+): Promise<DeduplicationResult> {
   debugLog(`MBNA transaction separation: ${settledTransactions.length} settled, ${pendingTransactions.length} pending`);
 
   // Step 1: Generate hash IDs for settled transactions
-  const settledIdMap = new Map();
+  const settledIdMap = new Map<string, MbnaRawTransaction>();
   for (const tx of settledTransactions) {
     const hashId = await generatePendingTransactionId(tx);
     settledIdMap.set(hashId, tx);
   }
 
   // Step 2: Generate hash IDs for pending transactions and filter out duplicates
-  const pendingIdMap = new Map();
+  const pendingIdMap = new Map<string, MbnaRawTransaction>();
   let duplicatesRemoved = 0;
 
   for (const tx of pendingTransactions) {
@@ -188,10 +232,10 @@ export async function separateAndDeduplicateTransactions(pendingTransactions, se
   }
 
   // Convert pendingIdMap back to array with IDs attached
-  const dedupedPending = Array.from(pendingIdMap.entries()).map(([hashId, tx]) => ({
+  const dedupedPending: MbnaPendingWithId[] = Array.from(pendingIdMap.entries()).map(([hashId, tx]) => ({
     ...tx,
     generatedId: hashId,
-    isPending: true,
+    isPending: true as const,
   }));
 
   return {
@@ -214,14 +258,19 @@ export async function separateAndDeduplicateTransactions(pendingTransactions, se
  *    - Hash matches a still-pending transaction → no action
  *    - Hash not found → cancelled: delete from Monarch
  *
- * @param {string} monarchAccountId - Monarch account ID
- * @param {Array} allPending - Current pending transactions from MBNA API
- * @param {Array} allSettled - Current settled transactions from MBNA API
- * @param {number} lookbackDays - Number of days to look back for pending transactions
- * @returns {Promise<Object>} Reconciliation result { success, settled, cancelled, failed, error }
+ * @param monarchAccountId - Monarch account ID
+ * @param allPending - Current pending transactions from MBNA API
+ * @param allSettled - Current settled transactions from MBNA API
+ * @param lookbackDays - Number of days to look back for pending transactions
+ * @returns Reconciliation result
  */
-export async function reconcileMbnaPendingTransactions(monarchAccountId, allPending, allSettled, lookbackDays) {
-  const result = { success: true, settled: 0, cancelled: 0, failed: 0, error: null };
+export async function reconcileMbnaPendingTransactions(
+  monarchAccountId: string,
+  allPending: MbnaRawTransaction[],
+  allSettled: MbnaRawTransaction[],
+  lookbackDays: number,
+): Promise<ReconciliationResult> {
+  const result: ReconciliationResult = { success: true, settled: 0, cancelled: 0, failed: 0, error: null };
 
   try {
     debugLog('Starting MBNA pending transaction reconciliation', {
@@ -260,7 +309,7 @@ export async function reconcileMbnaPendingTransactions(monarchAccountId, allPend
       endDate: endDateStr,
     });
 
-    const pendingMonarchTransactions = pendingTransactionsResult.results || [];
+    const pendingMonarchTransactions = (pendingTransactionsResult.results || []) as MonarchTransaction[];
 
     if (pendingMonarchTransactions.length === 0) {
       debugLog('No pending transactions found in Monarch for this MBNA account');
@@ -270,13 +319,13 @@ export async function reconcileMbnaPendingTransactions(monarchAccountId, allPend
     debugLog(`Found ${pendingMonarchTransactions.length} pending MBNA transaction(s) in Monarch to reconcile`);
 
     // Step 4: Build hash ID maps for current MBNA transactions
-    const settledIdMap = new Map();
+    const settledIdMap = new Map<string, MbnaRawTransaction>();
     for (const tx of (allSettled || [])) {
       const hashId = await generatePendingTransactionId(tx);
       settledIdMap.set(hashId, tx);
     }
 
-    const pendingIdMap = new Map();
+    const pendingIdMap = new Map<string, MbnaRawTransaction>();
     for (const tx of (allPending || [])) {
       const hashId = await generatePendingTransactionId(tx);
       pendingIdMap.set(hashId, tx);
@@ -302,11 +351,11 @@ export async function reconcileMbnaPendingTransactions(monarchAccountId, allPend
 
         // Check if transaction has settled
         if (settledIdMap.has(pendingId)) {
-          const settledTx = settledIdMap.get(pendingId);
+          const settledTx = settledIdMap.get(pendingId)!;
           debugLog(`MBNA transaction ${pendingId} has settled, updating Monarch transaction`);
 
           // Amount signs kept as-is from MBNA (positive = charge, negative = payment)
-          const settledAmount = parseFloat(settledTx.amount) || 0;
+          const settledAmount = parseFloat(String(settledTx.amount)) || 0;
 
           // Clean the notes - remove pending ID but keep user notes
           const cleanedNotes = cleanPendingIdFromNotes(notes);
@@ -360,21 +409,21 @@ export async function reconcileMbnaPendingTransactions(monarchAccountId, allPend
     return result;
   } catch (error) {
     debugLog('Error during MBNA pending transaction reconciliation:', error);
-    return { ...result, success: false, error: error.message };
+    return { ...result, success: false, error: (error as Error).message };
   }
 }
 
 /**
  * Format reconciliation result message for progress dialog
- * @param {Object} result - Reconciliation result from reconcileMbnaPendingTransactions
- * @returns {string} Formatted message
+ * @param result - Reconciliation result from reconcileMbnaPendingTransactions
+ * @returns Formatted message
  */
-export function formatReconciliationMessage(result) {
+export function formatReconciliationMessage(result: ReconciliationResult): string {
   if (result.noPendingTag || result.noPendingTransactions) {
     return 'No pending transactions';
   }
 
-  const parts = [];
+  const parts: string[] = [];
 
   if (result.settled > 0) {
     parts.push(`${result.settled} settled`);

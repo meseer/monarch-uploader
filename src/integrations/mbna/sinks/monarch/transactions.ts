@@ -17,12 +17,75 @@ import { calculateAllCategorySimilarities } from '../../../../mappers/category';
 import { showMonarchCategorySelector } from '../../../../ui/components/categorySelector';
 import monarchApi from '../../../../api/monarch';
 import accountService from '../../../../services/common/accountService';
+import type { MbnaRawTransaction } from '../../source/balanceReconstruction';
+import type { StoredTransaction } from '../../../../utils/transactionStorage';
+
+// ── Interfaces ──────────────────────────────────────────────
+
+/** Auto-categorization rule for MBNA transactions */
+interface AutoCategorizeRule {
+  pattern: RegExp;
+  category: string;
+  merchant: string;
+}
+
+/** Processing options for processTransaction */
+interface ProcessTransactionOptions {
+  isPending?: boolean;
+  pendingId?: string | null;
+}
+
+/** A processed MBNA transaction ready for CSV conversion */
+export interface ProcessedMbnaTransaction {
+  date: string;
+  merchant: string;
+  originalStatement: string;
+  amount: number;
+  referenceNumber: string;
+  isPending: boolean;
+  pendingId: string | null;
+  autoCategory: string | null;
+  resolvedMonarchCategory?: string;
+}
+
+/** Result of processMbnaTransactions */
+export interface ProcessedTransactionsResult {
+  settled: ProcessedMbnaTransaction[];
+  pending: ProcessedMbnaTransaction[];
+  all: ProcessedMbnaTransaction[];
+}
+
+/** Options for processMbnaTransactions */
+interface ProcessMbnaOptions {
+  includePending?: boolean;
+}
+
+/** Result of filterDuplicateSettledTransactions */
+export interface DuplicateFilterResult {
+  newTransactions: ProcessedMbnaTransaction[];
+  duplicateCount: number;
+}
+
+/** Category selection result from the category selector UI */
+interface CategorySelectionResult {
+  name?: string;
+  skipped?: boolean;
+  skipAll?: boolean;
+}
+
+/** Monarch category object (from API) */
+interface MonarchCategoryItem {
+  name: string;
+  [key: string]: unknown;
+}
+
+// ── Constants ───────────────────────────────────────────────
 
 /**
  * Auto-categorization rules for MBNA transactions
  * Maps description patterns to { category, merchant } overrides
  */
-const AUTO_CATEGORIZE_RULES = [
+const AUTO_CATEGORIZE_RULES: AutoCategorizeRule[] = [
   {
     pattern: /^PAYMENT$/i,
     category: 'Credit Card Payment',
@@ -30,12 +93,14 @@ const AUTO_CATEGORIZE_RULES = [
   },
 ];
 
+// ── Internal Helpers ────────────────────────────────────────
+
 /**
  * Apply auto-categorization rules to a transaction
- * @param {string} description - Raw MBNA transaction description
- * @returns {Object|null} { category, merchant } if matched, null otherwise
+ * @param description - Raw MBNA transaction description
+ * @returns { category, merchant } if matched, null otherwise
  */
-function applyAutoCategorization(description) {
+function applyAutoCategorization(description: string): { category: string; merchant: string } | null {
   if (!description) return null;
 
   for (const rule of AUTO_CATEGORIZE_RULES) {
@@ -50,13 +115,11 @@ function applyAutoCategorization(description) {
 /**
  * Process a single MBNA transaction into Monarch-ready format
  *
- * @param {Object} tx - Raw MBNA transaction from API
- * @param {Object} options - Processing options
- * @param {boolean} options.isPending - Whether this is a pending transaction
- * @param {string} options.pendingId - Generated pending ID (for pending transactions only)
- * @returns {Object} Processed transaction ready for CSV conversion
+ * @param tx - Raw MBNA transaction from API
+ * @param options - Processing options
+ * @returns Processed transaction ready for CSV conversion
  */
-function processTransaction(tx, options = {}) {
+function processTransaction(tx: MbnaRawTransaction, options: ProcessTransactionOptions = {}): ProcessedMbnaTransaction {
   const { isPending = false, pendingId = null } = options;
   const description = tx.description || '';
 
@@ -81,15 +144,52 @@ function processTransaction(tx, options = {}) {
 }
 
 /**
+ * Check if a merchant has a high-confidence auto-match to a Monarch category
+ * @param merchant - Merchant name to match
+ * @param availableCategories - Available Monarch categories
+ * @returns Auto-matched category name or null
+ */
+function findAutoMatch(merchant: string, availableCategories: MonarchCategoryItem[]): string | null {
+  if (!merchant || !availableCategories || availableCategories.length === 0) return null;
+
+  const normalizedMerchant = merchant.toLowerCase().trim();
+  let bestMatch: string | null = null;
+  let bestScore = 0;
+
+  for (const category of availableCategories) {
+    const categoryName = typeof category === 'string' ? category : category.name;
+    if (!categoryName) continue;
+    const score = stringSimilarity(normalizedMerchant, categoryName.toLowerCase());
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = categoryName;
+    }
+  }
+
+  // Only auto-match at very high confidence
+  if (bestScore > 0.95) {
+    debugLog(`MBNA auto-match: "${merchant}" → "${bestMatch}" (score: ${bestScore.toFixed(3)})`);
+    return bestMatch;
+  }
+
+  return null;
+}
+
+// ── Exported Functions ──────────────────────────────────────
+
+/**
  * Process all MBNA transactions (settled + pending) into Monarch-ready format
  *
- * @param {Array} settledTransactions - Settled transactions from API
- * @param {Array} pendingTransactions - Pending transactions (with generatedId from dedup)
- * @param {Object} options - Processing options
- * @param {boolean} options.includePending - Whether to include pending transactions
- * @returns {Object} { settled: [], pending: [], all: [] }
+ * @param settledTransactions - Settled transactions from API
+ * @param pendingTransactions - Pending transactions (with generatedId from dedup)
+ * @param options - Processing options
+ * @returns { settled, pending, all }
  */
-export function processMbnaTransactions(settledTransactions, pendingTransactions, options = {}) {
+export function processMbnaTransactions(
+  settledTransactions: MbnaRawTransaction[],
+  pendingTransactions: Array<MbnaRawTransaction & { generatedId?: string }>,
+  options: ProcessMbnaOptions = {},
+): ProcessedTransactionsResult {
   const { includePending = true } = options;
 
   const settled = settledTransactions.map((tx) => processTransaction(tx, { isPending: false }));
@@ -115,38 +215,6 @@ export function processMbnaTransactions(settledTransactions, pendingTransactions
 }
 
 /**
- * Check if a merchant has a high-confidence auto-match to a Monarch category
- * @param {string} merchant - Merchant name to match
- * @param {Array} availableCategories - Available Monarch categories
- * @returns {string|null} Auto-matched category name or null
- */
-function findAutoMatch(merchant, availableCategories) {
-  if (!merchant || !availableCategories || availableCategories.length === 0) return null;
-
-  const normalizedMerchant = merchant.toLowerCase().trim();
-  let bestMatch = null;
-  let bestScore = 0;
-
-  for (const category of availableCategories) {
-    const categoryName = typeof category === 'string' ? category : category.name;
-    if (!categoryName) continue;
-    const score = stringSimilarity(normalizedMerchant, categoryName.toLowerCase());
-    if (score > bestScore) {
-      bestScore = score;
-      bestMatch = categoryName;
-    }
-  }
-
-  // Only auto-match at very high confidence
-  if (bestScore > 0.95) {
-    debugLog(`MBNA auto-match: "${merchant}" → "${bestMatch}" (score: ${bestScore.toFixed(3)})`);
-    return bestMatch;
-  }
-
-  return null;
-}
-
-/**
  * Resolve categories for processed MBNA transactions
  *
  * Uses the common category resolution flow:
@@ -155,19 +223,22 @@ function findAutoMatch(merchant, availableCategories) {
  * 3. High-confidence similarity matches are applied automatically
  * 4. Remaining transactions prompt the user for manual categorization (unless skipCategorization)
  *
- * @param {Array} transactions - Processed MBNA transactions from processMbnaTransactions
- * @param {string} mbnaAccountId - MBNA account ID (for per-account settings)
- * @returns {Promise<Array>} Transactions with resolvedMonarchCategory set
+ * @param transactions - Processed MBNA transactions from processMbnaTransactions
+ * @param mbnaAccountId - MBNA account ID (for per-account settings)
+ * @returns Transactions with resolvedMonarchCategory set
  */
-export async function resolveMbnaCategories(transactions, mbnaAccountId) {
+export async function resolveMbnaCategories(
+  transactions: ProcessedMbnaTransaction[],
+  mbnaAccountId: string,
+): Promise<ProcessedMbnaTransaction[]> {
   if (!transactions || transactions.length === 0) return [];
 
   // Read skipCategorization setting from account data
-  const accountData = accountService.getAccountData(INTEGRATIONS.MBNA, mbnaAccountId);
+  const accountData = accountService.getAccountData(INTEGRATIONS.MBNA, mbnaAccountId) as Record<string, unknown> | null;
   const skipCategorization = accountData?.skipCategorization === true;
 
   // Separate auto-categorized from those needing resolution
-  const autoCategorized = new Set();
+  const autoCategorized = new Set<ProcessedMbnaTransaction>();
   for (const tx of transactions) {
     if (tx.autoCategory) {
       autoCategorized.add(tx);
@@ -179,7 +250,7 @@ export async function resolveMbnaCategories(transactions, mbnaAccountId) {
     debugLog('MBNA: skipCategorization enabled — setting Uncategorized for non-auto-categorized');
     const result = transactions.map((tx) => {
       if (autoCategorized.has(tx)) {
-        return { ...tx, resolvedMonarchCategory: tx.autoCategory };
+        return { ...tx, resolvedMonarchCategory: tx.autoCategory! };
       }
       return { ...tx, resolvedMonarchCategory: 'Uncategorized' };
     });
@@ -191,23 +262,23 @@ export async function resolveMbnaCategories(transactions, mbnaAccountId) {
   }
 
   // Fetch available Monarch categories for similarity matching and manual selection
-  let availableCategories = [];
+  let availableCategories: MonarchCategoryItem[] = [];
   try {
     const categoryData = await monarchApi.getCategoriesAndGroups();
-    availableCategories = categoryData.categories || [];
+    availableCategories = (categoryData.categories || []) as MonarchCategoryItem[];
   } catch (error) {
     debugLog('MBNA: Failed to fetch Monarch categories:', error);
   }
 
   // Resolve categories: stored mappings → auto-match → collect for manual prompt
-  const resolvedMap = new Map(); // tx index → resolvedMonarchCategory
-  const uniqueMerchants = new Map(); // merchant → { resolved, needsManual, exampleTx }
+  const resolvedMap = new Map<number, string>(); // tx index → resolvedMonarchCategory
+  const uniqueMerchants = new Map<string, { resolved?: string; needsManual?: boolean; exampleTx?: ProcessedMbnaTransaction }>();
 
   for (let i = 0; i < transactions.length; i += 1) {
     const tx = transactions[i];
 
     if (autoCategorized.has(tx)) {
-      resolvedMap.set(i, tx.autoCategory);
+      resolvedMap.set(i, tx.autoCategory!);
       continue;
     }
 
@@ -218,7 +289,7 @@ export async function resolveMbnaCategories(transactions, mbnaAccountId) {
     }
 
     // 1. Check stored mapping
-    const storedMapping = getCategoryMapping(INTEGRATIONS.MBNA, merchant);
+    const storedMapping = getCategoryMapping(INTEGRATIONS.MBNA, merchant) as string | null;
     if (storedMapping) {
       uniqueMerchants.set(merchant, { resolved: storedMapping });
       continue;
@@ -237,7 +308,7 @@ export async function resolveMbnaCategories(transactions, mbnaAccountId) {
   }
 
   // Collect merchants needing manual categorization
-  const merchantsNeedingManual = [];
+  const merchantsNeedingManual: Array<{ merchant: string; exampleTx?: ProcessedMbnaTransaction }> = [];
   for (const [merchant, info] of uniqueMerchants) {
     if (info.needsManual) {
       merchantsNeedingManual.push({ merchant, exampleTx: info.exampleTx });
@@ -258,7 +329,7 @@ export async function resolveMbnaCategories(transactions, mbnaAccountId) {
 
       const similarityData = calculateAllCategorySimilarities(merchant, availableCategories);
 
-      const transactionDetails = {};
+      const transactionDetails: Record<string, unknown> = {};
       if (exampleTx) {
         transactionDetails.merchant = exampleTx.originalStatement || merchant;
         transactionDetails.amount = exampleTx.amount || 0;
@@ -267,7 +338,7 @@ export async function resolveMbnaCategories(transactions, mbnaAccountId) {
         }
       }
 
-      const selectedCategory = await new Promise((resolve) => {
+      const selectedCategory = await new Promise<CategorySelectionResult | null>((resolve) => {
         showMonarchCategorySelector(merchant, resolve, similarityData, transactionDetails);
       });
 
@@ -289,7 +360,7 @@ export async function resolveMbnaCategories(transactions, mbnaAccountId) {
       }
 
       // Save user selection for future syncs
-      setCategoryMapping(INTEGRATIONS.MBNA, merchant, selectedCategory.name);
+      setCategoryMapping(INTEGRATIONS.MBNA, merchant, selectedCategory.name!);
       uniqueMerchants.set(merchant, { resolved: selectedCategory.name });
     }
   } else if (merchantsNeedingManual.length > 0) {
@@ -303,7 +374,7 @@ export async function resolveMbnaCategories(transactions, mbnaAccountId) {
   const result = transactions.map((tx, i) => {
     // Already resolved (auto-categorized)
     if (resolvedMap.has(i)) {
-      return { ...tx, resolvedMonarchCategory: resolvedMap.get(i) };
+      return { ...tx, resolvedMonarchCategory: resolvedMap.get(i)! };
     }
 
     const merchant = tx.merchant || '';
@@ -329,17 +400,20 @@ export async function resolveMbnaCategories(transactions, mbnaAccountId) {
  * Uses referenceNumber for settled transactions to detect duplicates.
  * Pending transactions are always re-uploaded (reconciliation handles them).
  *
- * @param {Array} settledTransactions - Processed settled transactions
- * @param {Array} uploadedTransactions - Previously uploaded transaction records from account storage
- * @returns {Object} { newTransactions: [], duplicateCount: number }
+ * @param settledTransactions - Processed settled transactions
+ * @param uploadedTransactions - Previously uploaded transaction records from account storage
+ * @returns { newTransactions, duplicateCount }
  */
-export function filterDuplicateSettledTransactions(settledTransactions, uploadedTransactions) {
+export function filterDuplicateSettledTransactions(
+  settledTransactions: ProcessedMbnaTransaction[],
+  uploadedTransactions: StoredTransaction[],
+): DuplicateFilterResult {
   if (!uploadedTransactions || uploadedTransactions.length === 0) {
     return { newTransactions: settledTransactions, duplicateCount: 0 };
   }
 
   const uploadedRefSet = new Set(uploadedTransactions.map((t) => t.id));
-  const newTransactions = [];
+  const newTransactions: ProcessedMbnaTransaction[] = [];
   let duplicateCount = 0;
 
   for (const tx of settledTransactions) {

@@ -6,12 +6,48 @@
  * transactions day by day to build a balance history.
  *
  * This is institution-specific, sink-agnostic logic.
- * For Monarch-specific formatting, see sinks/monarch/balanceFormatter.js
+ * For Monarch-specific formatting, see sinks/monarch/balanceFormatter.ts
  *
  * @module integrations/mbna/source/balanceReconstruction
  */
 
 import { debugLog, getTodayLocal } from '../../../core/utils';
+
+// ── Interfaces ──────────────────────────────────────────────
+
+/** A single daily balance entry */
+export interface BalanceEntry {
+  date: string;
+  balance: number;
+}
+
+/** Raw MBNA transaction with date and amount fields used for balance reconstruction */
+export interface MbnaRawTransaction {
+  transactionDate?: string;
+  postingDate?: string;
+  amount?: number;
+  referenceNumber?: string;
+  description?: string;
+  endingIn?: string;
+}
+
+/** Statement data used for balance reconstruction */
+export interface MbnaStatementData {
+  closingDate: string;
+  statementBalance: number | null | undefined;
+  transactions: MbnaRawTransaction[];
+  raw?: Record<string, unknown>;
+}
+
+/** Parameters for buildBalanceHistory */
+export interface BalanceHistoryParams {
+  currentBalance: number;
+  statements: MbnaStatementData[];
+  currentCycleSettled: MbnaRawTransaction[];
+  startDate: string;
+}
+
+// ── Implementation ──────────────────────────────────────────
 
 /**
  * Build balance history from statement data and current balance.
@@ -25,16 +61,11 @@ import { debugLog, getTodayLocal } from '../../../core/utils';
  * - Positive balance = money owed (charges)
  * - Negative balance = credit (overpayment)
  *
- * @param {Object} params - Balance reconstruction parameters
- * @param {number} params.currentBalance - Current live balance from snapshot
- * @param {Array} params.statements - Statement data from getTransactions
- *   Each: { closingDate, statementBalance, transactions }
- * @param {Array} params.currentCycleSettled - Settled transactions in current billing cycle
- * @param {string} params.startDate - Earliest date to include (YYYY-MM-DD)
- * @returns {Array<{date: string, balance: number}>} Daily balance entries, oldest first
+ * @param params - Balance reconstruction parameters
+ * @returns Daily balance entries, oldest first
  */
-export function buildBalanceHistory({ currentBalance, statements, currentCycleSettled, startDate }) {
-  const balanceEntries = new Map(); // date → balance
+export function buildBalanceHistory({ currentBalance, statements, currentCycleSettled, startDate }: BalanceHistoryParams): BalanceEntry[] {
+  const balanceEntries = new Map<string, number>(); // date → balance
 
   // Sort statements oldest first for chronological processing
   const sortedStatements = [...statements].sort((a, b) => a.closingDate.localeCompare(b.closingDate));
@@ -92,7 +123,7 @@ export function buildBalanceHistory({ currentBalance, statements, currentCycleSe
   }
 
   // Convert to sorted array (oldest first)
-  const result = Array.from(balanceEntries.entries())
+  const result: BalanceEntry[] = Array.from(balanceEntries.entries())
     .map(([date, balance]) => ({ date, balance }))
     .filter((entry) => !startDate || entry.date >= startDate)
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -112,20 +143,27 @@ export function buildBalanceHistory({ currentBalance, statements, currentCycleSe
  * Reconstruct daily balances within a billing period by walking backwards
  * from the closing balance through transactions.
  *
- * @param {Map} balanceEntries - Map to add entries to (date → balance)
- * @param {Array} transactions - Transactions in this period
- * @param {number} endBalance - Balance at the end of the period (closing balance)
- * @param {string} endDate - End date of the period (closing date)
- * @param {string|null} startBoundary - Start boundary (previous closing date, exclusive)
- * @param {string|null} filterStartDate - Overall filter start date
+ * @param balanceEntries - Map to add entries to (date → balance)
+ * @param transactions - Transactions in this period
+ * @param endBalance - Balance at the end of the period (closing balance)
+ * @param endDate - End date of the period (closing date)
+ * @param startBoundary - Start boundary (previous closing date, exclusive)
+ * @param filterStartDate - Overall filter start date
  */
-function reconstructPeriodBalances(balanceEntries, transactions, endBalance, endDate, startBoundary, filterStartDate) {
+function reconstructPeriodBalances(
+  balanceEntries: Map<string, number>,
+  transactions: MbnaRawTransaction[],
+  endBalance: number,
+  endDate: string,
+  startBoundary: string | null,
+  filterStartDate: string | null,
+): void {
   // Sort transactions by date descending (newest first) for backward walking
   const sorted = [...transactions]
     .filter((tx) => tx.transactionDate || tx.postingDate)
     .sort((a, b) => {
-      const dateA = a.transactionDate || a.postingDate;
-      const dateB = b.transactionDate || b.postingDate;
+      const dateA = a.transactionDate || a.postingDate || '';
+      const dateB = b.transactionDate || b.postingDate || '';
       return dateB.localeCompare(dateA);
     });
 
@@ -135,13 +173,13 @@ function reconstructPeriodBalances(balanceEntries, transactions, endBalance, end
   let runningBalance = endBalance;
 
   // Group transactions by date
-  const txByDate = new Map();
+  const txByDate = new Map<string, MbnaRawTransaction[]>();
   for (const tx of sorted) {
-    const txDate = tx.transactionDate || tx.postingDate;
+    const txDate = tx.transactionDate || tx.postingDate || '';
     if (!txByDate.has(txDate)) {
       txByDate.set(txDate, []);
     }
-    txByDate.get(txDate).push(tx);
+    txByDate.get(txDate)!.push(tx);
   }
 
   // Get unique dates sorted descending
@@ -158,7 +196,7 @@ function reconstructPeriodBalances(balanceEntries, transactions, endBalance, end
     }
 
     // Subtract this date's transactions to get balance before them
-    const dayTransactions = txByDate.get(date);
+    const dayTransactions = txByDate.get(date)!;
     for (const tx of dayTransactions) {
       const amount = tx.amount ?? 0;
       runningBalance -= amount;
@@ -179,10 +217,10 @@ function reconstructPeriodBalances(balanceEntries, transactions, endBalance, end
 
 /**
  * Get the previous calendar date
- * @param {string} dateStr - Date in YYYY-MM-DD format
- * @returns {string} Previous date in YYYY-MM-DD format
+ * @param dateStr - Date in YYYY-MM-DD format
+ * @returns Previous date in YYYY-MM-DD format
  */
-function getPreviousDate(dateStr) {
+function getPreviousDate(dateStr: string): string {
   const date = new Date(`${dateStr}T12:00:00`);
   date.setDate(date.getDate() - 1);
   return date.toISOString().split('T')[0];
@@ -190,10 +228,10 @@ function getPreviousDate(dateStr) {
 
 /**
  * Round a balance to 2 decimal places to avoid floating point issues
- * @param {number} balance - Balance value
- * @returns {number} Rounded balance
+ * @param balance - Balance value
+ * @returns Rounded balance
  */
-function roundBalance(balance) {
+function roundBalance(balance: number): number {
   return Math.round(balance * 100) / 100;
 }
 

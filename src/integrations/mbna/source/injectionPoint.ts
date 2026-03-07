@@ -9,12 +9,12 @@
  * to skip hidden instances, while the snapshot page uses
  * `div.snapshot-quick-link-wrapper`.
  *
- * @type {import('../../types').IntegrationInjectionPoint}
  * @module integrations/mbna/source/injectionPoint
  */
 
-/** @type {import('../../types').IntegrationInjectionPoint} */
-const injectionPoint = {
+import type { IntegrationInjectionPoint } from '../../types';
+
+const injectionPoint: IntegrationInjectionPoint = {
   // Global selectors fallback (empty  prefer per-page-mode selectors)
   selectors: [],
 

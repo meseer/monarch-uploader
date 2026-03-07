@@ -5,12 +5,12 @@
  * without instantiating any of its components. This is the reference
  * implementation of the IntegrationManifest contract.
  *
- * @type {import('../types').IntegrationManifest}
  * @module integrations/mbna/manifest
  */
 
-/** @type {import('../types').IntegrationManifest} */
-const manifest = {
+import type { IntegrationManifest } from '../types';
+
+const manifest: IntegrationManifest = {
   // ── Identity ──────────────────────────────────────────────
   id: 'mbna',
   displayName: 'MBNA',
