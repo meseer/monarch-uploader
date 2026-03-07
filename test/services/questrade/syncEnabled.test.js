@@ -62,6 +62,7 @@ jest.mock('../../../src/core/utils', () => {
   return {
     ...actual,
     getLastUpdateDate: jest.fn().mockReturnValue('2025-01-01'),
+    calculateFromDateWithLookback: jest.fn().mockReturnValue('2025-01-01'),
     saveLastUploadDate: jest.fn(),
     getTodayLocal: jest.fn().mockReturnValue('2025-02-01'),
     formatDaysAgoLocal: jest.fn().mockReturnValue('2025-01-15'),

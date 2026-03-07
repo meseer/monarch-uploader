@@ -79,7 +79,7 @@ function getEndOfCurrentMonth() {
 function filterDuplicateSettledTransactions(transactions, accountId) {
   // Read from consolidated storage (uploadedTransactions in account object)
   const accountData = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, accountId);
-  const uploadedRefs = getTransactionIdsFromArray(accountData?.uploadedTransactions || []);
+  const uploadedRefs = getTransactionIdsFromArray((accountData?.uploadedTransactions as unknown[]) || []);
   const originalCount = transactions.length;
 
   debugLog(`[DEDUP DEBUG] Account: ${accountId}`);
@@ -117,7 +117,7 @@ function filterDuplicateSettledTransactions(transactions, accountId) {
  */
 function filterDuplicatePendingTransactions(pendingTransactions, accountId) {
   const accountData = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, accountId);
-  const uploadedRefs = getTransactionIdsFromArray(accountData?.uploadedTransactions || []);
+  const uploadedRefs = getTransactionIdsFromArray((accountData?.uploadedTransactions as unknown[]) || []);
   const originalCount = pendingTransactions.length;
 
   const newTransactions = pendingTransactions.filter((transaction) => {
@@ -147,7 +147,11 @@ function filterDuplicatePendingTransactions(pendingTransactions, accountId) {
  * @param {boolean} options.skipCategorization - Skip manual category prompts, use empty category (optional)
  * @returns {Promise<Array>} Transactions with resolved Monarch categories
  */
-async function resolveCategoriesForTransactions(transactions, options = {}) {
+interface ResolveCategoriesOptions {
+  skipCategorization?: boolean;
+}
+
+async function resolveCategoriesForTransactions(transactions, options: ResolveCategoriesOptions = {}) {
   const { skipCategorization = false } = options;
   if (!transactions || transactions.length === 0) {
     return transactions;
@@ -202,7 +206,7 @@ async function resolveCategoriesForTransactions(transactions, options = {}) {
       const categoryToResolve = categoriesToResolve[i];
       const similarityData = calculateAllCategorySimilarities(categoryToResolve.bankCategory, availableCategories);
 
-      const transactionDetails = {};
+      const transactionDetails: { merchant?: string; amount?: number; date?: string } = {};
       if (categoryToResolve.exampleTransaction) {
         const exampleTx = categoryToResolve.exampleTransaction;
         transactionDetails.merchant = exampleTx.description || exampleTx.merchant?.name || 'Unknown';
@@ -214,7 +218,7 @@ async function resolveCategoriesForTransactions(transactions, options = {}) {
         }
       }
 
-      const selectedCategory = await new Promise((resolve) => {
+      const selectedCategory = await new Promise<Record<string, unknown> | null>((resolve) => {
         showMonarchCategorySelector(categoryToResolve.bankCategory, resolve, similarityData, transactionDetails);
       });
 
@@ -235,7 +239,7 @@ async function resolveCategoriesForTransactions(transactions, options = {}) {
         continue;
       }
 
-      saveUserCategorySelection(categoryToResolve.bankCategory, selectedCategory.name);
+      saveUserCategorySelection(categoryToResolve.bankCategory, selectedCategory.name as string);
     }
   }
 
@@ -383,7 +387,7 @@ function normalizeRogersTransaction(tx) {
  * @param {boolean} invertBalance - If true, invert (negate) all balance values
  * @param {boolean} applyCorrection - If true, apply correction factor to align reconstructed balance with actual
  */
-function reconstructBalanceFromTransactions(transactions, fromDate, toDate, currentBalance, invertBalance = false, applyCorrection = false) {
+function reconstructBalanceFromTransactions(transactions, fromDate: string, toDate: string, currentBalance: number, invertBalance: boolean = false, applyCorrection: boolean = false) {
   const transactionsByDate = new Map();
   if (transactions?.length > 0) {
     transactions.forEach((tx) => {
@@ -613,7 +617,11 @@ export async function uploadRogersBankToMonarch() {
       return { success: false, message: error.message };
     }
 
-    const { balance: currentBalance, creditLimit, openedDate } = accountDetails;
+    const { balance: currentBalance, creditLimit, openedDate } = accountDetails as {
+      balance: number;
+      creditLimit: number | null;
+      openedDate: string | null;
+    };
     const firstSync = isFirstSync(rogersAccountId);
 
     debugLog(`First sync: ${firstSync}, Balance: ${currentBalance}, Credit limit: ${creditLimit}, Opened: ${openedDate}`);
@@ -689,11 +697,11 @@ export async function uploadRogersBankToMonarch() {
           defaultName: rogersAccountName,
           defaultType: 'credit',
           defaultSubtype: 'credit_card',
-          defaultBalance: currentBalance,
           currentBalance: { amount: currentBalance, currency: 'CAD' },
           accountType: 'Credit Card',
           warningMessage: accountWarningMessage,
-        });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any);
       });
 
       if (!monarchAccount) {
@@ -782,7 +790,7 @@ export async function uploadRogersBankToMonarch() {
       if (settledRefIds.length > 0) {
         debugLog(`Saving ${settledRefIds.length} reconciled settled ref IDs to dedup store`);
         const reconAcctData = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, rogersAccountId);
-        const reconExisting = reconAcctData?.uploadedTransactions || [];
+        const reconExisting = (reconAcctData?.uploadedTransactions as unknown[]) || [];
         const reconRetention = getRetentionSettingsFromAccount(reconAcctData);
         const reconUpdated = mergeAndRetainTransactions(reconExisting, settledRefIds, reconRetention, getTodayLocal());
         accountService.updateAccountInList(INTEGRATIONS.ROGERSBANK, rogersAccountId, {
@@ -856,7 +864,7 @@ export async function uploadRogersBankToMonarch() {
 
         progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'processing', 'Converting...');
         const accountData = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, rogersAccountId);
-        const storeTransactionDetailsInNotes = accountData?.storeTransactionDetailsInNotes ?? false;
+        const storeTransactionDetailsInNotes = (accountData?.storeTransactionDetailsInNotes ?? false) as boolean;
         const csvData = convertTransactionsToMonarchCSV(resolvedTx, rogersAccountName, { storeTransactionDetailsInNotes });
         if (!csvData) throw new Error('Failed to convert transactions to CSV');
 
@@ -881,7 +889,7 @@ export async function uploadRogersBankToMonarch() {
               txDate = withDates[0].date;
             }
             const txAccountData = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, rogersAccountId);
-            const existingTransactions = txAccountData?.uploadedTransactions || [];
+            const existingTransactions = (txAccountData?.uploadedTransactions as unknown[]) || [];
             const retentionSettings = getRetentionSettingsFromAccount(txAccountData);
             const updatedTransactions = mergeAndRetainTransactions(existingTransactions, allRefs, retentionSettings, txDate);
             accountService.updateAccountInList(INTEGRATIONS.ROGERSBANK, rogersAccountId, {
@@ -917,15 +925,18 @@ export async function uploadRogersBankToMonarch() {
     // Get invertBalance setting from saved account data
     // For migration: if undefined, derive from monarchAccount.newlyCreated (persisted) and save it
     const accountDataForInvert = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, rogersAccountId);
-    let invertBalance = accountDataForInvert?.invertBalance;
+    let invertBalanceRaw = accountDataForInvert?.invertBalance as boolean | undefined;
 
-    if (invertBalance === undefined) {
+    if (invertBalanceRaw === undefined) {
       // Migration: derive from persisted newlyCreated flag (matches previous dynamic calculation)
-      invertBalance = accountDataForInvert?.monarchAccount?.newlyCreated === true;
+      const monarchAccountData = accountDataForInvert?.monarchAccount as Record<string, unknown> | undefined;
+      invertBalanceRaw = monarchAccountData?.newlyCreated === true;
       // Save for future syncs
-      accountService.updateAccountInList(INTEGRATIONS.ROGERSBANK, rogersAccountId, { invertBalance });
-      debugLog(`Migrated invertBalance setting: ${invertBalance} (derived from newlyCreated)`);
+      accountService.updateAccountInList(INTEGRATIONS.ROGERSBANK, rogersAccountId, { invertBalance: invertBalanceRaw });
+      debugLog(`Migrated invertBalance setting: ${invertBalanceRaw} (derived from newlyCreated)`);
     }
+
+    const invertBalance: boolean = invertBalanceRaw === true;
 
     if (invertBalance) {
       debugLog('Inverting balance (invertBalance setting enabled)');

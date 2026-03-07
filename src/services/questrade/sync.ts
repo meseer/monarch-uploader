@@ -4,7 +4,7 @@
  * between Questrade and Monarch
  */
 
-import { debugLog, getTodayLocal, formatDate, getLastUpdateDate } from '../../core/utils';
+import { debugLog, getTodayLocal, formatDate, calculateFromDateWithLookback } from '../../core/utils';
 import { INTEGRATIONS } from '../../core/integrationCapabilities';
 import stateManager from '../../core/state';
 import accountService from '../common/accountService';
@@ -263,7 +263,7 @@ export async function syncAccountToMonarch(accountId, accountName, fromDate, toD
 function calculateDaysBetween(fromDate, toDate) {
   const from = new Date(fromDate);
   const to = new Date(toDate);
-  const diffTime = Math.abs(to - from);
+  const diffTime = Math.abs(to.getTime() - from.getTime());
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 }
 
@@ -297,7 +297,7 @@ export async function syncAllAccountsToMonarch() {
     const progressDialog = showProgressDialog(accounts, 'Syncing All Accounts to Monarch');
 
     // Initialize stats and cancellation state
-    const stats = { success: 0, failed: 0, total: accounts.length };
+    const stats: { success: number; failed: number; total: number; skipped: number } = { success: 0, failed: 0, total: accounts.length, skipped: 0 };
     let isCancelled = false;
     let isUploadComplete = false;
 
@@ -427,10 +427,11 @@ export async function syncAllAccountsToMonarch() {
 async function getStartDatesForAllAccounts(accounts) {
   const startDates = {};
 
-  // Check each account for lastUsedDate - use unified getLastUpdateDate which checks both storages
+  // Check each account for lastUsedDate - use calculateFromDateWithLookback which applies
+  // the configured lookback period (e.g. 4 days) to the last sync date.
   // For accounts without lastUsedDate, use their createdOn date (first sync)
   for (const account of accounts) {
-    const lastDate = getLastUpdateDate(account.key, 'questrade');
+    const lastDate = calculateFromDateWithLookback('questrade', account.key);
     if (lastDate && /^\d{4}-\d{2}-\d{2}$/.test(lastDate)) {
       startDates[account.key] = lastDate;
     } else {

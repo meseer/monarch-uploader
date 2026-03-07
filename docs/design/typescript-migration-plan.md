@@ -1,7 +1,7 @@
 # TypeScript Migration Plan
 
 > **Status:** Draft  
-> **Updated:** 2026-03-06  
+> **Updated:** 2026-03-07 (Phase 9 complete)  
 > **Author:** @meseer  
 > **Note:** See [ADR-005](../decisions/005-typescript-migration.md) for the decision record.
 
@@ -17,15 +17,15 @@
 | 5 | API Layer | ✅ Complete | 9/9 src / 0 test |
 | 6 | Common Services Foundation | ✅ Complete | 12/12 src / 0 test |
 | 7 | CanadaLife Services | ✅ Complete | 3/3 src / 0 test |
-| 8 | Rogers Bank Services | ⬜ Not Started | 0/2 src / 0 test |
-| 9 | Questrade Services | ⬜ Not Started | 0/8 src / 0 test |
+| 8 | Rogers Bank Services | ✅ Complete | 2/2 src / 0 test |
+| 9 | Questrade Services | ✅ Complete | 8/8 src / 0 test |
 | 10 | WS Transaction Rules | ⬜ Not Started | 0/3 src / 0 test |
 | 11 | WS Core Services | ⬜ Not Started | 0/5 src / 0 test |
 | 12 | WS Top-Level Services | ⬜ Not Started | 0/3 src / 0 test |
 | 13 | UI Layer | ⬜ Not Started | 0/32 src / 0 test |
 | 14 | Strictness Ramp-up | ⬜ Not Started | — |
 
-**Overall:** 51/106 source files converted (~48%)
+**Overall:** 61/106 source files converted (~58%)
 
 ## Overview
 
@@ -242,10 +242,10 @@ Shared infrastructure all institution services depend on. Three batches.
 - `src/services/rogersbank/pendingTransactions.js` (467) — api/monarch, core
 - `src/services/rogersbank-upload.js` (1,040) — api/*, core/*, mappers/*, ui/*, common/accountService
 
-### Phase 9: Questrade Services (2–3 days)
+### Phase 9: Questrade Services ✅ Complete
 
-**Batch A (4 files, ~1,468 lines):** auth, transactionRules, accountMapping, account
-**Batch B (4 files, ~3,249 lines):** transactions, balance, positions, sync
+**Batch A (4 files):** auth.ts, transactionRules.ts, accountMapping.ts, account.ts  
+**Batch B (4 files):** transactions.ts, balance.ts, positions.ts, sync.ts
 
 ### Phase 10: WS Transaction Rules (1–2 days)
 

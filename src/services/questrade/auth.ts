@@ -10,7 +10,9 @@ import stateManager from '../../core/state';
  * Custom authentication error class
  */
 export class AuthError extends Error {
-  constructor(message, provider) {
+  provider: string;
+
+  constructor(message: string, provider: string) {
     super(message);
     this.name = 'AuthError';
     this.provider = provider;
@@ -92,6 +94,7 @@ export function checkQuestradeAuth(requiredPermissions = [
       authenticated: false,
       message: 'Not authenticated with Questrade',
       expiresIn: 0,
+      token: null,
     };
   }
 

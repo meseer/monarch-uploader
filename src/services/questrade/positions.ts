@@ -15,6 +15,9 @@ import toast from '../../ui/toast';
  * Custom positions error class
  */
 export class PositionsError extends Error {
+  accountId: string | null;
+  position: unknown;
+
   constructor(message, accountId, position = null) {
     super(message);
     this.name = 'PositionsError';
@@ -82,9 +85,10 @@ export async function resolveSecurityMapping(accountId, position) {
       return null;
     }
 
-    debugLog(`Selected security: ${position.security?.symbol} (${securityUuid}) -> ${selectedSecurity.name} (${selectedSecurity.id})`);
+    const sel = selectedSecurity as Record<string, unknown>;
+    debugLog(`Selected security: ${position.security?.symbol} (${securityUuid}) -> ${sel.name} (${sel.id})`);
 
-    return selectedSecurity.id;
+    return sel.id;
   } catch (error) {
     debugLog('Error resolving security mapping for position:', error);
     throw new PositionsError(`Failed to resolve security mapping: ${error.message}`, accountId, position);
@@ -209,7 +213,7 @@ export async function syncPositionToHolding(holdingId, position) {
         MutualFund: 'mutualFund',
         Index: 'index',
       };
-      updates.securityType = typeMap[position.securityType] || 'equity';
+      (updates as Record<string, unknown>).securityType = typeMap[position.securityType] || 'equity';
     }
 
     await monarchApi.updateHolding(holdingId, updates);
@@ -226,10 +230,10 @@ export async function syncPositionToHolding(holdingId, position) {
  * always match positions in Questrade. Mappings are preserved for future re-purchases.
  *
  * Logic for each Monarch holding:
- * 1. Has mapping AND mapped position still exists ’ keep
- * 2. Has mapping AND mapped position no longer exists ’ delete holding, clear holdingId from mapping
- * 3. No mapping AND ticker matches a position ’ auto-repair (create mapping)
- * 4. No mapping AND no matching position ’ delete holding
+ * 1. Has mapping AND mapped position still exists ï¿½ keep
+ * 2. Has mapping AND mapped position no longer exists ï¿½ delete holding, clear holdingId from mapping
+ * 3. No mapping AND ticker matches a position ï¿½ auto-repair (create mapping)
+ * 4. No mapping AND no matching position ï¿½ delete holding
  *
  * @param {string} accountId - Questrade account ID
  * @param {string} monarchAccountId - Monarch account ID
@@ -299,12 +303,12 @@ export async function detectAndRemoveDeletedHoldings(accountId, monarchAccountId
 
           // Check if the mapped position still exists in current positions
           if (currentPositionKeys.has(mappingKey)) {
-            // Case 1: Mapped position still exists ’ keep
+            // Case 1: Mapped position still exists ï¿½ keep
             debugLog(`Holding ${ticker} (${holdingId}) has mapping and position exists, keeping`);
             continue;
           }
 
-          // Case 2: Mapped position no longer exists ’ delete holding, clear holdingId
+          // Case 2: Mapped position no longer exists ï¿½ delete holding, clear holdingId
           try {
             debugLog(`Deleting holding for sold position: ${ticker} (${holdingId}) - position no longer exists`);
             await monarchApi.deleteHolding(holdingId);
@@ -344,7 +348,7 @@ export async function detectAndRemoveDeletedHoldings(accountId, monarchAccountId
             autoRepairedCount += 1;
           }
         } else {
-          // Case 4: No mapping AND no matching position ’ delete orphaned holding
+          // Case 4: No mapping AND no matching position ï¿½ delete orphaned holding
           try {
             debugLog(`Deleting orphaned holding: ${ticker} (${holdingId}) - no matching Questrade position`);
             await monarchApi.deleteHolding(holdingId);

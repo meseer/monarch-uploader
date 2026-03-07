@@ -38,7 +38,7 @@ import { showProgressDialog } from '../../ui/components/progressDialog';
 function saveUploadedTransactionsToConsolidated(accountId, newTransactions) {
   // Get current account data
   const accountData = accountService.getAccountData(INTEGRATIONS.QUESTRADE, accountId);
-  const existingTransactions = accountData?.uploadedTransactions || [];
+  const existingTransactions = (accountData?.uploadedTransactions || []) as unknown[];
 
   // Get retention settings from account or use defaults
   const retentionSettings = getRetentionSettingsFromAccount(accountData);
@@ -68,7 +68,7 @@ function saveUploadedTransactionsToConsolidated(accountId, newTransactions) {
 function filterDuplicateOrders(orders, accountId) {
   // Use consolidated storage via accountService
   const accountData = accountService.getAccountData(INTEGRATIONS.QUESTRADE, accountId);
-  const uploadedUUIDs = getTransactionIdsFromArray(accountData?.uploadedTransactions || []);
+  const uploadedUUIDs = getTransactionIdsFromArray((accountData?.uploadedTransactions || []) as unknown[]);
   const originalCount = orders.length;
 
   const newOrders = orders.filter(
@@ -99,7 +99,7 @@ function filterDuplicateOrders(orders, accountId) {
 function filterDuplicateTransactions(transactions, accountId) {
   // Use consolidated storage via accountService (same field as orders)
   const accountData = accountService.getAccountData(INTEGRATIONS.QUESTRADE, accountId);
-  const uploadedUUIDs = getTransactionIdsFromArray(accountData?.uploadedTransactions || []);
+  const uploadedUUIDs = getTransactionIdsFromArray((accountData?.uploadedTransactions || []) as unknown[]);
   const originalCount = transactions.length;
 
   const newTransactions = transactions.filter((tx) => {
@@ -163,7 +163,7 @@ function filterNonTradeTransactions(transactions) {
  * @param {boolean} options.skipCategorization - Skip manual category prompts, use empty category (optional)
  * @returns {Promise<Array>} Orders with resolved Monarch categories
  */
-async function resolveCategoriesForOrders(orders, options = {}) {
+async function resolveCategoriesForOrders(orders, options: { skipCategorization?: boolean } = {}) {
   const { skipCategorization = false } = options;
   if (!orders || orders.length === 0) {
     return orders;
@@ -235,7 +235,7 @@ async function resolveCategoriesForOrders(orders, options = {}) {
       const similarityData = calculateAllCategorySimilarities(actionToResolve.bankCategory, availableCategories);
 
       // Prepare order details for the selector
-      const transactionDetails = {};
+      const transactionDetails: Record<string, unknown> = {};
       if (actionToResolve.exampleOrder) {
         const exampleOrder = actionToResolve.exampleOrder;
 
@@ -270,12 +270,13 @@ async function resolveCategoriesForOrders(orders, options = {}) {
 
       // Handle "Skip All (this sync)" response
       // Handle "Skip single" - don't save as rule, just continue to next
-      if (selectedCategory.skipped) {
+      const selCat = selectedCategory as Record<string, unknown>;
+      if (selCat.skipped) {
         debugLog(`Skipped categorization for "${actionToResolve.bankCategory}" (single transaction)`);
         continue;
       }
 
-      if (selectedCategory.skipAll === true) {
+      if (selCat.skipAll === true) {
         debugLog('User chose "Skip All" - setting Uncategorized for all remaining Questrade orders');
         return orders.map((order) => {
           const action = order.action || 'Unknown';
@@ -291,10 +292,10 @@ async function resolveCategoriesForOrders(orders, options = {}) {
       }
 
       // Save the user's selection for future use
-      saveUserCategorySelection(actionToResolve.bankCategory, selectedCategory.name);
-      debugLog(`User selected category mapping: ${actionToResolve.bankCategory} -> ${selectedCategory.name}`);
+      saveUserCategorySelection(actionToResolve.bankCategory, selCat.name as string);
+      debugLog(`User selected category mapping: ${actionToResolve.bankCategory} -> ${selCat.name}`);
 
-      toast.show(`Mapped "${actionToResolve.bankCategory}" to "${selectedCategory.name}"`, 'debug');
+      toast.show(`Mapped "${actionToResolve.bankCategory}" to "${selCat.name}"`, 'debug');
     }
   }
 
@@ -1091,9 +1092,9 @@ export async function uploadAllAccountsActivityToMonarch() {
 
     // Create progress dialog
     const progressDialog = showProgressDialog(
-      accounts.map((acc) => ({
+      (accounts as unknown as Record<string, unknown>[]).map((acc) => ({
         key: acc.key,
-        nickname: acc.nickname || acc.key,
+        nickname: (acc.nickname as string) || (acc.key as string),
       })),
       'Uploading All Activity',
     );
@@ -1102,9 +1103,9 @@ export async function uploadAllAccountsActivityToMonarch() {
     let totalTransactions = 0;
     let totalSkipped = 0;
 
-    for (const account of accounts) {
-      const accountId = account.key;
-      const accountName = account.nickname || accountId;
+    for (const account of (accounts as unknown as Record<string, unknown>[])) {
+      const accountId = account.key as string;
+      const accountName = (account.nickname as string) || accountId;
 
       try {
         progressDialog.updateProgress(accountId, 'processing', 'Getting Monarch mapping...');

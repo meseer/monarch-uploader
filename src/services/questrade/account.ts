@@ -16,7 +16,9 @@ import syncService from './sync';
  * Custom account error class
  */
 export class AccountError extends Error {
-  constructor(message, accountId) {
+  accountId: string | null;
+
+  constructor(message: string, accountId: string | null = null) {
     super(message);
     this.name = 'AccountError';
     this.accountId = accountId;
@@ -37,25 +39,26 @@ export async function loadCurrentAccountInfo() {
     debugLog(`Detected account ID in URL: ${accountId}`);
 
     // Fetch accounts from consolidated storage or API
-    let consolidatedAccounts = accountService.getAccounts(INTEGRATIONS.QUESTRADE);
+    let consolidatedAccounts: Record<string, unknown>[] = accountService.getAccounts(INTEGRATIONS.QUESTRADE);
     if (consolidatedAccounts.length === 0) {
-      consolidatedAccounts = await questradeApi.fetchAccounts();
+      consolidatedAccounts = (await questradeApi.fetchAccounts()) as unknown as Record<string, unknown>[];
     }
 
     // Find the account in the consolidated list
-    const consolidatedAccount = consolidatedAccounts.find(
-      (acc) => acc.questradeAccount?.id === accountId || acc.questradeAccount?.key === accountId,
-    );
+    const consolidatedAccount = consolidatedAccounts.find((acc) => {
+      const qa = acc.questradeAccount as Record<string, unknown> | undefined;
+      return qa?.id === accountId || qa?.key === accountId;
+    });
 
     if (!consolidatedAccount?.questradeAccount) {
       debugLog(`Account ${accountId} not found in accounts list`);
       return null;
     }
 
-    const account = consolidatedAccount.questradeAccount;
+    const account = consolidatedAccount.questradeAccount as Record<string, unknown>;
 
     // Update state with current account
-    const accountNickname = account.nickname || account.name;
+    const accountNickname = (account.nickname || account.name) as string;
     stateManager.setAccount(accountId, accountNickname);
     debugLog(`Found account: ${accountNickname}`);
 
@@ -117,7 +120,7 @@ export async function getAllAccounts(refresh = false) {
     // Check if auth is valid
     const authStatus = authService.checkQuestradeAuth();
     if (!authStatus.authenticated) {
-      throw new AccountError('Not authenticated with Questrade');
+      throw new AccountError('Not authenticated with Questrade', null);
     }
 
     if (refresh) {
@@ -138,7 +141,7 @@ export async function getAllAccounts(refresh = false) {
     if (error instanceof AccountError) {
       throw error;
     }
-    throw new AccountError(`Failed to get accounts: ${error.message}`);
+    throw new AccountError(`Failed to get accounts: ${(error as Error).message}`, null);
   }
 }
 

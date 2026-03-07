@@ -85,13 +85,14 @@ export async function ensureAccountMapping(accountId, accountName, progressDialo
     };
 
     // Show enhanced account selector with create option
-    const selectedAccount = await new Promise((resolve) => {
+    const selectedAccount = await new Promise<Record<string, unknown> | null>((resolve) => {
       showMonarchAccountSelectorWithCreate(
         investmentAccounts,
         resolve,
         null,
         'brokerage',
-        createDefaults,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        createDefaults as any,
       );
     });
 
@@ -130,7 +131,7 @@ export async function ensureAccountMapping(accountId, accountName, progressDialo
     if (selectedAccount.newlyCreated) {
       try {
         debugLog(`Setting Questrade logo for newly created account ${selectedAccount.id}`);
-        await monarchApi.setAccountLogo(selectedAccount.id, LOGO_CLOUDINARY_IDS.QUESTRADE);
+        await monarchApi.setAccountLogo(selectedAccount.id as string, LOGO_CLOUDINARY_IDS.QUESTRADE);
         debugLog(`Successfully set Questrade logo for ${selectedAccount.displayName}`);
         toast.show(`Set Questrade logo for ${selectedAccount.displayName}`, 'debug');
       } catch (logoError) {

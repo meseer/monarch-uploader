@@ -26,7 +26,9 @@ const ensureAllAccountMappings = ensureQuestradeAccountMappings;
  * Custom balance error class
  */
 export class BalanceError extends Error {
-  constructor(message, accountId) {
+  accountId: string | null;
+
+  constructor(message: string, accountId: string | null = null) {
     super(message);
     this.name = 'BalanceError';
     this.accountId = accountId;
@@ -100,7 +102,8 @@ export async function getAccountsForSync(options = { includeClosed: false }) {
     // Then, check storage accounts for accounts not in API
     // This handles accounts that weren't returned by the API but exist in storage
     for (const storedAccount of storedAccounts) {
-      const accountId = storedAccount.questradeAccount?.id || storedAccount.questradeAccount?.key;
+      const qa = storedAccount.questradeAccount as Record<string, unknown> | undefined;
+      const accountId = qa?.id || qa?.key;
       if (!accountId) continue;
 
       // If account is already in merged list (from API response), skip
@@ -115,10 +118,10 @@ export async function getAccountsForSync(options = { includeClosed: false }) {
       // Build account object from storage data
       const storageAccount = {
         key: accountId,
-        nickname: storedAccount.questradeAccount?.nickname || accountId,
-        name: storedAccount.questradeAccount?.name || storedAccount.questradeAccount?.nickname || accountId,
+        nickname: qa?.nickname || accountId,
+        name: qa?.name || qa?.nickname || accountId,
         // Copy other fields from stored questradeAccount if available
-        ...storedAccount.questradeAccount,
+        ...(qa as object),
         status: isAlreadyMarkedClosed ? ACCOUNT_STATUS.CLOSED : 'pending_close',
         source: 'storage',
         closedDate: storedAccount.closedDate || null,
@@ -379,7 +382,7 @@ export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDat
     }
 
     // Upload using Monarch API with resolved account ID
-    const success = await monarchApi.uploadBalance(monarchAccount.id, csvData, fromDate, toDate);
+    const success = await monarchApi.uploadBalance((monarchAccount as Record<string, unknown>).id as string, csvData, fromDate, toDate);
 
     // Store the date for next time if successful
     if (success) {
@@ -545,7 +548,7 @@ export function extractBalanceChange(accountId, balanceData) {
         compareDate = yesterdayDate;
       } else {
         // If yesterday's balance not found (weekend), find most recent
-        const sortedData = [...balanceData.history.data].sort((a, b) => new Date(b.date) - new Date(a.date));
+        const sortedData = [...balanceData.history.data].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
         if (sortedData.length > 0) {
           oldBalance = sortedData[0].totalEquity;
           compareDate = sortedData[0].date;
@@ -567,7 +570,7 @@ export function extractBalanceChange(accountId, balanceData) {
 
         const sortedData = [...balanceData.history.data]
           .filter((item) => item.date < lastUploadDate)
-          .sort((a, b) => new Date(b.date) - new Date(a.date));
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
         if (sortedData.length > 0) {
           oldBalance = sortedData[0].totalEquity;
@@ -817,14 +820,14 @@ export async function uploadAllAccountsToMonarch() {
  * @returns {string|null} Creation date in YYYY-MM-DD format or null
  */
 export function getAccountCreationDate(accountId) {
-  const account = questradeApi.getAccount(accountId);
+  const account = questradeApi.getAccount(accountId) as Record<string, unknown> | null;
   if (!account || !account.createdOn) {
     debugLog(`No createdOn found for account ${accountId}`);
     return null;
   }
 
   // createdOn is in ISO format, extract just the date part
-  const createdOnDate = account.createdOn.split('T')[0];
+  const createdOnDate = (account.createdOn as string).split('T')[0];
   debugLog(`Account ${accountId} was created on ${createdOnDate}`);
   return createdOnDate;
 }
