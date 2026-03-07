@@ -17,25 +17,84 @@ import {
 } from '../services/common/configStore';
 
 // ============================================================================
+// Types
+// ============================================================================
+
+/** Result returned when manual category selection is needed */
+export interface ManualSelectionResult {
+  needsManualSelection: true;
+  bankCategory: string;
+  suggestedCategory: string;
+  similarityScore: number;
+}
+
+/** A Monarch category — either a plain string or an object with at least a name */
+export type MonarchCategory = string | MonarchCategoryObject;
+
+interface MonarchCategoryObject {
+  id?: string;
+  name: string;
+  group?: CategoryGroup;
+  order?: number;
+  isDisabled?: boolean;
+  [key: string]: unknown;
+}
+
+interface CategoryGroup {
+  id: string;
+  name?: string;
+  order?: number;
+  [key: string]: unknown;
+}
+
+/** Category with similarity score (used in similarity calculations) */
+interface ScoredCategory extends MonarchCategoryObject {
+  similarityScore: number;
+}
+
+/** Group with scored categories */
+interface ScoredCategoryGroup {
+  id: string;
+  name?: string;
+  order?: number;
+  categories: ScoredCategory[];
+  categoryCount: number;
+  maxSimilarityScore: number;
+  [key: string]: unknown;
+}
+
+/** Return type for calculateAllCategorySimilarities */
+export interface CategorySimilarityData {
+  bankCategory: string;
+  categoryGroups: ScoredCategoryGroup[];
+  totalCategories: number;
+}
+
+/** Match result from findBestMonarchCategoryMatch */
+interface CategoryMatchResult {
+  bestMatch: string;
+  score: number;
+}
+
+// ============================================================================
 // ROGERS BANK CATEGORY MAPPINGS
 // ============================================================================
 
 /**
  * Get saved Rogers Bank category mappings from storage
  * Reads from configStore first, falls back to legacy key
- * @returns {Object} Saved category mappings
  */
-function getSavedCategoryMappings() {
+function getSavedCategoryMappings(): Record<string, string> {
   try {
     // Read from configStore only
     const configMappings = getConfigCategoryMappings(INTEGRATIONS.ROGERSBANK);
     if (Object.keys(configMappings).length > 0) {
-      return configMappings;
+      return configMappings as Record<string, string>;
     }
 
     // Migrate-on-read: if configStore is empty, check legacy key and migrate
-    const saved = GM_getValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS, '{}');
-    const legacyMappings = JSON.parse(saved);
+    const saved = GM_getValue(STORAGE.ROGERSBANK_CATEGORY_MAPPINGS, '{}') as string;
+    const legacyMappings = JSON.parse(saved) as Record<string, string>;
     if (Object.keys(legacyMappings).length > 0) {
       debugLog('getSavedCategoryMappings: Migrating Rogers Bank legacy category mappings to configStore');
       saveConfigCategoryMappings(INTEGRATIONS.ROGERSBANK, legacyMappings);
@@ -53,15 +112,13 @@ function getSavedCategoryMappings() {
 
 /**
  * Save Rogers Bank category mapping to storage
- * Writes to configStore (primary) and legacy key (backward compatibility)
- * @param {string} bankCategory - Bank category name
- * @param {string} monarchCategory - Monarch category name
+ * Writes to configStore (primary) — migration completed, no dual-write
  */
-function saveCategoryMapping(bankCategory, monarchCategory) {
+function saveCategoryMapping(bankCategory: string, monarchCategory: string): void {
   try {
     const upperCategory = bankCategory.toUpperCase();
 
-    // Write to configStore only  migration completed, no dual-write
+    // Write to configStore only — migration completed, no dual-write
     setConfigCategoryMapping(INTEGRATIONS.ROGERSBANK, upperCategory, monarchCategory);
 
     debugLog('Saved Rogers Bank category mapping:', { bankCategory, monarchCategory });
@@ -78,11 +135,10 @@ function saveCategoryMapping(bankCategory, monarchCategory) {
  * Get saved Wealthsimple category mappings from storage
  * Reads from configStore (legacy migration completed)
  * Shared across all Wealthsimple accounts
- * @returns {Object} Saved category mappings (merchant name -> Monarch category)
  */
-function getSavedWealthsimpleCategoryMappings() {
+function getSavedWealthsimpleCategoryMappings(): Record<string, string> {
   try {
-    return getConfigCategoryMappings(INTEGRATIONS.WEALTHSIMPLE);
+    return getConfigCategoryMappings(INTEGRATIONS.WEALTHSIMPLE) as Record<string, string>;
   } catch (error) {
     debugLog('Error loading saved Wealthsimple category mappings:', error);
     return {};
@@ -91,15 +147,13 @@ function getSavedWealthsimpleCategoryMappings() {
 
 /**
  * Save Wealthsimple category mapping to storage
- * Writes to configStore (primary) and legacy key (backward compatibility)
- * @param {string} merchantName - Merchant name (cleaned)
- * @param {string} monarchCategory - Monarch category name
+ * Writes to configStore (primary) — migration completed, no dual-write
  */
-function saveWealthsimpleCategoryMapping(merchantName, monarchCategory) {
+function saveWealthsimpleCategoryMapping(merchantName: string, monarchCategory: string): void {
   try {
     const upperMerchant = merchantName.toUpperCase();
 
-    // Write to configStore only  migration completed, no dual-write
+    // Write to configStore only — migration completed, no dual-write
     setConfigCategoryMapping(INTEGRATIONS.WEALTHSIMPLE, upperMerchant, monarchCategory);
 
     debugLog('Saved Wealthsimple category mapping:', { merchantName, monarchCategory });
@@ -114,11 +168,8 @@ function saveWealthsimpleCategoryMapping(merchantName, monarchCategory) {
 
 /**
  * Find the best matching Monarch category using similarity scoring
- * @param {string} bankCategory - Bank category to match
- * @param {Array} availableCategories - Available Monarch categories to match against
- * @returns {Object} Result with bestMatch and score
  */
-function findBestMonarchCategoryMatch(bankCategory, availableCategories = []) {
+function findBestMonarchCategoryMatch(bankCategory: string, availableCategories: MonarchCategory[] = []): CategoryMatchResult {
   if (!bankCategory) {
     return { bestMatch: 'Uncategorized', score: 0 };
   }
@@ -159,11 +210,8 @@ function findBestMonarchCategoryMatch(bankCategory, availableCategories = []) {
 
 /**
  * Apply category mapping with similarity scoring and user selection (Rogers Bank)
- * @param {string} category - Original category from Rogers Bank (merchant code)
- * @param {Array} availableCategories - Available Monarch categories to match against
- * @returns {string|Object} Mapped category for Monarch, or object indicating manual selection needed
  */
-export function applyCategoryMapping(category, availableCategories = []) {
+export function applyCategoryMapping(category: string, availableCategories: MonarchCategory[] = []): string | ManualSelectionResult {
   if (!category) {
     return 'Uncategorized';
   }
@@ -218,10 +266,8 @@ export function applyCategoryMapping(category, availableCategories = []) {
 
 /**
  * Save a user-selected category mapping (Rogers Bank)
- * @param {string} bankCategory - Bank category name
- * @param {string} monarchCategory - Selected Monarch category name
  */
-export function saveUserCategorySelection(bankCategory, monarchCategory) {
+export function saveUserCategorySelection(bankCategory: string, monarchCategory: string): void {
   saveCategoryMapping(bankCategory, monarchCategory);
   debugLog('Rogers Bank user category selection saved:', { bankCategory, monarchCategory });
 }
@@ -229,11 +275,8 @@ export function saveUserCategorySelection(bankCategory, monarchCategory) {
 /**
  * Apply Wealthsimple category mapping with similarity scoring
  * Uses merchant names for matching (no merchant codes available)
- * @param {string} merchantName - Cleaned merchant name
- * @param {Array} availableCategories - Available Monarch categories to match against
- * @returns {string|Object} Mapped category for Monarch, or object indicating manual selection needed
  */
-export function applyWealthsimpleCategoryMapping(merchantName, availableCategories = []) {
+export function applyWealthsimpleCategoryMapping(merchantName: string, availableCategories: MonarchCategory[] = []): string | ManualSelectionResult {
   if (!merchantName) {
     return 'Uncategorized';
   }
@@ -288,21 +331,16 @@ export function applyWealthsimpleCategoryMapping(merchantName, availableCategori
 
 /**
  * Save a user-selected Wealthsimple category mapping
- * @param {string} merchantName - Merchant name
- * @param {string} monarchCategory - Selected Monarch category name
  */
-export function saveUserWealthsimpleCategorySelection(merchantName, monarchCategory) {
+export function saveUserWealthsimpleCategorySelection(merchantName: string, monarchCategory: string): void {
   saveWealthsimpleCategoryMapping(merchantName, monarchCategory);
   debugLog('Wealthsimple user category selection saved:', { merchantName, monarchCategory });
 }
 
 /**
  * Validate if a category is a valid Monarch category
- * @param {string} category - Category to validate
- * @param {Array} availableCategories - Available Monarch categories to validate against
- * @returns {boolean} True if valid Monarch category
  */
-export function isValidMonarchCategory(category, availableCategories = []) {
+export function isValidMonarchCategory(category: string, availableCategories: MonarchCategory[] = []): boolean {
   if (!availableCategories || availableCategories.length === 0) {
     return false;
   }
@@ -314,11 +352,8 @@ export function isValidMonarchCategory(category, availableCategories = []) {
 
 /**
  * Get the closest matching Monarch category using similarity scoring
- * @param {string} category - Category to match
- * @param {Array} availableCategories - Available Monarch categories to match against
- * @returns {string} Best matching Monarch category
  */
-export function getClosestMonarchCategory(category, availableCategories = []) {
+export function getClosestMonarchCategory(category: string, availableCategories: MonarchCategory[] = []): string {
   if (!category) {
     return 'Uncategorized';
   }
@@ -335,11 +370,11 @@ export function getClosestMonarchCategory(category, availableCategories = []) {
 
 /**
  * Clear all saved Rogers Bank category mappings
- * Clears from both configStore and legacy key
+ * Clears from configStore — migration completed
  */
-export function clearSavedCategoryMappings() {
+export function clearSavedCategoryMappings(): void {
   try {
-    // Clear from configStore only  migration completed
+    // Clear from configStore only — migration completed
     saveConfigCategoryMappings(INTEGRATIONS.ROGERSBANK, {});
     debugLog('Cleared all saved Rogers Bank category mappings');
   } catch (error) {
@@ -349,19 +384,18 @@ export function clearSavedCategoryMappings() {
 
 /**
  * Get all saved Rogers Bank category mappings for display/management
- * @returns {Object} All saved category mappings
  */
-export function getAllSavedCategoryMappings() {
+export function getAllSavedCategoryMappings(): Record<string, string> {
   return getSavedCategoryMappings();
 }
 
 /**
  * Clear all saved Wealthsimple category mappings
- * Clears from both configStore and legacy key
+ * Clears from configStore — migration completed
  */
-export function clearSavedWealthsimpleCategoryMappings() {
+export function clearSavedWealthsimpleCategoryMappings(): void {
   try {
-    // Clear from configStore only  migration completed
+    // Clear from configStore only — migration completed
     saveConfigCategoryMappings(INTEGRATIONS.WEALTHSIMPLE, {});
     debugLog('Cleared all saved Wealthsimple category mappings');
   } catch (error) {
@@ -371,19 +405,15 @@ export function clearSavedWealthsimpleCategoryMappings() {
 
 /**
  * Get all saved Wealthsimple category mappings for display/management
- * @returns {Object} All saved Wealthsimple category mappings
  */
-export function getAllSavedWealthsimpleCategoryMappings() {
+export function getAllSavedWealthsimpleCategoryMappings(): Record<string, string> {
   return getSavedWealthsimpleCategoryMappings();
 }
 
 /**
  * Calculate comprehensive similarity data for all categories and groups
- * @param {string} bankCategory - Bank category to match against
- * @param {Array} availableCategories - Available Monarch categories
- * @returns {Object} Comprehensive similarity data structure
  */
-export function calculateAllCategorySimilarities(bankCategory, availableCategories = []) {
+export function calculateAllCategorySimilarities(bankCategory: string, availableCategories: MonarchCategoryObject[] = []): CategorySimilarityData {
   if (!bankCategory || !availableCategories || availableCategories.length === 0) {
     return {
       bankCategory,
@@ -395,8 +425,7 @@ export function calculateAllCategorySimilarities(bankCategory, availableCategori
   debugLog('Calculating similarities for all categories against:', bankCategory);
 
   // Group categories by their group and calculate similarities
-  const categoriesByGroup = {};
-  const categoryScores = new Map();
+  const categoriesByGroup: Record<string, { group: CategoryGroup; categories: ScoredCategory[] }> = {};
 
   availableCategories.forEach((category) => {
     if (category && !category.isDisabled && category.group) {
@@ -410,7 +439,6 @@ export function calculateAllCategorySimilarities(bankCategory, availableCategori
 
       // Calculate similarity score for this category
       const similarityScore = stringSimilarity(bankCategory.toLowerCase().trim(), category.name.toLowerCase());
-      categoryScores.set(category.id, similarityScore);
 
       // Add category with its score
       categoriesByGroup[groupId].categories.push({
@@ -421,7 +449,7 @@ export function calculateAllCategorySimilarities(bankCategory, availableCategori
   });
 
   // Calculate max similarity for each group and structure the data
-  const categoryGroups = Object.values(categoriesByGroup)
+  const categoryGroups: ScoredCategoryGroup[] = Object.values(categoriesByGroup)
     .map((groupData) => {
       // Sort categories within group by similarity score (descending)
       const sortedCategories = groupData.categories
@@ -430,8 +458,8 @@ export function calculateAllCategorySimilarities(bankCategory, availableCategori
             return b.similarityScore - a.similarityScore;
           }
           // Fall back to original sorting
-          if (a.order !== b.order) {
-            return a.order - b.order;
+          if ((a.order ?? 0) !== (b.order ?? 0)) {
+            return (a.order ?? 0) - (b.order ?? 0);
           }
           return a.name.localeCompare(b.name);
         });
@@ -455,7 +483,7 @@ export function calculateAllCategorySimilarities(bankCategory, availableCategori
         return b.maxSimilarityScore - a.maxSimilarityScore;
       }
       // Fall back to original sorting
-      return a.order - b.order;
+      return (a.order ?? 0) - (b.order ?? 0);
     });
 
   const totalCategories = categoryGroups.reduce((sum, group) => sum + group.categoryCount, 0);
@@ -471,14 +499,12 @@ export function calculateAllCategorySimilarities(bankCategory, availableCategori
 
 /**
  * Batch apply category mappings to multiple transactions
- * @param {Array} transactions - Array of transaction objects
- * @param {Array} availableCategories - Available Monarch categories to match against
- * @returns {Array} Transactions with mapped categories (some may need manual selection)
  */
-export function applyCategoryMappingBatch(transactions, availableCategories = []) {
+export function applyCategoryMappingBatch(transactions: Record<string, unknown>[], availableCategories: MonarchCategory[] = []): Record<string, unknown>[] {
   return transactions.map((transaction) => {
-    const originalCategory = transaction.merchant?.categoryDescription
-      || transaction.merchant?.category
+    const merchant = transaction.merchant as Record<string, unknown> | undefined;
+    const originalCategory = (merchant?.categoryDescription as string)
+      || (merchant?.category as string)
       || 'Uncategorized';
 
     const mappingResult = applyCategoryMapping(originalCategory, availableCategories);

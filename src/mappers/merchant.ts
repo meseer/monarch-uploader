@@ -7,10 +7,8 @@ import { debugLog } from '../core/utils';
 
 /**
  * Convert string to title case (proper capitalization)
- * @param {string} str - String to convert
- * @returns {string} Title-cased string
  */
-function toTitleCase(str) {
+function toTitleCase(str: string): string {
   return str
     .toLowerCase()
     .split(' ')
@@ -25,11 +23,21 @@ function toTitleCase(str) {
     .join(' ');
 }
 
+interface PrefixConfig {
+  prefix: string;
+  description: string;
+}
+
+interface SuffixConfig {
+  suffix: string;
+  description: string;
+}
+
 /**
  * Configuration for prefixes to remove from merchant names
  * Each prefix should be lowercase for consistent matching
  */
-const PREFIXES_TO_REMOVE = [
+const PREFIXES_TO_REMOVE: PrefixConfig[] = [
   { prefix: 'tst-', description: 'Toast transactions' },
   { prefix: 'sq *', description: 'Square transactions' },
   { prefix: 'sp ', description: 'SP transactions' },
@@ -41,16 +49,14 @@ const PREFIXES_TO_REMOVE = [
  * Configuration for suffixes to remove from merchant names
  * Each suffix should be lowercase for consistent matching
  */
-const SUFFIXES_TO_REMOVE = [
+const SUFFIXES_TO_REMOVE: SuffixConfig[] = [
   { suffix: 'qps', description: 'QPS payment suffix' },
 ];
 
 /**
  * Remove leading prefixes from merchant name
- * @param {string} merchantName - Merchant name to process
- * @returns {string} Merchant name with prefix removed (if found)
  */
-function removeLeadingPrefixes(merchantName) {
+function removeLeadingPrefixes(merchantName: string): string {
   let transformed = merchantName.trim();
   const lowerTransformed = transformed.toLowerCase();
 
@@ -76,12 +82,8 @@ function removeLeadingPrefixes(merchantName) {
  * - Hash with numbers: "Shoppers Drug Mart #22" -> "Shoppers Drug Mart"
  * - Letters+numbers at end: "Mcdonald's F22821" -> "Mcdonald's"
  * - Numbers in middle: "Starbucks #1234 Vancouver BC" -> "Starbucks Vancouver BC"
- *
- * @param {string} merchantName - Merchant name to process
- * @param {boolean} enabled - Whether to apply store number stripping
- * @returns {string} Merchant name with store numbers removed
  */
-function stripStoreNumbers(merchantName, enabled = true) {
+function stripStoreNumbers(merchantName: string, enabled: boolean = true): string {
   if (!enabled || !merchantName) {
     return merchantName;
   }
@@ -111,10 +113,8 @@ function stripStoreNumbers(merchantName, enabled = true) {
 
 /**
  * Remove trailing suffixes from merchant name
- * @param {string} merchantName - Merchant name to process
- * @returns {string} Merchant name with suffix removed (if found)
  */
-function removeTrailingSuffixes(merchantName) {
+function removeTrailingSuffixes(merchantName: string): string {
   let transformed = merchantName.trim();
   const lowerTransformed = transformed.toLowerCase();
 
@@ -140,10 +140,8 @@ function removeTrailingSuffixes(merchantName) {
  * Transform DoorDash merchant names from compact format to readable format
  * e.g., "DD/DOORDASHUNCLEFATIHS" -> "Door Dash - Unclefatihs"
  * e.g., "DD/DOORDASH UNCLE FATIHS" -> "Door Dash - Uncle Fatihs"
- * @param {string} merchantName - Merchant name to process
- * @returns {{ transformed: string, matched: boolean }} Result with transformed name and match flag
  */
-function transformDoorDash(merchantName) {
+function transformDoorDash(merchantName: string): { transformed: string; matched: boolean } {
   const match = merchantName.match(/^DD\/DOORDASH(.*)$/i);
   if (!match) {
     return { transformed: merchantName, matched: false };
@@ -160,14 +158,14 @@ function transformDoorDash(merchantName) {
   return { transformed, matched: true };
 }
 
+export interface MerchantMappingOptions {
+  stripStoreNumbers?: boolean;
+}
+
 /**
  * Apply merchant name transformations
- * @param {string} merchantName - Original merchant name
- * @param {Object} options - Optional configuration
- * @param {boolean} options.stripStoreNumbers - Whether to strip store numbers (default: true)
- * @returns {string} Transformed merchant name
  */
-export function applyMerchantMapping(merchantName, options = {}) {
+export function applyMerchantMapping(merchantName: string, options: MerchantMappingOptions = {}): string {
   if (!merchantName) {
     return '';
   }
@@ -233,7 +231,7 @@ export function applyMerchantMapping(merchantName, options = {}) {
   transformed = toTitleCase(transformed);
 
   // Rule 6: Specific merchant name corrections
-  const merchantCorrections = {
+  const merchantCorrections: Record<string, string> = {
     // 'OLD NAME': 'NEW NAME',
     // Add specific corrections as needed
   };
@@ -251,13 +249,11 @@ export function applyMerchantMapping(merchantName, options = {}) {
 
 /**
  * Batch apply merchant mappings to multiple transactions
- * @param {Array} transactions - Array of transaction objects
- * @returns {Array} Transactions with mapped merchant names
  */
-export function applyMerchantMappingBatch(transactions) {
+export function applyMerchantMappingBatch(transactions: Record<string, unknown>[]): Record<string, unknown>[] {
   return transactions.map((transaction) => ({
     ...transaction,
-    mappedMerchantName: applyMerchantMapping(transaction.merchant?.name),
+    mappedMerchantName: applyMerchantMapping(((transaction.merchant as Record<string, unknown>)?.name as string) || ''),
   }));
 }
 

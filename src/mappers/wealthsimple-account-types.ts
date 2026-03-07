@@ -4,10 +4,14 @@
  * Also provides human-readable display names for account types
  */
 
+interface MonarchAccountTypeMapping {
+  type: string;
+  subtype: string;
+}
+
 /**
  * Map Wealthsimple account types to human-readable display names
  * Used when generating default account names when user hasn't set a nickname
- * @type {Object.<string, string>}
  */
 export const WEALTHSIMPLE_ACCOUNT_TYPE_DISPLAY_NAMES = {
   // Investment accounts - Managed
@@ -34,13 +38,12 @@ export const WEALTHSIMPLE_ACCOUNT_TYPE_DISPLAY_NAMES = {
 
   // Loans
   PORTFOLIO_LINE_OF_CREDIT: 'Portfolio Line of Credit',
-};
+} as const;
 
 /**
  * Map Wealthsimple account types to Monarch type/subtype
- * @type {Object.<string, {type: string, subtype: string}>}
  */
-export const WEALTHSIMPLE_TO_MONARCH_ACCOUNT_TYPES = {
+export const WEALTHSIMPLE_TO_MONARCH_ACCOUNT_TYPES: Record<string, MonarchAccountTypeMapping> = {
   // Investment accounts - Managed
   MANAGED_RESP_FAMILY: { type: 'brokerage', subtype: 'resp' },
   MANAGED_RESP: { type: 'brokerage', subtype: 'resp' },
@@ -69,30 +72,24 @@ export const WEALTHSIMPLE_TO_MONARCH_ACCOUNT_TYPES = {
 
 /**
  * Get Monarch account type mapping for a Wealthsimple account type
- * @param {string} wealthsimpleType - Wealthsimple account type
- * @returns {{type: string, subtype: string}|null} Monarch type/subtype or null if not mapped
  */
-export function getMonarchAccountTypeMapping(wealthsimpleType) {
+export function getMonarchAccountTypeMapping(wealthsimpleType: string): MonarchAccountTypeMapping | null {
   return WEALTHSIMPLE_TO_MONARCH_ACCOUNT_TYPES[wealthsimpleType] || null;
 }
 
 /**
  * Check if a Wealthsimple account type has a known mapping
- * @param {string} wealthsimpleType - Wealthsimple account type
- * @returns {boolean} True if mapping exists
  */
-export function hasAccountTypeMapping(wealthsimpleType) {
+export function hasAccountTypeMapping(wealthsimpleType: string): boolean {
   return wealthsimpleType in WEALTHSIMPLE_TO_MONARCH_ACCOUNT_TYPES;
 }
 
 /**
  * Get human-readable display name for a Wealthsimple account type
  * Falls back to the raw type if no mapping exists
- * @param {string} wealthsimpleType - Wealthsimple account type (e.g., 'CREDIT_CARD', 'MANAGED_TFSA')
- * @returns {string} Human-readable display name (e.g., 'Credit Card', 'Managed TFSA')
  */
-export function getAccountTypeDisplayName(wealthsimpleType) {
-  return WEALTHSIMPLE_ACCOUNT_TYPE_DISPLAY_NAMES[wealthsimpleType] || wealthsimpleType;
+export function getAccountTypeDisplayName(wealthsimpleType: string): string {
+  return (WEALTHSIMPLE_ACCOUNT_TYPE_DISPLAY_NAMES as Record<string, string>)[wealthsimpleType] || wealthsimpleType;
 }
 
 export default {

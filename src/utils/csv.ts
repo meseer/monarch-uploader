@@ -7,12 +7,110 @@ import { debugLog } from '../core/utils';
 import { applyMerchantMapping } from '../mappers/merchant';
 import { applyCategoryMapping } from '../mappers/category';
 
+// ============================================================================
+// Types
+// ============================================================================
+
+/** A generic row for CSV conversion */
+type CSVRow = Record<string, string | number | null | undefined>;
+
+/** Options for Rogers Bank CSV conversion */
+interface RogersBankCSVOptions {
+  storeTransactionDetailsInNotes?: boolean;
+}
+
+/** Rogers Bank transaction shape (loose, from JS callers) */
+interface RogersBankTransaction {
+  date?: string;
+  merchant?: { name?: string; categoryDescription?: string; category?: string };
+  amount?: { value?: number };
+  activityType?: string;
+  referenceNumber?: string;
+  isPending?: boolean;
+  pendingId?: string;
+  resolvedMonarchCategory?: string | null;
+  [key: string]: unknown;
+}
+
+/** Options for MBNA CSV conversion */
+interface MbnaCSVOptions {
+  storeTransactionDetailsInNotes?: boolean;
+}
+
+/** MBNA transaction shape */
+interface MbnaTransaction {
+  date?: string;
+  merchant?: string;
+  originalStatement?: string;
+  amount?: number;
+  referenceNumber?: string;
+  isPending?: boolean;
+  pendingId?: string;
+  resolvedMonarchCategory?: string | null;
+  autoCategory?: string | null;
+  [key: string]: unknown;
+}
+
+/** Options for Wealthsimple CSV conversion */
+interface WealthsimpleCSVOptions {
+  storeTransactionDetailsInNotes?: boolean;
+}
+
+/** Wealthsimple transaction shape */
+interface WealthsimpleTransaction {
+  id?: string;
+  date?: string;
+  merchant?: string;
+  originalMerchant?: string;
+  amount?: number;
+  status?: string;
+  isPending?: boolean;
+  notes?: string;
+  technicalDetails?: string;
+  resolvedMonarchCategory?: string | null;
+  [key: string]: unknown;
+}
+
+/** Questrade order shape */
+interface QuestradeOrder {
+  security?: { displayName?: string; currency?: string };
+  updatedDateTime?: string;
+  filledQuantity?: number;
+  averageFilledPrice?: number;
+  totalFees?: number;
+  action?: string;
+  orderStatement?: string;
+  resolvedMonarchCategory?: string | null;
+  [key: string]: unknown;
+}
+
+/** Questrade transaction item shape (from activity API) */
+interface QuestradeTransactionItem {
+  transaction: Record<string, unknown>;
+  details: {
+    net?: { amount?: number | string; currencyCode?: string };
+    transactionDate?: string;
+    [key: string]: unknown;
+  };
+  ruleResult: {
+    merchant?: string;
+    category?: string;
+    originalStatement?: string;
+    notes?: string;
+    amountOverride?: number | string | null;
+    currencyOverride?: string;
+    [key: string]: unknown;
+  };
+}
+
+// ============================================================================
+// Core CSV Functions
+// ============================================================================
+
 /**
  * Escape a CSV field value
- * @param {string|number} value - Value to escape
- * @returns {string} Escaped value
  */
-function escapeCSVField(value) {
+function escapeCSVField(value: string | number | null | undefined): string {
   if (value === null || value === undefined) {
     return '';
   }
@@ -31,11 +129,8 @@ function escapeCSVField(value) {
 
 /**
  * Convert an array of objects to CSV string
- * @param {Array<Object>} data - Array of objects to convert
- * @param {Array<string>} columns - Column names (optional, will use object keys if not provided)
- * @returns {string} CSV string
  */
-export function convertToCSV(data, columns = null) {
+export function convertToCSV(data: CSVRow[], columns: string[] | null = null): string {
   if (!data || !Array.isArray(data) || data.length === 0) {
     debugLog('No data to convert to CSV');
     return '';
@@ -65,45 +160,47 @@ export function convertToCSV(data, columns = null) {
   return csvContent;
 }
 
+// ============================================================================
+// Institution-Specific CSV Converters
+// ============================================================================
+
+/** Monarch CSV column order */
+const MONARCH_CSV_COLUMNS = [
+  'Date',
+  'Merchant',
+  'Category',
+  'Account',
+  'Original Statement',
+  'Notes',
+  'Amount',
+  'Tags',
+];
+
 /**
  * Convert Rogers Bank transactions to Monarch CSV format
  *
  * Supports both settled and pending transactions:
  * - Settled transactions: standard CSV row with no tags
  * - Pending transactions: "Pending" tag and generated hash ID in notes (for reconciliation)
- *
- * @param {Array} transactions - Array of Rogers Bank transaction objects
- * @param {string} accountName - Rogers account name for the Account column
- * @param {Object} options - Conversion options
- * @param {boolean} options.storeTransactionDetailsInNotes - Whether to include activityType and referenceNumber in notes (default: false)
- * @returns {string} CSV string formatted for Monarch
  */
-export function convertTransactionsToMonarchCSV(transactions, accountName, options = {}) {
+export function convertTransactionsToMonarchCSV(
+  transactions: RogersBankTransaction[],
+  accountName: string,
+  options: RogersBankCSVOptions = {},
+): string {
   if (!transactions || transactions.length === 0) {
     return '';
   }
 
   const { storeTransactionDetailsInNotes = false } = options;
 
-  // Define Monarch CSV columns
-  const columns = [
-    'Date',
-    'Merchant',
-    'Category',
-    'Account',
-    'Original Statement',
-    'Notes',
-    'Amount',
-    'Tags',
-  ];
-
   // Transform transactions to Monarch format
-  const monarchRows = transactions.map((transaction) => {
+  const monarchRows: CSVRow[] = transactions.map((transaction) => {
     // Apply merchant mapping
     const mappedMerchant = applyMerchantMapping(transaction.merchant?.name || '');
 
     // Use resolved Monarch category if available, otherwise fall back to old mapping
-    let mappedCategory;
+    let mappedCategory: string;
     if (transaction.resolvedMonarchCategory !== undefined && transaction.resolvedMonarchCategory !== null) {
       // Transaction already has a resolved Monarch category from the category resolution process
       mappedCategory = transaction.resolvedMonarchCategory;
@@ -112,11 +209,13 @@ export function convertTransactionsToMonarchCSV(transactions, accountName, optio
       const originalCategory = transaction.merchant?.categoryDescription
         || transaction.merchant?.category
         || '';
-      mappedCategory = applyCategoryMapping(originalCategory);
+      const mappingResult = applyCategoryMapping(originalCategory);
 
       // Ensure we never use raw bank categories in CSV - if mapping returns an object, use 'Uncategorized'
-      if (typeof mappedCategory === 'object') {
+      if (typeof mappingResult === 'object') {
         mappedCategory = 'Uncategorized';
+      } else {
+        mappedCategory = mappingResult;
       }
     }
 
@@ -124,7 +223,7 @@ export function convertTransactionsToMonarchCSV(transactions, accountName, optio
     const isPending = transaction.isPending === true;
 
     // Build notes field
-    const notesParts = [];
+    const notesParts: string[] = [];
 
     // Include transaction details if setting is enabled (for settled transactions)
     if (storeTransactionDetailsInNotes && !isPending) {
@@ -161,7 +260,7 @@ export function convertTransactionsToMonarchCSV(transactions, accountName, optio
     pendingCount: transactions.filter((t) => t.isPending).length,
   });
 
-  return convertToCSV(monarchRows, columns);
+  return convertToCSV(monarchRows, MONARCH_CSV_COLUMNS);
 }
 
 /**
@@ -170,38 +269,24 @@ export function convertTransactionsToMonarchCSV(transactions, accountName, optio
  * Supports both settled and pending transactions:
  * - Settled transactions: standard CSV row with no tags
  * - Pending transactions: "Pending" tag and generated hash ID in notes (for reconciliation)
- *
- * @param {Array} transactions - Array of processed MBNA transaction objects (from processMbnaTransactions)
- * @param {string} accountName - MBNA account name for the Account column
- * @param {Object} options - Conversion options
- * @param {boolean} options.storeTransactionDetailsInNotes - Whether to include referenceNumber in notes (default: false)
- * @returns {string} CSV string formatted for Monarch
  */
-export function convertMbnaTransactionsToMonarchCSV(transactions, accountName, options = {}) {
+export function convertMbnaTransactionsToMonarchCSV(
+  transactions: MbnaTransaction[],
+  accountName: string,
+  options: MbnaCSVOptions = {},
+): string {
   if (!transactions || transactions.length === 0) {
     return '';
   }
 
   const { storeTransactionDetailsInNotes = false } = options;
 
-  // Define Monarch CSV columns
-  const columns = [
-    'Date',
-    'Merchant',
-    'Category',
-    'Account',
-    'Original Statement',
-    'Notes',
-    'Amount',
-    'Tags',
-  ];
-
   // Transform transactions to Monarch format
-  const monarchRows = transactions.map((transaction) => {
+  const monarchRows: CSVRow[] = transactions.map((transaction) => {
     const isPending = transaction.isPending === true;
 
     // Build notes field
-    const notesParts = [];
+    const notesParts: string[] = [];
 
     // Include reference number if setting is enabled (for settled transactions)
     if (storeTransactionDetailsInNotes && !isPending && transaction.referenceNumber) {
@@ -227,7 +312,7 @@ export function convertMbnaTransactionsToMonarchCSV(transactions, accountName, o
       Account: accountName,
       'Original Statement': transaction.originalStatement || '',
       Notes: notes,
-      // Amount signs already inverted in transaction processing (MBNA charge ’ negative, payment ’ positive)
+      // Amount signs already inverted in transaction processing (MBNA charge â†’ negative, payment â†’ positive)
       Amount: transaction.amount || 0,
       Tags: isPending ? 'Pending' : '',
     };
@@ -241,50 +326,28 @@ export function convertMbnaTransactionsToMonarchCSV(transactions, accountName, o
     sample: monarchRows[0],
   });
 
-  return convertToCSV(monarchRows, columns);
+  return convertToCSV(monarchRows, MONARCH_CSV_COLUMNS);
 }
 
 /**
  * Format a Wealthsimple transaction ID for storage in Monarch notes
  * Uses the ws-tx: prefix format for consistent detection during reconciliation
- *
- * @param {string} transactionId - Original Wealthsimple transaction ID
- * @returns {string} Formatted ID with prefix (e.g., "ws-tx:funding_intent-xxx")
  */
-function formatTransactionIdForNotes(transactionId) {
+function formatTransactionIdForNotes(transactionId: string | undefined): string {
   if (!transactionId) return '';
   return `ws-tx:${transactionId}`;
 }
 
 /**
  * Build notes field for Wealthsimple transaction
- *
- * Format for pending transactions (always includes transaction ID for reconciliation):
- * 1. Memo (if present)
- * 2. Empty line separator (if both memo and technical details exist)
- * 3. Technical details (if present)
- * 4. Transaction ID (ws-tx:xxx format, only for pending)
- *
- * Example output for pending:
- * "Testing interac notes
- *
- * Auto Deposit: No; Reference Number: CAkJgEwf
- * ws-tx:funding_intent-4x01q2I19RLZcT1DscfyciJbtn2"
- *
- * Format for settled transactions (never includes transaction ID):
- * 1. Memo (if present)
- * 2. Empty line separator (if both memo and technical details exist)
- * 3. Technical details (if present)
- *
- * @param {Object} params - Parameters for building notes
- * @param {string} params.memo - Transaction memo (e.g., Interac memo)
- * @param {string} params.technicalDetails - Technical details (e.g., auto-deposit, reference number)
- * @param {string} params.formattedTxId - Formatted transaction ID with ws-tx: prefix
- * @param {boolean} params.includeTransactionId - Whether to include the transaction ID line (for pending only)
- * @returns {string} Formatted notes string
  */
-function buildWealthsimpleNotes({ memo, technicalDetails, formattedTxId, includeTransactionId }) {
-  const parts = [];
+function buildWealthsimpleNotes({ memo, technicalDetails, formattedTxId, includeTransactionId }: {
+  memo: string;
+  technicalDetails: string;
+  formattedTxId: string;
+  includeTransactionId: boolean;
+}): string {
+  const parts: string[] = [];
 
   // 1. Memo first (if present)
   if (memo) {
@@ -312,40 +375,20 @@ function buildWealthsimpleNotes({ memo, technicalDetails, formattedTxId, include
 /**
  * Convert Wealthsimple transactions to Monarch CSV format
  * Handles both credit card transactions (using status field) and CASH transactions (using isPending flag)
- *
- * Notes format:
- * - Memo/message first (if present)
- * - Empty line separator
- * - Technical details (auto-deposit, reference number)
- * - Transaction ID line at the bottom
- *
- * @param {Array} transactions - Array of processed Wealthsimple transaction objects
- * @param {string} accountName - Wealthsimple account name for the Account column
- * @param {Object} options - Conversion options
- * @param {boolean} options.storeTransactionDetailsInNotes - Whether to include subType and transaction ID in notes (default: false)
- * @returns {string} CSV string formatted for Monarch
  */
-export function convertWealthsimpleTransactionsToMonarchCSV(transactions, accountName, options = {}) {
+export function convertWealthsimpleTransactionsToMonarchCSV(
+  transactions: WealthsimpleTransaction[],
+  accountName: string,
+  options: WealthsimpleCSVOptions = {},
+): string {
   if (!transactions || transactions.length === 0) {
     return '';
   }
 
-  const { storeTransactionDetailsInNotes = false } = options;
-
-  // Define Monarch CSV columns
-  const columns = [
-    'Date',
-    'Merchant',
-    'Category',
-    'Account',
-    'Original Statement',
-    'Notes',
-    'Amount',
-    'Tags',
-  ];
+  const { storeTransactionDetailsInNotes: _storeDetails = false } = options;
 
   // Transform transactions to Monarch format
-  const monarchRows = transactions.map((transaction) => {
+  const monarchRows: CSVRow[] = transactions.map((transaction) => {
     // Check if transaction is pending
     // For credit cards: status === 'authorized'
     // For CASH accounts: isPending flag is set by the rules engine
@@ -360,7 +403,7 @@ export function convertWealthsimpleTransactionsToMonarchCSV(transactions, accoun
 
     // Build notes field based on settings
     // For pending transactions, always include transaction ID for de-duplication/reconciliation
-    let notes;
+    let notes: string;
 
     if (isPending) {
       // Always include transaction ID for pending transactions (for de-duplication/reconciliation)
@@ -396,38 +439,23 @@ export function convertWealthsimpleTransactionsToMonarchCSV(transactions, accoun
   debugLog('Transformed Wealthsimple transactions for CSV:', {
     originalCount: transactions.length,
     transformedCount: monarchRows.length,
-    storeTransactionDetailsInNotes,
+    storeTransactionDetailsInNotes: _storeDetails,
     sample: monarchRows[0], // Log first row as sample
   });
 
-  return convertToCSV(monarchRows, columns);
+  return convertToCSV(monarchRows, MONARCH_CSV_COLUMNS);
 }
 
 /**
  * Convert Questrade orders to Monarch CSV format
- * @param {Array} orders - Array of Questrade order objects
- * @param {string} accountName - Questrade account name for the Account column
- * @returns {string} CSV string formatted for Monarch
  */
-export function convertQuestradeOrdersToMonarchCSV(orders, accountName) {
+export function convertQuestradeOrdersToMonarchCSV(orders: QuestradeOrder[], accountName: string): string {
   if (!orders || orders.length === 0) {
     return '';
   }
 
-  // Define Monarch CSV columns
-  const columns = [
-    'Date',
-    'Merchant',
-    'Category',
-    'Account',
-    'Original Statement',
-    'Notes',
-    'Amount',
-    'Tags',
-  ];
-
   // Transform orders to Monarch format
-  const monarchRows = orders.map((order) => {
+  const monarchRows: CSVRow[] = orders.map((order) => {
     // Use security display name as merchant
     const merchant = order.security?.displayName || 'Unknown Security';
 
@@ -469,7 +497,7 @@ export function convertQuestradeOrdersToMonarchCSV(orders, accountName) {
     sample: monarchRows[0], // Log first row as sample
   });
 
-  return convertToCSV(monarchRows, columns);
+  return convertToCSV(monarchRows, MONARCH_CSV_COLUMNS);
 }
 
 /**
@@ -479,49 +507,32 @@ export function convertQuestradeOrdersToMonarchCSV(orders, accountName) {
  * Supports rule-level overrides for special transaction types (like FX conversions):
  * - ruleResult.amountOverride: Use this amount instead of details.net.amount
  * - ruleResult.currencyOverride: Use this currency tag instead of details.net.currencyCode
- *
- * @param {Array} transactions - Array of processed Questrade transaction objects
- *   Each object should have:
- *   - transaction: Original transaction from activity API
- *   - details: Full details from transactionUrl
- *   - ruleResult: Result from applyTransactionRule
- * @param {string} accountName - Questrade account name for the Account column
- * @returns {string} CSV string formatted for Monarch
  */
-export function convertQuestradeTransactionsToMonarchCSV(transactions, accountName) {
+export function convertQuestradeTransactionsToMonarchCSV(
+  transactions: QuestradeTransactionItem[],
+  accountName: string,
+): string {
   if (!transactions || transactions.length === 0) {
     return '';
   }
 
-  // Define Monarch CSV columns
-  const columns = [
-    'Date',
-    'Merchant',
-    'Category',
-    'Account',
-    'Original Statement',
-    'Notes',
-    'Amount',
-    'Tags',
-  ];
-
   // Transform transactions to Monarch format
-  const monarchRows = transactions.map((item) => {
+  const monarchRows: CSVRow[] = transactions.map((item) => {
     const { transaction, details, ruleResult } = item;
 
     // Get amount - check for rule override first (for FX conversions, etc.)
     let amount = 0;
     if (ruleResult?.amountOverride !== undefined && ruleResult?.amountOverride !== null) {
       // Rule specified an override (e.g., FX conversion using .fx.baseCurrency.amount)
-      amount = parseFloat(ruleResult.amountOverride) || 0;
+      amount = parseFloat(String(ruleResult.amountOverride)) || 0;
     } else if (details?.net?.amount !== undefined && details?.net?.amount !== null) {
       // Standard amount from .net.amount
-      amount = parseFloat(details.net.amount) || 0;
+      amount = parseFloat(String(details.net.amount)) || 0;
     }
 
     // Get date from transaction
     let date = '';
-    const rawDate = details?.transactionDate || transaction?.transactionDate;
+    const rawDate = (details?.transactionDate as string) || (transaction?.transactionDate as string);
     if (rawDate) {
       // If date includes time, extract just the date part
       if (rawDate.includes('T')) {
@@ -559,16 +570,17 @@ export function convertQuestradeTransactionsToMonarchCSV(transactions, accountNa
     sample: monarchRows[0], // Log first row as sample
   });
 
-  return convertToCSV(monarchRows, columns);
+  return convertToCSV(monarchRows, MONARCH_CSV_COLUMNS);
 }
+
+// ============================================================================
+// CSV Parser
+// ============================================================================
 
 /**
  * Parse CSV string to array of objects
- * @param {string} csvString - CSV string to parse
- * @param {boolean} hasHeader - Whether the first row is a header
- * @returns {Array<Object>} Array of parsed objects
  */
-export function parseCSV(csvString, hasHeader = true) {
+export function parseCSV(csvString: string, hasHeader: boolean = true): Record<string, string>[] | string[][] {
   if (!csvString) {
     return [];
   }
@@ -579,8 +591,8 @@ export function parseCSV(csvString, hasHeader = true) {
   }
 
   // Simple CSV parser (doesn't handle all edge cases)
-  const parseRow = (row) => {
-    const result = [];
+  const parseRow = (row: string): string[] => {
+    const result: string[] = [];
     let current = '';
     let inQuotes = false;
 
@@ -617,7 +629,7 @@ export function parseCSV(csvString, hasHeader = true) {
   const dataRows = rows.slice(1);
 
   return dataRows.map((row) => {
-    const obj = {};
+    const obj: Record<string, string> = {};
     header.forEach((col, index) => {
       obj[col] = row[index] || '';
     });

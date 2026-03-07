@@ -13,12 +13,37 @@
 import { TRANSACTION_RETENTION_DEFAULTS } from '../core/config';
 import { debugLog, getTodayLocal, parseLocalDate } from '../core/utils';
 
+// ============================================================================
+// Types
+// ============================================================================
+
+/** A stored transaction with ID and optional date */
+export interface StoredTransaction {
+  id: string;
+  date: string | null;
+}
+
+/** Retention settings for transaction storage */
+export interface RetentionSettings {
+  days: number;
+  count: number;
+}
+
+/** Account data shape with optional retention fields */
+interface AccountDataWithRetention {
+  transactionRetentionDays?: number;
+  transactionRetentionCount?: number;
+  [key: string]: unknown;
+}
+
+// ============================================================================
+// Functions
+// ============================================================================
+
 /**
  * Get retention settings from a consolidated account object
- * @param {Object} accountData - Consolidated account object
- * @returns {Object} Object with days and count limits
  */
-export function getRetentionSettingsFromAccount(accountData) {
+export function getRetentionSettingsFromAccount(accountData: AccountDataWithRetention | null | undefined): RetentionSettings {
   return {
     days: accountData?.transactionRetentionDays ?? TRANSACTION_RETENTION_DEFAULTS.DAYS,
     count: accountData?.transactionRetentionCount ?? TRANSACTION_RETENTION_DEFAULTS.COUNT,
@@ -27,17 +52,15 @@ export function getRetentionSettingsFromAccount(accountData) {
 
 /**
  * Migrate legacy transaction IDs to new format with dates
- * @param {Array} legacyData - Array of transaction IDs (strings) or already-migrated objects
- * @returns {Array} Array of transaction objects with id and date
  */
-export function migrateLegacyTransactions(legacyData) {
+export function migrateLegacyTransactions(legacyData: unknown[]): StoredTransaction[] {
   if (!Array.isArray(legacyData)) {
     return [];
   }
 
   // Check if already migrated (first item has 'id' property)
-  if (legacyData.length > 0 && typeof legacyData[0] === 'object' && 'id' in legacyData[0]) {
-    return legacyData;
+  if (legacyData.length > 0 && typeof legacyData[0] === 'object' && legacyData[0] !== null && 'id' in legacyData[0]) {
+    return legacyData as StoredTransaction[];
   }
 
   // Migrate: convert strings to objects with null dates
@@ -49,11 +72,8 @@ export function migrateLegacyTransactions(legacyData) {
 
 /**
  * Apply retention limits to transaction list
- * @param {Array} transactions - Array of transaction objects with id and date
- * @param {Object} settings - Retention settings with days and count
- * @returns {Array} Filtered array of transactions
  */
-export function applyRetentionLimits(transactions, settings) {
+export function applyRetentionLimits(transactions: StoredTransaction[], settings: RetentionSettings): StoredTransaction[] {
   if (!Array.isArray(transactions) || transactions.length === 0) {
     return [];
   }
@@ -68,20 +88,20 @@ export function applyRetentionLimits(transactions, settings) {
 
   // Sort dated transactions by date (newest first)
   datedTransactions.sort((a, b) => {
-    const dateA = parseLocalDate(a.date);
-    const dateB = parseLocalDate(b.date);
-    return dateB - dateA;
+    const dateA = parseLocalDate(a.date!);
+    const dateB = parseLocalDate(b.date!);
+    return dateB.getTime() - dateA.getTime();
   });
 
   // Apply date-based retention to dated transactions
   const recentDatedTransactions = datedTransactions.filter((tx) => {
-    const txDate = parseLocalDate(tx.date);
+    const txDate = parseLocalDate(tx.date!);
     return txDate >= cutoffDate;
   });
 
   // Check if we have any dated transactions older than the cutoff
   const hasOldDatedTransactions = datedTransactions.some((tx) => {
-    const txDate = parseLocalDate(tx.date);
+    const txDate = parseLocalDate(tx.date!);
     return txDate < cutoffDate;
   });
 
@@ -103,7 +123,7 @@ export function applyRetentionLimits(transactions, settings) {
       if (b.date === null) return -1;
       const dateA = parseLocalDate(a.date);
       const dateB = parseLocalDate(b.date);
-      return dateB - dateA;
+      return dateB.getTime() - dateA.getTime();
     });
 
     retained = retained.slice(0, settings.count);
@@ -117,14 +137,13 @@ export function applyRetentionLimits(transactions, settings) {
 /**
  * Merge new transactions with existing ones and apply retention limits
  * Pure logic function - can be used by any storage mechanism
- *
- * @param {Array} existingTransactions - Array of existing transaction objects with id and date
- * @param {Array} newTransactions - Array of new transactions to add (can be strings or objects with id/date)
- * @param {Object} retentionSettings - Object with days and count limits
- * @param {string} defaultDate - Default date for transactions without a date (YYYY-MM-DD format)
- * @returns {Array} Merged and filtered array of transactions
  */
-export function mergeAndRetainTransactions(existingTransactions, newTransactions, retentionSettings, defaultDate = null) {
+export function mergeAndRetainTransactions(
+  existingTransactions: unknown[],
+  newTransactions: (string | StoredTransaction)[],
+  retentionSettings: RetentionSettings,
+  defaultDate: string | null = null,
+): StoredTransaction[] {
   // Migrate existing transactions if needed
   const migratedExisting = migrateLegacyTransactions(existingTransactions);
 
@@ -133,9 +152,9 @@ export function mergeAndRetainTransactions(existingTransactions, newTransactions
 
   // Prepare new transactions with dates
   const date = defaultDate || getTodayLocal();
-  const transactionsToAdd = newTransactions
+  const transactionsToAdd: StoredTransaction[] = newTransactions
     .filter((tx) => {
-      const id = typeof tx === 'string' ? tx : tx.id || tx;
+      const id = typeof tx === 'string' ? tx : tx.id || String(tx);
       return !existingIds.has(id);
     })
     .map((tx) => {
@@ -144,7 +163,7 @@ export function mergeAndRetainTransactions(existingTransactions, newTransactions
       }
       // Preserve the date from the transaction if available
       return {
-        id: tx.id || tx,
+        id: tx.id || String(tx),
         date: tx.date || date,
       };
     });
@@ -159,11 +178,8 @@ export function mergeAndRetainTransactions(existingTransactions, newTransactions
 /**
  * Get transaction IDs as a Set from an array of transaction objects
  * Pure logic function - can be used by any storage mechanism
- *
- * @param {Array} transactions - Array of transaction objects with id and date
- * @returns {Set<string>} Set of transaction IDs
  */
-export function getTransactionIdsFromArray(transactions) {
+export function getTransactionIdsFromArray(transactions: unknown[] | null | undefined): Set<string> {
   const migrated = migrateLegacyTransactions(transactions || []);
   return new Set(migrated.map((tx) => tx.id));
 }

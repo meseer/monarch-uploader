@@ -12,14 +12,14 @@
 | 0 | Infrastructure Setup | ✅ Complete | 0 src / 0 test |
 | 1 | Type Foundation | ✅ Complete | 2 src / 0 test |
 | 2 | Core Layer | ✅ Complete | 8/8 src / 0 test |
-| 3 | Mappers & Utils | ⬜ Not Started | 0/5 src / 0 test |
+| 3 | Mappers & Utils | ✅ Complete | 5/5 src / 0 test |
 | 4 | MBNA Integration | ⬜ Not Started | 0/12 src / 0 test |
 | 5 | API Layer | ⬜ Not Started | 0/9 src / 0 test |
 | 6 | Services Layer | ⬜ Not Started | 0/36 src / 0 test |
 | 7 | UI Layer | ⬜ Not Started | 0/32 src / 0 test |
 | 8 | Strictness Ramp-up | ⬜ Not Started | — |
 
-**Overall:** 10/106 source files converted (~9%)
+**Overall:** 15/106 source files converted (~14%)
 
 ## Overview
 
