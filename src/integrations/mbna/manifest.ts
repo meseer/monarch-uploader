@@ -1,0 +1,97 @@
+/**
+ * MBNA Integration Manifest
+ *
+ * Declares everything the core needs to know about the MBNA integration
+ * without instantiating any of its components. This is the reference
+ * implementation of the IntegrationManifest contract.
+ *
+ * @module integrations/mbna/manifest
+ */
+
+import type { IntegrationManifest } from '../types';
+
+const manifest: IntegrationManifest = {
+  // ── Identity ──────────────────────────────────────────────
+  id: 'mbna',
+  displayName: 'MBNA',
+  faviconDomain: 'mbna.ca',
+
+  // ── Site matching ─────────────────────────────────────────
+  matchDomains: ['service.mbna.ca'],
+  matchUrls: ['https://service.mbna.ca/*'],
+
+  // ── Storage keys ──────────────────────────────────────────
+  storageKeys: {
+    accountsList: 'mbna_accounts_list',
+    config: 'mbna_config',
+    cache: null,
+  },
+
+  // ── Default lookback period ───────────────────────────────
+  defaultLookbackDays: 7,
+
+  // ── Config schema ─────────────────────────────────────────
+  configSchema: {
+    auth: ['sessionActive', 'accountNumber', 'lastChecked'],
+    settings: ['lookbackDays'],
+    hasCategoryMappings: true,
+    hasHoldingsMappings: false,
+  },
+
+  // ── Pending transaction ID prefix ─────────────────────────
+  txIdPrefix: 'mbna-tx',
+
+  // ── Capabilities (feature flags) ─────────────────────────
+  capabilities: {
+    hasTransactions: true,
+    hasDeduplication: true,
+    hasBalanceHistory: true,
+    hasCreditLimit: true,
+    hasHoldings: false,
+    hasBalanceReconstruction: true,
+    hasCategorization: true,
+  },
+
+  // ── Category mapping config ───────────────────────────────
+  categoryConfig: {
+    sourceLabel: 'Bank Category',
+  },
+
+  // ── Per-account settings ──────────────────────────────────
+  accountKeyName: 'mbnaAccount',
+  settings: [
+    { key: 'storeTransactionDetailsInNotes', default: false },
+    { key: 'transactionRetentionDays', default: 91 },
+    { key: 'transactionRetentionCount', default: 1000 },
+    { key: 'includePendingTransactions', default: true },
+    { key: 'invertBalance', default: false },
+    { key: 'skipCategorization', default: false },
+  ],
+
+  // ── Account creation defaults ─────────────────────────────
+  accountCreateDefaults: {
+    defaultType: 'credit',
+    defaultSubtype: 'credit_card',
+    accountType: 'credit',
+  },
+
+  // ── Brand theming ─────────────────────────────────────────
+  brandColor: '#003087',
+  logoCloudinaryId: 'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/mpyiskjxkwjoceqz00ll',
+
+  /*
+  // DO NOT DELETE:
+  // light MBNA: 'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/uyjbhlklztevwjlpmj0n',
+  // dark MBNA: 'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/mpyiskjxkwjoceqz00ll',
+  // light M only for MBNA: 'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/f0b14nmynprpkuncqpj0',
+  // dark M only for MBNA: 'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/kwpavqornhuljdo3kmg4',
+  */
+
+  // ── UI extensions ─────────────────────────────────────────
+  uiExtensions: {
+    showTokenExpiry: false,
+    showTestingSection: false,
+  },
+};
+
+export default manifest;

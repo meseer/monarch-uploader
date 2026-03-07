@@ -1,5 +1,6 @@
 import js from '@eslint/js';
 import globals from 'globals';
+import tseslint from 'typescript-eslint';
 
 // TODO: Monitor eslint-plugin-import for ESLint v10 support
 // Once eslint-plugin-import officially supports ESLint v10, install it and restore import linting rules
@@ -205,6 +206,44 @@ export default [
     },
   },
   
+  // TypeScript support  applies only to .ts files
+  ...tseslint.configs.recommended.map((config) => ({
+    ...config,
+    files: ['**/*.ts'],
+  })),
+  {
+    files: ['**/*.ts'],
+    languageOptions: {
+      parser: tseslint.parser,
+      parserOptions: {
+        project: false, // Type-aware linting disabled for now (enable in Phase 8)
+      },
+    },
+    rules: {
+      // Disable JS rules that have TS equivalents
+      'no-unused-vars': 'off',
+      '@typescript-eslint/no-unused-vars': ['error', {
+        vars: 'all',
+        args: 'after-used',
+        argsIgnorePattern: '^(e|error|_)',
+        caughtErrors: 'none',
+        varsIgnorePattern: '^GM_',
+      }],
+      'no-shadow': 'off',
+      '@typescript-eslint/no-shadow': 'error',
+      'no-use-before-define': 'off',
+      '@typescript-eslint/no-use-before-define': ['error', { functions: false }],
+      'no-dupe-class-members': 'off',
+      '@typescript-eslint/no-dupe-class-members': 'error',
+      'no-useless-constructor': 'off',
+      '@typescript-eslint/no-useless-constructor': 'error',
+
+      // Relax strict TS rules during migration
+      '@typescript-eslint/no-explicit-any': 'warn', // Warn, don't error  tighten in Phase 8
+      '@typescript-eslint/no-require-imports': 'off', // Allow require() in test setup
+    },
+  },
+
   // Ignore patterns
   {
     ignores: [

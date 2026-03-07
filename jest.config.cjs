@@ -15,19 +15,20 @@ module.exports = {
   
   // Files to match for tests
   testMatch: [
-    '**/__tests__/**/*.js',
-    '**/?(*.)(spec|test).js'
+    '**/__tests__/**/*.[jt]s',
+    '**/?(*.)(spec|test).[jt]s'
   ],
   
   // File extensions Jest will look for
   moduleFileExtensions: [
+    'ts',
     'js',
     'json'
   ],
   
-  // Transform files with babel-jest
+  // Transform files with babel-jest (handles both .js and .ts via @babel/preset-typescript)
   transform: {
-    '^.+\\.js$': 'babel-jest'
+    '^.+\\.[jt]s$': 'babel-jest'
   },
   
   // Coverage is now handled by c8, not Jest

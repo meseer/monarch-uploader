@@ -53,11 +53,11 @@ jest.mock('../../../src/services/common/accountService', () => ({
 }));
 
 jest.mock('../../../src/integrations/mbna/source/balanceReconstruction', () => ({
-  buildBalanceHistory: jest.fn(() => [{ date: '2024-01-10', amount: 100 }]),
+  buildBalanceHistory: jest.fn(() => [{ date: '2024-01-10', balance: 100 }]),
 }));
 
 jest.mock('../../../src/integrations/mbna/sinks/monarch/balanceFormatter', () => ({
-  formatBalanceHistoryForMonarch: jest.fn((history) => history.map((h) => ({ ...h, amount: -h.amount }))),
+  formatBalanceHistoryForMonarch: jest.fn((history) => history.map((h) => ({ date: h.date, amount: -h.balance }))),
 }));
 
 // ── Tests ───────────────────────────────────────────────────

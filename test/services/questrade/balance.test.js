@@ -691,7 +691,7 @@ describe('Balance Service', () => {
     test('should handle undefined accountId', () => {
       const error = new BalanceError('Test message', undefined);
       expect(error.message).toBe('Test message');
-      expect(error.accountId).toBeUndefined();
+      expect(error.accountId).toBeNull();
     });
   });
 
