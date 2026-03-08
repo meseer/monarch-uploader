@@ -240,15 +240,18 @@ class StateManager {
   /**
    * Notify all registered listeners about state changes
    */
-  private notifyListeners(type: string, prevState: AppState, newState: AppState): void {
+  notifyListeners(type: string, prevState?: AppState, newState?: AppState): void {
+    const prev = prevState ?? this.state;
+    const next = newState ?? this.state;
+
     // Call specific listeners
     if (this.listeners[type]) {
-      this.listeners[type].forEach((callback) => callback(newState, prevState));
+      this.listeners[type].forEach((callback) => callback(next, prev));
     }
 
     // Call wildcard listeners
     if (this.listeners['*']) {
-      this.listeners['*'].forEach((callback) => callback(newState, prevState));
+      this.listeners['*'].forEach((callback) => callback(next, prev));
     }
   }
 }

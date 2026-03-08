@@ -7,16 +7,16 @@ import { addModalKeyboardHandlers } from '../keyboardNavigation';
 
 /**
  * Show a confirmation dialog with custom message and button text
- * @param {string} message - The message to display
- * @param {string} confirmText - Text for the confirm button (default: 'Confirm')
- * @param {string} cancelText - Text for the cancel button (default: 'Cancel')
- * @returns {Promise<boolean>} True if confirmed, false if cancelled
+ * @param message - The message to display
+ * @param confirmText - Text for the confirm button (default: 'Confirm')
+ * @param cancelText - Text for the cancel button (default: 'Cancel')
+ * @returns True if confirmed, false if cancelled
  */
 export async function showConfirmationDialog(
-  message,
+  message: string,
   confirmText = 'Confirm',
   cancelText = 'Cancel',
-) {
+): Promise<boolean> {
   return new Promise((resolve) => {
     let cleanupKeyboard = () => {};
 

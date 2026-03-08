@@ -22,7 +22,11 @@
 | 10 | WS Transaction Rules | ✅ Complete | 3/3 src / 0 test |
 | 11 | WS Core Services | ✅ Complete | 5/5 src / 0 test |
 | 12 | WS Top-Level Services | ✅ Complete | 3/3 src / 0 test |
-| 13 | UI Layer | ⬜ Not Started | 0/32 src / 0 test |
+| 13a | UI Primitives | 🔄 In Progress | 0/6 src / 0 test |
+| 13b | Category Selector Cluster | ⬜ Not Started | 0/4 src / 0 test |
+| 13c | Dialog & Picker Components | ⬜ Not Started | 0/4 src / 0 test |
+| 13d | Settings Modal Cluster | ⬜ Not Started | 0/4 src / 0 test |
+| 13e | Institution Managers & Components | ⬜ Not Started | 0/14 src / 0 test |
 | 14 | Strictness Ramp-up | ⬜ Not Started | — |
 
 **Overall:** 69/106 source files converted (~65%)
@@ -263,23 +267,81 @@ Added full `WealthsimpleTransaction` interface, `ExtendedOrder`, `SpendDetails`,
 
 Completed in Phase 12: `src/services/wealthsimple/positions.ts`, `src/services/wealthsimple/account.ts`, `src/services/wealthsimple-upload.ts`. All originals deleted.
 
-### Phase 13: UI Layer (5–8 days)
+### Phase 13: UI Layer (broken into sub-phases)
 
-Hardest layer to type — framework-less DOM manipulation.
+Hardest layer to type — framework-less DOM manipulation. Split into 5 sub-phases ordered by dependency depth and complexity.
 
-**Files (32):**
-- `src/ui/components/*.js` (~12 files — settings modal, category selector, progress dialog, etc.)
-- `src/ui/canadalife/*.js` (~5 files)
-- `src/ui/modals/*.js`
-- `src/ui/questrade/*.js`
-- `src/ui/rogersbank/*.js`
-- `src/ui/wealthsimple/*.js`
-- `src/ui/generic/*.js`
-- `src/ui/theme.js`, `src/ui/toast.js`, `src/ui/keyboardNavigation.js`
+**Key challenge:** Heavy `document.createElement` chains, event handlers, dynamic element properties.
 
-**Key challenge:** Heavy `document.createElement` chains, event handlers, dynamic element properties. Consider creating helper types for component patterns (e.g., `UIComponent`, `ModalConfig`).
+---
 
-**Tests:** ~18 corresponding test files.
+### Phase 13a: UI Primitives (6 files, ~1,354 lines)
+
+Zero or minimal inter-UI-file dependencies — convert first to unblock everything else.
+
+| File | Lines |
+|------|-------|
+| `src/ui/toast.js` | 151 |
+| `src/ui/theme.js` | 290 |
+| `src/ui/keyboardNavigation.js` | 225 |
+| `src/ui/components/formValidation.js` | 286 |
+| `src/ui/components/confirmationDialog.js` | 151 |
+| `src/ui/components/monarchLoginLink.js` | 251 |
+
+---
+
+### Phase 13b: Category Selector Cluster (4 files, ~1,910 lines)
+
+Self-contained subsystem with internal dependency chain. Convert in order: utils → main → manual → example.
+
+| File | Lines |
+|------|-------|
+| `src/ui/components/categorySelectorUtils.js` | 279 |
+| `src/ui/components/categorySelector.js` | 1,020 |
+| `src/ui/components/categorySelectorManual.js` | 378 |
+| `src/ui/components/categorySelector.example.js` | 233 |
+
+---
+
+### Phase 13c: Dialog & Picker Components (4 files, ~2,956 lines)
+
+Interactive components consumed by services and the settings modal.
+
+| File | Lines |
+|------|-------|
+| `src/ui/components/datePicker.js` | 480 |
+| `src/ui/components/securitySelector.js` | 484 |
+| `src/ui/components/accountCreationDialog.js` | 620 |
+| `src/ui/components/accountSelectorWithCreate.js` | 1,372 |
+
+---
+
+### Phase 13d: Settings Modal Cluster (4 files, ~4,613 lines)
+
+The most complex sub-system. Convert in order: helpers → accountCards → settingsModal → progressDialog.
+
+| File | Lines |
+|------|-------|
+| `src/ui/components/progressDialog.js` | 1,248 |
+| `src/ui/components/settingsModalHelpers.js` | 1,280 |
+| `src/ui/components/settingsModalAccountCards.js` | 1,278 |
+| `src/ui/components/settingsModal.js` | 807 |
+
+---
+
+### Phase 13e: Institution UI Managers & Components (14 files, ~5,615 lines)
+
+Repeating pattern across institutions. Convert generic base first, then each institution.
+
+| Batch | Files | Lines |
+|-------|-------|-------|
+| Generic base | `generic/uiManager.js`, `generic/components/uploadButton.js`, `generic/components/connectionStatus.js` | 975 |
+| Questrade | `questrade/uiManager.js`, `questrade/components/uploadButton.js` | 1,166 |
+| Wealthsimple | `wealthsimple/uiManager.js`, `wealthsimple/components/uploadButton.js`, `wealthsimple/components/connectionStatus.js` | 1,085 |
+| Rogers Bank | `rogersbank/uiManager.js`, `rogersbank/components/uploadButton.js`, `rogersbank/components/connectionStatus.js` | 897 |
+| CanadaLife | `canadalife/uiManager.js`, `canadalife/components/uploadButton.js`, `canadalife/components/connectionStatus.js` | 1,492 |
+
+Also includes `src/index.js` and `src/integrations/index.js` (entry-point barrel files).
 
 ### Phase 14: Strictness Ramp-up (2–3 days)
 
