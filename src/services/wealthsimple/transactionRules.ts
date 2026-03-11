@@ -292,17 +292,28 @@ export const CASH_TRANSACTION_RULES: CashTransactionRule[] = [
     id: 'withdrawal-bill-pay',
     description: 'Bill payment transactions',
     match: (tx) => tx.type === 'WITHDRAWAL' && tx.subType === 'BILL_PAY',
-    process: (tx) => {
+    process: (tx, enrichmentMap) => {
       const billPayCompanyName = tx.billPayCompanyName || 'Unknown Company';
       const billPayPayeeNickname = tx.billPayPayeeNickname || 'Unknown Payee';
       const redactedExternalAccountNumber = tx.redactedExternalAccountNumber || '';
       const categoryKey = `${tx.type}:${tx.subType}:${billPayPayeeNickname}`;
       const statementText = `${billPayCompanyName} (${redactedExternalAccountNumber})`;
+
+      let notes = '';
+      if (enrichmentMap && tx.externalCanonicalId) {
+        const statusSummary = enrichmentMap.get(`status-summary:${tx.externalCanonicalId}`) as StatusSummary | undefined;
+        const statusAnnotation = extractStatusSummaryAnnotation(statusSummary);
+        if (statusAnnotation) {
+          debugLog(`Found bill payment annotation for ${tx.externalCanonicalId}: "${statusAnnotation}"`);
+          notes = statusAnnotation;
+        }
+      }
+
       return {
         category: null,
         merchant: billPayPayeeNickname,
         originalStatement: formatOriginalStatement(tx.type, tx.subType, statementText),
-        notes: '',
+        notes,
         technicalDetails: '',
         needsCategoryMapping: true,
         categoryKey,

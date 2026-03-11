@@ -494,6 +494,233 @@ describe('Wealthsimple Transaction Rules Engine - Cash Payments', () => {
     });
   });
 
+  describe('WITHDRAWAL/BILL_PAY rule', () => {
+    describe('rule matching', () => {
+      it('should match transactions with type WITHDRAWAL and subType BILL_PAY', () => {
+        const transaction = {
+          externalCanonicalId: 'funding_intent-bill-123',
+          type: 'WITHDRAWAL',
+          subType: 'BILL_PAY',
+          billPayCompanyName: 'ENBRIDGE GAS',
+          billPayPayeeNickname: 'Enbridge Gas',
+          redactedExternalAccountNumber: '****1234',
+        };
+
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'withdrawal-bill-pay');
+        expect(rule.match(transaction)).toBe(true);
+      });
+
+      it('should not match transactions with different type', () => {
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'withdrawal-bill-pay');
+        expect(rule.match({ type: 'DEPOSIT', subType: 'BILL_PAY' })).toBe(false);
+      });
+
+      it('should not match transactions with different subType', () => {
+        const rule = CASH_TRANSACTION_RULES.find((r) => r.id === 'withdrawal-bill-pay');
+        expect(rule.match({ type: 'WITHDRAWAL', subType: 'EFT' })).toBe(false);
+        expect(rule.match({ type: 'WITHDRAWAL', subType: 'AFT' })).toBe(false);
+      });
+    });
+
+    describe('transaction processing', () => {
+      it('should process WITHDRAWAL/BILL_PAY transaction correctly', () => {
+        const transaction = {
+          externalCanonicalId: 'funding_intent-bill-456',
+          type: 'WITHDRAWAL',
+          subType: 'BILL_PAY',
+          billPayCompanyName: 'ENBRIDGE GAS',
+          billPayPayeeNickname: 'Enbridge Gas',
+          redactedExternalAccountNumber: '****1234',
+          amount: 85.50,
+          amountSign: 'negative',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.ruleId).toBe('withdrawal-bill-pay');
+        expect(result.category).toBeNull();
+        expect(result.merchant).toBe('Enbridge Gas');
+        expect(result.originalStatement).toBe('WITHDRAWAL:BILL_PAY:ENBRIDGE GAS (****1234)');
+        expect(result.needsCategoryMapping).toBe(true);
+        expect(result.categoryKey).toBe('WITHDRAWAL:BILL_PAY:Enbridge Gas');
+        expect(result.notes).toBe('');
+        expect(result.technicalDetails).toBe('');
+      });
+
+      it('should include billPayDetails', () => {
+        const transaction = {
+          externalCanonicalId: 'funding_intent-bill-details',
+          type: 'WITHDRAWAL',
+          subType: 'BILL_PAY',
+          billPayCompanyName: 'TORONTO HYDRO',
+          billPayPayeeNickname: 'Toronto Hydro',
+          redactedExternalAccountNumber: '****5678',
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.billPayDetails).toBeDefined();
+        expect(result.billPayDetails.billPayCompanyName).toBe('TORONTO HYDRO');
+        expect(result.billPayDetails.billPayPayeeNickname).toBe('Toronto Hydro');
+        expect(result.billPayDetails.redactedExternalAccountNumber).toBe('****5678');
+      });
+
+      it('should use fallback values when fields are missing', () => {
+        const transaction = {
+          externalCanonicalId: 'funding_intent-bill-missing',
+          type: 'WITHDRAWAL',
+          subType: 'BILL_PAY',
+          billPayCompanyName: null,
+          billPayPayeeNickname: null,
+          redactedExternalAccountNumber: null,
+        };
+
+        const result = applyTransactionRule(transaction);
+
+        expect(result).not.toBeNull();
+        expect(result.merchant).toBe('Unknown Payee');
+        expect(result.originalStatement).toBe('WITHDRAWAL:BILL_PAY:Unknown Company ()');
+        expect(result.categoryKey).toBe('WITHDRAWAL:BILL_PAY:Unknown Payee');
+      });
+    });
+
+    describe('annotation from enrichment map', () => {
+      it('should extract annotation from status summary in enrichment map', () => {
+        const transaction = {
+          externalCanonicalId: 'funding_intent-bill-annotated',
+          type: 'WITHDRAWAL',
+          subType: 'BILL_PAY',
+          billPayCompanyName: 'BELL CANADA',
+          billPayPayeeNickname: 'Bell Internet',
+          redactedExternalAccountNumber: '****9012',
+        };
+
+        const enrichmentMap = new Map();
+        enrichmentMap.set('status-summary:funding_intent-bill-annotated', {
+          annotation: 'March internet bill',
+        });
+
+        const result = applyTransactionRule(transaction, enrichmentMap);
+
+        expect(result).not.toBeNull();
+        expect(result.ruleId).toBe('withdrawal-bill-pay');
+        expect(result.notes).toBe('March internet bill');
+        expect(result.merchant).toBe('Bell Internet');
+      });
+
+      it('should have empty notes when status summary has no annotation', () => {
+        const transaction = {
+          externalCanonicalId: 'funding_intent-bill-no-annotation',
+          type: 'WITHDRAWAL',
+          subType: 'BILL_PAY',
+          billPayCompanyName: 'ROGERS',
+          billPayPayeeNickname: 'Rogers Mobile',
+          redactedExternalAccountNumber: '****3456',
+        };
+
+        const enrichmentMap = new Map();
+        enrichmentMap.set('status-summary:funding_intent-bill-no-annotation', {
+          annotation: null,
+        });
+
+        const result = applyTransactionRule(transaction, enrichmentMap);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('');
+      });
+
+      it('should have empty notes when status summary is not in enrichment map', () => {
+        const transaction = {
+          externalCanonicalId: 'funding_intent-bill-not-in-map',
+          type: 'WITHDRAWAL',
+          subType: 'BILL_PAY',
+          billPayCompanyName: 'HYDRO ONE',
+          billPayPayeeNickname: 'Hydro One',
+          redactedExternalAccountNumber: '****7890',
+        };
+
+        const enrichmentMap = new Map();
+        // No entry for this transaction
+
+        const result = applyTransactionRule(transaction, enrichmentMap);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('');
+      });
+
+      it('should have empty notes when enrichment map is null', () => {
+        const transaction = {
+          externalCanonicalId: 'funding_intent-bill-null-map',
+          type: 'WITHDRAWAL',
+          subType: 'BILL_PAY',
+          billPayCompanyName: 'TELUS',
+          billPayPayeeNickname: 'Telus Phone',
+          redactedExternalAccountNumber: '****2345',
+        };
+
+        const result = applyTransactionRule(transaction, null);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('');
+      });
+
+      it('should have empty notes when externalCanonicalId is null', () => {
+        const transaction = {
+          externalCanonicalId: null,
+          canonicalId: 'canonical-bill-123',
+          type: 'WITHDRAWAL',
+          subType: 'BILL_PAY',
+          billPayCompanyName: 'FIDO',
+          billPayPayeeNickname: 'Fido Mobile',
+          redactedExternalAccountNumber: '****6789',
+        };
+
+        const enrichmentMap = new Map();
+        enrichmentMap.set('status-summary:canonical-bill-123', {
+          annotation: 'This should not be used',
+        });
+
+        const result = applyTransactionRule(transaction, enrichmentMap);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('');
+      });
+
+      it('should handle annotation with special characters', () => {
+        const transaction = {
+          externalCanonicalId: 'funding_intent-bill-special',
+          type: 'WITHDRAWAL',
+          subType: 'BILL_PAY',
+          billPayCompanyName: 'CITY OF TORONTO',
+          billPayPayeeNickname: 'Property Tax',
+          redactedExternalAccountNumber: '****0123',
+        };
+
+        const enrichmentMap = new Map();
+        enrichmentMap.set('status-summary:funding_intent-bill-special', {
+          annotation: 'Q1 2026 property tax - 123 Main St, Unit #4',
+        });
+
+        const result = applyTransactionRule(transaction, enrichmentMap);
+
+        expect(result).not.toBeNull();
+        expect(result.notes).toBe('Q1 2026 property tax - 123 Main St, Unit #4');
+      });
+    });
+  });
+
+  describe('hasRuleForTransaction with WITHDRAWAL/BILL_PAY', () => {
+    it('should return true for WITHDRAWAL/BILL_PAY type/subType', () => {
+      expect(hasRuleForTransaction('WITHDRAWAL', 'BILL_PAY')).toBe(true);
+    });
+
+    it('should return false for BILL_PAY with wrong type', () => {
+      expect(hasRuleForTransaction('DEPOSIT', 'BILL_PAY')).toBe(false);
+    });
+  });
+
   describe('hasRuleForTransaction with REIMBURSEMENT/CASHBACK', () => {
     it('should return true for REIMBURSEMENT/CASHBACK type/subType', () => {
       expect(hasRuleForTransaction('REIMBURSEMENT', 'CASHBACK')).toBe(true);

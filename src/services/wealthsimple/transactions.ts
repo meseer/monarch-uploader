@@ -207,6 +207,24 @@ function collectInternalTransferIds(transactions: WealthsimpleTransaction[]): st
 }
 
 /**
+ * Collect bill pay funding intent IDs from transactions that need status summary enrichment
+ */
+function collectBillPayFundingIntentIds(transactions: WealthsimpleTransaction[]): string[] {
+  const billPayIds: string[] = [];
+  for (const tx of transactions) {
+    if (
+      tx.type === 'WITHDRAWAL' &&
+      tx.subType === 'BILL_PAY' &&
+      tx.externalCanonicalId &&
+      tx.externalCanonicalId.startsWith('funding_intent-')
+    ) {
+      billPayIds.push(tx.externalCanonicalId);
+    }
+  }
+  return billPayIds;
+}
+
+/**
  * Collect SPEND transaction IDs from CASH account transactions that need spend details enrichment
  */
 function collectSpendTransactionIds(
@@ -492,6 +510,7 @@ export async function fetchAndProcessCashTransactions(
     const eTransferIds = collectETransferIds(transactionsWithRules);
     const internalTransferIds = collectInternalTransferIds(transactionsWithRules);
     const eftTransferIds = collectEftTransferIds(transactionsWithRules);
+    const billPayFundingIntentIds = collectBillPayFundingIntentIds(transactionsWithRules);
     const spendTransactionIds = collectSpendTransactionIds(transactionsWithRules);
 
     const enrichmentMap = new Map<string, unknown>();
@@ -521,6 +540,22 @@ export async function fetchAndProcessCashTransactions(
         }
       }
       debugLog(`Fetched status summaries for ${eTransferIds.length} e-transfer(s)`);
+    }
+
+    // Fetch FundingIntentStatusSummary for bill payments (annotations/notes)
+    if (billPayFundingIntentIds.length > 0) {
+      debugLog(`Fetching ${billPayFundingIntentIds.length} status summary(ies) for bill payment annotations...`);
+      for (let i = 0; i < billPayFundingIntentIds.length; i++) {
+        const id = billPayFundingIntentIds[i];
+        const progressNum = i + 1;
+        debugLog(`Fetching bill payment status summary (${progressNum}/${billPayFundingIntentIds.length}): ${id}`);
+        if (onProgress) onProgress(`Bill payment annotations (${progressNum}/${billPayFundingIntentIds.length})`);
+        const statusSummary = await wealthsimpleApi.fetchFundingIntentStatusSummary(id);
+        if (statusSummary) {
+          enrichmentMap.set(`status-summary:${id}`, statusSummary);
+        }
+      }
+      debugLog(`Fetched status summaries for ${billPayFundingIntentIds.length} bill payment(s)`);
     }
 
     // Fetch internal transfer data for annotations
