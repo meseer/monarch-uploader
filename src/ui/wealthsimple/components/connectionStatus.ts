@@ -5,12 +5,17 @@
 
 import wealthsimpleApi from '../../../api/wealthsimple';
 
+interface AuthStatus {
+  authenticated?: boolean;
+  expired?: boolean;
+  expiresAt?: string;
+  [key: string]: unknown;
+}
+
 /**
  * Format time remaining until expiration
- * @param {string} expiresAt - ISO timestamp
- * @returns {string} Formatted time remaining
  */
-function formatTimeRemaining(expiresAt) {
+function formatTimeRemaining(expiresAt: string): string {
   if (!expiresAt) return '';
 
   try {
@@ -33,17 +38,15 @@ function formatTimeRemaining(expiresAt) {
       return `expires in ${remainingHours}h ${remainingMinutes % 60}m`;
     }
     return `expires in ${remainingMinutes}m`;
-  } catch (error) {
+  } catch {
     return '';
   }
 }
 
 /**
  * Get color for expiration status
- * @param {string} expiresAt - ISO timestamp
- * @returns {string} Color code
  */
-function getExpirationColor(expiresAt) {
+function getExpirationColor(expiresAt: string): string {
   if (!expiresAt) return '#dc3545'; // Red for no expiration
 
   try {
@@ -59,16 +62,15 @@ function getExpirationColor(expiresAt) {
       return '#ffc107'; // Yellow for <10 minutes
     }
     return '#28a745'; // Green for >10 minutes
-  } catch (error) {
+  } catch {
     return '#dc3545';
   }
 }
 
 /**
  * Creates connection status indicators container
- * @returns {HTMLElement} Connection status container
  */
-export function createConnectionStatus() {
+export function createConnectionStatus(): HTMLElement {
   const container = document.createElement('div');
   container.id = 'wealthsimple-connection-status-container';
   container.className = 'connection-status-container';
@@ -119,10 +121,9 @@ export function createConnectionStatus() {
 
 /**
  * Update Wealthsimple status display
- * @param {HTMLElement} statusElement - Status element to update
  */
-function updateWealthsimpleStatus(statusElement) {
-  const authStatus = wealthsimpleApi.checkAuth();
+function updateWealthsimpleStatus(statusElement: HTMLElement): void {
+  const authStatus = wealthsimpleApi.checkAuth() as unknown as AuthStatus;
 
   if (authStatus.authenticated && authStatus.expiresAt) {
     const timeRemaining = formatTimeRemaining(authStatus.expiresAt);
@@ -141,7 +142,7 @@ function updateWealthsimpleStatus(statusElement) {
   // Ensure icon is first child
   const icon = statusElement.querySelector('span');
   if (icon && icon.nextSibling) {
-    icon.nextSibling.textContent = ` ${statusElement.textContent.split(': ')[1]}`;
+    (icon.nextSibling as Text).textContent = ` ${(statusElement.textContent || '').split(': ')[1]}`;
     statusElement.textContent = 'Wealthsimple: ';
     statusElement.appendChild(icon.nextSibling);
   }

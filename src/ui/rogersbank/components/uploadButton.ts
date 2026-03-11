@@ -10,14 +10,49 @@ import toast from '../../toast';
 import { uploadRogersBankToMonarch } from '../../../services/rogersbank-upload';
 import { ensureMonarchAuthentication } from '../../components/monarchLoginLink';
 
+interface ButtonOptions {
+  color?: string;
+  hoverColor?: string;
+  disabled?: boolean;
+  id?: string;
+  className?: string;
+}
+
+interface UploadResult {
+  success?: boolean;
+  data?: {
+    transactions?: TransactionData[];
+    fromDate?: string;
+    toDate?: string;
+    monarchAccountName?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+interface TransactionData {
+  date?: string;
+  merchant?: {
+    name?: string;
+    categoryDescription?: string;
+    category?: string;
+    [key: string]: unknown;
+  };
+  amount?: {
+    value?: number;
+    currency?: string;
+    [key: string]: unknown;
+  };
+  activityStatus?: string;
+  activityType?: string;
+  referenceNumber?: string;
+  [key: string]: unknown;
+}
+
 /**
  * Creates a styled button for Rogers Bank
- * @param {string} text - Button text
- * @param {Function} onClick - Click handler
- * @param {Object} options - Button options
- * @returns {HTMLButtonElement} The created button
  */
-function createRogersBankButton(text, onClick, options = {}) {
+function createRogersBankButton(text: string, onClick: ((event: MouseEvent) => void) | null, options: ButtonOptions = {}): HTMLButtonElement {
   const button = document.createElement('button');
   button.textContent = text;
   button.style.cssText = `
@@ -72,9 +107,8 @@ function createRogersBankButton(text, onClick, options = {}) {
 
 /**
  * Creates the main upload button for Rogers Bank
- * @returns {HTMLElement} Upload button container
  */
-export function createRogersBankUploadButton() {
+export function createRogersBankUploadButton(): HTMLElement {
   const container = document.createElement('div');
   container.className = 'rogersbank-upload-button-container';
   container.style.cssText = 'margin: 8px 0;';
@@ -129,7 +163,7 @@ export function createRogersBankUploadButton() {
 
     try {
       // Call the upload service
-      const result = await uploadRogersBankToMonarch();
+      const result: UploadResult = await uploadRogersBankToMonarch();
 
       if (result.success && result.data) {
         debugLog('Transaction upload completed:', result);

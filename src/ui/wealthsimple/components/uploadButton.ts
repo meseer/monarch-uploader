@@ -17,11 +17,41 @@ import { syncAccountListWithAPI } from '../../../services/wealthsimple/account';
 import { getDefaultDateRange } from '../../../services/wealthsimple/balance';
 import { showProgressDialog } from '../../components/progressDialog';
 
+interface ButtonOptions {
+  color?: string;
+  disabled?: boolean;
+  id?: string;
+  className?: string;
+}
+
+interface ConsolidatedAccount {
+  wealthsimpleAccount: WealthsimpleAccount;
+  [key: string]: unknown;
+}
+
+interface WealthsimpleAccount {
+  id: string;
+  nickname?: string;
+  [key: string]: unknown;
+}
+
+interface BalanceResult {
+  success: boolean;
+  balances: Map<string, number | null>;
+  [key: string]: unknown;
+}
+
+interface SyncResult {
+  success?: boolean;
+  cancelled?: boolean;
+  skipped?: boolean;
+  [key: string]: unknown;
+}
+
 /**
  * Determine button label based on current page
- * @returns {string} Button label
  */
-function getButtonLabel() {
+function getButtonLabel(): string {
   const pathname = window.location.pathname;
 
   // Check if on account detail page
@@ -35,9 +65,8 @@ function getButtonLabel() {
 
 /**
  * Get current account ID from URL if on account detail page
- * @returns {string|null} Account ID or null
  */
-function getCurrentAccountId() {
+function getCurrentAccountId(): string | null {
   const pathname = window.location.pathname;
   const match = pathname.match(/\/app\/account-details\/([^/]+)/);
   return match ? match[1] : null;
@@ -45,12 +74,8 @@ function getCurrentAccountId() {
 
 /**
  * Creates a styled button for Wealthsimple
- * @param {string} text - Button text
- * @param {Function} onClick - Click handler
- * @param {Object} options - Button options
- * @returns {HTMLButtonElement} The created button
  */
-function createWealthsimpleButton(text, onClick, options = {}) {
+function createWealthsimpleButton(text: string, onClick: (() => void) | null, options: ButtonOptions = {}): HTMLButtonElement {
   const button = document.createElement('button');
   button.textContent = text;
   button.style.cssText = `
@@ -101,17 +126,14 @@ function createWealthsimpleButton(text, onClick, options = {}) {
 
 /**
  * Upload a single Wealthsimple account with progress dialog
- * Shows the same detailed progress as the bulk upload from the home page
- * @param {string} accountId - The Wealthsimple account ID to sync
- * @returns {Promise<void>}
  */
-async function uploadSingleAccountWithProgress(accountId) {
-  let progressDialog = null;
+async function uploadSingleAccountWithProgress(accountId: string): Promise<void> {
+  let progressDialog: ReturnType<typeof showProgressDialog> | null = null;
   let isCancelled = false;
 
   try {
     // Sync account list with API to get consolidated account data
-    const consolidatedAccounts = await syncAccountListWithAPI();
+    const consolidatedAccounts: ConsolidatedAccount[] = await syncAccountListWithAPI() as unknown as ConsolidatedAccount[];
     const consolidatedAccount = consolidatedAccounts.find(
       (acc) => acc.wealthsimpleAccount.id === accountId,
     );
@@ -140,7 +162,7 @@ async function uploadSingleAccountWithProgress(accountId) {
     });
 
     // Fetch balance for this specific account
-    const balanceResult = await wealthsimpleApi.fetchAccountBalances([account]);
+    const balanceResult: BalanceResult = await wealthsimpleApi.fetchAccountBalances([account]) as unknown as BalanceResult;
     if (!balanceResult.success) {
       throw new Error('Failed to fetch account balance');
     }
@@ -170,13 +192,13 @@ async function uploadSingleAccountWithProgress(accountId) {
     debugLog(`Account page upload using date range: ${fromDate} to ${toDate}`);
 
     // Process the account with step-by-step progress tracking
-    const result = await uploadWealthsimpleAccountToMonarchWithSteps(
+    const result: SyncResult = await uploadWealthsimpleAccountToMonarchWithSteps(
       consolidatedAccount,
       fromDate,
       toDate,
       currentBalance,
       progressDialog,
-    );
+    ) as unknown as SyncResult;
 
     // Show summary
     if (result && result.cancelled) {
@@ -193,7 +215,7 @@ async function uploadSingleAccountWithProgress(accountId) {
     progressDialog.hideCancel();
   } catch (error) {
     debugLog('Error in single account sync:', error);
-    toast.show(`Sync failed: ${error.message}`, 'error');
+    toast.show(`Sync failed: ${(error as Error).message}`, 'error');
 
     // Clean up progress dialog on error
     if (progressDialog) {
@@ -203,16 +225,14 @@ async function uploadSingleAccountWithProgress(accountId) {
 }
 
 /**
- * Creates the main upload button for Wealthsimple
- * @returns {HTMLElement} Upload button container
- */
-/**
  * Fixed height for upload button container to prevent UI jumps
- * when switching between auth message and button
  */
 const UPLOAD_BUTTON_CONTAINER_HEIGHT = '42px';
 
-export function createWealthsimpleUploadButton() {
+/**
+ * Creates the main upload button for Wealthsimple
+ */
+export function createWealthsimpleUploadButton(): HTMLElement {
   const container = document.createElement('div');
   container.id = 'wealthsimple-upload-button-container';
   container.className = 'wealthsimple-upload-button-container';
@@ -258,9 +278,8 @@ export function createWealthsimpleUploadButton() {
     try {
       debugLog(`Starting Wealthsimple sync... (Account detail page: ${isAccountDetailPage})`);
 
-      if (isAccountDetailPage) {
+      if (isAccountDetailPage && accountId) {
         // Sync single account with progress dialog
-        // Don't change button state - the progress dialog provides visual feedback
         await uploadSingleAccountWithProgress(accountId);
       } else {
         // Sync all accounts - show button state change since dialog takes a moment to appear
@@ -276,7 +295,7 @@ export function createWealthsimpleUploadButton() {
       }
     } catch (error) {
       debugLog('Error in Wealthsimple sync:', error);
-      toast.show(`Sync failed: ${error.message}`, 'error');
+      toast.show(`Sync failed: ${(error as Error).message}`, 'error');
     }
   }, { id: 'wealthsimple-upload-button' });
 

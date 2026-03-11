@@ -1,7 +1,7 @@
 # TypeScript Migration Plan
 
 > **Status:** Active  
-> **Updated:** 2026-03-11 (Phase 13a complete, phases restructured)  
+> **Updated:** 2026-03-11 (Phases 13e–13j complete)  
 > **Author:** @meseer  
 > **Note:** See [ADR-005](../decisions/005-typescript-migration.md) for the decision record.
 
@@ -26,15 +26,15 @@
 | 13b | Category Selector Cluster | ⬜ Not Started | 0/3 src / 0 test |
 | 13c | Dialog & Picker Components | ⬜ Not Started | 0/4 src / 0 test |
 | 13d | Settings Modal Cluster | ⬜ Not Started | 0/4 src / 0 test |
-| 13e | Generic Base UI | ⬜ Not Started | 0/3 src / 0 test |
-| 13f | Questrade UI | ⬜ Not Started | 0/2 src / 0 test |
-| 13g | Wealthsimple UI | ⬜ Not Started | 0/3 src / 0 test |
-| 13h | Rogers Bank UI | ⬜ Not Started | 0/3 src / 0 test |
-| 13i | CanadaLife UI | ⬜ Not Started | 0/3 src / 0 test |
-| 13j | Entry Points | ⬜ Not Started | 0/2 src / 0 test |
+| 13e | Generic Base UI | ✅ Complete | 3/3 src / 0 test |
+| 13f | Questrade UI | ✅ Complete | 2/2 src / 0 test |
+| 13g | Wealthsimple UI | ✅ Complete | 3/3 src / 0 test |
+| 13h | Rogers Bank UI | ✅ Complete | 3/3 src / 0 test |
+| 13i | CanadaLife UI | ✅ Complete | 3/3 src / 0 test |
+| 13j | Entry Points | ✅ Complete | 2/2 src / 0 test |
 | 14 | Strictness Ramp-up | ⏸️ Deferred | — |
 
-**Overall:** 78/105 source files converted (~74%)
+**Overall:** 94/105 source files converted (~90%)
 
 > **Note:** `categorySelector.example.js` was deleted (dead code — development demo with no production imports or tests). Total file count is 105 not 106.
 
@@ -242,65 +242,65 @@ The most complex sub-system. Convert in order: helpers → accountCards → sett
 
 ---
 
-### Phase 13e: Generic Base UI (3 files, ~975 lines)
+### Phase 13e: Generic Base UI ✅ Complete
 
-Convert the generic/base UI components that institution-specific managers extend or mirror.
+Converted the generic/base UI components that institution-specific managers extend or mirror.
 
 | File | Lines |
 |------|-------|
-| `src/ui/generic/uiManager.js` | ~350 |
-| `src/ui/generic/components/uploadButton.js` | ~350 |
-| `src/ui/generic/components/connectionStatus.js` | ~275 |
+| `src/ui/generic/uiManager.ts` | ~350 |
+| `src/ui/generic/components/uploadButton.ts` | ~350 |
+| `src/ui/generic/components/connectionStatus.ts` | ~275 |
 
 ---
 
-### Phase 13f: Questrade UI (2 files, ~1,166 lines)
+### Phase 13f: Questrade UI ✅ Complete
 
 | File | Lines |
 |------|-------|
-| `src/ui/questrade/uiManager.js` | ~700 |
-| `src/ui/questrade/components/uploadButton.js` | ~466 |
+| `src/ui/questrade/uiManager.ts` | ~700 |
+| `src/ui/questrade/components/uploadButton.ts` | ~466 |
 
 ---
 
-### Phase 13g: Wealthsimple UI (3 files, ~1,085 lines)
+### Phase 13g: Wealthsimple UI ✅ Complete
 
 | File | Lines |
 |------|-------|
-| `src/ui/wealthsimple/uiManager.js` | ~400 |
-| `src/ui/wealthsimple/components/uploadButton.js` | ~400 |
-| `src/ui/wealthsimple/components/connectionStatus.js` | ~285 |
+| `src/ui/wealthsimple/uiManager.ts` | ~400 |
+| `src/ui/wealthsimple/components/uploadButton.ts` | ~400 |
+| `src/ui/wealthsimple/components/connectionStatus.ts` | ~285 |
 
 ---
 
-### Phase 13h: Rogers Bank UI (3 files, ~897 lines)
+### Phase 13h: Rogers Bank UI ✅ Complete
 
 | File | Lines |
 |------|-------|
-| `src/ui/rogersbank/uiManager.js` | ~350 |
-| `src/ui/rogersbank/components/uploadButton.js` | ~300 |
-| `src/ui/rogersbank/components/connectionStatus.js` | ~247 |
+| `src/ui/rogersbank/uiManager.ts` | ~350 |
+| `src/ui/rogersbank/components/uploadButton.ts` | ~300 |
+| `src/ui/rogersbank/components/connectionStatus.ts` | ~247 |
 
 ---
 
-### Phase 13i: CanadaLife UI (3 files, ~1,492 lines)
+### Phase 13i: CanadaLife UI ✅ Complete
 
 | File | Lines |
 |------|-------|
-| `src/ui/canadalife/uiManager.js` | ~600 |
-| `src/ui/canadalife/components/uploadButton.js` | ~500 |
-| `src/ui/canadalife/components/connectionStatus.js` | ~392 |
+| `src/ui/canadalife/uiManager.ts` | ~600 |
+| `src/ui/canadalife/components/uploadButton.ts` | ~500 |
+| `src/ui/canadalife/components/connectionStatus.ts` | ~392 |
 
 ---
 
-### Phase 13j: Entry Points (2 files, ~250 lines)
+### Phase 13j: Entry Points ✅ Complete
 
-Final source files to convert — the application entry point and integration barrel export.
+Converted the application entry point and integration barrel export. Updated webpack entry from `./src/index.js` to `./src/index.ts`.
 
 | File | Lines |
 |------|-------|
-| `src/index.js` | ~150 |
-| `src/integrations/index.js` | ~100 |
+| `src/index.ts` | ~150 |
+| `src/integrations/index.ts` | ~100 |
 
 ---
 
@@ -345,14 +345,14 @@ Final source files to convert — the application entry point and integration ba
 | 13b — Category Selector Cluster | 3 | ~1 day |
 | 13c — Dialog & Picker Components | 4 | ~2 days |
 | 13d — Settings Modal Cluster | 4 | ~2 days |
-| 13e — Generic Base UI | 3 | ~0.5 day |
-| 13f — Questrade UI | 2 | ~0.5 day |
-| 13g — Wealthsimple UI | 3 | ~0.5 day |
-| 13h — Rogers Bank UI | 3 | ~0.5 day |
-| 13i — CanadaLife UI | 3 | ~0.5 day |
-| 13j — Entry Points | 2 | ~0.5 day |
+| 13e — Generic Base UI | 3 | ✅ Done |
+| 13f — Questrade UI | 2 | ✅ Done |
+| 13g — Wealthsimple UI | 3 | ✅ Done |
+| 13h — Rogers Bank UI | 3 | ✅ Done |
+| 13i — CanadaLife UI | 3 | ✅ Done |
+| 13j — Entry Points | 2 | ✅ Done |
 | 14 — Strictness | all | ⏸️ Deferred |
-| **Total remaining** | **27** | **~7–8 days** |
+| **Total remaining** | **11** | **~5 days** |
 
 ---
 

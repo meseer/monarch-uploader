@@ -4,6 +4,9 @@
  * It imports all modules and initializes the application
  */
 
+declare function GM_registerMenuCommand(name: string, callback: () => void): void;
+declare function GM_getValue(key: string, defaultValue?: unknown): unknown;
+
 // Import core modules
 import { STORAGE } from './core/config';
 import {
@@ -82,19 +85,10 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
     }, 1000);
   }
 
-  // document.addEventListener('DOMContentLoaded', () => {
-  //     initApp();
-  // });
-
-  // Also try to initialize immediately in case DOMContentLoaded already fired
-  // if (document.readyState === 'complete' || document.readyState === 'interactive') {
-  //     initApp();
-  // }
-
   /**
-     * Main application initialization
-     */
-  function initApp() {
+   * Main application initialization
+   */
+  function initApp(): void {
     // Initialize theme system early (before any UI renders)
     // This injects CSS custom properties that all components rely on
     initTheme();
@@ -143,8 +137,10 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
       return;
     }
 
-    // Modular integrations (registry-driven)  detected via manifest matchDomains
-    const { getIntegrationForHostname } = require('./core/integrationRegistry');
+    // Modular integrations (registry-driven) detected via manifest matchDomains
+    const { getIntegrationForHostname } = require('./core/integrationRegistry') as {
+      getIntegrationForHostname: (hostname: string) => { manifest: { displayName: string; id: string }; [key: string]: unknown } | null;
+    };
     const modularMatch = getIntegrationForHostname(window.location.hostname);
     if (modularMatch) {
       debugLog(`Running on modular integration site: ${modularMatch.manifest.displayName}`);
@@ -169,9 +165,9 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
   }
 
   /**
-     * Initialize the application components
-     */
-  function initializeApp() {
+   * Initialize the application components
+   */
+  function initializeApp(): void {
     try {
       debugLog('Initializing application components...');
 
@@ -189,12 +185,12 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
       // Load current account info if on an account page
       if (window.location.pathname.match(/\/accounts\/([^/]+)/)) {
         loadCurrentAccountInfo()
-          .then((account) => {
+          .then((account: Record<string, unknown> | null) => {
             if (account) {
-              debugLog('Current account loaded:', account.nickname || account.name);
+              debugLog('Current account loaded:', (account.nickname || account.name) as string);
             }
           })
-          .catch((err) => debugLog('Error loading account info:', err));
+          .catch((err: unknown) => debugLog('Error loading account info:', err));
       }
 
       // Show initialization toast
@@ -205,18 +201,18 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
   }
 
   /**
-     * Check if the current Canada Life page is a valid app page (under /s/*)
-     * Login and loading pages (e.g., /sign-in, /secur/frontdoor.jsp) should be skipped
-     * @returns {boolean} True if on a valid app page
-     */
-  function isCanadaLifeAppPage() {
+   * Check if the current Canada Life page is a valid app page (under /s/*)
+   * Login and loading pages (e.g., /sign-in, /secur/frontdoor.jsp) should be skipped
+   * @returns True if on a valid app page
+   */
+  function isCanadaLifeAppPage(): boolean {
     return window.location.pathname.startsWith('/s/');
   }
 
   /**
-     * Initialize CanadaLife application components
-     */
-  function initializeCanadaLifeApp() {
+   * Initialize CanadaLife application components
+   */
+  function initializeCanadaLifeApp(): void {
     try {
       debugLog('Initializing CanadaLife application components...');
 
@@ -242,17 +238,15 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
   }
 
   /**
-     * Initialize Canada Life account loading and UI (only on /s/* pages)
-     */
-  function initializeCanadaLifeAppPage() {
+   * Initialize Canada Life account loading and UI (only on /s/* pages)
+   */
+  function initializeCanadaLifeAppPage(): void {
     // Pre-load accounts from API to refresh cache with full account details
-    // This ensures cached accounts have all required fields (EnglishShortName, agreementId, etc.)
-    // and triggers migration from old minimal storage to full API data structure
     loadCanadaLifeAccounts(true) // forceRefresh=true
-      .then((accounts) => {
+      .then((accounts: unknown[]) => {
         debugLog(`Pre-loaded ${accounts.length} Canada Life accounts with full details`);
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         // Non-fatal - accounts will be loaded when sync is triggered
         debugLog('Error pre-loading Canada Life accounts:', err);
       });
@@ -264,10 +258,10 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
   }
 
   /**
-     * Poll for navigation from login/loading page to a valid /s/* app page.
-     * Once detected, runs full initialization and stops polling.
-     */
-  function waitForCanadaLifeAppPage() {
+   * Poll for navigation from login/loading page to a valid /s/* app page.
+   * Once detected, runs full initialization and stops polling.
+   */
+  function waitForCanadaLifeAppPage(): void {
     let hasInitialized = false;
 
     const pollInterval = setInterval(() => {
@@ -291,35 +285,35 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
   }
 
   /**
-     * Check auth status and update UI (Questrade)
-     */
-  function checkStatus() {
+   * Check auth status and update UI (Questrade)
+   */
+  function checkStatus(): void {
     try {
       // Check Questrade token status
       checkTokenStatus();
 
       // Check if we have a Monarch token
-      const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN);
+      const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN) as string;
       stateManager.setMonarchAuth(monarchToken);
 
       // Update UI with status
       const { indicators } = stateManager.getState().ui;
-      updateStatusIndicators(indicators);
+      updateStatusIndicators(indicators as unknown as Parameters<typeof updateStatusIndicators>[0]);
     } catch (error) {
       debugLog('Error checking status:', error);
     }
   }
 
   /**
-     * Check auth status for CanadaLife
-     */
-  function checkCanadaLifeStatus() {
+   * Check auth status for CanadaLife
+   */
+  function checkCanadaLifeStatus(): void {
     try {
       // Check CanadaLife token status
       checkCanadaLifeTokenStatus();
 
       // Check if we have a Monarch token
-      const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN);
+      const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN) as string;
       stateManager.setMonarchAuth(monarchToken);
     } catch (error) {
       debugLog('Error checking CanadaLife status:', error);
@@ -327,9 +321,9 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
   }
 
   /**
-     * Initialize Rogers Bank application components
-     */
-  function initializeRogersBankApp() {
+   * Initialize Rogers Bank application components
+   */
+  function initializeRogersBankApp(): void {
     try {
       debugLog('Initializing Rogers Bank application components...');
 
@@ -346,35 +340,37 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
   }
 
   /**
-     * Initialize a modular integration (registry-driven).
-     * Detects the integration via manifest matchDomains, then bootstraps
-     * the generic UI manager with the registered integration data.
-     * @param {string} integrationId - The integration ID from the registry
-     */
-  function initializeModularIntegrationApp(integrationId) {
+   * Initialize a modular integration (registry-driven).
+   * Detects the integration via manifest matchDomains, then bootstraps
+   * the generic UI manager with the registered integration data.
+   * @param integrationId - The integration ID from the registry
+   */
+  function initializeModularIntegrationApp(integrationId: string): void {
     try {
       debugLog(`Initializing modular integration: ${integrationId}...`);
 
-      const { getIntegration } = require('./core/integrationRegistry');
+      const { getIntegration } = require('./core/integrationRegistry') as {
+        getIntegration: (id: string) => Record<string, unknown> | null;
+      };
       const reg = getIntegration(integrationId);
       if (!reg) {
         debugLog(`Integration ${integrationId} not found in registry`);
         return;
       }
 
-      // Use the generic UI manager  all institution-specific data comes from the registry entry
-      initGenericUI(reg)
+      // Use the generic UI manager - all institution-specific data comes from the registry entry
+      initGenericUI(reg as Parameters<typeof initGenericUI>[0])
         .then(() => debugLog(`${integrationId} UI initialized successfully`))
-        .catch((err) => debugLog(`Error initializing ${integrationId} UI:`, err));
+        .catch((err: unknown) => debugLog(`Error initializing ${integrationId} UI:`, err));
     } catch (error) {
       debugLog(`Error initializing modular integration ${integrationId}:`, error);
     }
   }
 
   /**
-     * Initialize Wealthsimple application components
-     */
-  function initializeWealthsimpleApp() {
+   * Initialize Wealthsimple application components
+   */
+  function initializeWealthsimpleApp(): void {
     try {
       debugLog('Initializing Wealthsimple application components...');
 
@@ -394,15 +390,15 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
   }
 
   /**
-     * Check auth status for Wealthsimple
-     */
-  function checkWealthsimpleStatus() {
+   * Check auth status for Wealthsimple
+   */
+  function checkWealthsimpleStatus(): void {
     try {
       // Check Wealthsimple auth status
       checkWealthsimpleAuth();
 
       // Check if we have a Monarch token
-      const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN);
+      const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN) as string;
       stateManager.setMonarchAuth(monarchToken);
     } catch (error) {
       debugLog('Error checking Wealthsimple status:', error);
@@ -410,19 +406,19 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
   }
 
   /**
-     * Initialize Monarch token monitoring with event-driven detection
-     */
-  function initializeMonarchTokenMonitoring() {
+   * Initialize Monarch token monitoring with event-driven detection
+   */
+  function initializeMonarchTokenMonitoring(): void {
     try {
       // Check initial Monarch token state
-      const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN);
+      const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN) as string;
       stateManager.setMonarchAuth(monarchToken);
 
       // Set up storage event listener for Monarch token changes
-      window.addEventListener('storage', (event) => {
+      window.addEventListener('storage', (event: StorageEvent) => {
         if (event.key === STORAGE.MONARCH_TOKEN) {
           debugLog('Monarch token changed via storage event');
-          const newToken = GM_getValue(STORAGE.MONARCH_TOKEN);
+          const newToken = GM_getValue(STORAGE.MONARCH_TOKEN) as string;
           stateManager.setMonarchAuth(newToken);
         }
       });

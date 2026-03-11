@@ -9,10 +9,8 @@
 
 /**
  * Creates connection status indicators container
- * @param {string} institutionName - Display name of the institution (e.g., 'MBNA')
- * @returns {HTMLElement} Connection status container
  */
-export function createConnectionStatus(institutionName) {
+export function createConnectionStatus(institutionName: string): HTMLElement {
   const container = document.createElement('div');
   container.className = 'connection-status-container';
   container.id = 'generic-connection-status';
@@ -77,12 +75,9 @@ export function createConnectionStatus(institutionName) {
 
 /**
  * Update institution connection status indicator
- * @param {HTMLElement} container - Connection status container
- * @param {string} institutionName - Display name of the institution
- * @param {boolean} authenticated - Whether the institution session is active
  */
-export function updateInstitutionStatus(container, institutionName, authenticated) {
-  const indicator = container.querySelector('.institution-status');
+export function updateInstitutionStatus(container: HTMLElement, institutionName: string, authenticated: boolean): void {
+  const indicator = container.querySelector('.institution-status') as HTMLElement | null;
   if (!indicator) return;
 
   if (authenticated) {
@@ -102,12 +97,9 @@ export function updateInstitutionStatus(container, institutionName, authenticate
 
 /**
  * Update Monarch connection status indicator
- * @param {HTMLElement} container - Connection status container
- * @param {boolean} connected - Whether Monarch token exists
- * @param {Function} [onLoginClick] - Callback when login link is clicked
  */
-export function updateMonarchStatus(container, connected, onLoginClick) {
-  const indicator = container.querySelector('.monarch-status');
+export function updateMonarchStatus(container: HTMLElement, connected: boolean, onLoginClick?: () => void): void {
+  const indicator = container.querySelector('.monarch-status') as HTMLElement | null;
   if (!indicator) return;
 
   indicator.innerHTML = '';
@@ -130,7 +122,7 @@ export function updateMonarchStatus(container, connected, onLoginClick) {
       link.textContent = ' Monarch: Connect';
       link.href = '#';
       link.style.cssText = 'color: inherit; text-decoration: underline; cursor: pointer;';
-      link.addEventListener('click', (e) => {
+      link.addEventListener('click', (e: Event) => {
         e.preventDefault();
         e.stopPropagation();
         onLoginClick();

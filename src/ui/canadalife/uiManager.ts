@@ -13,11 +13,17 @@ import { createCanadaLifeUploadButton } from './components/uploadButton';
 import { showSettingsModal } from '../components/settingsModal';
 import { createMonarchLoginLink } from '../components/monarchLoginLink';
 
+declare function GM_getValue(key: string): unknown;
+
+interface CanadaLifeAuthStatus {
+  authenticated: boolean;
+  [key: string]: unknown;
+}
+
 /**
  * Creates and appends the main UI container to CanadaLife navigation
- * @returns {HTMLElement|null} Created container element
  */
-function createUIContainer() {
+function createUIContainer(): HTMLElement | null {
   // Find the .ims-navigation insertion point
   const targetContainer = document.querySelector('.ims-navigation');
   if (!targetContainer) {
@@ -112,13 +118,13 @@ function createUIContainer() {
 /**
  * Wait for target element to appear using MutationObserver
  */
-function waitForTargetElement() {
-  let observer = null;
-  let timeoutId = null;
+function waitForTargetElement(): void {
+  let observer: MutationObserver | null = null;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
   let isInitialized = false;
 
   // Create observer
-  observer = new MutationObserver((mutations, obs) => {
+  observer = new MutationObserver((_mutations, obs) => {
     // Check if target element now exists
     const targetContainer = document.querySelector('.ims-navigation');
 
@@ -164,9 +170,8 @@ function waitForTargetElement() {
 
 /**
  * Initialize UI components once container is available
- * @param {HTMLElement} container - The UI container element
  */
-function initializeUIComponents(container) {
+function initializeUIComponents(container: HTMLElement): void {
   try {
     // Clear existing dynamic content (keep header)
     const existingContent = Array.from(container.children).slice(1);
@@ -199,7 +204,7 @@ function initializeUIComponents(container) {
 /**
  * Initialize UI for CanadaLife website
  */
-export async function initCanadaLifeUI() {
+export async function initCanadaLifeUI(): Promise<void> {
   try {
     debugLog('Initializing CanadaLife UI...');
 
@@ -221,16 +226,15 @@ export async function initCanadaLifeUI() {
 
 /**
  * Set up status monitoring for connection indicators
- * @param {HTMLElement} connectionStatus - Connection status container
  */
-function setupStatusMonitoring(connectionStatus) {
+function setupStatusMonitoring(connectionStatus: HTMLElement): void {
   // Set up periodic status checks
   const statusInterval = setInterval(() => {
     updateConnectionStatus(connectionStatus);
   }, 10000); // Check every 10 seconds
 
   // Store interval ID for cleanup if needed
-  connectionStatus.statusInterval = statusInterval;
+  (connectionStatus as HTMLElement & { statusInterval?: ReturnType<typeof setInterval> }).statusInterval = statusInterval;
 
   // Listen for state changes
   stateManager.addListener('auth', () => {
@@ -240,18 +244,17 @@ function setupStatusMonitoring(connectionStatus) {
 
 /**
  * Update connection status indicators
- * @param {HTMLElement} connectionStatus - Connection status container
  */
-function updateConnectionStatus(connectionStatus) {
+function updateConnectionStatus(connectionStatus: HTMLElement): void {
   if (!connectionStatus) return;
 
   try {
     // Get current auth status
-    const canadalifeAuth = canadalife.checkAuth();
+    const canadalifeAuth = canadalife.checkAuth() as unknown as CanadaLifeAuthStatus;
     const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN);
 
     // Update CanadaLife status
-    const canadalifeIndicator = connectionStatus.querySelector('.canadalife-status');
+    const canadalifeIndicator = connectionStatus.querySelector('.canadalife-status') as HTMLElement | null;
     if (canadalifeIndicator) {
       if (canadalifeAuth.authenticated) {
         canadalifeIndicator.textContent = 'CanadaLife: Connected';
@@ -263,7 +266,7 @@ function updateConnectionStatus(connectionStatus) {
     }
 
     // Update Monarch status
-    const monarchIndicator = connectionStatus.querySelector('.monarch-status');
+    const monarchIndicator = connectionStatus.querySelector('.monarch-status') as HTMLElement | null;
     if (monarchIndicator) {
       // Clear existing content
       monarchIndicator.innerHTML = '';
@@ -291,7 +294,7 @@ function updateConnectionStatus(connectionStatus) {
  * Refreshes the Canada Life UI by re-initializing the upload button component
  * Call this when Development Mode is toggled to apply changes immediately
  */
-export function refreshCanadaLifeUI() {
+export function refreshCanadaLifeUI(): boolean {
   try {
     const container = document.getElementById('canadalife-balance-uploader-container');
     if (!container) {

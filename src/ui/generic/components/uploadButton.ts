@@ -7,13 +7,24 @@
  * @module ui/generic/components/uploadButton
  */
 
+interface StyledButtonOptions {
+  color?: string;
+  hoverColor?: string;
+  id?: string;
+  className?: string;
+  disabled?: boolean;
+}
+
+interface UploadButtonParams {
+  isAuthenticated: boolean;
+  institutionName: string;
+  onUploadClick?: (button: HTMLButtonElement) => void;
+}
+
 /**
  * Darken a hex color by a percentage for hover effects
- * @param {string} hex - Hex color (e.g., '#003087')
- * @param {number} [percent=20] - Percentage to darken
- * @returns {string} Darkened hex color
  */
-export function darkenColor(hex, percent = 20) {
+export function darkenColor(hex: string, percent = 20): string {
   const num = parseInt(hex.replace('#', ''), 16);
   const r = Math.max(0, (num >> 16) - Math.round(2.55 * percent));
   const g = Math.max(0, ((num >> 8) & 0x00FF) - Math.round(2.55 * percent));
@@ -23,17 +34,8 @@ export function darkenColor(hex, percent = 20) {
 
 /**
  * Creates a styled button with the given brand color
- * @param {string} text - Button text
- * @param {Function} onClick - Click handler
- * @param {Object} [options] - Button options
- * @param {string} [options.color] - Button background color
- * @param {string} [options.hoverColor] - Hover background color (auto-derived if omitted)
- * @param {string} [options.id] - Button element ID
- * @param {string} [options.className] - CSS class name
- * @param {boolean} [options.disabled] - Whether button is disabled
- * @returns {HTMLButtonElement} The created button
  */
-function createStyledButton(text, onClick, options = {}) {
+function createStyledButton(text: string, onClick: ((e: Event) => void) | null, options: StyledButtonOptions = {}): HTMLButtonElement {
   const button = document.createElement('button');
   button.textContent = text;
   const color = options.color || '#28a745';
@@ -89,13 +91,8 @@ function createStyledButton(text, onClick, options = {}) {
 
 /**
  * Creates the main upload button for a modular integration
- * @param {Object} params - Button parameters
- * @param {boolean} params.isAuthenticated - Whether the institution session is active
- * @param {string} params.institutionName - Display name of the institution
- * @param {Function} [params.onUploadClick] - Handler when upload is clicked
- * @returns {HTMLElement} Upload button container
  */
-export function createUploadButton({ isAuthenticated, institutionName, onUploadClick }) {
+export function createUploadButton({ isAuthenticated, institutionName, onUploadClick }: UploadButtonParams): HTMLElement {
   const container = document.createElement('div');
   container.className = 'generic-upload-button-container';
   container.id = 'generic-upload-button-container';
