@@ -30,9 +30,9 @@ describe('Wealthsimple UI Injection Points', () => {
       });
     });
 
-    test('first injection point should be .kOjAGq with prepend method', () => {
+    test('first injection point should be last:.kOjAGq with prepend method', () => {
       const firstPoint = WEALTHSIMPLE_UI.INJECTION_POINTS[0];
-      expect(firstPoint.selector).toBe('.kOjAGq');
+      expect(firstPoint.selector).toBe('last:.kOjAGq');
       expect(firstPoint.insertMethod).toBe('prepend');
     });
   });
@@ -43,22 +43,33 @@ describe('Wealthsimple UI Injection Points', () => {
       document.body.innerHTML = '';
     });
 
-    test('should find injection point when available', () => {
-      // Create injection point
-      const container = document.createElement('div');
-      container.className = 'kOjAGq';
-      document.body.appendChild(container);
+    test('should find last injection point element when available', () => {
+      // Create multiple elements matching the first injection point selector
+      const first = document.createElement('div');
+      first.className = 'kOjAGq';
+      document.body.appendChild(first);
 
-      // Verify injection point is found
-      const found = document.querySelector(WEALTHSIMPLE_UI.INJECTION_POINTS[0].selector);
-      expect(found).toBe(container);
+      const last = document.createElement('div');
+      last.className = 'kOjAGq';
+      document.body.appendChild(last);
+
+      // 'last:.kOjAGq' should resolve to the last element
+      const selector = WEALTHSIMPLE_UI.INJECTION_POINTS[0].selector; // 'last:.kOjAGq'
+      expect(selector.startsWith('last:')).toBe(true);
+      const cssSelector = selector.slice(5);
+      const all = document.querySelectorAll(cssSelector);
+      const found = all.length > 0 ? all[all.length - 1] : null;
+      expect(found).toBe(last);
+      expect(found).not.toBe(first);
     });
 
     test('should return null when no injection points are available', () => {
       // Don't create any injection points
-      const found = WEALTHSIMPLE_UI.INJECTION_POINTS.map((ip) => document.querySelector(ip.selector)).find(
-        (el) => el !== null,
-      );
+      // Strip 'last:' prefix before querying since it's not a valid CSS selector prefix
+      const found = WEALTHSIMPLE_UI.INJECTION_POINTS.map((ip) => {
+        const cssSelector = ip.selector.startsWith('last:') ? ip.selector.slice(5) : ip.selector;
+        return document.querySelector(cssSelector);
+      }).find((el) => el !== null);
       expect(found).toBeUndefined();
     });
   });
@@ -243,8 +254,10 @@ describe('Wealthsimple UI Injection Points', () => {
   });
 
   describe('getAllInjectionSelectors helper', () => {
-    test('should combine all selectors with comma separator', () => {
-      const combinedSelector = WEALTHSIMPLE_UI.INJECTION_POINTS.map((ip) => ip.selector).join(', ');
+    test('should combine all selectors with comma separator, stripping last: prefix', () => {
+      const combinedSelector = WEALTHSIMPLE_UI.INJECTION_POINTS.map((ip) =>
+        ip.selector.startsWith('last:') ? ip.selector.slice(5) : ip.selector,
+      ).join(', ');
       expect(combinedSelector).toBe('.kOjAGq, .bZQXKE');
     });
   });

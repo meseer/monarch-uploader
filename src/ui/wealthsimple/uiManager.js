@@ -14,12 +14,28 @@ import { showSettingsModal } from '../components/settingsModal';
 import { createMonarchLoginLink } from '../components/monarchLoginLink';
 
 /**
+ * Resolve a selector string to a DOM element.
+ * Supports a 'last:' prefix to select the last matching element instead of the first.
+ * Example: 'last:.kOjAGq' returns the last element with class kOjAGq.
+ * @param {string} selector - CSS selector, optionally prefixed with 'last:'
+ * @returns {HTMLElement|null}
+ */
+function resolveElement(selector) {
+  if (selector.startsWith('last:')) {
+    const cssSelector = selector.slice(5);
+    const all = document.querySelectorAll(cssSelector);
+    return all.length > 0 ? all[all.length - 1] : null;
+  }
+  return document.querySelector(selector);
+}
+
+/**
  * Find the first available injection point from the prioritized list
  * @returns {{element: HTMLElement, insertMethod: string, selector: string}|null} Injection point info or null
  */
 function findInjectionPoint() {
   for (const injectionPoint of WEALTHSIMPLE_UI.INJECTION_POINTS) {
-    const element = document.querySelector(injectionPoint.selector);
+    const element = resolveElement(injectionPoint.selector);
     if (element) {
       debugLog(`Found injection point: ${injectionPoint.selector} (method: ${injectionPoint.insertMethod})`);
       return {
@@ -64,11 +80,21 @@ function getTargetContainer(element, insertMethod) {
 }
 
 /**
- * Get all possible injection point selectors as a comma-separated string for querySelector
+ * Strip the 'last:' prefix from a selector string if present, returning the raw CSS selector.
+ * @param {string} selector
+ * @returns {string}
+ */
+function stripSelectorPrefix(selector) {
+  return selector.startsWith('last:') ? selector.slice(5) : selector;
+}
+
+/**
+ * Get all possible injection point selectors as a comma-separated string for querySelector.
+ * Strips the 'last:' prefix if present.
  * @returns {string} Combined selector string
  */
 function getAllInjectionSelectors() {
-  return WEALTHSIMPLE_UI.INJECTION_POINTS.map((ip) => ip.selector).join(', ');
+  return WEALTHSIMPLE_UI.INJECTION_POINTS.map((ip) => stripSelectorPrefix(ip.selector)).join(', ');
 }
 
 /**
