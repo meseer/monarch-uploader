@@ -43,6 +43,7 @@ const PREFIXES_TO_REMOVE: PrefixConfig[] = [
   { prefix: 'sp ', description: 'SP transactions' },
   { prefix: 'ls ', description: 'Lightspeed transactions' },
   { prefix: 'str*', description: 'Stripe transactions' },
+  { prefix: 'sportpy*', description: 'SportPay transactions' },
 ];
 
 /**

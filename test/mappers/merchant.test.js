@@ -51,6 +51,14 @@ describe('Merchant Mapping Utilities', () => {
       expect(applyMerchantMapping('Sp Restaurant')).toBe('Restaurant');
     });
 
+    test('should remove SPORTPY* prefix (SportPay transactions)', () => {
+      expect(applyMerchantMapping('SPORTPY*VAFC FOOTBALL')).toBe('Vafc Football');
+      expect(applyMerchantMapping('sportpy*some merchant')).toBe('Some Merchant');
+      expect(applyMerchantMapping('SportPy*Another Club')).toBe('Another Club');
+      // Should not affect merchants that don't start with SPORTPY*
+      expect(applyMerchantMapping('NOTSPORTPY*SOMETHING')).toBe('Notsportpy*something');
+    });
+
     test('should transform Impark variants to standardized name', () => {
       expect(applyMerchantMapping('Impark00661600u')).toBe('Impark');
       expect(applyMerchantMapping('IMPARK12345678')).toBe('Impark');
