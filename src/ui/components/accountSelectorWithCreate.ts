@@ -11,28 +11,105 @@ import { addModalKeyboardHandlers, makeItemsKeyboardNavigable } from '../keyboar
 import { showAccountCreationDialog } from './accountCreationDialog';
 import { showConfirmationDialog } from './confirmationDialog';
 
+interface BalanceInfo {
+  amount?: number;
+  currency?: string;
+}
+
+interface CreateDefaults {
+  defaultName?: string;
+  defaultType?: string;
+  defaultSubtype?: string;
+  currentBalance?: BalanceInfo;
+  balanceOnlyTracking?: boolean;
+  accountType?: string;
+  warningMessage?: string;
+  trackingMethod?: 'balance' | 'holdings';
+  [key: string]: unknown;
+}
+
+interface AccountDetails {
+  id: string;
+  displayName?: string;
+  currentBalance?: number;
+  signedBalance?: number;
+  logoUrl?: string;
+  type?: { name: string };
+  subtype?: { name: string; display?: string };
+  isManual?: boolean;
+  icon?: string;
+  limit?: number;
+}
+
+interface AccountEntry {
+  id?: string;
+  displayName?: string;
+  displayBalance?: number;
+  signedBalance?: number;
+  logoUrl?: string;
+  type?: { name: string };
+  subtype?: { name: string; display?: string };
+  isHidden?: boolean;
+  dataProviderDeactivatedAt?: string | null;
+  credential?: CredentialInfo | null;
+  institution?: InstitutionInfo;
+  icon?: string;
+  limit?: number;
+  details?: AccountDetails;
+  similarityScore?: number;
+  [key: string]: unknown;
+}
+
+interface CredentialInfo {
+  id: string;
+  institution?: InstitutionInfo;
+  dataProvider?: string;
+}
+
+interface InstitutionInfo {
+  name?: string;
+  logo?: string;
+  url?: string;
+}
+
+interface ConnectionGroup {
+  credential: CredentialInfo | null;
+  institution?: InstitutionInfo;
+  accounts: AccountEntry[];
+  isManual: boolean;
+}
+
+interface InstitutionEntry {
+  credential: CredentialInfo;
+  institution?: InstitutionInfo;
+  accounts: AccountEntry[];
+  hasMatchingAccounts: boolean;
+  domainMatchScore: number;
+  isManual: boolean;
+}
+
+interface AccountTypeSummary {
+  type: { name: string };
+  accounts: AccountEntry[];
+}
+
+interface AccountsData {
+  accountTypeSummaries: AccountTypeSummary[];
+}
+
+type AccountCallback = (account: Record<string, unknown> | AccountDetails | null) => void;
+
 /**
  * Show Monarch account selector with create option
  * Uses getAccountsByType() to fetch accounts grouped by type, then aggregates by credential
- * @param {Array} accounts - List of available Monarch accounts (legacy param, may be empty)
- * @param {Function} callback - Callback function to receive selected or created account
- * @param {Array} originalAccounts - Original full accounts list for navigation (legacy param)
- * @param {string} accountType - Account type filter ('brokerage', 'credit', etc.)
- * @param {Object} createDefaults - Default values for account creation
- * @param {string} createDefaults.defaultName - Default account name
- * @param {string} createDefaults.defaultType - Default account type
- * @param {string} createDefaults.defaultSubtype - Default account subtype
- * @param {Object} createDefaults.currentBalance - Current balance object {amount, currency}
- * @param {boolean} createDefaults.balanceOnlyTracking - If true, only show balance tracking option for investment accounts
- * @returns {Promise} Promise that resolves when selection or creation is complete
  */
 export async function showMonarchAccountSelectorWithCreate(
-  accounts,
-  callback,
-  _originalAccounts = null,
-  accountType = null,
-  createDefaults = {},
-) {
+  accounts: AccountEntry[],
+  callback: AccountCallback,
+  _originalAccounts: AccountEntry[] | null = null,
+  accountType: string | null = null,
+  createDefaults: CreateDefaults = {},
+): Promise<void> {
   const effectiveAccountType = accountType || 'brokerage';
 
   debugLog('Starting account selector with create option', {
@@ -43,13 +120,13 @@ export async function showMonarchAccountSelectorWithCreate(
   try {
     // Fetch accounts grouped by type using new API
     debugLog('Fetching accounts by type for account selector');
-    const accountsData = await monarchApi.getAccountsByType();
+    const accountsData = await monarchApi.getAccountsByType() as AccountsData;
 
     // Get current domain for matching
     const currentDomain = extractDomain(window.location.href);
 
     // Filter accounts by requested type if specified
-    let accountsToProcess = [];
+    let accountsToProcess: AccountEntry[] = [];
     if (effectiveAccountType) {
       const typeSummary = accountsData.accountTypeSummaries.find(
         (s) => s.type.name === effectiveAccountType,
@@ -63,7 +140,7 @@ export async function showMonarchAccountSelectorWithCreate(
     debugLog(`Found ${accountsToProcess.length} accounts of type ${effectiveAccountType}`);
 
     // Aggregate accounts by credential.id (manual accounts have null credential)
-    const connectionMap = new Map();
+    const connectionMap = new Map<string, ConnectionGroup>();
 
     accountsToProcess.forEach((account) => {
       // Skip hidden or deleted accounts
@@ -75,18 +152,18 @@ export async function showMonarchAccountSelectorWithCreate(
 
       if (!connectionMap.has(credId)) {
         connectionMap.set(credId, {
-          credential: account.credential,
+          credential: account.credential || null,
           institution: account.institution || account.credential?.institution,
           accounts: [],
           isManual: credId === 'manual',
         });
       }
 
-      connectionMap.get(credId).accounts.push({
+      connectionMap.get(credId)!.accounts.push({
         ...account,
         // Create details object for compatibility with existing UI
         details: {
-          id: account.id,
+          id: account.id as string,
           displayName: account.displayName,
           currentBalance: account.displayBalance,
           signedBalance: account.signedBalance,
@@ -101,15 +178,15 @@ export async function showMonarchAccountSelectorWithCreate(
     });
 
     // Build institution list from connection map
-    const institutionList = Array.from(connectionMap.values()).map((conn) => {
-      const institutionDomain = extractDomain(conn.institution?.url);
+    const institutionList: InstitutionEntry[] = Array.from(connectionMap.values()).map((conn) => {
+      const institutionDomain = extractDomain(conn.institution?.url || '');
       const domainMatchScore = institutionDomain && currentDomain && institutionDomain === currentDomain ? 1 : 0;
 
       return {
         credential: conn.credential || {
           // Fake credential for manual accounts
           id: 'manual',
-          institution: { name: 'Manual Accounts', logo: null },
+          institution: { name: 'Manual Accounts', logo: undefined },
           dataProvider: 'Manual',
         },
         institution: conn.institution,
@@ -159,18 +236,19 @@ export async function showMonarchAccountSelectorWithCreate(
 
 /**
  * Show institution selector with "Create New Account" button
- * @param {Array} institutions - List of institutions with account info
- * @param {Function} callback - Callback for final account selection
- * @param {string} accountType - Account type being selected
- * @param {Object} createDefaults - Default values for account creation
  */
-function showInstitutionSelectorWithCreate(institutions, callback, accountType, createDefaults) {
+function showInstitutionSelectorWithCreate(
+  institutions: InstitutionEntry[],
+  callback: AccountCallback,
+  accountType: string,
+  createDefaults: CreateDefaults,
+): void {
   debugLog('Showing institution selector with create option', {
     institutionsCount: institutions ? institutions.length : 0,
     accountType,
   });
 
-  let cleanupKeyboard = () => {};
+  let cleanupKeyboard = (): void => {};
 
   const overlay = createModalOverlay(() => {
     cleanupKeyboard();
@@ -450,7 +528,7 @@ function showInstitutionSelectorWithCreate(institutions, callback, accountType, 
     modal.appendChild(noInst);
   }
 
-  const institutionItems = [];
+  const institutionItems: HTMLElement[] = [];
 
   // Add each institution
   institutions.forEach((inst) => {
@@ -494,11 +572,11 @@ function showInstitutionSelectorWithCreate(institutions, callback, accountType, 
     callback(null);
   });
 
-  let cleanupItemNavigation = () => {};
+  let cleanupItemNavigation = (): void => {};
   if (institutionItems.length > 0) {
     cleanupItemNavigation = makeItemsKeyboardNavigable(
       institutionItems,
-      (item, index) => {
+      (_item: HTMLElement, index: number) => {
         const inst = institutions[index];
         cleanupKeyboard();
         overlay.remove();
@@ -519,13 +597,14 @@ function showInstitutionSelectorWithCreate(institutions, callback, accountType, 
 
 /**
  * Show account selector with "Create New Account" option
- * @param {Object} institution - Institution object with accounts
- * @param {Function} callback - Callback for account selection
- * @param {Array} allInstitutions - All institutions for navigation
- * @param {string} accountType - Account type being selected
- * @param {Object} createDefaults - Default values for account creation
  */
-function showAccountSelectorWithCreate(institution, callback, allInstitutions, accountType, createDefaults) {
+function showAccountSelectorWithCreate(
+  institution: InstitutionEntry,
+  callback: AccountCallback,
+  allInstitutions: InstitutionEntry[],
+  accountType: string,
+  createDefaults: CreateDefaults,
+): void {
   const allInsts = allInstitutions || [institution];
   const cred = institution.credential;
   const accounts = institution.accounts || [];
@@ -549,18 +628,18 @@ function showAccountSelectorWithCreate(institution, callback, allInstitutions, a
     ...account,
     similarityScore: stringSimilarity(account.details?.displayName || '', currentAccountName || ''),
   }));
-  accountsWithScores.sort((a, b) => b.similarityScore - a.similarityScore);
+  accountsWithScores.sort((a, b) => (b.similarityScore || 0) - (a.similarityScore || 0));
 
-  let cleanupKeyboard = () => {};
-  let overlay;
+  let cleanupKeyboard = (): void => {};
+  let overlay: HTMLDivElement;
 
-  const closeModal = () => {
+  const closeModal = (): void => {
     cleanupKeyboard();
     overlay.remove();
     callback(null);
   };
 
-  const backAction = () => {
+  const backAction = (): void => {
     cleanupKeyboard();
     overlay.remove();
     showInstitutionSelectorWithCreate(allInsts, callback, accountType, createDefaults);
@@ -596,7 +675,7 @@ function showAccountSelectorWithCreate(institution, callback, allInstitutions, a
   backButton.innerHTML = '&lsaquo; Back to institutions';
   backButton.onclick = backAction;
   backButton.setAttribute('tabindex', '0');
-  backButton.addEventListener('keydown', (event) => {
+  backButton.addEventListener('keydown', (event: KeyboardEvent) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       backAction();
@@ -745,7 +824,7 @@ function showAccountSelectorWithCreate(institution, callback, allInstitutions, a
   divider.textContent = 'Or select existing:';
   modal.appendChild(divider);
 
-  const accountItems = [];
+  const accountItems: HTMLElement[] = [];
 
   // Add accounts
   accountsWithScores.forEach((account, index) => {
@@ -753,7 +832,7 @@ function showAccountSelectorWithCreate(institution, callback, allInstitutions, a
     item.onclick = () => {
       cleanupKeyboard();
       overlay.remove();
-      callback(account.details);
+      callback(account.details!);
     };
     modal.appendChild(item);
     accountItems.push(item);
@@ -789,15 +868,15 @@ function showAccountSelectorWithCreate(institution, callback, allInstitutions, a
   // Keyboard handlers
   const cleanupModalHandlers = addModalKeyboardHandlers(overlay, closeModal);
 
-  let cleanupItemNavigation = () => {};
+  let cleanupItemNavigation = (): void => {};
   if (accountItems.length > 0) {
     cleanupItemNavigation = makeItemsKeyboardNavigable(
       accountItems,
-      (item, index) => {
+      (_item: HTMLElement, index: number) => {
         const account = accountsWithScores[index];
         cleanupKeyboard();
         overlay.remove();
-        callback(account.details);
+        callback(account.details!);
       },
       0,
     );
@@ -814,11 +893,12 @@ function showAccountSelectorWithCreate(institution, callback, allInstitutions, a
 
 /**
  * Fallback flat account selector with create option
- * @param {Array} accounts - List of accounts
- * @param {Function} callback - Callback for account selection
- * @param {Object} createDefaults - Default values for account creation
  */
-function showFlatAccountSelectorWithCreate(accounts, callback, createDefaults) {
+function showFlatAccountSelectorWithCreate(
+  accounts: AccountEntry[],
+  callback: AccountCallback,
+  createDefaults: CreateDefaults,
+): void {
   const overlay = createModalOverlay(() => {
     overlay.remove();
     callback(null);
@@ -964,13 +1044,13 @@ function showFlatAccountSelectorWithCreate(accounts, callback, createDefaults) {
 
     const nameDiv = document.createElement('div');
     nameDiv.style.cssText = 'font-weight: bold;';
-    nameDiv.textContent = acc.displayName;
+    nameDiv.textContent = acc.displayName || '';
     infoDiv.appendChild(nameDiv);
 
-    if (acc.currentBalance !== undefined) {
+    if (acc.displayBalance !== undefined) {
       const balanceDiv = document.createElement('div');
       balanceDiv.style.cssText = 'font-size: 0.9em; color: var(--mu-text-secondary, #555);';
-      balanceDiv.textContent = `Balance: ${new Intl.NumberFormat().format(acc.currentBalance)}`;
+      balanceDiv.textContent = `Balance: ${new Intl.NumberFormat().format(acc.displayBalance)}`;
       infoDiv.appendChild(balanceDiv);
     }
 
@@ -987,7 +1067,7 @@ function showFlatAccountSelectorWithCreate(accounts, callback, createDefaults) {
 
     item.onclick = () => {
       overlay.remove();
-      callback(acc);
+      callback(acc as Record<string, unknown>);
     };
 
     modal.appendChild(item);
@@ -1017,10 +1097,8 @@ function showFlatAccountSelectorWithCreate(accounts, callback, createDefaults) {
 
 /**
  * Add a letter-based logo fallback
- * @param {HTMLElement} container - Container to add logo to
- * @param {string} name - Name to extract letter from
  */
-function addLogoFallback(container, name) {
+function addLogoFallback(container: HTMLElement, name: string | undefined): void {
   const fallback = document.createElement('div');
   fallback.style.cssText = `
     width: 40px;
@@ -1040,12 +1118,12 @@ function addLogoFallback(container, name) {
 
 /**
  * Add institution logo to container with proper handling of URLs vs base64
- * @param {HTMLElement} container - Container to add logo to
- * @param {Object} cred - Credential object with institution info
- * @param {Array} accounts - Optional accounts array for fallback logoUrl
- * @returns {boolean} Whether logo was successfully added
  */
-function addInstitutionLogo(container, cred, accounts = null) {
+function addInstitutionLogo(
+  container: HTMLElement,
+  cred: CredentialInfo,
+  accounts: AccountEntry[] | null = null,
+): boolean {
   let logoHandled = false;
 
   // Priority 1: Institution logo (base64 or URL)
@@ -1078,10 +1156,10 @@ function addInstitutionLogo(container, cred, accounts = null) {
   // Priority 2: Account logoUrl (fallback)
   if (!logoHandled && accounts) {
     const accountWithLogo = accounts.find((acc) => acc.details?.logoUrl);
-    if (accountWithLogo && accountWithLogo.details.logoUrl) {
+    if (accountWithLogo && accountWithLogo.details!.logoUrl) {
       try {
         GM_addElement(container, 'img', {
-          src: accountWithLogo.details.logoUrl,
+          src: accountWithLogo.details!.logoUrl,
           style: 'width: 40px; height: 40px; border-radius: 5px; object-fit: contain;',
         });
         logoHandled = true;
@@ -1102,12 +1180,12 @@ function addInstitutionLogo(container, cred, accounts = null) {
 
 /**
  * Add account logo to container with fallback chain: account.logoUrl → institution logo → letter
- * @param {HTMLElement} container - Container to add logo to
- * @param {Object} account - Account object with details
- * @param {Object} cred - Credential object with institution info (for fallback)
- * @returns {boolean} Whether logo was successfully added
  */
-function addAccountLogo(container, account, cred) {
+function addAccountLogo(
+  container: HTMLElement,
+  account: AccountEntry,
+  cred: CredentialInfo,
+): boolean {
   let logoHandled = false;
   const accountLogoUrl = account.details?.logoUrl || account.logoUrl;
 
@@ -1162,10 +1240,8 @@ function addAccountLogo(container, account, cred) {
 
 /**
  * Create institution item element
- * @param {Object} inst - Institution object
- * @returns {HTMLElement} Institution item element
  */
-function createInstitutionItem(inst) {
+function createInstitutionItem(inst: InstitutionEntry): HTMLDivElement {
   const cred = inst.credential;
   const item = document.createElement('div');
   item.style.cssText = `
@@ -1246,12 +1322,12 @@ function createInstitutionItem(inst) {
 
 /**
  * Create account item element
- * @param {Object} account - Account object
- * @param {Object} cred - Credential object
- * @param {number} index - Account index
- * @returns {HTMLElement} Account item element
  */
-function createAccountItem(account, cred, index) {
+function createAccountItem(
+  account: AccountEntry,
+  cred: CredentialInfo,
+  index: number,
+): HTMLDivElement {
   const item = document.createElement('div');
   item.style.cssText = `
     display: flex;
@@ -1340,10 +1416,8 @@ function createAccountItem(account, cred, index) {
 
 /**
  * Create a modal overlay
- * @param {Function} onClose - Function to call when clicking outside
- * @returns {HTMLElement} Overlay element
  */
-function createModalOverlay(onClose) {
+function createModalOverlay(onClose: () => void): HTMLDivElement {
   const overlay = document.createElement('div');
   overlay.style.cssText = `
     position: fixed;
@@ -1358,7 +1432,7 @@ function createModalOverlay(onClose) {
     z-index: 10000;
   `;
 
-  overlay.onclick = (e) => {
+  overlay.onclick = (e: MouseEvent) => {
     if (e.target === overlay) {
       onClose();
     }

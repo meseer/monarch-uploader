@@ -8,12 +8,36 @@ import { debugLog } from '../../core/utils';
 import monarchApi from '../../api/monarch';
 import { addModalKeyboardHandlers, makeItemsKeyboardNavigable } from '../keyboardNavigation';
 
+interface PositionSecurity {
+  symbol?: string;
+  listingMarket?: string;
+  listingExchange?: string;
+  description?: string;
+}
+
+interface Position {
+  security?: PositionSecurity;
+  symbol?: string;
+  listingExchange?: string;
+  description?: string;
+}
+
+interface MonarchSecurity {
+  id: string;
+  name?: string;
+  ticker?: string;
+  typeDisplay?: string;
+  logo?: string;
+  currentPrice?: number | string | null;
+  oneDayChangePercent?: number | string | null;
+}
+
+type SecurityCallback = (security: MonarchSecurity | null) => void;
+
 /**
  * Convert string to Camel Case
- * @param {string} str - String to convert
- * @returns {string} Camel cased string
  */
-function toCamelCase(str) {
+function toCamelCase(str: string): string {
   if (!str) return '';
   return str
     .toLowerCase()
@@ -24,11 +48,11 @@ function toCamelCase(str) {
 
 /**
  * Show sophisticated Monarch security selector with search
- * @param {Object} position - Questrade position object with security details
- * @param {Function} callback - Callback function to receive selected security
- * @returns {Promise} Promise that resolves when selection is complete
  */
-export async function showMonarchSecuritySelector(position, callback) {
+export async function showMonarchSecuritySelector(
+  position: Position,
+  callback: SecurityCallback,
+): Promise<void> {
   debugLog('Starting security selector for position:', position);
 
   // Extract security details from nested security object
@@ -40,13 +64,13 @@ export async function showMonarchSecuritySelector(position, callback) {
   const searchTerm = symbol.includes('.') ? symbol.split('.')[0] : symbol;
 
   // Set up keyboard navigation cleanup function
-  let cleanupKeyboard = () => {};
+  let cleanupKeyboard = (): void => {};
 
   // Create overlay first
-  let overlay;
+  let overlay: HTMLDivElement;
 
   // Helper to close modal with cleanup
-  const closeModal = () => {
+  const closeModal = (): void => {
     cleanupKeyboard();
     overlay.remove();
     callback(null);
@@ -116,7 +140,7 @@ export async function showMonarchSecuritySelector(position, callback) {
 
   // Search state
   let currentSearchTerm = searchTerm;
-  let searchDebounceTimer = null;
+  let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Create search input
   const searchContainer = document.createElement('div');
@@ -160,7 +184,7 @@ export async function showMonarchSecuritySelector(position, callback) {
   modal.appendChild(resultsContainer);
 
   // Function to perform search and display results
-  const performSearch = async (term) => {
+  const performSearch = async (term: string): Promise<void> => {
     if (!term || term.trim() === '') {
       resultsContainer.innerHTML = '<div style="color: #666; padding: 20px; text-align: center;">Enter a search term to find securities</div>';
       return;
@@ -171,7 +195,7 @@ export async function showMonarchSecuritySelector(position, callback) {
       resultsContainer.innerHTML = '';
 
       debugLog(`Searching for securities with term: ${term}`);
-      const securities = await monarchApi.searchSecurities(term, { limit: 5 });
+      const securities = await monarchApi.searchSecurities(term, { limit: 5 }) as MonarchSecurity[];
 
       loadingIndicator.style.display = 'none';
 
@@ -186,7 +210,7 @@ export async function showMonarchSecuritySelector(position, callback) {
       }
 
       // Display securities
-      const securityItems = [];
+      const securityItems: HTMLElement[] = [];
       securities.forEach((security) => {
         const item = createSecurityItem(security, () => {
           debugLog('Selected security:', security);
@@ -203,7 +227,7 @@ export async function showMonarchSecuritySelector(position, callback) {
       if (securityItems.length > 0) {
         const originalCleanup = makeItemsKeyboardNavigable(
           securityItems,
-          (item) => {
+          (item: HTMLElement) => {
             item.click();
           },
           null, // Don't auto-focus items - let user keep typing in search
@@ -228,15 +252,15 @@ export async function showMonarchSecuritySelector(position, callback) {
       debugLog('Error searching securities:', error);
       resultsContainer.innerHTML = `
         <div style="color: #d32f2f; padding: 20px; text-align: center;">
-          Error searching securities: ${error.message}
+          Error searching securities: ${(error as Error).message}
         </div>
       `;
     }
   };
 
   // Set up search input handler with debouncing
-  searchInput.addEventListener('input', (e) => {
-    const term = e.target.value.trim();
+  searchInput.addEventListener('input', (e: Event) => {
+    const term = (e.target as HTMLInputElement).value.trim();
 
     // Clear previous timer
     if (searchDebounceTimer) {
@@ -297,11 +321,8 @@ export async function showMonarchSecuritySelector(position, callback) {
 
 /**
  * Create a security item element
- * @param {Object} security - Security object from Monarch API
- * @param {Function} onClick - Click handler
- * @returns {HTMLElement} Security item element
  */
-function createSecurityItem(security, onClick) {
+function createSecurityItem(security: MonarchSecurity, onClick: () => void): HTMLDivElement {
   const item = document.createElement('div');
   item.id = `security-item-${security.id}`;
   item.style.cssText = `
@@ -371,14 +392,14 @@ function createSecurityItem(security, onClick) {
     const priceDiv = document.createElement('div');
     priceDiv.id = `security-price-${security.id}`;
     priceDiv.style.cssText = 'font-weight: 600; color: var(--mu-text-primary, #333);';
-    priceDiv.textContent = `$${parseFloat(security.currentPrice).toFixed(2)}`;
+    priceDiv.textContent = `$${parseFloat(String(security.currentPrice)).toFixed(2)}`;
     priceContainer.appendChild(priceDiv);
 
     // Show price change if available
     if (security.oneDayChangePercent !== undefined && security.oneDayChangePercent !== null) {
       const changeDiv = document.createElement('div');
       changeDiv.id = `security-price-change-${security.id}`;
-      const changePercent = parseFloat(security.oneDayChangePercent);
+      const changePercent = parseFloat(String(security.oneDayChangePercent));
       const changeColor = changePercent >= 0 ? '#27ae60' : '#e74c3c';
       const changeSymbol = changePercent >= 0 ? '+' : '';
       changeDiv.style.cssText = `font-size: 0.85em; color: ${changeColor};`;
@@ -406,11 +427,8 @@ function createSecurityItem(security, onClick) {
 
 /**
  * Add a ticker-based logo fallback
- * @param {HTMLElement} container - Container to add logo to
- * @param {string} text - Ticker text to display
- * @param {string} securityId - Security ID for unique element ID
  */
-function addLogoFallback(container, text, securityId) {
+function addLogoFallback(container: HTMLElement, text: string | undefined, securityId: string): void {
   const fullTicker = (text || '?').toUpperCase();
 
   // Use full ticker if < 4 chars, otherwise use first 4 chars
@@ -449,10 +467,8 @@ function addLogoFallback(container, text, securityId) {
 
 /**
  * Create a modal overlay with standard styling
- * @param {Function} onClickOutside - Handler for clicking outside modal
- * @returns {HTMLElement} Overlay element
  */
-function createModalOverlay(onClickOutside) {
+function createModalOverlay(onClickOutside: (() => void) | null): HTMLDivElement {
   const overlay = document.createElement('div');
   overlay.style.cssText = `
     position: fixed;
@@ -469,7 +485,7 @@ function createModalOverlay(onClickOutside) {
 
   // Add click outside handler if provided
   if (onClickOutside) {
-    overlay.onclick = (e) => {
+    overlay.onclick = (e: MouseEvent) => {
       if (e.target === overlay) {
         onClickOutside();
       }

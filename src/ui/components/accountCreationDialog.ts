@@ -8,18 +8,64 @@ import monarchApi from '../../api/monarch';
 import toast from '../toast';
 import { addModalKeyboardHandlers } from '../keyboardNavigation';
 
+interface AccountCreationOptions {
+  defaultName?: string;
+  defaultType?: string | null;
+  defaultSubtype?: string | null;
+  defaultBalance?: number;
+  defaultIncludeInNetWorth?: boolean;
+  trackingMethod?: 'balance' | 'holdings';
+}
+
+interface AccountSubtype {
+  name: string;
+  display: string;
+}
+
+interface AccountType {
+  name: string;
+  display: string;
+  possibleSubtypes?: AccountSubtype[];
+}
+
+interface AccountTypeOption {
+  type: AccountType;
+}
+
+interface CreatedAccount {
+  id: string;
+  displayName?: string;
+  type?: { name: string };
+  subtype?: { name: string };
+  newlyCreated: boolean;
+  manualInvestmentsTrackingMethod?: string;
+  [key: string]: unknown;
+}
+
+interface FormGroupResult {
+  container: HTMLDivElement;
+  label: HTMLLabelElement;
+  input: HTMLInputElement;
+}
+
+interface CheckboxGroupResult {
+  container: HTMLDivElement;
+  checkbox: HTMLInputElement;
+  label: HTMLLabelElement;
+}
+
+interface DropdownGroupResult {
+  container: HTMLDivElement;
+  label: HTMLLabelElement;
+  select: HTMLSelectElement;
+}
+
 /**
  * Show account creation dialog
- * @param {Object} options - Configuration options
- * @param {string} options.defaultName - Default account name
- * @param {string} options.defaultType - Default account type (e.g., 'brokerage')
- * @param {string} options.defaultSubtype - Default account subtype (e.g., 'tfsa')
- * @param {number} options.defaultBalance - Default initial balance
- * @param {boolean} options.defaultIncludeInNetWorth - Default net worth inclusion
- * @param {string} options.trackingMethod - Tracking method: 'balance' or 'holdings' (default: 'balance')
- * @returns {Promise<Object|null>} Created account or null if cancelled
  */
-export async function showAccountCreationDialog(options = {}) {
+export async function showAccountCreationDialog(
+  options: AccountCreationOptions = {},
+): Promise<CreatedAccount | null> {
   const {
     defaultName = '',
     defaultType = null,
@@ -40,9 +86,9 @@ export async function showAccountCreationDialog(options = {}) {
   });
 
   // Fetch account type options from Monarch
-  let accountTypeOptions;
+  let accountTypeOptions: AccountTypeOption[];
   try {
-    accountTypeOptions = await monarchApi.getAccountTypeOptions();
+    accountTypeOptions = await monarchApi.getAccountTypeOptions() as AccountTypeOption[];
     debugLog(`Fetched ${accountTypeOptions.length} account type options from Monarch`);
   } catch (error) {
     debugLog('Failed to fetch account type options:', error);
@@ -52,7 +98,7 @@ export async function showAccountCreationDialog(options = {}) {
 
   return new Promise((resolve) => {
     // Set up keyboard navigation cleanup function
-    let cleanupKeyboard = () => {};
+    let cleanupKeyboard = (): void => {};
 
     // Create overlay
     const overlay = createModalOverlay(() => {
@@ -120,7 +166,7 @@ export async function showAccountCreationDialog(options = {}) {
     form.appendChild(subtypeGroup.container);
 
     // Initial Balance field (round to 2 decimal places) - hidden in holdings mode
-    let balanceGroup = null;
+    let balanceGroup: FormGroupResult | null = null;
     if (!isHoldingsMode) {
       const roundedBalance = typeof defaultBalance === 'number'
         ? Math.round(defaultBalance * 100) / 100
@@ -138,8 +184,7 @@ export async function showAccountCreationDialog(options = {}) {
     }
 
     // Include in Net Worth checkbox - hidden in holdings mode (always true for holdings accounts)
-    // Include in Net Worth checkbox - hidden in holdings mode (always true for holdings accounts)
-    let netWorthGroup = null;
+    let netWorthGroup: CheckboxGroupResult | null = null;
     if (!isHoldingsMode) {
       netWorthGroup = createCheckboxGroup(
         'account-net-worth',
@@ -214,7 +259,7 @@ export async function showAccountCreationDialog(options = {}) {
     modal.appendChild(form);
 
     // Set up type/subtype relationship
-    const updateSubtypeOptions = (typeName) => {
+    const updateSubtypeOptions = (typeName: string): void => {
       const selectedTypeOption = accountTypeOptions.find((opt) => opt.type.name === typeName);
       if (selectedTypeOption && selectedTypeOption.type.possibleSubtypes) {
         const subtypes = selectedTypeOption.type.possibleSubtypes;
@@ -230,12 +275,12 @@ export async function showAccountCreationDialog(options = {}) {
     }
 
     // Update subtypes when type changes
-    typeGroup.select.addEventListener('change', (e) => {
-      updateSubtypeOptions(e.target.value);
+    typeGroup.select.addEventListener('change', (e: Event) => {
+      updateSubtypeOptions((e.target as HTMLSelectElement).value);
     });
 
     // Form validation and submission
-    form.addEventListener('submit', async (e) => {
+    form.addEventListener('submit', async (e: Event) => {
       e.preventDefault();
 
       // Clear previous errors
@@ -271,7 +316,7 @@ export async function showAccountCreationDialog(options = {}) {
       createButton.textContent = 'Creating...';
 
       try {
-        let accountId;
+        let accountId: string;
 
         if (isHoldingsMode) {
           debugLog('Creating manual investments account with:', {
@@ -283,7 +328,7 @@ export async function showAccountCreationDialog(options = {}) {
           accountId = await monarchApi.createManualInvestmentsAccount({
             name: accountName,
             subtype: accountSubtype,
-          });
+          }) as string;
 
           debugLog(`Successfully created investments account with ID: ${accountId}`);
           toast.show(`Created investment account "${accountName}" (Track Holdings)`, 'info');
@@ -303,14 +348,14 @@ export async function showAccountCreationDialog(options = {}) {
             name: accountName,
             displayBalance: initialBalance,
             includeInNetWorth,
-          });
+          }) as string;
 
           debugLog(`Successfully created account with ID: ${accountId}`);
           toast.show(`Created account "${accountName}"`, 'info');
         }
 
         // Fetch the full account details to return
-        const accounts = await monarchApi.listAccounts(accountType);
+        const accounts = await monarchApi.listAccounts(accountType) as Array<Record<string, unknown>>;
         const createdAccount = accounts.find((acc) => acc.id === accountId);
 
         if (createdAccount) {
@@ -322,7 +367,7 @@ export async function showAccountCreationDialog(options = {}) {
             ...createdAccount,
             newlyCreated: true,
             ...(isHoldingsMode && { manualInvestmentsTrackingMethod: 'holdings' }),
-          });
+          } as CreatedAccount);
         } else {
           // Fallback: return minimal account object
           cleanupKeyboard();
@@ -339,7 +384,7 @@ export async function showAccountCreationDialog(options = {}) {
         }
       } catch (error) {
         debugLog('Failed to create account:', error);
-        showError(errorContainer, `Failed to create account: ${error.message}`);
+        showError(errorContainer, `Failed to create account: ${(error as Error).message}`);
 
         // Re-enable button
         createButton.disabled = false;
@@ -369,15 +414,15 @@ export async function showAccountCreationDialog(options = {}) {
 
 /**
  * Create a form group with label, input, and error container
- * @param {string} id - Input ID
- * @param {string} label - Label text
- * @param {string} type - Input type
- * @param {*} defaultValue - Default value
- * @param {string} placeholder - Placeholder text
- * @param {boolean} required - Whether field is required
- * @returns {Object} Object with container, label, input, and error elements
  */
-function createFormGroup(id, label, type, defaultValue, placeholder, required = false) {
+function createFormGroup(
+  id: string,
+  label: string,
+  type: string,
+  defaultValue: string | number,
+  placeholder: string,
+  required = false,
+): FormGroupResult {
   const container = document.createElement('div');
   container.id = `${id}-group`;
   container.style.cssText = 'display: flex; flex-direction: column; gap: 5px;';
@@ -391,7 +436,7 @@ function createFormGroup(id, label, type, defaultValue, placeholder, required = 
   const input = document.createElement('input');
   input.id = id;
   input.type = type;
-  input.value = defaultValue;
+  input.value = String(defaultValue);
   input.placeholder = placeholder;
   input.required = required;
   input.style.cssText = `
@@ -411,12 +456,12 @@ function createFormGroup(id, label, type, defaultValue, placeholder, required = 
 
 /**
  * Create a checkbox form group
- * @param {string} id - Checkbox ID
- * @param {string} label - Label text
- * @param {boolean} defaultChecked - Default checked state
- * @returns {Object} Object with container, checkbox, and label elements
  */
-function createCheckboxGroup(id, label, defaultChecked) {
+function createCheckboxGroup(
+  id: string,
+  label: string,
+  defaultChecked: boolean,
+): CheckboxGroupResult {
   const container = document.createElement('div');
   container.id = `${id}-group`;
   container.style.cssText = 'display: flex; align-items: center; gap: 8px;';
@@ -441,13 +486,13 @@ function createCheckboxGroup(id, label, defaultChecked) {
 
 /**
  * Create a type dropdown
- * @param {string} id - Select ID
- * @param {string} label - Label text
- * @param {Array} accountTypeOptions - Account type options from Monarch
- * @param {string} defaultValue - Default selected value
- * @returns {Object} Object with container, label, and select elements
  */
-function createTypeDropdown(id, label, accountTypeOptions, defaultValue) {
+function createTypeDropdown(
+  id: string,
+  label: string,
+  accountTypeOptions: AccountTypeOption[],
+  defaultValue: string | null,
+): DropdownGroupResult {
   const container = document.createElement('div');
   container.id = `${id}-group`;
   container.style.cssText = 'display: flex; flex-direction: column; gap: 5px;';
@@ -500,13 +545,13 @@ function createTypeDropdown(id, label, accountTypeOptions, defaultValue) {
 
 /**
  * Create a subtype dropdown
- * @param {string} id - Select ID
- * @param {string} label - Label text
- * @param {Array} _subtypes - Subtype options (unused in initial creation)
- * @param {string} _defaultValue - Default selected value (unused in initial creation)
- * @returns {Object} Object with container, label, and select elements
  */
-function createSubtypeDropdown(id, label, _subtypes, _defaultValue) {
+function createSubtypeDropdown(
+  id: string,
+  label: string,
+  _subtypes: AccountSubtype[],
+  _defaultValue: string | null,
+): DropdownGroupResult {
   const container = document.createElement('div');
   container.id = `${id}-group`;
   container.style.cssText = 'display: flex; flex-direction: column; gap: 5px;';
@@ -545,11 +590,12 @@ function createSubtypeDropdown(id, label, _subtypes, _defaultValue) {
 
 /**
  * Update subtype dropdown options
- * @param {HTMLSelectElement} select - Select element to update
- * @param {Array} subtypes - New subtype options
- * @param {string} defaultValue - Value to select by default
  */
-function updateSubtypeDropdown(select, subtypes, defaultValue) {
+function updateSubtypeDropdown(
+  select: HTMLSelectElement,
+  subtypes: AccountSubtype[],
+  defaultValue: string | null,
+): void {
   // Clear existing options
   select.innerHTML = '';
 
@@ -578,20 +624,16 @@ function updateSubtypeDropdown(select, subtypes, defaultValue) {
 
 /**
  * Show error message
- * @param {HTMLElement} errorContainer - Error container element
- * @param {string} message - Error message
  */
-function showError(errorContainer, message) {
+function showError(errorContainer: HTMLElement, message: string): void {
   errorContainer.textContent = message;
   errorContainer.style.display = 'block';
 }
 
 /**
  * Create a modal overlay
- * @param {Function} onClose - Function to call when clicking outside
- * @returns {HTMLElement} Overlay element
  */
-function createModalOverlay(onClose) {
+function createModalOverlay(onClose: () => void): HTMLDivElement {
   const overlay = document.createElement('div');
   overlay.style.cssText = `
     position: fixed;
@@ -606,7 +648,7 @@ function createModalOverlay(onClose) {
     z-index: 10000;
   `;
 
-  overlay.onclick = (e) => {
+  overlay.onclick = (e: MouseEvent) => {
     if (e.target === overlay) {
       onClose();
     }
