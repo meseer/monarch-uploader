@@ -167,7 +167,8 @@ export const UI = {
  */
 export const WEALTHSIMPLE_UI = {
   // XPath: //*[@id="main"]/div/div/div[2]/div[2]
-  INJECTION_POINTS: [{ selector: '.kOjAGq', insertMethod: 'prepend' },
+  INJECTION_POINTS: [
+    { selector: 'last:.kOjAGq', insertMethod: 'prepend' },
     { selector: '.bZQXKE', insertMethod: 'prepend' },
   ],
 } as const;
