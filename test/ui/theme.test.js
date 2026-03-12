@@ -159,10 +159,26 @@ describe('Theme Module', () => {
       expect(css).toContain('--mu-input-border');
       expect(css).toContain('--mu-input-text');
 
-      // Status variables
+      // Status background variables
       expect(css).toContain('--mu-status-processing-bg');
       expect(css).toContain('--mu-status-success-bg');
       expect(css).toContain('--mu-status-error-bg');
+      expect(css).toContain('--mu-status-skipped-bg');
+
+      // Status text variables
+      expect(css).toContain('--mu-status-processing-text');
+      expect(css).toContain('--mu-status-success-text');
+      expect(css).toContain('--mu-status-error-text');
+
+      // Status border variables
+      expect(css).toContain('--mu-status-success-border');
+      expect(css).toContain('--mu-status-error-border');
+
+      // Balance change variables
+      expect(css).toContain('--mu-balance-neutral-bg');
+      expect(css).toContain('--mu-balance-neutral-text');
+      expect(css).toContain('--mu-balance-info-bg');
+      expect(css).toContain('--mu-balance-info-text');
 
       // Warning variables
       expect(css).toContain('--mu-warning-bg');
@@ -170,6 +186,15 @@ describe('Theme Module', () => {
 
       // Overlay
       expect(css).toContain('--mu-overlay-bg');
+
+      // Interactive element variables
+      expect(css).toContain('--mu-hover-bg');
+      expect(css).toContain('--mu-danger-bg');
+      expect(css).toContain('--mu-danger-text');
+      expect(css).toContain('--mu-close-btn-bg');
+      expect(css).toContain('--mu-error-border');
+      expect(css).toContain('--mu-error-text');
+      expect(css).toContain('--mu-closed-badge-bg');
     });
 
     test('dark theme includes all required variable groups', () => {
@@ -187,6 +212,42 @@ describe('Theme Module', () => {
       expect(css).toContain('--mu-input-bg: #2d2d2d');
       expect(css).toContain('--mu-status-processing-bg: #1a3a5c');
       expect(css).toContain('--mu-warning-bg: #3d3520');
+
+      // Verify dark status text colors (lighter shades for dark backgrounds)
+      expect(css).toContain('--mu-status-processing-text: #64b5f6');
+      expect(css).toContain('--mu-status-success-text: #66bb6a');
+      expect(css).toContain('--mu-status-error-text: #ef5350');
+
+      // Verify dark balance change variables
+      expect(css).toContain('--mu-balance-neutral-bg: #2d2d2d');
+      expect(css).toContain('--mu-balance-neutral-text: #aaaaaa');
+      expect(css).toContain('--mu-balance-info-bg: #1a3a5c');
+      expect(css).toContain('--mu-balance-info-text: #64b5f6');
+
+      // Verify dark interactive elements
+      expect(css).toContain('--mu-hover-bg: #3a3a3a');
+      expect(css).toContain('--mu-error-border: #ef5350');
+      expect(css).toContain('--mu-close-btn-bg: #555555');
+    });
+
+    test('light and dark themes define the same set of variables', () => {
+      // Get light theme variables
+      initTheme();
+      const lightStyleEl = document.getElementById('monarch-uploader-theme');
+      const lightCss = lightStyleEl.textContent;
+      const lightVars = lightCss.match(/--mu-[\w-]+/g) || [];
+
+      // Switch to dark theme
+      jest.resetModules();
+      const darkTheme = require('../../src/ui/theme');
+      document.documentElement.setAttribute('data-appearance', 'dark');
+      darkTheme.initTheme();
+      const darkStyleEl = document.getElementById('monarch-uploader-theme');
+      const darkCss = darkStyleEl.textContent;
+      const darkVars = darkCss.match(/--mu-[\w-]+/g) || [];
+
+      // Both themes should define the same variables
+      expect(lightVars.sort()).toEqual(darkVars.sort());
     });
   });
 
