@@ -5,38 +5,32 @@
 
 import { debugLog, formatDate, parseLocalDate, getLookbackForInstitution } from '../../core/utils';
 import { WEALTHSIMPLE_BALANCE_RECONSTRUCTION_TYPES } from '../../core/config';
+import type { CurrentBalance, BalanceCheckpoint } from '../../types/monarch';
 import stateManager from '../../core/state';
 import wealthsimpleApi from '../../api/wealthsimple';
 import monarchApi from '../../api/monarch';
 import toast from '../../ui/toast';
 
+export type { CurrentBalance, BalanceCheckpoint };
+
+// Local interface to avoid circular dependency with account.ts
+// (account.ts imports from balance.ts; balance.ts cannot import from account.ts)
+// Tier 2 will extract ConsolidatedAccount to a shared location.
+interface ConsolidatedAccount {
+  wealthsimpleAccount: {
+    id: string;
+    nickname?: string;
+    type?: string;
+    currency?: string;
+    createdAt?: string;
+  };
+  monarchAccount?: { displayName?: string } | null;
+  lastSyncDate?: string;
+}
+
 export interface BalanceHistory {
   date: string;
   amount: number;
-}
-
-export interface BalanceCheckpoint {
-  date: string;
-  amount: number;
-}
-
-export interface CurrentBalance {
-  amount: number;
-  currency?: string;
-}
-
-interface WealthsimpleAccountData {
-  id: string;
-  nickname?: string;
-  type?: string;
-  currency?: string;
-  createdAt?: string;
-}
-
-interface ConsolidatedAccount {
-  wealthsimpleAccount: WealthsimpleAccountData;
-  monarchAccount?: { displayName?: string } | null;
-  lastSyncDate?: string;
 }
 
 interface ProcessedTransactionForBalance {

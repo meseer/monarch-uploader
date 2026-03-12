@@ -310,32 +310,71 @@ Converted the application entry point and integration barrel export. Updated web
 > **Status:** In progress  
 > **ADR:** [ADR-006](../decisions/006-shared-type-system.md)
 
-**Problem:** During the TS migration, three layers of independent type definitions emerged for Monarch domain concepts (accounts, categories, balances). This caused 11+ `as unknown as X` double casts and 1 `Promise<any>` workaround when data crossed layer boundaries.
+**Problem:** During the TS migration, independent type definitions proliferated across layers. A post-migration audit found:
 
-**Solution:** Create `src/types/monarch.ts` — a single canonical module for cross-boundary Monarch domain types.
+| Issue | Count | Risk |
+|-------|-------|------|
+| `as unknown as` double-casts | 46 | Type disagreements cause runtime bugs (e.g., the `[object Object]` balance bug in v6.6.10) |
+| Duplicate interface definitions | ~20 across 5 interface families | Definitions drift apart silently |
+| `any` usage | 8 (most with eslint-disable) | Low risk — mostly GraphQL response parsing |
+| Files importing from shared types | 4 of ~105 | Shared type module exists but adoption is minimal |
 
-#### Sub-task 1: Category pipeline types
-- Create `src/types/monarch.ts` with `MonarchCategory`, `CategoryGroup`, `SimilarityInfo`, `CategoryCallbackResult`
-- Update `src/mappers/category.ts` to return `SimilarityInfo`-compatible data
-- Update `src/ui/components/categorySelector.ts` to import shared types
-- **Eliminates:** 4× `as unknown as SimilarityInfo` in service files
+**Solution:** Create `src/types/monarch.ts` — a single canonical module for cross-boundary Monarch domain types. Consolidate duplicates in tiers by risk.
 
-#### Sub-task 2: Account pipeline types
-- Add `AccountDetails`, `BalanceInfo` to shared types
-- Update `src/ui/components/accountSelectorWithCreate.ts` to use shared types
-- Unify `BalanceInfo` in `src/core/utils.ts` with shared definition
-- Unify `CurrentBalance` in `src/services/wealthsimple/account.ts`
-- **Eliminates:** `Promise<any>` in accountMapping, `as unknown as Parameters<...>` casts
+#### Sub-task 1: Category pipeline types ✅ Complete
+- Created `src/types/monarch.ts` with `MonarchCategory`, `CategoryGroup`, `SimilarityInfo`, `CategoryCallbackResult`, `CategoryCallback`
+- Updated `src/mappers/category.ts` to return `SimilarityInfo`-compatible data
+- Updated `src/ui/components/categorySelector.ts` to import shared types
+- Added `AccountDetails`, `AccountCallback`, `BalanceInfo` to shared types
+- **Eliminated:** 4× `as unknown as SimilarityInfo` in service files
 
-#### Sub-task 3: Remaining cleanup
-- Clean up remaining `as unknown as` casts that were workarounds
-- Audit for any remaining `any` types introduced during migration
+#### Sub-task 2: Balance type unification (Tier 1)
+Consolidate `CurrentBalance` and `BalanceCheckpoint` — the exact pattern that caused the v6.6.10 `[object Object]` production bug.
+
+**Duplicates found:**
+| Interface | Locations |
+|-----------|-----------|
+| `CurrentBalance` | `balance.ts`, `account.ts`, `wealthsimple-upload.ts` (3 copies) |
+| `BalanceCheckpoint` | `balance.ts`, `account.ts` (2 copies) |
+| `BalanceInfo` | `types/monarch.ts`, `core/utils.ts` (2 copies) |
+
+**Changes:**
+- Add `CurrentBalance`, `BalanceCheckpoint` to `src/types/monarch.ts`
+- Remove local definitions from `balance.ts`, `account.ts`, `wealthsimple-upload.ts`
+- Replace `BalanceInfo` in `core/utils.ts` with re-export from shared types
+- Fix `uploadButton.ts` local `BalanceResult` to use shared `CurrentBalance`
+
+#### Sub-task 3: Wealthsimple domain type unification (Tier 2)
+Consolidate `ConsolidatedAccount`, `WealthsimpleAccount`, `ProgressDialog`, and `SyncResult`.
+
+**Duplicates found:**
+| Interface | Locations |
+|-----------|-----------|
+| `ConsolidatedAccount` | `account.ts` (exported), `balance.ts`, `transactions.ts`, `uploadButton.ts` (4 copies) |
+| `WealthsimpleAccount` | `account.ts`, `uploadButton.ts`, `balance.ts` as `WealthsimpleAccountData` (3 copies) |
+| `ProgressDialog` | `wealthsimple-upload.ts`, `positions.ts` (2 copies) |
+| `SyncResult` | `wealthsimple-upload.ts`, `uploadButton.ts` (2 copies) |
+
+**Changes:**
+- Export `WealthsimpleAccount` from `account.ts` (already exports `ConsolidatedAccount`)
+- Remove local copies from `balance.ts`, `transactions.ts`, `uploadButton.ts`
+- Export `ProgressDialog`, `SyncResult` from `wealthsimple-upload.ts`
+- Import in `positions.ts`, `uploadButton.ts`
+
+#### Tier 3: Deferred (acceptable as-is)
+These issues are low-risk and acceptable in their current form:
+
+- **`any` in GraphQL** (8 instances) — genuinely dynamic API response parsing, all have `eslint-disable` comments
+- **MBNA hook casts** (~6 instances) — part of the new integration architecture, will resolve as that system matures
+- **Config/capabilities casts** (~5 instances) — inherent to the dynamic capabilities system design
+- **API return type casts** (~15 instances) — API functions return loose types; fixing requires adding return types to all API functions (large scope, separate effort)
 
 | Metric | Count |
 |--------|-------|
-| Double casts eliminated | 11+ |
-| `Promise<any>` eliminated | 1 |
-| Files modified | ~18 |
+| Duplicate interfaces eliminated | ~20 |
+| Files modified | ~10 |
+| `as unknown as` eliminated (Tier 1+2) | ~8 |
+| Remaining `as unknown as` (Tier 3, deferred) | ~38 |
 
 ---
 

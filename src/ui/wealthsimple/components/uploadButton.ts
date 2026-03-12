@@ -5,15 +5,17 @@
 
 import { debugLog } from '../../../core/utils';
 import { COLORS } from '../../../core/config';
+import type { CurrentBalance } from '../../../types/monarch';
 import wealthsimpleApi from '../../../api/wealthsimple';
 import toast from '../../toast';
 import {
   uploadAllWealthsimpleAccountsToMonarch,
   uploadWealthsimpleAccountToMonarchWithSteps,
   buildSyncStepsForAccount,
+  type SyncResult,
 } from '../../../services/wealthsimple-upload';
 import { ensureMonarchAuthentication } from '../../components/monarchLoginLink';
-import { syncAccountListWithAPI } from '../../../services/wealthsimple/account';
+import { syncAccountListWithAPI, type ConsolidatedAccount } from '../../../services/wealthsimple/account';
 import { getDefaultDateRange } from '../../../services/wealthsimple/balance';
 import { showProgressDialog } from '../../components/progressDialog';
 
@@ -24,27 +26,9 @@ interface ButtonOptions {
   className?: string;
 }
 
-interface ConsolidatedAccount {
-  wealthsimpleAccount: WealthsimpleAccount;
-  [key: string]: unknown;
-}
-
-interface WealthsimpleAccount {
-  id: string;
-  nickname?: string;
-  [key: string]: unknown;
-}
-
 interface BalanceResult {
   success: boolean;
-  balances: Map<string, { amount: number; currency?: string } | null>;
-  [key: string]: unknown;
-}
-
-interface SyncResult {
-  success?: boolean;
-  cancelled?: boolean;
-  skipped?: boolean;
+  balances: Map<string, CurrentBalance | null>;
   [key: string]: unknown;
 }
 

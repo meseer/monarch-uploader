@@ -4,6 +4,7 @@
  */
 
 import { debugLog, getLookbackForInstitution, getTodayLocal } from '../core/utils';
+import type { CurrentBalance } from '../types/monarch';
 import { WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES, WEALTHSIMPLE_PENDING_RECONCILIATION_TYPES } from '../core/config';
 import toast from '../ui/toast';
 import wealthsimpleApi from '../api/wealthsimple';
@@ -35,18 +36,13 @@ import { showProgressDialog } from '../ui/components/progressDialog';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface CurrentBalance {
-  amount: number;
-  currency?: string;
-}
-
-interface SyncResult {
+export interface SyncResult {
   success: boolean;
   skipped?: boolean;
   cancelled?: boolean;
 }
 
-interface ProgressDialog {
+export interface ProgressDialog {
   updateStepStatus: (accountId: string, step: string, status: string, message: string) => void;
   updateBalanceChange: (accountId: string, data: Record<string, unknown>) => void;
   initSteps: (accountId: string, steps: Array<{ key: string; name: string }>) => void;

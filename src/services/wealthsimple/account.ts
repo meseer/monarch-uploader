@@ -4,6 +4,7 @@
  */
 
 import { debugLog, formatDate } from '../../core/utils';
+import type { CurrentBalance, BalanceCheckpoint } from '../../types/monarch';
 import { STORAGE, TRANSACTION_RETENTION_DEFAULTS, LOGO_CLOUDINARY_IDS, WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES } from '../../core/config';
 import stateManager from '../../core/state';
 import monarchApi from '../../api/monarch';
@@ -49,11 +50,6 @@ interface MonarchAccount {
   [key: string]: unknown;
 }
 
-interface BalanceCheckpoint {
-  date: string;
-  amount: number;
-}
-
 interface StoredTransaction {
   id: string;
   date?: string;
@@ -72,11 +68,6 @@ export interface ConsolidatedAccount {
   balanceCheckpoint?: BalanceCheckpoint;
   lastSyncedCreditLimit?: number | null;
   [key: string]: unknown;
-}
-
-interface CurrentBalance {
-  amount: number;
-  currency?: string;
 }
 
 interface UploadTransactionOptions {

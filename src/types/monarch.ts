@@ -120,9 +120,37 @@ export type AccountCallback = (account: AccountDetails | null) => void;
 
 /**
  * Balance information used across balance upload, account display, and account creation.
- * The canonical definition — replaces BalanceInfo in core/utils and CurrentBalance in services.
+ * Nullable amount variant — used in account creation dialogs and display contexts
+ * where balance may not yet be known.
  */
 export interface BalanceInfo {
   amount: number | null | undefined;
   currency?: string;
+}
+
+/**
+ * Current balance as returned by fetchAccountBalances API calls.
+ * Non-nullable amount — the balance is always known when fetched from the API.
+ *
+ * Canonical definition — replaces local CurrentBalance interfaces in:
+ * - src/services/wealthsimple/balance.ts
+ * - src/services/wealthsimple/account.ts
+ * - src/services/wealthsimple-upload.ts
+ */
+export interface CurrentBalance {
+  amount: number;
+  currency?: string;
+}
+
+/**
+ * A stored balance checkpoint used for incremental balance reconstruction.
+ * Saved per-account after each successful sync to avoid full history rebuilds.
+ *
+ * Canonical definition — replaces local BalanceCheckpoint interfaces in:
+ * - src/services/wealthsimple/balance.ts
+ * - src/services/wealthsimple/account.ts
+ */
+export interface BalanceCheckpoint {
+  date: string;
+  amount: number;
 }
