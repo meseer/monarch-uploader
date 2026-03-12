@@ -35,7 +35,19 @@ import {
   createGenericAccountCards,
 } from './settingsModalAccountCards';
 
-export function createSettingsModal() {
+declare function GM_addElement(parent: HTMLElement, tagName: string, attributes: Record<string, string>): HTMLElement;
+declare function GM_getValue(key: string, defaultValue?: unknown): unknown;
+declare function GM_setValue(key: string, value: unknown): void;
+declare function GM_deleteValue(key: string): void;
+
+interface TabDefinition {
+  id: string;
+  label: string;
+  faviconDomain?: string;
+  fallbackIcon?: string;
+}
+
+export function createSettingsModal(): HTMLElement {
   // Create modal backdrop
   const modal = document.createElement('div');
   modal.className = 'settings-modal-backdrop';
@@ -142,7 +154,7 @@ export function createSettingsModal() {
   const legacyIntegrationIds = new Set(['questrade', 'canadalife', 'rogersbank', 'wealthsimple']);
 
   // Hardcoded legacy tabs (kept until each integration is migrated to module architecture)
-  const legacyTabs = [
+  const legacyTabs: TabDefinition[] = [
     {
       id: 'questrade',
       label: 'Questrade',
@@ -168,7 +180,7 @@ export function createSettingsModal() {
   // Dynamic tabs — auto-generated from modular integrations registered in the registry.
   // When a legacy integration is migrated to a module, remove it from legacyTabs above
   // and it will automatically appear here via its manifest.
-  const modularTabs = getAllManifests()
+  const modularTabs: TabDefinition[] = getAllManifests()
     .filter((manifest) => !legacyIntegrationIds.has(manifest.id))
     .map((manifest) => ({
       id: manifest.id,
@@ -177,7 +189,7 @@ export function createSettingsModal() {
     }));
 
   // Assemble full tab list: General → legacy integrations → modular integrations → Monarch
-  const tabs = [
+  const tabs: TabDefinition[] = [
     { id: 'general', label: 'General', fallbackIcon: '⚙️' },
     ...legacyTabs,
     ...modularTabs,
@@ -262,9 +274,9 @@ export function createSettingsModal() {
 
       // Update tab button styles
       tabNav.querySelectorAll('.settings-tab-button').forEach((btn) => {
-        btn.style.borderLeftColor = 'transparent';
-        btn.style.backgroundColor = 'transparent';
-        btn.style.fontWeight = 'normal';
+        (btn as HTMLElement).style.borderLeftColor = 'transparent';
+        (btn as HTMLElement).style.backgroundColor = 'transparent';
+        (btn as HTMLElement).style.fontWeight = 'normal';
       });
 
       tabButton.style.borderLeftColor = 'var(--mu-tab-active-border, #0073b1)';
@@ -334,14 +346,14 @@ export function createSettingsModal() {
   modal.appendChild(modalContent);
 
   // Close modal when clicking backdrop
-  modal.addEventListener('click', (e) => {
+  modal.addEventListener('click', (e: Event) => {
     if (e.target === modal) {
       modal.remove();
     }
   });
 
   // Close modal with Escape key
-  const handleKeyDown = (e) => {
+  const handleKeyDown = (e: KeyboardEvent): void => {
     if (e.key === 'Escape') {
       modal.remove();
       document.removeEventListener('keydown', handleKeyDown);
@@ -352,7 +364,7 @@ export function createSettingsModal() {
   return modal;
 }
 
-function renderTabContent(container, tabId) {
+function renderTabContent(container: HTMLElement, tabId: string): void {
   container.innerHTML = '';
 
   switch (tabId) {
@@ -381,7 +393,7 @@ function renderTabContent(container, tabId) {
   }
 }
 
-function renderGeneralTab(container) {
+function renderGeneralTab(container: HTMLElement): void {
   // Log Level Section
   const logLevelSection = createSection('Log Level', '🔍', 'Configure application logging level');
 
@@ -411,7 +423,7 @@ function renderGeneralTab(container) {
     { value: 'error', label: 'Error (Show only errors)' },
   ];
 
-  const currentLogLevel = GM_getValue('debug_log_level', 'info');
+  const currentLogLevel = GM_getValue('debug_log_level', 'info') as string;
 
   logLevels.forEach((level) => {
     const option = document.createElement('option');
@@ -446,10 +458,10 @@ function renderGeneralTab(container) {
     <div style="font-size: 12px; color: var(--mu-text-secondary, #666);">When enabled, shows development-only UI elements like testing sections in Canada Life</div>
   `;
 
-  const currentDevMode = GM_getValue(STORAGE.DEVELOPMENT_MODE, false);
+  const currentDevMode = GM_getValue(STORAGE.DEVELOPMENT_MODE, false) as boolean;
   const devModeToggle = createToggleSwitch(
     currentDevMode,
-    (isEnabled) => {
+    (isEnabled: boolean) => {
       GM_setValue(STORAGE.DEVELOPMENT_MODE, isEnabled);
 
       // If on Canada Life, refresh UI immediately
@@ -463,7 +475,7 @@ function renderGeneralTab(container) {
           } else {
             toast.show(`Development mode ${isEnabled ? 'enabled' : 'disabled'}. Refresh the page to see changes.`, 'info');
           }
-        }).catch((error) => {
+        }).catch((error: unknown) => {
           debugLog('Error refreshing Canada Life UI:', error);
           toast.show(`Development mode ${isEnabled ? 'enabled' : 'disabled'}. Refresh the page to see changes.`, 'info');
         });
@@ -483,7 +495,7 @@ function renderGeneralTab(container) {
   container.appendChild(devModeSection);
 }
 
-function renderQuestradeTab(container) {
+function renderQuestradeTab(container: HTMLElement): void {
   // Lookback Period Section
   const lookbackSection = createLookbackPeriodSection('questrade');
   container.appendChild(lookbackSection);
@@ -503,7 +515,7 @@ function renderQuestradeTab(container) {
   container.appendChild(mappingsSection);
 }
 
-function renderCanadaLifeTab(container) {
+function renderCanadaLifeTab(container: HTMLElement): void {
   // Lookback Period Section
   const lookbackSection = createLookbackPeriodSection('canadalife');
   container.appendChild(lookbackSection);
@@ -523,7 +535,7 @@ function renderCanadaLifeTab(container) {
   container.appendChild(mappingsSection);
 }
 
-function renderRogersBankTab(container) {
+function renderRogersBankTab(container: HTMLElement): void {
   // Lookback Period Section
   const lookbackSection = createLookbackPeriodSection('rogersbank');
   container.appendChild(lookbackSection);
@@ -549,7 +561,7 @@ function renderRogersBankTab(container) {
   container.appendChild(categorySection);
 }
 
-function renderWealthsimpleTab(container) {
+function renderWealthsimpleTab(container: HTMLElement): void {
   // Lookback Period Section
   const lookbackSection = createLookbackPeriodSection('wealthsimple');
   container.appendChild(lookbackSection);
@@ -561,7 +573,7 @@ function renderWealthsimpleTab(container) {
   const accounts = accountService.getAccounts(INTEGRATIONS.WEALTHSIMPLE);
 
   // Sort accounts before rendering (enabled first, then by type)
-  const sortedAccounts = sortWealthsimpleAccounts(accounts);
+  const sortedAccounts = sortWealthsimpleAccounts(accounts as unknown[]);
 
   const accountCards = createGenericAccountCards(INTEGRATIONS.WEALTHSIMPLE, sortedAccounts, () => {
     // Refresh callback
@@ -578,7 +590,7 @@ function renderWealthsimpleTab(container) {
   container.appendChild(categorySection);
 }
 
-function renderMonarchTab(container) {
+function renderMonarchTab(container: HTMLElement): void {
   // Connection Status Section
   const statusSection = createSection('Connection Status', '🔗', 'Current Monarch Money authentication status');
 
@@ -619,7 +631,7 @@ function renderMonarchTab(container) {
     // Create clickable login link for non-authenticated state
     const loginLink = createMonarchLoginLink('Connect to Monarch Money', () => {
       // Callback to refresh the tab after successful login using proper tab rendering
-      const tabContainer = document.querySelector('.settings-tab-content');
+      const tabContainer = document.querySelector('.settings-tab-content') as HTMLElement | null;
       if (tabContainer) {
         renderTabContent(tabContainer, 'monarch');
       }
@@ -693,7 +705,7 @@ function renderMonarchTab(container) {
         debugLog('Monarch token removed by user');
 
         // Refresh the tab to show updated status using proper tab rendering
-        const tabContainer = document.querySelector('.settings-tab-content');
+        const tabContainer = document.querySelector('.settings-tab-content') as HTMLElement | null;
         if (tabContainer) {
           renderTabContent(tabContainer, 'monarch');
         }
@@ -728,11 +740,8 @@ function renderMonarchTab(container) {
  * As legacy integrations are migrated to the modular architecture, their hardcoded
  * render functions (renderQuestradeTab, etc.) will be removed and they'll use
  * this generic function instead.
- *
- * @param {HTMLElement} container - Tab content container
- * @param {string} integrationId - Integration identifier (e.g., 'mbna')
  */
-function renderModularIntegrationTab(container, integrationId) {
+function renderModularIntegrationTab(container: HTMLElement, integrationId: string): void {
   const capabilities = getCapabilities(integrationId);
   if (!capabilities) {
     container.innerHTML = `<p>Unknown integration: ${integrationId}</p>`;
@@ -769,7 +778,7 @@ function renderModularIntegrationTab(container, integrationId) {
 /**
  * Shows the settings modal
  */
-export function showSettingsModal() {
+export function showSettingsModal(): void {
   // Remove any existing modal
   const existingModal = document.querySelector('.settings-modal-backdrop');
   if (existingModal) {

@@ -7,6 +7,7 @@ import { debugLog, formatDate } from '../../core/utils';
 import { applyMerchantMapping } from '../../mappers/merchant';
 import { applyWealthsimpleCategoryMapping, saveUserWealthsimpleCategorySelection, calculateAllCategorySimilarities, type MonarchCategory, type ManualSelectionResult } from '../../mappers/category';
 import { showMonarchCategorySelector } from '../../ui/components/categorySelector';
+import type { SimilarityInfo } from '../../types/monarch';
 import monarchApi from '../../api/monarch';
 import toast from '../../ui/toast';
 import {
@@ -288,7 +289,7 @@ export async function resolveCategoriesForTransactions(
       debugLog(`Showing category selector for: ${categoryToResolve.bankCategory} (${progressNum}/${totalCategories})`);
       toast.show(`Selecting category ${progressNum} of ${totalCategories}: "${categoryToResolve.bankCategory}"`, 'debug');
 
-      const similarityData = calculateAllCategorySimilarities(categoryToResolve.bankCategory, availableCategories as unknown as Parameters<typeof calculateAllCategorySimilarities>[1]);
+      const similarityData: SimilarityInfo = calculateAllCategorySimilarities(categoryToResolve.bankCategory, availableCategories as unknown as Parameters<typeof calculateAllCategorySimilarities>[1]);
 
       const transactionDetails: Record<string, unknown> = {};
       if (categoryToResolve.exampleTransaction) {

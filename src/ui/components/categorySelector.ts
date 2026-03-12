@@ -29,18 +29,61 @@ export {
 
 export { showManualCategorizationDialog } from './categorySelectorManual';
 
+import type {
+  MonarchCategory,
+  CategoryGroup,
+  SimilarityInfo,
+  CategoryCallbackResult,
+  CategoryCallback,
+} from '../../types/monarch';
+
+// Re-export shared types for consumers
+export type { MonarchCategory, CategoryGroup, SimilarityInfo, CategoryCallbackResult, CategoryCallback };
+
+interface TransactionAmount {
+  value?: number | string;
+  currency?: string;
+}
+
+interface TransactionDetails {
+  merchant?: string;
+  amount?: number | TransactionAmount;
+  date?: string;
+  institution?: string;
+  aftDetails?: {
+    aftOriginatorName?: string;
+    aftTransactionType?: string;
+    aftTransactionCategory?: string;
+  };
+  p2pDetails?: {
+    type?: string;
+    subType?: string;
+    p2pHandle?: string;
+  };
+  [key: string]: unknown;
+}
+
+interface CategorySelectorOptions {
+  bankCategory?: string;
+  categories?: MonarchCategory[];
+  onChange?: ((category: MonarchCategory | undefined) => void) | null;
+  selectedId?: string | null;
+  labelText?: string | null;
+  placeholderText?: string;
+  required?: boolean;
+}
+
+interface SearchCategoryItem extends MonarchCategory {
+  groupName: string;
+  groupColor: string;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Simple dropdown selector                                           */
+/* ------------------------------------------------------------------ */
+
 /**
  * Creates a simple category selector dropdown
- *
- * @param {Object} options - Configuration options
- * @param {string} options.bankCategory - Bank category name being mapped
- * @param {Array<Object>} options.categories - List of categories to select from
- * @param {Function} options.onChange - Callback when selection changes
- * @param {string} options.selectedId - Initially selected category ID
- * @param {string} options.labelText - Text to show as label
- * @param {string} options.placeholderText - Placeholder text when no selection
- * @param {boolean} options.required - Whether selection is required (default: true)
- * @returns {HTMLElement} The created selector element
  */
 export function createCategorySelector({
   bankCategory = '',
@@ -50,7 +93,7 @@ export function createCategorySelector({
   labelText = null,
   placeholderText = 'Choose a category...',
   required = true,
-}) {
+}: CategorySelectorOptions): HTMLElement {
   const container = document.createElement('div');
   container.className = 'category-selector-container';
   container.style.cssText = 'margin: 10px 0; display: flex; flex-direction: column; gap: 5px;';
@@ -93,7 +136,7 @@ export function createCategorySelector({
 
   if (onChange && typeof onChange === 'function') {
     select.addEventListener('change', (event) => {
-      const selectedCategory = categories.find((cat) => cat.id === event.target.value);
+      const selectedCategory = categories.find((cat) => cat.id === (event.target as HTMLSelectElement).value);
       onChange(selectedCategory);
     });
   }
@@ -102,20 +145,24 @@ export function createCategorySelector({
   return container;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Modal category selector                                            */
+/* ------------------------------------------------------------------ */
+
 /**
  * Show sophisticated Monarch category selector with group-based selection
- * @param {string} bankCategory - Bank category name being mapped
- * @param {Function} callback - Callback function to receive selected category
- * @param {Object} similarityInfo - Optional comprehensive similarity data
- * @param {Object} transactionDetails - Optional transaction details (merchant, amount, etc.)
- * @returns {Promise} Promise that resolves when selection is complete
  */
-export async function showMonarchCategorySelector(bankCategory, callback, similarityInfo = null, transactionDetails = null) {
+export async function showMonarchCategorySelector(
+  bankCategory: string,
+  callback: CategoryCallback,
+  similarityInfo: SimilarityInfo | null = null,
+  transactionDetails: TransactionDetails | null = null,
+): Promise<void> {
   debugLog('Starting category selector for bank category:', bankCategory);
   debugLog('Transaction details:', transactionDetails);
 
   try {
-    let groupsWithCategories = [];
+    let groupsWithCategories: CategoryGroup[] = [];
 
     if (similarityInfo && similarityInfo.categoryGroups && similarityInfo.categoryGroups.length > 0) {
       debugLog('Using pre-calculated similarity data for category selection');
@@ -126,7 +173,7 @@ export async function showMonarchCategorySelector(bankCategory, callback, simila
       const categoryData = await monarchApi.getCategoriesAndGroups();
 
       const categoryGroups = categoryData.categoryGroups || [];
-      const categories = categoryData.categories || [];
+      const categories: MonarchCategory[] = categoryData.categories || [];
 
       if (!categoryGroups.length && !categories.length) {
         toast.show('No categories found in Monarch', 'error');
@@ -134,7 +181,7 @@ export async function showMonarchCategorySelector(bankCategory, callback, simila
         return;
       }
 
-      const categoriesByGroup = {};
+      const categoriesByGroup: Record<string, MonarchCategory[]> = {};
       categories.forEach((category) => {
         if (!category.isDisabled && category.group) {
           const groupId = category.group.id;
@@ -145,14 +192,16 @@ export async function showMonarchCategorySelector(bankCategory, callback, simila
         }
       });
 
-      groupsWithCategories = categoryGroups
+      groupsWithCategories = (categoryGroups as unknown as Array<Record<string, unknown>>)
         .map((group) => ({
           ...group,
-          categories: categoriesByGroup[group.id] || [],
-          categoryCount: (categoriesByGroup[group.id] || []).length,
-        }))
+          categories: categoriesByGroup[group.id as string] || [],
+          categoryCount: (categoriesByGroup[group.id as string] || []).length,
+        })) as CategoryGroup[];
+
+      groupsWithCategories = groupsWithCategories
         .filter((group) => group.categoryCount > 0)
-        .sort((a, b) => a.order - b.order);
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
     }
 
     if (!groupsWithCategories.length) {
@@ -176,12 +225,14 @@ export async function showMonarchCategorySelector(bankCategory, callback, simila
   }
 }
 
+/* ------------------------------------------------------------------ */
+/*  Transaction details HTML builder                                   */
+/* ------------------------------------------------------------------ */
+
 /**
  * Build transaction details HTML for display in modals
- * @param {Object} transactionDetails - Transaction details object
- * @returns {string} HTML string
  */
-function buildTransactionDetailsHtml(transactionDetails) {
+function buildTransactionDetailsHtml(transactionDetails: TransactionDetails): string {
   let html = '<div style="font-weight: bold; margin-bottom: 8px; color: var(--mu-text-primary, #333);">Transaction Details:</div>';
 
   if (transactionDetails.merchant) {
@@ -195,9 +246,9 @@ function buildTransactionDetailsHtml(transactionDetails) {
     let formattedAmount = '';
     let amountValue = 0;
 
-    if (typeof transactionDetails.amount === 'object' && transactionDetails.amount.value !== undefined) {
-      amountValue = parseFloat(transactionDetails.amount.value) || 0;
-      const currency = transactionDetails.amount.currency || 'CAD';
+    if (typeof transactionDetails.amount === 'object' && (transactionDetails.amount as TransactionAmount).value !== undefined) {
+      amountValue = parseFloat(String((transactionDetails.amount as TransactionAmount).value)) || 0;
+      const currency = (transactionDetails.amount as TransactionAmount).currency || 'CAD';
       formattedAmount = `$${Math.abs(amountValue).toFixed(2)} ${currency}`;
     } else if (typeof transactionDetails.amount === 'number') {
       amountValue = transactionDetails.amount;
@@ -207,7 +258,7 @@ function buildTransactionDetailsHtml(transactionDetails) {
     }
 
     const isWealthsimple = transactionDetails.institution === 'wealthsimple';
-    let amountColor;
+    let amountColor: string;
     if (isWealthsimple) {
       amountColor = amountValue < 0 ? '#dc3545' : '#28a745';
     } else {
@@ -274,23 +325,28 @@ function buildTransactionDetailsHtml(transactionDetails) {
   return html;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Category group selector screen                                     */
+/* ------------------------------------------------------------------ */
+
 /**
  * Show the category group selection screen
- * @param {Array} categoryGroups - List of category groups with categories
- * @param {string} bankCategory - Bank category name being mapped
- * @param {Function} callback - Callback for final category selection
- * @param {Object} similarityInfo - Optional similarity information to display
- * @param {Object} transactionDetails - Optional transaction details (merchant, amount, etc.)
  */
-function showCategoryGroupSelector(categoryGroups, bankCategory, callback, similarityInfo = null, transactionDetails = null) {
+function showCategoryGroupSelector(
+  categoryGroups: CategoryGroup[],
+  bankCategory: string,
+  callback: CategoryCallback,
+  similarityInfo: SimilarityInfo | null = null,
+  transactionDetails: TransactionDetails | null = null,
+): void {
   debugLog('Showing category group selector with', {
     groupsCount: categoryGroups ? categoryGroups.length : 0,
     bankCategory,
     hasTransactionDetails: Boolean(transactionDetails),
   });
 
-  let cleanupKeyboard = () => {};
-  let actionBarCleanup = () => {};
+  let cleanupKeyboard = (): void => {};
+  let actionBarCleanup = (): void => {};
 
   const overlay = createModalOverlay(() => {
     cleanupKeyboard();
@@ -317,8 +373,8 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
   modal.appendChild(header);
 
   let searchQuery = '';
-  let selectedCategory = null;
-  let searchElements;
+  let selectedCategory: MonarchCategory | null = null;
+  let searchElements: { container: HTMLElement; input: HTMLInputElement };
 
   // Add transaction details section if available
   if (transactionDetails) {
@@ -362,7 +418,7 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
       actionBarCleanup();
       overlay.remove();
       toast.show('Skipped categorization for this transaction', 'info');
-      setTimeout(() => callback({ name: 'Uncategorized', assignmentType: 'once', skipped: true }), 0);
+      setTimeout(() => callback({ name: 'Uncategorized', assignmentType: 'once', skipped: true } as CategoryCallbackResult), 0);
     },
     () => {
       debugLog('Skip All clicked - skipping remaining category selections for this sync');
@@ -370,7 +426,7 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
       actionBarCleanup();
       overlay.remove();
       toast.show('Skipping categorization for remaining transactions', 'info');
-      setTimeout(() => callback({ skipAll: true }), 0);
+      setTimeout(() => callback({ skipAll: true } as CategoryCallbackResult), 0);
     },
     () => {
       cleanupKeyboard();
@@ -389,7 +445,7 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
   modal.appendChild(contentContainer);
 
   // Helper function to create a group item
-  const createGroupItem = (group, onClick) => {
+  const createGroupItem = (group: CategoryGroup, onClick: () => void): HTMLElement => {
     const item = document.createElement('div');
     item.style.cssText = `
       display: flex; align-items: center; padding: 15px; border-radius: 8px;
@@ -446,7 +502,7 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
   };
 
   // Helper function to create a category item (for search results)
-  const createCategoryItem = (category, onSelect, isSelected = false) => {
+  const createCategoryItem = (category: SearchCategoryItem, onSelect: () => void, isSelected = false): HTMLElement => {
     const item = document.createElement('div');
     item.style.cssText = `
       display: flex; align-items: center; padding: 15px; border-radius: 8px;
@@ -545,7 +601,7 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
       debugLog('Save as Rule clicked:', { name: selectedCategory.name, id: selectedCategory.id });
       cleanupKeyboard();
       overlay.remove();
-      callback({ ...selectedCategory, assignmentType: 'rule' });
+      callback({ ...selectedCategory, assignmentType: 'rule' } as CategoryCallbackResult);
     }
   };
 
@@ -559,7 +615,7 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
       debugLog('Assign Once clicked:', { name: selectedCategory.name, id: selectedCategory.id });
       cleanupKeyboard();
       overlay.remove();
-      callback({ ...selectedCategory, assignmentType: 'once' });
+      callback({ ...selectedCategory, assignmentType: 'once' } as CategoryCallbackResult);
     }
   };
 
@@ -567,7 +623,7 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
   buttonSection.appendChild(assignOnceBtn);
 
   // Helper function to update selection display and button states
-  const updateSelectionUI = () => {
+  const updateSelectionUI = (): void => {
     if (selectedCategory) {
       selectionText.textContent = selectedCategory.name;
       selectionText.style.color = '#333';
@@ -604,12 +660,12 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
   };
 
   // Define updateDisplay function
-  const updateDisplay = () => {
+  const updateDisplay = (): void => {
     contentContainer.innerHTML = '';
-    const items = [];
+    const items: HTMLElement[] = [];
 
     if (searchQuery) {
-      const filteredCategories = [];
+      const filteredCategories: SearchCategoryItem[] = [];
       categoryGroups.forEach((group) => {
         group.categories.forEach((category) => {
           if (category.name.toLowerCase().includes(searchQuery)) {
@@ -643,7 +699,7 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
         }
 
         filteredCategories.forEach((category) => {
-          const isSelected = selectedCategory && selectedCategory.id === category.id;
+          const isSelected = selectedCategory !== null && selectedCategory.id === category.id;
           const item = createCategoryItem(category, () => {
             debugLog('Selected category from search:', { name: category.name, id: category.id });
             selectedCategory = category;
@@ -683,7 +739,7 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
     }
   };
 
-  searchElements = createSearchInput('Search categories...', (query) => {
+  searchElements = createSearchInput('Search categories...', (query: string) => {
     searchQuery = query;
     updateDisplay();
     setTimeout(() => searchElements.input.focus(), 0);
@@ -711,15 +767,20 @@ function showCategoryGroupSelector(categoryGroups, bankCategory, callback, simil
   document.body.appendChild(overlay);
 }
 
+/* ------------------------------------------------------------------ */
+/*  Category selector for a specific group                             */
+/* ------------------------------------------------------------------ */
+
 /**
  * Show the category selection screen for a specific group
- * @param {Object} categoryGroup - Category group object with categories
- * @param {string} bankCategory - Bank category name being mapped
- * @param {Function} callback - Callback for category selection
- * @param {Array} allCategoryGroups - All category groups for navigation
- * @param {Object} transactionDetails - Optional transaction details
  */
-function showCategorySelector(categoryGroup, bankCategory, callback, allCategoryGroups, transactionDetails = null) {
+function showCategorySelector(
+  categoryGroup: CategoryGroup,
+  bankCategory: string,
+  callback: CategoryCallback,
+  allCategoryGroups: CategoryGroup[],
+  transactionDetails: TransactionDetails | null = null,
+): void {
   const categories = categoryGroup.categories || [];
 
   debugLog('Showing category selector for group:', {
@@ -734,18 +795,18 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
     return;
   }
 
-  let cleanupKeyboard = () => {};
-  let actionBarCleanup = () => {};
-  let overlay;
+  let cleanupKeyboard = (): void => {};
+  let actionBarCleanup = (): void => {};
+  let overlay: HTMLDivElement;
 
-  const closeModal = () => {
+  const closeModal = (): void => {
     cleanupKeyboard();
     actionBarCleanup();
     overlay.remove();
     callback(null);
   };
 
-  const backAction = () => {
+  const backAction = (): void => {
     debugLog('Navigating back to category group list');
     cleanupKeyboard();
     overlay.remove();
@@ -774,8 +835,8 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
   modal.appendChild(header);
 
   let searchQuery = '';
-  let cleanupItemNavigation = () => {};
-  let searchElements;
+  let cleanupItemNavigation = (): void => {};
+  let searchElements: { container: HTMLElement; input: HTMLInputElement };
 
   if (transactionDetails) {
     const transactionInfo = document.createElement('div');
@@ -796,7 +857,7 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
       actionBarCleanup();
       overlay.remove();
       toast.show('Skipped categorization for this transaction', 'info');
-      setTimeout(() => callback({ name: 'Uncategorized', assignmentType: 'once', skipped: true }), 0);
+      setTimeout(() => callback({ name: 'Uncategorized', assignmentType: 'once', skipped: true } as CategoryCallbackResult), 0);
     },
     () => {
       debugLog('Skip All clicked (detail view) - skipping remaining category selections for this sync');
@@ -804,7 +865,7 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
       actionBarCleanup();
       overlay.remove();
       toast.show('Skipping categorization for remaining transactions', 'info');
-      setTimeout(() => callback({ skipAll: true }), 0);
+      setTimeout(() => callback({ skipAll: true } as CategoryCallbackResult), 0);
     },
     closeModal,
   );
@@ -817,15 +878,15 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
   const contentContainer = document.createElement('div');
   modal.appendChild(contentContainer);
 
-  const updateDisplay = () => {
+  const updateDisplay = (): void => {
     contentContainer.innerHTML = '';
-    const categoryItems = [];
+    const categoryItems: HTMLElement[] = [];
 
     const sortedCategories = [...categories].sort((a, b) => {
       if (typeof a.similarityScore === 'number' && typeof b.similarityScore === 'number') {
         if (b.similarityScore !== a.similarityScore) return b.similarityScore - a.similarityScore;
       }
-      if (a.order !== b.order) return a.order - b.order;
+      if ((a.order || 0) !== (b.order || 0)) return (a.order || 0) - (b.order || 0);
       return a.name.localeCompare(b.name);
     });
 
@@ -889,7 +950,7 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
           debugLog('Selected category:', { name: category.name, id: category.id });
           cleanupKeyboard();
           overlay.remove();
-          callback(category);
+          callback(category as CategoryCallbackResult);
         };
 
         contentContainer.appendChild(item);
@@ -900,12 +961,12 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
     if (categoryItems.length > 0) {
       const originalCleanup = makeItemsKeyboardNavigable(
         categoryItems,
-        (_item, index) => {
+        (_item: HTMLElement, index: number) => {
           const category = filteredCategories[index];
           debugLog('Keyboard selecting category:', { name: category.name, id: category.id });
           cleanupKeyboard();
           overlay.remove();
-          callback(category);
+          callback(category as CategoryCallbackResult);
         },
         0,
       );
@@ -917,7 +978,7 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
     }
   };
 
-  searchElements = createSearchInput('Search within this group...', (query) => {
+  searchElements = createSearchInput('Search within this group...', (query: string) => {
     searchQuery = query;
     updateDisplay();
     setTimeout(() => searchElements.input.focus(), 0);
@@ -951,24 +1012,27 @@ function showCategorySelector(categoryGroup, bankCategory, callback, allCategory
   document.body.appendChild(overlay);
 }
 
+/* ------------------------------------------------------------------ */
+/*  Manual transaction categorization                                  */
+/* ------------------------------------------------------------------ */
+
 /**
  * Show manual transaction categorization dialog for transactions with no matching rule
  * Displays the full transaction JSON and asks user to provide merchant name and category
  * Does NOT save any mapping - this is one-time categorization only
- *
- * @param {Object} transaction - Raw transaction object from Wealthsimple API
- * @param {Function} callback - Callback with { category, merchant } or null if cancelled
- * @returns {Promise} Promise that resolves when selection is complete
  */
-export async function showManualTransactionCategorization(transaction, callback) {
-  debugLog('Starting manual transaction categorization for:', transaction.externalCanonicalId);
+export async function showManualTransactionCategorization(
+  transaction: Record<string, unknown>,
+  callback: (result: { category: unknown; merchant: string } | null) => void,
+): Promise<void> {
+  debugLog('Starting manual transaction categorization for:', (transaction as { externalCanonicalId?: string }).externalCanonicalId);
 
   try {
     debugLog('Fetching category data from Monarch');
     const categoryData = await monarchApi.getCategoriesAndGroups();
 
     const categoryGroups = categoryData.categoryGroups || [];
-    const categories = categoryData.categories || [];
+    const categories: MonarchCategory[] = categoryData.categories || [];
 
     if (!categoryGroups.length && !categories.length) {
       toast.show('No categories found in Monarch', 'error');
@@ -976,7 +1040,7 @@ export async function showManualTransactionCategorization(transaction, callback)
       return;
     }
 
-    const categoriesByGroup = {};
+    const categoriesByGroup: Record<string, MonarchCategory[]> = {};
     categories.forEach((category) => {
       if (!category.isDisabled && category.group) {
         const groupId = category.group.id;
@@ -987,14 +1051,14 @@ export async function showManualTransactionCategorization(transaction, callback)
       }
     });
 
-    const groupsWithCategories = categoryGroups
+    const groupsWithCategories = ((categoryGroups as unknown as Array<Record<string, unknown>>)
       .map((group) => ({
         ...group,
-        categories: categoriesByGroup[group.id] || [],
-        categoryCount: (categoriesByGroup[group.id] || []).length,
-      }))
+        categories: categoriesByGroup[group.id as string] || [],
+        categoryCount: (categoriesByGroup[group.id as string] || []).length,
+      })) as CategoryGroup[])
       .filter((group) => group.categoryCount > 0)
-      .sort((a, b) => a.order - b.order);
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
 
     if (!groupsWithCategories.length) {
       toast.show('No valid category groups found', 'error');

@@ -8,15 +8,31 @@ import { debugLog } from '../../core/utils';
 import { addModalKeyboardHandlers, trapFocus } from '../keyboardNavigation';
 import { validateDateFormat, clearFieldError } from './formValidation';
 
+interface DatePickerOptions {
+  cancelButtonText?: string;
+}
+
+interface DatePickerWithOptionsConfig {
+  showReconstructCheckbox?: boolean;
+  reconstructCheckedByDefault?: boolean;
+}
+
+interface DatePickerWithOptionsResult {
+  date: string;
+  reconstructBalance: boolean;
+}
+
+type DatePickerCallback = (selectedDate: string | null) => void;
+type DatePickerWithOptionsCallback = (result: DatePickerWithOptionsResult | null) => void;
+
 /**
  * Show a date picker modal and return a promise with the selected date
- * @param {string} defaultDate - Default date in YYYY-MM-DD format
- * @param {string} promptText - Text to display in the modal
- * @param {Object} options - Additional options
- * @param {string} options.cancelButtonText - Text for the cancel button (default: 'Cancel')
- * @returns {Promise<string|null>} Promise that resolves to selected date or null if cancelled
  */
-export function showDatePickerPromise(defaultDate, promptText, options = {}) {
+export function showDatePickerPromise(
+  defaultDate: string,
+  promptText: string,
+  options: DatePickerOptions = {},
+): Promise<string | null> {
   return new Promise((resolve) => {
     showDatePicker(defaultDate, promptText, (selectedDate) => {
       resolve(selectedDate);
@@ -26,14 +42,12 @@ export function showDatePickerPromise(defaultDate, promptText, options = {}) {
 
 /**
  * Show a date picker modal with options and return a promise
- * @param {string} defaultDate - Default date in YYYY-MM-DD format
- * @param {string} promptText - Text to display in the modal
- * @param {Object} options - Additional options
- * @param {boolean} options.showReconstructCheckbox - Whether to show the balance reconstruction checkbox
- * @param {boolean} options.reconstructCheckedByDefault - Whether the checkbox is checked by default (default: true)
- * @returns {Promise<Object|null>} Promise that resolves to {date, reconstructBalance} or null if cancelled
  */
-export function showDatePickerWithOptionsPromise(defaultDate, promptText, options = {}) {
+export function showDatePickerWithOptionsPromise(
+  defaultDate: string,
+  promptText: string,
+  options: DatePickerWithOptionsConfig = {},
+): Promise<DatePickerWithOptionsResult | null> {
   return new Promise((resolve) => {
     showDatePickerWithOptions(defaultDate, promptText, options, (result) => {
       resolve(result);
@@ -43,13 +57,13 @@ export function showDatePickerWithOptionsPromise(defaultDate, promptText, option
 
 /**
  * Show date picker modal with callback
- * @param {string} defaultDate - Default date in YYYY-MM-DD format
- * @param {string} promptText - Text to display in the modal
- * @param {Function} callback - Callback function to receive selected date
- * @param {Object} options - Additional options
- * @param {string} options.cancelButtonText - Text for the cancel button (default: 'Cancel')
  */
-export function showDatePicker(defaultDate, promptText, callback, options = {}) {
+export function showDatePicker(
+  defaultDate: string,
+  promptText: string,
+  callback: DatePickerCallback,
+  options: DatePickerOptions = {},
+): void {
   const { cancelButtonText = 'Cancel' } = options;
   debugLog('Showing date picker with default date:', defaultDate, 'cancelButtonText:', cancelButtonText);
 
@@ -69,7 +83,7 @@ export function showDatePicker(defaultDate, promptText, callback, options = {}) 
   `;
 
   // Handle click outside to close
-  overlay.onclick = (e) => {
+  overlay.onclick = (e: MouseEvent) => {
     if (e.target === overlay) {
       overlay.remove();
       callback(null);
@@ -132,16 +146,16 @@ export function showDatePicker(defaultDate, promptText, callback, options = {}) 
   `;
 
   // Set up keyboard navigation - declare cleanup function first
-  let cleanupKeyboard = () => {};
+  let cleanupKeyboard = (): void => {};
 
   // Helper functions for actions
-  const cancelAction = () => {
+  const cancelAction = (): void => {
     cleanupKeyboard();
     overlay.remove();
     callback(null);
   };
 
-  const selectAction = () => {
+  const selectAction = (): void => {
     if (!validateDateFormat(dateInput)) {
       return;
     }
@@ -199,7 +213,7 @@ export function showDatePicker(defaultDate, promptText, callback, options = {}) 
   const cleanupFocusTrap = trapFocus(modal);
 
   // Add Enter key handler specifically for date input
-  const handleDateInputKeyDown = (event) => {
+  const handleDateInputKeyDown = (event: KeyboardEvent): void => {
     if (event.key === 'Enter') {
       event.preventDefault();
       selectAction();
@@ -227,14 +241,13 @@ export function showDatePicker(defaultDate, promptText, callback, options = {}) 
 
 /**
  * Show date picker modal with options (including reconstruction checkbox)
- * @param {string} defaultDate - Default date in YYYY-MM-DD format
- * @param {string} promptText - Text to display in the modal
- * @param {Object} options - Additional options
- * @param {boolean} options.showReconstructCheckbox - Whether to show the balance reconstruction checkbox
- * @param {boolean} options.reconstructCheckedByDefault - Whether the checkbox is checked by default (default: true)
- * @param {Function} callback - Callback function to receive result {date, reconstructBalance} or null
  */
-export function showDatePickerWithOptions(defaultDate, promptText, options = {}, callback) {
+export function showDatePickerWithOptions(
+  defaultDate: string,
+  promptText: string,
+  options: DatePickerWithOptionsConfig = {},
+  callback: DatePickerWithOptionsCallback,
+): void {
   const { showReconstructCheckbox = false, reconstructCheckedByDefault = true } = options;
 
   debugLog('Showing date picker with options:', { defaultDate, showReconstructCheckbox, reconstructCheckedByDefault });
@@ -256,7 +269,7 @@ export function showDatePickerWithOptions(defaultDate, promptText, options = {},
   `;
 
   // Handle click outside to close
-  overlay.onclick = (e) => {
+  overlay.onclick = (e: MouseEvent) => {
     if (e.target === overlay) {
       overlay.remove();
       callback(null);
@@ -315,7 +328,7 @@ export function showDatePickerWithOptions(defaultDate, promptText, options = {},
   modal.appendChild(dateInput);
 
   // Create reconstruction checkbox if requested
-  let reconstructCheckbox = null;
+  let reconstructCheckbox: HTMLInputElement | null = null;
   if (showReconstructCheckbox) {
     const checkboxContainer = document.createElement('div');
     checkboxContainer.id = 'date-picker-checkbox-container';
@@ -371,16 +384,16 @@ export function showDatePickerWithOptions(defaultDate, promptText, options = {},
   `;
 
   // Set up keyboard navigation - declare cleanup function first
-  let cleanupKeyboard = () => {};
+  let cleanupKeyboard = (): void => {};
 
   // Helper functions for actions
-  const cancelAction = () => {
+  const cancelAction = (): void => {
     cleanupKeyboard();
     overlay.remove();
     callback(null);
   };
 
-  const selectAction = () => {
+  const selectAction = (): void => {
     if (!validateDateFormat(dateInput)) {
       return;
     }
@@ -389,7 +402,7 @@ export function showDatePickerWithOptions(defaultDate, promptText, options = {},
     overlay.remove();
 
     // Return result object with date and reconstruction flag
-    const result = {
+    const result: DatePickerWithOptionsResult = {
       date: selectedDate,
       reconstructBalance: reconstructCheckbox ? reconstructCheckbox.checked : false,
     };
@@ -446,7 +459,7 @@ export function showDatePickerWithOptions(defaultDate, promptText, options = {},
   const cleanupFocusTrap = trapFocus(modal);
 
   // Add Enter key handler specifically for date input
-  const handleDateInputKeyDown = (event) => {
+  const handleDateInputKeyDown = (event: KeyboardEvent): void => {
     if (event.key === 'Enter') {
       event.preventDefault();
       selectAction();

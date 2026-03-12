@@ -3,13 +3,26 @@
  * Common helper functions for category selector components
  */
 
+interface SearchInputResult {
+  container: HTMLDivElement;
+  input: HTMLInputElement;
+}
+
+interface SplitSkipButtonElement extends HTMLDivElement {
+  cleanupFn?: () => void;
+}
+
+interface TopActionBarElement extends HTMLDivElement {
+  cleanupFn?: () => void;
+}
+
 /**
  * Create a search input element
- * @param {string} placeholder - Placeholder text for the input
- * @param {Function} onSearch - Callback function when search value changes
- * @returns {Object} Object containing the container and input elements
+ * @param placeholder - Placeholder text for the input
+ * @param onSearch - Callback function when search value changes
+ * @returns Object containing the container and input elements
  */
-export function createSearchInput(placeholder, onSearch) {
+export function createSearchInput(placeholder: string, onSearch: (query: string) => void): SearchInputResult {
   const searchContainer = document.createElement('div');
   searchContainer.style.cssText = `
     margin-bottom: 15px;
@@ -31,7 +44,7 @@ export function createSearchInput(placeholder, onSearch) {
   `;
 
   searchInput.addEventListener('input', (e) => {
-    onSearch(e.target.value.toLowerCase());
+    onSearch((e.target as HTMLInputElement).value.toLowerCase());
   });
 
   searchContainer.appendChild(searchInput);
@@ -42,12 +55,12 @@ export function createSearchInput(placeholder, onSearch) {
 
 /**
  * Create a split "Skip" button with dropdown for skip-all option
- * @param {Function} onSkipThis - Callback when "Skip" (single) is clicked
- * @param {Function} onSkipAll - Callback when "Skip All" is clicked
- * @returns {HTMLElement} The split button container element
+ * @param onSkipThis - Callback when "Skip" (single) is clicked
+ * @param onSkipAll - Callback when "Skip All" is clicked
+ * @returns The split button container element
  */
-export function createSplitSkipButton(onSkipThis, onSkipAll) {
-  const container = document.createElement('div');
+export function createSplitSkipButton(onSkipThis: () => void, onSkipAll: () => void): SplitSkipButtonElement {
+  const container = document.createElement('div') as SplitSkipButtonElement;
   container.id = 'category-selector-skip-container';
   container.style.cssText = 'position: relative; display: inline-flex;';
 
@@ -133,8 +146,8 @@ export function createSplitSkipButton(onSkipThis, onSkipAll) {
     }
   };
 
-  const closeDropdown = (e) => {
-    if (!container.contains(e.target)) {
+  const closeDropdown = (e: Event): void => {
+    if (!container.contains(e.target as Node)) {
       dropdownMenu.style.display = 'none';
       skipBtn.style.borderRadius = '4px 0 0 4px';
       dropdownBtn.style.borderRadius = '0 4px 4px 0';
@@ -152,13 +165,13 @@ export function createSplitSkipButton(onSkipThis, onSkipAll) {
 
 /**
  * Create the top action bar with Skip (split) and Cancel buttons
- * @param {Function} onSkipThis - Callback when "Skip" (single) is clicked
- * @param {Function} onSkipAll - Callback when "Skip All remaining" is clicked
- * @param {Function} onCancel - Callback when "Cancel" is clicked
- * @returns {HTMLElement} The action bar element
+ * @param onSkipThis - Callback when "Skip" (single) is clicked
+ * @param onSkipAll - Callback when "Skip All remaining" is clicked
+ * @param onCancel - Callback when "Cancel" is clicked
+ * @returns The action bar element
  */
-export function createTopActionBar(onSkipThis, onSkipAll, onCancel) {
-  const actionBar = document.createElement('div');
+export function createTopActionBar(onSkipThis: () => void, onSkipAll: () => void, onCancel: () => void): TopActionBarElement {
+  const actionBar = document.createElement('div') as TopActionBarElement;
   actionBar.id = 'category-selector-action-bar';
   actionBar.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;';
 
@@ -189,10 +202,10 @@ export function createTopActionBar(onSkipThis, onSkipAll, onCancel) {
 
 /**
  * Create a modal overlay with standard styling
- * @param {Function} onClickOutside - Handler for clicking outside modal
- * @returns {HTMLElement} Overlay element
+ * @param onClickOutside - Handler for clicking outside modal
+ * @returns Overlay element
  */
-export function createModalOverlay(onClickOutside) {
+export function createModalOverlay(onClickOutside?: () => void): HTMLDivElement {
   const overlay = document.createElement('div');
   overlay.style.cssText = `
     position: fixed;
@@ -221,11 +234,11 @@ export function createModalOverlay(onClickOutside) {
 
 /**
  * Get color for category group based on type or name
- * @param {string} groupType - Group type or name
- * @returns {string} Hex color code
+ * @param groupType - Group type or name
+ * @returns Hex color code
  */
-export function getGroupColor(groupType) {
-  const colors = {
+export function getGroupColor(groupType: string): string {
+  const colors: Record<string, string> = {
     expense: '#e74c3c',
     income: '#27ae60',
     transfer: '#3498db',
@@ -251,11 +264,11 @@ export function getGroupColor(groupType) {
 
 /**
  * Get icon for category group based on type or name
- * @param {string} groupType - Group type or name
- * @returns {string} Single character icon
+ * @param groupType - Group type or name
+ * @returns Single character icon
  */
-export function getGroupIcon(groupType) {
-  const icons = {
+export function getGroupIcon(groupType: string): string {
+  const icons: Record<string, string> = {
     expense: '💸',
     income: '💰',
     transfer: '🔄',

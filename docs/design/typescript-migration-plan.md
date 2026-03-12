@@ -1,7 +1,7 @@
 # TypeScript Migration Plan
 
-> **Status:** Draft  
-> **Updated:** 2026-03-07 (Phase 12 complete)
+> **Status:** Active  
+> **Updated:** 2026-03-12 (Phase 15 complete — shared type system done)  
 > **Author:** @meseer  
 > **Note:** See [ADR-005](../decisions/005-typescript-migration.md) for the decision record.
 
@@ -22,18 +22,26 @@
 | 10 | WS Transaction Rules | ✅ Complete | 3/3 src / 0 test |
 | 11 | WS Core Services | ✅ Complete | 5/5 src / 0 test |
 | 12 | WS Top-Level Services | ✅ Complete | 3/3 src / 0 test |
-| 13a | UI Primitives | 🔄 In Progress | 0/6 src / 0 test |
-| 13b | Category Selector Cluster | ⬜ Not Started | 0/4 src / 0 test |
-| 13c | Dialog & Picker Components | ⬜ Not Started | 0/4 src / 0 test |
-| 13d | Settings Modal Cluster | ⬜ Not Started | 0/4 src / 0 test |
-| 13e | Institution Managers & Components | ⬜ Not Started | 0/14 src / 0 test |
-| 14 | Strictness Ramp-up | ⬜ Not Started | — |
+| 13a | UI Primitives | ✅ Complete | 6/6 src / 0 test |
+| 13b | Category Selector Cluster | ✅ Complete | 3/3 src / 0 test |
+| 13c | Dialog & Picker Components | ✅ Complete | 4/4 src / 0 test |
+| 13d | Settings Modal Cluster | ✅ Complete | 4/4 src / 0 test |
+| 13e | Generic Base UI | ✅ Complete | 3/3 src / 0 test |
+| 13f | Questrade UI | ✅ Complete | 2/2 src / 0 test |
+| 13g | Wealthsimple UI | ✅ Complete | 3/3 src / 0 test |
+| 13h | Rogers Bank UI | ✅ Complete | 3/3 src / 0 test |
+| 13i | CanadaLife UI | ✅ Complete | 3/3 src / 0 test |
+| 13j | Entry Points | ✅ Complete | 2/2 src / 0 test |
+| 15 | Shared Type System | ✅ Complete | 2 new + ~16 modified |
+| 14 | Strictness Ramp-up | ⏸️ Deferred | — |
 
-**Overall:** 69/106 source files converted (~65%)
+**Overall:** 105/105 source files converted (100%) 🎉
+
+> **Note:** `categorySelector.example.js` was deleted (dead code — development demo with no production imports or tests). Total file count is 105 not 106.
 
 ## Overview
 
-Migrate the monarch-uploader codebase from JavaScript (with JSDoc type annotations) to TypeScript. The project currently has **106 source files (~52,300 lines)** and **92 test files (~61,600 lines)** across a well-structured layered architecture.
+Migrate the monarch-uploader codebase from JavaScript (with JSDoc type annotations) to TypeScript. The project currently has **105 source files (~52,100 lines)** and **92 test files (~61,600 lines)** across a well-structured layered architecture.
 
 ## Current State
 
@@ -41,11 +49,11 @@ Migrate the monarch-uploader codebase from JavaScript (with JSDoc type annotatio
 
 | Layer | Files | Lines | Largest File |
 |-------|-------|-------|-------------|
-| UI (`src/ui/`) | 32 | ~12,000 | accountSelectorWithCreate.js (1,372) |
-| Services (`src/services/`) | 36 | ~18,000 | canadalife-upload.js (1,359) |
+| UI (`src/ui/`) | 31 | ~11,800 | accountSelectorWithCreate.js (1,372) |
+| Services (`src/services/`) | 36 | ~18,000 | canadalife-upload.ts (1,359) |
 | Integrations (`src/integrations/`) | 14 | ~3,500 | Newest modular architecture |
-| API (`src/api/`) | 9 | ~7,500 | wealthsimpleQueries.js (1,676) |
-| Core (`src/core/`) | 8 | ~5,000 | utils.js (914) |
+| API (`src/api/`) | 9 | ~7,500 | wealthsimpleQueries.ts (1,676) |
+| Core (`src/core/`) | 8 | ~5,000 | utils.ts (914) |
 | Mappers (`src/mappers/`) | 3 | ~1,500 | Category/merchant mapping |
 | Utils (`src/utils/`) | 2 | ~800 | CSV, transaction storage |
 | Other (index, metadata, scriptInfo) | 2 | ~200 | Entry point, build metadata |
@@ -55,22 +63,21 @@ Migrate the monarch-uploader codebase from JavaScript (with JSDoc type annotatio
 
 The project already has a significant JSDoc type system:
 
-- `src/integrations/types.js` — ~310 lines of `@typedef` definitions (IntegrationManifest, IntegrationApi, SyncHooks, all callback types)
-- `src/sinks/types.js` — ~130 lines of `@typedef` definitions (DataSink, SinkAccount, SinkHolding, etc.)
-- `src/core/httpClient.js` — `@typedef` for HttpClient, HttpRequestOptions, HttpResponse
-- `src/core/storageAdapter.js` — `@typedef` for StorageAdapter
-
-These JSDoc types map almost 1:1 to TypeScript interfaces, making conversion largely mechanical.
+- `src/integrations/types.ts` — ~310 lines of interface definitions (IntegrationManifest, IntegrationApi, SyncHooks, all callback types)
+- `src/sinks/types.ts` — ~130 lines of interface definitions (DataSink, SinkAccount, SinkHolding, etc.)
+- `src/core/httpClient.ts` — interfaces for HttpClient, HttpRequestOptions, HttpResponse
+- `src/core/storageAdapter.ts` — interfaces for StorageAdapter
 
 ### Build Toolchain
 
 | Tool | Current | Purpose |
 |------|---------|---------|
 | Webpack 5 | `webpack.config.cjs` | Bundle to single `.user.js` file |
-| Babel | `.babelrc` with `@babel/preset-env` | ES6+ transpilation, browser targeting |
-| ESLint 10 | `eslint.config.mjs` with ~80 rules | Code quality |
+| Babel | `.babelrc` with `@babel/preset-env` + `@babel/preset-typescript` | ES6+ transpilation, browser targeting, TS stripping |
+| ESLint 10 | `eslint.config.mjs` with ~80 rules + typescript-eslint | Code quality |
 | Jest 30 | `jest.config.cjs` with jsdom | Testing |
 | c8 | Via `test:coverage` script | Code coverage |
+| TypeScript | `tsconfig.json` with `noEmit: true` | Type checking only |
 
 ---
 
@@ -91,7 +98,7 @@ Keep the existing Babel pipeline and add TypeScript support as a preset. TypeScr
 
 ## Migration Phases
 
-### Phase 0: Infrastructure Setup (1–2 days)
+### Phase 0: Infrastructure Setup ✅ Complete
 
 Set up TypeScript tooling without converting any source files.
 
@@ -118,236 +125,296 @@ typescript-eslint
 
 **Validation:** Build still works with zero `.ts` files. All existing tests pass.
 
-### Phase 1: Type Foundation (1–2 days)
+### Phase 1: Type Foundation ✅ Complete
 
 Convert type-only files from JSDoc `@typedef` to native TypeScript interfaces.
 
-**Files to convert:**
+**Files converted:**
 - `src/integrations/types.js` → `src/integrations/types.ts`
 - `src/sinks/types.js` → `src/sinks/types.ts`
-- Create `src/types/` directory for shared types:
-  - `src/types/tampermonkey.d.ts` — GM_* augmentations (or rely on `@types/tampermonkey`)
-  - `src/types/accounts.ts` — shared account types
-  - `src/types/transactions.ts` — shared transaction types
 
-### Phase 2: Core Layer (3–5 days)
+### Phase 2: Core Layer ✅ Complete
 
 Convert the foundation that everything else imports from.
 
-**Files (8):**
-- `src/core/config.js` — constants, enums (high value: config keys become string enums)
-- `src/core/state.js` — centralized state
-- `src/core/utils.js` — utility functions (914 lines)
-- `src/core/httpClient.js` — already has JSDoc types
-- `src/core/storageAdapter.js` — already has JSDoc types
-- `src/core/integrationCapabilities.js` — INTEGRATIONS enum, capabilities
-- `src/core/integrationRegistry.js` — registry pattern
-- `src/core/navigation.js` — URL/routing
+**Files (8):** config, state, utils, httpClient, storageAdapter, integrationCapabilities, integrationRegistry, navigation
 
-**Tests:** ~12 corresponding test files.
-
-### Phase 3: Mappers & Utils (1–2 days)
+### Phase 3: Mappers & Utils ✅ Complete
 
 Small, pure-function files with high type-safety value.
 
-**Files (5):**
-- `src/mappers/category.js`
-- `src/mappers/merchant.js`
-- `src/mappers/wealthsimple-account-types.js`
-- `src/utils/csv.js`
-- `src/utils/transactionStorage.js`
+**Files (5):** category, merchant, wealthsimple-account-types, csv, transactionStorage
 
-**Tests:** ~4 corresponding test files.
+### Phase 4: MBNA Integration ✅ Complete
 
-### Phase 4: MBNA Integration (2–3 days)
+Converted the reference integration to establish TypeScript patterns for all future integrations.
 
-Convert the reference integration early to establish TypeScript patterns for all future integrations.
+**Files (12):** manifest, index, source/api, source/auth, source/injectionPoint, source/balanceReconstruction, sinks/monarch/index, sinks/monarch/csvFormatter, sinks/monarch/balanceFormatter, sinks/monarch/transactions, sinks/monarch/pendingTransactions, sinks/monarch/syncHooks
 
-**Files (12):**
-
-| File | Description |
-|------|-------------|
-| `src/integrations/mbna/manifest.js` | Integration manifest |
-| `src/integrations/mbna/index.js` | Barrel export |
-| `src/integrations/mbna/source/api.js` | API client |
-| `src/integrations/mbna/source/auth.js` | Auth handler |
-| `src/integrations/mbna/source/injectionPoint.js` | UI injection config |
-| `src/integrations/mbna/source/balanceReconstruction.js` | Balance logic |
-| `src/integrations/mbna/sinks/monarch/index.js` | Monarch sink barrel |
-| `src/integrations/mbna/sinks/monarch/csvFormatter.js` | CSV generation |
-| `src/integrations/mbna/sinks/monarch/balanceFormatter.js` | Balance formatting |
-| `src/integrations/mbna/sinks/monarch/transactions.js` | Transaction processing |
-| `src/integrations/mbna/sinks/monarch/pendingTransactions.js` | Pending tx handling |
-| `src/integrations/mbna/sinks/monarch/syncHooks.js` | SyncHooks implementation |
-
-**External dependencies still in JS at this point (need `.d.ts` stubs):**
-- `src/services/common/configStore.js` — getCategoryMapping, setCategoryMapping
-- `src/services/common/accountService.js` — accountService default export
-- `src/api/monarch.js` — monarchApi default export
-- `src/ui/components/categorySelector.js` — showMonarchCategorySelector
-
-These 4 files are heavily used across the codebase and are good candidates for early conversion instead of stubs.
-
-**Tests:** ~8 corresponding test files.
-
-### Phase 5: API Layer (3–5 days)
+### Phase 5: API Layer ✅ Complete
 
 Highest-value phase — API response shapes are where most runtime bugs originate.
 
-**Files (9):**
-- `src/api/canadalife.js` (1,043 lines)
-- `src/api/monarch.js` (977 lines)
-- `src/api/monarchAccounts.js` (988 lines)
-- `src/api/monarchTransactions.js`
-- `src/api/questrade.js`
-- `src/api/rogersbank.js`
-- `src/api/wealthsimple.js` (1,040 lines)
-- `src/api/wealthsimplePositions.js`
-- `src/api/wealthsimpleQueries.js` (1,676 lines — mostly GraphQL query strings)
+**Files (9):** canadalife, monarch, monarchAccounts, monarchTransactions, questrade, rogersbank, wealthsimple, wealthsimplePositions, wealthsimpleQueries
 
-**Key task:** Define response types for each external API (Wealthsimple, Questrade, Monarch, CanadaLife, Rogers Bank).
+### Phase 6: Common Services Foundation ✅ Complete
 
-**Tests:** ~10 corresponding test files.
+**Files (12):** auth, configStore, legacyMigration, pendingReconciliation, csvFormatter, accountService, deduplication, balanceUpload, creditLimitSync, transactionUpload, accountMappingResolver, syncOrchestrator
 
-### Phase 6: Common Services Foundation (2–3 days)
+### Phase 7: CanadaLife Services ✅ Complete
 
-Shared infrastructure all institution services depend on. Three batches.
+**Files (3):** transactions, pendingReconciliation, canadalife-upload
 
-**Batch A — Leaves (5 files, ~1,233 lines):**
-- `src/services/auth.js` (111) — core only
-- `src/services/common/configStore.js` (398) — core only
-- `src/services/common/legacyMigration.js` (217) — core only
-- `src/services/common/pendingReconciliation.js` (396) — api/monarch, core
-- `src/services/canadalife/csvFormatter.js` (90) — core, utils/csv
+### Phase 8: Rogers Bank Services ✅ Complete
 
-**Batch B — accountService cluster (6 files, ~1,830 lines):**
-- `src/services/common/accountService.js` (1,170) — core only
-- `src/services/common/deduplication.js` (99) — accountService
-- `src/services/common/balanceUpload.js` (265) — accountService, api/monarch
-- `src/services/common/creditLimitSync.js` (61) — accountService, api/monarch
-- `src/services/common/transactionUpload.js` (107) — accountService, api/monarch
-- `src/services/common/accountMappingResolver.js` (128) — accountService, api/monarch, ui/*
-
-**Batch C — syncOrchestrator (1 file, 682 lines):**
-- `src/services/common/syncOrchestrator.js` — depends on Batch B files + ui/*
-
-**Tests:** ~10 corresponding test files.
-
-### Phase 7: CanadaLife Services (1–2 days)
-
-**Files (3, ~1,938 lines):**
-- `src/services/canadalife/transactions.js` (393) — api/canadalife, core
-- `src/services/canadalife/pendingReconciliation.js` (186) — common/pendingReconciliation, CL/transactions
-- `src/services/canadalife-upload.js` (1,359) — api/*, core/*, ui/*, common/accountService
-
-### Phase 8: Rogers Bank Services (1 day)
-
-**Files (2, ~1,507 lines):**
-- `src/services/rogersbank/pendingTransactions.js` (467) — api/monarch, core
-- `src/services/rogersbank-upload.js` (1,040) — api/*, core/*, mappers/*, ui/*, common/accountService
+**Files (2):** pendingTransactions, rogersbank-upload
 
 ### Phase 9: Questrade Services ✅ Complete
 
-**Batch A (4 files):** auth.ts, transactionRules.ts, accountMapping.ts, account.ts  
-**Batch B (4 files):** transactions.ts, balance.ts, positions.ts, sync.ts
+**Batch A (4 files):** auth, transactionRules, accountMapping, account  
+**Batch B (4 files):** transactions, balance, positions, sync
 
 ### Phase 10: WS Transaction Rules ✅ Complete
 
-**Files (3):** transactionRulesHelpers.ts, transactionRulesInvestment.ts, transactionRules.ts  
+**Files (3):** transactionRulesHelpers, transactionRulesInvestment, transactionRules  
 Added full `WealthsimpleTransaction` interface, `ExtendedOrder`, `SpendDetails`, and other shared types to `transactionRulesHelpers.ts`.
 
-### Phase 11: WS Core Services (2–3 days)
+### Phase 11: WS Core Services ✅ Complete
 
-**Batch A (3 files, ~1,626 lines):** transactionsReconciliation, transactionsHelpers, balance
-**Batch B (2 files, ~1,846 lines):** transactionsInvestment, transactions
+**Batch A (3 files):** transactionsReconciliation, transactionsHelpers, balance  
+**Batch B (2 files):** transactionsInvestment, transactions
 
 ### Phase 12: WS Top-Level Services ✅ Complete
 
-**Files (3, ~2,891 lines):** positions, account, wealthsimple-upload
+**Files (3):** positions, account, wealthsimple-upload
 
-Completed in Phase 12: `src/services/wealthsimple/positions.ts`, `src/services/wealthsimple/account.ts`, `src/services/wealthsimple-upload.ts`. All originals deleted.
+### Phase 13a: UI Primitives ✅ Complete
 
-### Phase 13: UI Layer (broken into sub-phases)
-
-Hardest layer to type — framework-less DOM manipulation. Split into 5 sub-phases ordered by dependency depth and complexity.
-
-**Key challenge:** Heavy `document.createElement` chains, event handlers, dynamic element properties.
-
----
-
-### Phase 13a: UI Primitives (6 files, ~1,354 lines)
-
-Zero or minimal inter-UI-file dependencies — convert first to unblock everything else.
+Zero or minimal inter-UI-file dependencies — converted first to unblock everything else.
 
 | File | Lines |
 |------|-------|
-| `src/ui/toast.js` | 151 |
-| `src/ui/theme.js` | 290 |
-| `src/ui/keyboardNavigation.js` | 225 |
-| `src/ui/components/formValidation.js` | 286 |
-| `src/ui/components/confirmationDialog.js` | 151 |
-| `src/ui/components/monarchLoginLink.js` | 251 |
+| `src/ui/toast.ts` | 151 |
+| `src/ui/theme.ts` | 290 |
+| `src/ui/keyboardNavigation.ts` | 225 |
+| `src/ui/components/formValidation.ts` | 286 |
+| `src/ui/components/confirmationDialog.ts` | 151 |
+| `src/ui/components/monarchLoginLink.ts` | 251 |
 
 ---
 
-### Phase 13b: Category Selector Cluster (4 files, ~1,910 lines)
+### Phase 13b: Category Selector Cluster ✅ Complete
 
-Self-contained subsystem with internal dependency chain. Convert in order: utils → main → manual → example.
+Self-contained subsystem with internal dependency chain. Converted in order: utils → manual → main.
 
 | File | Lines |
 |------|-------|
-| `src/ui/components/categorySelectorUtils.js` | 279 |
-| `src/ui/components/categorySelector.js` | 1,020 |
-| `src/ui/components/categorySelectorManual.js` | 378 |
-| `src/ui/components/categorySelector.example.js` | 233 |
+| `src/ui/components/categorySelectorUtils.ts` | 279 |
+| `src/ui/components/categorySelectorManual.ts` | 378 |
+| `src/ui/components/categorySelector.ts` | 1,020 |
+
+> **Note:** `categorySelector.example.js` (233 lines) was deleted — it was a development demo file with no production imports or test coverage.
 
 ---
 
-### Phase 13c: Dialog & Picker Components (4 files, ~2,956 lines)
+### Phase 13c: Dialog & Picker Components ✅ Complete
 
 Interactive components consumed by services and the settings modal.
 
 | File | Lines |
 |------|-------|
-| `src/ui/components/datePicker.js` | 480 |
-| `src/ui/components/securitySelector.js` | 484 |
-| `src/ui/components/accountCreationDialog.js` | 620 |
-| `src/ui/components/accountSelectorWithCreate.js` | 1,372 |
+| `src/ui/components/datePicker.ts` | 480 |
+| `src/ui/components/securitySelector.ts` | 484 |
+| `src/ui/components/accountCreationDialog.ts` | 620 |
+| `src/ui/components/accountSelectorWithCreate.ts` | 1,372 |
 
 ---
 
-### Phase 13d: Settings Modal Cluster (4 files, ~4,613 lines)
+### Phase 13d: Settings Modal Cluster ✅ Complete
 
-The most complex sub-system. Convert in order: helpers → accountCards → settingsModal → progressDialog.
+The most complex sub-system. Converted in order: helpers → accountCards → settingsModal → progressDialog.
 
 | File | Lines |
 |------|-------|
-| `src/ui/components/progressDialog.js` | 1,248 |
-| `src/ui/components/settingsModalHelpers.js` | 1,280 |
-| `src/ui/components/settingsModalAccountCards.js` | 1,278 |
-| `src/ui/components/settingsModal.js` | 807 |
+| `src/ui/components/settingsModalHelpers.ts` | 1,280 |
+| `src/ui/components/settingsModalAccountCards.ts` | 1,278 |
+| `src/ui/components/settingsModal.ts` | 807 |
+| `src/ui/components/progressDialog.ts` | 1,248 |
 
 ---
 
-### Phase 13e: Institution UI Managers & Components (14 files, ~5,615 lines)
+### Phase 13e: Generic Base UI ✅ Complete
 
-Repeating pattern across institutions. Convert generic base first, then each institution.
+Converted the generic/base UI components that institution-specific managers extend or mirror.
 
-| Batch | Files | Lines |
-|-------|-------|-------|
-| Generic base | `generic/uiManager.js`, `generic/components/uploadButton.js`, `generic/components/connectionStatus.js` | 975 |
-| Questrade | `questrade/uiManager.js`, `questrade/components/uploadButton.js` | 1,166 |
-| Wealthsimple | `wealthsimple/uiManager.js`, `wealthsimple/components/uploadButton.js`, `wealthsimple/components/connectionStatus.js` | 1,085 |
-| Rogers Bank | `rogersbank/uiManager.js`, `rogersbank/components/uploadButton.js`, `rogersbank/components/connectionStatus.js` | 897 |
-| CanadaLife | `canadalife/uiManager.js`, `canadalife/components/uploadButton.js`, `canadalife/components/connectionStatus.js` | 1,492 |
+| File | Lines |
+|------|-------|
+| `src/ui/generic/uiManager.ts` | ~350 |
+| `src/ui/generic/components/uploadButton.ts` | ~350 |
+| `src/ui/generic/components/connectionStatus.ts` | ~275 |
 
-Also includes `src/index.js` and `src/integrations/index.js` (entry-point barrel files).
+---
 
-### Phase 14: Strictness Ramp-up (2–3 days)
+### Phase 13f: Questrade UI ✅ Complete
 
-Enable full strict mode once all files are `.ts`.
+| File | Lines |
+|------|-------|
+| `src/ui/questrade/uiManager.ts` | ~700 |
+| `src/ui/questrade/components/uploadButton.ts` | ~466 |
 
-**Steps:**
+---
+
+### Phase 13g: Wealthsimple UI ✅ Complete
+
+| File | Lines |
+|------|-------|
+| `src/ui/wealthsimple/uiManager.ts` | ~400 |
+| `src/ui/wealthsimple/components/uploadButton.ts` | ~400 |
+| `src/ui/wealthsimple/components/connectionStatus.ts` | ~285 |
+
+---
+
+### Phase 13h: Rogers Bank UI ✅ Complete
+
+| File | Lines |
+|------|-------|
+| `src/ui/rogersbank/uiManager.ts` | ~350 |
+| `src/ui/rogersbank/components/uploadButton.ts` | ~300 |
+| `src/ui/rogersbank/components/connectionStatus.ts` | ~247 |
+
+---
+
+### Phase 13i: CanadaLife UI ✅ Complete
+
+| File | Lines |
+|------|-------|
+| `src/ui/canadalife/uiManager.ts` | ~600 |
+| `src/ui/canadalife/components/uploadButton.ts` | ~500 |
+| `src/ui/canadalife/components/connectionStatus.ts` | ~392 |
+
+---
+
+### Phase 13j: Entry Points ✅ Complete
+
+Converted the application entry point and integration barrel export. Updated webpack entry from `./src/index.js` to `./src/index.ts`.
+
+| File | Lines |
+|------|-------|
+| `src/index.ts` | ~150 |
+| `src/integrations/index.ts` | ~100 |
+
+---
+
+### Phase 15: Shared Type System — ✅ Complete
+
+> **Status:** Complete (all planned tiers done; remaining casts are architectural — see Tier 3 remainder)  
+> **ADR:** [ADR-006](../decisions/006-shared-type-system.md)
+
+**Problem:** During the TS migration, independent type definitions proliferated across layers. A post-migration audit found:
+
+| Issue | Count | Risk |
+|-------|-------|------|
+| `as unknown as` double-casts | 46 | Type disagreements cause runtime bugs (e.g., the `[object Object]` balance bug in v6.6.10) |
+| Duplicate interface definitions | ~20 across 5 interface families | Definitions drift apart silently |
+| `any` usage | 8 (most with eslint-disable) | Low risk — mostly GraphQL response parsing |
+| Files importing from shared types | 4 of ~105 | Shared type module exists but adoption is minimal |
+
+**Solution:** Create `src/types/monarch.ts` — a single canonical module for cross-boundary Monarch domain types. Consolidate duplicates in tiers by risk.
+
+#### Sub-task 1: Category pipeline types ✅ Complete
+- Created `src/types/monarch.ts` with `MonarchCategory`, `CategoryGroup`, `SimilarityInfo`, `CategoryCallbackResult`, `CategoryCallback`
+- Updated `src/mappers/category.ts` to return `SimilarityInfo`-compatible data
+- Updated `src/ui/components/categorySelector.ts` to import shared types
+- Added `AccountDetails`, `AccountCallback`, `BalanceInfo` to shared types
+- **Eliminated:** 4× `as unknown as SimilarityInfo` in service files
+
+#### Sub-task 2: Balance type unification (Tier 1) ✅ Complete
+Consolidate `CurrentBalance` and `BalanceCheckpoint` — the exact pattern that caused the v6.6.10 `[object Object]` production bug.
+
+**Duplicates found:**
+| Interface | Locations |
+|-----------|-----------|
+| `CurrentBalance` | `balance.ts`, `account.ts`, `wealthsimple-upload.ts` (3 copies) |
+| `BalanceCheckpoint` | `balance.ts`, `account.ts` (2 copies) |
+| `BalanceInfo` | `types/monarch.ts`, `core/utils.ts` (2 copies) |
+
+**Changes:**
+- Add `CurrentBalance`, `BalanceCheckpoint` to `src/types/monarch.ts`
+- Remove local definitions from `balance.ts`, `account.ts`, `wealthsimple-upload.ts`
+- Replace `BalanceInfo` in `core/utils.ts` with re-export from shared types
+- Fix `uploadButton.ts` local `BalanceResult` to use shared `CurrentBalance`
+
+#### Sub-task 3: Wealthsimple domain type unification (Tier 2) ✅ Complete
+Consolidate `ConsolidatedAccount`, `WealthsimpleAccount`, `ProgressDialog`, and `SyncResult`.
+
+**Duplicates found:**
+| Interface | Locations |
+|-----------|-----------|
+| `ConsolidatedAccount` | `account.ts` (exported), `balance.ts`, `transactions.ts`, `uploadButton.ts` (4 copies) |
+| `WealthsimpleAccount` | `account.ts`, `uploadButton.ts`, `balance.ts` as `WealthsimpleAccountData` (3 copies) |
+| `ProgressDialog` | `wealthsimple-upload.ts`, `positions.ts` (2 copies) |
+| `SyncResult` | `wealthsimple-upload.ts`, `uploadButton.ts` (2 copies) |
+
+**Changes:**
+- Export `WealthsimpleAccount` from `account.ts` (already exports `ConsolidatedAccount`)
+- Remove local copies from `balance.ts`, `transactions.ts`, `uploadButton.ts`
+- Export `ProgressDialog`, `SyncResult` from `wealthsimple-upload.ts`
+- Import in `positions.ts`, `uploadButton.ts`
+
+#### Sub-task 4: Auth status type deduplication (Tier 3A) ✅ Complete
+Each UI manager had a local copy of its integration's auth status interface and used `as unknown as` casts. Fix: import the canonical type directly from the API module.
+
+**Changes:**
+- `src/ui/wealthsimple/components/connectionStatus.ts` — removed local `AuthStatus`, import `WealthsimpleAuthStatus` from API
+- `src/ui/rogersbank/uiManager.ts` — removed local `RogersBankAuthStatus`, import from API
+- `src/ui/canadalife/uiManager.ts` — removed local `CanadaLifeAuthStatus`, import from API
+
+**Eliminated:** 3 duplicate interfaces + 3 `as unknown as` casts
+
+#### Sub-task 5: Wealthsimple domain types extraction (Tier 3B) ✅ Complete
+`ConsolidatedAccount` and `WealthsimpleAccountData` were duplicated 2–4 times across Wealthsimple service files. A circular dependency between `account.ts` ↔ `balance.ts` prevented direct sharing.
+
+**Changes:**
+- Created `src/types/wealthsimple.ts` with `WealthsimpleAccountBase`, `MonarchAccountMapping`, `StoredTransaction`, `BalanceCheckpoint` (re-export), `ConsolidatedAccountBase`
+- `src/services/wealthsimple/balance.ts` — replaced local `ConsolidatedAccount` with import from shared types
+- `src/services/wealthsimple/transactions.ts` — replaced local `WealthsimpleAccountData` + `ConsolidatedAccount` with shared types
+- `src/services/wealthsimple/transactionsInvestment.ts` — replaced local `WealthsimpleAccountData` + `ConsolidatedAccountForInvestment` with shared types
+
+**Eliminated:** 5 duplicate interfaces, broke circular dependency via shared type module
+
+#### Tier 3 remainder: Deferred (acceptable as-is)
+These issues are low-risk and acceptable in their current form:
+
+- **MBNA hook casts** (6 instances) — part of the new integration architecture, will resolve as that system matures
+- **Config/capabilities/registry casts** (3 instances) — inherent to the dynamic capabilities system design
+- **State/window casts** (3 instances) — `window` property access and dynamic indicator map
+- **API response casts** (2 instances in `monarch.ts`) — GraphQL responses are untyped
+- **Service-layer casts** (15 instances) — API functions return loose types; fixing requires adding return types to all API functions (large scope, separate effort)
+- **UI-layer casts** (13 instances) — cross-layer data flow from services with loose return types (CanadaLife, Wealthsimple, category selector)
+- **Entry point casts** (2 instances) — integration module + status indicator typing
+
+> **Note:** The remaining count (44) is higher than the original estimate (~32) because subsequent feature development (e.g., CanadaLife UI) introduced new casts after the initial audit. The consolidation work itself was completed as planned.
+
+| Metric | Count |
+|--------|-------|
+| Duplicate interfaces eliminated | ~28 |
+| Files modified | ~16 |
+| `as unknown as` eliminated (Tier 1–3B) | ~14 |
+| Remaining `as unknown as` (Tier 3 remainder + post-audit additions, deferred) | 44 |
+
+---
+
+### Phase 14: Strictness Ramp-up — ⏸️ Deferred
+
+> **Status:** Deferred indefinitely. To be reconsidered when a specific pain point arises (e.g., a null-dereference bug that strict mode would have caught).
+
+**Rationale for deferral:**
+1. `noUncheckedIndexedAccess` adds `| undefined` to every array/object access, generating hundreds of fixes across 105 files — very high effort for very low bug-prevention value in a userscript context.
+2. The DOM-heavy UI layer means `document.getElementById()` returns `HTMLElement | null` everywhere — strict null checking adds defensive code the runtime doesn't need (elements always exist because we create them).
+3. The codebase already has good type annotations, meaning the actual "implicit any" surface is small.
+4. This is a single-developer userscript with good test coverage. The ROI on strict mode doesn't justify the effort.
+
+**If activated later, steps would be:**
 1. Enable `strict: true` in `tsconfig.json`
 2. Fix all `any` types and implicit anys
 3. Enable `strictNullChecks` — add null guards where needed
@@ -359,26 +426,34 @@ Enable full strict mode once all files are `.ts`.
 
 ## Effort Summary
 
-| Phase | Files (src) | Files (test) | Effort |
-|-------|-------------|-------------|--------|
-| 0 — Infrastructure | 0 | 0 | 1–2 days |
-| 1 — Type Foundation | 3–5 | 0 | 1–2 days |
-| 2 — Core | 8 | ~12 | 3–5 days |
-| 3 — Mappers/Utils | 5 | ~4 | 1–2 days |
-| 4 — MBNA Integration | 12 | ~8 | 2–3 days |
-| 5 — API | 9 | ~10 | 3–5 days |
-| 6 — Common Services | 12 | ~10 | 2–3 days |
-| 7 — CanadaLife Services | 3 | ~3 | 1–2 days |
-| 8 — Rogers Bank Services | 2 | ~4 | 1 day |
-| 9 — Questrade Services | 8 | ~5 | 2–3 days |
-| 10 — WS Transaction Rules | 3 | ~6 | 1–2 days |
-| 11 — WS Core Services | 5 | ~6 | 2–3 days |
-| 12 — WS Top-Level Services | 3 | ~3 | 1–2 days |
-| 13 — UI | 32 | ~18 | 5–8 days |
-| 14 — Strictness | all | all | 2–3 days |
-| **Total** | **~106** | **~92** | **28–45 days** |
-
-**Realistic calendar estimate:** 6–10 weeks for a single developer.
+| Phase | Files (src) | Effort |
+|-------|-------------|--------|
+| 0 — Infrastructure | 0 | ✅ Done |
+| 1 — Type Foundation | 2 | ✅ Done |
+| 2 — Core | 8 | ✅ Done |
+| 3 — Mappers/Utils | 5 | ✅ Done |
+| 4 — MBNA Integration | 12 | ✅ Done |
+| 5 — API | 9 | ✅ Done |
+| 6 — Common Services | 12 | ✅ Done |
+| 7 — CanadaLife Services | 3 | ✅ Done |
+| 8 — Rogers Bank Services | 2 | ✅ Done |
+| 9 — Questrade Services | 8 | ✅ Done |
+| 10 — WS Transaction Rules | 3 | ✅ Done |
+| 11 — WS Core Services | 5 | ✅ Done |
+| 12 — WS Top-Level Services | 3 | ✅ Done |
+| 13a — UI Primitives | 6 | ✅ Done |
+| 13b — Category Selector Cluster | 3 | ✅ Done |
+| 13c — Dialog & Picker Components | 4 | ✅ Done |
+| 13d — Settings Modal Cluster | 4 | ✅ Done |
+| 13e — Generic Base UI | 3 | ✅ Done |
+| 13f — Questrade UI | 2 | ✅ Done |
+| 13g — Wealthsimple UI | 3 | ✅ Done |
+| 13h — Rogers Bank UI | 3 | ✅ Done |
+| 13i — CanadaLife UI | 3 | ✅ Done |
+| 13j — Entry Points | 2 | ✅ Done |
+| 15 — Shared Type System | 2 new + ~16 modified | ✅ Done |
+| 14 — Strictness | all | ⏸️ Deferred |
+| **Total remaining** | **0** | **✅ All source files converted, shared types consolidated** |
 
 ---
 
@@ -390,8 +465,8 @@ Enable full strict mode once all files are `.ts`.
 |------|--------|------------|
 | **GM_* / Tampermonkey globals** | TS may not recognize GM_ functions | Use `@types/tampermonkey` + custom `.d.ts` for missing functions (GM_addElement) |
 | **Webpack externals for GM_*** | TS tries to resolve imports that are actually runtime globals | Keep externals config; declare globals in `.d.ts` |
-| **DOM-heavy UI code** | Typing `createElement` chains is tedious, low ROI | Use `HTMLElement` generics; accept `as HTMLInputElement` casts in UI layer |
-| **Test file volume** | 61,600 lines of tests — converting is high effort, low type-safety value | Convert test files last; keep `.js` tests importing `.ts` sources via `allowJs` |
+| **DOM-heavy UI code** | Typing `createElement` chains is tedious, low ROI | Use TypeScript's built-in `lib.dom.d.ts` types; accept `as HTMLInputElement` casts in UI layer |
+| **Test file volume** | 61,600 lines of tests — converting is high effort, low type-safety value | Keep `.js` tests importing `.ts` sources via `allowJs` — tests do not need type checking |
 
 ### Medium Risk
 
@@ -432,7 +507,7 @@ This provides ~70% of TypeScript's value with ~10% of the effort and serves as a
 
 ### File Naming
 - Source: `*.js` → `*.ts` (same name, different extension)
-- Tests: `*.test.js` → `*.test.ts`
+- Tests: remain as `*.test.js` (no conversion planned — tests import TS sources transparently)
 - Type-only files: `*.ts` in `src/types/` or co-located `*.types.ts`
 
 ### Import Style
@@ -444,6 +519,12 @@ This provides ~70% of TypeScript's value with ~10% of the effort and serves as a
 - Internal functions may use type inference where unambiguous
 - Prefer `interface` over `type` for object shapes (extendability)
 - Use `unknown` instead of `any` wherever possible
+
+### DOM Typing Approach
+- Use TypeScript's built-in `lib.dom.d.ts` types — no external DOM typing libraries needed
+- Use `as HTMLInputElement`, `as HTMLSelectElement` etc. for narrowing `event.target` and `querySelector` results
+- Define interfaces for component option objects (e.g., `CreateCategorySelectorOptions`)
+- Accept that UI layer will have more `as` casts than other layers — this is expected and acceptable
 
 ### Migration Commit Pattern
 - One commit per file or small group of related files

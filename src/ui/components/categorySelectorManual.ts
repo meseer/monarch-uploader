@@ -7,15 +7,57 @@ import { debugLog } from '../../core/utils';
 import { addModalKeyboardHandlers } from '../keyboardNavigation';
 import { createModalOverlay } from './categorySelectorUtils';
 
+interface ManualCategorizationResult {
+  merchant: string;
+  category: CategorySelection;
+}
+
+interface CategorySelection {
+  id?: string;
+  name: string;
+  [key: string]: unknown;
+}
+
+interface Transaction {
+  externalCanonicalId?: string;
+  type?: string;
+  subType?: string;
+  amount?: number;
+  amountSign?: string;
+  currency?: string;
+  occurredAt?: string;
+  unifiedStatus?: string;
+  status?: string;
+  [key: string]: unknown;
+}
+
+interface CategoryGroup {
+  id?: string;
+  name: string;
+  categories: CategorySelection[];
+  [key: string]: unknown;
+}
+
+type CategoryGroupSelectorFn = (
+  categoryGroups: CategoryGroup[],
+  bankCategory: string,
+  callback: (selected: CategorySelection | null) => void,
+) => void;
+
 /**
  * Internal function to show the manual categorization dialog
- * @param {Object} transaction - Raw transaction object
- * @param {Array} categoryGroups - Category groups with categories
- * @param {Function} callback - Callback function
- * @param {Function} showCategoryGroupSelectorFn - Injected function to show category group selector (avoids circular dependency)
+ * @param transaction - Raw transaction object
+ * @param categoryGroups - Category groups with categories
+ * @param callback - Callback function
+ * @param showCategoryGroupSelectorFn - Injected function to show category group selector (avoids circular dependency)
  */
-export function showManualCategorizationDialog(transaction, categoryGroups, callback, showCategoryGroupSelectorFn) {
-  let selectedCategory = null;
+export function showManualCategorizationDialog(
+  transaction: Transaction,
+  categoryGroups: CategoryGroup[],
+  callback: (result: ManualCategorizationResult | null) => void,
+  showCategoryGroupSelectorFn: CategoryGroupSelectorFn,
+): void {
+  let selectedCategory: CategorySelection | null = null;
   let merchantName = '';
   let isJsonExpanded = false;
 
@@ -301,7 +343,7 @@ export function showManualCategorizationDialog(transaction, categoryGroups, call
     font-size: 14px;
   `;
 
-  const updateSaveButton = () => {
+  const updateSaveButton = (): void => {
     const isValid = merchantName.length > 0 && selectedCategory !== null;
     saveBtn.disabled = !isValid;
 
@@ -318,7 +360,7 @@ export function showManualCategorizationDialog(transaction, categoryGroups, call
 
   // Now add the event listeners that use updateSaveButton
   merchantInput.addEventListener('input', (e) => {
-    merchantName = e.target.value.trim();
+    merchantName = (e.target as HTMLInputElement).value.trim();
     updateSaveButton();
   });
   merchantSection.appendChild(merchantInput);
@@ -329,7 +371,7 @@ export function showManualCategorizationDialog(transaction, categoryGroups, call
     overlay.style.display = 'none';
 
     // Create a wrapper callback that re-shows our dialog
-    const categorySelectCallback = (selected) => {
+    const categorySelectCallback = (selected: CategorySelection | null): void => {
       overlay.style.display = 'flex';
 
       if (selected) {

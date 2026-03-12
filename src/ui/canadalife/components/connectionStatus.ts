@@ -5,9 +5,8 @@
 
 /**
  * Creates connection status indicators container
- * @returns {HTMLElement} Connection status container
  */
-export function createConnectionStatus() {
+export function createConnectionStatus(): HTMLElement {
   const container = document.createElement('div');
   container.className = 'connection-status-container';
   container.style.cssText = `

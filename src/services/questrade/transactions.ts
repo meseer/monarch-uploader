@@ -1093,7 +1093,7 @@ export async function uploadAllAccountsActivityToMonarch() {
     // Create progress dialog
     const progressDialog = showProgressDialog(
       (accounts as unknown as Record<string, unknown>[]).map((acc) => ({
-        key: acc.key,
+        key: acc.key as string,
         nickname: (acc.nickname as string) || (acc.key as string),
       })),
       'Uploading All Activity',

@@ -14,38 +14,45 @@ import toast from '../toast';
 import accountService from '../../services/common/accountService';
 import { getMonarchAccountTypeMapping } from '../../mappers/wealthsimple-account-types';
 
+interface WealthsimpleAccountEntry {
+  syncEnabled: boolean;
+  wealthsimpleAccount: {
+    type: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+interface LookbackValidation {
+  valid: boolean;
+  error?: string;
+}
+
 /**
  * Checks connection status for an institution
- * @param {string} institutionId - Institution identifier
- * @returns {boolean} True if connected
  */
-export function checkInstitutionConnection(institutionId) {
+export function checkInstitutionConnection(institutionId: string): boolean {
   switch (institutionId) {
   case 'questrade':
     return checkQuestradeAuth().authenticated;
   case 'canadalife':
-    // Check for CanadaLife token in localStorage
     try {
       const token = localStorage.getItem(STORAGE.CANADALIFE_TOKEN_KEY);
       return Boolean(token);
-    } catch (error) {
+    } catch {
       return false;
     }
   case 'rogersbank': {
-    // Read from configStore only — migration completed
     const rbAuth = getAuth(INTEGRATIONS.ROGERSBANK);
     return Boolean(rbAuth.authToken);
   }
   case 'wealthsimple': {
-    // Read from configStore only — migration completed
     const wsAuth = getAuth(INTEGRATIONS.WEALTHSIMPLE);
     return Boolean(wsAuth.accessToken);
   }
   case 'monarch':
     return checkMonarchAuth().authenticated;
   default: {
-    // Generic fallback for modular integrations registered in the integration registry.
-    // Uses the integration's auth.checkStatus() if available.
     const registeredIntegration = getIntegration(institutionId);
     if (registeredIntegration && registeredIntegration.auth) {
       try {
@@ -63,10 +70,8 @@ export function checkInstitutionConnection(institutionId) {
 
 /**
  * Creates a lookback period configuration section for an institution
- * @param {string} institutionType - Type of institution ('questrade', 'canadalife', 'rogersbank')
- * @returns {HTMLElement} Lookback period section element
  */
-export function createLookbackPeriodSection(institutionType) {
+export function createLookbackPeriodSection(institutionType: string): HTMLElement {
   const section = createSection('Lookback Period', '⏰', 'Configure how many days to look back from the last upload date for subsequent uploads');
 
   const configContainer = document.createElement('div');
@@ -94,13 +99,11 @@ export function createLookbackPeriodSection(institutionType) {
     color: var(--mu-text-primary, #333);
   `;
 
-  // Get institution name from capabilities (works for both legacy and modular integrations)
   const institutionName = getDisplayName(institutionType);
 
-  // Load current value or default (uses configStore for Wealthsimple)
   const defaultLookback = getDefaultLookbackDays(institutionType);
   const currentValue = getLookbackForInstitution(institutionType);
-  input.value = currentValue;
+  input.value = String(currentValue);
 
   const daysLabel = document.createElement('span');
   daysLabel.textContent = 'days';
@@ -123,7 +126,6 @@ export function createLookbackPeriodSection(institutionType) {
   inputContainer.appendChild(daysLabel);
   inputContainer.appendChild(resetButton);
 
-  // Description
   const description = document.createElement('div');
   description.style.cssText = 'font-size: 13px; color: var(--mu-text-secondary, #666); margin-top: 8px; line-height: 1.4;';
   description.innerHTML = `
@@ -134,30 +136,23 @@ export function createLookbackPeriodSection(institutionType) {
     • Range: 0-30 days (0 means start exactly from the last upload date)
   `;
 
-  /**
-   * Save lookback value to storage via configStore.
-   * Works for all integrations — both legacy and modular.
-   * @param {number} value - Lookback days value
-   */
-  const saveLookbackValue = (value) => {
+  const saveLookbackValue = (value: number): void => {
     setSetting(institutionType, 'lookbackDays', value);
   };
 
-  // Save changes
-  const saveChanges = () => {
+  const saveChanges = (): void => {
     const value = parseInt(input.value, 10);
     if (Number.isNaN(value) || value < 0 || value > 30) {
-      input.value = currentValue; // Reset to previous valid value
+      input.value = String(currentValue);
       toast.show('Please enter a valid number between 0 and 30', 'error');
       return;
     }
 
-    // Validate lookback vs retention
     const minRetention = getMinRetentionForInstitution(institutionType);
-    const validation = validateLookbackVsRetention(value, minRetention);
+    const validation = validateLookbackVsRetention(value, minRetention) as LookbackValidation;
     if (!validation.valid) {
-      input.value = currentValue; // Reset to previous valid value
-      toast.show(validation.error, 'error');
+      input.value = String(currentValue);
+      toast.show(validation.error || 'Validation failed', 'error');
       return;
     }
 
@@ -166,23 +161,20 @@ export function createLookbackPeriodSection(institutionType) {
     debugLog(`${institutionName} lookback period updated to: ${value} days`);
   };
 
-  // Reset to default
   resetButton.addEventListener('click', () => {
-    // Validate default lookback vs retention
     const minRetention = getMinRetentionForInstitution(institutionType);
-    const validation = validateLookbackVsRetention(defaultLookback, minRetention);
+    const validation = validateLookbackVsRetention(defaultLookback, minRetention) as LookbackValidation;
     if (!validation.valid) {
       toast.show(`Cannot reset: ${validation.error}`, 'error');
       return;
     }
 
-    input.value = defaultLookback;
+    input.value = String(defaultLookback);
     saveLookbackValue(defaultLookback);
     toast.show(`${institutionName} lookback period reset to default (${defaultLookback} day${defaultLookback !== 1 ? 's' : ''})`, 'info');
   });
 
-  // Save on blur, enter, or spinner button clicks (debounced input event)
-  let saveTimeout;
+  let saveTimeout: ReturnType<typeof setTimeout>;
   input.addEventListener('input', () => {
     clearTimeout(saveTimeout);
     saveTimeout = setTimeout(saveChanges, 500);
@@ -191,7 +183,7 @@ export function createLookbackPeriodSection(institutionType) {
     clearTimeout(saveTimeout);
     saveChanges();
   });
-  input.addEventListener('keydown', (e) => {
+  input.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Enter') {
       clearTimeout(saveTimeout);
       saveChanges();
@@ -217,28 +209,27 @@ export function createLookbackPeriodSection(institutionType) {
 /**
  * Sort Wealthsimple accounts by sync status and account type
  * Priority: Enabled first, then by type (credit > cash > investment)
- * @param {Array} accounts - Array of consolidated account objects
- * @returns {Array} Sorted array of accounts
  */
-export function sortWealthsimpleAccounts(accounts) {
-  return accounts.sort((a, b) => {
+export function sortWealthsimpleAccounts(accounts: unknown[]): WealthsimpleAccountEntry[] {
+  const typedAccounts = accounts as WealthsimpleAccountEntry[];
+  return typedAccounts.sort((a, b) => {
     // First: Sort by enabled status (enabled first)
     if (a.syncEnabled !== b.syncEnabled) {
-      return b.syncEnabled - a.syncEnabled; // true before false
+      return (b.syncEnabled ? 1 : 0) - (a.syncEnabled ? 1 : 0);
     }
 
     // Second: Sort by account type priority
-    const getTypePriority = (account) => {
+    const getTypePriority = (account: WealthsimpleAccountEntry): number => {
       const accountType = account.wealthsimpleAccount.type;
-      const mapping = getMonarchAccountTypeMapping(accountType);
+      const mapping = getMonarchAccountTypeMapping(accountType as string);
 
-      if (!mapping) return 999; // Unknown types last
+      if (!mapping) return 999;
 
       switch (mapping.type) {
-      case 'credit': return 1; // Credit cards
-      case 'depository': return 2; // Cash accounts
-      case 'brokerage': return 3; // Investment accounts
-      default: return 4; // Other types
+      case 'credit': return 1;
+      case 'depository': return 2;
+      case 'brokerage': return 3;
+      default: return 4;
       }
     };
 
@@ -248,12 +239,8 @@ export function sortWealthsimpleAccounts(accounts) {
 
 /**
  * Creates a section with title and description
- * @param {string} title - Section title
- * @param {string} icon - Section icon
- * @param {string} description - Section description
- * @returns {HTMLElement} Section element
  */
-export function createSection(title, icon, description) {
+export function createSection(title: string, icon: string, description: string): HTMLElement {
   const section = document.createElement('div');
   section.style.cssText = 'margin-bottom: 30px;';
 
@@ -277,10 +264,8 @@ export function createSection(title, icon, description) {
 
 /**
  * Creates a confirmation dialog
- * @param {string} message - Confirmation message
- * @returns {Promise<boolean>} Promise that resolves to true if confirmed
  */
-export function showConfirmDialog(message) {
+export function showConfirmDialog(message: string): Promise<boolean> {
   return new Promise((resolve) => {
     const modal = document.createElement('div');
     modal.style.cssText = `
@@ -357,10 +342,8 @@ export function showConfirmDialog(message) {
 
 /**
  * Adds a logo fallback (first letter) to a container for account cards
- * @param {HTMLElement} container - Container to add logo to
- * @param {string} institutionName - Institution name for fallback
  */
-export function addAccountLogoFallback(container, institutionName) {
+export function addAccountLogoFallback(container: HTMLElement, institutionName: string): void {
   const logoFallback = document.createElement('div');
   logoFallback.style.cssText = `
     width: 40px;
@@ -381,10 +364,8 @@ export function addAccountLogoFallback(container, institutionName) {
 
 /**
  * Formats a date for display
- * @param {string} dateValue - Date value to format
- * @returns {string} Formatted date string
  */
-export function formatLastUpdateDate(dateValue) {
+export function formatLastUpdateDate(dateValue: string | null | undefined): string {
   if (!dateValue) return 'Never';
 
   try {
@@ -396,19 +377,15 @@ export function formatLastUpdateDate(dateValue) {
       month: 'short',
       day: 'numeric',
     });
-  } catch (error) {
+  } catch {
     return 'Invalid date';
   }
 }
 
 /**
  * Creates a styled toggle switch component (AirBnB/iOS style)
- * @param {boolean} isEnabled - Initial state (true = enabled/on, false = disabled/off)
- * @param {Function} onChange - Callback when toggle changes
- * @param {boolean} showLabel - Whether to show the Enabled/Disabled label (default: true)
- * @returns {HTMLElement} Toggle switch element
  */
-export function createToggleSwitch(isEnabled, onChange, showLabel = true) {
+export function createToggleSwitch(isEnabled: boolean, onChange: (state: boolean) => void, showLabel = true): HTMLElement {
   const container = document.createElement('label');
   container.style.cssText = `
     display: inline-flex;
@@ -418,7 +395,7 @@ export function createToggleSwitch(isEnabled, onChange, showLabel = true) {
     user-select: none;
   `;
 
-  let label = null;
+  let label: HTMLSpanElement | null = null;
   if (showLabel) {
     label = document.createElement('span');
     label.textContent = isEnabled ? 'Enabled' : 'Disabled';
@@ -453,11 +430,10 @@ export function createToggleSwitch(isEnabled, onChange, showLabel = true) {
   checkbox.checked = isEnabled;
   checkbox.style.cssText = 'display: none;';
 
-  checkbox.addEventListener('change', (e) => {
-    const newState = e.target.checked;
+  checkbox.addEventListener('change', (e: Event) => {
+    const newState = (e.target as HTMLInputElement).checked;
     switchContainer.style.backgroundColor = newState ? 'var(--mu-toggle-active-bg, #2196F3)' : 'var(--mu-toggle-bg, #ccc)';
     switchSlider.style.left = newState ? '22px' : '2px';
-    // Update label text if it exists
     if (label) {
       label.textContent = newState ? 'Enabled' : 'Disabled';
     }
@@ -471,9 +447,8 @@ export function createToggleSwitch(isEnabled, onChange, showLabel = true) {
   container.appendChild(switchContainer);
   container.appendChild(checkbox);
 
-  // Make the container clickable
-  container.addEventListener('click', (e) => {
-    e.preventDefault(); // Prevent default label behavior to avoid double-toggle
+  container.addEventListener('click', (e: Event) => {
+    e.preventDefault();
     checkbox.checked = !checkbox.checked;
     checkbox.dispatchEvent(new Event('change'));
   });
@@ -483,23 +458,16 @@ export function createToggleSwitch(isEnabled, onChange, showLabel = true) {
 
 /**
  * Renders category mappings section if the integration supports categorization
- * This is the capability-driven entry point - checks capabilities and renders appropriately
- * @param {string} integrationId - Integration identifier
- * @param {Function} onRefresh - Callback to refresh the tab after changes
- * @returns {HTMLElement} Category section element (or empty div if not supported)
  */
-export function renderCategoryMappingsSectionIfEnabled(integrationId, onRefresh) {
+export function renderCategoryMappingsSectionIfEnabled(integrationId: string, onRefresh: () => void): HTMLElement {
   const categoryConfig = getCategoryMappingsConfig(integrationId);
 
-  // If integration doesn't support categorization, return empty element
   if (!categoryConfig || !categoryConfig.storageKey) {
     return document.createElement('div');
   }
 
-  // Create section wrapper
   const sectionWrapper = createSection('Category Mappings', '🏷️', `${categoryConfig.sourceLabel} to Monarch category mappings`);
 
-  // Render the collapsible category mappings section
   const categorySection = renderCategoryMappingsSection(
     integrationId,
     categoryConfig.storageKey,
@@ -513,30 +481,34 @@ export function renderCategoryMappingsSectionIfEnabled(integrationId, onRefresh)
 
 /**
  * Creates a collapsible category mappings section with filters
- * @param {string} integrationId - Integration identifier (rogersbank or wealthsimple)
- * @param {string} storageKey - Storage key for category mappings
- * @param {string} sourceColumnLabel - Label for the source column (e.g., "Bank Category" or "Merchant Name")
- * @param {Function} onRefresh - Callback to refresh the tab after changes
- * @returns {HTMLElement} Category mappings section element
  */
-export function renderCategoryMappingsSection(integrationId, storageKey, sourceColumnLabel, onRefresh) {
+export function renderCategoryMappingsSection(
+  integrationId: string,
+  storageKey: string,
+  sourceColumnLabel: string,
+  onRefresh: () => void,
+): HTMLElement {
   const sectionContainer = document.createElement('div');
   sectionContainer.id = `category-mappings-section-${integrationId}`;
   sectionContainer.style.cssText = 'margin-bottom: 15px;';
 
-  // Get category mappings from configStore (with legacy fallback via category mapper)
-  let categoryData = [];
-  const allCategories = new Set();
+  interface CategoryItem {
+    key: string;
+    sourceKey: string;
+    monarchCategory: string;
+  }
+
+  let categoryData: CategoryItem[] = [];
+  const allCategories = new Set<string>();
 
   try {
-    const mappings = getCategoryMappings(integrationId);
+    const mappings = getCategoryMappings(integrationId) as Record<string, string>;
     categoryData = Object.entries(mappings).map(([sourceKey, monarchCategory]) => ({
       key: `${integrationId}.${sourceKey}`,
       sourceKey,
       monarchCategory,
     }));
 
-    // Collect unique Monarch categories for dropdown
     categoryData.forEach((item) => {
       if (item.monarchCategory) {
         allCategories.add(item.monarchCategory);
@@ -546,7 +518,6 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
     debugLog(`Error parsing ${integrationId} category mappings:`, error);
   }
 
-  // Section header with expand/collapse
   const sectionHeader = document.createElement('div');
   sectionHeader.id = `category-mappings-header-${integrationId}`;
   sectionHeader.style.cssText = `
@@ -583,7 +554,6 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
   sectionHeader.appendChild(headerLeft);
   sectionContainer.appendChild(sectionHeader);
 
-  // Expandable content
   const expandableContent = document.createElement('div');
   expandableContent.id = `category-mappings-content-${integrationId}`;
   expandableContent.style.cssText = `
@@ -601,12 +571,10 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
     emptyMessage.style.cssText = 'color: var(--mu-text-secondary, #666); font-style: italic; margin: 0; font-size: 13px;';
     expandableContent.appendChild(emptyMessage);
   } else {
-    // Filter controls container
     const filterContainer = document.createElement('div');
     filterContainer.id = `category-mappings-filters-${integrationId}`;
     filterContainer.style.cssText = 'display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; align-items: flex-end;';
 
-    // Source name filter (freetext)
     const sourceFilterWrapper = document.createElement('div');
     sourceFilterWrapper.style.cssText = 'flex: 1; min-width: 200px;';
 
@@ -632,7 +600,6 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
     sourceFilterWrapper.appendChild(sourceFilterInput);
     filterContainer.appendChild(sourceFilterWrapper);
 
-    // Category filter (dropdown with search)
     const categoryFilterWrapper = document.createElement('div');
     categoryFilterWrapper.style.cssText = 'flex: 1; min-width: 200px; position: relative;';
 
@@ -641,7 +608,6 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
     categoryFilterLabel.style.cssText = 'display: block; font-size: 12px; color: var(--mu-text-secondary, #666); margin-bottom: 4px; font-weight: 500;';
     categoryFilterWrapper.appendChild(categoryFilterLabel);
 
-    // Searchable dropdown container
     const dropdownContainer = document.createElement('div');
     dropdownContainer.id = `category-mappings-category-dropdown-${integrationId}`;
     dropdownContainer.style.cssText = 'position: relative;';
@@ -663,7 +629,6 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
       color: var(--mu-text-primary, #333);
     `;
 
-    // Dropdown arrow
     const dropdownArrow = document.createElement('span');
     dropdownArrow.textContent = '▼';
     dropdownArrow.style.cssText = `
@@ -676,7 +641,6 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
       pointer-events: none;
     `;
 
-    // Dropdown list
     const dropdownList = document.createElement('div');
     dropdownList.id = `category-mappings-dropdown-list-${integrationId}`;
     dropdownList.style.cssText = `
@@ -695,11 +659,8 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
       box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
     `;
 
-    // Define applyFilters early (referenced in event handlers below)
-    // This will be properly initialized after table elements are created
-    let applyFiltersCallback = () => {};
+    let applyFiltersCallback = (): void => {};
 
-    // Add "All Categories" option
     const allOption = document.createElement('div');
     allOption.textContent = 'All Categories';
     allOption.style.cssText = `
@@ -724,7 +685,6 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
     });
     dropdownList.appendChild(allOption);
 
-    // Add category options
     const sortedCategories = Array.from(allCategories).sort();
     sortedCategories.forEach((category) => {
       const option = document.createElement('div');
@@ -751,29 +711,25 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
       dropdownList.appendChild(option);
     });
 
-    // Toggle dropdown on input click
-    categoryInput.addEventListener('click', (e) => {
+    categoryInput.addEventListener('click', (e: Event) => {
       e.stopPropagation();
       const isVisible = dropdownList.style.display === 'block';
       dropdownList.style.display = isVisible ? 'none' : 'block';
     });
 
-    // Filter dropdown options as user types
     categoryInput.addEventListener('input', () => {
       const searchTerm = categoryInput.value.toLowerCase();
-      const options = dropdownList.querySelectorAll('div[data-category]');
+      const options = dropdownList.querySelectorAll('div[data-category]') as NodeListOf<HTMLElement>;
       options.forEach((option) => {
-        const categoryName = option.dataset.category.toLowerCase();
+        const categoryName = (option.dataset.category || '').toLowerCase();
         option.style.display = categoryName.includes(searchTerm) ? 'block' : 'none';
       });
-      // Always show "All Categories" option
       allOption.style.display = 'block';
       dropdownList.style.display = 'block';
     });
 
-    // Close dropdown when clicking outside
-    document.addEventListener('click', (e) => {
-      if (!dropdownContainer.contains(e.target)) {
+    document.addEventListener('click', (e: Event) => {
+      if (!dropdownContainer.contains(e.target as Node)) {
         dropdownList.style.display = 'none';
       }
     });
@@ -784,7 +740,6 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
     categoryFilterWrapper.appendChild(dropdownContainer);
     filterContainer.appendChild(categoryFilterWrapper);
 
-    // Clear filters button
     const clearFiltersBtn = document.createElement('button');
     clearFiltersBtn.id = `category-mappings-clear-filters-${integrationId}`;
     clearFiltersBtn.textContent = 'Clear Filters';
@@ -799,7 +754,7 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
       white-space: nowrap;
       transition: background-color 0.2s;
     `;
-    clearFiltersBtn.addEventListener('click', (e) => {
+    clearFiltersBtn.addEventListener('click', (e: Event) => {
       e.stopPropagation();
       sourceFilterInput.value = '';
       categoryInput.value = '';
@@ -814,12 +769,10 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
     });
     filterContainer.appendChild(clearFiltersBtn);
 
-    // Table container
     const tableContainer = document.createElement('div');
     tableContainer.id = `category-mappings-table-container-${integrationId}`;
     tableContainer.style.cssText = 'max-height: 300px; overflow-y: auto;';
 
-    // Create table
     const table = document.createElement('table');
     table.id = `category-mappings-table-${integrationId}`;
     table.style.cssText = `
@@ -828,7 +781,6 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
       font-size: 13px;
     `;
 
-    // Table header
     const thead = document.createElement('thead');
     const headerRow = document.createElement('tr');
     [sourceColumnLabel, 'Monarch Category', 'Actions'].forEach((headerText) => {
@@ -849,7 +801,6 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
     thead.appendChild(headerRow);
     table.appendChild(thead);
 
-    // Table body
     const tbody = document.createElement('tbody');
     tbody.id = `category-mappings-tbody-${integrationId}`;
 
@@ -859,19 +810,16 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
       row.dataset.sourceKey = item.sourceKey.toLowerCase();
       row.dataset.category = item.monarchCategory.toLowerCase();
 
-      // Source key cell
       const sourceCell = document.createElement('td');
       sourceCell.textContent = item.sourceKey;
       sourceCell.style.cssText = 'padding: 10px; border: 1px solid var(--mu-border, #e0e0e0);';
       row.appendChild(sourceCell);
 
-      // Monarch category cell
       const categoryCell = document.createElement('td');
       categoryCell.textContent = item.monarchCategory;
       categoryCell.style.cssText = 'padding: 10px; border: 1px solid var(--mu-border, #e0e0e0);';
       row.appendChild(categoryCell);
 
-      // Actions cell
       const actionsCell = document.createElement('td');
       actionsCell.style.cssText = 'padding: 10px; border: 1px solid var(--mu-border, #e0e0e0);';
 
@@ -887,14 +835,14 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
         font-size: 12px;
         transition: background-color 0.2s;
       `;
-      deleteBtn.addEventListener('click', async (e) => {
+      deleteBtn.addEventListener('click', async (e: Event) => {
         e.stopPropagation();
         const confirmed = await showConfirmDialog(
           `Delete mapping for "${item.sourceKey}"?\n\nMonarch Category: ${item.monarchCategory}`,
         );
         if (confirmed) {
           try {
-            const currentMappings = getCategoryMappings(integrationId);
+            const currentMappings = getCategoryMappings(integrationId) as Record<string, string>;
             delete currentMappings[item.sourceKey];
             saveCategoryMappings(integrationId, currentMappings);
             toast.show('Category mapping deleted', 'info');
@@ -919,23 +867,22 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
 
     table.appendChild(tbody);
     tableContainer.appendChild(table);
-    // Filter results count
+
     const resultsCount = document.createElement('div');
     resultsCount.id = `category-mappings-results-count-${integrationId}`;
     resultsCount.style.cssText = 'margin-top: 8px; font-size: 12px; color: var(--mu-text-secondary, #666);';
     resultsCount.textContent = `Showing ${categoryData.length} of ${categoryData.length} mappings`;
 
-    // Now define the actual applyFilters implementation and assign to callback
     applyFiltersCallback = () => {
       const sourceFilter = sourceFilterInput.value.toLowerCase();
       const categoryFilter = (categoryInput.dataset.selectedCategory || '').toLowerCase();
 
-      const rows = tbody.querySelectorAll('tr');
+      const rows = tbody.querySelectorAll('tr') as NodeListOf<HTMLTableRowElement>;
       let visibleCount = 0;
 
       rows.forEach((row) => {
-        const sourceKey = row.dataset.sourceKey;
-        const category = row.dataset.category;
+        const sourceKey = row.dataset.sourceKey || '';
+        const category = row.dataset.category || '';
 
         const sourceMatch = !sourceFilter || sourceKey.includes(sourceFilter);
         const categoryMatch = !categoryFilter || category === categoryFilter;
@@ -951,14 +898,12 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
       resultsCount.textContent = `Showing ${visibleCount} of ${categoryData.length} mappings`;
     };
 
-    // Attach filter event listeners
     sourceFilterInput.addEventListener('input', () => applyFiltersCallback());
 
     expandableContent.appendChild(filterContainer);
     expandableContent.appendChild(tableContainer);
     expandableContent.appendChild(resultsCount);
 
-    // Delete All button
     const deleteAllContainer = document.createElement('div');
     deleteAllContainer.style.cssText = 'margin-top: 12px; display: flex; gap: 8px;';
 
@@ -976,7 +921,7 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
       font-weight: 500;
       transition: background-color 0.2s;
     `;
-    deleteAllBtn.addEventListener('click', async (e) => {
+    deleteAllBtn.addEventListener('click', async (e: Event) => {
       e.stopPropagation();
       const confirmed = await showConfirmDialog(
         `Are you sure you want to delete ALL ${categoryData.length} category mapping(s)?\n\nThis action cannot be undone.`,
@@ -1000,9 +945,8 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
 
   sectionContainer.appendChild(expandableContent);
 
-  // Toggle expand/collapse
   let isExpanded = false;
-  sectionHeader.addEventListener('click', (e) => {
+  sectionHeader.addEventListener('click', (e: Event) => {
     e.stopPropagation();
     isExpanded = !isExpanded;
     expandableContent.style.display = isExpanded ? 'block' : 'none';
@@ -1021,18 +965,17 @@ export function renderCategoryMappingsSection(integrationId, storageKey, sourceC
 
 /**
  * Renders the debug JSON section with editable functionality (collapsible)
- * @param {string} integrationId - Integration identifier
- * @param {Object} accountEntry - Consolidated account data object
- * @param {string} accountId - Account ID for updates
- * @param {Function} onSave - Callback after successful save
- * @returns {HTMLElement} Debug section element
  */
-export function renderDebugJsonSection(integrationId, accountEntry, accountId, onSave) {
+export function renderDebugJsonSection(
+  integrationId: string,
+  accountEntry: Record<string, unknown>,
+  accountId: string,
+  onSave: (() => void) | null,
+): HTMLElement {
   const sectionContainer = document.createElement('div');
   sectionContainer.id = `debug-section-${integrationId}-${accountId}`;
   sectionContainer.style.cssText = 'margin-bottom: 15px;';
 
-  // Section header with expand/collapse
   const sectionHeader = document.createElement('div');
   sectionHeader.id = `debug-header-${integrationId}-${accountId}`;
   sectionHeader.style.cssText = `
@@ -1064,7 +1007,6 @@ export function renderDebugJsonSection(integrationId, accountEntry, accountId, o
   sectionHeader.appendChild(headerLeft);
   sectionContainer.appendChild(sectionHeader);
 
-  // Expandable content
   const expandableContent = document.createElement('div');
   expandableContent.id = `debug-content-${integrationId}-${accountId}`;
   expandableContent.style.cssText = `
@@ -1076,12 +1018,10 @@ export function renderDebugJsonSection(integrationId, accountEntry, accountId, o
     background-color: var(--mu-bg-primary, #fff);
   `;
 
-  // Button container for Edit/Save/Cancel
   const buttonContainer = document.createElement('div');
   buttonContainer.id = `debug-buttons-${integrationId}-${accountId}`;
   buttonContainer.style.cssText = 'display: flex; gap: 8px; margin-bottom: 10px;';
 
-  // Edit button (visible in view mode)
   const editButton = document.createElement('button');
   editButton.id = `debug-edit-btn-${integrationId}-${accountId}`;
   editButton.textContent = '✍️ Edit';
@@ -1107,7 +1047,6 @@ export function renderDebugJsonSection(integrationId, accountEntry, accountId, o
     editButton.style.borderColor = '#6c757d';
   });
 
-  // Save button (hidden in view mode)
   const saveButton = document.createElement('button');
   saveButton.id = `debug-save-btn-${integrationId}-${accountId}`;
   saveButton.textContent = '✔ Save';
@@ -1131,7 +1070,6 @@ export function renderDebugJsonSection(integrationId, accountEntry, accountId, o
     saveButton.style.backgroundColor = '#28a745';
   });
 
-  // Cancel button (hidden in view mode)
   const cancelButton = document.createElement('button');
   cancelButton.id = `debug-cancel-btn-${integrationId}-${accountId}`;
   cancelButton.textContent = '✘ Cancel';
@@ -1160,7 +1098,6 @@ export function renderDebugJsonSection(integrationId, accountEntry, accountId, o
   buttonContainer.appendChild(cancelButton);
   expandableContent.appendChild(buttonContainer);
 
-  // JSON container (view mode)
   const jsonContainer = document.createElement('pre');
   jsonContainer.id = `debug-json-view-${integrationId}-${accountId}`;
   jsonContainer.style.cssText = `
@@ -1179,7 +1116,6 @@ export function renderDebugJsonSection(integrationId, accountEntry, accountId, o
   jsonContainer.textContent = JSON.stringify(accountEntry, null, 2);
   expandableContent.appendChild(jsonContainer);
 
-  // JSON textarea (edit mode - hidden by default)
   const jsonTextarea = document.createElement('textarea');
   jsonTextarea.id = `debug-json-edit-${integrationId}-${accountId}`;
   jsonTextarea.style.cssText = `
@@ -1202,12 +1138,10 @@ export function renderDebugJsonSection(integrationId, accountEntry, accountId, o
 
   sectionContainer.appendChild(expandableContent);
 
-  // Store original JSON for cancel functionality
   let originalJson = JSON.stringify(accountEntry, null, 2);
 
-  // Toggle expand/collapse
   let isExpanded = false;
-  sectionHeader.addEventListener('click', (e) => {
+  sectionHeader.addEventListener('click', (e: Event) => {
     e.stopPropagation();
     isExpanded = !isExpanded;
     expandableContent.style.display = isExpanded ? 'block' : 'none';
@@ -1221,8 +1155,7 @@ export function renderDebugJsonSection(integrationId, accountEntry, accountId, o
     sectionHeader.style.backgroundColor = 'var(--mu-bg-primary, #fff)';
   });
 
-  // Edit button click handler
-  editButton.addEventListener('click', (e) => {
+  editButton.addEventListener('click', (e: Event) => {
     e.stopPropagation();
     jsonContainer.style.display = 'none';
     jsonTextarea.style.display = 'block';
@@ -1232,21 +1165,18 @@ export function renderDebugJsonSection(integrationId, accountEntry, accountId, o
     originalJson = jsonTextarea.value;
   });
 
-  // Save button click handler
-  saveButton.addEventListener('click', (e) => {
+  saveButton.addEventListener('click', (e: Event) => {
     e.stopPropagation();
     const newJsonValue = jsonTextarea.value;
 
-    // Validate JSON
-    let parsedJson;
+    let parsedJson: Record<string, unknown>;
     try {
       parsedJson = JSON.parse(newJsonValue);
-    } catch (error) {
+    } catch {
       toast.show('Invalid JSON format. Please fix the syntax and try again.', 'error');
       return;
     }
 
-    // Update the account in storage
     const success = accountService.updateAccountInList(integrationId, accountId, parsedJson);
 
     if (success) {
@@ -1264,8 +1194,7 @@ export function renderDebugJsonSection(integrationId, accountEntry, accountId, o
     }
   });
 
-  // Cancel button click handler
-  cancelButton.addEventListener('click', (e) => {
+  cancelButton.addEventListener('click', (e: Event) => {
     e.stopPropagation();
     jsonTextarea.value = originalJson;
     jsonContainer.style.display = 'block';
@@ -1277,4 +1206,3 @@ export function renderDebugJsonSection(integrationId, accountEntry, accountId, o
 
   return sectionContainer;
 }
-

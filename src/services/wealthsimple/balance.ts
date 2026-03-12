@@ -5,38 +5,25 @@
 
 import { debugLog, formatDate, parseLocalDate, getLookbackForInstitution } from '../../core/utils';
 import { WEALTHSIMPLE_BALANCE_RECONSTRUCTION_TYPES } from '../../core/config';
+import type { CurrentBalance, BalanceCheckpoint } from '../../types/monarch';
+import type { ConsolidatedAccountBase } from '../../types/wealthsimple';
 import stateManager from '../../core/state';
 import wealthsimpleApi from '../../api/wealthsimple';
 import monarchApi from '../../api/monarch';
 import toast from '../../ui/toast';
 
+export type { CurrentBalance, BalanceCheckpoint };
+
+/**
+ * Alias for the shared ConsolidatedAccountBase type.
+ * balance.ts uses the base type from src/types/wealthsimple.ts,
+ * breaking the former circular dependency with account.ts.
+ */
+type ConsolidatedAccount = ConsolidatedAccountBase;
+
 export interface BalanceHistory {
   date: string;
   amount: number;
-}
-
-export interface BalanceCheckpoint {
-  date: string;
-  amount: number;
-}
-
-export interface CurrentBalance {
-  amount: number;
-  currency?: string;
-}
-
-interface WealthsimpleAccountData {
-  id: string;
-  nickname?: string;
-  type?: string;
-  currency?: string;
-  createdAt?: string;
-}
-
-interface ConsolidatedAccount {
-  wealthsimpleAccount: WealthsimpleAccountData;
-  monarchAccount?: { displayName?: string } | null;
-  lastSyncDate?: string;
 }
 
 interface ProcessedTransactionForBalance {

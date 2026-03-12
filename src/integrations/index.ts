@@ -8,15 +8,20 @@
  * @module integrations
  */
 
+import type { IntegrationModule } from './types';
 import * as mbna from './mbna';
+
+/* eslint-disable no-underscore-dangle */
+declare const __ENABLED_INTEGRATIONS__: string[] | undefined;
+/* eslint-enable no-underscore-dangle */
 
 /**
  * All integration modules keyed by ID.
  * As existing integrations are migrated to the module architecture,
  * they will be added here.
  */
-const ALL = {
-  mbna,
+const ALL: Record<string, IntegrationModule> = {
+  mbna: mbna as unknown as IntegrationModule,
   // Future: wealthsimple, questrade, canadalife, rogersbank
 };
 
@@ -24,17 +29,13 @@ const ALL = {
  * Build-time integration selection.
  * When __ENABLED_INTEGRATIONS__ is defined by webpack DefinePlugin,
  * only the specified integrations are bundled. Otherwise, all are included.
- *
- * @type {import('./types').IntegrationModule[]}
  */
-/* eslint-disable no-undef */
-const enabled = typeof __ENABLED_INTEGRATIONS__ !== 'undefined'
+const enabled: string[] | 'all' = typeof __ENABLED_INTEGRATIONS__ !== 'undefined'
   ? __ENABLED_INTEGRATIONS__
   : 'all';
-/* eslint-enable no-undef */
 
-export const AVAILABLE_INTEGRATIONS = enabled === 'all'
+export const AVAILABLE_INTEGRATIONS: IntegrationModule[] = enabled === 'all'
   ? Object.values(ALL)
-  : enabled.map((id) => ALL[id]).filter(Boolean);
+  : (enabled as string[]).map((id) => ALL[id]).filter(Boolean);
 
 export default AVAILABLE_INTEGRATIONS;

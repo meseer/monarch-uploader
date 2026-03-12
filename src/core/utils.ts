@@ -726,10 +726,9 @@ export function formatCurrencyAmount(amount: number): string {
   }).format(amount);
 }
 
-interface BalanceInfo {
-  amount: number | null | undefined;
-  currency: string;
-}
+// Re-exported from shared types for backward compatibility
+import type { BalanceInfo } from '../types/monarch';
+export type { BalanceInfo } from '../types/monarch';
 
 /**
  * Format balance with currency and amount

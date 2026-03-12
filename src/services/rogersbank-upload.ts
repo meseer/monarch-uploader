@@ -693,7 +693,7 @@ export async function uploadRogersBankToMonarch() {
       if (!monarchAccounts?.length) throw new Error('No Monarch credit card accounts found.');
 
       monarchAccount = await new Promise((resolve) => {
-        showMonarchAccountSelectorWithCreate(monarchAccounts, resolve, null, 'credit', {
+        showMonarchAccountSelectorWithCreate(monarchAccounts as unknown as Parameters<typeof showMonarchAccountSelectorWithCreate>[0], resolve, null, 'credit', {
           defaultName: rogersAccountName,
           defaultType: 'credit',
           defaultSubtype: 'credit_card',

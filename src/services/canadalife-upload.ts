@@ -317,7 +317,7 @@ async function getOrCreateMonarchAccountMapping(canadalifeAccount) {
   // Show account selector with create option (balance-only for Canada Life)
   const monarchAccount = await new Promise((resolve) => {
     showMonarchAccountSelectorWithCreate(
-      investmentAccounts,
+      investmentAccounts as unknown as Parameters<typeof showMonarchAccountSelectorWithCreate>[0],
       resolve,
       null,
       'brokerage',

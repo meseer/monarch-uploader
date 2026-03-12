@@ -24,6 +24,66 @@ import { createUploadButton } from './components/uploadButton';
 import { createMonarchLoginLink } from '../components/monarchLoginLink';
 import { prepareAndSyncAccount } from '../../services/common/syncOrchestrator';
 
+declare function GM_getValue(key: string): unknown;
+
+// ──────────────────────────────────────────────────────────────
+// Types
+// ──────────────────────────────────────────────────────────────
+
+interface PageMode {
+  id: string;
+  urlPattern: RegExp;
+  selectors?: SelectorEntry[];
+}
+
+interface SelectorEntry {
+  selector: string;
+}
+
+interface InjectionPoint {
+  containerId: string;
+  selectors: SelectorEntry[];
+  pageModes?: PageMode[];
+  skipPatterns?: RegExp[];
+}
+
+interface Manifest {
+  id: string;
+  displayName: string;
+  brandColor: string;
+}
+
+interface AccountSummary {
+  accountId?: string;
+  displayName?: string;
+  endingIn?: string;
+  [key: string]: unknown;
+}
+
+interface SyncHooks {
+  [key: string]: unknown;
+}
+
+interface ApiClient {
+  getAccountsSummary: () => Promise<AccountSummary[]>;
+  [key: string]: unknown;
+}
+
+interface RegistryEntry {
+  manifest: Manifest;
+  injectionPoint: InjectionPoint;
+  api: ApiClient;
+  syncHooks: SyncHooks;
+  auth?: unknown;
+  [key: string]: unknown;
+}
+
+interface UIState {
+  cachedAccounts: AccountSummary[];
+  institutionConnected: boolean;
+  navigationManager: GenericNavigationManager | null;
+}
+
 // ──────────────────────────────────────────────────────────────
 // Per-integration UI state
 // ──────────────────────────────────────────────────────────────
@@ -32,16 +92,13 @@ import { prepareAndSyncAccount } from '../../services/common/syncOrchestrator';
  * Holds per-integration runtime UI state.
  * Keyed by integrationId to support multiple simultaneous integrations
  * (unlikely in practice but architecturally clean).
- * @type {Map<string, Object>}
  */
-const uiStateMap = new Map();
+const uiStateMap = new Map<string, UIState>();
 
 /**
  * Get or create UI state for an integration
- * @param {string} integrationId
- * @returns {Object} Mutable state object
  */
-function getUIState(integrationId) {
+function getUIState(integrationId: string): UIState {
   if (!uiStateMap.has(integrationId)) {
     uiStateMap.set(integrationId, {
       cachedAccounts: [],
@@ -49,7 +106,7 @@ function getUIState(integrationId) {
       navigationManager: null,
     });
   }
-  return uiStateMap.get(integrationId);
+  return uiStateMap.get(integrationId) as UIState;
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -61,10 +118,17 @@ function getUIState(integrationId) {
  * Handles both hash-based routing (Angular) and path-based routing (React/Vue).
  */
 class GenericNavigationManager {
-  /**
-   * @param {Object} registryEntry - The full registry entry for this integration
-   */
-  constructor(registryEntry) {
+  registryEntry: RegistryEntry;
+  injectionPoint: InjectionPoint;
+  containerId: string;
+  currentUrl: string;
+  currentPageModeId: string | null;
+  isInitialized: boolean;
+  pollInterval: ReturnType<typeof setInterval> | null;
+  uiInitialized: boolean;
+  logPrefix: string;
+
+  constructor(registryEntry: RegistryEntry) {
     this.registryEntry = registryEntry;
     this.injectionPoint = registryEntry.injectionPoint;
     this.containerId = this.injectionPoint.containerId;
@@ -77,7 +141,7 @@ class GenericNavigationManager {
   }
 
   /** Start monitoring navigation changes */
-  startMonitoring() {
+  startMonitoring(): void {
     if (this.isInitialized) return;
 
     debugLog(`${this.logPrefix} Starting navigation monitoring...`);
@@ -101,7 +165,7 @@ class GenericNavigationManager {
   }
 
   /** Stop monitoring */
-  stopMonitoring() {
+  stopMonitoring(): void {
     if (this.pollInterval) {
       clearInterval(this.pollInterval);
       this.pollInterval = null;
@@ -111,7 +175,7 @@ class GenericNavigationManager {
   }
 
   /** Handle a navigation event */
-  async handleNavigation() {
+  async handleNavigation(): Promise<void> {
     try {
       const url = window.location.hash || window.location.pathname;
       debugLog(`${this.logPrefix} Navigation detected:`, url);
@@ -139,7 +203,7 @@ class GenericNavigationManager {
   }
 
   /** Reinitialize UI after SPA navigation */
-  async reinitializeUI() {
+  async reinitializeUI(): Promise<void> {
     try {
       await waitForTargetElementAsync(this.injectionPoint, this.logPrefix);
       const container = createUIContainer(this.registryEntry);
@@ -155,9 +219,8 @@ class GenericNavigationManager {
 
   /**
    * Determine if UI should be shown based on current URL
-   * @returns {boolean}
    */
-  shouldShowUI() {
+  shouldShowUI(): boolean {
     const url = window.location.hash || window.location.pathname;
     // Check skip patterns first
     if (this.injectionPoint.skipPatterns?.some((p) => p.test(url))) {
@@ -167,13 +230,12 @@ class GenericNavigationManager {
     return this.injectionPoint.pageModes?.some((mode) => mode.urlPattern.test(url)) ?? false;
   }
 
-  /** @returns {boolean} */
-  hasUIContainer() {
+  hasUIContainer(): boolean {
     return document.getElementById(this.containerId) !== null;
   }
 
   /** Remove UI container */
-  cleanupUI() {
+  cleanupUI(): void {
     const container = document.getElementById(this.containerId);
     if (container) {
       container.remove();
@@ -190,11 +252,8 @@ class GenericNavigationManager {
 /**
  * Probe institution API connectivity by fetching accounts summary.
  * Updates the integration's UI state (cachedAccounts, institutionConnected).
- *
- * @param {Object} registryEntry - Registry entry with api, manifest
- * @returns {Promise<boolean>} True if connection is valid
  */
-async function probeConnection(registryEntry) {
+async function probeConnection(registryEntry: RegistryEntry): Promise<boolean> {
   const { manifest, api } = registryEntry;
   const state = getUIState(manifest.id);
   const logPrefix = `[${manifest.displayName}]`;
@@ -208,7 +267,7 @@ async function probeConnection(registryEntry) {
   } catch (error) {
     state.institutionConnected = false;
     state.cachedAccounts = [];
-    debugLog(`${logPrefix} Probe: API call failed:`, error.message);
+    debugLog(`${logPrefix} Probe: API call failed:`, (error as Error).message);
     return false;
   }
 }
@@ -219,30 +278,24 @@ async function probeConnection(registryEntry) {
 
 /**
  * Get the active page mode based on current URL
- * @param {Object} injectionPoint - Injection point config
- * @returns {Object|null} The matching page mode or null
  */
-function getActivePageMode(injectionPoint) {
+function getActivePageMode(injectionPoint: InjectionPoint): PageMode | null {
   const url = window.location.hash || window.location.pathname;
   return injectionPoint.pageModes?.find((mode) => mode.urlPattern.test(url)) || null;
 }
 
 /**
  * Check if an element is visible in the DOM
- * @param {HTMLElement} el
- * @returns {boolean}
  */
-function isElementVisible(el) {
+function isElementVisible(el: HTMLElement): boolean {
   return el.offsetParent !== null || el.offsetWidth > 0 || el.offsetHeight > 0;
 }
 
 /**
  * Find the injection target element using per-page-mode selectors.
  * Falls back to global selectors if no page mode matches.
- * @param {Object} injectionPoint - Injection point config
- * @returns {HTMLElement|null}
  */
-function findInjectionTarget(injectionPoint) {
+function findInjectionTarget(injectionPoint: InjectionPoint): HTMLElement | null {
   const pageMode = getActivePageMode(injectionPoint);
   const selectors = pageMode?.selectors?.length ? pageMode.selectors : injectionPoint.selectors;
 
@@ -252,11 +305,11 @@ function findInjectionTarget(injectionPoint) {
 
     // Prefer the first visible element
     for (const el of elements) {
-      if (isElementVisible(el)) return el;
+      if (isElementVisible(el as HTMLElement)) return el as HTMLElement;
     }
 
     // Fallback: return first match even if visibility check fails
-    return elements[0];
+    return elements[0] as HTMLElement;
   }
   return null;
 }
@@ -267,10 +320,8 @@ function findInjectionTarget(injectionPoint) {
 
 /**
  * Creates and appends the main UI container after the injection target
- * @param {Object} registryEntry - Registry entry with manifest, injectionPoint
- * @returns {HTMLElement|null} Created container or null
  */
-function createUIContainer(registryEntry) {
+function createUIContainer(registryEntry: RegistryEntry): HTMLElement | null {
   const { manifest, injectionPoint } = registryEntry;
   const containerId = injectionPoint.containerId;
   const logPrefix = `[${manifest.displayName}]`;
@@ -362,7 +413,7 @@ function createUIContainer(registryEntry) {
   container.appendChild(header);
 
   // Insert after the target element
-  target.parentNode.insertBefore(container, target.nextSibling);
+  target.parentNode!.insertBefore(container, target.nextSibling);
 
   const pageMode = getActivePageMode(injectionPoint);
   debugLog(`${logPrefix} UI container created and inserted after target on page mode:`, pageMode?.id || 'unknown');
@@ -376,11 +427,8 @@ function createUIContainer(registryEntry) {
 /**
  * Handle the upload button click.
  * Iterates through all accounts, delegates to syncOrchestrator.
- *
- * @param {HTMLButtonElement} button - The upload button (for disabling during operation)
- * @param {Object} registryEntry - Registry entry
  */
-async function handleUploadClick(button, registryEntry) {
+async function handleUploadClick(button: HTMLButtonElement, registryEntry: RegistryEntry): Promise<void> {
   const { manifest, api, syncHooks } = registryEntry;
   const state = getUIState(manifest.id);
   const logPrefix = `[${manifest.displayName}]`;
@@ -425,7 +473,7 @@ async function handleUploadClick(button, registryEntry) {
     }
   } catch (error) {
     debugLog(`${logPrefix} Upload error:`, error);
-    toast.show(error.message || 'Failed to start upload', 'error');
+    toast.show((error as Error).message || 'Failed to start upload', 'error');
   } finally {
     button.textContent = 'Upload to Monarch';
     button.disabled = false;
@@ -438,10 +486,8 @@ async function handleUploadClick(button, registryEntry) {
 
 /**
  * Initialize UI components inside the container.
- * @param {HTMLElement} container
- * @param {Object} registryEntry - Registry entry
  */
-async function initializeUIComponents(container, registryEntry) {
+async function initializeUIComponents(container: HTMLElement, registryEntry: RegistryEntry): Promise<void> {
   const { manifest } = registryEntry;
   const state = getUIState(manifest.id);
   const logPrefix = `[${manifest.displayName}]`;
@@ -462,7 +508,7 @@ async function initializeUIComponents(container, registryEntry) {
     const uploadButton = createUploadButton({
       isAuthenticated: state.institutionConnected,
       institutionName: manifest.displayName,
-      onUploadClick: (btn) => handleUploadClick(btn, registryEntry),
+      onUploadClick: (btn: HTMLButtonElement) => handleUploadClick(btn, registryEntry),
     });
     container.appendChild(uploadButton);
 
@@ -484,10 +530,8 @@ async function initializeUIComponents(container, registryEntry) {
 
 /**
  * Refresh all connection status indicators
- * @param {HTMLElement} connectionStatus
- * @param {Object} registryEntry - Registry entry
  */
-function updateConnectionStatusDisplay(connectionStatus, registryEntry) {
+function updateConnectionStatusDisplay(connectionStatus: HTMLElement, registryEntry: RegistryEntry): void {
   if (!connectionStatus) return;
 
   const { manifest } = registryEntry;
@@ -504,8 +548,8 @@ function updateConnectionStatusDisplay(connectionStatus, registryEntry) {
       const loginLink = createMonarchLoginLink('Login to Monarch', () => {
         updateConnectionStatusDisplay(connectionStatus, registryEntry);
       });
-      if (loginLink && loginLink.href) {
-        window.open(loginLink.href, '_blank');
+      if (loginLink && (loginLink as HTMLAnchorElement).href) {
+        window.open((loginLink as HTMLAnchorElement).href, '_blank');
       }
     });
 
@@ -515,9 +559,9 @@ function updateConnectionStatusDisplay(connectionStatus, registryEntry) {
       const newUploadButton = createUploadButton({
         isAuthenticated: state.institutionConnected,
         institutionName: manifest.displayName,
-        onUploadClick: (btn) => handleUploadClick(btn, registryEntry),
+        onUploadClick: (btn: HTMLButtonElement) => handleUploadClick(btn, registryEntry),
       });
-      existingUpload.parentNode.replaceChild(newUploadButton, existingUpload);
+      existingUpload.parentNode!.replaceChild(newUploadButton, existingUpload);
     }
 
     debugLog(`[${manifest.displayName}] Connection status updated`);
@@ -532,11 +576,8 @@ function updateConnectionStatusDisplay(connectionStatus, registryEntry) {
 
 /**
  * Wait for injection target element using polling
- * @param {Object} injectionPoint - Injection point config
- * @param {string} logPrefix - Log prefix for debug messages
- * @returns {Promise<HTMLElement>}
  */
-function waitForTargetElementAsync(injectionPoint, logPrefix) {
+function waitForTargetElementAsync(injectionPoint: InjectionPoint, logPrefix: string): Promise<HTMLElement> {
   return new Promise((resolve, reject) => {
     const existing = findInjectionTarget(injectionPoint);
     if (existing) {
@@ -564,15 +605,14 @@ function waitForTargetElementAsync(injectionPoint, logPrefix) {
 
 /**
  * Wait for target element using MutationObserver (for initial load)
- * @param {Object} registryEntry - Registry entry
  */
-function waitForTargetElement(registryEntry) {
+function waitForTargetElement(registryEntry: RegistryEntry): void {
   const { manifest, injectionPoint } = registryEntry;
   const state = getUIState(manifest.id);
   const logPrefix = `[${manifest.displayName}]`;
 
-  let observer = null;
-  let timeoutId = null;
+  let observer: MutationObserver | null = null;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
   let initialized = false;
 
   observer = new MutationObserver((_mutations, obs) => {
@@ -614,10 +654,8 @@ function waitForTargetElement(registryEntry) {
  *
  * This is the single entry point called by initializeModularIntegrationApp()
  * in src/index.js. It reads everything it needs from the registry entry.
- *
- * @param {Object} registryEntry - Full registry entry (manifest, api, auth, injectionPoint, syncHooks, etc.)
  */
-export async function initGenericUI(registryEntry) {
+export async function initGenericUI(registryEntry: RegistryEntry): Promise<void> {
   const { manifest } = registryEntry;
   const state = getUIState(manifest.id);
   const logPrefix = `[${manifest.displayName}]`;
@@ -650,15 +688,13 @@ export async function initGenericUI(registryEntry) {
 
 /**
  * Refresh the UI when auth state changes.
- *
- * @param {Object} registryEntry - Full registry entry
  */
-export async function refreshGenericUI(registryEntry) {
+export async function refreshGenericUI(registryEntry: RegistryEntry): Promise<void> {
   const { injectionPoint } = registryEntry;
 
   await probeConnection(registryEntry);
 
-  const connectionStatus = document.querySelector(`#${injectionPoint.containerId} .connection-status-container`);
+  const connectionStatus = document.querySelector(`#${injectionPoint.containerId} .connection-status-container`) as HTMLElement | null;
   if (connectionStatus) {
     updateConnectionStatusDisplay(connectionStatus, registryEntry);
   }

@@ -1,7 +1,6 @@
 /**
  * Progress Dialog Component
  * Creates and manages the sophisticated progress dialog for bulk account uploads
- * Based on the original script's showProgressDialog functionality
  *
  * Features:
  * - Accordion-style expandable account rows (collapsed by default)
@@ -12,38 +11,108 @@
 
 import { debugLog } from '../../core/utils';
 
+type StepStatus = 'pending' | 'processing' | 'success' | 'error' | 'skipped';
+
+interface StepDefinition {
+  key: string;
+  name: string;
+}
+
+interface Step {
+  key: string;
+  name: string;
+  status: StepStatus;
+  message: string;
+  element?: HTMLElement | null;
+}
+
+interface AccountInput {
+  key?: string;
+  id?: string;
+  nickname?: string;
+  name?: string;
+  status?: string;
+}
+
+interface BalanceChangeData {
+  oldBalance?: number | null;
+  newBalance?: number | null;
+  lastUploadDate?: string;
+  changePercent?: number | null;
+  daysUploaded?: number;
+  accountType?: string;
+  transactionCount?: number | null;
+  debtAsPositive?: boolean;
+}
+
+interface AccountElement {
+  container: HTMLDivElement;
+  row: HTMLDivElement;
+  expandIcon: HTMLSpanElement;
+  icon: HTMLSpanElement;
+  status: HTMLDivElement;
+  stepsContainer: HTMLDivElement;
+  balanceChange: HTMLDivElement;
+  steps: Step[];
+  balanceChangeData: BalanceChangeData | null;
+  isExpanded: () => boolean;
+  setExpanded: (expanded: boolean) => void;
+}
+
+interface StepSummary {
+  complete: number;
+  total: number;
+  hasError: boolean;
+  currentStep: Step | null;
+  text: string;
+  color: string | null;
+}
+
+interface UploadStats {
+  success: number;
+  failed: number;
+  skipped?: number;
+}
+
+interface ProgressDialogApi {
+  initSteps: (accountId: string, steps: StepDefinition[]) => void;
+  updateStepStatus: (accountId: string, stepKey: string, status: StepStatus, message?: string) => void;
+  updateProgress: (accountId: string, status: string, message: string) => void;
+  updateBalanceChange: (accountId: string, balanceChangeData: BalanceChangeData) => void;
+  showError: (accountId: string, error: Error) => Promise<void>;
+  showSummary: (stats: UploadStats) => ProgressDialogApi;
+  onCancel: (callback: () => void) => void;
+  isCancelled: () => boolean;
+  hideCancel: () => void;
+  close: () => ProgressDialogApi;
+}
+
 /**
  * Format a date string (YYYY-MM-DD) as "Jan 20" style
- * @param {string} dateString - Date in YYYY-MM-DD format
- * @returns {string} Formatted date like "Jan 20"
  */
-function formatShortDate(dateString) {
+function formatShortDate(dateString: string): string {
   if (!dateString) return '';
 
   try {
-    // Parse the date string as local date (not UTC)
     const [year, month, day] = dateString.split('-').map(Number);
     const date = new Date(year, month - 1, day);
 
     if (Number.isNaN(date.getTime())) {
-      return dateString; // Fallback to original
+      return dateString;
     }
 
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return `${monthNames[date.getMonth()]} ${date.getDate()}`;
-  } catch (error) {
-    return dateString; // Fallback to original
+  } catch {
+    return dateString;
   }
 }
 
 /**
  * Format a currency amount with proper formatting
- * @param {number} amount - Amount to format
- * @param {boolean} showSign - Whether to show +/- sign for non-negative amounts
- * @returns {string} Formatted amount like "$1,234.56" or "+$1,234.56"
  */
-function formatCurrency(amount, showSign = false) {
+function formatCurrency(amount: number | undefined | null, showSign = false): string {
   if (amount === undefined || amount === null) return '';
 
   const absAmount = Math.abs(amount);
@@ -62,12 +131,8 @@ function formatCurrency(amount, showSign = false) {
 
 /**
  * Calculate step summary for display in collapsed account row
- * Shows the current step being processed, or final status when complete
- * @param {Array} steps - Array of step objects with status
- * @param {Object} balanceChangeData - Optional balance change data to show on completion
- * @returns {Object} Summary object with counts and display text
  */
-function calculateStepSummary(steps, balanceChangeData = null) {
+function calculateStepSummary(steps: Step[], balanceChangeData: BalanceChangeData | null = null): StepSummary {
   if (!steps || steps.length === 0) {
     return { complete: 0, total: 0, hasError: false, currentStep: null, text: '', color: null };
   }
@@ -75,7 +140,7 @@ function calculateStepSummary(steps, balanceChangeData = null) {
   let complete = 0;
   let errors = 0;
   let skipped = 0;
-  let currentStep = null;
+  let currentStep: Step | null = null;
 
   steps.forEach((step) => {
     if (step.status === 'success') {
@@ -93,16 +158,14 @@ function calculateStepSummary(steps, balanceChangeData = null) {
   const hasError = errors > 0;
   const allDone = complete + errors + skipped === total;
 
-  let text;
-  let color = null; // Color for the summary text (used for balance display)
+  let text: string;
+  let color: string | null = null;
 
   if (currentStep) {
-    // Show current step being processed
     text = currentStep.message || currentStep.name || 'Processing...';
   } else if (hasError) {
     text = `${complete}/${total} complete, ${errors} error${errors > 1 ? 's' : ''}`;
   } else if (allDone && balanceChangeData) {
-    // Show balance change info when complete
     const summaryResult = formatCollapsedBalanceSummary(balanceChangeData);
     text = summaryResult.text;
     color = summaryResult.color;
@@ -117,32 +180,28 @@ function calculateStepSummary(steps, balanceChangeData = null) {
 
 /**
  * Format balance change summary for collapsed row display
- * @param {Object} balanceChangeData - Balance change data
- * @returns {Object} Summary with text and color
  */
-function formatCollapsedBalanceSummary(balanceChangeData) {
+function formatCollapsedBalanceSummary(balanceChangeData: BalanceChangeData): { text: string; color: string | null } {
   const {
     accountType, changePercent, oldBalance, newBalance,
     transactionCount, debtAsPositive,
   } = balanceChangeData;
 
-  // Investment accounts: show transaction count (if any), dollar change and percentage
   if (accountType === 'investment') {
     if (oldBalance !== undefined && oldBalance !== null
         && newBalance !== undefined && newBalance !== null) {
       const dollarChange = newBalance - oldBalance;
       const formattedDollarChange = formatCurrency(dollarChange, true);
-      const changeSymbol = changePercent > 0 ? '+' : '';
+      const changeSymbol = (changePercent || 0) > 0 ? '+' : '';
       const formattedPercent = `${changeSymbol}${(changePercent || 0).toFixed(2)}%`;
 
-      // Determine color based on change
-      let color;
-      if (changePercent > 0) {
-        color = 'var(--mu-status-success-text, #2e7d32)'; // Green
-      } else if (changePercent < 0) {
-        color = 'var(--mu-status-error-text, #c62828)'; // Red
+      let color: string;
+      if ((changePercent || 0) > 0) {
+        color = 'var(--mu-status-success-text, #2e7d32)';
+      } else if ((changePercent || 0) < 0) {
+        color = 'var(--mu-status-error-text, #c62828)';
       } else {
-        color = 'var(--mu-text-muted, #666)'; // Grey for no change
+        color = 'var(--mu-text-muted, #666)';
       }
 
       const balanceText = `${formattedDollarChange} / ${formattedPercent}`;
@@ -154,51 +213,37 @@ function formatCollapsedBalanceSummary(balanceChangeData) {
     return { text: 'Complete', color: null };
   }
 
-  // Cash/Credit accounts: show transaction count and colored balance
-  const parts = [];
+  const parts: string[] = [];
 
-  // Add transaction count if available
   if (transactionCount !== undefined && transactionCount !== null && transactionCount > 0) {
     parts.push(`${transactionCount} new`);
   }
 
-  // Add balance with color coding
   if (newBalance !== undefined && newBalance !== null) {
     const formattedBalance = formatCurrency(newBalance);
     parts.push(formattedBalance);
   }
 
-  // Determine color for cash/credit accounts based on balance change
-  // debtAsPositive: true for Rogers (positive balance = debt, increase is bad)
-  // debtAsPositive: false/undefined for WS (negative balance = debt, decrease is bad)
-  let color = 'var(--mu-text-muted, #666)'; // Grey default
+  let color: string = 'var(--mu-text-muted, #666)';
   if (changePercent !== undefined && changePercent !== null) {
     if (debtAsPositive) {
-      // Rogers-style: positive balance is debt, so increase is bad (red), decrease is good (green)
       if (changePercent > 0) {
-        color = 'var(--mu-status-error-text, #c62828)'; // Red - more debt
+        color = 'var(--mu-status-error-text, #c62828)';
       } else if (changePercent < 0) {
-        color = 'var(--mu-status-success-text, #2e7d32)'; // Green - less debt
+        color = 'var(--mu-status-success-text, #2e7d32)';
       }
     } else {
-      // WS-style: negative balance is debt
-      // For regular cash: increase is green, decrease is red
-      // For credit (negative balance): decrease (less negative) is green, increase (more negative) is red
-      if (newBalance < 0) {
-        // Credit card with negative balance (debt tracked as negative)
-        // Balance going from -1000 to -800 (less debt) = changePercent positive = green
-        // Balance going from -1000 to -1200 (more debt) = changePercent negative = red
+      if (newBalance !== undefined && newBalance !== null && newBalance < 0) {
         if (changePercent > 0) {
-          color = 'var(--mu-status-success-text, #2e7d32)'; // Green - less debt
+          color = 'var(--mu-status-success-text, #2e7d32)';
         } else if (changePercent < 0) {
-          color = 'var(--mu-status-error-text, #c62828)'; // Red - more debt
+          color = 'var(--mu-status-error-text, #c62828)';
         }
       } else {
-        // Regular cash account
         if (changePercent > 0) {
-          color = 'var(--mu-status-success-text, #2e7d32)'; // Green - balance increased
+          color = 'var(--mu-status-success-text, #2e7d32)';
         } else if (changePercent < 0) {
-          color = 'var(--mu-status-error-text, #c62828)'; // Red - balance decreased
+          color = 'var(--mu-status-error-text, #c62828)';
         }
       }
     }
@@ -213,10 +258,8 @@ function formatCollapsedBalanceSummary(balanceChangeData) {
 
 /**
  * Get status icon for a step
- * @param {string} status - Step status
- * @returns {string} Icon character
  */
-function getStepIcon(status) {
+function getStepIcon(status: string): string {
   switch (status) {
   case 'processing':
     return '⟳';
@@ -234,10 +277,8 @@ function getStepIcon(status) {
 
 /**
  * Get status color for a step
- * @param {string} status - Step status
- * @returns {string} CSS color value
  */
-function getStepColor(status) {
+function getStepColor(status: string): string {
   switch (status) {
   case 'processing':
     return 'var(--mu-status-processing-text, #1565c0)';
@@ -255,82 +296,47 @@ function getStepColor(status) {
 
 /**
  * Creates and displays a progress dialog for tracking bulk account uploads
- * @param {Array} accounts - List of account objects with key and nickname/name properties
- * @param {string} title - Dialog title (default: 'Uploading Balance History for All Accounts')
- * @returns {Object} Progress dialog API object
  */
-export function showProgressDialog(accounts, title = 'Uploading Balance History for All Accounts') {
+export function showProgressDialog(
+  accounts: AccountInput[],
+  title = 'Uploading Balance History for All Accounts',
+): ProgressDialogApi {
   const timestamp = Date.now();
 
-  // Create overlay
   const overlay = document.createElement('div');
   overlay.id = `balance-uploader-overlay-${timestamp}`;
   overlay.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
     background: var(--mu-overlay-bg, rgba(0,0,0,0.7));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10000;
+    display: flex; align-items: center; justify-content: center; z-index: 10000;
   `;
 
-  // Create modal
   const modal = document.createElement('div');
   modal.id = `balance-uploader-modal-${timestamp}`;
   modal.style.cssText = `
-    background: var(--mu-bg-primary, white);
-    color: var(--mu-text-primary, #333);
-    padding: 25px;
-    border-radius: 8px;
-    width: 90%;
-    max-width: 650px;
-    max-height: 80vh;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
+    background: var(--mu-bg-primary, white); color: var(--mu-text-primary, #333);
+    padding: 25px; border-radius: 8px; width: 90%; max-width: 650px;
+    max-height: 80vh; overflow-y: auto; display: flex; flex-direction: column;
   `;
 
-  // Header
   const header = document.createElement('h2');
   header.id = `balance-uploader-header-${timestamp}`;
-  header.style.cssText = `
-    margin-top: 0;
-    margin-bottom: 15px;
-    font-size: 1.2em;
-  `;
+  header.style.cssText = 'margin-top: 0; margin-bottom: 15px; font-size: 1.2em;';
   header.textContent = title;
   modal.appendChild(header);
 
-  // Account list container
   const accountList = document.createElement('div');
   accountList.id = `balance-uploader-account-list-${timestamp}`;
-  accountList.style.cssText = `
-    margin-bottom: 20px;
-    max-height: 400px;
-    overflow-y: auto;
-    position: relative;
-  `;
+  accountList.style.cssText = 'margin-bottom: 20px; max-height: 400px; overflow-y: auto; position: relative;';
   modal.appendChild(accountList);
 
-  // Auto-scroll state management (defined early so it can be used in account row click handlers)
-  // Auto-scroll keeps the currently syncing account in view and expands its details
-  // It is disabled when user interacts with the dialog (scrolling or clicking to expand/collapse)
+  // Auto-scroll state
   let autoScrollEnabled = true;
-  let isProgrammaticAction = false; // Flag to distinguish programmatic scrolling from user scrolling
-  let programmaticActionCount = 0; // Counter to handle overlapping programmatic actions
-  let isScrollMonitoringActive = false; // Only start monitoring after first account starts processing
+  let isProgrammaticAction = false;
+  let programmaticActionCount = 0;
+  let isScrollMonitoringActive = false;
 
-  /**
-   * Mark the start of a programmatic action that may trigger scroll events.
-   * Uses a counter so overlapping actions (e.g. collapse + expand) don't
-   * prematurely clear the flag when the shorter timeout fires first.
-   * @param {number} durationMs - How long the programmatic action lasts
-   */
-  function beginProgrammaticAction(durationMs) {
+  function beginProgrammaticAction(durationMs: number): void {
     programmaticActionCount += 1;
     isProgrammaticAction = true;
     setTimeout(() => {
@@ -342,9 +348,6 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     }, durationMs);
   }
 
-  // Add scroll event listener to detect user scrolling
-  // Only monitors after isScrollMonitoringActive is true (when first account starts processing)
-  // This prevents false triggers during dialog initialization/rendering
   accountList.addEventListener('scroll', () => {
     if (!isProgrammaticAction && isScrollMonitoringActive) {
       autoScrollEnabled = false;
@@ -353,169 +356,85 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
   });
 
   // Create account rows
-  const accountElements = {};
+  const accountElements: Record<string, AccountElement> = {};
   accounts.forEach((account) => {
-    // Skip null/undefined accounts
-    if (!account) {
-      return;
-    }
+    if (!account) return;
 
-    const accountKey = account.key || account.id;
+    const accountKey = account.key || account.id || '';
 
-    // Main account container
     const accountContainer = document.createElement('div');
     accountContainer.id = `balance-uploader-account-container-${accountKey}`;
-    accountContainer.style.cssText = `
-      border: 1px solid var(--mu-border-light, #eee);
-      border-radius: 6px;
-      margin-bottom: 8px;
-      overflow: hidden;
-    `;
+    accountContainer.style.cssText = 'border: 1px solid var(--mu-border-light, #eee); border-radius: 6px; margin-bottom: 8px; overflow: hidden;';
 
-    // Account header row (clickable for accordion)
     const accountRow = document.createElement('div');
     accountRow.id = `balance-uploader-account-row-${accountKey}`;
-    accountRow.style.cssText = `
-      display: flex;
-      align-items: center;
-      padding: 12px;
-      cursor: pointer;
-      transition: background-color 0.2s;
-    `;
+    accountRow.style.cssText = 'display: flex; align-items: center; padding: 12px; cursor: pointer; transition: background-color 0.2s;';
 
-    // Expand/collapse indicator
     const expandIcon = document.createElement('span');
     expandIcon.id = `balance-uploader-expand-icon-${accountKey}`;
-    expandIcon.style.cssText = `
-      margin-right: 8px;
-      font-size: 0.8em;
-      color: var(--mu-text-secondary, #666);
-      transition: transform 0.2s;
-      display: inline-block;
-    `;
+    expandIcon.style.cssText = 'margin-right: 8px; font-size: 0.8em; color: var(--mu-text-secondary, #666); transition: transform 0.2s; display: inline-block;';
     expandIcon.textContent = '▶';
     accountRow.appendChild(expandIcon);
 
-    // Status icon
-    const statusIcon = document.createElement('span');
+    const statusIcon = document.createElement('span') as HTMLSpanElement & { dataset: DOMStringMap };
     statusIcon.id = `balance-uploader-account-icon-${accountKey}`;
-    statusIcon.style.cssText = `
-      margin-right: 10px;
-      font-size: 1.2em;
-    `;
-    statusIcon.textContent = '○'; // Pending
+    statusIcon.style.cssText = 'margin-right: 10px; font-size: 1.2em;';
+    statusIcon.textContent = '○';
     statusIcon.dataset.status = 'pending';
     accountRow.appendChild(statusIcon);
 
-    // Account name container
     const accountNameContainer = document.createElement('div');
     accountNameContainer.id = `balance-uploader-account-info-${accountKey}`;
-    accountNameContainer.style.cssText = `
-      flex-grow: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    `;
+    accountNameContainer.style.cssText = 'flex-grow: 1; display: flex; flex-direction: column; gap: 2px;';
 
-    // Account name row (includes name and optional badges)
     const accountNameRow = document.createElement('div');
-    accountNameRow.style.cssText = `
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    `;
+    accountNameRow.style.cssText = 'display: flex; align-items: center; gap: 8px;';
 
-    // Account name
     const accountName = document.createElement('div');
     accountName.style.cssText = 'font-weight: 500;';
     accountName.textContent = account.nickname || account.name || 'Account';
     accountNameRow.appendChild(accountName);
 
-    // Closed badge (if account is closed)
     const isClosed = account.status === 'closed';
     if (isClosed) {
       const closedBadge = document.createElement('span');
       closedBadge.id = `balance-uploader-closed-badge-${accountKey}`;
-      closedBadge.style.cssText = `
-        background: var(--mu-closed-badge-bg, #9e9e9e);
-        color: white;
-        font-size: 0.7em;
-        padding: 2px 6px;
-        border-radius: 10px;
-        font-weight: 500;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-      `;
+      closedBadge.style.cssText = 'background: var(--mu-closed-badge-bg, #9e9e9e); color: white; font-size: 0.7em; padding: 2px 6px; border-radius: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px;';
       closedBadge.textContent = 'Closed';
       accountNameRow.appendChild(closedBadge);
-
-      // Apply greyed-out styling to the entire row
       accountRow.style.opacity = '0.7';
       accountRow.style.backgroundColor = 'var(--mu-bg-tertiary, #f5f5f5)';
     }
 
     accountNameContainer.appendChild(accountNameRow);
 
-    // Account ID
     const accountIdDiv = document.createElement('div');
-    accountIdDiv.style.cssText = `
-      font-size: 0.85em;
-      color: var(--mu-text-muted, #888);
-      font-weight: normal;
-    `;
+    accountIdDiv.style.cssText = 'font-size: 0.85em; color: var(--mu-text-muted, #888); font-weight: normal;';
     accountIdDiv.textContent = accountKey;
     accountNameContainer.appendChild(accountIdDiv);
 
     accountRow.appendChild(accountNameContainer);
 
-    // Status text / Step summary
     const statusText = document.createElement('div');
     statusText.id = `balance-uploader-account-status-${accountKey}`;
-    statusText.style.cssText = `
-      margin-left: 10px;
-      color: var(--mu-text-muted, #888);
-      min-width: 120px;
-      max-width: 180px;
-      word-wrap: break-word;
-      text-align: right;
-      font-size: 0.9em;
-    `;
+    statusText.style.cssText = 'margin-left: 10px; color: var(--mu-text-muted, #888); min-width: 120px; max-width: 180px; word-wrap: break-word; text-align: right; font-size: 0.9em;';
     statusText.textContent = 'Pending';
     accountRow.appendChild(statusText);
 
     accountContainer.appendChild(accountRow);
 
-    // Expandable steps container (initially hidden)
     const stepsContainer = document.createElement('div');
     stepsContainer.id = `balance-uploader-steps-container-${accountKey}`;
-    stepsContainer.style.cssText = `
-      display: none;
-      background: var(--mu-bg-secondary, #f9f9f9);
-      border-top: 1px solid var(--mu-border-light, #eee);
-      padding: 0;
-    `;
+    stepsContainer.style.cssText = 'display: none; background: var(--mu-bg-secondary, #f9f9f9); border-top: 1px solid var(--mu-border-light, #eee); padding: 0;';
     accountContainer.appendChild(stepsContainer);
 
-    // Balance change section (will be added to steps container when expanded)
     const balanceChangeDiv = document.createElement('div');
     balanceChangeDiv.id = `balance-uploader-balance-change-${accountKey}`;
-    balanceChangeDiv.style.cssText = `
-      display: none;
-      padding: 8px 15px;
-      margin: 8px 12px;
-      border-radius: 4px;
-      font-size: 0.9em;
-      font-weight: 500;
-      text-align: center;
-    `;
+    balanceChangeDiv.style.cssText = 'display: none; padding: 8px 15px; margin: 8px 12px; border-radius: 4px; font-size: 0.9em; font-weight: 500; text-align: center;';
 
-    // Track expansion state
     let isExpanded = false;
 
-    // Toggle expand/collapse on row click
     accountRow.addEventListener('click', () => {
-      // Disable auto-scroll when user manually interacts with expand/collapse
-      // Only if this is not a programmatic action
       if (!isProgrammaticAction) {
         autoScrollEnabled = false;
         debugLog('Auto-scroll disabled due to user click on account row');
@@ -525,14 +444,12 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
       expandIcon.style.transform = isExpanded ? 'rotate(90deg)' : 'rotate(0deg)';
     });
 
-    // Hover effect
     accountRow.addEventListener('mouseenter', () => {
       if (accountRow.style.backgroundColor === '' || accountRow.style.backgroundColor === 'transparent') {
         accountRow.style.backgroundColor = 'var(--mu-hover-bg, #f5f5f5)';
       }
     });
     accountRow.addEventListener('mouseleave', () => {
-      // Restore the status-based background color
       const currentStatus = statusIcon.dataset.status;
       if (currentStatus === 'processing') {
         accountRow.style.backgroundColor = 'var(--mu-status-processing-bg, #e3f2fd)';
@@ -555,10 +472,10 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
       status: statusText,
       stepsContainer,
       balanceChange: balanceChangeDiv,
-      steps: [], // Array of step objects: { key, name, status, message, element }
-      balanceChangeData: null, // Stored balance change data for collapsed summary display
+      steps: [],
+      balanceChangeData: null,
       isExpanded: () => isExpanded,
-      setExpanded: (expanded) => {
+      setExpanded: (expanded: boolean) => {
         isExpanded = expanded;
         stepsContainer.style.display = isExpanded ? 'block' : 'none';
         expandIcon.style.transform = isExpanded ? 'rotate(90deg)' : 'rotate(0deg)';
@@ -566,165 +483,88 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     };
   });
 
-  // Error container (initially hidden)
   const errorContainer = document.createElement('div');
   errorContainer.id = `balance-uploader-error-container-${timestamp}`;
-  errorContainer.style.cssText = `
-    border: 1px solid var(--mu-error-border, #f44336);
-    border-radius: 5px;
-    padding: 15px;
-    margin-bottom: 20px;
-    display: none;
-    background: var(--mu-bg-primary, white);
-  `;
+  errorContainer.style.cssText = 'border: 1px solid var(--mu-error-border, #f44336); border-radius: 5px; padding: 15px; margin-bottom: 20px; display: none; background: var(--mu-bg-primary, white);';
   modal.appendChild(errorContainer);
 
-  // Summary
   const summary = document.createElement('div');
   summary.id = `balance-uploader-summary-${timestamp}`;
-  summary.style.cssText = `
-    margin-bottom: 20px;
-    font-weight: bold;
-  `;
+  summary.style.cssText = 'margin-bottom: 20px; font-weight: bold;';
   summary.textContent = `Total: ${accounts.length} accounts`;
   modal.appendChild(summary);
 
-  // Buttons container
   const buttonsContainer = document.createElement('div');
   buttonsContainer.id = `balance-uploader-buttons-${timestamp}`;
-  buttonsContainer.style.cssText = `
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-  `;
+  buttonsContainer.style.cssText = 'display: flex; justify-content: flex-end; gap: 10px;';
   modal.appendChild(buttonsContainer);
 
-  // Cancel button (initially visible)
   const cancelButton = document.createElement('button');
   cancelButton.textContent = 'Cancel Upload';
-  cancelButton.style.cssText = `
-    padding: 8px 16px;
-    border: none;
-    border-radius: 4px;
-    background: var(--mu-danger-bg, #dc3545);
-    color: var(--mu-danger-text, white);
-    cursor: pointer;
-    margin-right: 10px;
-  `;
+  cancelButton.style.cssText = 'padding: 8px 16px; border: none; border-radius: 4px; background: var(--mu-danger-bg, #dc3545); color: var(--mu-danger-text, white); cursor: pointer; margin-right: 10px;';
   buttonsContainer.appendChild(cancelButton);
 
-  // Close button (initially hidden)
   const closeButton = document.createElement('button');
   closeButton.textContent = 'Close';
-  closeButton.style.cssText = `
-    padding: 8px 16px;
-    border: none;
-    border-radius: 4px;
-    background: var(--mu-close-btn-bg, #6c757d);
-    color: white;
-    cursor: pointer;
-    display: none;
-  `;
+  closeButton.style.cssText = 'padding: 8px 16px; border: none; border-radius: 4px; background: var(--mu-close-btn-bg, #6c757d); color: white; cursor: pointer; display: none;';
   buttonsContainer.appendChild(closeButton);
 
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 
-  // Promise management for error acknowledgment
-  const acknowledgmentPromise = {
+  const acknowledgmentPromise: { promise: Promise<void> | null; resolve: (() => void) | null } = {
     promise: null,
     resolve: null,
   };
 
-  // Cancel callback management and state tracking
-  let cancelCallback = null;
+  let cancelCallback: (() => void) | null = null;
   let isCancelled = false;
-  let uploadState = 'pending'; // 'pending', 'active', 'completed'
+  let uploadState = 'pending';
 
-  /**
-   * Update the step summary display in the account row
-   * @param {string} accountId - Account ID
-   */
-  function updateStepSummaryDisplay(accountId) {
+  function updateStepSummaryDisplay(accountId: string): void {
     const el = accountElements[accountId];
-    if (!el || !el.steps || el.steps.length === 0) {
-      return;
-    }
+    if (!el || !el.steps || el.steps.length === 0) return;
 
-    // Pass balance change data for collapsed summary display when complete
     const summaryData = calculateStepSummary(el.steps, el.balanceChangeData);
     if (summaryData.text) {
       el.status.textContent = summaryData.text;
-      // Apply color if specified (for balance change display)
       if (summaryData.color) {
         el.status.style.color = summaryData.color;
       }
     }
   }
 
-  /**
-   * Create a step element in the steps container
-   * @param {string} accountId - Account ID
-   * @param {Object} step - Step object with key, name, status, message
-   * @returns {HTMLElement} The created step element
-   */
-  function createStepElement(accountId, step) {
+  function createStepElement(accountId: string, step: Step): HTMLElement | null {
     const el = accountElements[accountId];
     if (!el) return null;
 
     const stepDiv = document.createElement('div');
     stepDiv.id = `balance-uploader-step-${accountId}-${step.key}`;
-    stepDiv.style.cssText = `
-      display: flex;
-      align-items: flex-start;
-      padding: 8px 12px 8px 36px;
-      border-bottom: 1px solid var(--mu-border-light, #eee);
-      font-size: 0.9em;
-    `;
+    stepDiv.style.cssText = 'display: flex; align-items: flex-start; padding: 8px 12px 8px 36px; border-bottom: 1px solid var(--mu-border-light, #eee); font-size: 0.9em;';
 
-    // Step icon
     const stepIconSpan = document.createElement('span');
     stepIconSpan.id = `balance-uploader-step-icon-${accountId}-${step.key}`;
-    stepIconSpan.style.cssText = `
-      margin-right: 8px;
-      color: ${getStepColor(step.status)};
-    `;
+    stepIconSpan.style.cssText = `margin-right: 8px; color: ${getStepColor(step.status)};`;
     stepIconSpan.textContent = getStepIcon(step.status);
     stepDiv.appendChild(stepIconSpan);
 
-    // Step name
     const stepNameSpan = document.createElement('span');
     stepNameSpan.id = `balance-uploader-step-name-${accountId}-${step.key}`;
-    stepNameSpan.style.cssText = `
-      flex-grow: 1;
-      color: var(--mu-text-primary, #333);
-    `;
+    stepNameSpan.style.cssText = 'flex-grow: 1; color: var(--mu-text-primary, #333);';
     stepNameSpan.textContent = step.name;
     stepDiv.appendChild(stepNameSpan);
 
-    // Step message
     const stepMessageSpan = document.createElement('span');
     stepMessageSpan.id = `balance-uploader-step-message-${accountId}-${step.key}`;
-    stepMessageSpan.style.cssText = `
-      color: ${getStepColor(step.status)};
-      text-align: right;
-      max-width: 250px;
-      word-wrap: break-word;
-    `;
+    stepMessageSpan.style.cssText = `color: ${getStepColor(step.status)}; text-align: right; max-width: 250px; word-wrap: break-word;`;
     stepMessageSpan.textContent = step.message || '';
     stepDiv.appendChild(stepMessageSpan);
 
     el.stepsContainer.appendChild(stepDiv);
-
     return stepDiv;
   }
 
-  /**
-   * Update a step element's display
-   * @param {string} accountId - Account ID
-   * @param {Object} step - Step object
-   */
-  function updateStepElement(accountId, step) {
+  function updateStepElement(accountId: string, step: Step): void {
     const iconEl = document.getElementById(`balance-uploader-step-icon-${accountId}-${step.key}`);
     const messageEl = document.getElementById(`balance-uploader-step-message-${accountId}-${step.key}`);
 
@@ -739,27 +579,19 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
     }
   }
 
-  // Dialog API
-  const dialog = {
-    /**
-     * Initialize steps for an account (called before sync starts)
-     * @param {string} accountId - Account ID
-     * @param {Array} steps - Array of step definitions [{key, name}]
-     */
-    initSteps: (accountId, steps) => {
+  const dialog: ProgressDialogApi = {
+    initSteps: (accountId: string, steps: StepDefinition[]) => {
       const el = accountElements[accountId];
       if (!el) {
         debugLog(`Warning: Account element not found for ID: ${accountId}`);
         return;
       }
 
-      // Clear existing steps
       el.stepsContainer.innerHTML = '';
       el.steps = [];
 
-      // Create step elements
       steps.forEach((stepDef) => {
-        const step = {
+        const step: Step = {
           key: stepDef.key,
           name: stepDef.name,
           status: 'pending',
@@ -769,49 +601,33 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
         step.element = createStepElement(accountId, step);
       });
 
-      // Add balance change div at the end (will be shown when balance is uploaded)
       el.stepsContainer.appendChild(el.balanceChange);
-
       debugLog(`Initialized ${steps.length} steps for account ${accountId}`);
     },
 
-    /**
-     * Update a specific step's status
-     * @param {string} accountId - Account ID
-     * @param {string} stepKey - Step key to update
-     * @param {string} status - Step status: 'pending', 'processing', 'success', 'error', 'skipped'
-     * @param {string} message - Optional message to display
-     */
-    updateStepStatus: (accountId, stepKey, status, message = '') => {
+    updateStepStatus: (accountId: string, stepKey: string, status: StepStatus, message = '') => {
       const el = accountElements[accountId];
       if (!el) {
         debugLog(`Warning: Account element not found for ID: ${accountId}`);
         return;
       }
 
-      // Find the step
       const step = el.steps.find((s) => s.key === stepKey);
       if (!step) {
         debugLog(`Warning: Step ${stepKey} not found for account ${accountId}`);
         return;
       }
 
-      // Update step data
       step.status = status;
       step.message = message;
-
-      // Update the DOM element
       updateStepElement(accountId, step);
-
-      // Update step summary display
       updateStepSummaryDisplay(accountId);
 
-      // Update account-level icon and colors based on overall status
       const allSuccess = el.steps.every((s) => s.status === 'success' || s.status === 'skipped');
       const hasError = el.steps.some((s) => s.status === 'error');
       const hasProcessing = el.steps.some((s) => s.status === 'processing');
 
-      let accountStatus;
+      let accountStatus: string;
       if (hasError) {
         accountStatus = 'error';
       } else if (hasProcessing) {
@@ -822,12 +638,10 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
         accountStatus = 'pending';
       }
 
-      // Update account icon
       el.icon.textContent = getStepIcon(accountStatus);
       el.icon.style.color = getStepColor(accountStatus);
       el.icon.dataset.status = accountStatus;
 
-      // Update row background
       if (accountStatus === 'processing') {
         el.row.style.backgroundColor = 'var(--mu-status-processing-bg, #e3f2fd)';
       } else if (accountStatus === 'success') {
@@ -838,59 +652,33 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
         el.row.style.backgroundColor = 'transparent';
       }
 
-      // Auto-scroll and auto-expand behavior
-      // When account starts processing (first step becomes 'processing'), scroll into view and expand
-      // When account completes (all steps done), collapse
       if (autoScrollEnabled) {
         const allDone = el.steps.every((s) =>
           s.status === 'success' || s.status === 'error' || s.status === 'skipped');
 
         if (accountStatus === 'processing' && status === 'processing') {
-          // Activate scroll monitoring on first processing status
-          // This ensures dialog initialization scroll events don't disable auto-scroll
           if (!isScrollMonitoringActive) {
             isScrollMonitoringActive = true;
             debugLog('Scroll monitoring activated - first account started processing');
           }
 
-          // Account is actively processing - scroll into view and expand
-          // Use counter-based flag so overlapping collapse/expand actions
-          // don't prematurely clear the programmatic action guard
           beginProgrammaticAction(600);
-
-          // Expand the account details
           el.setExpanded(true);
 
-          // Scroll the account container into view within the accountList container
-          // Using direct scroll manipulation because scrollIntoView doesn't work
-          // reliably for nested scrollable containers
           const containerTop = el.container.offsetTop;
-
-          // Scroll to position the element near the top of the visible area
-          // with a small margin for context
           const targetScrollTop = Math.max(0, containerTop - 10);
-
-          accountList.scrollTo({
-            top: targetScrollTop,
-            behavior: 'smooth',
-          });
-
+          accountList.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
           debugLog(`Auto-scrolled to account ${accountId}, scrollTop: ${targetScrollTop}`);
         } else if (allDone && el.isExpanded()) {
-          // Account has completed all steps - check if this is the last account
-          // If all accounts are now done, keep it expanded so user can see final results
           const allAccountsDone = Object.values(accountElements).every((acctEl) => {
-            // Accounts without initialized steps are considered done (pending/not started)
             if (!acctEl.steps || acctEl.steps.length === 0) return true;
             return acctEl.steps.every((s) =>
               s.status === 'success' || s.status === 'error' || s.status === 'skipped');
           });
 
           if (!allAccountsDone) {
-            // More accounts to process - collapse to make room for the next one
             beginProgrammaticAction(150);
             el.setExpanded(false);
-
             debugLog(`Auto-collapsed completed account ${accountId}`);
           } else {
             debugLog(`Kept last completed account ${accountId} expanded`);
@@ -901,31 +689,18 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
       debugLog(`Updated step ${stepKey} for account ${accountId}: ${status} - ${message}`);
     },
 
-    /**
-     * Update progress for a specific account (legacy method for backward compatibility)
-     * @param {string} accountId - Account ID to update
-     * @param {string} status - Status: 'processing', 'success', 'error', 'pending'
-     * @param {string} message - Status message to display
-     */
-    updateProgress: (accountId, status, message) => {
+    updateProgress: (accountId: string, status: string, message: string) => {
       const el = accountElements[accountId];
       if (!el) {
         debugLog(`Warning: Account element not found for ID: ${accountId}`);
         return;
       }
 
-      // Update upload state based on account status
       if (status === 'processing' && uploadState === 'pending') {
         uploadState = 'active';
-        debugLog('Upload state changed to active');
-      } else if ((status === 'success' || status === 'error') && uploadState === 'active') {
-        debugLog(`Account ${accountId} finished with status: ${status}`);
       }
 
-      // If steps are initialized, update summary; otherwise use the message directly
       if (el.steps && el.steps.length > 0) {
-        // Steps are being used, let step updates handle the status
-        // Only update if this is a final status
         if (status === 'success' || status === 'error') {
           el.icon.textContent = getStepIcon(status);
           el.icon.style.color = getStepColor(status);
@@ -959,23 +734,7 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
       el.icon.style.color = el.status.style.color;
     },
 
-    /**
-     * Update balance change information for a specific account
-     * This is displayed in the expandable steps section AND in the collapsed row summary
-     * New format: $oldBalance (date) → $newBalance (+$dollarChange / +percent%)
-     * Example: $132,085.72 (Jan 20) → $133,407.31 (+$1,321.59 / +1.00%)
-     * @param {string} accountId - Account ID to update
-     * @param {Object} balanceChangeData - Balance change data
-     * @param {number} balanceChangeData.oldBalance - Previous balance (optional)
-     * @param {number} balanceChangeData.newBalance - Current balance
-     * @param {string} balanceChangeData.lastUploadDate - Last upload date in YYYY-MM-DD format (optional)
-     * @param {number} balanceChangeData.changePercent - Percentage change (optional, null means no history)
-     * @param {number} balanceChangeData.daysUploaded - Number of days uploaded (optional, legacy)
-     * @param {string} balanceChangeData.accountType - 'investment' | 'cash' | 'credit' for collapsed summary display
-     * @param {number} balanceChangeData.transactionCount - Number of new transactions (for cash/credit accounts)
-     * @param {boolean} balanceChangeData.debtAsPositive - True if debt is tracked as positive balance (Rogers style)
-     */
-    updateBalanceChange: (accountId, balanceChangeData) => {
+    updateBalanceChange: (accountId: string, balanceChangeData: BalanceChangeData) => {
       const el = accountElements[accountId];
       if (!el || !el.balanceChange) {
         debugLog(`Warning: Balance change element not found for ID: ${accountId}`);
@@ -990,27 +749,14 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
           oldBalance, newBalance, lastUploadDate, changePercent, debtAsPositive,
         } = balanceChangeData;
 
-        // Build display string based on available data
-        // Full format: $oldBalance (date) → $newBalance (+$dollarChange / +percent%)
-        // Fallback: just $newBalance if no old balance data available
-        //
-        // For debtAsPositive accounts (like Rogers credit cards):
-        // - Debt is tracked as positive balance
-        // - An increase in balance = MORE DEBT = BAD (should show as negative change, red)
-        // - A decrease in balance = LESS DEBT = GOOD (should show as positive change, green)
-        // So we invert the sign for display purposes when debtAsPositive is true
-
         let displayText = '';
         let effectiveChangePercent = changePercent;
 
-        // If we have all the data for the full format
         if (oldBalance !== undefined && oldBalance !== null
             && newBalance !== undefined && newBalance !== null
             && lastUploadDate) {
-          // Calculate dollar change
           const dollarChange = newBalance - oldBalance;
 
-          // Calculate percentage if not provided
           if (effectiveChangePercent === undefined || effectiveChangePercent === null) {
             effectiveChangePercent = oldBalance !== 0
               ? ((newBalance - oldBalance) / Math.abs(oldBalance)) * 100
@@ -1018,11 +764,9 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
           }
 
           // For debtAsPositive accounts, invert the display values
-          // This makes an increase in debt show as a negative change (which is semantically correct)
           const displayDollarChange = debtAsPositive ? -dollarChange : dollarChange;
           const displayChangePercent = debtAsPositive ? -effectiveChangePercent : effectiveChangePercent;
 
-          // Format the components
           const formattedOldBalance = formatCurrency(oldBalance);
           const formattedDate = formatShortDate(lastUploadDate);
           const formattedNewBalance = formatCurrency(newBalance);
@@ -1030,39 +774,27 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
           const changeSymbol = displayChangePercent > 0 ? '+' : '';
           const formattedPercent = `${changeSymbol}${displayChangePercent.toFixed(2)}%`;
 
-          // Build the full format: $old (date) → $new (+$change / +%)
           displayText = `${formattedOldBalance} (${formattedDate}) → ${formattedNewBalance} (${formattedDollarChange} / ${formattedPercent})`;
         } else if (newBalance !== undefined && newBalance !== null) {
-          // Fallback: just show the current balance
           displayText = formatCurrency(newBalance);
         } else {
-          // No balance data available
           debugLog(`No balance data available for ${accountId}`);
           return;
         }
 
-        // Set the content
         el.balanceChange.textContent = displayText;
 
-        // Set colors based on change (or neutral if no change data)
-        // For debtAsPositive accounts, invert the color logic:
-        // - Positive raw change (more debt) = red
-        // - Negative raw change (less debt) = green
-        let backgroundColor;
-        let textColor;
+        let backgroundColor: string;
+        let textColor: string;
         if (effectiveChangePercent !== undefined && effectiveChangePercent !== null) {
-          // Determine if this is a "good" or "bad" change
-          let isPositiveChange;
+          let isPositiveChange: boolean;
           if (debtAsPositive) {
-            // For debt accounts: decrease is good, increase is bad
             isPositiveChange = effectiveChangePercent < 0;
           } else {
-            // For normal accounts: increase is good, decrease is bad
             isPositiveChange = effectiveChangePercent > 0;
           }
 
           if (effectiveChangePercent === 0) {
-            // Zero change - neutral gray
             backgroundColor = 'var(--mu-balance-neutral-bg, #f5f5f5)';
             textColor = 'var(--mu-balance-neutral-text, #666)';
           } else if (isPositiveChange) {
@@ -1073,7 +805,6 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
             textColor = 'var(--mu-status-error-text, #c62828)';
           }
         } else {
-          // Neutral color when no change data
           backgroundColor = 'var(--mu-balance-info-bg, #e3f2fd)';
           textColor = 'var(--mu-balance-info-text, #1565c0)';
         }
@@ -1082,7 +813,6 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
         el.balanceChange.style.color = textColor;
         el.balanceChange.style.display = 'block';
 
-        // Update the collapsed row summary to show balance change info
         updateStepSummaryDisplay(accountId);
 
         debugLog(`Updated balance change for ${accountId}: ${displayText}`);
@@ -1091,18 +821,11 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
       }
     },
 
-    /**
-     * Show error dialog and wait for user acknowledgment
-     * @param {string} accountId - Account ID that had the error
-     * @param {Error} error - Error object
-     * @returns {Promise} Promise that resolves when user acknowledges the error
-     */
-    showError: (accountId, error) => {
+    showError: (accountId: string, error: Error) => {
       // Mark upload as completed on error
       uploadState = 'completed';
       debugLog('Upload state changed to completed due to error');
 
-      // Hide cancel button and show close button since upload is done
       dialog.hideCancel();
 
       errorContainer.style.display = 'block';
@@ -1133,13 +856,11 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
         </div>
       `;
 
-      // Create new promise for acknowledgment
-      acknowledgmentPromise.promise = new Promise((resolve) => {
+      acknowledgmentPromise.promise = new Promise<void>((resolve) => {
         acknowledgmentPromise.resolve = resolve;
       });
 
-      // Set up acknowledgment button (continue with next account if applicable)
-      document.getElementById('error-ack-button').onclick = () => {
+      (document.getElementById('error-ack-button') as HTMLButtonElement).onclick = () => {
         errorContainer.style.display = 'none';
         if (acknowledgmentPromise.resolve) {
           acknowledgmentPromise.resolve();
@@ -1147,21 +868,15 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
         }
       };
 
-      // Set up close button within error dialog
-      document.getElementById('error-close-button').onclick = () => {
+      (document.getElementById('error-close-button') as HTMLButtonElement).onclick = () => {
         errorContainer.style.display = 'none';
         dialog.close();
       };
 
-      return acknowledgmentPromise.promise;
+      return acknowledgmentPromise.promise as Promise<void>;
     },
 
-    /**
-     * Show summary of results
-     * @param {Object} stats - Statistics object with success, failed, skipped (optional) counts
-     * @returns {Object} Dialog instance for chaining
-     */
-    showSummary: (stats) => {
+    showSummary: (stats: UploadStats) => {
       const skipped = stats.skipped || 0;
       let summaryText = `Summary: ${stats.success} success, ${stats.failed} failed`;
       if (skipped > 0) {
@@ -1171,39 +886,24 @@ export function showProgressDialog(accounts, title = 'Uploading Balance History 
       return dialog;
     },
 
-    /**
-     * Set up cancel callback for the upload process
-     * @param {Function} callback - Function to call when cancel is requested
-     */
-    onCancel: (callback) => {
+    onCancel: (callback: () => void) => {
       cancelCallback = callback;
     },
 
-    /**
-     * Check if the operation has been cancelled
-     * @returns {boolean} True if cancelled
-     */
     isCancelled: () => isCancelled,
 
-    /**
-     * Hide cancel button and show close button (when upload completes)
-     */
     hideCancel: () => {
       cancelButton.style.display = 'none';
       closeButton.style.display = 'inline-block';
     },
 
-    /**
-     * Close and remove the dialog
-     * @returns {Object} Dialog instance for chaining
-     */
     close: () => {
       overlay.remove();
       return dialog;
     },
   };
 
-  // Set up cancel button handler with debugging
+  // Set up cancel button handler
   cancelButton.onclick = () => {
     debugLog('Cancel button clicked', {
       hasCallback: Boolean(cancelCallback),

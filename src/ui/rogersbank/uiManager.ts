@@ -6,17 +6,24 @@
 import { debugLog } from '../../core/utils';
 import { STORAGE, COLORS } from '../../core/config';
 import stateManager from '../../core/state';
-import rogersbank from '../../api/rogersbank';
+import rogersbank, { type RogersBankAuthStatus } from '../../api/rogersbank';
 import toast from '../toast';
 import { createConnectionStatus, updateCredentialsDisplay } from './components/connectionStatus';
 import { createRogersBankUploadButton } from './components/uploadButton';
 import { showSettingsModal } from '../components/settingsModal';
 import { createMonarchLoginLink } from '../components/monarchLoginLink';
 
+declare function GM_getValue(key: string): unknown;
+
 /**
  * Navigation manager for Rogers Bank SPA navigation
  */
 class RogersBankNavigationManager {
+  currentUrl: string;
+  isInitialized: boolean;
+  urlCheckInterval: ReturnType<typeof setInterval> | null;
+  uiInitialized: boolean;
+
   constructor() {
     this.currentUrl = window.location.href;
     this.isInitialized = false;
@@ -24,32 +31,24 @@ class RogersBankNavigationManager {
     this.uiInitialized = false;
   }
 
-  /**
-   * Start monitoring URL changes for SPA navigation
-   */
-  startMonitoring() {
+  startMonitoring(): void {
     if (this.isInitialized) return;
 
     debugLog('Starting Rogers Bank navigation monitoring...');
 
-    // Listen for popstate events (back/forward navigation)
     window.addEventListener('popstate', () => {
       this.handleUrlChange();
     });
 
-    // Poll for URL changes (for programmatic navigation)
     this.urlCheckInterval = setInterval(() => {
       this.checkUrlChange();
-    }, 500); // Check every 500ms
+    }, 500);
 
     this.isInitialized = true;
     debugLog('Rogers Bank navigation monitoring started');
   }
 
-  /**
-   * Stop monitoring URL changes
-   */
-  stopMonitoring() {
+  stopMonitoring(): void {
     if (this.urlCheckInterval) {
       clearInterval(this.urlCheckInterval);
       this.urlCheckInterval = null;
@@ -58,10 +57,7 @@ class RogersBankNavigationManager {
     debugLog('Rogers Bank navigation monitoring stopped');
   }
 
-  /**
-   * Check if URL has changed and handle it
-   */
-  checkUrlChange() {
+  checkUrlChange(): void {
     const newUrl = window.location.href;
     if (newUrl !== this.currentUrl) {
       this.currentUrl = newUrl;
@@ -69,10 +65,7 @@ class RogersBankNavigationManager {
     }
   }
 
-  /**
-   * Handle URL change event
-   */
-  async handleUrlChange() {
+  async handleUrlChange(): Promise<void> {
     try {
       debugLog('Rogers Bank URL changed to:', window.location.href);
 
@@ -80,11 +73,9 @@ class RogersBankNavigationManager {
       const hasUI = this.hasUIContainer();
 
       if (shouldShowUI && !hasUI) {
-        // UI should be shown but isn't present - initialize it directly
         debugLog('Re-initializing Rogers Bank UI after navigation');
         await this.initializeUIDirectly();
       } else if (!shouldShowUI && hasUI) {
-        // UI shouldn't be shown but is present - clean it up
         debugLog('Cleaning up Rogers Bank UI after navigation away');
         this.cleanupUI();
       }
@@ -93,18 +84,12 @@ class RogersBankNavigationManager {
     }
   }
 
-  /**
-   * Initialize UI directly without recursion
-   */
-  async initializeUIDirectly() {
+  async initializeUIDirectly(): Promise<void> {
     try {
-      // Wait for DOM to be ready with target element
       await this.waitForTargetElementAsync();
 
-      // Try to create container
       const container = createUIContainer();
       if (container) {
-        // Element exists, initialize UI immediately
         initializeUIComponents(container);
         this.markUIInitialized();
         debugLog('Rogers Bank UI re-initialized successfully after navigation');
@@ -114,25 +99,20 @@ class RogersBankNavigationManager {
     }
   }
 
-  /**
-   * Wait for target element with async/await pattern
-   */
-  async waitForTargetElementAsync() {
+  async waitForTargetElementAsync(): Promise<HTMLElement> {
     return new Promise((resolve, reject) => {
-      // Check if element already exists
-      const targetSection = document.querySelector('section[aria-labelledby="master-card-section"]');
+      const targetSection = document.querySelector('section[aria-labelledby="master-card-section"]') as HTMLElement | null;
       if (targetSection) {
         resolve(targetSection);
         return;
       }
 
-      // Set up observer to wait for element
       let attempts = 0;
-      const maxAttempts = 60; // 30 seconds with 500ms intervals
+      const maxAttempts = 60;
 
       const checkInterval = setInterval(() => {
         attempts++;
-        const element = document.querySelector('section[aria-labelledby="master-card-section"]');
+        const element = document.querySelector('section[aria-labelledby="master-card-section"]') as HTMLElement | null;
 
         if (element) {
           clearInterval(checkInterval);
@@ -145,34 +125,20 @@ class RogersBankNavigationManager {
     });
   }
 
-  /**
-   * Determine if UI should be shown on current page
-   * @returns {boolean} True if UI should be shown
-   */
-  shouldShowUI() {
-    // Check if we're on the main account page where the master-card-section exists
+  shouldShowUI(): boolean {
     const path = window.location.pathname;
-
-    // Show UI on main dashboard/home pages where the target element exists
     return path === '/'
            || path === '/home'
            || path === '/dashboard'
-           || path.match(/^\/accounts?\/?$/)
+           || /^\/accounts?\/?$/.test(path)
            || path.includes('master-card');
   }
 
-  /**
-   * Check if UI container currently exists
-   * @returns {boolean} True if UI container exists
-   */
-  hasUIContainer() {
+  hasUIContainer(): boolean {
     return document.getElementById('rogersbank-balance-uploader-container') !== null;
   }
 
-  /**
-   * Clean up UI when navigating away
-   */
-  cleanupUI() {
+  cleanupUI(): void {
     const container = document.getElementById('rogersbank-balance-uploader-container');
     if (container) {
       container.remove();
@@ -181,17 +147,11 @@ class RogersBankNavigationManager {
     }
   }
 
-  /**
-   * Mark UI as initialized
-   */
-  markUIInitialized() {
+  markUIInitialized(): void {
     this.uiInitialized = true;
   }
 
-  /**
-   * Check if UI is initialized
-   */
-  isUIInitialized() {
+  isUIInitializedCheck(): boolean {
     return this.uiInitialized;
   }
 }
@@ -201,23 +161,19 @@ const navigationManager = new RogersBankNavigationManager();
 
 /**
  * Creates and appends the main UI container to Rogers Bank page
- * @returns {HTMLElement|null} Created container element
  */
-function createUIContainer() {
-  // Find the master card section as specified
+function createUIContainer(): HTMLElement | null {
   const targetSection = document.querySelector('section[aria-labelledby="master-card-section"]');
   if (!targetSection) {
     debugLog('Could not find section[aria-labelledby="master-card-section"] insertion point');
     return null;
   }
 
-  // Check if container already exists
   let container = document.getElementById('rogersbank-balance-uploader-container');
   if (container) {
     return container;
   }
 
-  // Create main container
   container = document.createElement('div');
   container.id = 'rogersbank-balance-uploader-container';
   container.style.cssText = `
@@ -236,7 +192,7 @@ function createUIContainer() {
     overflow: hidden;
   `;
 
-  // Add responsive behavior using media queries to match the card above
+  // Add responsive behavior
   const style = document.createElement('style');
   style.textContent = `
     @media (max-width: 1279px) {
@@ -310,10 +266,8 @@ function createUIContainer() {
   titleSection.appendChild(subtitle);
 
   header.appendChild(titleSection);
-
   container.appendChild(header);
 
-  // Append to the target section as the last element
   targetSection.appendChild(container);
 
   debugLog('Rogers Bank UI container created and appended to master-card-section');
@@ -323,23 +277,19 @@ function createUIContainer() {
 /**
  * Initialize UI for Rogers Bank website
  */
-export async function initRogersBankUI() {
+export async function initRogersBankUI(): Promise<void> {
   try {
     debugLog('Initializing Rogers Bank UI...');
 
-    // Start navigation monitoring if not already started
     if (!navigationManager.isInitialized) {
       navigationManager.startMonitoring();
     }
 
-    // Try to create container immediately
     const container = createUIContainer();
     if (container) {
-      // Element exists, initialize UI immediately
       initializeUIComponents(container);
       navigationManager.markUIInitialized();
     } else {
-      // Element doesn't exist yet, set up observer to wait for it
       debugLog('Target element not found, setting up MutationObserver...');
       waitForTargetElement();
     }
@@ -349,47 +299,32 @@ export async function initRogersBankUI() {
   }
 }
 
-/**
- * Start navigation monitoring for Rogers Bank
- */
-export function startNavigationMonitoring() {
+export function startNavigationMonitoring(): void {
   navigationManager.startMonitoring();
 }
 
-/**
- * Stop navigation monitoring for Rogers Bank
- */
-export function stopNavigationMonitoring() {
+export function stopNavigationMonitoring(): void {
   navigationManager.stopMonitoring();
 }
 
 /**
  * Initialize UI components once container is available
- * @param {HTMLElement} container - The UI container element
  */
-function initializeUIComponents(container) {
+function initializeUIComponents(container: HTMLElement): void {
   try {
-    // Clear existing dynamic content (keep header)
     const existingContent = Array.from(container.children).slice(1);
     existingContent.forEach((child) => child.remove());
 
-    // Create connection status component
     const connectionStatus = createConnectionStatus();
     container.appendChild(connectionStatus);
 
-    // Create upload button
     const uploadButton = createRogersBankUploadButton();
     container.appendChild(uploadButton);
 
-    // Set up status monitoring
     setupStatusMonitoring(connectionStatus);
-
-    // Update status immediately
     updateConnectionStatus(connectionStatus);
 
     debugLog('Rogers Bank UI initialized successfully');
-
-    // Show initialization toast
     toast.show('Rogers Bank Balance Uploader initialized', 'debug', 2000);
   } catch (error) {
     debugLog('Error initializing UI components:', error);
@@ -400,29 +335,23 @@ function initializeUIComponents(container) {
 /**
  * Wait for target element to appear using MutationObserver
  */
-function waitForTargetElement() {
-  let observer = null;
-  let timeoutId = null;
+function waitForTargetElement(): void {
+  let observer: MutationObserver | null = null;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
   let isInitialized = false;
 
-  // Create observer
-  observer = new MutationObserver((mutations, obs) => {
-    // Check if target element now exists
+  observer = new MutationObserver((_mutations, obs) => {
     const targetSection = document.querySelector('section[aria-labelledby="master-card-section"]');
 
     if (targetSection && !isInitialized) {
       debugLog('Target element found, initializing UI...');
       isInitialized = true;
-
-      // Stop observing
       obs.disconnect();
 
-      // Clear timeout
       if (timeoutId) {
         clearTimeout(timeoutId);
       }
 
-      // Create container and initialize UI
       const container = createUIContainer();
       if (container) {
         initializeUIComponents(container);
@@ -431,13 +360,8 @@ function waitForTargetElement() {
     }
   });
 
-  // Start observing
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true,
-  });
+  observer.observe(document.body, { childList: true, subtree: true });
 
-  // Set timeout to stop observing after 30 seconds
   timeoutId = setTimeout(() => {
     if (!isInitialized) {
       debugLog('Timeout waiting for Rogers Bank UI element (30s)');
@@ -446,47 +370,35 @@ function waitForTargetElement() {
       }
       toast.show('Rogers Bank UI element not found', 'warning');
     }
-  }, 30000); // 30 seconds timeout
+  }, 30000);
 
   debugLog('MutationObserver started, waiting for target element...');
 }
 
-/**
- * Set up status monitoring for connection indicators
- * @param {HTMLElement} connectionStatus - Connection status container
- */
-function setupStatusMonitoring(connectionStatus) {
-  // Listen for state changes (reactive updates only)
+function setupStatusMonitoring(connectionStatus: HTMLElement): void {
   stateManager.addListener('auth', () => {
     updateConnectionStatus(connectionStatus);
   });
 
-  // Listen for Rogers Bank credential changes (event-driven)
   stateManager.addListener('rogersbankAuth', () => {
     updateConnectionStatus(connectionStatus);
   });
 }
 
-/**
- * Update connection status indicators
- * @param {HTMLElement} connectionStatus - Connection status container
- */
-function updateConnectionStatus(connectionStatus) {
+function updateConnectionStatus(connectionStatus: HTMLElement): void {
   if (!connectionStatus) return;
 
   try {
-    // Get current auth status
-    const rogersbankAuth = rogersbank.checkRogersBankAuth();
+    const rogersbankAuth: RogersBankAuthStatus = rogersbank.checkRogersBankAuth();
     const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN);
 
-    // Update Rogers Bank status
-    const rogersbankIndicator = connectionStatus.querySelector('.rogersbank-status');
+    const rogersbankIndicator = connectionStatus.querySelector('.rogersbank-status') as HTMLElement | null;
     if (rogersbankIndicator) {
       if (rogersbankAuth.authenticated) {
         rogersbankIndicator.textContent = 'Rogers Bank: Connected';
         rogersbankIndicator.style.color = '#28a745';
       } else {
-        const missingCreds = [];
+        const missingCreds: string[] = [];
         const creds = rogersbankAuth.credentials || {};
         if (!creds.authToken) missingCreds.push('token');
         if (!creds.accountId) missingCreds.push('account');
@@ -500,35 +412,29 @@ function updateConnectionStatus(connectionStatus) {
       }
     }
 
-    // Update Monarch status
-    const monarchIndicator = connectionStatus.querySelector('.monarch-status');
+    const monarchIndicator = connectionStatus.querySelector('.monarch-status') as HTMLElement | null;
     if (monarchIndicator) {
-      // Clear existing content
       monarchIndicator.innerHTML = '';
 
       if (monarchToken) {
         monarchIndicator.textContent = 'Monarch: Connected';
         monarchIndicator.style.color = '#28a745';
       } else {
-        // Create clickable login link
         const loginLink = createMonarchLoginLink('Monarch: Connect', () => {
-          // Callback to update status after successful login
           updateConnectionStatus(connectionStatus);
         });
         monarchIndicator.appendChild(loginLink);
       }
     }
 
-    // Update credentials display
     if (rogersbankAuth.credentials) {
-      updateCredentialsDisplay(connectionStatus, rogersbankAuth.credentials);
+      updateCredentialsDisplay(connectionStatus, rogersbankAuth.credentials as Record<string, string>);
     }
 
-    // Refresh upload button container based on new status
     const uploadContainer = document.querySelector('.rogersbank-upload-button-container');
     if (uploadContainer) {
       const newUploadButton = createRogersBankUploadButton();
-      uploadContainer.parentNode.replaceChild(newUploadButton, uploadContainer);
+      uploadContainer.parentNode!.replaceChild(newUploadButton, uploadContainer);
     }
 
     debugLog('Connection status updated');
@@ -537,11 +443,8 @@ function updateConnectionStatus(connectionStatus) {
   }
 }
 
-/**
- * Refresh the UI when credentials are captured
- */
-export function refreshRogersBankUI() {
-  const connectionStatus = document.querySelector('#rogersbank-balance-uploader-container .connection-status-container');
+export function refreshRogersBankUI(): void {
+  const connectionStatus = document.querySelector('#rogersbank-balance-uploader-container .connection-status-container') as HTMLElement | null;
   if (connectionStatus) {
     updateConnectionStatus(connectionStatus);
   }

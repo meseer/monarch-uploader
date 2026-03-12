@@ -15,6 +15,7 @@ import { INTEGRATIONS } from '../../../../core/integrationCapabilities';
 import { getCategoryMapping, setCategoryMapping } from '../../../../services/common/configStore';
 import { calculateAllCategorySimilarities } from '../../../../mappers/category';
 import { showMonarchCategorySelector } from '../../../../ui/components/categorySelector';
+import type { SimilarityInfo } from '../../../../types/monarch';
 import monarchApi from '../../../../api/monarch';
 import accountService from '../../../../services/common/accountService';
 import type { MbnaRawTransaction } from '../../source/balanceReconstruction';
@@ -75,6 +76,7 @@ interface CategorySelectionResult {
 
 /** Monarch category object (from API) */
 interface MonarchCategoryItem {
+  id: string;
   name: string;
   [key: string]: unknown;
 }
@@ -327,7 +329,7 @@ export async function resolveMbnaCategories(
         continue;
       }
 
-      const similarityData = calculateAllCategorySimilarities(merchant, availableCategories);
+      const similarityData: SimilarityInfo = calculateAllCategorySimilarities(merchant, availableCategories);
 
       const transactionDetails: Record<string, unknown> = {};
       if (exampleTx) {

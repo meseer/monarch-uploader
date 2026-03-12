@@ -4,6 +4,7 @@
  */
 
 import { debugLog } from '../../core/utils';
+import type { ProgressDialog } from '../wealthsimple-upload';
 import { INTEGRATIONS } from '../../core/integrationCapabilities';
 import wealthsimpleApi from '../../api/wealthsimple';
 import monarchApi from '../../api/monarch';
@@ -83,10 +84,6 @@ export interface CashPositionResult {
   cashSynced: number;
   cashSkipped: number;
   error: string | null;
-}
-
-interface ProgressDialog {
-  updateStepStatus: (accountId: string, step: string, status: string, message: string) => void;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────

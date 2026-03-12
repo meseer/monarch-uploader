@@ -23,6 +23,8 @@ ADRs are **immutable once accepted**. If a decision changes, a new ADR is writte
 | [002](002-mbna-as-reference-implementation.md) | Use MBNA as the Reference Implementation | Accepted | 2026-01-15 |
 | [003](003-manifest-as-source-of-truth.md) | Integration Manifest as Single Source of Truth | Accepted | 2026-01-15 |
 | [004](004-docs-folder-reorganization.md) | Reorganize Documentation into docs/ | Accepted | 2026-02-20 |
+| [005](005-typescript-migration.md) | Migrate Codebase to TypeScript | Accepted | 2026-03-06 |
+| [006](006-shared-type-system.md) | Introduce Shared Monarch Domain Type System | Accepted | 2026-03-11 |
 
 ## Template
 

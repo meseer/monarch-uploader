@@ -3,11 +3,25 @@
  * Creates and manages connection status indicators
  */
 
+interface CredentialItem {
+  label: string;
+  value?: string;
+  mask?: boolean;
+}
+
+interface RogersBankCredentials {
+  authToken?: string;
+  accountId?: string;
+  customerId?: string;
+  deviceId?: string;
+  lastUpdated?: string;
+  [key: string]: unknown;
+}
+
 /**
  * Creates connection status indicators container
- * @returns {HTMLElement} Connection status container
  */
-export function createConnectionStatus() {
+export function createConnectionStatus(): HTMLElement {
   const container = document.createElement('div');
   container.className = 'connection-status-container';
   container.style.cssText = `
@@ -111,14 +125,12 @@ export function createConnectionStatus() {
 
 /**
  * Update credentials display
- * @param {HTMLElement} container - Connection status container
- * @param {Object} credentials - Rogers Bank credentials
  */
-export function updateCredentialsDisplay(container, credentials) {
+export function updateCredentialsDisplay(container: HTMLElement, credentials: RogersBankCredentials): void {
   const credentialsList = container.querySelector('.credentials-list');
   if (!credentialsList) return;
 
-  const items = [
+  const items: CredentialItem[] = [
     { label: 'Auth Token', value: credentials.authToken, mask: true },
     { label: 'Account ID', value: credentials.accountId },
     { label: 'Customer ID', value: credentials.customerId },

@@ -3,6 +3,8 @@
  * Creates buttons for uploading balance history
  */
 
+declare function GM_getValue(key: string, defaultValue?: unknown): unknown;
+
 import { debugLog } from '../../../core/utils';
 import { STORAGE } from '../../../core/config';
 import stateManager from '../../../core/state';
@@ -18,14 +20,27 @@ import {
 } from '../../../services/questrade/balance';
 import { showDatePickerPromise } from '../../components/datePicker';
 
+interface ButtonOptions {
+  color?: string;
+  hoverColor?: string;
+  disabled?: boolean;
+  id?: string;
+  className?: string;
+}
+
+interface AccountContext {
+  accountId: string;
+  accountName: string;
+}
+
 /**
  * Creates a styled button
- * @param {string} text - Button text
- * @param {Function} onClick - Click handler
- * @param {Object} options - Button options
- * @returns {HTMLButtonElement} The created button
+ * @param text - Button text
+ * @param onClick - Click handler
+ * @param options - Button options
+ * @returns The created button
  */
-export function createButton(text, onClick, options = {}) {
+export function createButton(text: string, onClick: ((event: MouseEvent) => void) | null, options: ButtonOptions = {}): HTMLButtonElement {
   const button = document.createElement('button');
   button.textContent = text;
   button.style.cssText = `
@@ -74,12 +89,12 @@ export function createButton(text, onClick, options = {}) {
 
 /**
  * Creates a date picker with label
- * @param {string} id - Input ID
- * @param {string} label - Label text
- * @param {string} value - Default value
- * @returns {HTMLElement} Container with label and date picker
+ * @param id - Input ID
+ * @param label - Label text
+ * @param value - Default value
+ * @returns Container with label and date picker
  */
-export function createDatePicker(id, label, value) {
+export function createDatePicker(id: string, label: string, value: string): HTMLDivElement {
   const container = document.createElement('div');
   container.style.cssText = 'margin: 10px 0; display: flex; flex-direction: column; gap: 5px;';
 
@@ -101,9 +116,9 @@ export function createDatePicker(id, label, value) {
 
 /**
  * Creates a button group container
- * @returns {HTMLElement} Button group container
+ * @returns Button group container
  */
-export function createButtonGroup() {
+export function createButtonGroup(): HTMLDivElement {
   const container = document.createElement('div');
   container.className = 'balance-uploader-button-group';
   container.style.cssText = 'margin: 10px 0; display: flex; flex-wrap: wrap; gap: 5px;';
@@ -112,11 +127,11 @@ export function createButtonGroup() {
 
 /**
  * Creates a single-account upload button that responds to state changes
- * @param {string} fallbackAccountId - Fallback account ID if state is not available
- * @param {string} fallbackAccountName - Fallback account name if state is not available
- * @returns {HTMLElement} Upload button element
+ * @param fallbackAccountId - Fallback account ID if state is not available
+ * @param fallbackAccountName - Fallback account name if state is not available
+ * @returns Upload button element
  */
-export function createSingleAccountUploadButton(fallbackAccountId, fallbackAccountName) {
+export function createSingleAccountUploadButton(fallbackAccountId: string, fallbackAccountName: string): HTMLButtonElement {
   // Create button with initial text
   const button = createButton(`Upload ${fallbackAccountName} to Monarch`, async () => {
     // Check Monarch authentication before proceeding
@@ -182,8 +197,8 @@ export function createSingleAccountUploadButton(fallbackAccountId, fallbackAccou
       buttonGroup.appendChild(cancelButton);
 
       const uploadButton = createButton('Upload', async () => {
-        const selectedFromDate = document.getElementById('fromDate').value;
-        const selectedToDate = document.getElementById('toDate').value;
+        const selectedFromDate = (document.getElementById('fromDate') as HTMLInputElement).value;
+        const selectedToDate = (document.getElementById('toDate') as HTMLInputElement).value;
 
         // Remove modal
         modal.remove();
@@ -202,7 +217,7 @@ export function createSingleAccountUploadButton(fallbackAccountId, fallbackAccou
       modal.appendChild(form);
       document.body.appendChild(modal);
     } catch (error) {
-      toast.show(`Error: ${error.message}`, 'error');
+      toast.show(`Error: ${(error as Error).message}`, 'error');
       debugLog('Error creating upload form:', error);
     }
   });
@@ -212,10 +227,10 @@ export function createSingleAccountUploadButton(fallbackAccountId, fallbackAccou
 
 /**
  * Creates a bulk upload button for processing multiple accounts
- * @param {Array<Object>} accounts - List of accounts to process
- * @returns {HTMLElement} Bulk upload button
+ * @param accounts - List of accounts to process
+ * @returns Bulk upload button
  */
-export function createBulkUploadButton(accounts) {
+export function createBulkUploadButton(accounts: unknown[]): HTMLButtonElement {
   if (!accounts || accounts.length === 0) {
     return createButton('No Accounts Available', null, { disabled: true });
   }
@@ -231,7 +246,7 @@ export function createBulkUploadButton(accounts) {
       // Call the comprehensive sync function (balance + positions)
       await syncAllAccountsToMonarch();
     } catch (error) {
-      toast.show(`Error: ${error.message}`, 'error');
+      toast.show(`Error: ${(error as Error).message}`, 'error');
       debugLog('Error in bulk sync:', error);
     }
   }, { color: '#17a2b8' });
@@ -240,12 +255,10 @@ export function createBulkUploadButton(accounts) {
 /**
  * Creates a testing section with development-only features
  * Only visible when Development Mode is enabled
- * @param {Object|null} accountContext - Optional account context for single account page
- * @param {string} accountContext.accountId - The account ID
- * @param {string} accountContext.accountName - The account name
- * @returns {HTMLElement|null} Testing section container or null if not in development mode
+ * @param accountContext - Optional account context for single account page
+ * @returns Testing section container or null if not in development mode
  */
-export function createTestingSection(accountContext = null) {
+export function createTestingSection(accountContext: AccountContext | null = null): HTMLDivElement | null {
   // Only show testing section when Development Mode is enabled
   const isDevelopmentMode = GM_getValue(STORAGE.DEVELOPMENT_MODE, false);
   if (!isDevelopmentMode) {
@@ -365,7 +378,7 @@ export function createTestingSection(accountContext = null) {
         await uploadFullBalanceHistoryForAccount(currentAccountId, currentAccountName, selectedDate);
       } catch (error) {
         debugLog('Error in upload full balance history:', error);
-        toast.show(`Upload failed: ${error.message}`, 'error');
+        toast.show(`Upload failed: ${(error as Error).message}`, 'error');
       } finally {
         // Re-enable button
         uploadFullBalanceButton.disabled = false;
@@ -405,7 +418,7 @@ export function createTestingSection(accountContext = null) {
         await uploadSingleAccountActivityToMonarch(currentAccountId, currentAccountName);
       } catch (error) {
         debugLog('Error in upload activity:', error);
-        toast.show(`Upload failed: ${error.message}`, 'error');
+        toast.show(`Upload failed: ${(error as Error).message}`, 'error');
       } finally {
         // Re-enable button
         uploadActivityButton.disabled = false;
@@ -448,7 +461,7 @@ export function createTestingSection(accountContext = null) {
         await uploadFullBalanceHistoryForAllAccounts();
       } catch (error) {
         debugLog('Error in upload all full balance history:', error);
-        toast.show(`Upload failed: ${error.message}`, 'error');
+        toast.show(`Upload failed: ${(error as Error).message}`, 'error');
       } finally {
         // Re-enable button
         uploadAllFullBalanceButton.disabled = false;
@@ -481,7 +494,7 @@ export function createTestingSection(accountContext = null) {
         await uploadAllAccountsActivityToMonarch();
       } catch (error) {
         debugLog('Error in upload all activity:', error);
-        toast.show(`Upload failed: ${error.message}`, 'error');
+        toast.show(`Upload failed: ${(error as Error).message}`, 'error');
       } finally {
         // Re-enable button
         uploadAllActivityButton.disabled = false;
