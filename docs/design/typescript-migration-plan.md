@@ -307,7 +307,7 @@ Converted the application entry point and integration barrel export. Updated web
 
 ### Phase 15: Shared Type System — 🔄 In Progress
 
-> **Status:** In progress  
+> **Status:** In progress (Tiers 1–3B complete)  
 > **ADR:** [ADR-006](../decisions/006-shared-type-system.md)
 
 **Problem:** During the TS migration, independent type definitions proliferated across layers. A post-migration audit found:
@@ -361,7 +361,28 @@ Consolidate `ConsolidatedAccount`, `WealthsimpleAccount`, `ProgressDialog`, and 
 - Export `ProgressDialog`, `SyncResult` from `wealthsimple-upload.ts`
 - Import in `positions.ts`, `uploadButton.ts`
 
-#### Tier 3: Deferred (acceptable as-is)
+#### Sub-task 4: Auth status type deduplication (Tier 3A) ✅ Complete
+Each UI manager had a local copy of its integration's auth status interface and used `as unknown as` casts. Fix: import the canonical type directly from the API module.
+
+**Changes:**
+- `src/ui/wealthsimple/components/connectionStatus.ts` — removed local `AuthStatus`, import `WealthsimpleAuthStatus` from API
+- `src/ui/rogersbank/uiManager.ts` — removed local `RogersBankAuthStatus`, import from API
+- `src/ui/canadalife/uiManager.ts` — removed local `CanadaLifeAuthStatus`, import from API
+
+**Eliminated:** 3 duplicate interfaces + 3 `as unknown as` casts
+
+#### Sub-task 5: Wealthsimple domain types extraction (Tier 3B) ✅ Complete
+`ConsolidatedAccount` and `WealthsimpleAccountData` were duplicated 2–4 times across Wealthsimple service files. A circular dependency between `account.ts` ↔ `balance.ts` prevented direct sharing.
+
+**Changes:**
+- Created `src/types/wealthsimple.ts` with `WealthsimpleAccountBase`, `MonarchAccountMapping`, `StoredTransaction`, `BalanceCheckpoint` (re-export), `ConsolidatedAccountBase`
+- `src/services/wealthsimple/balance.ts` — replaced local `ConsolidatedAccount` with import from shared types
+- `src/services/wealthsimple/transactions.ts` — replaced local `WealthsimpleAccountData` + `ConsolidatedAccount` with shared types
+- `src/services/wealthsimple/transactionsInvestment.ts` — replaced local `WealthsimpleAccountData` + `ConsolidatedAccountForInvestment` with shared types
+
+**Eliminated:** 5 duplicate interfaces, broke circular dependency via shared type module
+
+#### Tier 3 remainder: Deferred (acceptable as-is)
 These issues are low-risk and acceptable in their current form:
 
 - **`any` in GraphQL** (8 instances) — genuinely dynamic API response parsing, all have `eslint-disable` comments
@@ -371,10 +392,10 @@ These issues are low-risk and acceptable in their current form:
 
 | Metric | Count |
 |--------|-------|
-| Duplicate interfaces eliminated | ~20 |
-| Files modified | ~10 |
-| `as unknown as` eliminated (Tier 1+2) | ~8 |
-| Remaining `as unknown as` (Tier 3, deferred) | ~38 |
+| Duplicate interfaces eliminated | ~28 |
+| Files modified | ~16 |
+| `as unknown as` eliminated (Tier 1–3B) | ~14 |
+| Remaining `as unknown as` (Tier 3 remainder, deferred) | ~32 |
 
 ---
 

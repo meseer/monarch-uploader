@@ -6,7 +6,7 @@
 import { debugLog } from '../../core/utils';
 import { STORAGE, COLORS } from '../../core/config';
 import stateManager from '../../core/state';
-import canadalife from '../../api/canadalife';
+import canadalife, { type CanadaLifeAuthStatus } from '../../api/canadalife';
 import toast from '../toast';
 import { createConnectionStatus } from './components/connectionStatus';
 import { createCanadaLifeUploadButton } from './components/uploadButton';
@@ -14,11 +14,6 @@ import { showSettingsModal } from '../components/settingsModal';
 import { createMonarchLoginLink } from '../components/monarchLoginLink';
 
 declare function GM_getValue(key: string): unknown;
-
-interface CanadaLifeAuthStatus {
-  authenticated: boolean;
-  [key: string]: unknown;
-}
 
 /**
  * Creates and appends the main UI container to CanadaLife navigation
@@ -250,7 +245,7 @@ function updateConnectionStatus(connectionStatus: HTMLElement): void {
 
   try {
     // Get current auth status
-    const canadalifeAuth = canadalife.checkAuth() as unknown as CanadaLifeAuthStatus;
+    const canadalifeAuth: CanadaLifeAuthStatus = canadalife.checkAuth();
     const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN);
 
     // Update CanadaLife status

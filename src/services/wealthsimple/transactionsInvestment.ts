@@ -25,22 +25,15 @@ import {
 } from './transactionRules';
 import { type WealthsimpleTransaction } from './transactionRulesHelpers';
 import { collectEftTransferIds, convertToLocalDate, type ProcessedTransaction } from './transactionsHelpers';
+import type { ConsolidatedAccountBase } from '../../types/wealthsimple';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-interface WealthsimpleAccountData {
-  id: string;
-  nickname?: string;
-  type?: string;
-  currency?: string;
-}
-
-interface ConsolidatedAccountForInvestment {
-  wealthsimpleAccount: WealthsimpleAccountData;
-  includePendingTransactions?: boolean;
-  skipCategorization?: boolean;
-  uploadedTransactions?: Array<{ id: string; date?: string }>;
-}
+/**
+ * Alias for the shared ConsolidatedAccountBase type from src/types/wealthsimple.ts.
+ * Eliminates the former local duplicate of WealthsimpleAccountData and ConsolidatedAccountForInvestment.
+ */
+type ConsolidatedAccountForInvestment = ConsolidatedAccountBase;
 
 interface FetchInvestmentOptions {
   rawTransactions?: WealthsimpleTransaction[];

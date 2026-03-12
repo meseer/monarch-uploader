@@ -6,7 +6,7 @@
 import { debugLog } from '../../core/utils';
 import { STORAGE, COLORS } from '../../core/config';
 import stateManager from '../../core/state';
-import rogersbank from '../../api/rogersbank';
+import rogersbank, { type RogersBankAuthStatus } from '../../api/rogersbank';
 import toast from '../toast';
 import { createConnectionStatus, updateCredentialsDisplay } from './components/connectionStatus';
 import { createRogersBankUploadButton } from './components/uploadButton';
@@ -14,18 +14,6 @@ import { showSettingsModal } from '../components/settingsModal';
 import { createMonarchLoginLink } from '../components/monarchLoginLink';
 
 declare function GM_getValue(key: string): unknown;
-
-interface RogersBankAuthStatus {
-  authenticated: boolean;
-  credentials?: {
-    authToken?: string;
-    accountId?: string;
-    customerId?: string;
-    deviceId?: string;
-    [key: string]: unknown;
-  };
-  [key: string]: unknown;
-}
 
 /**
  * Navigation manager for Rogers Bank SPA navigation
@@ -401,7 +389,7 @@ function updateConnectionStatus(connectionStatus: HTMLElement): void {
   if (!connectionStatus) return;
 
   try {
-    const rogersbankAuth = rogersbank.checkRogersBankAuth() as unknown as RogersBankAuthStatus;
+    const rogersbankAuth: RogersBankAuthStatus = rogersbank.checkRogersBankAuth();
     const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN);
 
     const rogersbankIndicator = connectionStatus.querySelector('.rogersbank-status') as HTMLElement | null;

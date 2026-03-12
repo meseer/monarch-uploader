@@ -3,14 +3,7 @@
  * Creates and manages connection status indicators
  */
 
-import wealthsimpleApi from '../../../api/wealthsimple';
-
-interface AuthStatus {
-  authenticated?: boolean;
-  expired?: boolean;
-  expiresAt?: string;
-  [key: string]: unknown;
-}
+import wealthsimpleApi, { type WealthsimpleAuthStatus } from '../../../api/wealthsimple';
 
 /**
  * Format time remaining until expiration
@@ -123,7 +116,7 @@ export function createConnectionStatus(): HTMLElement {
  * Update Wealthsimple status display
  */
 function updateWealthsimpleStatus(statusElement: HTMLElement): void {
-  const authStatus = wealthsimpleApi.checkAuth() as unknown as AuthStatus;
+  const authStatus: WealthsimpleAuthStatus = wealthsimpleApi.checkAuth();
 
   if (authStatus.authenticated && authStatus.expiresAt) {
     const timeRemaining = formatTimeRemaining(authStatus.expiresAt);

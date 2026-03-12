@@ -57,25 +57,15 @@ export { fetchAndProcessInvestmentTransactions };
 // Re-export reconciliation
 export { formatTransactionIdForNotes, reconcilePendingTransactions, formatReconciliationMessage };
 
+import type { ConsolidatedAccountBase } from '../../types/wealthsimple';
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
-interface WealthsimpleAccountData {
-  id: string;
-  nickname?: string;
-  type?: string;
-  currency?: string;
-  stripStoreNumbers?: boolean;
-  includePendingTransactions?: boolean;
-  skipCategorization?: boolean;
-}
-
-interface ConsolidatedAccount {
-  wealthsimpleAccount: WealthsimpleAccountData;
-  stripStoreNumbers?: boolean;
-  includePendingTransactions?: boolean;
-  skipCategorization?: boolean;
-  uploadedTransactions?: Array<{ id: string; date?: string }>;
-}
+/**
+ * Alias for the shared ConsolidatedAccountBase type from src/types/wealthsimple.ts.
+ * Eliminates the former local duplicate of ConsolidatedAccount and WealthsimpleAccountData.
+ */
+type ConsolidatedAccount = ConsolidatedAccountBase;
 
 interface FetchOptions {
   rawTransactions?: WealthsimpleTransaction[];

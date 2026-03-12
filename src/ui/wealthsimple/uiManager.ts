@@ -31,12 +31,6 @@ interface TargetContainerResult {
   referenceNode: Element | ChildNode | null;
 }
 
-interface WealthsimpleAuthStatus {
-  authenticated: boolean;
-  expiresAt?: string;
-  expired?: boolean;
-  [key: string]: unknown;
-}
 
 type ConnectionStatusElement = HTMLDivElement & {
   statusInterval?: ReturnType<typeof setInterval>;
@@ -385,7 +379,7 @@ function getExpirationColor(expiresAt: string): string {
 function updateConnectionStatus(connectionStatus: HTMLElement): void {
   if (!connectionStatus) return;
   try {
-    const wealthsimpleAuth = wealthsimpleApi.checkAuth() as unknown as WealthsimpleAuthStatus;
+    const wealthsimpleAuth = wealthsimpleApi.checkAuth();
     const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN);
     const wealthsimpleIndicator = connectionStatus.querySelector('.wealthsimple-status') as HTMLElement | null;
     if (wealthsimpleIndicator) {
