@@ -1,7 +1,7 @@
 # Monarch Uploader — Documentation
 
 > **Status:** Active  
-> **Updated:** 2026-02-20  
+> **Updated:** 2026-03-12  
 > **Author:** @meseer  
 
 All project documentation lives here. See the [root README](../README.md) for project setup and installation.
@@ -20,7 +20,7 @@ Architecture reference documents. These explain *how* the system works and *why*
 | [Eliminate Upload Services Plan](design/eliminate-upload-services-plan.md) | Draft | Refactoring upload services into the modular architecture |
 | [Settings UI Unification Plan](design/settings-unification-plan.md) | Implemented | Consolidated account storage design (now live) |
 | [Skip Categorization Plan](design/skip-categorization-plan.md) | Draft | Per-account option to skip category mapping |
-| [TypeScript Migration Plan](design/typescript-migration-plan.md) | Active | Phased migration from JavaScript to TypeScript |
+| [TypeScript Migration Plan](design/typescript-migration-plan.md) | Active | Phased migration from JavaScript to TypeScript (105/105 files, shared types consolidated) |
 | [MBNA Integration Plan](design/integration/mbna-integration-plan.md) | Implemented | Planning document for the MBNA reference implementation |
 | **Mobile App** | | |
 | [Mobile App Architecture](design/mobile-app/architecture.md) | Draft | High-level design: on-device API calls, WebView auth, background sync, backend, phased roadmap |

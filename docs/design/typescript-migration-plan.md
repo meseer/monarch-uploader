@@ -1,7 +1,7 @@
 # TypeScript Migration Plan
 
 > **Status:** Active  
-> **Updated:** 2026-03-11 (All source files converted — 105/105)  
+> **Updated:** 2026-03-12 (Phase 15 complete — shared type system done)  
 > **Author:** @meseer  
 > **Note:** See [ADR-005](../decisions/005-typescript-migration.md) for the decision record.
 
@@ -32,7 +32,7 @@
 | 13h | Rogers Bank UI | ✅ Complete | 3/3 src / 0 test |
 | 13i | CanadaLife UI | ✅ Complete | 3/3 src / 0 test |
 | 13j | Entry Points | ✅ Complete | 2/2 src / 0 test |
-| 15 | Shared Type System | 🔄 In Progress | — |
+| 15 | Shared Type System | ✅ Complete | 2 new + ~16 modified |
 | 14 | Strictness Ramp-up | ⏸️ Deferred | — |
 
 **Overall:** 105/105 source files converted (100%) 🎉
@@ -305,9 +305,9 @@ Converted the application entry point and integration barrel export. Updated web
 
 ---
 
-### Phase 15: Shared Type System — 🔄 In Progress
+### Phase 15: Shared Type System — ✅ Complete
 
-> **Status:** In progress (Tiers 1–3B complete)  
+> **Status:** Complete (all planned tiers done; remaining casts are architectural — see Tier 3 remainder)  
 > **ADR:** [ADR-006](../decisions/006-shared-type-system.md)
 
 **Problem:** During the TS migration, independent type definitions proliferated across layers. A post-migration audit found:
@@ -328,7 +328,7 @@ Converted the application entry point and integration barrel export. Updated web
 - Added `AccountDetails`, `AccountCallback`, `BalanceInfo` to shared types
 - **Eliminated:** 4× `as unknown as SimilarityInfo` in service files
 
-#### Sub-task 2: Balance type unification (Tier 1)
+#### Sub-task 2: Balance type unification (Tier 1) ✅ Complete
 Consolidate `CurrentBalance` and `BalanceCheckpoint` — the exact pattern that caused the v6.6.10 `[object Object]` production bug.
 
 **Duplicates found:**
@@ -344,7 +344,7 @@ Consolidate `CurrentBalance` and `BalanceCheckpoint` — the exact pattern that 
 - Replace `BalanceInfo` in `core/utils.ts` with re-export from shared types
 - Fix `uploadButton.ts` local `BalanceResult` to use shared `CurrentBalance`
 
-#### Sub-task 3: Wealthsimple domain type unification (Tier 2)
+#### Sub-task 3: Wealthsimple domain type unification (Tier 2) ✅ Complete
 Consolidate `ConsolidatedAccount`, `WealthsimpleAccount`, `ProgressDialog`, and `SyncResult`.
 
 **Duplicates found:**
@@ -385,17 +385,22 @@ Each UI manager had a local copy of its integration's auth status interface and 
 #### Tier 3 remainder: Deferred (acceptable as-is)
 These issues are low-risk and acceptable in their current form:
 
-- **`any` in GraphQL** (8 instances) — genuinely dynamic API response parsing, all have `eslint-disable` comments
-- **MBNA hook casts** (~6 instances) — part of the new integration architecture, will resolve as that system matures
-- **Config/capabilities casts** (~5 instances) — inherent to the dynamic capabilities system design
-- **API return type casts** (~15 instances) — API functions return loose types; fixing requires adding return types to all API functions (large scope, separate effort)
+- **MBNA hook casts** (6 instances) — part of the new integration architecture, will resolve as that system matures
+- **Config/capabilities/registry casts** (3 instances) — inherent to the dynamic capabilities system design
+- **State/window casts** (3 instances) — `window` property access and dynamic indicator map
+- **API response casts** (2 instances in `monarch.ts`) — GraphQL responses are untyped
+- **Service-layer casts** (15 instances) — API functions return loose types; fixing requires adding return types to all API functions (large scope, separate effort)
+- **UI-layer casts** (13 instances) — cross-layer data flow from services with loose return types (CanadaLife, Wealthsimple, category selector)
+- **Entry point casts** (2 instances) — integration module + status indicator typing
+
+> **Note:** The remaining count (44) is higher than the original estimate (~32) because subsequent feature development (e.g., CanadaLife UI) introduced new casts after the initial audit. The consolidation work itself was completed as planned.
 
 | Metric | Count |
 |--------|-------|
 | Duplicate interfaces eliminated | ~28 |
 | Files modified | ~16 |
 | `as unknown as` eliminated (Tier 1–3B) | ~14 |
-| Remaining `as unknown as` (Tier 3 remainder, deferred) | ~32 |
+| Remaining `as unknown as` (Tier 3 remainder + post-audit additions, deferred) | 44 |
 
 ---
 
@@ -446,8 +451,9 @@ These issues are low-risk and acceptable in their current form:
 | 13h — Rogers Bank UI | 3 | ✅ Done |
 | 13i — CanadaLife UI | 3 | ✅ Done |
 | 13j — Entry Points | 2 | ✅ Done |
+| 15 — Shared Type System | 2 new + ~16 modified | ✅ Done |
 | 14 — Strictness | all | ⏸️ Deferred |
-| **Total remaining** | **0** | **✅ All source files converted** |
+| **Total remaining** | **0** | **✅ All source files converted, shared types consolidated** |
 
 ---
 
