@@ -192,11 +192,13 @@ async function uploadSingleAccountWithProgress(accountId: string): Promise<void>
     debugLog(`Account page upload using date range: ${fromDate} to ${toDate}`);
 
     // Process the account with step-by-step progress tracking
+    // Wrap balance number as CurrentBalance object expected by the upload function
+    const currentBalanceObj = currentBalance !== null ? { amount: currentBalance } : null;
     const result: SyncResult = await uploadWealthsimpleAccountToMonarchWithSteps(
       consolidatedAccount,
       fromDate,
       toDate,
-      currentBalance,
+      currentBalanceObj,
       progressDialog,
     ) as unknown as SyncResult;
 

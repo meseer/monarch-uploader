@@ -726,9 +726,9 @@ export function formatCurrencyAmount(amount: number): string {
   }).format(amount);
 }
 
-interface BalanceInfo {
+export interface BalanceInfo {
   amount: number | null | undefined;
-  currency: string;
+  currency?: string;
 }
 
 /**

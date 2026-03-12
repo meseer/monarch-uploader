@@ -16,7 +16,7 @@ import { showMonarchAccountSelectorWithCreate } from '../ui/components/accountSe
 import { convertTransactionsToMonarchCSV } from '../utils/csv';
 import { showDatePickerWithOptionsPromise } from '../ui/components/datePicker';
 import { applyCategoryMapping, saveUserCategorySelection, calculateAllCategorySimilarities } from '../mappers/category';
-import { showMonarchCategorySelector } from '../ui/components/categorySelector';
+import { showMonarchCategorySelector, type SimilarityInfo } from '../ui/components/categorySelector';
 import { showProgressDialog } from '../ui/components/progressDialog';
 import {
   getTransactionIdsFromArray,
@@ -219,7 +219,7 @@ async function resolveCategoriesForTransactions(transactions, options: ResolveCa
       }
 
       const selectedCategory = await new Promise<Record<string, unknown> | null>((resolve) => {
-        showMonarchCategorySelector(categoryToResolve.bankCategory, resolve, similarityData, transactionDetails);
+        showMonarchCategorySelector(categoryToResolve.bankCategory, resolve, similarityData as unknown as SimilarityInfo, transactionDetails);
       });
 
       if (!selectedCategory) {
@@ -693,7 +693,7 @@ export async function uploadRogersBankToMonarch() {
       if (!monarchAccounts?.length) throw new Error('No Monarch credit card accounts found.');
 
       monarchAccount = await new Promise((resolve) => {
-        showMonarchAccountSelectorWithCreate(monarchAccounts, resolve, null, 'credit', {
+        showMonarchAccountSelectorWithCreate(monarchAccounts as unknown as Parameters<typeof showMonarchAccountSelectorWithCreate>[0], resolve, null, 'credit', {
           defaultName: rogersAccountName,
           defaultType: 'credit',
           defaultSubtype: 'credit_card',

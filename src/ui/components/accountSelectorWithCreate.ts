@@ -3,18 +3,13 @@
  * Extends the generic account selector to include account creation functionality
  */
 
-import { debugLog, extractDomain, stringSimilarity, formatBalance } from '../../core/utils';
+import { debugLog, extractDomain, stringSimilarity, formatBalance, type BalanceInfo } from '../../core/utils';
 import stateManager from '../../core/state';
 import monarchApi from '../../api/monarch';
 import toast from '../toast';
 import { addModalKeyboardHandlers, makeItemsKeyboardNavigable } from '../keyboardNavigation';
 import { showAccountCreationDialog } from './accountCreationDialog';
 import { showConfirmationDialog } from './confirmationDialog';
-
-interface BalanceInfo {
-  amount?: number;
-  currency?: string;
-}
 
 interface CreateDefaults {
   defaultName?: string;
@@ -76,7 +71,7 @@ interface ConnectionGroup {
   credential: CredentialInfo | null;
   institution?: InstitutionInfo;
   accounts: AccountEntry[];
-  isManual: boolean;
+  isManual?: boolean;
 }
 
 interface InstitutionEntry {

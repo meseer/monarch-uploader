@@ -1,7 +1,7 @@
 # TypeScript Migration Plan
 
 > **Status:** Active  
-> **Updated:** 2026-03-11 (Phases 13e–13j complete)  
+> **Updated:** 2026-03-11 (All source files converted — 105/105)  
 > **Author:** @meseer  
 > **Note:** See [ADR-005](../decisions/005-typescript-migration.md) for the decision record.
 
@@ -23,9 +23,9 @@
 | 11 | WS Core Services | ✅ Complete | 5/5 src / 0 test |
 | 12 | WS Top-Level Services | ✅ Complete | 3/3 src / 0 test |
 | 13a | UI Primitives | ✅ Complete | 6/6 src / 0 test |
-| 13b | Category Selector Cluster | ⬜ Not Started | 0/3 src / 0 test |
-| 13c | Dialog & Picker Components | ⬜ Not Started | 0/4 src / 0 test |
-| 13d | Settings Modal Cluster | ⬜ Not Started | 0/4 src / 0 test |
+| 13b | Category Selector Cluster | ✅ Complete | 3/3 src / 0 test |
+| 13c | Dialog & Picker Components | ✅ Complete | 4/4 src / 0 test |
+| 13d | Settings Modal Cluster | ✅ Complete | 4/4 src / 0 test |
 | 13e | Generic Base UI | ✅ Complete | 3/3 src / 0 test |
 | 13f | Questrade UI | ✅ Complete | 2/2 src / 0 test |
 | 13g | Wealthsimple UI | ✅ Complete | 3/3 src / 0 test |
@@ -34,7 +34,7 @@
 | 13j | Entry Points | ✅ Complete | 2/2 src / 0 test |
 | 14 | Strictness Ramp-up | ⏸️ Deferred | — |
 
-**Overall:** 94/105 source files converted (~90%)
+**Overall:** 105/105 source files converted (100%) 🎉
 
 > **Note:** `categorySelector.example.js` was deleted (dead code — development demo with no production imports or tests). Total file count is 105 not 106.
 
@@ -202,43 +202,43 @@ Zero or minimal inter-UI-file dependencies — converted first to unblock everyt
 
 ---
 
-### Phase 13b: Category Selector Cluster (3 files, ~1,677 lines)
+### Phase 13b: Category Selector Cluster ✅ Complete
 
-Self-contained subsystem with internal dependency chain. Convert in order: utils → manual → main.
+Self-contained subsystem with internal dependency chain. Converted in order: utils → manual → main.
 
 | File | Lines |
 |------|-------|
-| `src/ui/components/categorySelectorUtils.js` | 279 |
-| `src/ui/components/categorySelectorManual.js` | 378 |
-| `src/ui/components/categorySelector.js` | 1,020 |
+| `src/ui/components/categorySelectorUtils.ts` | 279 |
+| `src/ui/components/categorySelectorManual.ts` | 378 |
+| `src/ui/components/categorySelector.ts` | 1,020 |
 
 > **Note:** `categorySelector.example.js` (233 lines) was deleted — it was a development demo file with no production imports or test coverage.
 
 ---
 
-### Phase 13c: Dialog & Picker Components (4 files, ~2,956 lines)
+### Phase 13c: Dialog & Picker Components ✅ Complete
 
 Interactive components consumed by services and the settings modal.
 
 | File | Lines |
 |------|-------|
-| `src/ui/components/datePicker.js` | 480 |
-| `src/ui/components/securitySelector.js` | 484 |
-| `src/ui/components/accountCreationDialog.js` | 620 |
-| `src/ui/components/accountSelectorWithCreate.js` | 1,372 |
+| `src/ui/components/datePicker.ts` | 480 |
+| `src/ui/components/securitySelector.ts` | 484 |
+| `src/ui/components/accountCreationDialog.ts` | 620 |
+| `src/ui/components/accountSelectorWithCreate.ts` | 1,372 |
 
 ---
 
-### Phase 13d: Settings Modal Cluster (4 files, ~4,613 lines)
+### Phase 13d: Settings Modal Cluster ✅ Complete
 
-The most complex sub-system. Convert in order: helpers → accountCards → settingsModal → progressDialog.
+The most complex sub-system. Converted in order: helpers → accountCards → settingsModal → progressDialog.
 
 | File | Lines |
 |------|-------|
-| `src/ui/components/settingsModalHelpers.js` | 1,280 |
-| `src/ui/components/settingsModalAccountCards.js` | 1,278 |
-| `src/ui/components/settingsModal.js` | 807 |
-| `src/ui/components/progressDialog.js` | 1,248 |
+| `src/ui/components/settingsModalHelpers.ts` | 1,280 |
+| `src/ui/components/settingsModalAccountCards.ts` | 1,278 |
+| `src/ui/components/settingsModal.ts` | 807 |
+| `src/ui/components/progressDialog.ts` | 1,248 |
 
 ---
 
@@ -342,9 +342,9 @@ Converted the application entry point and integration barrel export. Updated web
 | 11 — WS Core Services | 5 | ✅ Done |
 | 12 — WS Top-Level Services | 3 | ✅ Done |
 | 13a — UI Primitives | 6 | ✅ Done |
-| 13b — Category Selector Cluster | 3 | ~1 day |
-| 13c — Dialog & Picker Components | 4 | ~2 days |
-| 13d — Settings Modal Cluster | 4 | ~2 days |
+| 13b — Category Selector Cluster | 3 | ✅ Done |
+| 13c — Dialog & Picker Components | 4 | ✅ Done |
+| 13d — Settings Modal Cluster | 4 | ✅ Done |
 | 13e — Generic Base UI | 3 | ✅ Done |
 | 13f — Questrade UI | 2 | ✅ Done |
 | 13g — Wealthsimple UI | 3 | ✅ Done |
@@ -352,7 +352,7 @@ Converted the application entry point and integration barrel export. Updated web
 | 13i — CanadaLife UI | 3 | ✅ Done |
 | 13j — Entry Points | 2 | ✅ Done |
 | 14 — Strictness | all | ⏸️ Deferred |
-| **Total remaining** | **11** | **~5 days** |
+| **Total remaining** | **0** | **✅ All source files converted** |
 
 ---
 

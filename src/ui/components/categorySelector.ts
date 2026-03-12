@@ -56,7 +56,7 @@ interface CategoryGroup {
   [key: string]: unknown;
 }
 
-interface SimilarityInfo {
+export interface SimilarityInfo {
   score?: number;
   bestMatch?: string;
   categoryGroups?: CategoryGroup[];
@@ -223,8 +223,8 @@ export async function showMonarchCategorySelector(
         }
       });
 
-      groupsWithCategories = categoryGroups
-        .map((group: Record<string, unknown>) => ({
+      groupsWithCategories = (categoryGroups as unknown as Array<Record<string, unknown>>)
+        .map((group) => ({
           ...group,
           categories: categoriesByGroup[group.id as string] || [],
           categoryCount: (categoriesByGroup[group.id as string] || []).length,
@@ -1082,14 +1082,14 @@ export async function showManualTransactionCategorization(
       }
     });
 
-    const groupsWithCategories = (categoryGroups as Array<Record<string, unknown>>)
+    const groupsWithCategories = ((categoryGroups as unknown as Array<Record<string, unknown>>)
       .map((group) => ({
         ...group,
         categories: categoriesByGroup[group.id as string] || [],
         categoryCount: (categoriesByGroup[group.id as string] || []).length,
-      }))
+      })) as CategoryGroup[])
       .filter((group) => group.categoryCount > 0)
-      .sort((a, b) => ((a.order as number) || 0) - ((b.order as number) || 0)) as CategoryGroup[];
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
 
     if (!groupsWithCategories.length) {
       toast.show('No valid category groups found', 'error');

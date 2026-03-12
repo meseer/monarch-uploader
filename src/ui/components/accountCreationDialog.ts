@@ -355,7 +355,7 @@ export async function showAccountCreationDialog(
         }
 
         // Fetch the full account details to return
-        const accounts = await monarchApi.listAccounts(accountType) as Array<Record<string, unknown>>;
+        const accounts = await monarchApi.listAccounts(accountType) as unknown as Array<Record<string, unknown>>;
         const createdAccount = accounts.find((acc) => acc.id === accountId);
 
         if (createdAccount) {

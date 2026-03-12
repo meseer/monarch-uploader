@@ -15,7 +15,7 @@ import accountService from '../common/accountService';
 import toast from '../../ui/toast';
 import { convertQuestradeOrdersToMonarchCSV, convertQuestradeTransactionsToMonarchCSV } from '../../utils/csv';
 import { applyCategoryMapping, saveUserCategorySelection, calculateAllCategorySimilarities } from '../../mappers/category';
-import { showMonarchCategorySelector } from '../../ui/components/categorySelector';
+import { showMonarchCategorySelector, type SimilarityInfo } from '../../ui/components/categorySelector';
 import {
   getTransactionIdsFromArray,
   getRetentionSettingsFromAccount,
@@ -260,7 +260,7 @@ async function resolveCategoriesForOrders(orders, options: { skipCategorization?
 
       // Show the category selector with order details
       const selectedCategory = await new Promise((resolve) => {
-        showMonarchCategorySelector(actionToResolve.bankCategory, resolve, similarityData, transactionDetails);
+        showMonarchCategorySelector(actionToResolve.bankCategory, resolve, similarityData as unknown as SimilarityInfo, transactionDetails);
       });
 
       if (!selectedCategory) {
@@ -1093,7 +1093,7 @@ export async function uploadAllAccountsActivityToMonarch() {
     // Create progress dialog
     const progressDialog = showProgressDialog(
       (accounts as unknown as Record<string, unknown>[]).map((acc) => ({
-        key: acc.key,
+        key: acc.key as string,
         nickname: (acc.nickname as string) || (acc.key as string),
       })),
       'Uploading All Activity',
