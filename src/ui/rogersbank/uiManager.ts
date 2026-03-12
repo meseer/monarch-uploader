@@ -399,7 +399,7 @@ function updateConnectionStatus(connectionStatus: HTMLElement): void {
         rogersbankIndicator.style.color = '#28a745';
       } else {
         const missingCreds: string[] = [];
-        const creds = rogersbankAuth.credentials || {};
+        const creds = rogersbankAuth.credentials;
         if (!creds.authToken) missingCreds.push('token');
         if (!creds.accountId) missingCreds.push('account');
         if (!creds.customerId) missingCreds.push('customer');

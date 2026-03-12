@@ -31,7 +31,6 @@ interface TargetContainerResult {
   referenceNode: Element | ChildNode | null;
 }
 
-
 type ConnectionStatusElement = HTMLDivElement & {
   statusInterval?: ReturnType<typeof setInterval>;
 };
