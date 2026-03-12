@@ -29,39 +29,16 @@ export {
 
 export { showManualCategorizationDialog } from './categorySelectorManual';
 
-/* ------------------------------------------------------------------ */
-/*  Shared interfaces                                                  */
-/* ------------------------------------------------------------------ */
+import type {
+  MonarchCategory,
+  CategoryGroup,
+  SimilarityInfo,
+  CategoryCallbackResult,
+  CategoryCallback,
+} from '../../types/monarch';
 
-interface MonarchCategory {
-  id: string;
-  name: string;
-  icon?: string;
-  isSystemCategory?: boolean;
-  isDisabled?: boolean;
-  order?: number;
-  group?: { id: string; name?: string; type?: string };
-  similarityScore?: number;
-  [key: string]: unknown;
-}
-
-interface CategoryGroup {
-  id: string;
-  name: string;
-  type?: string;
-  order?: number;
-  categories: MonarchCategory[];
-  categoryCount: number;
-  maxSimilarityScore?: number;
-  [key: string]: unknown;
-}
-
-export interface SimilarityInfo {
-  score?: number;
-  bestMatch?: string;
-  categoryGroups?: CategoryGroup[];
-  [key: string]: unknown;
-}
+// Re-export shared types for consumers
+export type { MonarchCategory, CategoryGroup, SimilarityInfo, CategoryCallbackResult, CategoryCallback };
 
 interface TransactionAmount {
   value?: number | string;
@@ -95,14 +72,6 @@ interface CategorySelectorOptions {
   placeholderText?: string;
   required?: boolean;
 }
-
-interface CategoryCallbackResult extends MonarchCategory {
-  assignmentType?: string;
-  skipped?: boolean;
-  skipAll?: boolean;
-}
-
-type CategoryCallback = (result: CategoryCallbackResult | null) => void;
 
 interface SearchCategoryItem extends MonarchCategory {
   groupName: string;

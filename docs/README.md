@@ -20,7 +20,7 @@ Architecture reference documents. These explain *how* the system works and *why*
 | [Eliminate Upload Services Plan](design/eliminate-upload-services-plan.md) | Draft | Refactoring upload services into the modular architecture |
 | [Settings UI Unification Plan](design/settings-unification-plan.md) | Implemented | Consolidated account storage design (now live) |
 | [Skip Categorization Plan](design/skip-categorization-plan.md) | Draft | Per-account option to skip category mapping |
-| [TypeScript Migration Plan](design/typescript-migration-plan.md) | Draft | Phased migration from JavaScript to TypeScript |
+| [TypeScript Migration Plan](design/typescript-migration-plan.md) | Active | Phased migration from JavaScript to TypeScript |
 | [MBNA Integration Plan](design/integration/mbna-integration-plan.md) | Implemented | Planning document for the MBNA reference implementation |
 | **Mobile App** | | |
 | [Mobile App Architecture](design/mobile-app/architecture.md) | Draft | High-level design: on-device API calls, WebView auth, background sync, backend, phased roadmap |
@@ -50,6 +50,7 @@ Immutable records of significant architectural decisions and the reasoning behin
 | [ADR-003](decisions/003-manifest-as-source-of-truth.md) | Integration Manifest as Single Source of Truth | Accepted | 2026-01-15 |
 | [ADR-004](decisions/004-docs-folder-reorganization.md) | Reorganize Documentation into docs/ | Accepted | 2026-02-20 |
 | [ADR-005](decisions/005-typescript-migration.md) | Migrate Codebase to TypeScript | Accepted | 2026-03-06 |
+| [ADR-006](decisions/006-shared-type-system.md) | Introduce Shared Monarch Domain Type System | Accepted | 2026-03-11 |
 
 See [`decisions/README.md`](decisions/README.md) for ADR conventions and the template.
 

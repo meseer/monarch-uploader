@@ -37,7 +37,7 @@ interface WealthsimpleAccount {
 
 interface BalanceResult {
   success: boolean;
-  balances: Map<string, number | null>;
+  balances: Map<string, { amount: number; currency?: string } | null>;
   [key: string]: unknown;
 }
 
@@ -192,13 +192,11 @@ async function uploadSingleAccountWithProgress(accountId: string): Promise<void>
     debugLog(`Account page upload using date range: ${fromDate} to ${toDate}`);
 
     // Process the account with step-by-step progress tracking
-    // Wrap balance number as CurrentBalance object expected by the upload function
-    const currentBalanceObj = currentBalance !== null ? { amount: currentBalance } : null;
     const result: SyncResult = await uploadWealthsimpleAccountToMonarchWithSteps(
       consolidatedAccount,
       fromDate,
       toDate,
-      currentBalanceObj,
+      currentBalance,
       progressDialog,
     ) as unknown as SyncResult;
 

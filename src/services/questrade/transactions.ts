@@ -15,7 +15,7 @@ import accountService from '../common/accountService';
 import toast from '../../ui/toast';
 import { convertQuestradeOrdersToMonarchCSV, convertQuestradeTransactionsToMonarchCSV } from '../../utils/csv';
 import { applyCategoryMapping, saveUserCategorySelection, calculateAllCategorySimilarities } from '../../mappers/category';
-import { showMonarchCategorySelector, type SimilarityInfo } from '../../ui/components/categorySelector';
+import { showMonarchCategorySelector } from '../../ui/components/categorySelector';
 import {
   getTransactionIdsFromArray,
   getRetentionSettingsFromAccount,
@@ -260,7 +260,7 @@ async function resolveCategoriesForOrders(orders, options: { skipCategorization?
 
       // Show the category selector with order details
       const selectedCategory = await new Promise((resolve) => {
-        showMonarchCategorySelector(actionToResolve.bankCategory, resolve, similarityData as unknown as SimilarityInfo, transactionDetails);
+        showMonarchCategorySelector(actionToResolve.bankCategory, resolve, similarityData, transactionDetails);
       });
 
       if (!selectedCategory) {

@@ -32,6 +32,7 @@
 | 13h | Rogers Bank UI | ✅ Complete | 3/3 src / 0 test |
 | 13i | CanadaLife UI | ✅ Complete | 3/3 src / 0 test |
 | 13j | Entry Points | ✅ Complete | 2/2 src / 0 test |
+| 15 | Shared Type System | 🔄 In Progress | — |
 | 14 | Strictness Ramp-up | ⏸️ Deferred | — |
 
 **Overall:** 105/105 source files converted (100%) 🎉
@@ -301,6 +302,40 @@ Converted the application entry point and integration barrel export. Updated web
 |------|-------|
 | `src/index.ts` | ~150 |
 | `src/integrations/index.ts` | ~100 |
+
+---
+
+### Phase 15: Shared Type System — 🔄 In Progress
+
+> **Status:** In progress  
+> **ADR:** [ADR-006](../decisions/006-shared-type-system.md)
+
+**Problem:** During the TS migration, three layers of independent type definitions emerged for Monarch domain concepts (accounts, categories, balances). This caused 11+ `as unknown as X` double casts and 1 `Promise<any>` workaround when data crossed layer boundaries.
+
+**Solution:** Create `src/types/monarch.ts` — a single canonical module for cross-boundary Monarch domain types.
+
+#### Sub-task 1: Category pipeline types
+- Create `src/types/monarch.ts` with `MonarchCategory`, `CategoryGroup`, `SimilarityInfo`, `CategoryCallbackResult`
+- Update `src/mappers/category.ts` to return `SimilarityInfo`-compatible data
+- Update `src/ui/components/categorySelector.ts` to import shared types
+- **Eliminates:** 4× `as unknown as SimilarityInfo` in service files
+
+#### Sub-task 2: Account pipeline types
+- Add `AccountDetails`, `BalanceInfo` to shared types
+- Update `src/ui/components/accountSelectorWithCreate.ts` to use shared types
+- Unify `BalanceInfo` in `src/core/utils.ts` with shared definition
+- Unify `CurrentBalance` in `src/services/wealthsimple/account.ts`
+- **Eliminates:** `Promise<any>` in accountMapping, `as unknown as Parameters<...>` casts
+
+#### Sub-task 3: Remaining cleanup
+- Clean up remaining `as unknown as` casts that were workarounds
+- Audit for any remaining `any` types introduced during migration
+
+| Metric | Count |
+|--------|-------|
+| Double casts eliminated | 11+ |
+| `Promise<any>` eliminated | 1 |
+| Files modified | ~18 |
 
 ---
 

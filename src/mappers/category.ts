@@ -20,6 +20,13 @@ import {
 // Types
 // ============================================================================
 
+import type {
+  MonarchCategory as SharedMonarchCategory,
+  CategoryGroup,
+  CategoryGroupRef,
+  SimilarityInfo,
+} from '../types/monarch';
+
 /** Result returned when manual category selection is needed */
 export interface ManualSelectionResult {
   needsManualSelection: true;
@@ -32,18 +39,11 @@ export interface ManualSelectionResult {
 export type MonarchCategory = string | MonarchCategoryObject;
 
 interface MonarchCategoryObject {
-  id?: string;
+  id: string;
   name: string;
-  group?: CategoryGroup;
+  group?: { id: string; name?: string; order?: number; [key: string]: unknown };
   order?: number;
   isDisabled?: boolean;
-  [key: string]: unknown;
-}
-
-interface CategoryGroup {
-  id: string;
-  name?: string;
-  order?: number;
   [key: string]: unknown;
 }
 
@@ -55,7 +55,7 @@ interface ScoredCategory extends MonarchCategoryObject {
 /** Group with scored categories */
 interface ScoredCategoryGroup {
   id: string;
-  name?: string;
+  name: string;
   order?: number;
   categories: ScoredCategory[];
   categoryCount: number;
@@ -63,8 +63,11 @@ interface ScoredCategoryGroup {
   [key: string]: unknown;
 }
 
-/** Return type for calculateAllCategorySimilarities */
-export interface CategorySimilarityData {
+/**
+ * Return type for calculateAllCategorySimilarities.
+ * Extends SimilarityInfo so callers can use it directly without casting.
+ */
+export interface CategorySimilarityData extends SimilarityInfo {
   bankCategory: string;
   categoryGroups: ScoredCategoryGroup[];
   totalCategories: number;
@@ -75,6 +78,9 @@ interface CategoryMatchResult {
   bestMatch: string;
   score: number;
 }
+
+// Re-export shared types for consumers that import from this module
+export type { SharedMonarchCategory, CategoryGroup, SimilarityInfo };
 
 // ============================================================================
 // ROGERS BANK CATEGORY MAPPINGS
@@ -425,7 +431,7 @@ export function calculateAllCategorySimilarities(bankCategory: string, available
   debugLog('Calculating similarities for all categories against:', bankCategory);
 
   // Group categories by their group and calculate similarities
-  const categoriesByGroup: Record<string, { group: CategoryGroup; categories: ScoredCategory[] }> = {};
+  const categoriesByGroup: Record<string, { group: CategoryGroupRef & { order?: number }; categories: ScoredCategory[] }> = {};
 
   availableCategories.forEach((category) => {
     if (category && !category.isDisabled && category.group) {
@@ -471,6 +477,7 @@ export function calculateAllCategorySimilarities(bankCategory: string, available
 
       return {
         ...groupData.group,
+        name: groupData.group.name || 'Unknown',
         categories: sortedCategories,
         categoryCount: sortedCategories.length,
         maxSimilarityScore,
