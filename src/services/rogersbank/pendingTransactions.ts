@@ -212,10 +212,15 @@ export async function separateAndDeduplicateTransactions(transactions) {
   debugLog(`Transaction separation: ${settled.length} settled, ${pending.length} pending`);
 
   // Step 2: Generate hash IDs for settled transactions
+  // Also attach generatedId to settled transactions that lack a referenceNumber,
+  // so they can be deduplicated using the hash (same logic as pending transactions)
   const settledIdMap = new Map();
   for (const tx of settled) {
     const hashId = await generatePendingTransactionId(tx);
     settledIdMap.set(hashId, tx);
+    if (!tx.referenceNumber) {
+      tx.generatedId = hashId;
+    }
   }
 
   // Step 3: Convert pending transaction dates and generate hash IDs, then filter out duplicates
@@ -385,9 +390,13 @@ export async function reconcileRogersPendingTransactions(monarchAccountId, allTr
           // Remove Pending tag
           await monarchApi.setTransactionTags(monarchTxId, []);
 
-          // Collect settled reference number for dedup store
+          // Collect dedup key for dedup store
+          // Use referenceNumber when available, fall back to hash ID for ref-less transactions
           if (settledTx.referenceNumber) {
             result.settledRefIds.push(settledTx.referenceNumber);
+          } else {
+            // pendingId IS the hash (rb-tx:xxx), use it as dedup key
+            result.settledRefIds.push(pendingId);
           }
 
           result.settled += 1;

@@ -89,11 +89,13 @@ function filterDuplicateSettledTransactions(transactions, accountId) {
   }
 
   const newTransactions = transactions.filter((transaction) => {
-    const refNum = transaction.referenceNumber;
-    const isNew = !uploadedRefs.has(refNum);
+    // Use referenceNumber as primary dedup key; fall back to generatedId
+    // for settled transactions that lack a referenceNumber (e.g. BALANCE PROTECTION)
+    const dedupKey = transaction.referenceNumber || transaction.generatedId;
+    const isNew = !dedupKey || !uploadedRefs.has(dedupKey);
 
     if (isNew) {
-      debugLog(`[DEDUP DEBUG] Settled transaction PASSED filter - refNum: "${refNum}", date: ${transaction.date}, merchant: ${transaction.merchant?.name || 'N/A'}`);
+      debugLog(`[DEDUP DEBUG] Settled transaction PASSED filter - dedupKey: "${dedupKey}", date: ${transaction.date}, merchant: ${transaction.merchant?.name || 'N/A'}`);
     }
 
     return isNew;
@@ -875,8 +877,9 @@ export async function uploadRogersBankToMonarch() {
         if (uploadSuccess) {
           transactionUploadSuccess = true;
 
-          // Save settled transaction reference numbers to dedup store
-          const settledRefs = settledFilterResult.transactions.map((tx) => tx.referenceNumber).filter(Boolean);
+          // Save settled transaction dedup keys to store
+          // Use referenceNumber when available, fall back to generatedId for ref-less transactions
+          const settledRefs = settledFilterResult.transactions.map((tx) => tx.referenceNumber || tx.generatedId).filter(Boolean);
           // Save pending transaction hash IDs to dedup store
           const pendingRefs = newPendingTx.map((tx) => tx.generatedId).filter(Boolean);
           const allRefs = [...settledRefs, ...pendingRefs];

@@ -176,7 +176,13 @@ jest.mock('../../src/core/integrationCapabilities', () => ({
 
 jest.mock('../../src/services/rogersbank/pendingTransactions', () => ({
   separateAndDeduplicateTransactions: jest.fn(async (transactions) => {
-    const settled = (transactions || []).filter((tx) => tx.activityStatus === 'APPROVED');
+    const settled = (transactions || []).filter((tx) => tx.activityStatus === 'APPROVED').map((tx) => {
+      // Attach generatedId to settled transactions without referenceNumber (mirrors real behavior)
+      if (!tx.referenceNumber) {
+        return { ...tx, generatedId: `rb-tx:mock${Math.random().toString(16).slice(2, 18)}` };
+      }
+      return tx;
+    });
     const pending = (transactions || []).filter((tx) => tx.activityStatus === 'PENDING').map((tx) => ({
       ...tx,
       generatedId: `rb-tx:mock${Math.random().toString(16).slice(2, 18)}`,

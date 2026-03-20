@@ -401,6 +401,40 @@ describe('separateAndDeduplicateTransactions', () => {
     expect(result.duplicatesRemoved).toBe(0);
   });
 
+  it('assigns generatedId to settled transactions without referenceNumber', async () => {
+    const transactions = [
+      {
+        activityStatus: 'APPROVED',
+        date: '2026-03-11',
+        amount: { value: '57.65', currency: 'CAD' },
+        merchant: { name: 'BALANCE PROTECTION', categoryCode: '6012' },
+        cardNumber: '************8584',
+        // No referenceNumber
+      },
+    ];
+
+    const result = await separateAndDeduplicateTransactions(transactions);
+    expect(result.settled).toHaveLength(1);
+    expect(result.settled[0].generatedId).toMatch(/^rb-tx:[a-f0-9]{16}$/);
+  });
+
+  it('does not assign generatedId to settled transactions with referenceNumber', async () => {
+    const transactions = [
+      {
+        activityStatus: 'APPROVED',
+        date: '2026-03-11',
+        amount: { value: '25.00', currency: 'CAD' },
+        merchant: { name: 'STORE', categoryCode: '5411' },
+        cardNumber: '************8584',
+        referenceNumber: '12345678901234567890123',
+      },
+    ];
+
+    const result = await separateAndDeduplicateTransactions(transactions);
+    expect(result.settled).toHaveLength(1);
+    expect(result.settled[0].generatedId).toBeUndefined();
+  });
+
   it('converts pending transaction date from activityId before hashing', async () => {
     // Pending transaction at 1:30 AM EST Feb 20 = 10:30 PM PST Feb 19
     // Settled version has local date Feb 19
@@ -523,6 +557,82 @@ describe('reconcileRogersPendingTransactions', () => {
     const result = await reconcileRogersPendingTransactions('monarch-123', [], 90);
 
     expect(result.noPendingTransactions).toBe(true);
+  });
+
+  it('collects hash ID as settledRefId when settled transaction has no referenceNumber', async () => {
+    monarchApi.getTagByName.mockResolvedValue({ id: 'tag-pending', name: 'Pending' });
+
+    // Transaction without referenceNumber
+    const testTx = {
+      date: '2026-03-11',
+      amount: { value: '57.65', currency: 'CAD' },
+      merchant: { name: 'BALANCE PROTECTION', categoryCode: '6012' },
+      cardNumber: '************8584',
+    };
+    const expectedId = await generatePendingTransactionId(testTx);
+
+    monarchApi.getTransactionsList.mockResolvedValue({
+      results: [{
+        id: 'monarch-tx-1',
+        amount: -57.65,
+        date: '2026-03-11',
+        notes: expectedId,
+        ownedByUser: { id: 'user-1' },
+      }],
+    });
+
+    monarchApi.updateTransaction.mockResolvedValue({});
+    monarchApi.setTransactionTags.mockResolvedValue({});
+
+    const settledVersion = {
+      ...testTx,
+      activityStatus: 'APPROVED',
+      // No referenceNumber
+    };
+
+    const result = await reconcileRogersPendingTransactions('monarch-123', [settledVersion], 90);
+
+    expect(result.settled).toBe(1);
+    // Should save the hash ID as the dedup key since there's no referenceNumber
+    expect(result.settledRefIds).toContain(expectedId);
+  });
+
+  it('collects referenceNumber as settledRefId when present', async () => {
+    monarchApi.getTagByName.mockResolvedValue({ id: 'tag-pending', name: 'Pending' });
+
+    const testTx = {
+      date: '2026-02-13',
+      amount: { value: '5.50', currency: 'CAD' },
+      merchant: { name: 'STORE', categoryCode: '7523' },
+      cardNumber: '************8584',
+    };
+    const expectedId = await generatePendingTransactionId(testTx);
+
+    monarchApi.getTransactionsList.mockResolvedValue({
+      results: [{
+        id: 'monarch-tx-1',
+        amount: -5.50,
+        date: '2026-02-13',
+        notes: expectedId,
+        ownedByUser: { id: 'user-1' },
+      }],
+    });
+
+    monarchApi.updateTransaction.mockResolvedValue({});
+    monarchApi.setTransactionTags.mockResolvedValue({});
+
+    const settledVersion = {
+      ...testTx,
+      activityStatus: 'APPROVED',
+      referenceNumber: '123456',
+    };
+
+    const result = await reconcileRogersPendingTransactions('monarch-123', [settledVersion], 90);
+
+    expect(result.settled).toBe(1);
+    // Should save the referenceNumber (not the hash) as the dedup key
+    expect(result.settledRefIds).toContain('123456');
+    expect(result.settledRefIds).not.toContain(expectedId);
   });
 
   it('settles transactions that are now approved', async () => {
