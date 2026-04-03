@@ -96,6 +96,33 @@ export async function resolveSecurityMapping(accountId, position) {
 }
 
 /**
+ * Find existing holding by holdingId in Monarch holdings (in-memory search, no API call)
+ * Used to validate that a stored holdingId still exists in Monarch
+ * @param {string} holdingId - Holding ID to find
+ * @param {Object} holdings - Holdings data from Monarch
+ * @returns {Object|null} Holding object if found, null otherwise
+ */
+export function findHoldingById(holdingId, holdings) {
+  if (!holdings || !holdings.aggregateHoldings || !holdings.aggregateHoldings.edges) {
+    return null;
+  }
+
+  for (const edge of holdings.aggregateHoldings.edges) {
+    const aggregateHolding = edge.node;
+    if (!aggregateHolding.holdings || !Array.isArray(aggregateHolding.holdings)) {
+      continue;
+    }
+    for (const holding of aggregateHolding.holdings) {
+      if (holding.id === holdingId) {
+        return holding;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * Find existing holding for a security in Monarch account
  * @param {string} monarchAccountId - Monarch account ID
  * @param {string} securityId - Security ID to find
@@ -145,8 +172,20 @@ export async function resolveOrCreateHolding(accountId, monarchAccountId, securi
     // Check for existing holding ID using accountService (unified structure)
     const existingMapping = accountService.getHoldingMapping(INTEGRATIONS.QUESTRADE, accountId, securityUuid);
     if (existingMapping?.holdingId) {
-      debugLog(`Found stored holding ID for ${symbol}: ${existingMapping.holdingId}`);
-      return existingMapping.holdingId;
+      // Validate that the stored holdingId still exists in Monarch (in-memory check, no API call)
+      const validatedHolding = findHoldingById(existingMapping.holdingId, holdings);
+      if (validatedHolding) {
+        debugLog(`Found stored holding ID for ${symbol}: ${existingMapping.holdingId} (validated in Monarch)`);
+        return existingMapping.holdingId;
+      }
+
+      // Stored holdingId is stale — holding no longer exists in Monarch
+      debugLog(`Stored holding ID ${existingMapping.holdingId} for ${symbol} is stale (not found in Monarch), will re-create`);
+      accountService.saveHoldingMapping(INTEGRATIONS.QUESTRADE, accountId, securityUuid, {
+        securityId: existingMapping.securityId,
+        holdingId: null,
+        symbol: existingMapping.symbol,
+      });
     }
 
     // Check if holding exists in Monarch

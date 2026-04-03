@@ -10,6 +10,7 @@ import {
   fetchPositions,
   resolveSecurityMapping,
   resolveOrCreateHolding,
+  findHoldingById,
   syncPositionToHolding,
   detectAndRemoveDeletedHoldings,
   processAccountPositions,
@@ -313,7 +314,7 @@ describe('Questrade Positions Service', () => {
       );
     });
 
-    test('should use existing holding from storage', async () => {
+    test('should use existing holding from storage when validated in Monarch', async () => {
       const position = {
         securityUuid: 'UUID1',
         security: { symbol: 'AAPL' },
@@ -327,18 +328,32 @@ describe('Questrade Positions Service', () => {
         symbol: 'AAPL',
       });
 
+      // Holdings include the stored holdingId (validates it exists in Monarch)
+      const holdings = {
+        aggregateHoldings: {
+          edges: [
+            {
+              node: {
+                security: { id: 'SEC123' },
+                holdings: [{ id: 'HOLD123', isManual: true, ticker: 'AAPL' }],
+              },
+            },
+          ],
+        },
+      };
+
       const result = await resolveOrCreateHolding(
         'ACC123',
         'MON123',
         'SEC123',
         position,
-        { aggregateHoldings: { edges: [] } },
+        holdings,
       );
 
       expect(result).toBe('HOLD123');
       // Should not create new holding
       expect(monarchApi.createManualHolding).not.toHaveBeenCalled();
-      // Should not save since mapping already exists
+      // Should not save since mapping already exists and is valid
       expect(accountService.saveHoldingMapping).not.toHaveBeenCalled();
     });
 
@@ -408,6 +423,70 @@ describe('Questrade Positions Service', () => {
     });
   });
 
+  describe('findHoldingById', () => {
+    test('returns holding when found by ID', () => {
+      const holdings = {
+        aggregateHoldings: {
+          edges: [
+            {
+              node: {
+                security: { id: 'sec-1' },
+                holdings: [
+                  { id: 'hold-aaa', ticker: 'AAPL', isManual: true },
+                  { id: 'hold-bbb', ticker: 'GOOGL', isManual: true },
+                ],
+              },
+            },
+            {
+              node: {
+                security: { id: 'sec-2' },
+                holdings: [{ id: 'hold-ccc', ticker: 'MSFT', isManual: true }],
+              },
+            },
+          ],
+        },
+      };
+
+      expect(findHoldingById('hold-aaa', holdings)).toEqual({ id: 'hold-aaa', ticker: 'AAPL', isManual: true });
+      expect(findHoldingById('hold-bbb', holdings)).toEqual({ id: 'hold-bbb', ticker: 'GOOGL', isManual: true });
+      expect(findHoldingById('hold-ccc', holdings)).toEqual({ id: 'hold-ccc', ticker: 'MSFT', isManual: true });
+    });
+
+    test('returns null when holdingId not found', () => {
+      const holdings = {
+        aggregateHoldings: {
+          edges: [
+            {
+              node: {
+                security: { id: 'sec-1' },
+                holdings: [{ id: 'hold-aaa', ticker: 'AAPL', isManual: true }],
+              },
+            },
+          ],
+        },
+      };
+
+      expect(findHoldingById('hold-nonexistent', holdings)).toBeNull();
+    });
+
+    test('returns null for null holdings', () => {
+      expect(findHoldingById('hold-1', null)).toBeNull();
+    });
+
+    test('returns null for empty holdings', () => {
+      expect(findHoldingById('hold-1', { aggregateHoldings: { edges: [] } })).toBeNull();
+    });
+
+    test('returns null when aggregateHoldings has no holdings array', () => {
+      const holdings = {
+        aggregateHoldings: {
+          edges: [{ node: { security: { id: 'sec-1' } } }],
+        },
+      };
+      expect(findHoldingById('hold-1', holdings)).toBeNull();
+    });
+  });
+
   describe('resolveOrCreateHolding', () => {
     const position = {
       securityUuid: 'UUID1',
@@ -415,7 +494,7 @@ describe('Questrade Positions Service', () => {
       openQuantity: 100,
     };
 
-    test('should return existing holding ID from storage', async () => {
+    test('should return existing holding ID from storage when validated in Monarch', async () => {
       // Mock getHoldingMapping to return existing mapping with holdingId
       accountService.getHoldingMapping.mockReturnValue({
         securityId: 'SEC123',
@@ -423,15 +502,115 @@ describe('Questrade Positions Service', () => {
         symbol: 'AAPL',
       });
 
+      // Holdings include the stored holdingId (validates it exists)
+      const holdings = {
+        aggregateHoldings: {
+          edges: [
+            {
+              node: {
+                security: { id: 'SEC123' },
+                holdings: [{ id: 'HOLD123', isManual: true, ticker: 'AAPL' }],
+              },
+            },
+          ],
+        },
+      };
+
       const result = await resolveOrCreateHolding(
         'ACC123',
         'MON123',
         'SEC123',
         position,
-        {},
+        holdings,
       );
 
       expect(result).toBe('HOLD123');
+      expect(monarchApi.createManualHolding).not.toHaveBeenCalled();
+      // Should NOT save mapping since it's still valid
+      expect(accountService.saveHoldingMapping).not.toHaveBeenCalled();
+    });
+
+    test('should clear stale holdingId and re-create holding when not found in Monarch', async () => {
+      // Stored mapping points to a holdingId that no longer exists
+      accountService.getHoldingMapping.mockReturnValue({
+        securityId: 'SEC123',
+        holdingId: 'HOLD-STALE',
+        symbol: 'AAPL',
+      });
+
+      // Empty holdings — the stale holding doesn't exist
+      const emptyHoldings = { aggregateHoldings: { edges: [] } };
+
+      monarchApi.createManualHolding.mockResolvedValue({ id: 'HOLD-NEW' });
+
+      const result = await resolveOrCreateHolding(
+        'ACC123',
+        'MON123',
+        'SEC123',
+        position,
+        emptyHoldings,
+      );
+
+      expect(result).toBe('HOLD-NEW');
+
+      // First call: clear stale holdingId
+      expect(accountService.saveHoldingMapping).toHaveBeenCalledWith(
+        'questrade',
+        'ACC123',
+        'UUID1',
+        expect.objectContaining({
+          securityId: 'SEC123',
+          holdingId: null,
+          symbol: 'AAPL',
+        }),
+      );
+
+      // Second call: save new holdingId
+      expect(accountService.saveHoldingMapping).toHaveBeenCalledWith(
+        'questrade',
+        'ACC123',
+        'UUID1',
+        expect.objectContaining({
+          securityId: 'SEC123',
+          holdingId: 'HOLD-NEW',
+          symbol: 'AAPL',
+        }),
+      );
+
+      expect(monarchApi.createManualHolding).toHaveBeenCalledWith('MON123', 'SEC123', 100);
+    });
+
+    test('should find existing Monarch holding by security after clearing stale holdingId', async () => {
+      // Stored mapping points to stale holdingId, but the security exists with a different holdingId
+      accountService.getHoldingMapping.mockReturnValue({
+        securityId: 'SEC123',
+        holdingId: 'HOLD-STALE',
+        symbol: 'AAPL',
+      });
+
+      const holdings = {
+        aggregateHoldings: {
+          edges: [
+            {
+              node: {
+                security: { id: 'SEC123' },
+                holdings: [{ id: 'HOLD-REAL', isManual: true, ticker: 'AAPL' }],
+              },
+            },
+          ],
+        },
+      };
+
+      const result = await resolveOrCreateHolding(
+        'ACC123',
+        'MON123',
+        'SEC123',
+        position,
+        holdings,
+      );
+
+      // Should find existing holding by security ID (not the stale one)
+      expect(result).toBe('HOLD-REAL');
       expect(monarchApi.createManualHolding).not.toHaveBeenCalled();
     });
 

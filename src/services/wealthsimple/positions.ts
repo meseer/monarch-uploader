@@ -375,6 +375,30 @@ export async function resolveSecurityMapping(accountId: string, position: Wealth
 }
 
 /**
+ * Find existing holding by holdingId in Monarch holdings (in-memory search, no API call)
+ * Used to validate that a stored holdingId still exists in Monarch
+ */
+export function findHoldingById(holdingId: string, holdings: MonarchHoldings | null): MonarchHolding | null {
+  if (!holdings?.aggregateHoldings?.edges) {
+    return null;
+  }
+
+  for (const edge of holdings.aggregateHoldings.edges) {
+    const aggregateHolding = edge.node;
+    if (!aggregateHolding.holdings || !Array.isArray(aggregateHolding.holdings)) {
+      continue;
+    }
+    for (const holding of aggregateHolding.holdings) {
+      if (holding.id === holdingId) {
+        return holding;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * Find existing holding for a security in Monarch account
  */
 function findExistingHolding(monarchAccountId: string, securityId: string, holdings: MonarchHoldings | null): MonarchHolding | null {
@@ -414,8 +438,20 @@ export async function resolveOrCreateHolding(
 
     const existingMapping = accountService.getHoldingMapping(INTEGRATIONS.WEALTHSIMPLE, accountId, securityKey as string) as HoldingMapping | null;
     if (existingMapping?.holdingId) {
-      debugLog(`Found stored holding ID for ${symbol}: ${existingMapping.holdingId}`);
-      return existingMapping.holdingId;
+      // Validate that the stored holdingId still exists in Monarch (in-memory check, no API call)
+      const validatedHolding = findHoldingById(existingMapping.holdingId, holdings);
+      if (validatedHolding) {
+        debugLog(`Found stored holding ID for ${symbol}: ${existingMapping.holdingId} (validated in Monarch)`);
+        return existingMapping.holdingId;
+      }
+
+      // Stored holdingId is stale — holding no longer exists in Monarch
+      debugLog(`Stored holding ID ${existingMapping.holdingId} for ${symbol} is stale (not found in Monarch), will re-create`);
+      accountService.saveHoldingMapping(INTEGRATIONS.WEALTHSIMPLE, accountId, securityKey as string, {
+        securityId: existingMapping.securityId,
+        holdingId: null,
+        symbol: existingMapping.symbol,
+      });
     }
 
     const existingHolding = findExistingHolding(monarchAccountId, monarchSecurityId, holdings);
