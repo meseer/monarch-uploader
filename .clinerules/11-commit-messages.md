@@ -1,10 +1,72 @@
-# Commit Message Guidelines - MANDATORY
+# Git Workflow - MANDATORY
 
-## Critical: Always Generate Commit Messages
+## Overview
 
-**You MUST generate a commit message after completing ANY changes to the codebase.**
+This project uses branch protection on `main`. All changes must go through a feature branch → PR → merge workflow. **You MUST manage this entire lifecycle automatically** — do not leave manual steps for the user.
 
-After successfully implementing changes and passing all validation checks, provide the complete `git commit` command ready for execution in your final response.
+## Workflow Steps
+
+### 1. Before Making Changes — Create a Feature Branch
+
+At the start of every task that involves code or file changes:
+
+```bash
+git checkout main && git pull && git checkout -b <type>/<short-name>
+```
+
+- Always branch from an up-to-date `main`
+- Create the branch **before** making any changes
+
+### 2. Branch Naming Convention
+
+Format: `<type>/<kebab-case-description>`
+
+| Type | When to use | Example |
+|------|-------------|---------|
+| `feat/` | New feature | `feat/pending-transactions` |
+| `fix/` | Bug fix | `fix/balance-rounding` |
+| `refactor/` | Code refactoring | `refactor/extract-sync-logic` |
+| `docs/` | Documentation | `docs/readme-update` |
+| `test/` | Test additions/changes | `test/holdings-edge-cases` |
+| `chore/` | Maintenance, deps, config | `chore/update-dependencies` |
+| `build/` | Build system changes | `build/webpack-config` |
+
+### 3. After Validation Passes — Commit, Push, and Create PR
+
+After all build validation checks pass (`npm run lint && npm test && npm run build && npm run build:full`):
+
+```bash
+# Stage and commit
+git add .
+git commit -m "<type>: <summary>
+
+- Detail 1
+- Detail 2"
+
+# Push and create PR
+git push origin <branch-name>
+gh pr create --title "<type>: <summary>" --body "<bullet list of changes>"
+```
+
+### 4. After CI Passes — Merge and Clean Up
+
+Once CI checks pass on the PR:
+
+```bash
+gh pr merge --squash --delete-branch
+```
+
+This command:
+- Squash-merges the PR into `main`
+- Deletes the remote branch
+- Switches to `main` and pulls the latest changes
+- Deletes the local branch
+
+After merging, verify you're on a clean `main`:
+
+```bash
+git checkout main && git pull && git branch
+```
 
 ## Commit Message Format
 
@@ -33,23 +95,36 @@ After successfully implementing changes and passing all validation checks, provi
 - Brief overview of **what** changed; explain **why** if not obvious
 - List major changes as bullet points if multiple
 
-## Output Format
+## Important Rules
 
-Always provide the complete command ready to execute:
+- **NEVER commit directly to `main`** — always use a feature branch
+- **NEVER force-push to `main`**
+- **ALWAYS create the feature branch before making changes** — if you forget, move the commit to a branch before pushing
+- **ALWAYS use `--squash` merge** to keep `main` history clean
+- **ALWAYS delete the branch after merge** (the `--delete-branch` flag handles this)
+- If unsure about the type, default to `chore:`
+- For multiple unrelated changes, suggest separate branches and PRs
+
+## Quick Reference — Full Lifecycle
 
 ```bash
+# 1. Start
+git checkout main && git pull && git checkout -b feat/my-feature
+
+# 2. Make changes, then validate
+npm run lint && npm test && npm run build && npm run build:full
+
+# 3. Commit and push
 git add .
-git commit -m "type: brief summary
+git commit -m "feat: add my feature
 
 - Change detail 1
 - Change detail 2"
-```
+git push origin feat/my-feature
 
-## When to Generate
+# 4. Create PR
+gh pr create --title "feat: add my feature" --body "- Change detail 1
+- Change detail 2"
 
-Generate a commit message:
-- After successfully completing any code changes
-- After passing all build validation checks (`npm run lint && npm test && npm run build && npm run build:full`)
-- When using the `attempt_completion` tool
-
-If unsure about the type, default to `chore:`. For multiple unrelated changes, suggest separate commits.
+# 5. After CI passes — merge
+gh pr merge --squash --delete-branch
