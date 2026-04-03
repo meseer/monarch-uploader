@@ -34,7 +34,7 @@
   "author": "Mykhailo Delegan",
   "license": "MIT",
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=24"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",

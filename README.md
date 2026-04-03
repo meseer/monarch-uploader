@@ -10,13 +10,13 @@ A [Violentmonkey](https://violentmonkey.github.io/) userscript that automaticall
 
 ## Supported Institutions
 
-| Institution | Balance History | Transactions | Holdings | Credit Limit | Category Mappings | Notes |
-|---|:---:|:---:|:---:|:---:|:---:|---|
-| Canada Life | ✅ | ✅ | ❌ | ❌ | ❌ | Group retirement and pension plans |
-| MBNA | ✅ | ✅ | ❌ | ✅ | ✅ | Credit cards |
-| Questrade | ✅ | ✅ | ✅ | ❌ | ❌ | Investment accounts (TFSA, RRSP, margin, etc.) |
-| Rogers Bank | ✅ | ✅ | ❌ | ✅ | ✅ | Credit cards |
-| Wealthsimple | ✅ | ✅ | ✅ | ✅ | ✅ | Investment, Cash, and Credit Card accounts |
+| Institution | Balance History | Transactions | Holdings | Credit Limit | Category Mappings | Multi-Account | Notes |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|---|
+| Canada Life | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | Group retirement and pension plans |
+| MBNA | ✅ | ✅ | ❌ | ✅ | ✅ | ? | Credit cards |
+| Questrade | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | Investment accounts (TFSA, RRSP, margin, etc.) |
+| Rogers Bank | ✅ | ✅ | ❌ | ✅ | ✅ | ? | Credit cards |
+| Wealthsimple | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Investment, Cash, and Credit Card accounts |
 
 ## Installation
 
@@ -45,7 +45,7 @@ Violentmonkey will open an installation prompt — click **Confirm installation*
 
 ### Prerequisites
 
-- Node.js (v14+)
+- Node.js (v24+)
 - npm
 
 ### Setup
@@ -72,7 +72,7 @@ npm install
 1. Build the project: `npm run build`
 2. Open the Violentmonkey dashboard in your browser.
 3. Click the **+** button and select **Install from file** (or create a new script and paste the contents).
-4. Select `dist/questrade-account-balance-uploader.user.js` from the build output.
+4. Select `dist/monarch-uploader.user.js` from the build output.
 
 ## Contributing
 
