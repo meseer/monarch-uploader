@@ -243,7 +243,7 @@ function buildTransactionDetailsHtml(transactionDetails: TransactionDetails): st
   }
 
   if (transactionDetails.amount !== undefined && transactionDetails.amount !== null) {
-    let formattedAmount = '';
+    let formattedAmount: string;
     let amountValue = 0;
 
     if (typeof transactionDetails.amount === 'object' && (transactionDetails.amount as TransactionAmount).value !== undefined) {

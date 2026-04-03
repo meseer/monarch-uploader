@@ -277,7 +277,7 @@ export function processBalanceData(rawData, accountName) {
     return csvContent;
   } catch (error) {
     debugLog('Error processing balance data:', error);
-    throw new Error(`Failed to process balance data: ${error.message}`);
+    throw new Error(`Failed to process balance data: ${error.message}`, { cause: error });
   }
 }
 

@@ -142,7 +142,7 @@ async function executeCreditLimitStep({ integrationId, accountId, monarchAccount
 
   if (abortController.signal.aborted) throw new Error('Cancelled');
 
-  let creditLimit = null;
+  let creditLimit;
   try {
     creditLimit = await api.getCreditLimit(accountId);
     debugLog(`[orchestrator] Credit limit fetched: $${creditLimit}`);

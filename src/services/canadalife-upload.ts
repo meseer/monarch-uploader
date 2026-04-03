@@ -75,7 +75,7 @@ export function convertCanadaLifeDataToCSV(historicalData) {
     return csvContent;
   } catch (error) {
     debugLog('Error converting Canada Life data to CSV:', error);
-    throw new Error(`Failed to convert balance data: ${error.message}`);
+    throw new Error(`Failed to convert balance data: ${error.message}`, { cause: error });
   }
 }
 

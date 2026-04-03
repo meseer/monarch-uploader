@@ -575,7 +575,7 @@ export function processBalanceData(balanceHistory: BalanceHistory[], accountName
   } catch (error: unknown) {
     debugLog('Error processing balance data:', error);
     const msg = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to process balance data: ${msg}`);
+    throw new Error(`Failed to process balance data: ${msg}`, { cause: error });
   }
 }
 

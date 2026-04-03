@@ -210,7 +210,7 @@ export function createApi(httpClient: HttpClient, _auth: unknown): MbnaApiClient
     try {
       return JSON.parse(response.responseText);
     } catch (error) {
-      throw new Error(`Failed to parse MBNA API response: ${(error as Error).message}`);
+      throw new Error(`Failed to parse MBNA API response: ${(error as Error).message}`, { cause: error });
     }
   }
 
@@ -378,7 +378,7 @@ export function createApi(httpClient: HttpClient, _auth: unknown): MbnaApiClient
       const currentCycle = await this.getCurrentCycleTransactions(accountId);
 
       // Step 2: Get closing dates for historical statements
-      let closingDates: string[] = [];
+      let closingDates: string[];
       try {
         closingDates = await this.getClosingDates(accountId);
       } catch (_error) {
