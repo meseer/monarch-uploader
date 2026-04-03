@@ -428,3 +428,114 @@ export type SuggestStartDateHook = (
 export type BuildAccountEntryHook = (
   account: Record<string, unknown>,
 ) => Record<string, unknown>;
+
+// ============================================================
+// HOLDINGS SYNC HOOKS (holdings orchestrator contract)
+// ============================================================
+
+/**
+ * Monarch holdings data structure returned by monarchApi.getHoldings().
+ * Used by the generic holdings sync orchestrator.
+ */
+export interface MonarchHoldingsData {
+  aggregateHoldings?: {
+    edges?: Array<{
+      node: {
+        security?: { id?: string };
+        holdings?: Array<{
+          id: string;
+          ticker?: string;
+          isManual?: boolean;
+        }>;
+      };
+    }>;
+  };
+}
+
+/**
+ * Result of processing positions for a single account.
+ */
+export interface HoldingsSyncResult {
+  success: boolean;
+  positionsProcessed: number;
+  positionsSkipped: number;
+  holdingsRemoved: number;
+  mappingsAutoRepaired: number;
+  error: string | null;
+}
+
+/**
+ * Progress callback interface for holdings sync.
+ * Abstracts over different progress dialog implementations
+ * used by legacy integrations.
+ */
+export interface HoldingsSyncProgress {
+  updateStatus: (status: string, message: string) => void;
+}
+
+/**
+ * Institution-specific hooks that the generic holdings sync
+ * orchestrator calls during the holdings sync workflow.
+ *
+ * Follows the same pattern as SyncHooks: the orchestrator owns
+ * all generic logic (find holding, validate stored ID, create/update
+ * holding, detect deletions, auto-repair mappings). Only truly
+ * institution-specific data extraction is exposed as hooks.
+ *
+ * When WS/QT are migrated to the modular architecture, these hooks
+ * move to `sinks/monarch/holdingsHooks.ts`.
+ */
+export interface HoldingsSyncHooks {
+  // ── Required hooks ─────────────────────────────────────────
+
+  /**
+   * Extract the storage key for a position.
+   * This is the key used in holdingsMappings to store the security→holding mapping.
+   * Examples: WS security.id, QT securityUuid/symbolId
+   */
+  getPositionKey: (position: Record<string, unknown>) => string | undefined;
+
+  /**
+   * Extract a display symbol for logging and UI messages.
+   * Examples: "AAPL", "CUR:CAD", "BTC-USD"
+   */
+  getDisplaySymbol: (position: Record<string, unknown>) => string | null;
+
+  /**
+   * Extract quantity from a position (absolute value).
+   */
+  getQuantity: (position: Record<string, unknown>) => number;
+
+  /**
+   * Build the update payload for monarchApi.updateHolding().
+   * Should include quantity, costBasis, and optionally securityType.
+   */
+  buildHoldingUpdate: (position: Record<string, unknown>) => Record<string, unknown>;
+
+  /**
+   * Resolve the Monarch security ID for a position.
+   * Handles existing mappings, auto-mapping (crypto, cash), and user prompts.
+   * Returns null if user cancels or mapping cannot be resolved.
+   */
+  resolveSecurityMapping: (
+    accountId: string,
+    position: Record<string, unknown>,
+  ) => Promise<string | null>;
+
+  // ── Optional hooks ─────────────────────────────────────────
+
+  /**
+   * Extract ticker symbol for auto-repair matching during deletion detection.
+   * Used to match Monarch holdings to source positions by ticker when no
+   * mapping entry exists. Falls back to getDisplaySymbol if not provided.
+   */
+  getTickerForAutoRepair?: (position: Record<string, unknown>) => string | null;
+
+  /**
+   * Extract the source-side security identifier for auto-repair.
+   * When a Monarch holding matches a position by ticker but has no mapping,
+   * this provides the key to store in the repaired mapping.
+   * If not provided, falls back to getPositionKey.
+   */
+  getAutoRepairSourceId?: (position: Record<string, unknown>) => string | null;
+}

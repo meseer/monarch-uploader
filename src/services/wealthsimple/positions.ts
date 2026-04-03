@@ -1,6 +1,16 @@
 /**
  * Wealthsimple Positions Service
- * Handles fetching, mapping, and synchronizing Wealthsimple positions to Monarch holdings
+ *
+ * Handles fetching, mapping, and synchronizing Wealthsimple positions to Monarch holdings.
+ *
+ * Institution-specific logic lives here:
+ * - Position fetching (managed vs self-directed API routing)
+ * - Security mapping resolution (crypto auto-map, cash currencies, user prompts)
+ * - Position data extraction (nested vs flat structure handling)
+ * - Cash position handling (CAD/USD balances)
+ *
+ * Generic holding resolution/creation/deletion is delegated to the shared
+ * holdingsSync orchestrator via HoldingsSyncHooks.
  */
 
 import { debugLog } from '../../core/utils';
@@ -9,8 +19,13 @@ import { INTEGRATIONS } from '../../core/integrationCapabilities';
 import wealthsimpleApi from '../../api/wealthsimple';
 import monarchApi from '../../api/monarch';
 import accountService from '../common/accountService';
+import {
+  findExistingHolding,
+  processAccountPositions as genericProcessAccountPositions,
+} from '../common/holdingsSync';
 import { showMonarchSecuritySelector } from '../../ui/components/securitySelector';
 import toast from '../../ui/toast';
+import type { HoldingsSyncHooks, MonarchHoldingsData } from '../../integrations/types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -51,23 +66,6 @@ interface HoldingMapping {
   securityId?: string;
   holdingId?: string | null;
   symbol?: string;
-}
-
-interface MonarchHolding {
-  id: string;
-  ticker?: string;
-  isManual?: boolean;
-}
-
-interface AggregateHolding {
-  security?: { id?: string };
-  holdings?: MonarchHolding[];
-}
-
-interface MonarchHoldings {
-  aggregateHoldings?: {
-    edges?: Array<{ node: AggregateHolding }>;
-  };
 }
 
 export interface PositionResult {
@@ -118,28 +116,6 @@ const MANAGED_ACCOUNT_TYPES = new Set([
 ]);
 
 /**
- * Check if an account type is a managed account
- */
-export function isManagedAccount(accountType: string): boolean {
-  return MANAGED_ACCOUNT_TYPES.has(accountType);
-}
-
-/**
- * Custom positions error class
- */
-export class PositionsError extends Error {
-  accountId: string | null;
-  position: WealthsimplePosition | null;
-
-  constructor(message: string, accountId: string | null, position: WealthsimplePosition | null = null) {
-    super(message);
-    this.name = 'PositionsError';
-    this.accountId = accountId;
-    this.position = position;
-  }
-}
-
-/**
  * Investment account types that support position sync
  */
 const INVESTMENT_ACCOUNT_TYPES = new Set([
@@ -157,11 +133,35 @@ const INVESTMENT_ACCOUNT_TYPES = new Set([
   'SELF_DIRECTED_NON_REGISTERED_MARGIN',
 ]);
 
+// ── Helper Functions ──────────────────────────────────────────────────────────
+
+/**
+ * Check if an account type is a managed account
+ */
+export function isManagedAccount(accountType: string): boolean {
+  return MANAGED_ACCOUNT_TYPES.has(accountType);
+}
+
 /**
  * Check if an account type is an investment account
  */
 export function isInvestmentAccount(accountType: string): boolean {
   return INVESTMENT_ACCOUNT_TYPES.has(accountType);
+}
+
+/**
+ * Custom positions error class
+ */
+export class PositionsError extends Error {
+  accountId: string | null;
+  position: WealthsimplePosition | null;
+
+  constructor(message: string, accountId: string | null, position: WealthsimplePosition | null = null) {
+    super(message);
+    this.name = 'PositionsError';
+    this.accountId = accountId;
+    this.position = position;
+  }
 }
 
 /**
@@ -256,6 +256,69 @@ function getPositionDisplaySymbol(position: WealthsimplePosition): string | null
   }
   return getSecuritySymbolForLookup(position);
 }
+
+// ── HoldingsSyncHooks Implementation ──────────────────────────────────────────
+
+/**
+ * Build Wealthsimple HoldingsSyncHooks.
+ * Provides WS-specific data extraction for the generic holdings sync orchestrator.
+ */
+export function buildWealthsimpleHoldingsHooks(): HoldingsSyncHooks {
+  return {
+    getPositionKey: (position) => getPositionSecurityKey(position as unknown as WealthsimplePosition),
+
+    getDisplaySymbol: (position) => getPositionDisplaySymbol(position as unknown as WealthsimplePosition),
+
+    getQuantity: (position) => Math.abs(parseFloat(String((position as unknown as WealthsimplePosition).quantity)) || 0),
+
+    buildHoldingUpdate: (position) => {
+      const wsPos = position as unknown as WealthsimplePosition;
+      const quantity = Math.abs(parseFloat(String(wsPos.quantity)) || 0);
+      const sdPos = wsPos as SelfDirectedPosition;
+      const costBasis = parseFloat(String(sdPos.averagePrice?.amount)) || 0;
+      const updates: Record<string, unknown> = { quantity, costBasis };
+
+      if (isManagedPositionFormat(wsPos)) {
+        const managedTypeMap: Record<string, string> = {
+          exchange_traded_fund: 'etf',
+          currency: 'cash',
+          mutual_fund: 'mutualFund',
+          equity: 'equity',
+          bond: 'bond',
+        };
+        const positionType = wsPos.type?.toLowerCase();
+        updates.securityType = (positionType && managedTypeMap[positionType]) ? managedTypeMap[positionType] : 'etf';
+      } else {
+        const securityType = sdPos.security?.securityType;
+        if (securityType) {
+          const typeMap: Record<string, string> = {
+            EQUITY: 'equity',
+            OPTION: 'option',
+            BOND: 'bond',
+            EXCHANGE_TRADED_FUND: 'etf',
+            MUTUAL_FUND: 'mutualFund',
+          };
+          updates.securityType = typeMap[securityType] || 'equity';
+        }
+      }
+
+      return updates;
+    },
+
+    resolveSecurityMapping: (accountId, position) =>
+      resolveSecurityMapping(accountId, position as unknown as WealthsimplePosition),
+
+    getTickerForAutoRepair: (position) =>
+      getSecuritySymbolForLookup(position as unknown as WealthsimplePosition),
+
+    getAutoRepairSourceId: (position) => {
+      const sdPos = position as unknown as SelfDirectedPosition;
+      return sdPos.security?.id || undefined;
+    },
+  };
+}
+
+// ── Wealthsimple-Specific Functions ───────────────────────────────────────────
 
 /**
  * Fetch positions for a Wealthsimple account
@@ -374,279 +437,57 @@ export async function resolveSecurityMapping(accountId: string, position: Wealth
   }
 }
 
-/**
- * Find existing holding by holdingId in Monarch holdings (in-memory search, no API call)
- * Used to validate that a stored holdingId still exists in Monarch
- */
-export function findHoldingById(holdingId: string, holdings: MonarchHoldings | null): MonarchHolding | null {
-  if (!holdings?.aggregateHoldings?.edges) {
-    return null;
-  }
+// ── Re-exports for backward compatibility ─────────────────────────────────────
 
-  for (const edge of holdings.aggregateHoldings.edges) {
-    const aggregateHolding = edge.node;
-    if (!aggregateHolding.holdings || !Array.isArray(aggregateHolding.holdings)) {
-      continue;
-    }
-    for (const holding of aggregateHolding.holdings) {
-      if (holding.id === holdingId) {
-        return holding;
-      }
-    }
-  }
-
-  return null;
-}
+// These re-exports allow existing code that imports from this module to continue
+// working. The actual implementations now live in the shared holdingsSync module.
+export { findHoldingById } from '../common/holdingsSync';
 
 /**
- * Find existing holding for a security in Monarch account
- */
-function findExistingHolding(monarchAccountId: string, securityId: string, holdings: MonarchHoldings | null): MonarchHolding | null {
-  if (!holdings?.aggregateHoldings?.edges) {
-    return null;
-  }
-
-  for (const edge of holdings.aggregateHoldings.edges) {
-    const aggregateHolding = edge.node;
-
-    if (aggregateHolding.security && aggregateHolding.security.id === securityId) {
-      if (aggregateHolding.holdings && Array.isArray(aggregateHolding.holdings)) {
-        const manualHolding = aggregateHolding.holdings.find((h) => h.isManual);
-        if (manualHolding) {
-          return manualHolding;
-        }
-      }
-    }
-  }
-
-  return null;
-}
-
-/**
- * Resolve or create holding for a position
+ * Resolve or create holding for a position (delegates to shared holdingsSync)
  */
 export async function resolveOrCreateHolding(
   accountId: string,
   monarchAccountId: string,
   monarchSecurityId: string,
   position: WealthsimplePosition,
-  holdings: MonarchHoldings | null,
+  holdings: MonarchHoldingsData | null,
 ): Promise<string> {
-  try {
-    const securityKey = getPositionSecurityKey(position);
-    const symbol = getPositionDisplaySymbol(position);
-
-    const existingMapping = accountService.getHoldingMapping(INTEGRATIONS.WEALTHSIMPLE, accountId, securityKey as string) as HoldingMapping | null;
-    if (existingMapping?.holdingId) {
-      // Validate that the stored holdingId still exists in Monarch (in-memory check, no API call)
-      const validatedHolding = findHoldingById(existingMapping.holdingId, holdings);
-      if (validatedHolding) {
-        debugLog(`Found stored holding ID for ${symbol}: ${existingMapping.holdingId} (validated in Monarch)`);
-        return existingMapping.holdingId;
-      }
-
-      // Stored holdingId is stale — holding no longer exists in Monarch
-      debugLog(`Stored holding ID ${existingMapping.holdingId} for ${symbol} is stale (not found in Monarch), will re-create`);
-      accountService.saveHoldingMapping(INTEGRATIONS.WEALTHSIMPLE, accountId, securityKey as string, {
-        securityId: existingMapping.securityId,
-        holdingId: null,
-        symbol: existingMapping.symbol,
-      });
-    }
-
-    const existingHolding = findExistingHolding(monarchAccountId, monarchSecurityId, holdings);
-
-    if (existingHolding) {
-      debugLog(`Found existing holding in Monarch for ${symbol}: ${existingHolding.id}`);
-      accountService.saveHoldingMapping(INTEGRATIONS.WEALTHSIMPLE, accountId, securityKey as string, {
-        securityId: monarchSecurityId,
-        holdingId: existingHolding.id,
-        symbol,
-      });
-      return existingHolding.id;
-    }
-
-    const quantity = Math.abs(parseFloat(String(position.quantity)) || 0);
-    debugLog(`Creating new holding for ${symbol} in Monarch account ${monarchAccountId}, quantity: ${quantity}`);
-
-    const newHolding = (await monarchApi.createManualHolding(monarchAccountId, monarchSecurityId, quantity)) as { id: string };
-
-    accountService.saveHoldingMapping(INTEGRATIONS.WEALTHSIMPLE, accountId, securityKey as string, {
-      securityId: monarchSecurityId,
-      holdingId: newHolding.id,
-      symbol,
-    });
-
-    debugLog(`Created and saved holding: ${symbol} -> ${newHolding.id}`);
-    return newHolding.id;
-  } catch (error: unknown) {
-    debugLog('Error resolving/creating holding for position:', error);
-    throw new PositionsError(`Failed to resolve or create holding: ${(error as Error).message}`, accountId, position);
-  }
+  const { resolveOrCreateHolding: genericResolve } = await import('../common/holdingsSync');
+  const hooks = buildWealthsimpleHoldingsHooks();
+  return genericResolve(
+    INTEGRATIONS.WEALTHSIMPLE, accountId, monarchAccountId, monarchSecurityId,
+    position as unknown as Record<string, unknown>, holdings, hooks,
+  );
 }
 
 /**
- * Sync position data to Monarch holding
+ * Sync position data to Monarch holding (delegates to shared holdingsSync)
  */
 export async function syncPositionToHolding(holdingId: string, position: WealthsimplePosition): Promise<void> {
-  try {
-    const symbol = getPositionDisplaySymbol(position);
-    debugLog(`Syncing position ${symbol} to holding ${holdingId}`);
-
-    const quantity = Math.abs(parseFloat(String(position.quantity)) || 0);
-    const sdPos = position as SelfDirectedPosition;
-    const costBasis = parseFloat(String(sdPos.averagePrice?.amount)) || 0;
-
-    const updates: Record<string, unknown> = { quantity, costBasis };
-
-    if (isManagedPositionFormat(position)) {
-      const managedTypeMap: Record<string, string> = {
-        exchange_traded_fund: 'etf',
-        currency: 'cash',
-        mutual_fund: 'mutualFund',
-        equity: 'equity',
-        bond: 'bond',
-      };
-      const positionType = position.type?.toLowerCase();
-      updates.securityType = (positionType && managedTypeMap[positionType]) ? managedTypeMap[positionType] : 'etf';
-    } else {
-      const securityType = sdPos.security?.securityType;
-      if (securityType) {
-        const typeMap: Record<string, string> = {
-          EQUITY: 'equity',
-          OPTION: 'option',
-          BOND: 'bond',
-          EXCHANGE_TRADED_FUND: 'etf',
-          MUTUAL_FUND: 'mutualFund',
-        };
-        updates.securityType = typeMap[securityType] || 'equity';
-      }
-    }
-
-    await monarchApi.updateHolding(holdingId, updates);
-    debugLog(`Successfully synced ${symbol}: quantity=${quantity}, costBasis=${costBasis}`);
-  } catch (error: unknown) {
-    debugLog('Error syncing position to holding:', error);
-    throw new PositionsError(`Failed to sync position: ${(error as Error).message}`, null, position);
-  }
+  const { syncPositionToHolding: genericSync } = await import('../common/holdingsSync');
+  const hooks = buildWealthsimpleHoldingsHooks();
+  return genericSync(holdingId, position as unknown as Record<string, unknown>, hooks);
 }
 
 /**
- * Detect and remove deleted holdings
+ * Detect and remove deleted holdings (delegates to shared holdingsSync)
  */
 export async function detectAndRemoveDeletedHoldings(
   accountId: string,
   monarchAccountId: string,
   currentPositions: WealthsimplePosition[],
 ): Promise<{ deleted: number; autoRepaired: number }> {
-  let deletedCount = 0;
-  let autoRepairedCount = 0;
-
-  try {
-    debugLog(`Detecting deleted holdings for account ${accountId}`);
-
-    const portfolio = (await monarchApi.getHoldings([monarchAccountId])) as MonarchHoldings | null;
-
-    if (!portfolio?.aggregateHoldings?.edges) {
-      debugLog('No holdings found in Monarch');
-      return { deleted: 0, autoRepaired: 0 };
-    }
-
-    const mappings = (accountService.getHoldingsMappings(INTEGRATIONS.WEALTHSIMPLE, accountId) || {}) as Record<string, HoldingMapping>;
-
-    const currentPositionKeys = new Set<string>();
-    for (const position of currentPositions) {
-      const key = getPositionSecurityKey(position);
-      if (key) currentPositionKeys.add(key);
-    }
-
-    const positionsBySymbol = new Map<string, WealthsimplePosition>();
-    for (const position of currentPositions) {
-      const symbol = getSecuritySymbolForLookup(position);
-      if (symbol) positionsBySymbol.set(symbol, position);
-    }
-
-    debugLog(`Found ${portfolio.aggregateHoldings.edges.length} aggregate holdings in Monarch, ${currentPositionKeys.size} Wealthsimple positions`);
-
-    for (const edge of portfolio.aggregateHoldings.edges) {
-      const aggregateHolding = edge.node;
-
-      if (!aggregateHolding.holdings || !Array.isArray(aggregateHolding.holdings)) {
-        continue;
-      }
-
-      for (const holding of aggregateHolding.holdings) {
-        const holdingId = holding.id;
-        const ticker = holding.ticker;
-
-        if (!holdingId || !ticker) continue;
-
-        const mappingEntry = Object.entries(mappings).find(([, m]) => m.holdingId === holdingId);
-
-        if (mappingEntry) {
-          const [mappingKey, mappingData] = mappingEntry;
-
-          if (currentPositionKeys.has(mappingKey)) {
-            debugLog(`Holding ${ticker} (${holdingId}) has mapping and position exists, keeping`);
-            continue;
-          }
-
-          try {
-            debugLog(`Deleting holding for sold position: ${ticker} (${holdingId}) - position no longer exists`);
-            await monarchApi.deleteHolding(holdingId);
-            debugLog(`Successfully deleted holding ${ticker}`);
-            deletedCount += 1;
-
-            accountService.saveHoldingMapping(INTEGRATIONS.WEALTHSIMPLE, accountId, mappingKey, {
-              securityId: mappingData.securityId,
-              holdingId: null,
-              symbol: mappingData.symbol,
-            });
-            debugLog(`Cleared holdingId from mapping for ${ticker}, preserved securityId ${mappingData.securityId}`);
-          } catch (error: unknown) {
-            debugLog(`Failed to delete holding ${ticker} (${holdingId}):`, error);
-          }
-          continue;
-        }
-
-        const matchingPosition = positionsBySymbol.get(ticker);
-
-        if (matchingPosition) {
-          const wsSecurityId = (matchingPosition as SelfDirectedPosition).security?.id;
-          const monarchSecurityId = aggregateHolding.security?.id;
-
-          if (wsSecurityId && monarchSecurityId) {
-            debugLog(`Auto-repairing mapping for ${ticker}: wsSecurityId=${wsSecurityId}, holdingId=${holdingId}`);
-            accountService.saveHoldingMapping(INTEGRATIONS.WEALTHSIMPLE, accountId, wsSecurityId, {
-              securityId: monarchSecurityId,
-              holdingId,
-              symbol: ticker,
-            });
-            autoRepairedCount += 1;
-          }
-        } else {
-          try {
-            debugLog(`Deleting orphaned holding: ${ticker} (${holdingId}) - no matching Wealthsimple position`);
-            await monarchApi.deleteHolding(holdingId);
-            debugLog(`Successfully deleted holding ${ticker}`);
-            deletedCount += 1;
-          } catch (error: unknown) {
-            debugLog(`Failed to delete holding ${ticker} (${holdingId}):`, error);
-          }
-        }
-      }
-    }
-
-    debugLog(`Deletion complete: ${deletedCount} deleted, ${autoRepairedCount} auto-repaired`);
-    return { deleted: deletedCount, autoRepaired: autoRepairedCount };
-  } catch (error: unknown) {
-    debugLog('Error detecting deleted holdings:', error);
-    return { deleted: deletedCount, autoRepaired: autoRepairedCount };
-  }
+  const { detectAndRemoveDeletedHoldings: genericDetect } = await import('../common/holdingsSync');
+  const hooks = buildWealthsimpleHoldingsHooks();
+  return genericDetect(
+    INTEGRATIONS.WEALTHSIMPLE, accountId, monarchAccountId,
+    currentPositions as unknown as Record<string, unknown>[], hooks,
+  );
 }
 
 /**
- * Process positions for a single account
+ * Process positions for a single account (uses shared holdingsSync orchestrator)
  */
 export async function processAccountPositions(
   accountId: string,
@@ -686,73 +527,40 @@ export async function processAccountPositions(
 
     debugLog(`Found ${positions.length} positions to process`);
 
-    if (progressDialog) {
-      progressDialog.updateStepStatus(accountId, 'positions', 'processing', 'Fetching Monarch holdings...');
+    // Adapt the progress dialog to the HoldingsSyncProgress interface
+    const progress = progressDialog ? {
+      updateStatus: (status: string, message: string) => {
+        progressDialog.updateStepStatus(accountId, 'positions', status, message);
+      },
+    } : null;
+
+    // Delegate to shared orchestrator
+    const hooks = buildWealthsimpleHoldingsHooks();
+    const syncResult = await genericProcessAccountPositions(
+      INTEGRATIONS.WEALTHSIMPLE, accountId, monarchAccountId,
+      positions as unknown as Record<string, unknown>[], hooks, progress,
+    );
+
+    // Copy results
+    result.success = syncResult.success;
+    result.positionsProcessed = syncResult.positionsProcessed;
+    result.positionsSkipped = syncResult.positionsSkipped;
+    result.holdingsRemoved = syncResult.holdingsRemoved;
+    result.mappingsAutoRepaired = syncResult.mappingsAutoRepaired;
+    result.error = syncResult.error;
+
+    // Show completion toast (WS-specific formatting)
+    if (syncResult.success) {
+      const toastParts = [`Synced ${result.positionsProcessed} positions for ${accountName}`];
+      if (result.positionsSkipped > 0) toastParts.push(`${result.positionsSkipped} skipped`);
+      if (result.mappingsAutoRepaired > 0) toastParts.push(`${result.mappingsAutoRepaired} repaired`);
+      if (result.holdingsRemoved > 0) toastParts.push(`${result.holdingsRemoved} deleted`);
+
+      const toastMsg = toastParts.length > 1
+        ? `${toastParts[0]} (${toastParts.slice(1).join(', ')})`
+        : toastParts[0];
+      toast.show(toastMsg, 'info');
     }
-
-    const holdings = (await monarchApi.getHoldings([monarchAccountId])) as MonarchHoldings | null;
-
-    for (let i = 0; i < positions.length; i += 1) {
-      const position = positions[i];
-      const symbol = getPositionDisplaySymbol(position) || 'Unknown';
-
-      try {
-        if (progressDialog) {
-          progressDialog.updateStepStatus(
-            accountId,
-            'positions',
-            'processing',
-            `Processing ${i + 1}/${positions.length}: ${symbol}...`,
-          );
-        }
-
-        const monarchSecurityId = await resolveSecurityMapping(accountId, position);
-
-        if (!monarchSecurityId) {
-          debugLog(`Skipping position ${symbol} (user cancelled)`);
-          result.positionsSkipped += 1;
-          continue;
-        }
-
-        const holdingId = await resolveOrCreateHolding(accountId, monarchAccountId, monarchSecurityId, position, holdings);
-        await syncPositionToHolding(holdingId, position);
-
-        result.positionsProcessed += 1;
-        debugLog(`Successfully processed position ${symbol}`);
-      } catch (error: unknown) {
-        debugLog(`Error processing position ${symbol}:`, error);
-        result.positionsSkipped += 1;
-      }
-    }
-
-    if (progressDialog) {
-      progressDialog.updateStepStatus(accountId, 'positions', 'processing', 'Checking for deleted positions...');
-    }
-
-    const deletionResult = await detectAndRemoveDeletedHoldings(accountId, monarchAccountId, positions);
-    result.holdingsRemoved = deletionResult.deleted;
-    result.mappingsAutoRepaired = deletionResult.autoRepaired;
-    result.success = true;
-
-    let statusMsg = `${result.positionsProcessed} synced`;
-    if (result.mappingsAutoRepaired > 0) statusMsg += `, ${result.mappingsAutoRepaired} repaired`;
-    if (result.holdingsRemoved > 0) statusMsg += `, ${result.holdingsRemoved} deleted`;
-
-    if (progressDialog) {
-      progressDialog.updateStepStatus(accountId, 'positions', 'success', statusMsg);
-    }
-
-    const toastParts = [`Synced ${result.positionsProcessed} positions for ${accountName}`];
-    if (result.positionsSkipped > 0) toastParts.push(`${result.positionsSkipped} skipped`);
-    if (result.mappingsAutoRepaired > 0) toastParts.push(`${result.mappingsAutoRepaired} repaired`);
-    if (result.holdingsRemoved > 0) toastParts.push(`${result.holdingsRemoved} deleted`);
-
-    const toastMsg = toastParts.length > 1
-      ? `${toastParts[0]} (${toastParts.slice(1).join(', ')})`
-      : toastParts[0];
-    toast.show(toastMsg, 'info');
-
-    debugLog(`Completed processing positions for ${accountName}: ${result.positionsProcessed} processed, ${result.positionsSkipped} skipped, ${result.mappingsAutoRepaired} repaired, ${result.holdingsRemoved} deleted`);
   } catch (error: unknown) {
     debugLog(`Error processing account positions for ${accountId}:`, error);
     result.error = (error as Error).message;
@@ -763,6 +571,8 @@ export async function processAccountPositions(
 
   return result;
 }
+
+// ── Cash Position Handling (WS-specific) ──────────────────────────────────────
 
 /**
  * Fetch cash balances for an investment account
@@ -798,7 +608,7 @@ async function resolveOrCreateCashHolding(
   accountId: string,
   monarchAccountId: string,
   currency: string,
-  holdings: MonarchHoldings | null,
+  holdings: MonarchHoldingsData | null,
 ): Promise<string> {
   const cashHoldingKey = CASH_HOLDING_KEYS[currency];
   const monarchSecurityId = MONARCH_CASH_SECURITY_IDS[currency];
@@ -814,7 +624,7 @@ async function resolveOrCreateCashHolding(
     return existingMapping.holdingId;
   }
 
-  const existingHolding = findExistingHolding(monarchAccountId, monarchSecurityId, holdings);
+  const existingHolding = findExistingHolding(monarchSecurityId, holdings);
 
   if (existingHolding) {
     debugLog(`Found existing cash holding in Monarch for ${currency}: ${existingHolding.id}`);
@@ -862,7 +672,7 @@ export async function processCashPositions(
     debugLog(`Processing cash positions for account ${accountName} (${accountId})`);
     if (progressDialog) progressDialog.updateStepStatus(accountId, 'cashSync', 'processing', 'Fetching cash balances...');
     const cashBalances = await fetchCashBalances(accountId);
-    const holdings = (await monarchApi.getHoldings([monarchAccountId])) as MonarchHoldings | null;
+    const holdings = (await monarchApi.getHoldings([monarchAccountId])) as MonarchHoldingsData | null;
     if (cashBalances.cad !== null) {
       try {
         if (progressDialog) progressDialog.updateStepStatus(accountId, 'cashSync', 'processing', 'Syncing CAD cash...');
@@ -899,4 +709,5 @@ export default {
   resolveOrCreateHolding, syncPositionToHolding, detectAndRemoveDeletedHoldings,
   processAccountPositions, getSecuritySymbolForLookup, fetchCashBalances,
   processCashPositions, PositionsError, MONARCH_CASH_SECURITY_IDS,
+  buildWealthsimpleHoldingsHooks,
 };

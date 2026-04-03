@@ -721,7 +721,7 @@ describe('Questrade Positions Service', () => {
           position,
           { aggregateHoldings: { edges: [] } },
         ),
-      ).rejects.toThrow(PositionsError);
+      ).rejects.toThrow('API error');
     });
   });
 
@@ -816,7 +816,7 @@ describe('Questrade Positions Service', () => {
       };
 
       await expect(syncPositionToHolding('HOLD123', position)).rejects.toThrow(
-        PositionsError,
+        'Update failed',
       );
     });
   });

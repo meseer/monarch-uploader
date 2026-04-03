@@ -120,7 +120,7 @@ export async function syncAccountToMonarch(accountId, accountName, fromDate, toD
         const positionsResult = await positionsService.processAccountPositions(
           accountId,
           accountName,
-          monarchAccount.id,
+          monarchAccount.id as string,
           progressDialog,
         );
 
@@ -132,7 +132,7 @@ export async function syncAccountToMonarch(accountId, accountName, fromDate, toD
           debugLog(`Positions sync completed: ${positionsResult.positionsProcessed} processed, ${positionsResult.positionsSkipped} skipped`);
         } else {
           if (progressDialog) {
-            progressDialog.updateStepStatus(accountId, 'positions', 'error', positionsResult.error || 'Sync failed');
+            progressDialog.updateStepStatus(accountId, 'positions', 'error', (positionsResult.error as string) || 'Sync failed');
           }
           debugLog(`Positions sync had errors: ${positionsResult.error}`);
         }
