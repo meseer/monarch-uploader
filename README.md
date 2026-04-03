@@ -74,9 +74,13 @@ npm install
 3. Click the **+** button and select **Install from file** (or create a new script and paste the contents).
 4. Select `dist/monarch-uploader.user.js` from the build output.
 
+## Security
+
+To report a security vulnerability, please see [SECURITY.md](SECURITY.md). **Do not** open a public issue for security concerns.
+
 ## Contributing
 
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on submitting pull requests.
 
 ## License
 
