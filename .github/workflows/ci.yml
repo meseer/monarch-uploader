@@ -12,7 +12,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [22.x]
+        node-version: [24.x]
 
     steps:
     - uses: actions/checkout@v6
@@ -36,7 +36,7 @@ jobs:
       run: BUILD_TYPE=dev npm run build
 
     - name: Upload coverage reports to Codecov
-      if: matrix.node-version == '22.x'
+      if: matrix.node-version == '24.x'
       uses: codecov/codecov-action@v6
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
@@ -57,7 +57,7 @@ jobs:
     - name: Use Node.js
       uses: actions/setup-node@v6
       with:
-        node-version: '22.x'
+        node-version: '24.x'
         cache: 'npm'
 
     - name: Install dependencies
