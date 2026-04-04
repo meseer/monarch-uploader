@@ -70,6 +70,15 @@ function cleanSystemNotesFromNotes(notes: string | null | undefined): string {
 }
 
 /**
+ * Update dividend notes when a pending dividend settles.
+ * Replaces "Upcoming dividend on {symbol}" with "Dividend on {symbol}"
+ * so the notes reflect the settled state.
+ */
+export function updateSettledDividendNotes(notes: string): string {
+  return notes.replace(/^Upcoming dividend on /m, 'Dividend on ');
+}
+
+/**
  * Check if a transaction is a SPEND/PREPAID type (uses status field like credit cards)
  */
 function isSpendPrepaidTransaction(transaction: Record<string, unknown>): boolean {
@@ -279,7 +288,13 @@ export async function reconcilePendingTransactions(
           const isNegative = wsTx.amountSign === 'negative';
           const settledAmount = isNegative ? -Math.abs(wsTx.amount as number) : Math.abs(wsTx.amount as number);
 
-          const cleanedNotes = cleanSystemNotesFromNotes(notes);
+          let cleanedNotes = cleanSystemNotesFromNotes(notes);
+
+          // Update dividend notes: "Upcoming dividend" → "Dividend" once settled
+          if (wsTx.type === 'DIVIDEND') {
+            cleanedNotes = updateSettledDividendNotes(cleanedNotes);
+          }
+
           const amountChanged = monarchTx.amount !== settledAmount;
 
           debugLog(`Updating transaction ${monarchTxId}:`, {

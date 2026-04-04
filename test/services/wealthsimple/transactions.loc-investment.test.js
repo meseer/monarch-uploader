@@ -934,6 +934,137 @@ describe('Wealthsimple Transaction Service - LoC & Investment', () => {
       expect(result[1].id).toBe('funding_intent-settled');
     });
 
+    it('should use payableDate for DIVIDEND transactions instead of occurredAt', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'dividend-payable-date-1',
+          occurredAt: '2026-03-15T10:30:00.000000+00:00',
+          type: 'DIVIDEND',
+          subType: 'DIY_DIVIDEND',
+          unifiedStatus: 'COMPLETED',
+          status: null,
+          amount: 12.50,
+          amountSign: 'positive',
+          assetSymbol: 'VFV',
+          currency: 'CAD',
+          payableDate: '2026-03-28',
+          announcementDate: '2026-03-01',
+          recordDate: '2026-03-10',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        mockInvestmentAccount,
+        '2026-03-01',
+        '2026-03-31',
+      );
+
+      expect(result).toHaveLength(1);
+      // Date should be the payableDate, not occurredAt
+      expect(result[0].date).toBe('2026-03-28');
+      expect(result[0].merchant).toBe('VFV');
+      expect(result[0].resolvedMonarchCategory).toBe('Dividends & Capital Gains');
+    });
+
+    it('should fall back to occurredAt when DIVIDEND has no payableDate', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'dividend-no-payable-date',
+          occurredAt: '2026-03-15T10:30:00.000000+00:00',
+          type: 'DIVIDEND',
+          subType: null,
+          unifiedStatus: 'COMPLETED',
+          status: null,
+          amount: 8.00,
+          amountSign: 'positive',
+          assetSymbol: 'XAW',
+          currency: 'CAD',
+          payableDate: null,
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        mockInvestmentAccount,
+        '2026-03-01',
+        '2026-03-31',
+      );
+
+      expect(result).toHaveLength(1);
+      // Date should fall back to occurredAt
+      expect(result[0].date).toBe('2026-03-15');
+    });
+
+    it('should use payableDate for pending DIVIDEND transactions (upcoming dividends)', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'dividend-pending-1',
+          occurredAt: '2026-03-10T10:30:00.000000+00:00',
+          type: 'DIVIDEND',
+          subType: 'CASH_DIVIDEND',
+          unifiedStatus: 'PENDING',
+          status: null,
+          amount: null,
+          amountSign: 'positive',
+          assetSymbol: 'ZHY',
+          currency: 'CAD',
+          payableDate: '2026-04-01',
+          announcementDate: '2026-03-05',
+          recordDate: '2026-03-08',
+          assetQuantity: 34.3537,
+          grossDividendRate: 0.06,
+          withholdingTaxAmount: 0,
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        mockInvestmentAccount,
+        '2026-03-01',
+        '2026-04-30',
+      );
+
+      expect(result).toHaveLength(1);
+      // Date should be the payableDate even for pending dividends
+      expect(result[0].date).toBe('2026-04-01');
+      expect(result[0].isPending).toBe(true);
+      expect(result[0].notes).toContain('Upcoming dividend on ZHY');
+    });
+
+    it('should NOT use payableDate for non-DIVIDEND transactions', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'funding_intent-transfer-with-payable',
+          occurredAt: '2026-01-15T10:30:00.000000+00:00',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'DESTINATION',
+          status: 'completed',
+          accountId: 'investment-account-id',
+          opposingAccountId: 'cash-account-id',
+          amount: 500.00,
+          amountSign: 'positive',
+          payableDate: '2026-02-01', // This should be ignored for non-DIVIDEND
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      wealthsimpleApi.fetchInternalTransfer.mockResolvedValue({ annotation: '' });
+
+      const result = await fetchAndProcessInvestmentTransactions(
+        mockInvestmentAccount,
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      expect(result).toHaveLength(1);
+      // Date should be occurredAt, NOT payableDate
+      expect(result[0].date).toBe('2026-01-15');
+    });
+
     it('should include authorized transactions as pending when includePendingTransactions is true', async () => {
       const mockRawTransactions = [
         {
@@ -1238,6 +1369,101 @@ describe('Wealthsimple Transaction Service - LoC & Investment', () => {
       expect(result.settled).toBe(0);
       expect(result.cancelled).toBe(1);
       expect(monarchApi.deleteTransaction).toHaveBeenCalledWith('monarch-tx-1');
+    });
+
+    it('should update dividend notes from "Upcoming dividend" to "Dividend" when settled', async () => {
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [
+          {
+            id: 'monarch-dividend-tx',
+            amount: 2.06,
+            date: '2026-04-01',
+            notes: 'Upcoming dividend on ZHY\nws-tx:dividend-pending-123',
+            ownedByUser: { id: 'user-123' },
+          },
+        ],
+      });
+      monarchApi.updateTransaction.mockResolvedValue({});
+      monarchApi.setTransactionTags.mockResolvedValue({});
+
+      const wealthsimpleTransactions = [
+        {
+          externalCanonicalId: 'dividend-pending-123',
+          type: 'DIVIDEND',
+          status: null,
+          unifiedStatus: 'COMPLETED',
+          amount: 2.06,
+          amountSign: 'positive',
+        },
+      ];
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        wealthsimpleTransactions,
+        30,
+        'SELF_DIRECTED_TFSA',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.settled).toBe(1);
+
+      // Notes should be updated: "Upcoming dividend" → "Dividend", ws-tx removed
+      expect(monarchApi.updateTransaction).toHaveBeenCalledWith(
+        'monarch-dividend-tx',
+        expect.objectContaining({
+          notes: 'Dividend on ZHY',
+        }),
+      );
+      // Pending tag should be removed
+      expect(monarchApi.setTransactionTags).toHaveBeenCalledWith('monarch-dividend-tx', []);
+    });
+
+    it('should NOT update notes for non-DIVIDEND transactions during reconciliation', async () => {
+      monarchApi.getTagByName.mockResolvedValue({ id: mockPendingTagId, name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [
+          {
+            id: 'monarch-transfer-tx',
+            amount: 500.00,
+            date: '2026-01-10',
+            notes: 'Monthly contribution\nws-tx:funding_intent-transfer-456',
+            ownedByUser: { id: 'user-123' },
+          },
+        ],
+      });
+      monarchApi.updateTransaction.mockResolvedValue({});
+      monarchApi.setTransactionTags.mockResolvedValue({});
+
+      const wealthsimpleTransactions = [
+        {
+          externalCanonicalId: 'funding_intent-transfer-456',
+          type: 'INTERNAL_TRANSFER',
+          subType: 'DESTINATION',
+          status: 'settled',
+          unifiedStatus: null,
+          amount: 500.00,
+          amountSign: 'positive',
+        },
+      ];
+
+      const result = await reconcilePendingTransactions(
+        mockMonarchAccountId,
+        wealthsimpleTransactions,
+        30,
+        'SELF_DIRECTED_TFSA',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.settled).toBe(1);
+
+      // Notes should have ws-tx removed but NOT apply dividend note transformation
+      expect(monarchApi.updateTransaction).toHaveBeenCalledWith(
+        'monarch-transfer-tx',
+        expect.objectContaining({
+          notes: 'Monthly contribution',
+        }),
+      );
     });
 
     it('should handle mixed investment transaction types correctly', async () => {
