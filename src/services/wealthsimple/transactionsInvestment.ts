@@ -343,9 +343,15 @@ function processInvestmentTransaction(
 
       const uStatus = (transaction as Record<string, unknown>).unifiedStatus as string | null | undefined;
 
+      // For dividends, use payableDate (when money appears in account) if available
+      // payableDate is already YYYY-MM-DD format, so use directly (no timezone conversion needed)
+      const transactionDate = transaction.type === 'DIVIDEND' && transaction.payableDate
+        ? transaction.payableDate
+        : convertToLocalDate(transaction.occurredAt);
+
       return {
         id: getTransactionId(transaction),
-        date: convertToLocalDate(transaction.occurredAt),
+        date: transactionDate,
         merchant: ruleResult.merchant,
         originalMerchant: ruleResult.originalStatement,
         amount: finalAmount,
