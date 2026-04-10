@@ -32,7 +32,7 @@ import {
 
 //    Interfaces
 
-export interface WealthsimpleTokenData {
+interface WealthsimpleTokenData {
   accessToken: string;
   identityId: string;
   expiresAt: string;
@@ -51,7 +51,7 @@ export interface WealthsimpleAuthStatus {
   tradeProfile?: string | null;
 }
 
-export interface WealthsimpleApiAccount {
+interface WealthsimpleApiAccount {
   id: string;
   type: string;
   nickname: string;
@@ -62,7 +62,7 @@ export interface WealthsimpleApiAccount {
   createdAt?: string;
 }
 
-export interface WealthsimpleConsolidatedAccount {
+interface WealthsimpleConsolidatedAccount {
   wealthsimpleAccount: WealthsimpleApiAccount;
   monarchAccount: Record<string, unknown> | null;
   syncEnabled: boolean;
@@ -77,18 +77,18 @@ export interface WealthsimpleConsolidatedAccount {
   transactionRetentionCount: number | null;
 }
 
-export interface WealthsimpleBalanceResult {
+interface WealthsimpleBalanceResult {
   amount: number;
   currency: string;
 }
 
-export interface WealthsimpleBalancesResponse {
+interface WealthsimpleBalancesResponse {
   success: boolean;
   balances: Map<string, WealthsimpleBalanceResult | null>;
   error?: string;
 }
 
-export interface WealthsimpleTransaction {
+interface WealthsimpleTransaction {
   accountId?: string;
   canonicalId?: string;
   amount?: string;
@@ -417,7 +417,7 @@ export async function makeGraphQLQuery(operationName: string, query: string, var
  * @returns Token info
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function validateToken(): Promise<any> {
+async function validateToken(): Promise<any> {
   const authStatus = checkAuth();
 
   if (!authStatus.authenticated) {
@@ -481,7 +481,7 @@ function generateAccountName(unifiedType: string, last4: string): string {
  * For credit cards without user nicknames, enriches the name with actual card last 4 digits
  * @returns Array of consolidated account objects
  */
-export async function fetchAndCacheWealthsimpleAccounts(): Promise<WealthsimpleConsolidatedAccount[]> {
+async function fetchAndCacheWealthsimpleAccounts(): Promise<WealthsimpleConsolidatedAccount[]> {
   try {
     debugLog('Fetching and caching Wealthsimple accounts...');
 
@@ -605,7 +605,7 @@ async function enrichCreditCardNicknames(accounts: WealthsimpleApiAccount[]): Pr
  * Fetch all Wealthsimple accounts using GraphQL
  * @returns Array of account objects
  */
-export async function fetchAccounts(): Promise<WealthsimpleApiAccount[]> {
+async function fetchAccounts(): Promise<WealthsimpleApiAccount[]> {
   try {
     debugLog('Fetching Wealthsimple accounts via GraphQL...');
 
@@ -698,7 +698,7 @@ export async function fetchAccounts(): Promise<WealthsimpleApiAccount[]> {
  * @param accounts - Array of account objects with {id, type} properties
  * @returns Object with success status and balances map
  */
-export async function fetchAccountBalances(accounts: Array<{ id: string; type?: string | null; currency?: string }>): Promise<WealthsimpleBalancesResponse> {
+async function fetchAccountBalances(accounts: Array<{ id: string; type?: string | null; currency?: string }>): Promise<WealthsimpleBalancesResponse> {
   try {
     if (!accounts || accounts.length === 0) {
       debugLog('No accounts provided for balance fetch');
@@ -851,7 +851,7 @@ fragment Returns on SimpleReturns {
  * @param currency - Account currency (e.g., 'CAD')
  * @returns Account balance data
  */
-export async function fetchAccountBalance(accountId: string, accountType: string | null = null, currency: string = 'CAD'): Promise<WealthsimpleBalanceResult> {
+async function fetchAccountBalance(accountId: string, accountType: string | null = null, currency: string = 'CAD'): Promise<WealthsimpleBalanceResult> {
   try {
     debugLog(`Fetching balance for Wealthsimple account ${accountId}...`);
 
@@ -886,7 +886,7 @@ export async function fetchAccountBalance(accountId: string, accountType: string
  * @param startDate - Start date in YYYY-MM-DD format (local timezone)
  * @returns Array of transaction objects with all Activity fields
  */
-export async function fetchTransactions(accountId: string, startDate: string): Promise<WealthsimpleTransaction[]> {
+async function fetchTransactions(accountId: string, startDate: string): Promise<WealthsimpleTransaction[]> {
   try {
     if (!accountId) {
       throw new Error('Account ID is required');
@@ -1070,43 +1070,9 @@ fragment Activity on ActivityFeedItem {
 }
 
 // Re-export types and functions from sub-modules for named import consumers
-export {
-  type BalanceHistoryRecord,
-  type PositionNode,
-  fetchBalanceHistory,
-  fetchIdentityPositions,
-} from './wealthsimplePositions';
+;
 
-export {
-  type FundingIntentNode,
-  type CreditCardAccountSummary,
-  type InternalTransferDetails,
-  type FundsTransferDetails,
-  type ActivityByOrderData,
-  type ExtendedOrderData,
-  type CorporateActionChildActivity,
-  type ShortOptionExpiryDetail,
-  type SecurityDetails,
-  type ManagedPortfolioPosition,
-  type AccountCashBalances,
-  type SpendTransactionDetails,
-  type FundingIntentStatusSummaryData,
-  type CryptoOrderDetails,
-  fetchFundingIntents,
-  fetchFundingIntentStatusSummary,
-  fetchCreditCardAccountSummary,
-  fetchInternalTransfer,
-  fetchFundsTransfer,
-  fetchActivityByOrdersServiceOrderId,
-  fetchExtendedOrder,
-  fetchCorporateActionChildActivities,
-  fetchShortOptionPositionExpiryDetail,
-  fetchSecurity,
-  fetchManagedPortfolioPositions,
-  fetchAccountsWithBalance,
-  fetchSpendTransactions,
-  fetchCryptoOrder,
-} from './wealthsimpleQueries';
+;
 
 export default {
   checkAuth,

@@ -309,9 +309,3 @@ export function trapFocus(container: HTMLElement): () => void {
   };
 }
 
-export default {
-  addModalKeyboardHandlers,
-  makeItemsKeyboardNavigable,
-  addButtonKeyboardHandlers,
-  trapFocus,
-};

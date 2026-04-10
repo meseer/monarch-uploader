@@ -53,12 +53,12 @@ export interface ProcessedTransaction {
   [key: string]: unknown;
 }
 
-export interface CategoryResolutionOptions {
+interface CategoryResolutionOptions {
   onProgress?: (message: string) => void;
   skipCategorization?: boolean;
 }
 
-export interface ProcessCreditCardOptions {
+interface ProcessCreditCardOptions {
   stripStoreNumbers?: boolean;
   spendDetailsMap?: Map<string, unknown> | null;
 }

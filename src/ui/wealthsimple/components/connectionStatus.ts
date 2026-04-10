@@ -141,6 +141,3 @@ function updateWealthsimpleStatus(statusElement: HTMLElement): void {
   }
 }
 
-export default {
-  createConnectionStatus,
-};

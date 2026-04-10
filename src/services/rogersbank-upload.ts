@@ -1046,9 +1046,3 @@ export async function uploadRogersBankToMonarch() {
   }
 }
 
-export default {
-  uploadRogersBankToMonarch,
-  fetchRogersBankTransactions,
-  isFirstSync,
-  getEndOfCurrentMonth,
-};

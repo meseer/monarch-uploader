@@ -18,16 +18,9 @@ import {
 import { showManualCategorizationDialog } from './categorySelectorManual';
 
 // Re-export utilities for consumers
-export {
-  createSearchInput,
-  createSplitSkipButton,
-  createTopActionBar,
-  createModalOverlay,
-  getGroupColor,
-  getGroupIcon,
-} from './categorySelectorUtils';
+;
 
-export { showManualCategorizationDialog } from './categorySelectorManual';
+;
 
 import type {
   MonarchCategory,
@@ -38,7 +31,7 @@ import type {
 } from '../../types/monarch';
 
 // Re-export shared types for consumers
-export type { MonarchCategory, CategoryGroup, SimilarityInfo, CategoryCallbackResult, CategoryCallback };
+;
 
 interface TransactionAmount {
   value?: number | string;
@@ -85,7 +78,7 @@ interface SearchCategoryItem extends MonarchCategory {
 /**
  * Creates a simple category selector dropdown
  */
-export function createCategorySelector({
+function createCategorySelector({
   bankCategory = '',
   categories = [],
   onChange = null,

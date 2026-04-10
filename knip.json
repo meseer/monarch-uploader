@@ -1,0 +1,13 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "project": ["src/**/*.{ts,js}"],
+  "ignore": ["src/integrations/mbna/**", "src/sinks/types.ts"],
+  "ignoreDependencies": ["@jest/globals", "jsdom", "babel-jest"],
+  "jest": {
+    "config": ["jest.config.cjs"],
+    "entry": ["test/**/*.test.{js,ts}"]
+  },
+  "webpack": {
+    "config": ["webpack.config.cjs"]
+  }
+}

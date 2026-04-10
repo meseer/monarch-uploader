@@ -134,8 +134,3 @@ export function updateMonarchStatus(container: HTMLElement, connected: boolean, 
   }
 }
 
-export default {
-  createConnectionStatus,
-  updateInstitutionStatus,
-  updateMonarchStatus,
-};

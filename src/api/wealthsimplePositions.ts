@@ -8,13 +8,13 @@ import { makeGraphQLQuery, checkAuth } from './wealthsimple';
 
 //    Interfaces
 
-export interface BalanceHistoryRecord {
+interface BalanceHistoryRecord {
   date: string;
   amount: number;
   currency: string;
 }
 
-export interface PositionNode {
+interface PositionNode {
   id?: string;
   quantity?: number;
   percentageOfAccount?: number;

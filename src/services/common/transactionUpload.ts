@@ -112,7 +112,3 @@ export function formatTransactionUploadMessage(settledCount: number, pendingCoun
   return 'No new';
 }
 
-export default {
-  uploadTransactionsAndSaveRefs,
-  formatTransactionUploadMessage,
-};

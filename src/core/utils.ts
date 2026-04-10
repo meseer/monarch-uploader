@@ -719,7 +719,7 @@ export function formatAmount(amount: number | string | null | undefined): string
 /**
  * Format currency amount with proper thousands separators
  */
-export function formatCurrencyAmount(amount: number): string {
+function formatCurrencyAmount(amount: number): string {
   return new Intl.NumberFormat('en-CA', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,

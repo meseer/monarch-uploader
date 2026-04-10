@@ -119,7 +119,7 @@ export function updateStatusIndicators(indicators: StatusIndicators | null): voi
   }
 }
 
-export function createButtonContainer(): HTMLDivElement {
+function createButtonContainer(): HTMLDivElement {
   const container = document.createElement('div');
   container.id = 'balance-uploader-container';
   container.style.cssText = 'position: relative; margin: 15px 0; padding: 15px; background-color: var(--mu-bg-primary, white); color: var(--mu-text-primary, #333); border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);';
@@ -365,7 +365,7 @@ export async function initUI(): Promise<void> {
   }
 }
 
-export function refreshQuestradeUI(): boolean {
+function refreshQuestradeUI(): boolean {
   try {
     const container = document.getElementById('balance-uploader-container');
     if (!container) {

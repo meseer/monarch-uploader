@@ -38,7 +38,7 @@ function buildQuestradeSteps() {
  * @param {Object} progressDialog - Optional progress dialog
  * @returns {Promise<boolean>} Success status
  */
-export async function syncAccountToMonarch(accountId, accountName, fromDate, toDate, progressDialog = null) {
+async function syncAccountToMonarch(accountId, accountName, fromDate, toDate, progressDialog = null) {
   try {
     debugLog(`Starting sync for account ${accountName} (${accountId})`);
 

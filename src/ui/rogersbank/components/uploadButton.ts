@@ -220,7 +220,3 @@ export function createRogersBankUploadButton(): HTMLElement {
   return container;
 }
 
-export default {
-  createRogersBankButton,
-  createRogersBankUploadButton,
-};

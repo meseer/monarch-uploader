@@ -686,21 +686,3 @@ export async function initGenericUI(registryEntry: RegistryEntry): Promise<void>
   }
 }
 
-/**
- * Refresh the UI when auth state changes.
- */
-export async function refreshGenericUI(registryEntry: RegistryEntry): Promise<void> {
-  const { injectionPoint } = registryEntry;
-
-  await probeConnection(registryEntry);
-
-  const connectionStatus = document.querySelector(`#${injectionPoint.containerId} .connection-status-container`) as HTMLElement | null;
-  if (connectionStatus) {
-    updateConnectionStatusDisplay(connectionStatus, registryEntry);
-  }
-}
-
-export default {
-  initGenericUI,
-  refreshGenericUI,
-};

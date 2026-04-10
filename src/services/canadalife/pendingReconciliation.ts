@@ -180,8 +180,3 @@ export function formatReconciliationMessage(result) {
   return parts.join(', ');
 }
 
-export default {
-  reconcileCanadaLifePendingTransactions,
-  formatReconciliationMessage,
-  CL_TX_ID_PREFIX,
-};

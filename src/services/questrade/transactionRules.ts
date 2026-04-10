@@ -44,7 +44,7 @@ export function cleanString(value) {
  * @param {Object} details - Full details from transactionUrl (optional)
  * @returns {Object} Normalized transaction data for rule matching
  */
-export function normalizeTransactionData(transaction, details) {
+function normalizeTransactionData(transaction, details) {
   // Prefer details over transaction for all fields
   const source = details || transaction || {};
   const txFallback = transaction || {};
@@ -177,7 +177,7 @@ export function formatTransactionNotes(normalized) {
  * @param {Object} normalized - Normalized transaction data
  * @returns {string} Formatted notes string
  */
-export function formatDividendNotes(normalized) {
+function formatDividendNotes(normalized) {
   const lines = [];
 
   // Line 1: Description
@@ -210,7 +210,7 @@ export function formatDividendNotes(normalized) {
  * @param {Object} normalized - Normalized transaction data
  * @returns {string} Formatted notes string
  */
-export function formatDividendReinvestmentNotes(normalized) {
+function formatDividendReinvestmentNotes(normalized) {
   const lines = [];
 
   // Line 1: Description
@@ -251,7 +251,7 @@ export function formatDividendReinvestmentNotes(normalized) {
  * @param {Object} normalized - Normalized transaction data
  * @returns {string} Formatted notes string
  */
-export function formatQuantityNotes(normalized) {
+function formatQuantityNotes(normalized) {
   const lines = [];
 
   // Line 1: Description
@@ -297,7 +297,7 @@ export function formatQuantityNotes(normalized) {
  * @param {string} action - 'Bought' or 'Sold' based on .net.amount sign
  * @returns {string} Formatted FX notes
  */
-export function formatFxConversionNotes(normalized, action) {
+function formatFxConversionNotes(normalized, action) {
   const lines = [];
 
   // Description first
@@ -814,22 +814,3 @@ export function getTransactionDate(transaction, details = null) {
   return date || '';
 }
 
-export default {
-  QUESTRADE_TRANSACTION_RULES,
-  applyTransactionRule,
-  shouldFilterTransaction,
-  getTransactionId,
-  getTransactionAmount,
-  getCurrencyTag,
-  getTransactionDate,
-  formatOriginalStatement,
-  formatTransactionNotes,
-  formatFxNotes,
-  formatNumber,
-  formatAmount,
-  cleanString,
-  normalizeTransactionData,
-  formatDividendNotes,
-  formatDividendReinvestmentNotes,
-  formatQuantityNotes,
-};

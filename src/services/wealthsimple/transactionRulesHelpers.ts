@@ -114,18 +114,18 @@ export interface FundsTransfer {
   [key: string]: unknown;
 }
 
-export interface BankAccount {
+interface BankAccount {
   nickname?: string | null;
   accountNumber?: string | null;
   [key: string]: unknown;
 }
 
-export interface OutgoingETransferDetails {
+interface OutgoingETransferDetails {
   autoDeposit: string | null;
   networkPaymentRefId: string | null;
 }
 
-export interface WealthsimpleAccountEntry {
+interface WealthsimpleAccountEntry {
   wealthsimpleAccount?: {
     id?: string;
     nickname?: string;

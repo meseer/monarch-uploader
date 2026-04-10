@@ -414,8 +414,3 @@ function updateConnectionStatus(connectionStatus: HTMLElement): void {
   }
 }
 
-export default {
-  initWealthsimpleUI,
-  createUIContainer,
-  updateConnectionStatus,
-};

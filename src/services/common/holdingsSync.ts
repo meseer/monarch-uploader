@@ -478,11 +478,3 @@ export async function processAccountPositions(
   return result;
 }
 
-export default {
-  findHoldingById,
-  findExistingHolding,
-  resolveOrCreateHolding,
-  syncPositionToHolding,
-  detectAndRemoveDeletedHoldings,
-  processAccountPositions,
-};

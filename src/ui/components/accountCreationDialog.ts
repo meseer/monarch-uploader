@@ -657,6 +657,3 @@ function createModalOverlay(onClose: () => void): HTMLDivElement {
   return overlay;
 }
 
-export default {
-  showAccountCreationDialog,
-};

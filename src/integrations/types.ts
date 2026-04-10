@@ -16,10 +16,10 @@
 // ADAPTER INTERFACES (re-exported from canonical core locations)
 // ============================================================
 
-import type { HttpClient, HttpRequestOptions, HttpResponse } from '../core/httpClient';
+import type { HttpClient } from '../core/httpClient';
 import type { StorageAdapter } from '../core/storageAdapter';
 
-export type { HttpClient, HttpRequestOptions, HttpResponse };
+export type { HttpClient };
 export type { StorageAdapter };
 
 // ============================================================

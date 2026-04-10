@@ -288,7 +288,3 @@ export function createWealthsimpleUploadButton(): HTMLElement {
   return container;
 }
 
-export default {
-  createWealthsimpleButton,
-  createWealthsimpleUploadButton,
-};

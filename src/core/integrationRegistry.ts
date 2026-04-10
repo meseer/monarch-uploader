@@ -26,7 +26,7 @@ import type {
 /**
  * Shape of a fully registered integration in the runtime registry.
  */
-export interface RegisteredIntegration {
+interface RegisteredIntegration {
   manifest: IntegrationManifest;
   api: IntegrationApi;
   auth: IntegrationAuth;

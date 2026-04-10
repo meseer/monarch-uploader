@@ -59,7 +59,7 @@ export function createSearchInput(placeholder: string, onSearch: (query: string)
  * @param onSkipAll - Callback when "Skip All" is clicked
  * @returns The split button container element
  */
-export function createSplitSkipButton(onSkipThis: () => void, onSkipAll: () => void): SplitSkipButtonElement {
+function createSplitSkipButton(onSkipThis: () => void, onSkipAll: () => void): SplitSkipButtonElement {
   const container = document.createElement('div') as SplitSkipButtonElement;
   container.id = 'category-selector-skip-container';
   container.style.cssText = 'position: relative; display: inline-flex;';

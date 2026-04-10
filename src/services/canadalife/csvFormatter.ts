@@ -111,6 +111,3 @@ export function convertCanadaLifeTransactionsToMonarchCSV(transactions: CanadaLi
   return convertToCSV(monarchRows, columns);
 }
 
-export default {
-  convertCanadaLifeTransactionsToMonarchCSV,
-};

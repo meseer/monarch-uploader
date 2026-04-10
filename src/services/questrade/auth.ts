@@ -9,7 +9,7 @@ import stateManager from '../../core/state';
 /**
  * Custom authentication error class
  */
-export class AuthError extends Error {
+class AuthError extends Error {
   provider: string;
 
   constructor(message: string, provider: string) {

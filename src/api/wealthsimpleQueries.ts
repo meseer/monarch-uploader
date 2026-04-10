@@ -8,7 +8,7 @@ import { makeGraphQLQuery } from './wealthsimple';
 
 //    Interfaces
 
-export interface FundingIntentNode {
+interface FundingIntentNode {
   id: string;
   state?: string;
   createdAt?: string;
@@ -27,7 +27,7 @@ export interface FundingIntentNode {
   [key: string]: unknown;
 }
 
-export interface CreditCardAccountSummary {
+interface CreditCardAccountSummary {
   id: string;
   balance?: {
     current: number;
@@ -44,7 +44,7 @@ export interface CreditCardAccountSummary {
   [key: string]: unknown;
 }
 
-export interface InternalTransferDetails {
+interface InternalTransferDetails {
   id?: string;
   amount?: number;
   currency?: string;
@@ -56,7 +56,7 @@ export interface InternalTransferDetails {
   [key: string]: unknown;
 }
 
-export interface FundsTransferDetails {
+interface FundsTransferDetails {
   id?: string;
   status?: string;
   annotation?: string;
@@ -65,7 +65,7 @@ export interface FundsTransferDetails {
   [key: string]: unknown;
 }
 
-export interface ActivityByOrderData {
+interface ActivityByOrderData {
   id?: string;
   quantity?: number;
   fxRate?: number;
@@ -73,7 +73,7 @@ export interface ActivityByOrderData {
   [key: string]: unknown;
 }
 
-export interface ExtendedOrderData {
+interface ExtendedOrderData {
   status?: string;
   orderType?: string;
   filledQuantity?: number;
@@ -86,7 +86,7 @@ export interface ExtendedOrderData {
   [key: string]: unknown;
 }
 
-export interface CorporateActionChildActivity {
+interface CorporateActionChildActivity {
   canonicalId?: string;
   activityCanonicalId?: string;
   assetName?: string;
@@ -100,7 +100,7 @@ export interface CorporateActionChildActivity {
   [key: string]: unknown;
 }
 
-export interface ShortOptionExpiryDetail {
+interface ShortOptionExpiryDetail {
   id?: string;
   decision?: string;
   reason?: string;
@@ -110,7 +110,7 @@ export interface ShortOptionExpiryDetail {
   [key: string]: unknown;
 }
 
-export interface SecurityDetails {
+interface SecurityDetails {
   id?: string;
   currency?: string;
   securityType?: string;
@@ -118,7 +118,7 @@ export interface SecurityDetails {
   [key: string]: unknown;
 }
 
-export interface ManagedPortfolioPosition {
+interface ManagedPortfolioPosition {
   id?: string;
   allocation?: number;
   className?: string;
@@ -135,12 +135,12 @@ export interface ManagedPortfolioPosition {
   [key: string]: unknown;
 }
 
-export interface AccountCashBalances {
+interface AccountCashBalances {
   cad: number | null;
   usd: number | null;
 }
 
-export interface SpendTransactionDetails {
+interface SpendTransactionDetails {
   id: string;
   hasReward?: boolean;
   rewardAmount?: number;
@@ -151,7 +151,7 @@ export interface SpendTransactionDetails {
   [key: string]: unknown;
 }
 
-export interface FundingIntentStatusSummaryData {
+interface FundingIntentStatusSummaryData {
   id?: string;
   annotation?: string;
   activityFrequency?: string;
@@ -159,7 +159,7 @@ export interface FundingIntentStatusSummaryData {
   [key: string]: unknown;
 }
 
-export interface CryptoOrderDetails {
+interface CryptoOrderDetails {
   id?: string;
   quantity?: number;
   executedQuantity?: number;

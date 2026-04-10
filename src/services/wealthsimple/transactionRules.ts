@@ -10,8 +10,6 @@ import {
   formatSpendNotes,
   formatTransferNotes,
   formatPrettyDate,
-  toSentenceCase,
-  formatInvestmentOrderNotes,
   formatManagedOrderNotes,
   formatOptionsOrderNotes,
   getTransactionId,
@@ -42,8 +40,6 @@ import {
   INVESTMENT_REFUND_TRANSACTION_RULES,
   INVESTMENT_INSTITUTIONAL_TRANSFER_RULES,
   INVESTMENT_DEPOSIT_TRANSACTION_RULES,
-  formatNumberWithPrecision,
-  formatDividendNotes,
   INVESTMENT_DIVIDEND_TRANSACTION_RULES,
   INVESTMENT_INTEREST_TRANSACTION_RULES,
   formatCorporateActionNotes,
@@ -61,8 +57,7 @@ export {
   formatSpendNotes,
   formatTransferNotes,
   formatPrettyDate,
-  toSentenceCase,
-  formatInvestmentOrderNotes,
+
   formatManagedOrderNotes,
   formatOptionsOrderNotes,
   getTransactionId,
@@ -75,8 +70,7 @@ export {
   extractOutgoingETransferDetails,
   formatOutgoingETransferDetails,
   extractInternalTransferAnnotation,
-  extractFundsTransferAnnotation,
-  getExternalBankAccountDisplayName,
+
 };
 
 export {
@@ -84,8 +78,7 @@ export {
   INVESTMENT_REFUND_TRANSACTION_RULES,
   INVESTMENT_INSTITUTIONAL_TRANSFER_RULES,
   INVESTMENT_DEPOSIT_TRANSACTION_RULES,
-  formatNumberWithPrecision,
-  formatDividendNotes,
+
   INVESTMENT_DIVIDEND_TRANSACTION_RULES,
   INVESTMENT_INTEREST_TRANSACTION_RULES,
   formatCorporateActionNotes,
@@ -514,17 +507,3 @@ export function hasRuleForTransaction(type: string, subType: string): boolean {
   });
 }
 
-export default {
-  CASH_TRANSACTION_RULES,
-  INVESTMENT_FEE_TRANSACTION_RULES,
-  INVESTMENT_DEPOSIT_TRANSACTION_RULES,
-  INVESTMENT_DIVIDEND_TRANSACTION_RULES,
-  INVESTMENT_INTEREST_TRANSACTION_RULES,
-  INVESTMENT_RESP_GRANT_TRANSACTION_RULES,
-  INVESTMENT_NON_RESIDENT_TAX_TRANSACTION_RULES,
-  INVESTMENT_REIMBURSEMENT_TRANSACTION_RULES,
-  applyTransactionRule,
-  hasRuleForTransaction,
-  getETransferDisplayName,
-  getTransactionId,
-};

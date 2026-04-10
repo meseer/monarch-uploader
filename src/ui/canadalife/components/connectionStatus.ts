@@ -64,6 +64,3 @@ export function createConnectionStatus(): HTMLElement {
   return container;
 }
 
-export default {
-  createConnectionStatus,
-};

@@ -84,37 +84,6 @@ export interface CategoryCallbackResult extends MonarchCategory {
 export type CategoryCallback = (result: CategoryCallbackResult | null) => void;
 
 // ============================================================
-// ACCOUNT TYPES
-// ============================================================
-
-/**
- * Account details returned from account selection/creation dialogs.
- * Used across account selector UI, upload services, and account mapping.
- */
-export interface AccountDetails {
-  id: string;
-  displayName?: string;
-  currentBalance?: number;
-  signedBalance?: number;
-  logoUrl?: string | null;
-  type?: { name: string };
-  subtype?: { name: string; display?: string };
-  isManual?: boolean;
-  icon?: string;
-  limit?: number;
-  /** Set when user created a new account in the dialog */
-  newlyCreated?: boolean;
-  /** Set when user chose to skip mapping */
-  skipped?: boolean;
-  [key: string]: unknown;
-}
-
-/**
- * Callback type for account selection.
- */
-export type AccountCallback = (account: AccountDetails | null) => void;
-
-// ============================================================
 // BALANCE TYPES
 // ============================================================
 

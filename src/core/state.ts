@@ -266,4 +266,4 @@ export default stateManager;
 export { StateManager };
 
 // Export state interfaces for external use
-export type { AppState, AccountState, AuthState, WealthsimpleAuth, UIState, StateChangeCallback };
+;

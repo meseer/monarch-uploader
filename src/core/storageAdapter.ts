@@ -79,7 +79,3 @@ export function createMemoryStorageAdapter(initialData: Record<string, unknown> 
   };
 }
 
-export default {
-  createGMStorageAdapter,
-  createMemoryStorageAdapter,
-};
