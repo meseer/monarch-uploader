@@ -5,7 +5,7 @@
 
 import {
   debugLog, formatDate, getTodayLocal, getYesterdayLocal, formatDaysAgoLocal, parseLocalDate,
-  calculateFromDateWithLookback, saveLastUploadDate, getLastUpdateDate, getLookbackForInstitution,
+  calculateFromDateWithLookback, saveLastUploadDate, getLookbackForInstitution,
 } from '../core/utils';
 import { LOGO_CLOUDINARY_IDS } from '../core/config';
 import stateManager from '../core/state';
@@ -365,64 +365,41 @@ async function getOrCreateMonarchAccountMapping(canadalifeAccount) {
 }
 
 /**
- * Extract balance change information for a Canada Life account
+ * Extract balance change information for a Canada Life account.
+ * Compares the stored lastSyncBalance (from previous sync) against the current balance,
+ * matching the pattern used by other integrations in balanceUpload.ts.
  * @param {string} accountId - Account ID
- * @param {Object} historicalData - Historical data from loadAccountBalanceHistory
+ * @param {number} newBalance - Current balance (most recent entry from historical data)
  * @returns {Object|null} Balance change data or null if not available
  */
-function extractCanadaLifeBalanceChange(accountId, historicalData) {
+function extractCanadaLifeBalanceChange(accountId: string, newBalance: number) {
   try {
-    if (!historicalData || !historicalData.data || !Array.isArray(historicalData.data)) {
-      debugLog(`No historical data found for Canada Life account ${accountId}`);
-      return null;
-    }
-
-    const dataRows = historicalData.data.slice(1); // Skip header row
-    if (dataRows.length === 0) {
-      debugLog(`No balance data rows found for Canada Life account ${accountId}`);
-      return null;
-    }
-
-    // Today's balance is the last entry (most recent)
-    const todayEntry = dataRows[dataRows.length - 1];
-    const newBalance = parseFloat(todayEntry[1]);
-
     if (isNaN(newBalance)) {
       debugLog(`Invalid new balance for Canada Life account ${accountId}`);
       return null;
     }
 
-    // Get last upload date
-    const lastUploadDate = getLastUpdateDate(accountId, 'canadalife');
-    if (!lastUploadDate) {
-      debugLog(`No last upload date found for Canada Life account ${accountId}`);
-      return null;
-    }
+    // Read previously-stored balance from consolidated account data
+    const acctData = accountService.getAccountData(INTEGRATIONS.CANADALIFE, accountId);
+    const lastSyncBalance = acctData?.lastSyncBalance as number | undefined | null;
+    const lastSyncDate = acctData?.lastSyncDate as string | undefined | null;
 
-    // Find old balance from last upload date
-    const oldBalanceEntry = dataRows.find((row) => row[0] === lastUploadDate);
-    if (!oldBalanceEntry) {
-      debugLog(`No balance found for last upload date ${lastUploadDate} for Canada Life account ${accountId}`);
-      return null;
-    }
-
-    const oldBalance = parseFloat(oldBalanceEntry[1]);
-    if (isNaN(oldBalance)) {
-      debugLog(`Invalid old balance for Canada Life account ${accountId}`);
+    if (lastSyncBalance === undefined || lastSyncBalance === null || !lastSyncDate) {
+      debugLog(`No previous sync balance found for Canada Life account ${accountId}`);
       return null;
     }
 
     // Calculate percentage change
-    const changePercent = oldBalance !== 0
-      ? ((newBalance - oldBalance) / Math.abs(oldBalance)) * 100
+    const changePercent = lastSyncBalance !== 0
+      ? ((newBalance - lastSyncBalance) / Math.abs(lastSyncBalance)) * 100
       : 0;
 
-    debugLog(`Balance change for Canada Life account ${accountId}: ${oldBalance} -> ${newBalance} (${changePercent.toFixed(2)}%)`);
+    debugLog(`Balance change for Canada Life account ${accountId}: ${lastSyncBalance} -> ${newBalance} (${changePercent.toFixed(2)}%)`);
 
     return {
-      oldBalance,
+      oldBalance: lastSyncBalance,
       newBalance,
-      lastUploadDate,
+      lastUploadDate: lastSyncDate,
       changePercent,
     };
   } catch (error) {
@@ -601,17 +578,29 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
         throw new CanadaLifeUploadError('Failed to upload balance to Monarch', accountId);
       }
 
+      // Extract the latest balance from historical data for change detection and persistence
+      const dataRows = historicalData.data.slice(1); // Skip header row
+      const latestEntry = dataRows[dataRows.length - 1];
+      const latestBalance = parseFloat(String(latestEntry[1]));
+
       // Mark upload step as complete and extract balance change BEFORE saving last upload date
-      // This ensures balance change calculation uses the previous upload date, not the one we're about to save
+      // This ensures balance change calculation uses the previous sync balance, not the one we're about to save
       if (progressDialog) {
         const uploadMessage = daysCount > 1 ? `${daysCount} days uploaded` : 'Uploaded';
         progressDialog.updateStepStatus(accountId, 'uploadBalance', 'success', uploadMessage);
 
-        // Extract and display balance change information (must happen before saveLastUploadDate)
-        const balanceChange = extractCanadaLifeBalanceChange(accountId, historicalData);
+        // Extract and display balance change information (must happen before saving lastSyncBalance)
+        const balanceChange = extractCanadaLifeBalanceChange(accountId, latestBalance);
         if (balanceChange) {
           progressDialog.updateBalanceChange(accountId, { ...balanceChange, accountType: 'investment' });
         }
+      }
+
+      // Persist current balance for next sync's diff display
+      if (!isNaN(latestBalance)) {
+        accountService.updateAccountInList(INTEGRATIONS.CANADALIFE, accountId, {
+          lastSyncBalance: latestBalance,
+        });
       }
     } else {
       // No business days in date range (e.g., weekend-only sync)

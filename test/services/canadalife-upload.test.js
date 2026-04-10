@@ -477,7 +477,7 @@ describe('Canada Life Upload Service', () => {
 
       const mockMonarchAccount = { id: 'monarch456', displayName: 'Balance Account' };
 
-      // Setup to exercise balance change extraction
+      // Setup to exercise balance change extraction via stored lastSyncBalance
       ensureMonarchAuthentication.mockResolvedValue(true);
       canadalife.loadCanadaLifeAccounts.mockResolvedValue([mockAccount]);
       utils.calculateFromDateWithLookback.mockReturnValue('2024-01-01');
@@ -485,12 +485,18 @@ describe('Canada Life Upload Service', () => {
       globalThis.GM_getValue.mockReturnValue(JSON.stringify(mockMonarchAccount));
       canadalife.loadAccountBalanceHistory.mockResolvedValue(mockHistoricalData);
       monarchApi.uploadBalance.mockResolvedValue(true);
-      utils.getLastUpdateDate.mockReturnValue('2024-01-10'); // This should match data
       stateManager.setAccount.mockImplementation(() => {});
+
+      // Mock accountService to return stored lastSyncBalance from previous sync
+      accountService.getAccountData.mockReturnValue({
+        lastSyncBalance: 9000.00,
+        lastSyncDate: '2024-01-10',
+        uploadedTransactions: [],
+      });
 
       await uploadAllCanadaLifeAccountsToMonarch();
 
-      // Verify balance change calculation was called
+      // Verify balance change calculation was called with stored balance
       expect(mockProgressDialog.updateBalanceChange).toHaveBeenCalledWith('acc456', expect.objectContaining({
         oldBalance: 9000.00,
         newBalance: 10000.50,
@@ -502,9 +508,9 @@ describe('Canada Life Upload Service', () => {
       expect(utils.debugLog).toHaveBeenCalledWith(expect.stringContaining('Balance change for Canada Life account acc456'));
     });
 
-    test('should extract balance change BEFORE saving last upload date (regression test)', async () => {
-      // This test verifies the fix for the bug where percentage change was always 0%
-      // because saveLastUploadDate was called before extractCanadaLifeBalanceChange
+    test('should extract balance change BEFORE saving lastSyncBalance (regression test)', async () => {
+      // This test verifies that balance change calculation reads the PREVIOUS lastSyncBalance
+      // before overwriting it with the new balance value
       const mockAccount = {
         agreementId: 'accOrderTest',
         LongNameEnglish: 'Order Test Account',
@@ -533,11 +539,11 @@ describe('Canada Life Upload Service', () => {
       monarchApi.uploadBalance.mockResolvedValue(true);
       stateManager.setAccount.mockImplementation(() => {});
 
-      // Mock getLastUpdateDate to return the PREVIOUS upload date (2024-01-12)
-      // This simulates having uploaded data before, and now uploading new data
-      utils.getLastUpdateDate.mockImplementation(() => {
-        callOrder.push('getLastUpdateDate');
-        return '2024-01-12';
+      // Mock accountService to return stored lastSyncBalance from previous sync
+      accountService.getAccountData.mockReturnValue({
+        lastSyncBalance: 133929.57,
+        lastSyncDate: '2024-01-12',
+        uploadedTransactions: [],
       });
 
       // Track when saveLastUploadDate is called
@@ -545,26 +551,31 @@ describe('Canada Life Upload Service', () => {
         callOrder.push('saveLastUploadDate');
       });
 
-      // Track when updateBalanceChange is called
+      // Track when updateBalanceChange is called (reads old balance)
       mockProgressDialog.updateBalanceChange.mockImplementation(() => {
         callOrder.push('updateBalanceChange');
       });
 
+      // Track when lastSyncBalance is persisted
+      accountService.updateAccountInList.mockImplementation((integrationId, accountId, updates) => {
+        if (updates?.lastSyncBalance !== undefined) {
+          callOrder.push('saveLastSyncBalance');
+        }
+        return true;
+      });
+
       await uploadAllCanadaLifeAccountsToMonarch();
 
-      // Verify the correct order: balance change extraction should happen BEFORE saving
-      // getLastUpdateDate is called during balance change extraction
-      // updateBalanceChange is called to display the result
-      // saveLastUploadDate is called to save the new date
-      const getLastUpdateIndex = callOrder.indexOf('getLastUpdateDate');
+      // Key assertion: balance change display happens BEFORE saving new lastSyncBalance
       const updateBalanceChangeIndex = callOrder.indexOf('updateBalanceChange');
+      const saveLastSyncBalanceIndex = callOrder.indexOf('saveLastSyncBalance');
       const saveLastUploadIndex = callOrder.indexOf('saveLastUploadDate');
 
-      expect(getLastUpdateIndex).not.toBe(-1);
       expect(updateBalanceChangeIndex).not.toBe(-1);
+      expect(saveLastSyncBalanceIndex).not.toBe(-1);
       expect(saveLastUploadIndex).not.toBe(-1);
 
-      // Key assertion: balance change must be extracted BEFORE saving the new date
+      expect(updateBalanceChangeIndex).toBeLessThan(saveLastSyncBalanceIndex);
       expect(updateBalanceChangeIndex).toBeLessThan(saveLastUploadIndex);
 
       // Verify the balance change was calculated correctly (not 0%)
@@ -574,11 +585,94 @@ describe('Canada Life Upload Service', () => {
         changePercent: expect.any(Number),
       }));
 
-      // Verify the change percent is NOT 0 (the bug would have caused 0%)
+      // Verify the change percent is NOT 0
       const updateBalanceChangeCall = mockProgressDialog.updateBalanceChange.mock.calls[0];
       const balanceChangeData = updateBalanceChangeCall[1];
       expect(balanceChangeData.changePercent).not.toBe(0);
       expect(balanceChangeData.changePercent).toBeCloseTo(0.063, 2); // ~0.063% change
+    });
+
+    test('should show no balance change on first sync (no stored lastSyncBalance)', async () => {
+      // First sync: no lastSyncBalance stored yet, so balance change should not be displayed
+      const mockAccount = {
+        agreementId: 'accFirstSync',
+        LongNameEnglish: 'First Sync Account',
+        EnglishShortName: 'FirstSync',
+      };
+
+      const mockHistoricalData = {
+        data: [
+          ['Date', 'Balance', 'Account Name'],
+          ['2024-01-15', '50000.00', 'First Sync Account'],
+        ],
+      };
+
+      ensureMonarchAuthentication.mockResolvedValue(true);
+      canadalife.loadCanadaLifeAccounts.mockResolvedValue([mockAccount]);
+      utils.calculateFromDateWithLookback.mockReturnValue('2024-01-01');
+      utils.debugLog.mockImplementation(() => {});
+      canadalife.loadAccountBalanceHistory.mockResolvedValue(mockHistoricalData);
+      monarchApi.uploadBalance.mockResolvedValue(true);
+      stateManager.setAccount.mockImplementation(() => {});
+
+      // First sync: no stored lastSyncBalance
+      accountService.getAccountData.mockReturnValue({
+        lastSyncBalance: null,
+        lastSyncDate: null,
+        uploadedTransactions: [],
+      });
+
+      await uploadAllCanadaLifeAccountsToMonarch();
+
+      // Balance change should NOT be displayed (no previous balance to compare)
+      expect(mockProgressDialog.updateBalanceChange).not.toHaveBeenCalled();
+
+      // But lastSyncBalance should still be persisted for next sync
+      expect(accountService.updateAccountInList).toHaveBeenCalledWith(
+        'canadalife',
+        'accFirstSync',
+        expect.objectContaining({ lastSyncBalance: 50000.00 }),
+      );
+    });
+
+    test('should correctly detect same-day re-sync balance change', async () => {
+      // Same-day re-sync: lastSyncBalance was stored earlier today, balance has changed
+      const mockAccount = {
+        agreementId: 'accResync',
+        LongNameEnglish: 'Resync Account',
+        EnglishShortName: 'Resync',
+      };
+
+      const mockHistoricalData = {
+        data: [
+          ['Date', 'Balance', 'Account Name'],
+          ['2024-01-15', '51000.00', 'Resync Account'], // Balance changed since morning sync
+        ],
+      };
+
+      ensureMonarchAuthentication.mockResolvedValue(true);
+      canadalife.loadCanadaLifeAccounts.mockResolvedValue([mockAccount]);
+      utils.calculateFromDateWithLookback.mockReturnValue('2024-01-14');
+      utils.debugLog.mockImplementation(() => {});
+      canadalife.loadAccountBalanceHistory.mockResolvedValue(mockHistoricalData);
+      monarchApi.uploadBalance.mockResolvedValue(true);
+      stateManager.setAccount.mockImplementation(() => {});
+
+      // Morning sync stored 50000, now balance is 51000
+      accountService.getAccountData.mockReturnValue({
+        lastSyncBalance: 50000.00,
+        lastSyncDate: '2024-01-15', // Same day!
+        uploadedTransactions: [],
+      });
+
+      await uploadAllCanadaLifeAccountsToMonarch();
+
+      // Balance change SHOULD be detected even on same-day re-sync
+      expect(mockProgressDialog.updateBalanceChange).toHaveBeenCalledWith('accResync', expect.objectContaining({
+        oldBalance: 50000.00,
+        newBalance: 51000.00,
+        changePercent: 2.0, // 2% increase
+      }));
     });
 
     test('should save uploaded transactions with actual transaction dates, not sync date (regression test)', async () => {
