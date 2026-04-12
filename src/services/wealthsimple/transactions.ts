@@ -28,7 +28,6 @@ import {
   convertToLocalDate,
   processCreditCardTransaction,
   filterSyncableTransactions,
-  getAutoMappingForSubType,
   resolveCategoriesForTransactions,
   type ProcessedTransaction,
 } from './transactionsHelpers';
@@ -36,26 +35,15 @@ import {
 import { fetchAndProcessInvestmentTransactions } from './transactionsInvestment';
 
 import {
-  formatTransactionIdForNotes,
   reconcilePendingTransactions,
   formatReconciliationMessage,
 } from './transactionsReconciliation';
-
-// Re-export helpers for consumers
-export {
-  collectEftTransferIds,
-  convertToLocalDate,
-  processCreditCardTransaction,
-  filterSyncableTransactions,
-  getAutoMappingForSubType,
-  resolveCategoriesForTransactions,
-};
 
 // Re-export investment processing
 export { fetchAndProcessInvestmentTransactions };
 
 // Re-export reconciliation
-export { formatTransactionIdForNotes, reconcilePendingTransactions, formatReconciliationMessage };
+export { reconcilePendingTransactions, formatReconciliationMessage };
 
 import type { ConsolidatedAccountBase } from '../../types/wealthsimple';
 
@@ -703,24 +691,6 @@ export async function fetchAndProcessCashTransactions(
   }
 }
 
-// ── Loan account placeholder ─────────────────────────────────────────────────
-
-/**
- * Placeholder for loan account transaction processing
- */
-export async function fetchAndProcessLoanTransactions(
-  consolidatedAccount: ConsolidatedAccount,
-  fromDate: string,
-  toDate: string,
-): Promise<ProcessedTransaction[]> {
-  debugLog('Loan account transaction processing not yet implemented', {
-    accountId: consolidatedAccount.wealthsimpleAccount.id,
-    fromDate,
-    toDate,
-  });
-  return [];
-}
-
 // ── Line of Credit transactions ──────────────────────────────────────────────
 
 /**
@@ -943,13 +913,3 @@ export async function fetchAndProcessTransactions(
   return fetchAndProcessInvestmentTransactions(consolidatedAccount, fromDate, toDate, options);
 }
 
-export default {
-  fetchAndProcessTransactions,
-  fetchAndProcessCreditCardTransactions,
-  fetchAndProcessCashTransactions,
-  fetchAndProcessLineOfCreditTransactions,
-  fetchAndProcessLoanTransactions,
-  fetchAndProcessInvestmentTransactions,
-  reconcilePendingTransactions,
-  formatReconciliationMessage,
-};

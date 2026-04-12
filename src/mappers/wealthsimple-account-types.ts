@@ -13,7 +13,7 @@ interface MonarchAccountTypeMapping {
  * Map Wealthsimple account types to human-readable display names
  * Used when generating default account names when user hasn't set a nickname
  */
-export const WEALTHSIMPLE_ACCOUNT_TYPE_DISPLAY_NAMES = {
+const WEALTHSIMPLE_ACCOUNT_TYPE_DISPLAY_NAMES = {
   // Investment accounts - Managed
   MANAGED_RESP_FAMILY: 'Managed Family RESP',
   MANAGED_RESP: 'Managed RESP',
@@ -43,7 +43,7 @@ export const WEALTHSIMPLE_ACCOUNT_TYPE_DISPLAY_NAMES = {
 /**
  * Map Wealthsimple account types to Monarch type/subtype
  */
-export const WEALTHSIMPLE_TO_MONARCH_ACCOUNT_TYPES: Record<string, MonarchAccountTypeMapping> = {
+const WEALTHSIMPLE_TO_MONARCH_ACCOUNT_TYPES: Record<string, MonarchAccountTypeMapping> = {
   // Investment accounts - Managed
   MANAGED_RESP_FAMILY: { type: 'brokerage', subtype: 'resp' },
   MANAGED_RESP: { type: 'brokerage', subtype: 'resp' },
@@ -78,13 +78,6 @@ export function getMonarchAccountTypeMapping(wealthsimpleType: string): MonarchA
 }
 
 /**
- * Check if a Wealthsimple account type has a known mapping
- */
-export function hasAccountTypeMapping(wealthsimpleType: string): boolean {
-  return wealthsimpleType in WEALTHSIMPLE_TO_MONARCH_ACCOUNT_TYPES;
-}
-
-/**
  * Get human-readable display name for a Wealthsimple account type
  * Falls back to the raw type if no mapping exists
  */
@@ -92,10 +85,3 @@ export function getAccountTypeDisplayName(wealthsimpleType: string): string {
   return (WEALTHSIMPLE_ACCOUNT_TYPE_DISPLAY_NAMES as Record<string, string>)[wealthsimpleType] || wealthsimpleType;
 }
 
-export default {
-  WEALTHSIMPLE_ACCOUNT_TYPE_DISPLAY_NAMES,
-  WEALTHSIMPLE_TO_MONARCH_ACCOUNT_TYPES,
-  getMonarchAccountTypeMapping,
-  hasAccountTypeMapping,
-  getAccountTypeDisplayName,
-};

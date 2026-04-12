@@ -692,7 +692,7 @@ async function processAndUploadOrders(accountId, accountName, fromDate, monarchA
  * @param {Object} progressDialog - Optional progress dialog
  * @returns {Promise<Object>} Upload result
  */
-export async function processAndUploadTransactions(accountId, accountName, fromDate, progressDialog = null) {
+async function processAndUploadTransactions(accountId, accountName, fromDate, progressDialog = null) {
   try {
     debugLog(`Starting transaction processing for account ${accountName} (${accountId})`);
 

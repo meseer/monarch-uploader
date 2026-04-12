@@ -54,7 +54,7 @@ export class PositionsError extends Error {
  * Build Questrade HoldingsSyncHooks.
  * Provides QT-specific data extraction for the generic holdings sync orchestrator.
  */
-export function buildQuestradeHoldingsHooks(): HoldingsSyncHooks {
+function buildQuestradeHoldingsHooks(): HoldingsSyncHooks {
   return {
     getPositionKey: (position) =>
       (position as Record<string, unknown>).securityUuid as string

@@ -23,7 +23,7 @@ export const INTEGRATIONS = {
  * Favicon domains for each integration
  * Used to fetch logos via Google Favicon API
  */
-export const FAVICON_DOMAINS: Record<string, string> = {
+const FAVICON_DOMAINS: Record<string, string> = {
   [INTEGRATIONS.WEALTHSIMPLE]: 'wealthsimple.com',
   [INTEGRATIONS.QUESTRADE]: 'questrade.com',
   [INTEGRATIONS.CANADALIFE]: 'canadalife.com',
@@ -46,7 +46,7 @@ export const ACCOUNT_SETTINGS = {
 /**
  * Capabilities configuration for each integration
  */
-export interface LegacyIntegrationCapabilities {
+interface LegacyIntegrationCapabilities {
   id: string;
   displayName: string;
   accountKeyName: string;
@@ -327,7 +327,7 @@ export function getCategoryMappingsConfig(integrationId: string): { storageKey: 
  * Get favicon domain for an integration.
  * Checks hardcoded FAVICON_DOMAINS first, then falls back to registry manifest.
  */
-export function getFaviconDomain(integrationId: string): string | null {
+function getFaviconDomain(integrationId: string): string | null {
   if (FAVICON_DOMAINS[integrationId]) {
     return FAVICON_DOMAINS[integrationId];
   }
@@ -347,21 +347,3 @@ export function getFaviconUrl(integrationId: string, size: number = 128): string
   return `https://www.google.com/s2/favicons?domain=${domain}&sz=${size}`;
 }
 
-export default {
-  INTEGRATIONS,
-  ACCOUNT_SETTINGS,
-  INTEGRATION_CAPABILITIES,
-  FAVICON_DOMAINS,
-  getCapabilities,
-  hasCapability,
-  hasSetting,
-  getSettingDefault,
-  getDefaultSettings,
-  getAccountKeyName,
-  getIntegrationsWithCapability,
-  getIntegrationsWithSetting,
-  getDisplayName,
-  getFaviconDomain,
-  getFaviconUrl,
-  getCategoryMappingsConfig,
-};

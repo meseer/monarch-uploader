@@ -236,7 +236,3 @@ export async function ensureAllAccountMappings(accounts, progressDialog = null) 
   return true;
 }
 
-export default {
-  ensureAccountMapping,
-  ensureAllAccountMappings,
-};

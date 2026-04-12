@@ -40,7 +40,7 @@ interface AccountContext {
  * @param options - Button options
  * @returns The created button
  */
-export function createButton(text: string, onClick: ((event: MouseEvent) => void) | null, options: ButtonOptions = {}): HTMLButtonElement {
+function createButton(text: string, onClick: ((event: MouseEvent) => void) | null, options: ButtonOptions = {}): HTMLButtonElement {
   const button = document.createElement('button');
   button.textContent = text;
   button.style.cssText = `
@@ -94,7 +94,7 @@ export function createButton(text: string, onClick: ((event: MouseEvent) => void
  * @param value - Default value
  * @returns Container with label and date picker
  */
-export function createDatePicker(id: string, label: string, value: string): HTMLDivElement {
+function createDatePicker(id: string, label: string, value: string): HTMLDivElement {
   const container = document.createElement('div');
   container.style.cssText = 'margin: 10px 0; display: flex; flex-direction: column; gap: 5px;';
 
@@ -118,7 +118,7 @@ export function createDatePicker(id: string, label: string, value: string): HTML
  * Creates a button group container
  * @returns Button group container
  */
-export function createButtonGroup(): HTMLDivElement {
+function createButtonGroup(): HTMLDivElement {
   const container = document.createElement('div');
   container.className = 'balance-uploader-button-group';
   container.style.cssText = 'margin: 10px 0; display: flex; flex-wrap: wrap; gap: 5px;';
@@ -131,7 +131,7 @@ export function createButtonGroup(): HTMLDivElement {
  * @param fallbackAccountName - Fallback account name if state is not available
  * @returns Upload button element
  */
-export function createSingleAccountUploadButton(fallbackAccountId: string, fallbackAccountName: string): HTMLButtonElement {
+function createSingleAccountUploadButton(fallbackAccountId: string, fallbackAccountName: string): HTMLButtonElement {
   // Create button with initial text
   const button = createButton(`Upload ${fallbackAccountName} to Monarch`, async () => {
     // Check Monarch authentication before proceeding
@@ -230,7 +230,7 @@ export function createSingleAccountUploadButton(fallbackAccountId: string, fallb
  * @param accounts - List of accounts to process
  * @returns Bulk upload button
  */
-export function createBulkUploadButton(accounts: unknown[]): HTMLButtonElement {
+function createBulkUploadButton(accounts: unknown[]): HTMLButtonElement {
   if (!accounts || accounts.length === 0) {
     return createButton('No Accounts Available', null, { disabled: true });
   }

@@ -22,16 +22,9 @@ import {
   createSection,
   showConfirmDialog,
   renderCategoryMappingsSectionIfEnabled,
-  renderCategoryMappingsSection,
   createToggleSwitch,
-  addAccountLogoFallback,
-  formatLastUpdateDate,
-  renderDebugJsonSection,
 } from './settingsModalHelpers';
 import {
-  renderAccountSettingsSection,
-  renderTransactionsManagementSection,
-  renderHoldingsMappingsSection,
   createGenericAccountCards,
 } from './settingsModalAccountCards';
 
@@ -790,27 +783,3 @@ export function showSettingsModal(): void {
   document.body.appendChild(modal);
 }
 
-// Re-export sub-module functions for backward compatibility
-export {
-  createGenericAccountCards,
-  checkInstitutionConnection,
-  createLookbackPeriodSection,
-  sortWealthsimpleAccounts,
-  createSection,
-  showConfirmDialog,
-  renderCategoryMappingsSectionIfEnabled,
-  renderCategoryMappingsSection,
-  createToggleSwitch,
-  addAccountLogoFallback,
-  formatLastUpdateDate,
-  renderDebugJsonSection,
-  renderAccountSettingsSection,
-  renderTransactionsManagementSection,
-  renderHoldingsMappingsSection,
-};
-
-export default {
-  createSettingsModal,
-  showSettingsModal,
-  createGenericAccountCards,
-};

@@ -60,7 +60,7 @@ interface ManagedPosition {
   type?: string;
 }
 
-export type WealthsimplePosition = SelfDirectedPosition | ManagedPosition;
+type WealthsimplePosition = SelfDirectedPosition | ManagedPosition;
 
 interface HoldingMapping {
   securityId?: string;
@@ -68,7 +68,7 @@ interface HoldingMapping {
   symbol?: string;
 }
 
-export interface PositionResult {
+interface PositionResult {
   success: boolean;
   positionsProcessed: number;
   positionsSkipped: number;
@@ -77,7 +77,7 @@ export interface PositionResult {
   error: string | null;
 }
 
-export interface CashPositionResult {
+interface CashPositionResult {
   success: boolean;
   cashSynced: number;
   cashSkipped: number;
@@ -138,7 +138,7 @@ const INVESTMENT_ACCOUNT_TYPES = new Set([
 /**
  * Check if an account type is a managed account
  */
-export function isManagedAccount(accountType: string): boolean {
+function isManagedAccount(accountType: string): boolean {
   return MANAGED_ACCOUNT_TYPES.has(accountType);
 }
 
@@ -169,7 +169,7 @@ export class PositionsError extends Error {
  * For options: use osiSymbol with whitespace removed
  * For stocks/ETFs: use stock symbol
  */
-export function getSecuritySymbolForLookup(position: WealthsimplePosition): string | null {
+function getSecuritySymbolForLookup(position: WealthsimplePosition): string | null {
   const security = (position as SelfDirectedPosition).security;
   if (!security) {
     return null;
@@ -263,7 +263,7 @@ function getPositionDisplaySymbol(position: WealthsimplePosition): string | null
  * Build Wealthsimple HoldingsSyncHooks.
  * Provides WS-specific data extraction for the generic holdings sync orchestrator.
  */
-export function buildWealthsimpleHoldingsHooks(): HoldingsSyncHooks {
+function buildWealthsimpleHoldingsHooks(): HoldingsSyncHooks {
   return {
     getPositionKey: (position) => getPositionSecurityKey(position as unknown as WealthsimplePosition),
 
@@ -326,7 +326,7 @@ export function buildWealthsimpleHoldingsHooks(): HoldingsSyncHooks {
  * - MANAGED_* accounts: Uses FetchAccountManagedPortfolioPositions API
  * - SELF_DIRECTED_* accounts: Uses FetchIdentityPositions API
  */
-export async function fetchPositions(accountId: string, accountType: string | null = null): Promise<WealthsimplePosition[]> {
+async function fetchPositions(accountId: string, accountType: string | null = null): Promise<WealthsimplePosition[]> {
   try {
     debugLog(`Fetching positions for account ${accountId} (type: ${accountType})`);
 
@@ -464,7 +464,7 @@ export async function resolveOrCreateHolding(
 /**
  * Sync position data to Monarch holding (delegates to shared holdingsSync)
  */
-export async function syncPositionToHolding(holdingId: string, position: WealthsimplePosition): Promise<void> {
+async function syncPositionToHolding(holdingId: string, position: WealthsimplePosition): Promise<void> {
   const { syncPositionToHolding: genericSync } = await import('../common/holdingsSync');
   const hooks = buildWealthsimpleHoldingsHooks();
   return genericSync(holdingId, position as unknown as Record<string, unknown>, hooks);

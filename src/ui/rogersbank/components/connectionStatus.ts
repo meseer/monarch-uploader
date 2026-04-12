@@ -154,7 +154,3 @@ export function updateCredentialsDisplay(container: HTMLElement, credentials: Ro
     .join('');
 }
 
-export default {
-  createConnectionStatus,
-  updateCredentialsDisplay,
-};

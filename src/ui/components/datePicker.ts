@@ -242,7 +242,7 @@ export function showDatePicker(
 /**
  * Show date picker modal with options (including reconstruction checkbox)
  */
-export function showDatePickerWithOptions(
+function showDatePickerWithOptions(
   defaultDate: string,
   promptText: string,
   options: DatePickerWithOptionsConfig = {},

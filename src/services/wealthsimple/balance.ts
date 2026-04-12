@@ -12,7 +12,7 @@ import wealthsimpleApi from '../../api/wealthsimple';
 import monarchApi from '../../api/monarch';
 import toast from '../../ui/toast';
 
-export type { CurrentBalance, BalanceCheckpoint };
+;
 
 /**
  * Alias for the shared ConsolidatedAccountBase type.
@@ -21,7 +21,7 @@ export type { CurrentBalance, BalanceCheckpoint };
  */
 type ConsolidatedAccount = ConsolidatedAccountBase;
 
-export interface BalanceHistory {
+interface BalanceHistory {
   date: string;
   amount: number;
 }
@@ -450,7 +450,7 @@ function mergeBalanceData(olderData: BalanceHistory[], newerData: BalanceHistory
  * @param toDate - End date in YYYY-MM-DD format
  * @returns Array of balance history objects
  */
-export async function fetchBalanceHistory(
+async function fetchBalanceHistory(
   accountId: string,
   currency: string,
   fromDate: string,
@@ -816,17 +816,3 @@ export async function processAndUploadBalance(
   }
 }
 
-export default {
-  fetchBalanceHistory,
-  processBalanceData,
-  getDefaultDateRange,
-  uploadBalanceToMonarch,
-  processAndUploadBalance,
-  accountNeedsBalanceReconstruction,
-  reconstructBalanceFromTransactions,
-  reconstructBalanceFromCheckpoint,
-  calculateCheckpointDate,
-  getBalanceAtDate,
-  createCurrentBalanceOnly,
-  BalanceError,
-};

@@ -6,7 +6,7 @@
 
 import { debugLog } from '../core/utils';
 
-export type Theme = 'light' | 'dark';
+type Theme = 'light' | 'dark';
 
 interface ThemeVariables {
   [key: string]: string;

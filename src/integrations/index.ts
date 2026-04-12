@@ -38,4 +38,3 @@ export const AVAILABLE_INTEGRATIONS: IntegrationModule[] = enabled === 'all'
   ? Object.values(ALL)
   : (enabled as string[]).map((id) => ALL[id]).filter(Boolean);
 
-export default AVAILABLE_INTEGRATIONS;

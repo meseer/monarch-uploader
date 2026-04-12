@@ -6,7 +6,7 @@
 import { UI } from '../core/config';
 import { debugLog } from '../core/utils';
 
-export type ToastType = 'debug' | 'info' | 'warning' | 'error' | string;
+type ToastType = 'debug' | 'info' | 'warning' | 'error' | string;
 
 const LOG_LEVELS: Record<string, number> = {
   debug: 0,
@@ -84,7 +84,7 @@ export function ensureToastContainer(): HTMLElement {
 /**
  * Remove a toast element with slide-out animation
  */
-export function removeToast(toastElement: HTMLElement): void {
+function removeToast(toastElement: HTMLElement): void {
   if (!toastElement || !toastElement.parentElement) return;
 
   toastElement.style.animation = 'slideOut 0.3s ease-in';

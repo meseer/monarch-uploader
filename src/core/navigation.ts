@@ -192,4 +192,4 @@ class NavigationManager {
 const navigationManager = new NavigationManager();
 
 export default navigationManager;
-export { NavigationManager };
+;

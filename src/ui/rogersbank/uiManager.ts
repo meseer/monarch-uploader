@@ -299,14 +299,6 @@ export async function initRogersBankUI(): Promise<void> {
   }
 }
 
-export function startNavigationMonitoring(): void {
-  navigationManager.startMonitoring();
-}
-
-export function stopNavigationMonitoring(): void {
-  navigationManager.stopMonitoring();
-}
-
 /**
  * Initialize UI components once container is available
  */
@@ -443,18 +435,3 @@ function updateConnectionStatus(connectionStatus: HTMLElement): void {
   }
 }
 
-export function refreshRogersBankUI(): void {
-  const connectionStatus = document.querySelector('#rogersbank-balance-uploader-container .connection-status-container') as HTMLElement | null;
-  if (connectionStatus) {
-    updateConnectionStatus(connectionStatus);
-  }
-}
-
-export default {
-  initRogersBankUI,
-  createUIContainer,
-  updateConnectionStatus,
-  refreshRogersBankUI,
-  startNavigationMonitoring,
-  stopNavigationMonitoring,
-};

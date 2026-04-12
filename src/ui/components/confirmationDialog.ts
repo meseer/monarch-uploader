@@ -146,6 +146,3 @@ export async function showConfirmationDialog(
   });
 }
 
-export default {
-  showConfirmationDialog,
-};

@@ -21,8 +21,6 @@ import {
 // ============================================================================
 
 import type {
-  MonarchCategory as SharedMonarchCategory,
-  CategoryGroup,
   CategoryGroupRef,
   SimilarityInfo,
 } from '../types/monarch';
@@ -67,7 +65,7 @@ interface ScoredCategoryGroup {
  * Return type for calculateAllCategorySimilarities.
  * Extends SimilarityInfo so callers can use it directly without casting.
  */
-export interface CategorySimilarityData extends SimilarityInfo {
+interface CategorySimilarityData extends SimilarityInfo {
   bankCategory: string;
   categoryGroups: ScoredCategoryGroup[];
   totalCategories: number;
@@ -78,9 +76,6 @@ interface CategoryMatchResult {
   bestMatch: string;
   score: number;
 }
-
-// Re-export shared types for consumers that import from this module
-export type { SharedMonarchCategory, CategoryGroup, SimilarityInfo };
 
 // ============================================================================
 // ROGERS BANK CATEGORY MAPPINGS

@@ -59,7 +59,7 @@ export function checkMonarchAuth(): { authenticated: boolean; message: string; t
  * Set up Monarch token capture by monitoring localStorage
  * Should be called when on Monarch's site
  */
-export function setupMonarchTokenCapture(): void {
+function setupMonarchTokenCapture(): void {
   if (window.location.hostname.includes('monarch.com')) {
     debugLog('Running on Monarch site. Setting up token capture.');
 
@@ -90,7 +90,7 @@ export function setupMonarchTokenCapture(): void {
  * Save a token for Monarch
  * @param {string} token - Token to save
  */
-export function saveMonarchToken(token: string): void {
+function saveMonarchToken(token: string): void {
   if (!token) return;
 
   try {

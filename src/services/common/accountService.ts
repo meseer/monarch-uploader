@@ -733,7 +733,7 @@ export function getMonarchAccountMapping(integrationId: string, accountId: strin
  * @param {string} accountId - Account ID
  * @returns {number} New sync count
  */
-export function incrementSyncCount(integrationId: string, accountId: string): number {
+function incrementSyncCount(integrationId: string, accountId: string): number {
   const accountData = getAccountData(integrationId, accountId);
   if (!accountData) {
     debugLog(`Cannot increment sync count: account ${accountId} not found`);
@@ -757,7 +757,7 @@ export function incrementSyncCount(integrationId: string, accountId: string): nu
  * @param {string} accountId - Account ID
  * @returns {number} Sync count
  */
-export function getSyncCount(integrationId: string, accountId: string): number {
+function getSyncCount(integrationId: string, accountId: string): number {
   const accountData = getAccountData(integrationId, accountId);
   return (accountData?.successfulSyncCount as number) || 0;
 }
@@ -769,7 +769,7 @@ export function getSyncCount(integrationId: string, accountId: string): number {
  * @param {string} accountId - Account ID
  * @returns {boolean} True if ready for cleanup
  */
-export function isReadyForLegacyCleanup(integrationId: string, accountId: string): boolean {
+function isReadyForLegacyCleanup(integrationId: string, accountId: string): boolean {
   const syncCount = getSyncCount(integrationId, accountId);
   return syncCount >= MIN_SYNCS_BEFORE_CLEANUP;
 }
@@ -782,7 +782,7 @@ export function isReadyForLegacyCleanup(integrationId: string, accountId: string
  * @param {string} accountId - Specific account ID to clean up legacy data for
  * @returns {Object} Cleanup result {cleaned: boolean, keysDeleted: number, keys: string[]}
  */
-export function cleanupLegacyStorage(integrationId: string, accountId: string): { cleaned: boolean; keysDeleted: number; keys: string[]; reason?: string } {
+function cleanupLegacyStorage(integrationId: string, accountId: string): { cleaned: boolean; keysDeleted: number; keys: string[]; reason?: string } {
   try {
     // Safety check: only clean up if consolidated data exists
     const accountData = getAccountData(integrationId, accountId);
@@ -880,7 +880,7 @@ export function cleanupLegacyStorage(integrationId: string, accountId: string): 
  * @param {string} integrationId - Integration identifier
  * @returns {Object} Cleanup result {cleaned: boolean, totalKeysDeleted: number, accountsProcessed: number}
  */
-export function cleanupAllLegacyStorage(integrationId: string): { cleaned: boolean; totalKeysDeleted: number; accountsProcessed: number; keys?: string[]; reason?: string } {
+function cleanupAllLegacyStorage(integrationId: string): { cleaned: boolean; totalKeysDeleted: number; accountsProcessed: number; keys?: string[]; reason?: string } {
   try {
     const accounts = getAccounts(integrationId);
     const accountKeyName = getAccountKeyName(integrationId);
@@ -972,7 +972,7 @@ function normalizeAllHoldingsMappings(holdingsMappings: Record<string, unknown>)
  * @param {string} accountId - Account ID
  * @returns {Object} Mappings object { sourceSecurityKey: { securityId, holdingId, symbol } }
  */
-export function getHoldingsMappings(integrationId: string, accountId: string): Record<string, { securityId: string | null; holdingId: string | null; symbol: string | null }> {
+function getHoldingsMappings(integrationId: string, accountId: string): Record<string, { securityId: string | null; holdingId: string | null; symbol: string | null }> {
   const accountData = getAccountData(integrationId, accountId);
   if (!accountData || !accountData.holdingsMappings) {
     debugLog(`[accountService.getHoldingsMappings] No holdings mappings for ${integrationId}/${accountId}`);
@@ -991,7 +991,7 @@ export function getHoldingsMappings(integrationId: string, accountId: string): R
  * @param {string} sourceSecurityKey - Source security key/ID
  * @returns {Object|null} Mapping data { securityId, holdingId, symbol } or null
  */
-export function getHoldingMapping(integrationId: string, accountId: string, sourceSecurityKey: string): { securityId: string | null; holdingId: string | null; symbol: string | null } | null {
+function getHoldingMapping(integrationId: string, accountId: string, sourceSecurityKey: string): { securityId: string | null; holdingId: string | null; symbol: string | null } | null {
   const mappings = getHoldingsMappings(integrationId, accountId);
   const mapping = mappings[sourceSecurityKey];
   if (mapping) {
@@ -1009,7 +1009,7 @@ export function getHoldingMapping(integrationId: string, accountId: string, sour
  * @param {Object} mappingData - Mapping data { securityId, holdingId, symbol }
  * @returns {boolean} Success status
  */
-export function saveHoldingMapping(integrationId: string, accountId: string, sourceSecurityKey: string, mappingData: Record<string, unknown>): boolean {
+function saveHoldingMapping(integrationId: string, accountId: string, sourceSecurityKey: string, mappingData: Record<string, unknown>): boolean {
   try {
     const accountData = getAccountData(integrationId, accountId);
     if (!accountData) {
@@ -1051,7 +1051,7 @@ export function saveHoldingMapping(integrationId: string, accountId: string, sou
  * @param {string} sourceSecurityKey - Source security key/ID
  * @returns {boolean} Success status
  */
-export function deleteHoldingMapping(integrationId: string, accountId: string, sourceSecurityKey: string): boolean {
+function deleteHoldingMapping(integrationId: string, accountId: string, sourceSecurityKey: string): boolean {
   try {
     const accountData = getAccountData(integrationId, accountId);
     if (!accountData) {
@@ -1088,7 +1088,7 @@ export function deleteHoldingMapping(integrationId: string, accountId: string, s
  * @param {string} accountId - Account ID
  * @returns {boolean} Success status
  */
-export function clearHoldingsMappings(integrationId: string, accountId: string): boolean {
+function clearHoldingsMappings(integrationId: string, accountId: string): boolean {
   try {
     const success = updateAccountInList(integrationId, accountId, {
       holdingsMappings: {},

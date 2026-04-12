@@ -182,7 +182,7 @@ export function markAccountAsClosed(accountId) {
  * Get count of active accounts for sync (excludes closed accounts)
  * @returns {Promise<number>} Count of active accounts
  */
-export async function getActiveAccountCount() {
+async function getActiveAccountCount() {
   const accounts = await getAccountsForSync({ includeClosed: false });
   return accounts.length;
 }

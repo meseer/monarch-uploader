@@ -74,7 +74,7 @@ function cleanSystemNotesFromNotes(notes: string | null | undefined): string {
  * Replaces "Upcoming dividend on {symbol}" with "Dividend on {symbol}"
  * so the notes reflect the settled state.
  */
-export function updateSettledDividendNotes(notes: string): string {
+function updateSettledDividendNotes(notes: string): string {
   return notes.replace(/^Upcoming dividend on /m, 'Dividend on ');
 }
 

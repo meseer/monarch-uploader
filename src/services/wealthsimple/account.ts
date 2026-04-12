@@ -844,14 +844,3 @@ export async function syncCreditLimit(
   }
 }
 
-export default {
-  resolveWealthsimpleAccountMapping,
-  uploadWealthsimpleBalance,
-  uploadWealthsimpleTransactions,
-  getWealthsimpleAccounts,
-  updateAccountInList,
-  markAccountAsSkipped,
-  isAccountSkipped,
-  syncAccountListWithAPI,
-  syncCreditLimit,
-};

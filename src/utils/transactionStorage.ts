@@ -24,7 +24,7 @@ export interface StoredTransaction {
 }
 
 /** Retention settings for transaction storage */
-export interface RetentionSettings {
+interface RetentionSettings {
   days: number;
   count: number;
 }
@@ -185,11 +185,3 @@ export function getTransactionIdsFromArray(transactions: unknown[] | null | unde
 }
 
 // Export all functions
-export default {
-  // Pure logic functions for consolidated account storage
-  getRetentionSettingsFromAccount,
-  migrateLegacyTransactions,
-  applyRetentionLimits,
-  mergeAndRetainTransactions,
-  getTransactionIdsFromArray,
-};

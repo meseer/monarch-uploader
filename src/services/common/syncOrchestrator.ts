@@ -677,7 +677,3 @@ export async function prepareAndSyncAccount({
   });
 }
 
-export default {
-  syncAccount,
-  prepareAndSyncAccount,
-};

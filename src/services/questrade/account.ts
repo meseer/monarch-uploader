@@ -162,7 +162,7 @@ export async function processAccountBalanceHistory(accountId, accountName, fromD
  * Bulk process multiple accounts
  * @returns {Promise<Object>} Results with success and fail counts
  */
-export async function bulkProcessAccounts() {
+async function bulkProcessAccounts() {
   // Delegate to balance service comprehensive upload function
   return balanceService.uploadAllAccountsToMonarch();
 }

@@ -75,7 +75,7 @@ export function createGMHttpClient(): HttpClient {
 }
 
 /** Mock HTTP client with request recording for tests */
-export interface MockHttpClient extends HttpClient {
+interface MockHttpClient extends HttpClient {
   requests: HttpRequestOptions[];
   setHandler(newHandler: (request: HttpRequestOptions) => HttpResponse | Promise<HttpResponse>): void;
 }
@@ -117,7 +117,3 @@ export function createMockHttpClient(options: {
   };
 }
 
-export default {
-  createGMHttpClient,
-  createMockHttpClient,
-};

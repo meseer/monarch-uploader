@@ -149,8 +149,3 @@ export function createUploadButton({ isAuthenticated, institutionName, onUploadC
   return container;
 }
 
-export default {
-  createUploadButton,
-  createStyledButton,
-  darkenColor,
-};

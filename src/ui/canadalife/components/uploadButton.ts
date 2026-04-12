@@ -652,7 +652,3 @@ export function createCanadaLifeUploadButton(): HTMLDivElement {
   return container;
 }
 
-export default {
-  createCanadaLifeButton,
-  createCanadaLifeUploadButton,
-};

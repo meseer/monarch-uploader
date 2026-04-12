@@ -495,6 +495,3 @@ function createModalOverlay(onClickOutside: (() => void) | null): HTMLDivElement
   return overlay;
 }
 
-export default {
-  showMonarchSecuritySelector,
-};

@@ -1349,10 +1349,3 @@ export async function uploadTransactionHistory(canadalifeAccount, startDate: str
   }
 }
 
-export default {
-  uploadAllCanadaLifeAccountsToMonarch,
-  uploadCanadaLifeAccountWithDateRange,
-  uploadTransactionHistory,
-  convertCanadaLifeDataToCSV,
-  CanadaLifeUploadError,
-};

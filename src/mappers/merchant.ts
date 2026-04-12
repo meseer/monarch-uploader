@@ -159,7 +159,7 @@ function transformDoorDash(merchantName: string): { transformed: string; matched
   return { transformed, matched: true };
 }
 
-export interface MerchantMappingOptions {
+interface MerchantMappingOptions {
   stripStoreNumbers?: boolean;
 }
 
@@ -258,8 +258,3 @@ export function applyMerchantMappingBatch(transactions: Record<string, unknown>[
   }));
 }
 
-export default {
-  applyMerchantMapping,
-  applyMerchantMappingBatch,
-  toTitleCase,
-};

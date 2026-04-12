@@ -210,9 +210,3 @@ export function migrateAllLegacyStorage(): number {
   return totalDeleted;
 }
 
-export default {
-  migrateAllLegacyStorage,
-  migrateRogersBankAuth,
-  migrateLookbackDays,
-  migrateCategoryMappings,
-};

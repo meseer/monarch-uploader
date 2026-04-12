@@ -3,9 +3,6 @@
  * This file will gradually replace inline constants in the original script
  */
 
-// Debug settings
-export const DEBUG_LOG = true;
-
 /**
  * Get the Monarch domain
  */
@@ -174,14 +171,3 @@ export const WEALTHSIMPLE_UI = {
 } as const;
 
 // Default export with all config values
-export default {
-  DEBUG_LOG,
-  API,
-  STORAGE,
-  TRANSACTION_RETENTION_DEFAULTS,
-  ACCOUNT_STATUS,
-  COLORS,
-  LOGO_CLOUDINARY_IDS,
-  UI,
-  WEALTHSIMPLE_UI,
-};
