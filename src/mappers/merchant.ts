@@ -225,6 +225,17 @@ export function applyMerchantMapping(merchantName: string, options: MerchantMapp
     });
   }
 
+  // Rule 3b: Transform Coinbase variants to standardized name
+  // Matches merchant names starting with "Coinbase" followed by transaction ref codes (e.g., "COINBASE RTL-KQP9WV9C")
+  if (/^coinbase/i.test(transformed)) {
+    const originalCoinbase = transformed;
+    transformed = 'Coinbase';
+    debugLog('Transformed Coinbase variant to standardized name:', {
+      original: originalCoinbase,
+      transformed,
+    });
+  }
+
   // Rule 4: Strip store numbers (configurable)
   transformed = stripStoreNumbers(transformed, shouldStripStoreNumbers);
 

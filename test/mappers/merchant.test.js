@@ -77,6 +77,16 @@ describe('Merchant Mapping Utilities', () => {
       expect(applyMerchantMapping('NotSpotify Store')).toBe('Notspotify Store');
     });
 
+    test('should transform Coinbase variants to standardized name', () => {
+      expect(applyMerchantMapping('COINBASE RTL-KQP9WV9C')).toBe('Coinbase');
+      expect(applyMerchantMapping('Coinbase RTL-ABC12345')).toBe('Coinbase');
+      expect(applyMerchantMapping('coinbase rtl-xyz')).toBe('Coinbase');
+      expect(applyMerchantMapping('COINBASE')).toBe('Coinbase');
+      expect(applyMerchantMapping('Coinbase')).toBe('Coinbase');
+      // Should not transform merchants that don't start with Coinbase
+      expect(applyMerchantMapping('NotCoinbase Store')).toBe('Notcoinbase Store');
+    });
+
     test('should handle multiple spaces and clean them up', () => {
       expect(applyMerchantMapping('STARBUCKS    COFFEE   SHOP')).toBe('Starbucks Coffee Shop');
       expect(applyMerchantMapping('  WALMART  SUPERCENTER  ')).toBe('Walmart Supercenter');
