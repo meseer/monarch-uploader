@@ -1104,6 +1104,143 @@ describe('Rogers Bank Upload Service - Core - Error Handling, Balance Upload, Tr
     });
   });
 
+  describe('CASH Auto-Categorization', () => {
+    test('should auto-categorize CASH/CASH transactions as Cash & ATM', async () => {
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+
+      calculateFromDateWithLookback.mockReturnValue('2024-01-01');
+
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
+      monarchApi.uploadBalance.mockResolvedValue(true);
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          activitySummary: {
+            totalCount: 2,
+            activities: [
+              {
+                referenceNumber: 'REF_PURCHASE',
+                activityStatus: 'APPROVED',
+                activityClassification: 'PURCHASE',
+                transactionAmount: -100.00,
+                date: '2024-01-10',
+                amount: { value: '100.00', currency: 'CAD' },
+                merchant: { name: 'SOME MERCHANT', category: 'RETAIL' },
+              },
+              {
+                referenceNumber: 'REF_CASH',
+                activityStatus: 'APPROVED',
+                activityClassification: 'CASH',
+                activityCategory: 'CASH',
+                transactionAmount: -10.00,
+                date: '2024-01-12',
+                amount: { value: '10.00', currency: 'CAD' },
+                merchant: { name: 'COINBASE RTL-KQP9WV9C', categoryCode: '6051', category: 'MISCELLANEOUS' },
+              },
+            ],
+          },
+        }),
+      });
+
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({
+        categories: [{ name: 'Cash & ATM' }, { name: 'Shopping' }],
+      });
+      applyCategoryMapping.mockReturnValue('Shopping');
+
+      convertTransactionsToMonarchCSV.mockReturnValue('csv,data');
+      monarchApi.uploadTransactions.mockResolvedValue(true);
+
+      await uploadRogersBankToMonarch();
+
+      expect(convertTransactionsToMonarchCSV).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            activityClassification: 'CASH',
+            activityCategory: 'CASH',
+            resolvedMonarchCategory: 'Cash & ATM',
+          }),
+          expect.objectContaining({
+            activityClassification: 'PURCHASE',
+            resolvedMonarchCategory: 'Shopping',
+          }),
+        ]),
+        expect.any(String),
+        expect.any(Object),
+      );
+    });
+
+    test('should NOT auto-categorize when activityCategory differs from CASH', async () => {
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+
+      calculateFromDateWithLookback.mockReturnValue('2024-01-01');
+
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
+      monarchApi.uploadBalance.mockResolvedValue(true);
+
+      // A transaction with activityClassification=CASH but activityCategory=FRONT-END FEE
+      // should NOT be auto-categorized as Cash & ATM
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          activitySummary: {
+            totalCount: 1,
+            activities: [
+              {
+                referenceNumber: 'REF_NOT_CASH',
+                activityStatus: 'APPROVED',
+                activityClassification: 'CASH',
+                activityCategory: 'FRONT-END FEE',
+                transactionAmount: -5.00,
+                date: '2024-01-10',
+                amount: { value: '5.00', currency: 'CAD' },
+                merchant: { name: 'SOME FEE', category: 'MISCELLANEOUS' },
+              },
+            ],
+          },
+        }),
+      });
+
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({
+        categories: [{ name: 'Cash & ATM' }, { name: 'Shopping' }],
+      });
+      // Normal category mapping returns a resolved category
+      applyCategoryMapping.mockReturnValue('Shopping');
+
+      convertTransactionsToMonarchCSV.mockReturnValue('csv,data');
+      monarchApi.uploadTransactions.mockResolvedValue(true);
+
+      await uploadRogersBankToMonarch();
+
+      // Should use normal category mapping, NOT Cash & ATM
+      expect(convertTransactionsToMonarchCSV).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            activityClassification: 'CASH',
+            activityCategory: 'FRONT-END FEE',
+            resolvedMonarchCategory: 'Shopping',
+          }),
+        ]),
+        expect.any(String),
+        expect.any(Object),
+      );
+    });
+  });
+
   describe('FEES Auto-Categorization', () => {
     test('should auto-categorize FEES transactions as Financial Fees', async () => {
       getRogersBankCredentials.mockReturnValue({
