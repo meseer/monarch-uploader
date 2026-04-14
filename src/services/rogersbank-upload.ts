@@ -211,6 +211,10 @@ async function resolveCategoriesForTransactions(transactions, options: ResolveCa
     // and should never trigger manual category prompts
     if (transaction.activityClassification === 'FEES') return;
 
+    // Skip CASH/CASH transactions — they are auto-categorized as "Cash & ATM"
+    // Only when BOTH fields are 'CASH' (other activityCategory values use normal mapping)
+    if (transaction.activityClassification === 'CASH' && transaction.activityCategory === 'CASH') return;
+
     const bankCategory = transaction.merchant?.categoryDescription
       || transaction.merchant?.category
       || 'Uncategorized';
@@ -279,6 +283,13 @@ async function resolveCategoriesForTransactions(transactions, options: ResolveCa
     if (transaction.activityClassification === 'FEES') {
       debugLog(`Auto-categorizing FEES transaction as "Financial Fees": ${transaction.merchant?.name || 'N/A'}`);
       return { ...transaction, resolvedMonarchCategory: 'Financial Fees', originalBankCategory: bankCategory };
+    }
+
+    // Auto-categorize CASH transactions (e.g. cash advances, ATM withdrawals)
+    // Only when BOTH activityClassification AND activityCategory are 'CASH'
+    if (transaction.activityClassification === 'CASH' && transaction.activityCategory === 'CASH') {
+      debugLog(`Auto-categorizing CASH transaction as "Cash & ATM": ${transaction.merchant?.name || 'N/A'}`);
+      return { ...transaction, resolvedMonarchCategory: 'Cash & ATM', originalBankCategory: bankCategory };
     }
 
     const mappingResult = applyCategoryMapping(bankCategory, availableCategories);
