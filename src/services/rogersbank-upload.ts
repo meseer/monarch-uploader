@@ -70,6 +70,25 @@ function getEndOfCurrentMonth() {
 }
 
 /**
+ * Compute the deduplication key for a settled Rogers Bank transaction.
+ *
+ * Fee transactions (activityClassification === 'FEES') share the same
+ * referenceNumber as the purchase they are associated with. To prevent
+ * the fee from being incorrectly filtered as a duplicate of the purchase,
+ * we append a ':fee' suffix to the key.
+ *
+ * @param {Object} tx - Rogers Bank transaction
+ * @returns {string|undefined} Dedup key or undefined if none available
+ */
+function computeSettledDedupKey(tx) {
+  let key = tx.referenceNumber || tx.generatedId;
+  if (key && tx.activityClassification === 'FEES') {
+    key = `${key}:fee`;
+  }
+  return key;
+}
+
+/**
  * Filter out already uploaded settled transactions
  * Uses consolidated storage for uploaded transaction IDs
  * @param {Array} transactions - Array of settled transactions
@@ -89,13 +108,14 @@ function filterDuplicateSettledTransactions(transactions, accountId) {
   }
 
   const newTransactions = transactions.filter((transaction) => {
-    // Use referenceNumber as primary dedup key; fall back to generatedId
-    // for settled transactions that lack a referenceNumber (e.g. BALANCE PROTECTION)
-    const dedupKey = transaction.referenceNumber || transaction.generatedId;
+    // Use qualified dedup key (appends :fee suffix for FEES classification)
+    const dedupKey = computeSettledDedupKey(transaction);
     const isNew = !dedupKey || !uploadedRefs.has(dedupKey);
 
     if (isNew) {
       debugLog(`[DEDUP DEBUG] Settled transaction PASSED filter - dedupKey: "${dedupKey}", date: ${transaction.date}, merchant: ${transaction.merchant?.name || 'N/A'}`);
+    } else {
+      debugLog(`[DEDUP DEBUG] Settled transaction FILTERED (duplicate) - dedupKey: "${dedupKey}", date: ${transaction.date}, merchant: ${transaction.merchant?.name || 'N/A'}, classification: ${transaction.activityClassification || 'N/A'}`);
     }
 
     return isNew;
@@ -187,6 +207,10 @@ async function resolveCategoriesForTransactions(transactions, options: ResolveCa
   let skipAllTriggered = false;
 
   transactions.forEach((transaction) => {
+    // Skip FEES transactions — they are auto-categorized as "Financial Fees"
+    // and should never trigger manual category prompts
+    if (transaction.activityClassification === 'FEES') return;
+
     const bankCategory = transaction.merchant?.categoryDescription
       || transaction.merchant?.category
       || 'Uncategorized';
@@ -249,6 +273,14 @@ async function resolveCategoriesForTransactions(transactions, options: ResolveCa
     const bankCategory = transaction.merchant?.categoryDescription
       || transaction.merchant?.category
       || 'Uncategorized';
+
+    // Auto-categorize FEES transactions (e.g. cash advance fees, annual fees)
+    // activityClassification is a more reliable signal than merchant.category
+    if (transaction.activityClassification === 'FEES') {
+      debugLog(`Auto-categorizing FEES transaction as "Financial Fees": ${transaction.merchant?.name || 'N/A'}`);
+      return { ...transaction, resolvedMonarchCategory: 'Financial Fees', originalBankCategory: bankCategory };
+    }
+
     const mappingResult = applyCategoryMapping(bankCategory, availableCategories);
 
     // If skip all was triggered, unresolved categories get Uncategorized
@@ -878,8 +910,8 @@ export async function uploadRogersBankToMonarch() {
           transactionUploadSuccess = true;
 
           // Save settled transaction dedup keys to store
-          // Use referenceNumber when available, fall back to generatedId for ref-less transactions
-          const settledRefs = settledFilterResult.transactions.map((tx) => tx.referenceNumber || tx.generatedId).filter(Boolean);
+          // Use computeSettledDedupKey to apply :fee suffix for FEES classification
+          const settledRefs = settledFilterResult.transactions.map((tx) => computeSettledDedupKey(tx)).filter(Boolean);
           // Save pending transaction hash IDs to dedup store
           const pendingRefs = newPendingTx.map((tx) => tx.generatedId).filter(Boolean);
           const allRefs = [...settledRefs, ...pendingRefs];

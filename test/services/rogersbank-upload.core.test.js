@@ -916,4 +916,333 @@ describe('Rogers Bank Upload Service - Core - Error Handling, Balance Upload, Tr
     });
   });
 
+  describe('Fee Transaction Deduplication', () => {
+    test('should NOT filter fee transaction that shares referenceNumber with a purchase', async () => {
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+
+      calculateFromDateWithLookback.mockReturnValue('2024-01-01');
+
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
+      monarchApi.uploadBalance.mockResolvedValue(true);
+
+      // The purchase's referenceNumber is already in dedup store
+      const transactionStorageMock = jest.requireMock('../../src/utils/transactionStorage');
+      transactionStorageMock.getTransactionIdsFromArray.mockReturnValue(new Set(['SHARED_REF_123']));
+
+      // API returns both a purchase and a fee with the SAME referenceNumber
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          activitySummary: {
+            totalCount: 2,
+            activities: [
+              {
+                referenceNumber: 'SHARED_REF_123',
+                activityStatus: 'APPROVED',
+                activityClassification: 'PURCHASE',
+                transactionAmount: -100.00,
+                date: '2024-01-10',
+                amount: { value: '100.00', currency: 'CAD' },
+                merchant: { name: 'SOME MERCHANT', category: 'RETAIL' },
+              },
+              {
+                referenceNumber: 'SHARED_REF_123',
+                activityStatus: 'APPROVED',
+                activityClassification: 'FEES',
+                activityCategory: 'FRONT-END FEE',
+                transactionAmount: -5.00,
+                date: '2024-01-10',
+                amount: { value: '5.00', currency: 'CAD' },
+                merchant: { name: 'CASH ADVANCE FEE', category: 'MISCELLANEOUS' },
+              },
+            ],
+          },
+        }),
+      });
+
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [] });
+      applyCategoryMapping.mockReturnValue('Uncategorized');
+      convertTransactionsToMonarchCSV.mockReturnValue('csv,data');
+      monarchApi.uploadTransactions.mockResolvedValue(true);
+
+      const result = await uploadRogersBankToMonarch();
+
+      expect(result.success).toBe(true);
+      // The purchase (SHARED_REF_123) should be filtered as duplicate
+      // The fee (SHARED_REF_123:fee) should NOT be filtered
+      // So 1 transaction should be uploaded (the fee)
+      expect(convertTransactionsToMonarchCSV).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            activityClassification: 'FEES',
+            merchant: expect.objectContaining({ name: 'CASH ADVANCE FEE' }),
+          }),
+        ]),
+        expect.any(String),
+        expect.any(Object),
+      );
+      // The purchase should have been filtered out (1 skipped)
+      expect(result.message).toContain('skipped');
+    });
+
+    test('should filter fee transaction when its qualified key is already in dedup store', async () => {
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+
+      calculateFromDateWithLookback.mockReturnValue('2024-01-01');
+
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
+      monarchApi.uploadBalance.mockResolvedValue(true);
+
+      // Both the purchase AND the fee's qualified key are in dedup store
+      const transactionStorageMock = jest.requireMock('../../src/utils/transactionStorage');
+      transactionStorageMock.getTransactionIdsFromArray.mockReturnValue(
+        new Set(['SHARED_REF_123', 'SHARED_REF_123:fee']),
+      );
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          activitySummary: {
+            totalCount: 2,
+            activities: [
+              {
+                referenceNumber: 'SHARED_REF_123',
+                activityStatus: 'APPROVED',
+                activityClassification: 'PURCHASE',
+                transactionAmount: -100.00,
+                date: '2024-01-10',
+                amount: { value: '100.00', currency: 'CAD' },
+                merchant: { name: 'SOME MERCHANT', category: 'RETAIL' },
+              },
+              {
+                referenceNumber: 'SHARED_REF_123',
+                activityStatus: 'APPROVED',
+                activityClassification: 'FEES',
+                transactionAmount: -5.00,
+                date: '2024-01-10',
+                amount: { value: '5.00', currency: 'CAD' },
+                merchant: { name: 'CASH ADVANCE FEE', category: 'MISCELLANEOUS' },
+              },
+            ],
+          },
+        }),
+      });
+
+      const result = await uploadRogersBankToMonarch();
+
+      expect(result.success).toBe(true);
+      // Both transactions should be filtered as duplicates
+      expect(monarchApi.uploadTransactions).not.toHaveBeenCalled();
+      expect(result.message).toContain('skipped');
+    });
+
+    test('should save fee dedup key with :fee suffix after upload', async () => {
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+
+      calculateFromDateWithLookback.mockReturnValue('2024-01-01');
+
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
+      monarchApi.uploadBalance.mockResolvedValue(true);
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          activitySummary: {
+            totalCount: 1,
+            activities: [
+              {
+                referenceNumber: 'FEE_REF_456',
+                activityStatus: 'APPROVED',
+                activityClassification: 'FEES',
+                transactionAmount: -5.00,
+                date: '2024-01-10',
+                amount: { value: '5.00', currency: 'CAD' },
+                merchant: { name: 'CASH ADVANCE FEE', category: 'MISCELLANEOUS' },
+              },
+            ],
+          },
+        }),
+      });
+
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [] });
+      applyCategoryMapping.mockReturnValue('Uncategorized');
+      convertTransactionsToMonarchCSV.mockReturnValue('csv,data');
+      monarchApi.uploadTransactions.mockResolvedValue(true);
+
+      const transactionStorageMock = jest.requireMock('../../src/utils/transactionStorage');
+
+      await uploadRogersBankToMonarch();
+
+      // Verify that mergeAndRetainTransactions was called with the :fee-suffixed key
+      expect(transactionStorageMock.mergeAndRetainTransactions).toHaveBeenCalledWith(
+        expect.any(Array),
+        expect.arrayContaining(['FEE_REF_456:fee']),
+        expect.any(Object),
+        expect.any(String),
+      );
+    });
+  });
+
+  describe('FEES Auto-Categorization', () => {
+    test('should auto-categorize FEES transactions as Financial Fees', async () => {
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+
+      calculateFromDateWithLookback.mockReturnValue('2024-01-01');
+
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
+      monarchApi.uploadBalance.mockResolvedValue(true);
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          activitySummary: {
+            totalCount: 2,
+            activities: [
+              {
+                referenceNumber: 'REF_PURCHASE',
+                activityStatus: 'APPROVED',
+                activityClassification: 'PURCHASE',
+                transactionAmount: -100.00,
+                date: '2024-01-10',
+                amount: { value: '100.00', currency: 'CAD' },
+                merchant: { name: 'SOME MERCHANT', category: 'RETAIL' },
+              },
+              {
+                referenceNumber: 'REF_FEE',
+                activityStatus: 'APPROVED',
+                activityClassification: 'FEES',
+                activityCategory: 'FRONT-END FEE',
+                transactionAmount: -5.00,
+                date: '2024-01-10',
+                amount: { value: '5.00', currency: 'CAD' },
+                merchant: { name: 'CASH ADVANCE FEE', category: 'MISCELLANEOUS' },
+              },
+            ],
+          },
+        }),
+      });
+
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({
+        categories: [{ name: 'Financial Fees' }, { name: 'Shopping' }],
+      });
+      // For the purchase transaction, return a normal mapping
+      applyCategoryMapping.mockReturnValue('Shopping');
+
+      convertTransactionsToMonarchCSV.mockReturnValue('csv,data');
+      monarchApi.uploadTransactions.mockResolvedValue(true);
+
+      await uploadRogersBankToMonarch();
+
+      // The fee transaction should be auto-categorized as "Financial Fees"
+      // The purchase should use normal category mapping
+      expect(convertTransactionsToMonarchCSV).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            activityClassification: 'FEES',
+            resolvedMonarchCategory: 'Financial Fees',
+          }),
+          expect.objectContaining({
+            activityClassification: 'PURCHASE',
+            resolvedMonarchCategory: 'Shopping',
+          }),
+        ]),
+        expect.any(String),
+        expect.any(Object),
+      );
+    });
+
+    test('should auto-categorize FEES even when skipCategorization is false', async () => {
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+
+      calculateFromDateWithLookback.mockReturnValue('2024-01-01');
+
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
+      monarchApi.uploadBalance.mockResolvedValue(true);
+
+      // Only a fee transaction - should NOT trigger manual category selection
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          activitySummary: {
+            totalCount: 1,
+            activities: [
+              {
+                referenceNumber: 'REF_FEE',
+                activityStatus: 'APPROVED',
+                activityClassification: 'FEES',
+                transactionAmount: -5.00,
+                date: '2024-01-10',
+                amount: { value: '5.00', currency: 'CAD' },
+                merchant: { name: 'ANNUAL FEE', category: 'MISCELLANEOUS' },
+              },
+            ],
+          },
+        }),
+      });
+
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [] });
+      // Return needsManualSelection for the merchant category - but FEES override should bypass this
+      applyCategoryMapping.mockReturnValue({
+        needsManualSelection: true,
+        bankCategory: 'MISCELLANEOUS',
+        suggestedCategory: 'Uncategorized',
+        similarityScore: 0.1,
+      });
+
+      convertTransactionsToMonarchCSV.mockReturnValue('csv,data');
+      monarchApi.uploadTransactions.mockResolvedValue(true);
+
+      await uploadRogersBankToMonarch();
+
+      // FEES auto-categorization should override the merchant.category mapping
+      expect(convertTransactionsToMonarchCSV).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            resolvedMonarchCategory: 'Financial Fees',
+          }),
+        ]),
+        expect.any(String),
+        expect.any(Object),
+      );
+      // Manual category selector should NOT have been shown for the fee
+      // (it may be shown for MISCELLANEOUS category during the scanning phase,
+      //  but the final mapping uses FEES override)
+    });
+  });
+
 });
