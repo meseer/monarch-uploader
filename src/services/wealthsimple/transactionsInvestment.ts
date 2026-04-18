@@ -115,7 +115,7 @@ const INVESTMENT_TRANSACTION_RULES = [
  * Check if a transaction is a buy/sell order that uses unifiedStatus
  */
 function isInvestmentBuySellTransaction(transaction: WealthsimpleTransaction): boolean {
-  const buySellTypes = ['MANAGED_BUY', 'DIY_BUY', 'MANAGED_SELL', 'DIY_SELL', 'OPTIONS_BUY', 'OPTIONS_SELL', 'CRYPTO_BUY', 'CRYPTO_SELL'];
+  const buySellTypes = ['MANAGED_BUY', 'DIY_BUY', 'MANAGED_SELL', 'DIY_SELL', 'OPTIONS_BUY', 'OPTIONS_SELL', 'OPTIONS_ASSIGN', 'CRYPTO_BUY', 'CRYPTO_SELL'];
   return buySellTypes.includes(transaction.type ?? '');
 }
 
@@ -131,7 +131,7 @@ function isInvestmentBuySellTransaction(transaction: WealthsimpleTransaction): b
  */
 function usesUnifiedStatus(transaction: WealthsimpleTransaction): boolean {
   const unifiedStatusTypes = [
-    'MANAGED_BUY', 'DIY_BUY', 'MANAGED_SELL', 'DIY_SELL', 'OPTIONS_BUY', 'OPTIONS_SELL', 'OPTIONS_SHORT_EXPIRY',
+    'MANAGED_BUY', 'DIY_BUY', 'MANAGED_SELL', 'DIY_SELL', 'OPTIONS_BUY', 'OPTIONS_SELL', 'OPTIONS_ASSIGN', 'OPTIONS_SHORT_EXPIRY',
     'CRYPTO_BUY', 'CRYPTO_SELL',
     'DEPOSIT', 'DIVIDEND', 'INTEREST', 'INSTITUTIONAL_TRANSFER_INTENT',
   ];
@@ -238,7 +238,7 @@ function collectShortOptionExpiryIds(transactions: WealthsimpleTransaction[]): s
   const expiryIds: string[] = [];
 
   for (const tx of transactions) {
-    if (tx.type === 'OPTIONS_SHORT_EXPIRY' && tx.externalCanonicalId) {
+    if ((tx.type === 'OPTIONS_SHORT_EXPIRY' || tx.type === 'OPTIONS_ASSIGN') && tx.externalCanonicalId) {
       expiryIds.push(tx.externalCanonicalId);
     }
   }
@@ -327,9 +327,9 @@ function processInvestmentTransaction(
       debugLog(`Investment transaction ${getTransactionId(transaction)} matched rule: ${rule.id}`);
       const ruleResult = rule.process(transaction, enrichmentMap);
 
-      // Determine amount sign
+      const baseAmount = transaction.amount ?? 0;
       const isNegative = transaction.amountSign === 'negative';
-      const finalAmount = isNegative ? -Math.abs(transaction.amount ?? 0) : Math.abs(transaction.amount ?? 0);
+      const finalAmount = isNegative ? -Math.abs(baseAmount) : Math.abs(baseAmount);
 
       // Determine pending status based on transaction type
       // Most investment transactions use unifiedStatus; only INTERNAL_TRANSFER uses status
