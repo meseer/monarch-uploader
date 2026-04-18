@@ -8,6 +8,8 @@ import {
   cleanPendingIdFromNotes,
   separateAndDeduplicateTransactions,
   reconcilePendingTransactions,
+  reconcileFetchedPendingTransactions,
+  fetchMonarchPendingTransactions,
   formatReconciliationMessage,
 } from '../../../src/services/common/pendingReconciliation';
 
@@ -339,6 +341,175 @@ describe('reconcilePendingTransactions', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toBe('Network error');
+  });
+});
+
+describe('fetchMonarchPendingTransactions', () => {
+  it('should return noPendingTag when no Pending tag exists', async () => {
+    mockMonarchApi.getTagByName.mockResolvedValue(null);
+
+    const result = await fetchMonarchPendingTransactions('monarch-1', 91);
+
+    expect(result.noPendingTag).toBe(true);
+    expect(result.pendingTag).toBeNull();
+    expect(result.monarchPendingTransactions).toHaveLength(0);
+    expect(result.oldestPendingDate).toBeNull();
+  });
+
+  it('should return noPendingTransactions when no transactions found', async () => {
+    mockMonarchApi.getTagByName.mockResolvedValue({ id: 'tag-1', name: 'Pending' });
+    mockMonarchApi.getTransactionsList.mockResolvedValue({ results: [] });
+
+    const result = await fetchMonarchPendingTransactions('monarch-1', 91);
+
+    expect(result.noPendingTransactions).toBe(true);
+    expect(result.pendingTag).toEqual({ id: 'tag-1', name: 'Pending' });
+    expect(result.monarchPendingTransactions).toHaveLength(0);
+    expect(result.oldestPendingDate).toBeNull();
+  });
+
+  it('should return transactions and oldest date when found', async () => {
+    mockMonarchApi.getTagByName.mockResolvedValue({ id: 'tag-1', name: 'Pending' });
+    mockMonarchApi.getTransactionsList.mockResolvedValue({
+      results: [
+        { id: 'tx-1', date: '2024-03-10', notes: 'test-tx:abc' },
+        { id: 'tx-2', date: '2024-02-15', notes: 'test-tx:def' },
+        { id: 'tx-3', date: '2024-03-20', notes: 'test-tx:ghi' },
+      ],
+    });
+
+    const result = await fetchMonarchPendingTransactions('monarch-1', 91);
+
+    expect(result.pendingTag).toEqual({ id: 'tag-1', name: 'Pending' });
+    expect(result.monarchPendingTransactions).toHaveLength(3);
+    expect(result.oldestPendingDate).toBe('2024-02-15');
+    expect(result.noPendingTag).toBeUndefined();
+    expect(result.noPendingTransactions).toBeUndefined();
+  });
+
+  it('should query Monarch with correct parameters', async () => {
+    mockMonarchApi.getTagByName.mockResolvedValue({ id: 'tag-pending', name: 'Pending' });
+    mockMonarchApi.getTransactionsList.mockResolvedValue({ results: [] });
+
+    await fetchMonarchPendingTransactions('monarch-42', 91);
+
+    expect(mockMonarchApi.getTransactionsList).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountIds: ['monarch-42'],
+        tags: ['tag-pending'],
+      }),
+    );
+  });
+
+  it('should propagate errors', async () => {
+    mockMonarchApi.getTagByName.mockRejectedValue(new Error('API down'));
+
+    await expect(fetchMonarchPendingTransactions('monarch-1', 91)).rejects.toThrow('API down');
+  });
+});
+
+describe('reconcileFetchedPendingTransactions', () => {
+  const getPendingIdFields = (tx) => [tx.date, tx.desc, String(tx.amt)];
+  const getSettledAmount = (tx) => -tx.amt;
+  const pendingTag = { id: 'tag-1', name: 'Pending' };
+
+  it('should settle transactions that are now settled', async () => {
+    const settledTx = { date: '2024-01-15', desc: 'Amazon', amt: 42.50 };
+    const pendingId = await generatePendingTransactionId('test-tx', getPendingIdFields(settledTx));
+
+    mockMonarchApi.updateTransaction.mockResolvedValue({});
+    mockMonarchApi.setTransactionTags.mockResolvedValue({});
+
+    const result = await reconcileFetchedPendingTransactions({
+      txIdPrefix: 'test-tx',
+      pendingTag,
+      monarchPendingTransactions: [{
+        id: 'mtx-1',
+        notes: pendingId,
+        amount: -42.50,
+        tags: [{ id: 'tag-1', name: 'Pending' }],
+        ownedByUser: { id: 'user-1' },
+      }],
+      rawPending: [],
+      rawSettled: [settledTx],
+      getPendingIdFields,
+      getSettledAmount,
+    });
+
+    expect(result.settled).toBe(1);
+    expect(result.cancelled).toBe(0);
+  });
+
+  it('should delete cancelled transactions', async () => {
+    mockMonarchApi.deleteTransaction.mockResolvedValue({});
+
+    const result = await reconcileFetchedPendingTransactions({
+      txIdPrefix: 'test-tx',
+      pendingTag,
+      monarchPendingTransactions: [{
+        id: 'mtx-1',
+        notes: 'test-tx:abcdef1234567890',
+        ownedByUser: null,
+      }],
+      rawPending: [],
+      rawSettled: [],
+      getPendingIdFields,
+      getSettledAmount,
+    });
+
+    expect(result.cancelled).toBe(1);
+    expect(mockMonarchApi.deleteTransaction).toHaveBeenCalledWith('mtx-1');
+  });
+
+  it('should skip transactions still pending', async () => {
+    const pendingTx = { date: '2024-01-16', desc: 'Starbucks', amt: 5.25 };
+    const pendingId = await generatePendingTransactionId('test-tx', getPendingIdFields(pendingTx));
+
+    const result = await reconcileFetchedPendingTransactions({
+      txIdPrefix: 'test-tx',
+      pendingTag,
+      monarchPendingTransactions: [{
+        id: 'mtx-1',
+        notes: pendingId,
+        ownedByUser: null,
+      }],
+      rawPending: [pendingTx],
+      rawSettled: [],
+      getPendingIdFields,
+      getSettledAmount,
+    });
+
+    expect(result.settled).toBe(0);
+    expect(result.cancelled).toBe(0);
+    expect(mockMonarchApi.deleteTransaction).not.toHaveBeenCalled();
+  });
+
+  it('should collect settledRefIds when getSettledRefId is provided', async () => {
+    const settledTx = { date: '2024-01-15', desc: 'Amazon', amt: 42.50, refId: 'ref-abc' };
+    const pendingId = await generatePendingTransactionId('test-tx', getPendingIdFields(settledTx));
+
+    mockMonarchApi.updateTransaction.mockResolvedValue({});
+    mockMonarchApi.setTransactionTags.mockResolvedValue({});
+
+    const result = await reconcileFetchedPendingTransactions({
+      txIdPrefix: 'test-tx',
+      pendingTag,
+      monarchPendingTransactions: [{
+        id: 'mtx-1',
+        notes: pendingId,
+        amount: -42.50,
+        tags: [{ id: 'tag-1', name: 'Pending' }],
+        ownedByUser: { id: 'user-1' },
+      }],
+      rawPending: [],
+      rawSettled: [settledTx],
+      getPendingIdFields,
+      getSettledAmount,
+      getSettledRefId: (tx) => tx.refId,
+    });
+
+    expect(result.settled).toBe(1);
+    expect(result.settledRefIds).toEqual(['ref-abc']);
   });
 });
 

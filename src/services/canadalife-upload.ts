@@ -5,9 +5,9 @@
 
 import {
   debugLog, formatDate, getTodayLocal, getYesterdayLocal, formatDaysAgoLocal, parseLocalDate,
-  calculateFromDateWithLookback, saveLastUploadDate, getLookbackForInstitution,
+  calculateFromDateWithLookback, saveLastUploadDate, computeExtendedFromDate,
 } from '../core/utils';
-import { LOGO_CLOUDINARY_IDS } from '../core/config';
+import { LOGO_CLOUDINARY_IDS, TRANSACTION_RETENTION_DEFAULTS } from '../core/config';
 import stateManager from '../core/state';
 import canadalife from '../api/canadalife';
 import monarchApi from '../api/monarch';
@@ -25,9 +25,10 @@ import {
 } from './canadalife/transactions';
 import { convertCanadaLifeTransactionsToMonarchCSV } from './canadalife/csvFormatter';
 import {
-  reconcileCanadaLifePendingTransactions,
+  reconcileCanadaLifeFetchedPending,
   formatReconciliationMessage,
 } from './canadalife/pendingReconciliation';
+import { fetchMonarchPendingTransactions } from './common/pendingReconciliation';
 
 /**
  * Custom Canada Life upload error class
@@ -617,12 +618,37 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
       throw new Error('Operation cancelled by user');
     }
 
+    // ===== PHASE 1: Fetch Monarch pending transactions (before activity fetch) =====
+    // This must run BEFORE fetching activities so we can extend the date window if needed
+    const monarchAccountObj3 = monarchAccount as Record<string, unknown>;
+    const monarchAccountId = monarchAccountObj3.id as string;
+    const retentionDays = TRANSACTION_RETENTION_DEFAULTS.DAYS;
+    let phase1Result = null;
+    let activityStartDate = startDate;
+
+    try {
+      progressDialog?.updateStepStatus(accountId, 'pendingReconciliation', 'processing', 'Checking pending...');
+      phase1Result = await fetchMonarchPendingTransactions(monarchAccountId, retentionDays);
+
+      if (!phase1Result.noPendingTag && !phase1Result.noPendingTransactions && phase1Result.oldestPendingDate) {
+        // Extend activity fetch window to cover oldest pending transaction
+        const extendedDate = computeExtendedFromDate(startDate, phase1Result.oldestPendingDate, retentionDays);
+        if (extendedDate !== startDate) {
+          debugLog(`[cl-upload] Extending activity fetch from ${startDate} to ${extendedDate} for pending reconciliation`);
+          activityStartDate = extendedDate;
+        }
+      }
+    } catch (phase1Error) {
+      debugLog('Error during Canada Life Phase 1 pending fetch:', phase1Error);
+      // Non-fatal: continue with original date range
+    }
+
     // ===== STEP 3: Fetch activities (shared between reconciliation and transaction upload) =====
     if (progressDialog) {
       progressDialog.updateStepStatus(accountId, 'pendingReconciliation', 'processing', 'Fetching activities...');
     }
 
-    const rawActivities = await fetchActivitiesForDateRange(canadalifeAccount, startDate, endDate, {
+    const rawActivities = await fetchActivitiesForDateRange(canadalifeAccount, activityStartDate, endDate, {
       onProgress: (chunk, total, count) => {
         if (progressDialog) {
           progressDialog.updateStepStatus(
@@ -641,21 +667,25 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
       throw new Error('Operation cancelled by user');
     }
 
-    // ===== STEP 3a: Pending reconciliation =====
+    // ===== STEP 3a: Pending reconciliation (Phase 2) =====
     // Runs before transaction upload so removed pending entries don't affect dedup store
     try {
-      progressDialog?.updateStepStatus(accountId, 'pendingReconciliation', 'processing', 'Reconciling...');
-      const lookbackDays = getLookbackForInstitution('canadalife');
-      const monarchAccountObj3 = monarchAccount as Record<string, unknown>;
-      const reconciliationResult = await reconcileCanadaLifePendingTransactions(
-        monarchAccountObj3.id as string,
-        rawActivities,
-        lookbackDays,
-      );
-      const reconciliationMsg = formatReconciliationMessage(reconciliationResult);
-      const reconciliationStatus = reconciliationResult.success !== false ? 'success' : 'error';
-      progressDialog?.updateStepStatus(accountId, 'pendingReconciliation', reconciliationStatus, reconciliationMsg);
-      debugLog('Canada Life pending reconciliation result:', reconciliationResult);
+      if (phase1Result && !phase1Result.noPendingTag && !phase1Result.noPendingTransactions
+          && phase1Result.pendingTag && phase1Result.monarchPendingTransactions.length > 0) {
+        progressDialog?.updateStepStatus(accountId, 'pendingReconciliation', 'processing', 'Reconciling...');
+        const reconciliationResult = await reconcileCanadaLifeFetchedPending(
+          phase1Result.pendingTag,
+          phase1Result.monarchPendingTransactions,
+          rawActivities,
+        );
+        const reconciliationMsg = formatReconciliationMessage(reconciliationResult);
+        const reconciliationStatus = reconciliationResult.success !== false ? 'success' : 'error';
+        progressDialog?.updateStepStatus(accountId, 'pendingReconciliation', reconciliationStatus, reconciliationMsg);
+        debugLog('Canada Life pending reconciliation result:', reconciliationResult);
+      } else {
+        // No pending transactions to reconcile
+        progressDialog?.updateStepStatus(accountId, 'pendingReconciliation', 'success', 'No pending transactions');
+      }
     } catch (reconciliationError) {
       debugLog('Error during Canada Life pending reconciliation:', reconciliationError);
       progressDialog?.updateStepStatus(accountId, 'pendingReconciliation', 'error', reconciliationError.message);

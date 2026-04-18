@@ -3,9 +3,9 @@
  * Handles uploading Wealthsimple account data to Monarch
  */
 
-import { debugLog, getLookbackForInstitution, getTodayLocal } from '../core/utils';
+import { debugLog, getLookbackForInstitution, getTodayLocal, computeExtendedFromDate } from '../core/utils';
 import type { CurrentBalance } from '../types/monarch';
-import { WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES, WEALTHSIMPLE_PENDING_RECONCILIATION_TYPES } from '../core/config';
+import { WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES, WEALTHSIMPLE_PENDING_RECONCILIATION_TYPES, TRANSACTION_RETENTION_DEFAULTS } from '../core/config';
 import toast from '../ui/toast';
 import wealthsimpleApi from '../api/wealthsimple';
 import {
@@ -29,8 +29,9 @@ import {
   reconstructBalanceFromTransactions,
 } from './wealthsimple/balance';
 import { isInvestmentAccount, processAccountPositions, processCashPositions } from './wealthsimple/positions';
-import { fetchAndProcessTransactions, reconcilePendingTransactions, formatReconciliationMessage } from './wealthsimple/transactions';
+import { fetchAndProcessTransactions, reconcileWealthsimpleFetchedPending, formatReconciliationMessage } from './wealthsimple/transactions';
 import { type ReconciliationResult } from './wealthsimple/transactionsReconciliation';
+import { fetchMonarchPendingTransactions } from './common/pendingReconciliation';
 import { showDatePickerWithOptionsPromise } from '../ui/components/datePicker';
 import { showProgressDialog } from '../ui/components/progressDialog';
 
@@ -554,7 +555,31 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(
       reconstructBalance = datePickerResult.reconstructBalance;
     }
 
-    // Step 1: Transaction sync
+    // Phase 1: Fetch Monarch pending transactions BEFORE source fetch
+    // This allows us to extend the source fetch window to cover old pending transactions
+    let phase1Result: Awaited<ReturnType<typeof fetchMonarchPendingTransactions>> | null = null;
+    const needsReconciliation = WEALTHSIMPLE_PENDING_RECONCILIATION_TYPES.has(accountType);
+
+    if (needsReconciliation) {
+      try {
+        const retentionDays = consolidatedAccount.transactionRetentionDays ?? TRANSACTION_RETENTION_DEFAULTS.DAYS;
+        debugLog(`[ws-upload] Phase 1: Fetching Monarch pending txs for ${account.id} (retentionDays=${retentionDays})`);
+        phase1Result = await fetchMonarchPendingTransactions(monarchAccount.id, retentionDays);
+
+        if (phase1Result.oldestPendingDate) {
+          const retentionForExtension = consolidatedAccount.transactionRetentionDays ?? TRANSACTION_RETENTION_DEFAULTS.DAYS;
+          const extendedFromDate = computeExtendedFromDate(actualFromDate, phase1Result.oldestPendingDate, retentionForExtension);
+          if (extendedFromDate !== actualFromDate) {
+            debugLog(`[ws-upload] Extended fetch window from ${actualFromDate} to ${extendedFromDate} (oldest pending: ${phase1Result.oldestPendingDate})`);
+            actualFromDate = extendedFromDate;
+          }
+        }
+      } catch (phase1Error: unknown) {
+        debugLog('[ws-upload] Phase 1 error (non-fatal, continuing):', phase1Error);
+      }
+    }
+
+    // Step 1: Transaction sync (using potentially extended actualFromDate)
     let rawWealthsimpleTransactions: unknown[] | null = null;
     let transactionsSyncedCount = 0;
 
@@ -595,19 +620,28 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(
       }
     }
 
-    // Step 2: Pending transaction reconciliation
-    if (WEALTHSIMPLE_PENDING_RECONCILIATION_TYPES.has(accountType)) {
+    // Step 2: Pending transaction reconciliation (Phase 2 with pre-fetched Monarch data)
+    if (needsReconciliation) {
       progressDialog.updateStepStatus(account.id, 'pendingReconciliation', 'processing', 'Reconciling pending');
 
       try {
-        const lookbackDays = getLookbackForInstitution('wealthsimple') as number;
+        let reconciliationResult: ReconciliationResult;
 
-        const reconciliationResult = await reconcilePendingTransactions(
-          monarchAccount.id,
-          (rawWealthsimpleTransactions || []) as Record<string, unknown>[],
-          lookbackDays,
-          accountType,
-        );
+        if (phase1Result && phase1Result.noPendingTag) {
+          reconciliationResult = { success: true, settled: 0, cancelled: 0, failed: 0, error: null, noPendingTag: true } as ReconciliationResult;
+        } else if (phase1Result && (phase1Result.noPendingTransactions || phase1Result.monarchPendingTransactions.length === 0)) {
+          reconciliationResult = { success: true, settled: 0, cancelled: 0, failed: 0, error: null, noPendingTransactions: true } as ReconciliationResult;
+        } else if (phase1Result && phase1Result.pendingTag) {
+          reconciliationResult = await reconcileWealthsimpleFetchedPending(
+            phase1Result.pendingTag,
+            phase1Result.monarchPendingTransactions,
+            (rawWealthsimpleTransactions || []) as Record<string, unknown>[],
+            accountType,
+          );
+        } else {
+          // Phase 1 failed or wasn't run — report as no pending
+          reconciliationResult = { success: true, settled: 0, cancelled: 0, failed: 0, error: null, noPendingTransactions: true } as ReconciliationResult;
+        }
 
         const reconciliationMessage = formatReconciliationMessage(reconciliationResult as ReconciliationResult) as string;
         const reconciliationStatus = reconciliationResult.success ? 'success' : 'error';

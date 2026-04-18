@@ -741,6 +741,58 @@ export function formatBalance(balance: BalanceInfo | null): string {
 }
 
 /**
+ * Compute an extended "from date" that covers all pending transactions.
+ *
+ * Given the current fetch window start date (currentFromDate) and the oldest
+ * pending Monarch transaction date (oldestPendingDate), return the earlier of
+ * the two — but never extend further back than transactionRetentionDays from
+ * today. This prevents the extension from exceeding the deduplication window.
+ *
+ * @param currentFromDate - Current fetch start date (YYYY-MM-DD)
+ * @param oldestPendingDate - Oldest pending transaction date from Monarch (YYYY-MM-DD), or null if none
+ * @param transactionRetentionDays - Per-account retention limit (0 = unlimited)
+ * @returns Extended from date (YYYY-MM-DD), guaranteed ≤ currentFromDate
+ */
+export function computeExtendedFromDate(
+  currentFromDate: string,
+  oldestPendingDate: string | null,
+  transactionRetentionDays: number,
+): string {
+  if (!oldestPendingDate) {
+    return currentFromDate;
+  }
+
+  const current = parseLocalDate(currentFromDate);
+  const oldest = parseLocalDate(oldestPendingDate);
+
+  // If the oldest pending date is already within (or after) the current window, no extension needed
+  if (oldest >= current) {
+    return currentFromDate;
+  }
+
+  // Compute the absolute floor: today minus retentionDays (0 = unlimited → no floor)
+  let floor: Date | null = null;
+  if (transactionRetentionDays > 0) {
+    floor = getLocalToday();
+    floor.setDate(floor.getDate() - transactionRetentionDays);
+  }
+
+  // The candidate is the oldest pending date
+  let candidate = oldest;
+
+  // Clamp to the retention floor if it exists
+  if (floor && candidate < floor) {
+    debugLog(
+      `[computeExtendedFromDate] Clamping oldest pending ${oldestPendingDate} to retention floor ${formatDate(floor)}`,
+    );
+    candidate = floor;
+  }
+
+  // Return the earlier of candidate and currentFromDate
+  return candidate < current ? formatDate(candidate) : currentFromDate;
+}
+
+/**
  * Validates that the lookback period is less than the retention period.
  * The lookback period must be smaller than retention to avoid losing transaction IDs
  * that were recently uploaded but haven't been evicted yet.

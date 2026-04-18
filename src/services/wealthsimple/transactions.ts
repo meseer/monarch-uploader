@@ -36,6 +36,7 @@ import { fetchAndProcessInvestmentTransactions } from './transactionsInvestment'
 
 import {
   reconcilePendingTransactions,
+  reconcileWealthsimpleFetchedPending,
   formatReconciliationMessage,
 } from './transactionsReconciliation';
 
@@ -43,7 +44,7 @@ import {
 export { fetchAndProcessInvestmentTransactions };
 
 // Re-export reconciliation
-export { reconcilePendingTransactions, formatReconciliationMessage };
+export { reconcilePendingTransactions, reconcileWealthsimpleFetchedPending, formatReconciliationMessage };
 
 import type { ConsolidatedAccountBase } from '../../types/wealthsimple';
 
