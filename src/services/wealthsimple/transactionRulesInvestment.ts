@@ -334,6 +334,8 @@ interface ShortOptionDeliverable {
 interface ShortOptionExpiryDetail {
   decision?: string;
   reason?: string;
+  fxRate?: string;
+  securityCurrency?: string;
   deliverables?: ShortOptionDeliverable[];
 }
 
@@ -349,6 +351,86 @@ interface CachedSecurity {
  * @param securityCache - Cache of fetched security details (securityId -> security object)
  * @returns Formatted notes string
  */
+/**
+ * Format notes for options assignment transactions
+ * Includes assignment details, share action, and total with CAD conversion
+ *
+ * @param tx - Raw transaction from Wealthsimple API
+ * @param expiryDetail - Assignment detail from FetchShortOptionPositionExpiryDetail API
+ * @param securityCache - Cache of fetched security details (securityId -> security object)
+ * @returns Formatted notes string
+ */
+export function formatOptionsAssignNotes(
+  tx: WealthsimpleTransaction,
+  expiryDetail: ShortOptionExpiryDetail | null | undefined,
+  securityCache: Map<string, CachedSecurity> = new Map(),
+): string {
+  const assetSymbol = tx.assetSymbol || 'Unknown';
+  const assetQuantity = tx.assetQuantity ?? 1;
+  const contractType = tx.contractType || 'unknown';
+  const strikePrice = formatAmount(tx.strikePrice ?? 0);
+  const currency = tx.currency || 'CAD';
+  const expiryDate = tx.expiryDate || '';
+  const amount = tx.amount ?? 0;
+  const subType = tx.subType || '';
+  const prettyExpiryDate = formatPrettyDate(expiryDate);
+
+  // Determine prefix based on subType
+  const isAutoAssign = subType === 'AUTO_ASSIGN';
+  const prefix = isAutoAssign ? 'Auto assigned' : 'Assigned';
+
+  // Determine decision/reason from enrichment
+  const decision = expiryDetail?.decision || 'Unknown';
+  const reason = expiryDetail?.reason || 'Unknown';
+
+  // Line 1: Assignment details
+  const line1 = `${prefix} ${assetQuantity} ${assetSymbol} ${contractType} contract(s) at ${currency}$${strikePrice} strike, expiry ${prettyExpiryDate} (decision: ${decision}, reason: ${reason}).`;
+
+  // Determine share action based on contract type: calls → Sold, puts → Bought
+  const isCall = contractType.toLowerCase() === 'call';
+  const shareAction = isCall ? 'Sold' : 'Bought';
+
+  // Calculate total shares from deliverables or default to 100 * contracts
+  let totalShares = 0;
+  let deliverableSymbol = assetSymbol;
+  if (expiryDetail?.deliverables && expiryDetail.deliverables.length > 0) {
+    for (const deliverable of expiryDetail.deliverables) {
+      const quantity = parseFloat(String(deliverable.quantity)) || 0;
+      totalShares += Math.abs(quantity);
+      // Resolve security name for the deliverable
+      const securityId = deliverable.securityId || '';
+      let securityName = STATIC_SECURITY_NAMES[securityId];
+      if (!securityName && securityCache.has(securityId)) {
+        const security = securityCache.get(securityId);
+        securityName = security?.stock?.symbol || assetSymbol;
+      }
+      if (securityName && securityName !== 'CAD' && securityName !== 'USD') {
+        deliverableSymbol = securityName;
+      }
+    }
+  }
+  if (totalShares === 0) {
+    totalShares = assetQuantity * 100;
+  }
+
+  // Line 2: Share action
+  const line2 = `${shareAction} ${totalShares} ${deliverableSymbol} shares at $${strikePrice} ${currency} per share.`;
+
+  // Line 3: Total with CAD conversion
+  const formattedAmount = formatAmount(amount);
+  let line3: string;
+  const fxRate = parseFloat(expiryDetail?.fxRate || '0');
+  if (fxRate > 0 && currency !== 'CAD') {
+    const cadAmount = amount * fxRate;
+    const formattedCadAmount = formatAmount(cadAmount);
+    line3 = `Total $${formattedAmount} ${currency} ($${formattedCadAmount} CAD)`;
+  } else {
+    line3 = `Total $${formattedAmount} ${currency}`;
+  }
+
+  return `${line1}\n${line2}\n${line3}`;
+}
+
 export function formatShortOptionExpiryNotes(
   expiryDetail: ShortOptionExpiryDetail | null | undefined,
   securityCache: Map<string, CachedSecurity> = new Map(),
@@ -702,6 +784,38 @@ export const INVESTMENT_BUY_SELL_TRANSACTION_RULES: InvestmentTransactionRule[] 
         merchant,
         originalStatement: formatOriginalStatement(tx.type, tx.subType, statementParts),
         notes: formatOptionsOrderNotes(tx, extendedOrder, true),
+        technicalDetails: '',
+      };
+    },
+  },
+  {
+    id: 'options-assign',
+    description: 'Options assignment transactions',
+    match: (tx) => tx.type === 'OPTIONS_ASSIGN',
+    process: (tx, enrichmentMap) => {
+      const assetSymbol = tx.assetSymbol || 'Unknown';
+      const expiryDate = tx.expiryDate || '';
+      const strikePrice = formatAmount(tx.strikePrice ?? 0);
+      const contractType = tx.contractType || '';
+      const currency = tx.currency || 'CAD';
+      const prettyExpiryDate = formatPrettyDate(expiryDate);
+      const contractTypeDisplay = toSentenceCase(contractType);
+      const merchant = `${assetSymbol} ${prettyExpiryDate} ${currency}$${strikePrice} ${contractTypeDisplay}`;
+      const statementParts = `${assetSymbol}:${expiryDate}:${strikePrice}:${contractType}`;
+
+      const assignEntry = enrichmentMap?.get(tx.externalCanonicalId) as
+        | { expiryDetail?: ShortOptionExpiryDetail; securityCache?: Map<string, CachedSecurity> }
+        | undefined;
+      const expiryDetail = assignEntry?.expiryDetail || null;
+      const securityCache = assignEntry?.securityCache || new Map<string, CachedSecurity>();
+
+      const notes = formatOptionsAssignNotes(tx, expiryDetail, securityCache);
+
+      return {
+        category: 'Options Assigned',
+        merchant,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, statementParts),
+        notes,
         technicalDetails: '',
       };
     },

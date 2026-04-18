@@ -11,6 +11,7 @@ import {
   INVESTMENT_BUY_SELL_TRANSACTION_RULES,
   formatPrettyDate,
   formatOptionsOrderNotes,
+  formatOptionsAssignNotes,
   formatTransferNotes,
 } from '../../../src/services/wealthsimple/transactionRules';
 
@@ -783,6 +784,210 @@ describe('Wealthsimple Transaction Rules Engine - Investment Interest & Options'
         expect(result.category).toBe('Sell');
         expect(result.merchant).toContain('Unknown');
         expect(result.merchant).toContain('CAD$0');
+      });
+    });
+  });
+
+  describe('formatOptionsAssignNotes', () => {
+    const baseTx = {
+      externalCanonicalId: 'oe-assign-123',
+      type: 'OPTIONS_ASSIGN',
+      subType: 'AUTO_ASSIGN',
+      assetSymbol: 'PSNY',
+      assetQuantity: 1,
+      strikePrice: 18.0,
+      contractType: 'call',
+      expiryDate: '2026-04-17',
+      currency: 'USD',
+      amount: 1800,
+      amountSign: 'positive',
+    };
+
+    const baseExpiryDetail = {
+      decision: 'ASSIGN',
+      reason: 'AUTO_ASSIGN',
+      fxRate: '1.342',
+      securityCurrency: 'USD',
+      deliverables: [{ quantity: '100', securityId: 'sec-s-555ffa9de9ad47d2925dda6a2032c225' }],
+    };
+
+    const baseSecurityCache = new Map([
+      ['sec-s-555ffa9de9ad47d2925dda6a2032c225', { stock: { symbol: 'PSNY' } }],
+    ]);
+
+    it('should format complete AUTO_ASSIGN call assignment notes', () => {
+      const result = formatOptionsAssignNotes(baseTx, baseExpiryDetail, baseSecurityCache);
+
+      expect(result).toContain('Auto assigned 1 PSNY call contract(s) at USD$18 strike, expiry Apr 17, 2026');
+      expect(result).toContain('decision: ASSIGN, reason: AUTO_ASSIGN');
+      expect(result).toContain('Sold 100 PSNY shares at $18 USD per share.');
+      expect(result).toContain('Total $1800 USD ($2415.6 CAD)');
+    });
+
+    it('should use "Assigned" prefix for unknown subTypes', () => {
+      const tx = { ...baseTx, subType: 'MANUAL_ASSIGN' };
+      const result = formatOptionsAssignNotes(tx, baseExpiryDetail, baseSecurityCache);
+
+      expect(result).toMatch(/^Assigned 1 PSNY/);
+      expect(result).not.toContain('Auto assigned');
+    });
+
+    it('should use "Assigned" prefix for null subType', () => {
+      const tx = { ...baseTx, subType: null };
+      const result = formatOptionsAssignNotes(tx, baseExpiryDetail, baseSecurityCache);
+
+      expect(result).toMatch(/^Assigned 1 PSNY/);
+    });
+
+    it('should use "Bought" for put contract assignments', () => {
+      const tx = { ...baseTx, contractType: 'put' };
+      const result = formatOptionsAssignNotes(tx, baseExpiryDetail, baseSecurityCache);
+
+      expect(result).toContain('Bought 100 PSNY shares');
+      expect(result).not.toContain('Sold');
+    });
+
+    it('should handle missing enrichment data gracefully', () => {
+      const result = formatOptionsAssignNotes(baseTx, null, new Map());
+
+      expect(result).toContain('Auto assigned 1 PSNY call contract(s)');
+      expect(result).toContain('decision: Unknown, reason: Unknown');
+      // Without deliverables, defaults to 100 * assetQuantity
+      expect(result).toContain('Sold 100 PSNY shares');
+      // Without fxRate, no CAD conversion
+      expect(result).toContain('Total $1800 USD');
+      expect(result).not.toContain('CAD)');
+    });
+
+    it('should handle CAD currency without fxRate conversion', () => {
+      const tx = { ...baseTx, currency: 'CAD' };
+      const expiryDetail = { ...baseExpiryDetail, fxRate: '1.342' };
+      const result = formatOptionsAssignNotes(tx, expiryDetail, baseSecurityCache);
+
+      expect(result).toContain('Total $1800 CAD');
+      expect(result).not.toContain('CAD)');
+    });
+
+    it('should handle multiple deliverables', () => {
+      const expiryDetail = {
+        ...baseExpiryDetail,
+        deliverables: [
+          { quantity: '100', securityId: 'sec-s-555ffa9de9ad47d2925dda6a2032c225' },
+          { quantity: '50', securityId: 'sec-s-555ffa9de9ad47d2925dda6a2032c225' },
+        ],
+      };
+      const result = formatOptionsAssignNotes(baseTx, expiryDetail, baseSecurityCache);
+
+      expect(result).toContain('Sold 150 PSNY shares');
+    });
+
+    it('should use static security names for cash security IDs', () => {
+      const expiryDetail = {
+        ...baseExpiryDetail,
+        deliverables: [{ quantity: '1800', securityId: 'sec-s-usd' }],
+      };
+      const result = formatOptionsAssignNotes(baseTx, expiryDetail, new Map());
+
+      // sec-s-usd resolves to "USD" which is filtered out as currency, so symbol stays as assetSymbol
+      expect(result).toContain('Sold 1800 PSNY shares');
+    });
+
+    it('should default to 100 shares per contract when no deliverables', () => {
+      const tx = { ...baseTx, assetQuantity: 3 };
+      const expiryDetail = { ...baseExpiryDetail, deliverables: [] };
+      const result = formatOptionsAssignNotes(tx, expiryDetail, new Map());
+
+      expect(result).toContain('Sold 300 PSNY shares');
+    });
+
+    it('should handle missing fields with defaults', () => {
+      const minimalTx = {
+        type: 'OPTIONS_ASSIGN',
+      };
+      const result = formatOptionsAssignNotes(minimalTx, null, new Map());
+
+      expect(result).toContain('Assigned');
+      expect(result).toContain('Unknown');
+      expect(result).toContain('CAD$0');
+      expect(result).toContain('Total $0 CAD');
+    });
+  });
+
+  describe('INVESTMENT_BUY_SELL_TRANSACTION_RULES - OPTIONS_ASSIGN', () => {
+    describe('OPTIONS_ASSIGN rule matching', () => {
+      it('should match transactions with type OPTIONS_ASSIGN', () => {
+        const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'options-assign');
+        expect(rule).toBeDefined();
+        expect(rule.match({ type: 'OPTIONS_ASSIGN', subType: 'AUTO_ASSIGN' })).toBe(true);
+      });
+
+      it('should match OPTIONS_ASSIGN with any subType', () => {
+        const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'options-assign');
+        expect(rule.match({ type: 'OPTIONS_ASSIGN', subType: null })).toBe(true);
+        expect(rule.match({ type: 'OPTIONS_ASSIGN', subType: 'MANUAL_ASSIGN' })).toBe(true);
+      });
+
+      it('should not match other transaction types', () => {
+        const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'options-assign');
+        expect(rule.match({ type: 'OPTIONS_BUY' })).toBe(false);
+        expect(rule.match({ type: 'OPTIONS_SELL' })).toBe(false);
+        expect(rule.match({ type: 'OPTIONS_SHORT_EXPIRY' })).toBe(false);
+        expect(rule.match({ type: 'DIY_BUY' })).toBe(false);
+      });
+    });
+
+    describe('OPTIONS_ASSIGN transaction processing', () => {
+      it('should process OPTIONS_ASSIGN with full enrichment data', () => {
+        const tx = {
+          externalCanonicalId: 'oe-assign-456',
+          type: 'OPTIONS_ASSIGN',
+          subType: 'AUTO_ASSIGN',
+          assetSymbol: 'PSNY',
+          assetQuantity: 1,
+          strikePrice: 18.0,
+          contractType: 'call',
+          expiryDate: '2026-04-17',
+          currency: 'USD',
+          amount: 1800,
+          amountSign: 'positive',
+        };
+
+        const enrichmentMap = new Map();
+        enrichmentMap.set('oe-assign-456', {
+          expiryDetail: {
+            decision: 'ASSIGN',
+            reason: 'AUTO_ASSIGN',
+            fxRate: '1.342',
+            securityCurrency: 'USD',
+            deliverables: [{ quantity: '100', securityId: 'sec-stock-psny' }],
+          },
+          securityCache: new Map([['sec-stock-psny', { stock: { symbol: 'PSNY' } }]]),
+        });
+
+        const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'options-assign');
+        const result = rule.process(tx, enrichmentMap);
+
+        expect(result.category).toBe('Options Assigned');
+        expect(result.merchant).toBe('PSNY Apr 17, 2026 USD$18 Call');
+        expect(result.originalStatement).toBe('OPTIONS_ASSIGN:AUTO_ASSIGN:PSNY:2026-04-17:18:call');
+        expect(result.notes).toContain('Auto assigned');
+        expect(result.notes).toContain('Sold 100 PSNY shares');
+        expect(result.notes).toContain('$2415.6 CAD');
+      });
+
+      it('should handle missing fields with defaults', () => {
+        const tx = {
+          externalCanonicalId: 'oe-assign-minimal',
+          type: 'OPTIONS_ASSIGN',
+        };
+
+        const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'options-assign');
+        const result = rule.process(tx, null);
+
+        expect(result.category).toBe('Options Assigned');
+        expect(result.merchant).toContain('Unknown');
+        expect(result.merchant).toContain('CAD$0');
+        expect(result.notes).toBeTruthy();
       });
     });
   });
