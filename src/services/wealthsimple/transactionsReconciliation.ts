@@ -3,7 +3,7 @@
  * Handles pending transaction reconciliation and status tracking
  */
 
-import { debugLog, formatDate } from '../../core/utils';
+import { debugLog } from '../../core/utils';
 import monarchApi from '../../api/monarch';
 
 /**
@@ -175,58 +175,32 @@ export interface ReconciliationResult {
 /**
  * Reconcile pending transactions for a Wealthsimple account
  */
-export async function reconcilePendingTransactions(
-  monarchAccountId: string,
+/**
+ * Phase 2: Reconcile pre-fetched Monarch pending transactions against Wealthsimple data.
+ *
+ * Uses externalCanonicalId-based matching (not hash-based like the common service).
+ * Accepts pre-fetched pendingTag and monarchPendingTransactions from the shared Phase 1.
+ *
+ * @param pendingTag - Monarch "Pending" tag object
+ * @param monarchPendingTransactions - Pre-fetched Monarch transactions with Pending tag
+ * @param wealthsimpleTransactions - Current WS transactions (with extended date range)
+ * @param accountType - WS account type for status determination
+ * @returns Reconciliation result
+ */
+export async function reconcileWealthsimpleFetchedPending(
+  pendingTag: { id: string; name: string },
+  monarchPendingTransactions: Array<Record<string, unknown>>,
   wealthsimpleTransactions: Record<string, unknown>[],
-  lookbackDays: number,
   accountType = 'CREDIT_CARD',
 ): Promise<ReconciliationResult> {
   const result: ReconciliationResult = { success: true, settled: 0, cancelled: 0, failed: 0, error: null };
 
   try {
-    debugLog('Starting pending transaction reconciliation', {
-      monarchAccountId,
-      transactionsLoaded: wealthsimpleTransactions?.length || 0,
-      lookbackDays,
+    debugLog('[ws-reconciliation:phase2] Starting reconciliation', {
+      monarchPendingCount: monarchPendingTransactions.length,
+      wsTransactionsCount: wealthsimpleTransactions?.length || 0,
+      accountType,
     });
-
-    debugLog('Fetching "Pending" tag from Monarch...');
-    const pendingTag = await monarchApi.getTagByName('Pending');
-
-    if (!pendingTag) {
-      debugLog('No "Pending" tag found in Monarch, skipping reconciliation');
-      return { ...result, noPendingTag: true };
-    }
-
-    debugLog(`Found "Pending" tag with ID: ${pendingTag.id}`);
-
-    const today = new Date();
-    const startDate = new Date(today);
-    startDate.setDate(startDate.getDate() - lookbackDays);
-
-    const endDate = new Date(today);
-    endDate.setFullYear(endDate.getFullYear() + 1);
-
-    const startDateStr = formatDate(startDate);
-    const endDateStr = formatDate(endDate);
-
-    debugLog(`Searching for pending transactions from ${startDateStr} to ${endDateStr}`);
-
-    const pendingTransactionsResult = await monarchApi.getTransactionsList({
-      accountIds: [monarchAccountId],
-      tags: [pendingTag.id],
-      startDate: startDateStr,
-      endDate: endDateStr,
-    });
-
-    const pendingMonarchTransactions = pendingTransactionsResult.results || [];
-
-    if (pendingMonarchTransactions.length === 0) {
-      debugLog('No pending transactions found in Monarch for this account');
-      return { ...result, noPendingTransactions: true };
-    }
-
-    debugLog(`Found ${pendingMonarchTransactions.length} pending transaction(s) in Monarch to reconcile`);
 
     const wsTransactionMap = new Map<string, Record<string, unknown>>();
     if (wealthsimpleTransactions && Array.isArray(wealthsimpleTransactions)) {
@@ -237,73 +211,48 @@ export async function reconcilePendingTransactions(
       });
     }
 
-    debugLog(`Created lookup map with ${wsTransactionMap.size} Wealthsimple transaction(s)`);
+    debugLog(`[ws-reconciliation:phase2] Lookup map: ${wsTransactionMap.size} WS transaction(s)`);
 
-    for (const monarchTx of pendingMonarchTransactions) {
+    for (const monarchTx of monarchPendingTransactions) {
       try {
-        const monarchTxId = monarchTx.id;
+        const monarchTxId = monarchTx.id as string;
         const notes = (monarchTx.notes as string) || '';
-
-        debugLog(`Processing pending Monarch transaction ${monarchTxId}`, {
-          amount: monarchTx.amount,
-          date: monarchTx.date,
-          notes,
-        });
 
         const wsTransactionId = extractTransactionIdFromNotes(notes);
 
         if (!wsTransactionId) {
-          debugLog(`Could not extract Wealthsimple transaction ID from notes: "${notes}", skipping`);
+          debugLog(`[ws-reconciliation:phase2] Could not extract WS ID from notes: "${notes}", skipping`);
           continue;
         }
-
-        debugLog(`Extracted Wealthsimple transaction ID: ${wsTransactionId}`);
 
         const wsTx = wsTransactionMap.get(wsTransactionId);
 
         if (!wsTx) {
-          debugLog(`Transaction ${wsTransactionId} not found in Wealthsimple, deleting from Monarch`);
+          debugLog(`[ws-reconciliation:phase2] ${wsTransactionId} not found in WS, deleting`);
           await monarchApi.deleteTransaction(monarchTxId);
           result.cancelled += 1;
-          debugLog(`Deleted cancelled transaction ${monarchTxId} from Monarch`);
           continue;
         }
 
         const statusInfo = getTransactionStatusForReconciliation(wsTx, accountType);
-        debugLog(`Wealthsimple transaction ${wsTransactionId} status:`, {
-          rawStatus: statusInfo.rawStatus,
-          isPending: statusInfo.isPending,
-          isSettled: statusInfo.isSettled,
-          accountType,
-        });
 
         if (statusInfo.isPending) {
-          debugLog(`Transaction ${wsTransactionId} is still pending, no action needed`);
+          debugLog(`[ws-reconciliation:phase2] ${wsTransactionId} still pending, no action`);
           continue;
         }
 
         if (statusInfo.isSettled) {
-          debugLog(`Transaction ${wsTransactionId} has settled, updating Monarch transaction`);
+          debugLog(`[ws-reconciliation:phase2] ${wsTransactionId} settled, updating`);
 
           const isNegative = wsTx.amountSign === 'negative';
           const settledAmount = isNegative ? -Math.abs(wsTx.amount as number) : Math.abs(wsTx.amount as number);
 
           let cleanedNotes = cleanSystemNotesFromNotes(notes);
-
-          // Update dividend notes: "Upcoming dividend" → "Dividend" once settled
           if (wsTx.type === 'DIVIDEND') {
             cleanedNotes = updateSettledDividendNotes(cleanedNotes);
           }
 
           const amountChanged = monarchTx.amount !== settledAmount;
-
-          debugLog(`Updating transaction ${monarchTxId}:`, {
-            oldAmount: monarchTx.amount,
-            newAmount: settledAmount,
-            amountChanged,
-            oldNotes: notes,
-            newNotes: cleanedNotes,
-          });
 
           await monarchApi.updateTransaction(monarchTxId, {
             notes: cleanedNotes,
@@ -311,41 +260,71 @@ export async function reconcilePendingTransactions(
           });
 
           if (amountChanged) {
-            debugLog(`Updating amount for transaction ${monarchTxId}: ${monarchTx.amount} -> ${settledAmount}`);
             await monarchApi.updateTransaction(monarchTxId, {
               amount: settledAmount,
               ownerUserId: (monarchTx.ownedByUser as Record<string, unknown>)?.id || null,
             });
           }
 
-          debugLog(`Removing Pending tag from transaction ${monarchTxId}`);
           await monarchApi.setTransactionTags(monarchTxId, []);
-
           result.settled += 1;
-          debugLog(`Successfully reconciled settled transaction ${monarchTxId}`);
           continue;
         }
 
-        debugLog(`Transaction ${wsTransactionId} has unknown status "${statusInfo.rawStatus}", deleting from Monarch`);
+        debugLog(`[ws-reconciliation:phase2] ${wsTransactionId} unknown status "${statusInfo.rawStatus}", deleting`);
         await monarchApi.deleteTransaction(monarchTxId);
         result.cancelled += 1;
-        debugLog(`Deleted transaction ${monarchTxId} with unknown status from Monarch`);
       } catch (txError) {
-        debugLog(`Error reconciling transaction ${monarchTx.id}:`, txError);
+        debugLog(`[ws-reconciliation:phase2] Error reconciling ${monarchTx.id}:`, txError);
         result.failed += 1;
       }
     }
 
-    debugLog('Pending transaction reconciliation completed', {
-      settled: result.settled,
-      cancelled: result.cancelled,
-      failed: result.failed,
-    });
-
+    debugLog('[ws-reconciliation:phase2] Completed', result);
     return result;
   } catch (error) {
-    debugLog('Error during pending transaction reconciliation:', error);
+    debugLog('[ws-reconciliation:phase2] Error:', error);
     return { ...result, success: false, error: (error as Error).message };
+  }
+}
+
+/**
+ * Convenience wrapper: Reconcile pending transactions for a Wealthsimple account.
+ *
+ * Combines Phase 1 (shared fetchMonarchPendingTransactions) and Phase 2
+ * (WS-specific reconcileWealthsimpleFetchedPending) in a single call.
+ * Kept for backward compatibility with existing callers.
+ */
+export async function reconcilePendingTransactions(
+  monarchAccountId: string,
+  wealthsimpleTransactions: Record<string, unknown>[],
+  lookbackDays: number,
+  accountType = 'CREDIT_CARD',
+): Promise<ReconciliationResult> {
+  const emptyResult: ReconciliationResult = { success: true, settled: 0, cancelled: 0, failed: 0, error: null };
+
+  try {
+    // Import shared Phase 1 (lazy to avoid circular deps)
+    const { fetchMonarchPendingTransactions } = await import('../common/pendingReconciliation');
+
+    const phase1 = await fetchMonarchPendingTransactions(monarchAccountId, lookbackDays);
+
+    if (phase1.noPendingTag) {
+      return { ...emptyResult, noPendingTag: true };
+    }
+    if (phase1.noPendingTransactions || phase1.monarchPendingTransactions.length === 0) {
+      return { ...emptyResult, noPendingTransactions: true };
+    }
+
+    return await reconcileWealthsimpleFetchedPending(
+      phase1.pendingTag!,
+      phase1.monarchPendingTransactions,
+      wealthsimpleTransactions,
+      accountType,
+    );
+  } catch (error) {
+    debugLog('Error during pending transaction reconciliation:', error);
+    return { ...emptyResult, success: false, error: (error as Error).message };
   }
 }
 

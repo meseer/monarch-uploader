@@ -17,7 +17,7 @@ import { debugLog, formatDate } from '../../core/utils';
 import monarchApi from '../../api/monarch';
 
 /** Result of the reconciliation process */
-interface ReconciliationResult {
+export interface ReconciliationResult {
   success: boolean;
   settled: number;
   cancelled: number;
@@ -28,13 +28,34 @@ interface ReconciliationResult {
   noPendingTransactions?: boolean;
 }
 
-/** Parameters for reconcilePendingTransactions */
+/** Result of Phase 1: fetching pending transactions from Monarch */
+export interface FetchPendingResult {
+  pendingTag: { id: string; name: string } | null;
+  monarchPendingTransactions: Array<Record<string, unknown>>;
+  oldestPendingDate: string | null;
+  noPendingTag?: boolean;
+  noPendingTransactions?: boolean;
+}
+
+/** Parameters for reconcilePendingTransactions (convenience wrapper) */
 interface ReconcileParams {
   txIdPrefix: string;
   monarchAccountId: string;
   rawPending: unknown[];
   rawSettled: unknown[];
   lookbackDays: number;
+  getPendingIdFields: (tx: unknown) => string[];
+  getSettledAmount: (tx: unknown) => number;
+  getSettledRefId?: (tx: unknown) => string | null;
+}
+
+/** Parameters for Phase 2 reconciliation (using pre-fetched Monarch data) */
+export interface ReconcileFetchedParams {
+  txIdPrefix: string;
+  pendingTag: { id: string; name: string };
+  monarchPendingTransactions: Array<Record<string, unknown>>;
+  rawPending: unknown[];
+  rawSettled: unknown[];
   getPendingIdFields: (tx: unknown) => string[];
   getSettledAmount: (tx: unknown) => number;
   getSettledRefId?: (tx: unknown) => string | null;
@@ -182,56 +203,44 @@ async function buildHashMaps(
 }
 
 /**
- * Reconcile pending transactions for an account.
+ * Phase 1: Fetch pending transactions from Monarch for an account.
  *
- * Generic algorithm:
- * 1. Fetch Monarch transactions with "Pending" tag for the account
- * 2. For each, extract the pending ID from notes
- * 3. Compare against current source transactions:
- *    - Hash matches settled → update amount, remove Pending tag, clean notes
- *    - Hash matches still-pending → no action
- *    - Hash not found → cancelled → delete from Monarch
+ * Shared across ALL integrations (common, Wealthsimple, CanadaLife).
+ * Queries Monarch for transactions tagged "Pending" within a wide window
+ * (startDate … +1 year) and returns them along with the oldest date found.
  *
- * @param {Object} params - Reconciliation parameters
- * @param {string} params.txIdPrefix - Integration prefix (e.g., 'mbna-tx')
- * @param {string} params.monarchAccountId - Monarch account ID
- * @param {Array} params.rawPending - Current pending transactions from source
- * @param {Array} params.rawSettled - Current settled transactions from source
- * @param {number} params.lookbackDays - Days to look back for pending transactions
- * @param {Function} params.getPendingIdFields - Hook: (tx) => Array<string>
- * @param {Function} params.getSettledAmount - Hook: (settledTx) => number (Monarch-normalized amount)
- * @param {Function} [params.getSettledRefId] - Hook: (settledTx) => string (settled reference ID for dedup)
- * @returns {Promise<Object>} Reconciliation result including settledRefIds array
+ * The caller uses `oldestPendingDate` to decide whether to extend the
+ * source-institution fetch window before running Phase 2.
+ *
+ * @param monarchAccountId - Monarch account ID
+ * @param lookbackDays - Days to look back from today for the Monarch search start date.
+ *   Should be large enough to cover the oldest plausible pending transaction
+ *   (typically the account's transactionRetentionDays).
+ * @returns Phase 1 result with pendingTag, transactions, and oldestPendingDate
  */
-export async function reconcilePendingTransactions({
-  txIdPrefix,
-  monarchAccountId,
-  rawPending,
-  rawSettled,
-  lookbackDays,
-  getPendingIdFields,
-  getSettledAmount,
-  getSettledRefId,
-}: ReconcileParams): Promise<ReconciliationResult> {
-  const result: ReconciliationResult = { success: true, settled: 0, cancelled: 0, failed: 0, error: null, settledRefIds: [] };
-
+export async function fetchMonarchPendingTransactions(
+  monarchAccountId: string,
+  lookbackDays: number,
+): Promise<FetchPendingResult> {
   try {
-    debugLog(`[reconciliation] Starting pending reconciliation for ${txIdPrefix}`, {
+    debugLog('[reconciliation:phase1] Fetching Monarch pending transactions', {
       monarchAccountId,
-      pendingCount: rawPending?.length || 0,
-      settledCount: rawSettled?.length || 0,
       lookbackDays,
     });
 
-    // Step 1: Get the "Pending" tag from Monarch
+    // Get the "Pending" tag from Monarch
     const pendingTag = await monarchApi.getTagByName('Pending');
-
     if (!pendingTag) {
-      debugLog('[reconciliation] No "Pending" tag found in Monarch, skipping');
-      return { ...result, noPendingTag: true };
+      debugLog('[reconciliation:phase1] No "Pending" tag found in Monarch');
+      return {
+        pendingTag: null,
+        monarchPendingTransactions: [],
+        oldestPendingDate: null,
+        noPendingTag: true,
+      };
     }
 
-    // Step 2: Calculate date range
+    // Calculate date range
     const today = new Date();
     const startDate = new Date(today);
     startDate.setDate(startDate.getDate() - lookbackDays);
@@ -242,9 +251,9 @@ export async function reconcilePendingTransactions({
     const startDateStr = formatDate(startDate);
     const endDateStr = formatDate(endDate);
 
-    debugLog(`[reconciliation] Searching from ${startDateStr} to ${endDateStr}`);
+    debugLog(`[reconciliation:phase1] Searching from ${startDateStr} to ${endDateStr}`);
 
-    // Step 3: Fetch Monarch transactions with Pending tag for this account
+    // Fetch Monarch transactions with Pending tag for this account
     const pendingTransactionsResult = await monarchApi.getTransactionsList({
       accountIds: [monarchAccountId],
       tags: [pendingTag.id],
@@ -252,16 +261,73 @@ export async function reconcilePendingTransactions({
       endDate: endDateStr,
     });
 
-    const pendingMonarchTransactions = pendingTransactionsResult.results || [];
+    const monarchPendingTransactions = pendingTransactionsResult.results || [];
 
-    if (pendingMonarchTransactions.length === 0) {
-      debugLog('[reconciliation] No pending transactions found in Monarch');
-      return { ...result, noPendingTransactions: true };
+    if (monarchPendingTransactions.length === 0) {
+      debugLog('[reconciliation:phase1] No pending transactions found in Monarch');
+      return {
+        pendingTag,
+        monarchPendingTransactions: [],
+        oldestPendingDate: null,
+        noPendingTransactions: true,
+      };
     }
 
-    debugLog(`[reconciliation] Found ${pendingMonarchTransactions.length} pending transaction(s) to reconcile`);
+    // Find the oldest pending transaction date
+    let oldestPendingDate: string | null = null;
+    for (const tx of monarchPendingTransactions) {
+      const txDate = tx.date as string | undefined;
+      if (txDate && (!oldestPendingDate || txDate < oldestPendingDate)) {
+        oldestPendingDate = txDate;
+      }
+    }
 
-    // Step 4: Build hash ID maps for current source transactions
+    debugLog(`[reconciliation:phase1] Found ${monarchPendingTransactions.length} pending transaction(s), oldest date: ${oldestPendingDate}`);
+
+    return {
+      pendingTag,
+      monarchPendingTransactions: monarchPendingTransactions as unknown as Array<Record<string, unknown>>,
+      oldestPendingDate,
+    };
+  } catch (error) {
+    debugLog('[reconciliation:phase1] Error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Phase 2: Reconcile pre-fetched Monarch pending transactions against source data.
+ *
+ * Generic algorithm for hash-based integrations (MBNA, Rogers Bank):
+ * 1. For each Monarch pending tx, extract the pending ID from notes
+ * 2. Compare against current source transactions:
+ *    - Hash matches settled → update amount, remove Pending tag, clean notes
+ *    - Hash matches still-pending → no action
+ *    - Hash not found → cancelled → delete from Monarch
+ *
+ * @param params - Phase 2 reconciliation parameters
+ * @returns Reconciliation result including settledRefIds array
+ */
+export async function reconcileFetchedPendingTransactions({
+  txIdPrefix,
+  pendingTag,
+  monarchPendingTransactions,
+  rawPending,
+  rawSettled,
+  getPendingIdFields,
+  getSettledAmount,
+  getSettledRefId,
+}: ReconcileFetchedParams): Promise<ReconciliationResult> {
+  const result: ReconciliationResult = { success: true, settled: 0, cancelled: 0, failed: 0, error: null, settledRefIds: [] };
+
+  try {
+    debugLog(`[reconciliation:phase2] Starting reconciliation for ${txIdPrefix}`, {
+      monarchPendingCount: monarchPendingTransactions.length,
+      rawPendingCount: rawPending?.length || 0,
+      rawSettledCount: rawSettled?.length || 0,
+    });
+
+    // Build hash ID maps for current source transactions
     const { settledIdMap, pendingIdMap } = await buildHashMaps(
       txIdPrefix,
       getPendingIdFields,
@@ -269,27 +335,27 @@ export async function reconcilePendingTransactions({
       rawPending || [],
     );
 
-    debugLog(`[reconciliation] Lookup: ${settledIdMap.size} settled hashes, ${pendingIdMap.size} pending hashes`);
+    debugLog(`[reconciliation:phase2] Lookup: ${settledIdMap.size} settled hashes, ${pendingIdMap.size} pending hashes`);
 
-    // Step 5: Process each pending Monarch transaction
-    for (const monarchTx of pendingMonarchTransactions) {
+    // Process each pending Monarch transaction
+    for (const monarchTx of monarchPendingTransactions) {
       try {
-        const monarchTxId = monarchTx.id;
-        const notes = monarchTx.notes || '';
+        const monarchTxId = monarchTx.id as string;
+        const notes = (monarchTx.notes as string) || '';
 
         const pendingId = extractPendingIdFromNotes(txIdPrefix, notes);
 
         if (!pendingId) {
-          debugLog(`[reconciliation] Could not extract pending ID from notes: "${notes}", skipping`);
+          debugLog(`[reconciliation:phase2] Could not extract pending ID from notes: "${notes}", skipping`);
           continue;
         }
 
-        debugLog(`[reconciliation] Reconciling ${monarchTxId} with ID: ${pendingId}`);
+        debugLog(`[reconciliation:phase2] Reconciling ${monarchTxId} with ID: ${pendingId}`);
 
         // Check if transaction has settled
         if (settledIdMap.has(pendingId)) {
           const settledTx = settledIdMap.get(pendingId);
-          debugLog(`[reconciliation] Transaction ${pendingId} has settled, updating`);
+          debugLog(`[reconciliation:phase2] Transaction ${pendingId} has settled, updating`);
 
           const settledAmount = getSettledAmount(settledTx);
           const cleanedNotes = cleanPendingIdFromNotes(txIdPrefix, notes);
@@ -298,19 +364,20 @@ export async function reconcilePendingTransactions({
           // Update notes (clean pending ID)
           await monarchApi.updateTransaction(monarchTxId, {
             notes: cleanedNotes,
-            ownerUserId: monarchTx.ownedByUser?.id || null,
+            ownerUserId: (monarchTx.ownedByUser as Record<string, unknown>)?.id || null,
           });
 
           // Update amount only if it changed
           if (amountChanged) {
             await monarchApi.updateTransaction(monarchTxId, {
               amount: settledAmount,
-              ownerUserId: monarchTx.ownedByUser?.id || null,
+              ownerUserId: (monarchTx.ownedByUser as Record<string, unknown>)?.id || null,
             });
           }
 
           // Remove Pending tag, preserving other tags
-          const remainingTagIds = (monarchTx.tags || [])
+          const tags = (monarchTx.tags || []) as Array<{ id: string; name?: string }>;
+          const remainingTagIds = tags
             .filter((tag) => tag.id !== pendingTag.id)
             .map((tag) => tag.id);
           await monarchApi.setTransactionTags(monarchTxId, remainingTagIds);
@@ -329,21 +396,21 @@ export async function reconcilePendingTransactions({
 
         // Check if transaction is still pending
         if (pendingIdMap.has(pendingId)) {
-          debugLog(`[reconciliation] Transaction ${pendingId} is still pending, no action`);
+          debugLog(`[reconciliation:phase2] Transaction ${pendingId} is still pending, no action`);
           continue;
         }
 
         // Transaction not found — likely cancelled
-        debugLog(`[reconciliation] Transaction ${pendingId} not found, deleting from Monarch`);
+        debugLog(`[reconciliation:phase2] Transaction ${pendingId} not found, deleting from Monarch`);
         await monarchApi.deleteTransaction(monarchTxId);
         result.cancelled += 1;
       } catch (txError) {
-        debugLog(`[reconciliation] Error reconciling ${monarchTx.id}:`, txError);
+        debugLog(`[reconciliation:phase2] Error reconciling ${monarchTx.id}:`, txError);
         result.failed += 1;
       }
     }
 
-    debugLog('[reconciliation] Completed', {
+    debugLog('[reconciliation:phase2] Completed', {
       settled: result.settled,
       cancelled: result.cancelled,
       failed: result.failed,
@@ -351,8 +418,57 @@ export async function reconcilePendingTransactions({
 
     return result;
   } catch (error) {
-    debugLog('[reconciliation] Error:', error);
+    debugLog('[reconciliation:phase2] Error:', error);
     return { ...result, success: false, error: error.message };
+  }
+}
+
+/**
+ * Convenience wrapper: Reconcile pending transactions for an account.
+ *
+ * Combines Phase 1 (fetch from Monarch) and Phase 2 (match against source)
+ * in a single call. Used by the syncOrchestrator's legacy path and tests.
+ *
+ * @param params - Reconciliation parameters (includes lookbackDays for Phase 1)
+ * @returns Reconciliation result including settledRefIds array
+ */
+export async function reconcilePendingTransactions({
+  txIdPrefix,
+  monarchAccountId,
+  rawPending,
+  rawSettled,
+  lookbackDays,
+  getPendingIdFields,
+  getSettledAmount,
+  getSettledRefId,
+}: ReconcileParams): Promise<ReconciliationResult> {
+  const emptyResult: ReconciliationResult = { success: true, settled: 0, cancelled: 0, failed: 0, error: null, settledRefIds: [] };
+
+  try {
+    // Phase 1: Fetch pending transactions from Monarch
+    const phase1 = await fetchMonarchPendingTransactions(monarchAccountId, lookbackDays);
+
+    if (phase1.noPendingTag) {
+      return { ...emptyResult, noPendingTag: true };
+    }
+    if (phase1.noPendingTransactions || phase1.monarchPendingTransactions.length === 0) {
+      return { ...emptyResult, noPendingTransactions: true };
+    }
+
+    // Phase 2: Reconcile against source data
+    return await reconcileFetchedPendingTransactions({
+      txIdPrefix,
+      pendingTag: phase1.pendingTag!,
+      monarchPendingTransactions: phase1.monarchPendingTransactions,
+      rawPending,
+      rawSettled,
+      getPendingIdFields,
+      getSettledAmount,
+      getSettledRefId,
+    });
+  } catch (error) {
+    debugLog('[reconciliation] Error:', error);
+    return { ...emptyResult, success: false, error: error.message };
   }
 }
 

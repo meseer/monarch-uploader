@@ -4,6 +4,7 @@
 
 import {
   reconcileCanadaLifePendingTransactions,
+  reconcileCanadaLifeFetchedPending,
   formatReconciliationMessage,
 } from '../../../src/services/canadalife/pendingReconciliation';
 
@@ -322,6 +323,87 @@ describe('reconcileCanadaLifePendingTransactions', () => {
       expect(result.cancelled).toBe(2);
       expect(result.success).toBe(true);
     });
+  });
+});
+
+// ============================================================
+// reconcileCanadaLifeFetchedPending (Phase 2)
+// ============================================================
+
+describe('reconcileCanadaLifeFetchedPending', () => {
+  const pendingTag = { id: 'tag-pending', name: 'Pending' };
+
+  test('deletes transactions whose hash is not in current activities', async () => {
+    const monarchApi = getMonarchApi();
+    monarchApi.deleteTransaction.mockResolvedValue({});
+
+    const result = await reconcileCanadaLifeFetchedPending(
+      pendingTag,
+      [makePendingMonarchTx('mtx-1', 'cl-tx:abcdef1234567890')],
+      [], // empty activities — all gone
+    );
+
+    expect(result.cancelled).toBe(1);
+    expect(monarchApi.deleteTransaction).toHaveBeenCalledWith('mtx-1');
+  });
+
+  test('does NOT delete when activity hash still present', async () => {
+    const monarchApi = getMonarchApi();
+    const { generateActivityHash } = require('../../../src/services/canadalife/transactions');
+
+    const activity = { Activity: 'New contribution' };
+    const hash = await generateActivityHash(activity);
+
+    const result = await reconcileCanadaLifeFetchedPending(
+      pendingTag,
+      [makePendingMonarchTx('mtx-1', `Notes\n${hash}`)],
+      [activity],
+    );
+
+    expect(result.cancelled).toBe(0);
+    expect(monarchApi.deleteTransaction).not.toHaveBeenCalled();
+  });
+
+  test('skips transactions without extractable cl-tx: ID', async () => {
+    const monarchApi = getMonarchApi();
+
+    const result = await reconcileCanadaLifeFetchedPending(
+      pendingTag,
+      [makePendingMonarchTx('mtx-1', 'No hash here')],
+      [],
+    );
+
+    expect(result.cancelled).toBe(0);
+    expect(result.failed).toBe(0);
+    expect(monarchApi.deleteTransaction).not.toHaveBeenCalled();
+  });
+
+  test('handles null currentActivities gracefully', async () => {
+    const monarchApi = getMonarchApi();
+    monarchApi.deleteTransaction.mockResolvedValue({});
+
+    const result = await reconcileCanadaLifeFetchedPending(
+      pendingTag,
+      [makePendingMonarchTx('mtx-1', 'cl-tx:abcdef1234567890')],
+      null,
+    );
+
+    expect(result.cancelled).toBe(1);
+  });
+
+  test('counts failed when deleteTransaction throws', async () => {
+    const monarchApi = getMonarchApi();
+    monarchApi.deleteTransaction.mockRejectedValue(new Error('fail'));
+
+    const result = await reconcileCanadaLifeFetchedPending(
+      pendingTag,
+      [makePendingMonarchTx('mtx-1', 'cl-tx:abcdef1234567890')],
+      [],
+    );
+
+    expect(result.failed).toBe(1);
+    expect(result.cancelled).toBe(0);
+    expect(result.success).toBe(true);
   });
 });
 

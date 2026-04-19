@@ -22,8 +22,9 @@
  * @module services/common/syncOrchestrator
  */
 
-import { debugLog, getTodayLocal, getLastUpdateDate, calculateFromDateWithLookback, formatDaysAgoLocal } from '../../core/utils';
+import { debugLog, getTodayLocal, getLastUpdateDate, calculateFromDateWithLookback, formatDaysAgoLocal, computeExtendedFromDate } from '../../core/utils';
 import { ACCOUNT_SETTINGS } from '../../core/integrationCapabilities';
+import { TRANSACTION_RETENTION_DEFAULTS } from '../../core/config';
 import stateManager from '../../core/state';
 import accountService from './accountService';
 import { resolveAccountMapping } from './accountMappingResolver';
@@ -32,7 +33,8 @@ import { executeBalanceUploadStep } from './balanceUpload';
 import { uploadTransactionsAndSaveRefs, formatTransactionUploadMessage } from './transactionUpload';
 import { filterDuplicateSettledTransactions, filterDuplicatePendingTransactions } from './deduplication';
 import {
-  reconcilePendingTransactions,
+  fetchMonarchPendingTransactions,
+  reconcileFetchedPendingTransactions,
   separateAndDeduplicateTransactions,
   formatReconciliationMessage,
 } from './pendingReconciliation';
@@ -327,36 +329,33 @@ async function executeTransactionStep({
 }
 
 /**
- * Execute the pending reconciliation step.
+ * Execute Phase 2 pending reconciliation and save settled ref IDs.
+ *
+ * Called after Phase 1 fetched Monarch pending transactions and after
+ * the source institution fetch was (potentially) extended.
  *
  * @param {Object} params - Parameters
  * @param {string} params.integrationId - Integration identifier
  * @param {string} params.accountId - Source account ID
- * @param {string} params.monarchAccountId - Monarch account ID
- * @param {Array} params.rawPending - Raw pending transactions
- * @param {Array} params.rawSettled - Raw settled transactions
+ * @param {Object} params.phase1Result - Result from fetchMonarchPendingTransactions
+ * @param {Array} params.rawPending - Raw pending transactions from source
+ * @param {Array} params.rawSettled - Raw settled transactions from source
  * @param {string} params.txIdPrefix - Pending transaction ID prefix
  * @param {import('../../integrations/types').SyncHooks} params.hooks - Sync hooks
  * @param {Object} params.progressDialog - Progress dialog instance
- * @param {AbortController} params.abortController - Abort controller
  * @returns {Promise<Object>} Reconciliation result (includes settledRefIds)
  */
-async function executePendingReconciliationStep({
-  integrationId, accountId, monarchAccountId, rawPending, rawSettled,
-  txIdPrefix, hooks, progressDialog, abortController,
+async function executePhase2Reconciliation({
+  integrationId, accountId, phase1Result, rawPending, rawSettled,
+  txIdPrefix, hooks, progressDialog,
 }) {
-  if (abortController.signal.aborted) throw new Error('Cancelled');
-
-  progressDialog.updateStepStatus(accountId, 'pending', 'processing', 'Reconciling...');
-
   try {
-    const lookbackDays = 90;
-    const result = await reconcilePendingTransactions({
+    const result = await reconcileFetchedPendingTransactions({
       txIdPrefix,
-      monarchAccountId,
+      pendingTag: phase1Result.pendingTag,
+      monarchPendingTransactions: phase1Result.monarchPendingTransactions,
       rawPending,
       rawSettled,
-      lookbackDays,
       getPendingIdFields: hooks.getPendingIdFields,
       getSettledAmount: hooks.getSettledAmount,
       getSettledRefId: hooks.getSettledRefId,
@@ -456,27 +455,75 @@ export async function syncAccount({
       });
     }
 
-    // ── STEP 2: Fetch & Separate Transactions ──────────────
+    // ── STEP 2: Phase 1 — Fetch Monarch Pending Transactions ─
+    // Runs BEFORE source fetch so we can extend the fetch window if needed.
+    let phase1Result = null;
+    let effectiveFromDate = fromDate;
+    const pendingEnabled = includePendingTransactions && txIdPrefix && hooks.getPendingIdFields;
+
+    if (pendingEnabled && capabilities.hasTransactions) {
+      if (abortController.signal.aborted) throw new Error('Cancelled');
+      progressDialog.updateStepStatus(accountId, 'pending', 'processing', 'Checking pending...');
+
+      try {
+        // Use account's transactionRetentionDays as the Monarch search window
+        const retentionDays = (accountData?.transactionRetentionDays as number | undefined)
+          ?? TRANSACTION_RETENTION_DEFAULTS.DAYS;
+        const monarchLookbackDays = retentionDays > 0 ? retentionDays : 365;
+
+        phase1Result = await fetchMonarchPendingTransactions(monarchAccountId, monarchLookbackDays);
+
+        if (!phase1Result.noPendingTag && !phase1Result.noPendingTransactions && phase1Result.oldestPendingDate) {
+          // Extend source fetch window to cover the oldest pending transaction
+          const extendedDate = computeExtendedFromDate(
+            fromDate,
+            phase1Result.oldestPendingDate,
+            retentionDays,
+          );
+
+          if (extendedDate !== fromDate) {
+            debugLog(`[orchestrator] Extended fromDate from ${fromDate} to ${extendedDate} to cover pending transactions`);
+            effectiveFromDate = extendedDate;
+          }
+        }
+      } catch (error) {
+        debugLog('[orchestrator] Phase 1 pending fetch failed, continuing without extension:', error);
+        progressDialog.updateStepStatus(accountId, 'pending', 'error', error.message);
+        phase1Result = null;
+      }
+    }
+
+    // ── STEP 3: Fetch & Separate Source Transactions ───────
     let fetchData = null;
     let txStepResult = null;
 
     if (capabilities.hasTransactions) {
       fetchData = await fetchAndSeparateTransactions({
-        accountId, api, fromDate, txIdPrefix, hooks,
+        accountId, api, fromDate: effectiveFromDate, txIdPrefix, hooks,
         abortController,
       });
     }
 
-    // ── STEP 3: Pending Reconciliation ─────────────────────
+    // ── STEP 4: Phase 2 — Pending Reconciliation ───────────
     // Runs BEFORE transaction upload so settled ref IDs are saved to dedup store,
     // preventing the settled version from being uploaded as a duplicate.
-    if (includePendingTransactions && fetchData && txIdPrefix && hooks.getPendingIdFields) {
-      await executePendingReconciliationStep({
-        integrationId, accountId, monarchAccountId,
-        rawPending: fetchData.rawPending,
-        rawSettled: fetchData.rawSettled,
-        txIdPrefix, hooks, progressDialog, abortController,
-      });
+    if (pendingEnabled && fetchData && phase1Result) {
+      if (phase1Result.noPendingTag || phase1Result.noPendingTransactions) {
+        const msg = formatReconciliationMessage({
+          success: true, settled: 0, cancelled: 0, failed: 0, error: null, settledRefIds: [],
+          noPendingTag: phase1Result.noPendingTag,
+          noPendingTransactions: phase1Result.noPendingTransactions,
+        });
+        progressDialog.updateStepStatus(accountId, 'pending', 'success', msg);
+      } else {
+        progressDialog.updateStepStatus(accountId, 'pending', 'processing', 'Reconciling...');
+        await executePhase2Reconciliation({
+          integrationId, accountId, phase1Result,
+          rawPending: fetchData.rawPending,
+          rawSettled: fetchData.rawSettled,
+          txIdPrefix, hooks, progressDialog,
+        });
+      }
     }
 
     // ── STEP 4: Process, Dedup & Upload Transactions ───────
