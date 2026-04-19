@@ -78,7 +78,7 @@ interface ManualCategorizationResult {
  * 13. Buy/sell transaction rules specific to investment accounts
  * Other unknown types are handled via manual categorization
  */
-const INVESTMENT_TRANSACTION_RULES = [
+export const INVESTMENT_TRANSACTION_RULES = [
   // EFT transfer rule FIRST (more specific - matches subType EFT before generic DEPOSIT)
   ...CASH_TRANSACTION_RULES.filter((rule) => rule.id === 'eft-transfer'),
   // Internal transfer rule (same as CASH accounts)

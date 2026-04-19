@@ -5,6 +5,10 @@
 
 import { debugLog } from '../../core/utils';
 import monarchApi from '../../api/monarch';
+import wealthsimpleApi from '../../api/wealthsimple';
+import { INVESTMENT_TRANSACTION_RULES } from './transactionsInvestment';
+import { CASH_TRANSACTION_RULES } from './transactionRules';
+import type { WealthsimpleTransaction } from './transactionRulesHelpers';
 
 /**
  * Custom prefix for Wealthsimple transaction IDs stored in Monarch notes
@@ -162,6 +166,142 @@ function getTransactionStatusForReconciliation(
   };
 }
 
+// ── Notes regeneration ────────────────────────────────────────────────────────
+
+/**
+ * Transaction types that are investment buy/sell orders needing enrichment data.
+ */
+const INVESTMENT_BUY_SELL_TYPES = new Set([
+  'MANAGED_BUY', 'DIY_BUY', 'MANAGED_SELL', 'DIY_SELL',
+  'OPTIONS_BUY', 'OPTIONS_SELL', 'OPTIONS_ASSIGN', 'OPTIONS_SHORT_EXPIRY',
+  'CRYPTO_BUY', 'CRYPTO_SELL',
+]);
+
+/** Static security IDs that don't need API fetching (cash currencies) */
+const STATIC_SECURITY_IDS = new Set(['sec-s-cad', 'sec-s-usd']);
+
+/**
+ * Fetch enrichment data for a single settled transaction.
+ * Mirrors the enrichment logic from transactionsInvestment.ts but for a single tx.
+ *
+ * @returns Enrichment map with 0 or 1 entries keyed by the transaction's canonical ID
+ */
+async function fetchEnrichmentForTransaction(
+  wsTx: Record<string, unknown>,
+): Promise<Map<string, unknown>> {
+  const enrichmentMap = new Map<string, unknown>();
+  const txType = wsTx.type as string | undefined;
+  const externalCanonicalId = wsTx.externalCanonicalId as string | undefined;
+  const canonicalId = wsTx.canonicalId as string | undefined;
+
+  if (!txType) return enrichmentMap;
+
+  // Buy/sell orders need extended order data
+  if (INVESTMENT_BUY_SELL_TYPES.has(txType) && externalCanonicalId) {
+    const isOrdersService = externalCanonicalId.startsWith('order-');
+
+    if ((txType === 'MANAGED_BUY' || txType === 'MANAGED_SELL') && isOrdersService) {
+      const accountId = wsTx.accountId as string;
+      const activityData = await wealthsimpleApi.fetchActivityByOrdersServiceOrderId(accountId, externalCanonicalId);
+      if (activityData) {
+        enrichmentMap.set(externalCanonicalId, { ...(activityData as object), isManagedOrderData: true });
+      }
+    } else if ((txType === 'CRYPTO_BUY' || txType === 'CRYPTO_SELL') && isOrdersService) {
+      const cryptoOrder = await wealthsimpleApi.fetchCryptoOrder(externalCanonicalId);
+      if (cryptoOrder) {
+        enrichmentMap.set(externalCanonicalId, { ...(cryptoOrder as object), isCryptoOrderData: true });
+      }
+    } else if (txType === 'OPTIONS_SHORT_EXPIRY' || txType === 'OPTIONS_ASSIGN') {
+      const expiryDetail = await wealthsimpleApi.fetchShortOptionPositionExpiryDetail(externalCanonicalId);
+      if (expiryDetail) {
+        const securityCache = new Map<string, unknown>();
+        const deliverables = (expiryDetail as Record<string, unknown>).deliverables;
+        if (deliverables && Array.isArray(deliverables)) {
+          for (const deliverable of deliverables) {
+            const secId = (deliverable as Record<string, unknown>).securityId as string | undefined;
+            if (secId && !STATIC_SECURITY_IDS.has(secId)) {
+              const security = await wealthsimpleApi.fetchSecurity(secId);
+              if (security) {
+                securityCache.set(secId, security);
+              }
+            }
+          }
+        }
+        enrichmentMap.set(externalCanonicalId, { expiryDetail, securityCache });
+      }
+    } else {
+      // DIY orders and other types — FetchSoOrdersExtendedOrder
+      const extendedOrder = await wealthsimpleApi.fetchExtendedOrder(externalCanonicalId);
+      if (extendedOrder) {
+        enrichmentMap.set(externalCanonicalId, extendedOrder);
+      }
+    }
+  }
+
+  // Corporate actions need child activities
+  if (txType === 'CORPORATE_ACTION' && canonicalId) {
+    const childActivities = await wealthsimpleApi.fetchCorporateActionChildActivities(canonicalId);
+    if (childActivities && childActivities.length > 0) {
+      enrichmentMap.set(canonicalId, childActivities);
+    }
+  }
+
+  return enrichmentMap;
+}
+
+/**
+ * Regenerate notes for a settled transaction using the same rules engine
+ * that was used at upload time. Fetches enrichment data if needed.
+ *
+ * @param wsTx - Settled Wealthsimple transaction
+ * @returns Regenerated notes string, or null if no rule matched or notes are empty
+ */
+export async function regenerateSettledNotes(
+  wsTx: Record<string, unknown>,
+): Promise<string | null> {
+  const tx = wsTx as unknown as WealthsimpleTransaction;
+
+  // Try investment rules first (more specific), then cash rules
+  const allRules = [...INVESTMENT_TRANSACTION_RULES, ...CASH_TRANSACTION_RULES];
+
+  let matchedRule: (typeof allRules)[number] | null = null;
+  for (const rule of allRules) {
+    if (rule.match(tx)) {
+      matchedRule = rule;
+      break;
+    }
+  }
+
+  if (!matchedRule) {
+    debugLog(`[ws-reconciliation:notes] No rule matched for type=${tx.type} subType=${tx.subType}`);
+    return null;
+  }
+
+  debugLog(`[ws-reconciliation:notes] Matched rule "${matchedRule.id}" for type=${tx.type}, fetching enrichment...`);
+
+  // Fetch enrichment data (e.g., extended order details for buy/sell)
+  let enrichmentMap: Map<string, unknown>;
+  try {
+    enrichmentMap = await fetchEnrichmentForTransaction(wsTx);
+  } catch (error) {
+    debugLog('[ws-reconciliation:notes] Failed to fetch enrichment, proceeding without it:', error);
+    enrichmentMap = new Map();
+  }
+
+  const result = matchedRule.process(tx, enrichmentMap);
+  const notes = result.notes || '';
+
+  if (!notes) {
+    debugLog(`[ws-reconciliation:notes] Rule "${matchedRule.id}" produced empty notes`);
+    return null;
+  }
+
+  debugLog(`[ws-reconciliation:notes] Regenerated notes via rule "${matchedRule.id}": "${notes.substring(0, 80)}..."`);
+  return notes;
+}
+
+// ── Reconciliation ────────────────────────────────────────────────────────────
+
 export interface ReconciliationResult {
   success: boolean;
   settled: number;
@@ -250,6 +390,19 @@ export async function reconcileWealthsimpleFetchedPending(
           let cleanedNotes = cleanSystemNotesFromNotes(notes);
           if (wsTx.type === 'DIVIDEND') {
             cleanedNotes = updateSettledDividendNotes(cleanedNotes);
+          }
+
+          // Regenerate notes using the rules engine with settled transaction data.
+          // This updates fill prices/quantities that were 0 when the order was pending.
+          // Only replaces when the regenerated notes actually differ from existing ones.
+          try {
+            const regeneratedNotes = await regenerateSettledNotes(wsTx);
+            if (regeneratedNotes !== null && !cleanedNotes.includes(regeneratedNotes)) {
+              debugLog(`[ws-reconciliation] Updating notes for ${wsTransactionId}: old="${cleanedNotes.substring(0, 60)}" new="${regeneratedNotes.substring(0, 60)}"`);
+              cleanedNotes = regeneratedNotes;
+            }
+          } catch (notesError) {
+            debugLog(`[ws-reconciliation] Failed to regenerate notes for ${wsTransactionId}, keeping cleaned notes:`, notesError);
           }
 
           const amountChanged = monarchTx.amount !== settledAmount;
