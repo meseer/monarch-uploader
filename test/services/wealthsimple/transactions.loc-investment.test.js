@@ -1395,6 +1395,9 @@ describe('Wealthsimple Transaction Service - LoC & Investment', () => {
           unifiedStatus: 'COMPLETED',
           amount: 2.06,
           amountSign: 'positive',
+          assetSymbol: 'ZHY',
+          currency: 'CAD',
+          assetQuantity: 34.3537,
         },
       ];
 
@@ -1408,13 +1411,19 @@ describe('Wealthsimple Transaction Service - LoC & Investment', () => {
       expect(result.success).toBe(true);
       expect(result.settled).toBe(1);
 
-      // Notes should be updated: "Upcoming dividend" → "Dividend", ws-tx removed
+      // Notes should be regenerated via rules engine with settled data, ws-tx removed
+      // The rules engine produces richer notes (e.g., "Dividend on ZHY: CAD$2.06\n...")
       expect(monarchApi.updateTransaction).toHaveBeenCalledWith(
         'monarch-dividend-tx',
         expect.objectContaining({
-          notes: 'Dividend on ZHY',
+          notes: expect.stringContaining('Dividend on ZHY'),
         }),
       );
+      // Should NOT contain "Upcoming" (settled, not pending)
+      const notesArg = monarchApi.updateTransaction.mock.calls[0][1].notes;
+      expect(notesArg).not.toContain('Upcoming');
+      // Should NOT contain ws-tx: prefix
+      expect(notesArg).not.toContain('ws-tx:');
       // Pending tag should be removed
       expect(monarchApi.setTransactionTags).toHaveBeenCalledWith('monarch-dividend-tx', []);
     });
