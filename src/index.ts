@@ -241,20 +241,47 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
    * Initialize Canada Life account loading and UI (only on /s/* pages)
    */
   function initializeCanadaLifeAppPage(): void {
-    // Pre-load accounts from API to refresh cache with full account details
-    loadCanadaLifeAccounts(true) // forceRefresh=true
-      .then((accounts: unknown[]) => {
-        debugLog(`Pre-loaded ${accounts.length} Canada Life accounts with full details`);
-      })
-      .catch((err: unknown) => {
-        // Non-fatal - accounts will be loaded when sync is triggered
-        debugLog('Error pre-loading Canada Life accounts:', err);
-      });
+    // Pre-load accounts from API with retry logic.
+    // The Canada Life backend session may not be ready immediately after
+    // navigation to /s/*, so we retry with exponential backoff silently.
+    preloadCanadaLifeAccountsWithRetry();
 
     // Initialize CanadaLife UI
     initCanadaLifeUI()
       .then(() => debugLog('CanadaLife UI initialized successfully'))
       .catch((err) => debugLog('Error initializing CanadaLife UI:', err));
+  }
+
+  /**
+   * Pre-load Canada Life accounts with exponential backoff.
+   * Retries silently up to MAX_RETRIES times; only shows an error toast
+   * on the final failed attempt so the user isn't spammed during page load.
+   */
+  async function preloadCanadaLifeAccountsWithRetry(): Promise<void> {
+    const MAX_RETRIES = 4;
+    const BACKOFF_DELAYS_MS = [2000, 4000, 8000]; // delays between retries
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      const isLastAttempt = attempt === MAX_RETRIES;
+      try {
+        const accounts = await loadCanadaLifeAccounts({
+          forceRefresh: true,
+          silent: !isLastAttempt, // only show toasts on the final attempt
+        });
+        debugLog(`Pre-loaded ${accounts.length} Canada Life accounts (attempt ${attempt}/${MAX_RETRIES})`);
+        return; // success — stop retrying
+      } catch (err: unknown) {
+        debugLog(`Pre-load Canada Life accounts attempt ${attempt}/${MAX_RETRIES} failed:`, err);
+        if (!isLastAttempt) {
+          const delay = BACKOFF_DELAYS_MS[attempt - 1];
+          debugLog(`Retrying in ${delay}ms...`);
+          await new Promise((resolve) => { setTimeout(resolve, delay); });
+        }
+        // On last attempt the error toast is shown by loadCanadaLifeAccounts
+        // itself (silent=false). We just log here — this is non-fatal.
+      }
+    }
+    debugLog('All pre-load attempts for Canada Life accounts exhausted; accounts will load on next sync');
   }
 
   /**
