@@ -364,8 +364,8 @@ export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDat
     // Check for existing mapping, or prompt for mapping if not found
     let monarchAccount = accountService.getMonarchAccountMapping(INTEGRATIONS.QUESTRADE, accountId);
 
-    // If no mapping found, use the shared mapping module to resolve it
-    if (!monarchAccount) {
+    // If no mapping found or mapping has no valid ID, use the shared mapping module to resolve it
+    if (!monarchAccount || !(monarchAccount as Record<string, unknown>).id) {
       debugLog(`No mapping found for account ${accountId}, using shared mapping resolver`);
 
       const result = await ensureAccountMapping(accountId, accountName);

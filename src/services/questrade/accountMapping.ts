@@ -40,11 +40,15 @@ import { showMonarchAccountSelectorWithCreate } from '../../ui/components/accoun
  */
 export async function ensureAccountMapping(accountId, accountName, progressDialog = null, cachedMonarchAccounts = null) {
   try {
-    // 1. Check for existing mapping in consolidated storage
+    // 1. Check for existing mapping in consolidated storage (must have a valid id)
     const existingMapping = accountService.getMonarchAccountMapping(INTEGRATIONS.QUESTRADE, accountId);
-    if (existingMapping) {
+    if (existingMapping && (existingMapping as Record<string, unknown>).id) {
       debugLog(`Using existing Questrade mapping: ${accountName} → ${existingMapping.displayName}`);
       return { monarchAccount: existingMapping };
+    }
+
+    if (existingMapping && !(existingMapping as Record<string, unknown>).id) {
+      debugLog(`Questrade mapping for ${accountName} exists but has no valid ID, re-prompting`);
     }
 
     // 2. Check if account was previously skipped (BEFORE fetching accounts)

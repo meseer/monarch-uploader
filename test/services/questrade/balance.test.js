@@ -33,6 +33,7 @@ jest.mock('../../../src/api/monarch', () => ({
 
 jest.mock('../../../src/services/common/accountService', () => ({
   getMonarchAccountMapping: jest.fn(),
+  getAccountData: jest.fn(),
   upsertAccount: jest.fn(),
 }));
 
@@ -219,6 +220,78 @@ describe('Balance Service', () => {
       await expect(uploadBalanceToMonarch('12345', '', '2025-01-01', '2025-01-31'))
         .rejects
         .toThrow(BalanceError);
+
+      expect(monarchApi.uploadBalance).not.toHaveBeenCalled();
+    });
+
+    test('should trigger account mapping when mapping exists but has no id', async () => {
+      const { showMonarchAccountSelectorWithCreate } = require('../../../src/ui/components/accountSelectorWithCreate');
+
+      // First call from uploadBalanceToMonarch returns mapping without id
+      // Second call from ensureAccountMapping also returns mapping without id (same stored data)
+      accountService.getMonarchAccountMapping.mockReturnValue({ displayName: 'Bad Mapping' });
+      accountService.getAccountData.mockReturnValue(null);
+
+      // Mock listAccounts for ensureAccountMapping
+      monarchApi.listAccounts.mockResolvedValueOnce([
+        { id: 'monarch-new-123', displayName: 'New Monarch Account' },
+      ]);
+
+      // Mock the account selector to resolve with a valid account
+      showMonarchAccountSelectorWithCreate.mockImplementation(
+        (accounts, resolve) => resolve({ id: 'monarch-new-123', displayName: 'New Monarch Account' }),
+      );
+
+      // Mock upsertAccount for saving the mapping
+      accountService.upsertAccount.mockReturnValueOnce(true);
+
+      // Mock uploadBalance for the actual upload
+      monarchApi.uploadBalance.mockResolvedValueOnce(true);
+
+      const result = await uploadBalanceToMonarch(
+        'acct-999',
+        '"Date","Amount"\n"2025-01-01","1000"',
+        '2025-01-01',
+        '2025-01-31',
+      );
+
+      expect(result).toBe(true);
+      // Should have called getMonarchAccountMapping at least twice (once in uploadBalanceToMonarch, once in ensureAccountMapping)
+      expect(accountService.getMonarchAccountMapping).toHaveBeenCalledTimes(2);
+      // Should have shown the account selector since mapping had no id
+      expect(showMonarchAccountSelectorWithCreate).toHaveBeenCalled();
+      // Should have uploaded with the newly selected account id
+      expect(monarchApi.uploadBalance).toHaveBeenCalledWith(
+        'monarch-new-123',
+        expect.any(String),
+        expect.any(String),
+        expect.any(String),
+      );
+    });
+
+    test('should throw BalanceError when mapping has no id and user cancels re-mapping', async () => {
+      const { showMonarchAccountSelectorWithCreate } = require('../../../src/ui/components/accountSelectorWithCreate');
+
+      // Return mapping without id
+      accountService.getMonarchAccountMapping.mockReturnValue({ displayName: 'Bad Mapping' });
+      accountService.getAccountData.mockReturnValue(null);
+
+      // Mock listAccounts
+      monarchApi.listAccounts.mockResolvedValueOnce([
+        { id: 'monarch-123', displayName: 'Some Account' },
+      ]);
+
+      // Mock the account selector to resolve with null (user cancelled)
+      showMonarchAccountSelectorWithCreate.mockImplementation(
+        (accounts, resolve) => resolve(null),
+      );
+
+      await expect(uploadBalanceToMonarch(
+        'acct-999',
+        '"Date","Amount"\n"2025-01-01","1000"',
+        '2025-01-01',
+        '2025-01-31',
+      )).rejects.toThrow(BalanceError);
 
       expect(monarchApi.uploadBalance).not.toHaveBeenCalled();
     });
