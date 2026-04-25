@@ -108,8 +108,9 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
       // Initialize components
       initializeApp();
 
-      // Set up periodic status checks
-      setInterval(checkStatus, 10000); // Check every 10 seconds
+      // Fast initial polling for auth token detection after login
+      // Check every 500ms for the first 5 seconds, then fall back to 10s interval
+      startQuestradeAuthPolling();
       return;
     }
 
@@ -309,6 +310,46 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
         debugLog('Timeout waiting for Canada Life app page navigation (5 min)');
       }
     }, 300000);
+  }
+
+  /**
+   * Start fast initial polling for Questrade auth, then fall back to slow interval.
+   * Checks every 500ms for the first 5 seconds (10 fast checks), stopping early
+   * once the token is found. Then switches to a 10-second interval for ongoing monitoring.
+   */
+  function startQuestradeAuthPolling(): void {
+    let tokenFound = false;
+    let fastCheckCount = 0;
+    const MAX_FAST_CHECKS = 10;
+    const FAST_INTERVAL_MS = 500;
+    const SLOW_INTERVAL_MS = 10000;
+
+    // Immediate first check
+    checkStatus();
+    tokenFound = !!stateManager.getState().auth.questrade.token;
+
+    if (!tokenFound) {
+      const fastInterval = setInterval(() => {
+        fastCheckCount += 1;
+        checkStatus();
+        tokenFound = !!stateManager.getState().auth.questrade.token;
+
+        if (tokenFound || fastCheckCount >= MAX_FAST_CHECKS) {
+          clearInterval(fastInterval);
+          if (tokenFound) {
+            debugLog(`Questrade token detected after ${fastCheckCount} fast checks (${fastCheckCount * FAST_INTERVAL_MS}ms)`);
+          } else {
+            debugLog('Questrade token not found during fast polling, switching to slow interval');
+          }
+          // Start the slow interval for ongoing monitoring
+          setInterval(checkStatus, SLOW_INTERVAL_MS);
+        }
+      }, FAST_INTERVAL_MS);
+    } else {
+      debugLog('Questrade token found immediately');
+      // Start the slow interval for ongoing monitoring
+      setInterval(checkStatus, SLOW_INTERVAL_MS);
+    }
   }
 
   /**

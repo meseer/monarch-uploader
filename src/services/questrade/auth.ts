@@ -121,6 +121,50 @@ export function questradeTokenNeedsRefresh() {
 }
 
 /**
+ * Wait for Questrade authentication token to become available in sessionStorage.
+ * Uses fast initial retries with exponential backoff.
+ * Useful after login when the OIDC library hasn't yet written the token.
+ *
+ * Retry schedule: 0ms, 250ms, 500ms, 1000ms, 2000ms, 3000ms (~6.75s total)
+ *
+ * @param {Array<string>} requiredPermissions - List of required permissions for the token
+ * @param {Object} options - Configuration options
+ * @param {number[]} options.retryDelays - Array of delays in ms between retries
+ * @returns {Promise<Object|null>} Token info or null if not found after all retries
+ */
+export async function waitForQuestradeToken(
+  requiredPermissions = [
+    'brokerage.balances.all',
+    'brokerage.account-transactions.read',
+    'brokerage.accounts.read',
+  ],
+  options: { retryDelays?: number[] } = {},
+): Promise<{ token: string; expires_at: number } | null> {
+  const { retryDelays = [250, 500, 1000, 2000, 3000] } = options;
+
+  // First attempt — immediate
+  const immediateResult = getQuestradeToken(requiredPermissions);
+  if (immediateResult) {
+    return immediateResult;
+  }
+
+  // Retry with backoff
+  for (let i = 0; i < retryDelays.length; i += 1) {
+    debugLog(`Waiting for Questrade token (attempt ${i + 2}/${retryDelays.length + 1}, delay ${retryDelays[i]}ms)...`);
+    await new Promise((resolve) => { setTimeout(resolve, retryDelays[i]); });
+
+    const result = getQuestradeToken(requiredPermissions);
+    if (result) {
+      debugLog(`Questrade token found on attempt ${i + 2}/${retryDelays.length + 1}`);
+      return result;
+    }
+  }
+
+  debugLog('Questrade token not found after all retry attempts');
+  return null;
+}
+
+/**
  * Save a token for Questrade (for testing or specific scenarios)
  * @param {string|Object} token - Token to save
  */
@@ -141,6 +185,7 @@ export default {
   getQuestradeToken,
   checkQuestradeAuth,
   questradeTokenNeedsRefresh,
+  waitForQuestradeToken,
   saveQuestradeToken,
   AuthError,
 };

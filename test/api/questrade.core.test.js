@@ -33,6 +33,7 @@ jest.mock('../../src/services/questrade/auth', () => ({
   default: {
     checkQuestradeAuth: jest.fn(),
     getQuestradeToken: jest.fn(),
+    waitForQuestradeToken: jest.fn(),
     saveQuestradeToken: jest.fn(),
   },
 }));
@@ -57,6 +58,8 @@ describe('Questrade API', () => {
       authenticated: true,
       token: 'Bearer test-token',
     });
+    // Default: waitForQuestradeToken returns null (token not found after retries)
+    authService.waitForQuestradeToken.mockResolvedValue(null);
   });
 
   describe('makeQuestradeApiCall', () => {
@@ -80,15 +83,65 @@ describe('Questrade API', () => {
       expect(result).toEqual(mockResponse);
     });
 
-    test('should throw error when not authenticated', async () => {
+    test('should throw error when not authenticated and token wait fails', async () => {
       authService.checkQuestradeAuth.mockReturnValue({
         authenticated: false,
         token: null,
       });
+      authService.waitForQuestradeToken.mockResolvedValue(null);
 
       await expect(makeQuestradeApiCall('/v1/accounts')).rejects.toThrow(
         'Questrade auth token not found. Please ensure you are logged in to Questrade.',
       );
+
+      // Should have attempted to wait for token
+      expect(authService.waitForQuestradeToken).toHaveBeenCalled();
+    });
+
+    test('should retry and succeed when token becomes available after wait', async () => {
+      const mockResponse = { accounts: [{ id: '123' }] };
+
+      // First check: not authenticated
+      authService.checkQuestradeAuth
+        .mockReturnValueOnce({ authenticated: false, token: null })
+        // Second check (after wait): authenticated
+        .mockReturnValueOnce({ authenticated: true, token: 'Bearer delayed-token' });
+
+      // waitForQuestradeToken succeeds
+      authService.waitForQuestradeToken.mockResolvedValue({
+        token: 'Bearer delayed-token',
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+      });
+
+      globalThis.GM_xmlhttpRequest.mockImplementation((options) => {
+        expect(options.headers.Authorization).toBe('Bearer delayed-token');
+        setTimeout(() => {
+          options.onload({
+            status: 200,
+            responseText: JSON.stringify(mockResponse),
+          });
+        }, 0);
+      });
+
+      const result = await makeQuestradeApiCall('/v1/accounts');
+      expect(result).toEqual(mockResponse);
+      expect(authService.waitForQuestradeToken).toHaveBeenCalled();
+    });
+
+    test('should not call waitForQuestradeToken when immediately authenticated', async () => {
+      const mockResponse = { data: 'test' };
+
+      globalThis.GM_xmlhttpRequest.mockImplementation((options) => {
+        setTimeout(() => {
+          options.onload({
+            status: 200,
+            responseText: JSON.stringify(mockResponse),
+          });
+        }, 0);
+      });
+
+      await makeQuestradeApiCall('/v1/accounts');
+      expect(authService.waitForQuestradeToken).not.toHaveBeenCalled();
     });
 
     test('should handle 401 unauthorized and clear auth', async () => {
