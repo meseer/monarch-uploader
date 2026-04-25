@@ -110,7 +110,7 @@ async function syncAccountToMonarch(accountId, accountName, fromDate, toDate, pr
       // Get Monarch account mapping from consolidated storage
       const monarchAccount = accountService.getMonarchAccountMapping(INTEGRATIONS.QUESTRADE, accountId);
 
-      if (!monarchAccount) {
+      if (!monarchAccount || !monarchAccount.id) {
         debugLog(`No Monarch account mapping for ${accountId}, skipping positions sync`);
         if (progressDialog) {
           progressDialog.updateStepStatus(accountId, 'positions', 'skipped', 'No account mapping');
@@ -153,7 +153,7 @@ async function syncAccountToMonarch(accountId, accountName, fromDate, toDate, pr
     }
 
     try {
-      if (!monarchAccountForTx) {
+      if (!monarchAccountForTx || !monarchAccountForTx.id) {
         debugLog(`No Monarch account mapping for ${accountId}, skipping orders sync`);
         if (progressDialog) {
           progressDialog.updateStepStatus(accountId, 'orders', 'skipped', 'No account mapping');
@@ -203,7 +203,7 @@ async function syncAccountToMonarch(accountId, accountName, fromDate, toDate, pr
     }
 
     try {
-      if (!monarchAccountForTx) {
+      if (!monarchAccountForTx || !monarchAccountForTx.id) {
         debugLog(`No Monarch account mapping for ${accountId}, skipping activity sync`);
         if (progressDialog) {
           progressDialog.updateStepStatus(accountId, 'activity', 'skipped', 'No account mapping');
