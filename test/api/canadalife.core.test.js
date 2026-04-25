@@ -1123,6 +1123,132 @@ describe('Canada Life API - Account Functions', () => {
       await expect(loadCanadaLifeAccounts()).rejects.toThrow('Network error');
       expect(toast.show).toHaveBeenCalledWith('Failed to load Canada Life accounts: Network error', 'error');
     });
+
+    test('should suppress toasts when silent option is true', async () => {
+      global.GM_getValue.mockReturnValue('[]');
+      global.fetch.mockRejectedValue(new Error('Network error'));
+
+      await expect(loadCanadaLifeAccounts({ forceRefresh: false, silent: true })).rejects.toThrow('Network error');
+      expect(toast.show).not.toHaveBeenCalled();
+    });
+
+    test('should suppress loading and success toasts when silent is true', async () => {
+      global.GM_getValue.mockReturnValue('[]');
+
+      const apiAccounts = [
+        { EnglishShortName: 'RRSP', LongNameEnglish: 'RRSP Account', agreementId: '123' },
+      ];
+
+      const mockApiResponse = {
+        IPResult: {
+          MemberPlans: apiAccounts,
+        },
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: {
+          get: () => 'application/json',
+          entries: () => [['content-type', 'application/json']],
+        },
+        text: () => Promise.resolve(JSON.stringify({
+          actions: [{
+            returnValue: {
+              returnValue: JSON.stringify(mockApiResponse),
+            },
+          }],
+        })),
+      });
+
+      await loadCanadaLifeAccounts({ forceRefresh: false, silent: true });
+
+      // No loading or success toasts
+      expect(toast.show).not.toHaveBeenCalled();
+    });
+
+    test('should show toasts when silent is false (explicit)', async () => {
+      global.GM_getValue.mockReturnValue('[]');
+
+      const apiAccounts = [
+        { EnglishShortName: 'RRSP', LongNameEnglish: 'RRSP Account', agreementId: '123' },
+      ];
+
+      const mockApiResponse = {
+        IPResult: {
+          MemberPlans: apiAccounts,
+        },
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: {
+          get: () => 'application/json',
+          entries: () => [['content-type', 'application/json']],
+        },
+        text: () => Promise.resolve(JSON.stringify({
+          actions: [{
+            returnValue: {
+              returnValue: JSON.stringify(mockApiResponse),
+            },
+          }],
+        })),
+      });
+
+      await loadCanadaLifeAccounts({ forceRefresh: false, silent: false });
+
+      expect(toast.show).toHaveBeenCalledWith('Loading Canada Life accounts...', 'debug');
+      expect(toast.show).toHaveBeenCalledWith('Loaded Canada Life accounts: RRSP', 'debug');
+    });
+
+    test('should accept options object with forceRefresh', async () => {
+      const cachedAccounts = [{
+        canadalifeAccount: { id: '123', agreementId: '123', EnglishShortName: 'RRSP', nickname: 'RRSP' },
+        monarchAccount: null,
+        syncEnabled: true,
+      }];
+      global.GM_getValue.mockImplementation((key, defaultVal) => {
+        if (key === 'canadalife_accounts_list') {
+          return JSON.stringify(cachedAccounts);
+        }
+        return defaultVal;
+      });
+
+      const freshApiAccounts = [{ EnglishShortName: 'NEW', LongNameEnglish: 'New Account', agreementId: '999' }];
+      const mockApiResponse = { IPResult: { MemberPlans: freshApiAccounts } };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: {
+          get: () => 'application/json',
+          entries: () => [['content-type', 'application/json']],
+        },
+        text: () => Promise.resolve(JSON.stringify({
+          actions: [{
+            returnValue: {
+              returnValue: JSON.stringify(mockApiResponse),
+            },
+          }],
+        })),
+      });
+
+      const result = await loadCanadaLifeAccounts({ forceRefresh: true, silent: true });
+
+      // Should have called API (force refresh) but no toasts (silent)
+      expect(global.fetch).toHaveBeenCalled();
+      expect(toast.show).not.toHaveBeenCalled();
+      expect(result.some((a) => a.canadalifeAccount.id === '999')).toBe(true);
+    });
+
+    test('should default silent to false when using boolean signature', async () => {
+      global.GM_getValue.mockReturnValue('[]');
+      global.fetch.mockRejectedValue(new Error('Network error'));
+
+      await expect(loadCanadaLifeAccounts(false)).rejects.toThrow('Network error');
+      expect(toast.show).toHaveBeenCalledWith('Failed to load Canada Life accounts: Network error', 'error');
+    });
   });
 });
 
