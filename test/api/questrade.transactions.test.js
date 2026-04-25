@@ -33,6 +33,7 @@ jest.mock('../../src/services/questrade/auth', () => ({
   default: {
     checkQuestradeAuth: jest.fn(),
     getQuestradeToken: jest.fn(),
+    waitForQuestradeToken: jest.fn(),
     saveQuestradeToken: jest.fn(),
   },
 }));
@@ -57,6 +58,8 @@ describe('Questrade API', () => {
       authenticated: true,
       token: 'Bearer test-token',
     });
+    // Default: waitForQuestradeToken returns null (token not found after retries)
+    authService.waitForQuestradeToken.mockResolvedValue(null);
   });
 
   describe('Edge Cases', () => {

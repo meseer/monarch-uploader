@@ -6,6 +6,7 @@ import {
   getQuestradeToken,
   checkQuestradeAuth,
   questradeTokenNeedsRefresh,
+  waitForQuestradeToken,
   saveQuestradeToken,
 } from '../../../src/services/questrade/auth';
 import stateManager from '../../../src/core/state';
@@ -223,6 +224,105 @@ describe('Questrade Auth Service', () => {
 
       // Should still call state manager
       expect(stateManager.setQuestradeAuth).toHaveBeenCalledWith(null);
+    });
+  });
+
+  describe('waitForQuestradeToken', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    test('should return token immediately if available on first check', async () => {
+      const mockSessionData = {
+        access_token: 'immediate-token',
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        scope: 'brokerage.balances.all brokerage.account-transactions.read brokerage.accounts.read',
+      };
+
+      window.sessionStorage.length = 1;
+      window.sessionStorage.key.mockReturnValue('oidc.user:https://login.questrade.com/:qtweb');
+      window.sessionStorage.getItem.mockReturnValue(JSON.stringify(mockSessionData));
+
+      const result = await waitForQuestradeToken();
+
+      expect(result).toBeDefined();
+      expect(result.token).toBe('Bearer immediate-token');
+    });
+
+    test('should retry and find token after delay', async () => {
+      const mockSessionData = {
+        access_token: 'delayed-token',
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        scope: 'brokerage.balances.all brokerage.account-transactions.read brokerage.accounts.read',
+      };
+
+      // First attempt: no token
+      window.sessionStorage.length = 0;
+
+      const promise = waitForQuestradeToken(undefined, { retryDelays: [100, 200] });
+
+      // After first delay (100ms), still no token
+      await jest.advanceTimersByTimeAsync(100);
+
+      // After second delay (200ms), token appears
+      window.sessionStorage.length = 1;
+      window.sessionStorage.key.mockReturnValue('oidc.user:https://login.questrade.com/:qtweb');
+      window.sessionStorage.getItem.mockReturnValue(JSON.stringify(mockSessionData));
+
+      await jest.advanceTimersByTimeAsync(200);
+
+      const result = await promise;
+
+      expect(result).toBeDefined();
+      expect(result.token).toBe('Bearer delayed-token');
+    });
+
+    test('should return null after all retries exhausted', async () => {
+      // No token available at any point
+      window.sessionStorage.length = 0;
+
+      const promise = waitForQuestradeToken(undefined, { retryDelays: [50, 50] });
+
+      // Advance through all delays
+      await jest.advanceTimersByTimeAsync(50);
+      await jest.advanceTimersByTimeAsync(50);
+
+      const result = await promise;
+
+      expect(result).toBeNull();
+    });
+
+    test('should accept custom permissions', async () => {
+      const mockSessionData = {
+        access_token: 'positions-token',
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        scope: 'brokerage.positions.read',
+      };
+
+      window.sessionStorage.length = 1;
+      window.sessionStorage.key.mockReturnValue('oidc.user:https://login.questrade.com/:qtweb');
+      window.sessionStorage.getItem.mockReturnValue(JSON.stringify(mockSessionData));
+
+      const result = await waitForQuestradeToken(['brokerage.positions.read']);
+
+      expect(result).toBeDefined();
+      expect(result.token).toBe('Bearer positions-token');
+    });
+
+    test('should use custom retry delays', async () => {
+      window.sessionStorage.length = 0;
+
+      const promise = waitForQuestradeToken(undefined, { retryDelays: [10] });
+
+      await jest.advanceTimersByTimeAsync(10);
+
+      const result = await promise;
+
+      expect(result).toBeNull();
     });
   });
 
