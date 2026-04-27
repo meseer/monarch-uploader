@@ -8,6 +8,7 @@ import {
   checkTokenStatus,
   setupTokenMonitoring,
   extractCookies,
+  getAuraContext,
   makeAuraApiCall,
   loadAccountBalanceHistory,
   loadAccountActivityReport,
@@ -1249,6 +1250,307 @@ describe('Canada Life API - Account Functions', () => {
       await expect(loadCanadaLifeAccounts(false)).rejects.toThrow('Network error');
       expect(toast.show).toHaveBeenCalledWith('Failed to load Canada Life accounts: Network error', 'error');
     });
+  });
+});
+
+describe('Canada Life API - getAuraContext', () => {
+  const savedWindow = {};
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // Save and clear $A from window
+    savedWindow.$A = global.window.$A;
+    delete global.window.$A;
+  });
+
+  afterEach(() => {
+    // Restore $A
+    if (savedWindow.$A !== undefined) {
+      global.window.$A = savedWindow.$A;
+    } else {
+      delete global.window.$A;
+    }
+  });
+
+  test('should use encodeForServer when $A.getContext().encodeForServer() returns a string', () => {
+    global.window.$A = {
+      getContext: jest.fn().mockReturnValue({
+        encodeForServer: jest.fn().mockReturnValue('{"mode":"PROD","fwuid":"dynamic-fwuid-123"}'),
+      }),
+    };
+
+    const result = getAuraContext();
+
+    expect(result).toBe('{"mode":"PROD","fwuid":"dynamic-fwuid-123"}');
+    expect(debugLog).toHaveBeenCalledWith('Extracted aura.context via $A.getContext().encodeForServer()');
+  });
+
+  test('should use encodeForServer when it returns an object', () => {
+    global.window.$A = {
+      getContext: jest.fn().mockReturnValue({
+        encodeForServer: jest.fn().mockReturnValue({ mode: 'PROD', fwuid: 'obj-fwuid' }),
+      }),
+    };
+
+    const result = getAuraContext();
+    const parsed = JSON.parse(result);
+
+    expect(parsed.fwuid).toBe('obj-fwuid');
+    expect(parsed.mode).toBe('PROD');
+    expect(debugLog).toHaveBeenCalledWith('Extracted aura.context via $A.getContext().encodeForServer()');
+  });
+
+  test('should build manually from context.fwuid when encodeForServer is unavailable', () => {
+    global.window.$A = {
+      getContext: jest.fn().mockReturnValue({
+        fwuid: 'manual-fwuid-456',
+        mode: 'PROD',
+        loaded: { 'APPLICATION@markup://siteforce:communityApp': 'test-hash' },
+      }),
+    };
+
+    const result = getAuraContext();
+    const parsed = JSON.parse(result);
+
+    expect(parsed.fwuid).toBe('manual-fwuid-456');
+    expect(parsed.mode).toBe('PROD');
+    expect(parsed.app).toBe('siteforce:communityApp');
+    expect(parsed.loaded).toEqual({ 'APPLICATION@markup://siteforce:communityApp': 'test-hash' });
+    expect(debugLog).toHaveBeenCalledWith(
+      'Built aura.context manually from $A.getContext() properties',
+      { fwuid: 'manual-fwuid-456' },
+    );
+  });
+
+  test('should use getEncodedFwuid() when fwuid property is missing', () => {
+    global.window.$A = {
+      getContext: jest.fn().mockReturnValue({
+        getEncodedFwuid: jest.fn().mockReturnValue('encoded-fwuid-789'),
+        mode: 'PROD',
+        loaded: {},
+      }),
+    };
+
+    const result = getAuraContext();
+    const parsed = JSON.parse(result);
+
+    expect(parsed.fwuid).toBe('encoded-fwuid-789');
+  });
+
+  test('should fall back to hardcoded constant when $A is unavailable', () => {
+    // $A is already deleted in beforeEach
+
+    const result = getAuraContext();
+    const parsed = JSON.parse(result);
+
+    expect(parsed.mode).toBe('PROD');
+    expect(parsed.fwuid).toBeTruthy();
+    expect(parsed.app).toBe('siteforce:communityApp');
+    expect(debugLog).toHaveBeenCalledWith('WARNING: Using hardcoded fallback aura.context — this may become stale');
+  });
+
+  test('should fall back gracefully when $A.getContext throws', () => {
+    global.window.$A = {
+      getContext: jest.fn().mockImplementation(() => {
+        throw new Error('Aura framework not initialized');
+      }),
+    };
+
+    const result = getAuraContext();
+    const parsed = JSON.parse(result);
+
+    expect(parsed.mode).toBe('PROD');
+    expect(parsed.fwuid).toBeTruthy();
+    expect(debugLog).toHaveBeenCalledWith('Error extracting dynamic aura.context, using fallback:', expect.any(Error));
+  });
+
+  test('should fall back when encodeForServer returns null', () => {
+    global.window.$A = {
+      getContext: jest.fn().mockReturnValue({
+        encodeForServer: jest.fn().mockReturnValue(null),
+        // No fwuid either
+      }),
+    };
+
+    const result = getAuraContext();
+    const parsed = JSON.parse(result);
+
+    // Should use fallback
+    expect(parsed.fwuid).toBeTruthy();
+    expect(debugLog).toHaveBeenCalledWith('WARNING: Using hardcoded fallback aura.context — this may become stale');
+  });
+});
+
+describe('Canada Life API - Generalized Error Detection', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    stateManager.getState.mockReturnValue({
+      auth: {
+        canadalife: {
+          token: 'valid-aura-token',
+        },
+      },
+    });
+  });
+
+  const mockPayload = {
+    actions: [{
+      id: '123',
+      descriptor: 'test',
+      params: { test: 'data' },
+    }],
+  };
+
+  test('should detect memberPlansHasAPIFailure flag', async () => {
+    const errorResponse = {
+      IPResult: {
+        memberPlansHasAPIFailure: true,
+        error: 'OK',
+      },
+    };
+
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+        entries: () => [['content-type', 'application/json']],
+      },
+      text: () => Promise.resolve(JSON.stringify(errorResponse)),
+    });
+
+    await expect(makeAuraApiCall(mockPayload)).rejects.toThrow(CanadaLifeApiError);
+    await expect(makeAuraApiCall(mockPayload)).rejects.toThrow(/memberPlansHasAPIFailure/);
+  });
+
+  test('should detect activityReportsHasApiFailure flag (backward compat)', async () => {
+    const errorResponse = {
+      IPResult: {
+        activityReportsHasApiFailure: true,
+      },
+    };
+
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+        entries: () => [['content-type', 'application/json']],
+      },
+      text: () => Promise.resolve(JSON.stringify(errorResponse)),
+    });
+
+    await expect(makeAuraApiCall(mockPayload)).rejects.toThrow(CanadaLifeApiError);
+  });
+
+  test('should detect multiple failure flags simultaneously', async () => {
+    const errorResponse = {
+      IPResult: {
+        activityReportsHasApiFailure: true,
+        memberPlansHasAPIFailure: true,
+      },
+    };
+
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+        entries: () => [['content-type', 'application/json']],
+      },
+      text: () => Promise.resolve(JSON.stringify(errorResponse)),
+    });
+
+    await expect(makeAuraApiCall(mockPayload)).rejects.toThrow(CanadaLifeApiError);
+    expect(debugLog).toHaveBeenCalledWith(
+      expect.stringContaining('API failure flag(s) detected'),
+      expect.any(Object),
+    );
+  });
+
+  test('should not trigger on HasApiFailure flags set to false', async () => {
+    const response = {
+      IPResult: {
+        activityReportsHasApiFailure: false,
+        memberPlansHasAPIFailure: false,
+        MemberPlans: [{ agreementId: '123' }],
+      },
+    };
+
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+        entries: () => [['content-type', 'application/json']],
+      },
+      text: () => Promise.resolve(JSON.stringify(response)),
+    });
+
+    // Should not throw — failure flags are false
+    const result = await makeAuraApiCall(mockPayload);
+    expect(result.IPResult.MemberPlans).toBeDefined();
+  });
+
+  test('should log COOSE warning when detected in response', async () => {
+    const responseWithCoose = {
+      actions: [
+        {
+          id: '164;a',
+          state: 'SUCCESS',
+          returnValue: { returnValue: '{"IPResult":{"memberPlansHasAPIFailure":true}}' },
+        },
+        {
+          id: 'COOSE',
+          state: 'warning',
+          returnValue: 'This page has changes since the last refresh.',
+        },
+      ],
+    };
+
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+        entries: () => [['content-type', 'application/json']],
+      },
+      text: () => Promise.resolve(JSON.stringify(responseWithCoose)),
+    });
+
+    // Should throw because of memberPlansHasAPIFailure, but also log COOSE
+    await expect(makeAuraApiCall(mockPayload)).rejects.toThrow(CanadaLifeApiError);
+    expect(debugLog).toHaveBeenCalledWith(
+      'COOSE (Client Out Of Sync Error) detected in response:',
+      expect.objectContaining({ id: 'COOSE' }),
+    );
+  });
+
+  test('should include failure flag names in error details', async () => {
+    const errorResponse = {
+      IPResult: {
+        memberPlansHasAPIFailure: true,
+      },
+    };
+
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+        entries: () => [['content-type', 'application/json']],
+      },
+      text: () => Promise.resolve(JSON.stringify(errorResponse)),
+    });
+
+    try {
+      await makeAuraApiCall(mockPayload);
+      // Should not reach here
+      expect(true).toBe(false);
+    } catch (error) {
+      expect(error).toBeInstanceOf(CanadaLifeApiError);
+      expect(error.errorDetails).toEqual({ memberPlansHasAPIFailure: true });
+    }
   });
 });
 
