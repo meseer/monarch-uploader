@@ -3,8 +3,12 @@
  * Handles fetching orders and activity transactions from Questrade and uploading them to Monarch
  *
  * This service uses TWO data sources:
- * 1. Orders API (v1) - For trade orders (buy/sell securities)
- * 2. Activity API (v3) - For non-trade transactions (dividends, fees, deposits, etc.)
+ * 1. Orders API (v1) - For trade orders (buy/sell securities) - only returns recent orders
+ * 2. Activity API (v3) - For ALL transactions including trades, dividends, fees, deposits, etc.
+ *
+ * Trades from Activity API are deduplicated against Orders API data.
+ * Orders API data is preferred when available (richer data), but Activity API
+ * trades are kept for historic orders that the Orders API no longer returns.
  */
 
 import { debugLog, getTodayLocal, saveLastUploadDate } from '../../core/utils';
@@ -23,8 +27,8 @@ import {
 } from '../../utils/transactionStorage';
 import {
   applyTransactionRule,
-  shouldFilterTransaction,
   getTransactionId,
+  cleanString,
 } from './transactionRules';
 import { showProgressDialog } from '../../ui/components/progressDialog';
 
@@ -121,6 +125,103 @@ function filterDuplicateTransactions(transactions, accountId) {
 }
 
 /**
+ * Build composite signature keys from orders for cross-source deduplication.
+ * These signatures allow matching Activity API trades against Orders API data.
+ * Format: "symbol:YYYY-MM-DD:action" (all lowercased for case-insensitive matching)
+ *
+ * @param {Array} orders - Array of executed orders from Orders API
+ * @returns {Set<string>} Set of order signature strings
+ */
+function buildOrderSignatures(orders) {
+  const signatures = new Set();
+
+  if (!orders || !Array.isArray(orders)) {
+    return signatures;
+  }
+
+  for (const order of orders) {
+    // Extract symbol from security object (Orders API uses security.symbol)
+    const symbol = cleanString(order.security?.symbol || '').toLowerCase();
+    const action = cleanString(order.action || '').toLowerCase();
+
+    // Extract date from updatedDateTime (ISO format)
+    let date = '';
+    if (order.updatedDateTime) {
+      const dateStr = order.updatedDateTime;
+      date = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+    }
+
+    if (symbol && date && action) {
+      const signature = `${symbol}:${date}:${action}`;
+      signatures.add(signature);
+    }
+  }
+
+  debugLog(`Built ${signatures.size} order signatures from ${orders.length} orders`);
+  return signatures;
+}
+
+/**
+ * Filter Activity API trades that match Orders API data (cross-source deduplication).
+ * Removes activity trades that have a matching order, since Orders API data is preferred.
+ *
+ * Only filters transactions with transactionType === 'Trades'.
+ * Non-trade transactions pass through unchanged.
+ *
+ * @param {Array} processedTransactions - Array of {transaction, details, ruleResult} from activity processing
+ * @param {Set<string>} orderSignatures - Set of order signatures from buildOrderSignatures()
+ * @returns {Object} Filtered transactions and statistics
+ */
+function filterActivityTradesMatchingOrders(processedTransactions, orderSignatures) {
+  if (!orderSignatures || orderSignatures.size === 0 || !processedTransactions || processedTransactions.length === 0) {
+    return {
+      transactions: processedTransactions || [],
+      matchedTradeCount: 0,
+    };
+  }
+
+  const originalCount = processedTransactions.length;
+  let matchedTradeCount = 0;
+
+  const filtered = processedTransactions.filter((pt) => {
+    const tx = pt.transaction;
+
+    // Only attempt to match trades — let all other transaction types pass through
+    if (tx.transactionType !== 'Trades') {
+      return true;
+    }
+
+    // Build the same composite key from the activity transaction
+    const symbol = cleanString(tx.symbol || pt.details?.symbol || '').toLowerCase();
+    const action = cleanString(tx.action || '').toLowerCase();
+    let date = cleanString(tx.transactionDate || '');
+    if (date.includes('T')) {
+      date = date.split('T')[0];
+    }
+
+    if (symbol && date && action) {
+      const signature = `${symbol}:${date}:${action}`;
+      if (orderSignatures.has(signature)) {
+        matchedTradeCount += 1;
+        return false; // Remove — this trade is covered by an order
+      }
+    }
+
+    // No matching order found — keep this activity trade
+    return true;
+  });
+
+  if (matchedTradeCount > 0) {
+    debugLog(`Cross-source dedup: removed ${matchedTradeCount} activity trades matching orders (${originalCount} → ${filtered.length})`);
+  }
+
+  return {
+    transactions: filtered,
+    matchedTradeCount,
+  };
+}
+
+/**
  * Filter orders to only include executed ones
  * @param {Array} orders - Array of orders
  * @returns {Array} Filtered orders with status="Executed"
@@ -133,27 +234,6 @@ function filterExecutedOrders(orders) {
   const executedOrders = orders.filter((order) => order.status === 'Executed');
   debugLog(`Filtered ${executedOrders.length} executed orders from ${orders.length} total`);
   return executedOrders;
-}
-
-/**
- * Filter transactions to exclude trades (handled by orders API)
- * @param {Array} transactions - Array of transactions from activity API
- * @returns {Array} Filtered transactions without trades
- */
-function filterNonTradeTransactions(transactions) {
-  if (!transactions || !Array.isArray(transactions)) {
-    return [];
-  }
-
-  const nonTradeTransactions = transactions.filter((tx) => !shouldFilterTransaction(tx));
-  const filteredCount = transactions.length - nonTradeTransactions.length;
-
-  if (filteredCount > 0) {
-    debugLog(`Filtered out ${filteredCount} trade transactions (handled by orders API)`);
-  }
-
-  debugLog(`Kept ${nonTradeTransactions.length} non-trade transactions`);
-  return nonTradeTransactions;
 }
 
 /**
@@ -355,6 +435,7 @@ async function fetchQuestradeOrders(accountId, fromDate) {
 
 /**
  * Fetch activity transactions and their details for an account
+ * Includes ALL transaction types (trades, dividends, fees, etc.)
  * @param {string} accountId - Questrade account ID
  * @param {string} fromDate - Start date in YYYY-MM-DD format
  * @param {Object} progressDialog - Optional progress dialog
@@ -368,7 +449,7 @@ async function fetchAndProcessActivityTransactions(accountId, fromDate, progress
       progressDialog.updateProgress(accountId, 'processing', 'Loading transactions from Questrade...');
     }
 
-    // Fetch all transactions since the date
+    // Fetch all transactions since the date (including trades)
     const transactions = await questradeApi.fetchTransactionsSinceDate(accountId, fromDate);
 
     if (!transactions || transactions.length === 0) {
@@ -376,34 +457,26 @@ async function fetchAndProcessActivityTransactions(accountId, fromDate, progress
       return [];
     }
 
-    debugLog(`Fetched ${transactions.length} activity transactions`);
-
-    // Filter out trades (handled by orders API)
-    const nonTradeTransactions = filterNonTradeTransactions(transactions);
-
-    if (nonTradeTransactions.length === 0) {
-      debugLog('No non-trade transactions to process');
-      return [];
-    }
+    debugLog(`Fetched ${transactions.length} activity transactions (including trades)`);
 
     if (progressDialog) {
       progressDialog.updateProgress(
         accountId,
         'processing',
-        `Loading transaction details (0/${nonTradeTransactions.length})...`,
+        `Loading transaction details (0/${transactions.length})...`,
       );
     }
 
     // Fetch details for each transaction
     const processedTransactions = [];
-    for (let i = 0; i < nonTradeTransactions.length; i += 1) {
-      const tx = nonTradeTransactions[i];
+    for (let i = 0; i < transactions.length; i += 1) {
+      const tx = transactions[i];
 
       if (progressDialog && i % 5 === 0) {
         progressDialog.updateProgress(
           accountId,
           'processing',
-          `Loading transaction details (${i + 1}/${nonTradeTransactions.length})...`,
+          `Loading transaction details (${i + 1}/${transactions.length})...`,
         );
       }
 
@@ -411,7 +484,7 @@ async function fetchAndProcessActivityTransactions(accountId, fromDate, progress
       let details = null;
       if (tx.transactionUrl) {
         try {
-          details = await questradeApi.fetchTransactionDetails(tx.transactionUrl);
+          details = await questradeApi.fetchTransactionDetails(tx.transactionUrl as string);
         } catch (detailError) {
           debugLog(`Failed to fetch details for transaction ${getTransactionId(tx)}:`, detailError);
           // Continue without details - rules can still process with basic info
@@ -438,14 +511,19 @@ async function fetchAndProcessActivityTransactions(accountId, fromDate, progress
 
 /**
  * Process and upload activity transactions for a Questrade account
+ * Includes all transaction types. Trades are deduplicated against Orders API data
+ * using order signatures — Activity trades matching an order are removed since
+ * the Orders API provides richer data for recent trades.
+ *
  * @param {string} accountId - Questrade account ID
  * @param {string} accountName - Account name for display
  * @param {string} fromDate - Start date for transactions
  * @param {string} monarchAccountId - Monarch account ID to upload to
  * @param {Object} progressDialog - Optional progress dialog
+ * @param {Set<string>} orderSignatures - Optional set of order signatures for cross-source trade dedup
  * @returns {Promise<Object>} Upload result
  */
-async function processAndUploadActivityTransactions(accountId, accountName, fromDate, monarchAccountId, progressDialog = null) {
+async function processAndUploadActivityTransactions(accountId, accountName, fromDate, monarchAccountId, progressDialog = null, orderSignatures = null) {
   try {
     debugLog(`Processing activity transactions for account ${accountName} (${accountId})`);
 
@@ -461,19 +539,29 @@ async function processAndUploadActivityTransactions(accountId, accountName, from
       };
     }
 
-    // Filter out duplicates
-    const transactionsForDedup = processedTransactions.map((pt) => pt.transaction);
+    // Step 1: Cross-source dedup — remove activity trades that match an order
+    let afterCrossDedup = processedTransactions;
+    let crossDedupCount = 0;
+    if (orderSignatures && orderSignatures.size > 0) {
+      const crossResult = filterActivityTradesMatchingOrders(processedTransactions, orderSignatures);
+      afterCrossDedup = crossResult.transactions;
+      crossDedupCount = crossResult.matchedTradeCount;
+    }
+
+    // Step 2: Standard dedup — remove already-uploaded transactions
+    const transactionsForDedup = afterCrossDedup.map((pt) => pt.transaction);
     const filterResult = filterDuplicateTransactions(transactionsForDedup, accountId);
 
     // Create a set of IDs to keep
     const idsToKeep = new Set(filterResult.transactions.map((tx) => getTransactionId(tx)));
 
     // Filter the processed transactions
-    const newProcessedTransactions = processedTransactions.filter((pt) => idsToKeep.has(getTransactionId(pt.transaction)));
+    const newProcessedTransactions = afterCrossDedup.filter((pt) => idsToKeep.has(getTransactionId(pt.transaction)));
 
     if (newProcessedTransactions.length === 0) {
-      const message = filterResult.duplicateCount > 0
-        ? `All ${filterResult.duplicateCount} activity transactions have already been uploaded`
+      const totalSkipped = filterResult.duplicateCount + crossDedupCount;
+      const message = totalSkipped > 0
+        ? `All activity transactions already uploaded or matched by orders (${totalSkipped} skipped)`
         : 'No new activity transactions to upload';
       debugLog(message);
       return {
@@ -481,13 +569,15 @@ async function processAndUploadActivityTransactions(accountId, accountName, from
         message,
         transactionsProcessed: 0,
         skippedDuplicates: filterResult.duplicateCount,
+        matchedByOrders: crossDedupCount,
       };
     }
 
     if (progressDialog) {
-      const dupMsg = filterResult.duplicateCount > 0
-        ? ` (${filterResult.duplicateCount} duplicates skipped)`
-        : '';
+      const dupParts = [];
+      if (filterResult.duplicateCount > 0) dupParts.push(`${filterResult.duplicateCount} duplicates`);
+      if (crossDedupCount > 0) dupParts.push(`${crossDedupCount} matched by orders`);
+      const dupMsg = dupParts.length > 0 ? ` (${dupParts.join(', ')} skipped)` : '';
       progressDialog.updateProgress(
         accountId,
         'processing',
@@ -532,9 +622,11 @@ async function processAndUploadActivityTransactions(accountId, accountName, from
       // Save to consolidated storage (shared with orders)
       saveUploadedTransactionsToConsolidated(accountId, transactionsWithDates);
 
-      const successMessage = filterResult.duplicateCount > 0
-        ? `Successfully uploaded ${newProcessedTransactions.length} activity transactions (${filterResult.duplicateCount} duplicates skipped)`
-        : `Successfully uploaded ${newProcessedTransactions.length} activity transactions`;
+      const skipParts = [];
+      if (filterResult.duplicateCount > 0) skipParts.push(`${filterResult.duplicateCount} duplicates`);
+      if (crossDedupCount > 0) skipParts.push(`${crossDedupCount} matched by orders`);
+      const skipMsg = skipParts.length > 0 ? ` (${skipParts.join(', ')} skipped)` : '';
+      const successMessage = `Successfully uploaded ${newProcessedTransactions.length} activity transactions${skipMsg}`;
 
       debugLog(successMessage);
       return {
@@ -542,6 +634,7 @@ async function processAndUploadActivityTransactions(accountId, accountName, from
         message: successMessage,
         transactionsProcessed: newProcessedTransactions.length,
         skippedDuplicates: filterResult.duplicateCount,
+        matchedByOrders: crossDedupCount,
       };
     }
 
@@ -664,6 +757,9 @@ async function processAndUploadOrders(accountId, accountName, fromDate, monarchA
       saveUploadedTransactionsToConsolidated(accountId, transactionsWithDates);
       saveLastUploadDate(accountId, toDate, 'questrade');
 
+      // Build order signatures for cross-source deduplication with activity trades
+      const signatures = buildOrderSignatures(executedOrders);
+
       const successMessage = filterResult.duplicateCount > 0
         ? `Successfully uploaded ${ordersToUpload.length} orders (${filterResult.duplicateCount} duplicates skipped)`
         : `Successfully uploaded ${ordersToUpload.length} orders`;
@@ -674,6 +770,7 @@ async function processAndUploadOrders(accountId, accountName, fromDate, monarchA
         message: successMessage,
         ordersProcessed: ordersToUpload.length,
         skippedDuplicates: filterResult.duplicateCount,
+        orderSignatures: signatures,
       };
     }
 
@@ -714,9 +811,12 @@ async function processAndUploadTransactions(accountId, accountName, fromDate, pr
       activity: null,
     };
 
-    // Process orders (trades)
+    // Process orders (trades) — also produces signatures for cross-source dedup
+    let orderSignatures = null;
     try {
       results.orders = await processAndUploadOrders(accountId, accountName, fromDate, monarchAccount.id, progressDialog);
+      // Extract order signatures for activity trade deduplication
+      orderSignatures = results.orders?.orderSignatures || null;
     } catch (orderError) {
       debugLog('Error processing orders:', orderError);
       results.orders = {
@@ -726,9 +826,9 @@ async function processAndUploadTransactions(accountId, accountName, fromDate, pr
       };
     }
 
-    // Process activity transactions (non-trades)
+    // Process activity transactions (all types, with cross-source trade dedup)
     try {
-      results.activity = await processAndUploadActivityTransactions(accountId, accountName, fromDate, monarchAccount.id, progressDialog);
+      results.activity = await processAndUploadActivityTransactions(accountId, accountName, fromDate, monarchAccount.id, progressDialog, orderSignatures);
     } catch (activityError) {
       debugLog('Error processing activity transactions:', activityError);
       results.activity = {
@@ -740,7 +840,7 @@ async function processAndUploadTransactions(accountId, accountName, fromDate, pr
 
     // Combine results
     const totalProcessed = (results.orders?.ordersProcessed || 0) + (results.activity?.transactionsProcessed || 0);
-    const totalDuplicates = (results.orders?.skippedDuplicates || 0) + (results.activity?.skippedDuplicates || 0);
+    const totalDuplicates = (results.orders?.skippedDuplicates || 0) + (results.activity?.skippedDuplicates || 0) + (results.activity?.matchedByOrders || 0);
 
     const overallSuccess = (results.orders?.success ?? true) && (results.activity?.success ?? true);
 
@@ -794,6 +894,7 @@ async function processAndUploadTransactions(accountId, accountName, fromDate, pr
 
 /**
  * Fetch and process ALL activity transactions for an account (no date filter)
+ * Includes all transaction types (trades, dividends, fees, etc.)
  * @param {string} accountId - Questrade account ID
  * @param {Object} progressDialog - Optional progress dialog
  * @returns {Promise<Array>} Array of processed transactions with details
@@ -806,7 +907,7 @@ async function fetchAndProcessAllActivityTransactions(accountId, progressDialog 
       progressDialog.updateProgress(accountId, 'processing', 'Loading all transactions from Questrade...');
     }
 
-    // Fetch ALL transactions (no date filter)
+    // Fetch ALL transactions (no date filter, including trades)
     const transactions = await questradeApi.fetchAllTransactions(accountId);
 
     if (!transactions || transactions.length === 0) {
@@ -814,34 +915,26 @@ async function fetchAndProcessAllActivityTransactions(accountId, progressDialog 
       return [];
     }
 
-    debugLog(`Fetched ${transactions.length} total activity transactions`);
-
-    // Filter out trades (handled by orders API)
-    const nonTradeTransactions = filterNonTradeTransactions(transactions);
-
-    if (nonTradeTransactions.length === 0) {
-      debugLog('No non-trade transactions to process');
-      return [];
-    }
+    debugLog(`Fetched ${transactions.length} total activity transactions (including trades)`);
 
     if (progressDialog) {
       progressDialog.updateProgress(
         accountId,
         'processing',
-        `Loading transaction details (0/${nonTradeTransactions.length})...`,
+        `Loading transaction details (0/${transactions.length})...`,
       );
     }
 
     // Fetch details for each transaction
     const processedTransactions = [];
-    for (let i = 0; i < nonTradeTransactions.length; i += 1) {
-      const tx = nonTradeTransactions[i];
+    for (let i = 0; i < transactions.length; i += 1) {
+      const tx = transactions[i];
 
       if (progressDialog && i % 10 === 0) {
         progressDialog.updateProgress(
           accountId,
           'processing',
-          `Loading transaction details (${i + 1}/${nonTradeTransactions.length})...`,
+          `Loading transaction details (${i + 1}/${transactions.length})...`,
         );
       }
 
@@ -849,7 +942,7 @@ async function fetchAndProcessAllActivityTransactions(accountId, progressDialog 
       let details = null;
       if (tx.transactionUrl) {
         try {
-          details = await questradeApi.fetchTransactionDetails(tx.transactionUrl);
+          details = await questradeApi.fetchTransactionDetails(tx.transactionUrl as string);
         } catch (detailError) {
           debugLog(`Failed to fetch details for transaction ${getTransactionId(tx)}:`, detailError);
           // Continue without details - rules can still process with basic info
@@ -1186,5 +1279,6 @@ export default {
   filterExecutedOrders,
   filterDuplicateOrders,
   filterDuplicateTransactions,
-  filterNonTradeTransactions,
+  buildOrderSignatures,
+  filterActivityTradesMatchingOrders,
 };

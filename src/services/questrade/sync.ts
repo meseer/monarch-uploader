@@ -147,7 +147,8 @@ async function syncAccountToMonarch(accountId, accountName, fromDate, toDate, pr
     // Get Monarch account mapping for transaction uploads
     const monarchAccountForTx = accountService.getMonarchAccountMapping(INTEGRATIONS.QUESTRADE, accountId);
 
-    // Step 3: Sync orders (trades) - gracefully handle failures
+    // Step 3: Sync orders (trades) - also produces signatures for cross-source dedup
+    let orderSignatures = null;
     if (progressDialog) {
       progressDialog.updateStepStatus(accountId, 'orders', 'processing', 'Syncing orders...');
     }
@@ -166,6 +167,9 @@ async function syncAccountToMonarch(accountId, accountName, fromDate, toDate, pr
           monarchAccountForTx.id,
           null, // Don't pass progressDialog to avoid double-updates
         );
+
+        // Extract order signatures for activity trade deduplication
+        orderSignatures = ordersResult?.orderSignatures || null;
 
         if (ordersResult.success) {
           const ordersCount = ordersResult.ordersProcessed || 0;
@@ -197,7 +201,7 @@ async function syncAccountToMonarch(accountId, accountName, fromDate, toDate, pr
       }
     }
 
-    // Step 4: Sync activity (contributions, dividends, fees, etc.) - gracefully handle failures
+    // Step 4: Sync activity (all types, with cross-source trade dedup against orders)
     if (progressDialog) {
       progressDialog.updateStepStatus(accountId, 'activity', 'processing', 'Syncing activity...');
     }
@@ -215,6 +219,7 @@ async function syncAccountToMonarch(accountId, accountName, fromDate, toDate, pr
           fromDate,
           monarchAccountForTx.id,
           null, // Don't pass progressDialog to avoid double-updates
+          orderSignatures, // Pass order signatures for cross-source trade dedup
         );
 
         if (activityResult.success) {

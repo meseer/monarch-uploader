@@ -285,6 +285,69 @@ function formatQuantityNotes(normalized) {
 }
 
 /**
+ * Format notes for trade transactions (buy/sell from Activity API)
+ * Produces notes similar to Orders API format:
+ * Line 1: Description (e.g., "VANGUARD GROWTH ETF PORTFOLIO ETF UNIT WE ACTED AS AGENT")
+ * Line 2: Filled quantity @ price per share, commission
+ * Line 3: Total amount with currency
+ * Line 4: Settlement date (only if different from transaction date)
+ *
+ * Data sources:
+ * - quantity: from details or activity list (with &fields=Quantity)
+ * - price: from details or activity list (with &fields=Price) — { currencyCode, amount }
+ * - commission: from details only (details.commission)
+ * - net: from details or activity list — { currencyCode, amount }
+ *
+ * @param {Object} normalized - Normalized transaction data
+ * @returns {string} Formatted trade notes
+ */
+export function formatTradeNotes(normalized) {
+  const lines = [];
+
+  // Line 1: Description
+  if (normalized.description) {
+    lines.push(normalized.description);
+  }
+
+  // Line 2: Filled quantity @ price, commission
+  const qty = normalized.quantity !== undefined && normalized.quantity !== null
+    ? formatNumber(normalized.quantity) : '';
+  const priceAmount = normalized.price?.amount !== undefined && normalized.price?.amount !== null
+    ? formatNumber(normalized.price.amount) : '';
+  const priceCurrency = cleanString(normalized.price?.currencyCode) || cleanString(normalized.net?.currencyCode) || 'CAD';
+
+  // Commission comes from details endpoint only (details.commission)
+  // eslint-disable-next-line no-underscore-dangle
+  const commission = normalized._details?.commission;
+  const commissionStr = commission !== undefined && commission !== null
+    ? formatNumber(commission) : '';
+
+  if (qty && priceAmount) {
+    let filledLine = `Filled ${qty} @ ${priceAmount}`;
+    if (commissionStr) {
+      filledLine += `, fees: ${commissionStr} ${priceCurrency}`;
+    }
+    lines.push(filledLine);
+  }
+
+  // Line 3: Total amount with currency
+  const netAmount = normalized.net?.amount;
+  if (netAmount !== undefined && netAmount !== null) {
+    const totalStr = formatNumber(Math.abs(parseFloat(netAmount) || 0));
+    if (totalStr) {
+      lines.push(`Total: ${totalStr} ${priceCurrency}`);
+    }
+  }
+
+  // Line 4: Settlement Date - only if different from transaction date
+  if (normalized.settlementDate && normalized.settlementDate !== normalized.transactionDate) {
+    lines.push(`Settlement Date: ${normalized.settlementDate}`);
+  }
+
+  return lines.join('\n');
+}
+
+/**
  * Format FX conversion notes with exchange rate details
  * Uses correct API structure:
  * - net: { currencyCode: "USD", amount: 100.00 }
@@ -697,6 +760,46 @@ export const QUESTRADE_TRANSACTION_RULES = [
   },
 
   // ============================================
+  // TRADES (from Activity API)
+  // Trades are also available from the Orders API (v1), but that only returns
+  // recent orders. Activity API trades are kept and deduplicated against orders
+  // to ensure historic trades are not lost.
+  // ============================================
+  {
+    id: 'trades-buy',
+    description: 'Trades - Buy order',
+    match: (n) => n.transactionType === 'Trades' && n.action === 'Buy',
+    process: (n) => ({
+      category: 'Buy',
+      merchant: n.symbol || 'Unknown Security',
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatTradeNotes(n),
+    }),
+  },
+  {
+    id: 'trades-sell',
+    description: 'Trades - Sell order',
+    match: (n) => n.transactionType === 'Trades' && n.action === 'Sell',
+    process: (n) => ({
+      category: 'Sell',
+      merchant: n.symbol || 'Unknown Security',
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatTradeNotes(n),
+    }),
+  },
+  {
+    id: 'trades-fallback',
+    description: 'Trades - Other trade actions (catch-all)',
+    match: (n) => n.transactionType === 'Trades',
+    process: (n) => ({
+      category: 'Investment',
+      merchant: n.symbol || 'Unknown Security',
+      originalStatement: formatOriginalStatement(n.transactionType, n.action, n.symbol),
+      notes: formatTradeNotes(n),
+    }),
+  },
+
+  // ============================================
   // FALLBACK - Unknown Type/Action
   // ============================================
   {
@@ -754,17 +857,15 @@ export function applyTransactionRule(transaction, details = null) {
 
 /**
  * Check if a transaction should be filtered out
- * Trades are handled by the orders API, not the activity API
+ * Previously filtered trades (handled by orders API), but now trades are kept
+ * and deduplicated against orders instead.
  * @param {Object} transaction - Transaction object
  * @returns {boolean} True if transaction should be excluded
  */
 export function shouldFilterTransaction(transaction) {
-  // Filter out Trades - they're handled by the orders API
-  if (transaction.transactionType === 'Trades') {
-    return true;
-  }
-
-  return false;
+  // Trades are no longer filtered — they are deduplicated against orders
+  // in the transaction processing pipeline instead
+  return !transaction && false; // always returns false; uses parameter to avoid unused warning
 }
 
 /**

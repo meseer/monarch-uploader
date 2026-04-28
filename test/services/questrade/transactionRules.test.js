@@ -9,6 +9,7 @@ import {
   getTransactionId,
   formatOriginalStatement,
   formatTransactionNotes,
+  formatTradeNotes,
   formatFxNotes,
   applyTransactionRule,
   shouldFilterTransaction,
@@ -234,9 +235,9 @@ describe('Questrade Transaction Rules', () => {
   });
 
   describe('shouldFilterTransaction', () => {
-    test('filters out trades', () => {
+    test('does not filter trades (they are deduplicated instead)', () => {
       const tx = { transactionType: 'Trades' };
-      expect(shouldFilterTransaction(tx)).toBe(true);
+      expect(shouldFilterTransaction(tx)).toBe(false);
     });
 
     test('does not filter non-trade transactions', () => {
@@ -608,6 +609,83 @@ describe('Questrade Transaction Rules', () => {
       });
     });
 
+    describe('Trades', () => {
+      test('Buy - Buy order', () => {
+        const tx = { transactionType: 'Trades', action: 'Buy', symbol: 'VGRO.TO' };
+        const details = {
+          transactionType: 'Trades',
+          action: 'Buy',
+          symbol: 'VGRO.TO',
+          quantity: 4.0,
+          price: { currencyCode: 'CAD', amount: 36.3 },
+          net: { currencyCode: 'CAD', amount: -145.21 },
+          commission: 0.0,
+          description: 'VANGUARD GROWTH ETF PORTFOLIO ETF UNIT WE ACTED AS AGENT',
+          transactionDate: '2024-10-09',
+          settlementDate: '2024-10-11',
+        };
+        const result = applyTransactionRule(tx, details);
+        expect(result.category).toBe('Buy');
+        expect(result.merchant).toBe('VGRO.TO');
+        expect(result.ruleId).toBe('trades-buy');
+        expect(result.originalStatement).toBe('Trades:Buy:VGRO.TO');
+        expect(result.notes).toContain('VANGUARD GROWTH ETF');
+        expect(result.notes).toContain('Filled 4 @ 36.3');
+        expect(result.notes).toContain('Total: 145.21 CAD');
+        expect(result.notes).toContain('Settlement Date: 2024-10-11');
+      });
+
+      test('Sell - Sell order', () => {
+        const tx = { transactionType: 'Trades', action: 'Sell', symbol: 'AMZN' };
+        const details = {
+          transactionType: 'Trades',
+          action: 'Sell',
+          symbol: 'AMZN',
+          quantity: 50.0,
+          price: { currencyCode: 'USD', amount: 271.6984 },
+          net: { currencyCode: 'USD', amount: 13584.92 },
+          commission: 0.0,
+          description: 'AMAZON.COM INC WE ACTED AS AGENT',
+          transactionDate: '2025-04-23',
+          settlementDate: '2025-04-25',
+        };
+        const result = applyTransactionRule(tx, details);
+        expect(result.category).toBe('Sell');
+        expect(result.merchant).toBe('AMZN');
+        expect(result.ruleId).toBe('trades-sell');
+      });
+
+      test('Buy with no details (list data only)', () => {
+        const tx = {
+          transactionType: 'Trades',
+          action: 'Buy',
+          symbol: 'AOA',
+          quantity: 1.0,
+          price: { currencyCode: 'USD', amount: 76.9799 },
+          net: { currencyCode: 'USD', amount: -76.98 },
+          description: 'ISHARES CORE AGGRESSIVE ALLOCATION FUND ETF WE ACTED AS AGENT',
+          transactionDate: '2024-12-30',
+        };
+        const result = applyTransactionRule(tx, null);
+        expect(result.category).toBe('Buy');
+        expect(result.merchant).toBe('AOA');
+        expect(result.ruleId).toBe('trades-buy');
+      });
+
+      test('Unknown trade action uses trades-fallback', () => {
+        const tx = { transactionType: 'Trades', action: 'Short' };
+        const result = applyTransactionRule(tx, null);
+        expect(result.category).toBe('Investment');
+        expect(result.ruleId).toBe('trades-fallback');
+      });
+
+      test('Trade with no symbol uses Unknown Security', () => {
+        const tx = { transactionType: 'Trades', action: 'Buy' };
+        const result = applyTransactionRule(tx, null);
+        expect(result.merchant).toBe('Unknown Security');
+      });
+    });
+
     describe('Fallback', () => {
       test('Unknown transaction type uses fallback', () => {
         const tx = { transactionType: 'Unknown Type', action: 'XYZ' };
@@ -629,8 +707,8 @@ describe('Questrade Transaction Rules', () => {
 
   describe('Rules Array', () => {
     test('has expected number of rules', () => {
-      // 22 rules + 1 fallback
-      expect(QUESTRADE_TRANSACTION_RULES.length).toBe(23);
+      // 22 original rules + 3 trade rules + 1 fallback = 26
+      expect(QUESTRADE_TRANSACTION_RULES.length).toBe(26);
     });
 
     test('all rules have required properties', () => {
