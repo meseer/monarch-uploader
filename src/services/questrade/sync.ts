@@ -160,12 +160,15 @@ async function syncAccountToMonarch(accountId, accountName, fromDate, toDate, pr
           progressDialog.updateStepStatus(accountId, 'orders', 'skipped', 'No account mapping');
         }
       } else {
+        const ordersOnProgress = progressDialog
+          ? (msg) => progressDialog.updateStepStatus(accountId, 'orders', 'processing', msg)
+          : null;
         const ordersResult = await transactionsService.processAndUploadOrders(
           accountId,
           accountName,
           fromDate,
           monarchAccountForTx.id,
-          null, // Don't pass progressDialog to avoid double-updates
+          ordersOnProgress,
         );
 
         // Extract order signatures for activity trade deduplication
@@ -213,12 +216,15 @@ async function syncAccountToMonarch(accountId, accountName, fromDate, toDate, pr
           progressDialog.updateStepStatus(accountId, 'activity', 'skipped', 'No account mapping');
         }
       } else {
+        const activityOnProgress = progressDialog
+          ? (msg) => progressDialog.updateStepStatus(accountId, 'activity', 'processing', msg)
+          : null;
         const activityResult = await transactionsService.processAndUploadActivityTransactions(
           accountId,
           accountName,
           fromDate,
           monarchAccountForTx.id,
-          null, // Don't pass progressDialog to avoid double-updates
+          activityOnProgress,
           orderSignatures, // Pass order signatures for cross-source trade dedup
         );
 
