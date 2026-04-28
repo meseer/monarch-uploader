@@ -8,6 +8,9 @@ import {
   checkTokenStatus,
   setupTokenMonitoring,
   extractCookies,
+  getAuraContext,
+  getSponsorInfo,
+  clearSponsorInfoCache,
   makeAuraApiCall,
   loadAccountBalanceHistory,
   loadAccountActivityReport,
@@ -105,6 +108,12 @@ global.setInterval = jest.fn();
 
 // Mock fetch
 global.fetch = jest.fn();
+
+// Mock crypto.randomUUID
+global.crypto = {
+  ...global.crypto,
+  randomUUID: jest.fn().mockReturnValue('mock-uuid-1234-5678-abcd-efghijklmnop'),
+};
 
 describe('Canada Life API - Core Functions', () => {
   beforeEach(() => {
@@ -601,6 +610,129 @@ describe('Canada Life API - makeAuraApiCall', () => {
   });
 });
 
+// Helper: builds a mock fetch response for getSponsorInfo API
+function buildSponsorInfoFetchResponse(adminSystemId = 'ENC_TEST_ADMIN_SYSTEM_ID') {
+  const sponsorInfoResult = {
+    getSponsorInfo: {
+      attributes: { type: 'User_Sponsor_Session__c' },
+      GRS_ParticId__c: adminSystemId,
+      User_Sponsor_Name__c: 'TEST SPONSOR',
+      SponsorId__c: 'ENC_TestSponsor',
+    },
+    error: 'OK',
+  };
+  return {
+    ok: true,
+    status: 200,
+    headers: {
+      get: () => 'application/json',
+      entries: () => [['content-type', 'application/json']],
+    },
+    text: () => Promise.resolve(JSON.stringify({
+      actions: [{
+        returnValue: {
+          returnValue: JSON.stringify(sponsorInfoResult),
+        },
+      }],
+    })),
+  };
+}
+
+describe('Canada Life API - getSponsorInfo', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    clearSponsorInfoCache();
+    stateManager.getState.mockReturnValue({
+      auth: { canadalife: { token: 'valid-aura-token' } },
+    });
+  });
+
+  test('should fetch sponsor info and return adminSystemId', async () => {
+    global.fetch.mockResolvedValueOnce(buildSponsorInfoFetchResponse('ENC_MY_ADMIN_ID'));
+
+    const result = await getSponsorInfo();
+
+    expect(result.adminSystemId).toBe('ENC_MY_ADMIN_ID');
+    expect(result.sponsorName).toBe('TEST SPONSOR');
+    expect(result.sponsorId).toBe('ENC_TestSponsor');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('should cache result and not call API again', async () => {
+    global.fetch.mockResolvedValueOnce(buildSponsorInfoFetchResponse('ENC_CACHED'));
+
+    const result1 = await getSponsorInfo();
+    const result2 = await getSponsorInfo();
+
+    expect(result1.adminSystemId).toBe('ENC_CACHED');
+    expect(result2.adminSystemId).toBe('ENC_CACHED');
+    expect(global.fetch).toHaveBeenCalledTimes(1); // Only one API call
+    expect(debugLog).toHaveBeenCalledWith('Using cached sponsor info', expect.any(Object));
+  });
+
+  test('should throw CanadaLifeApiError when GRS_ParticId__c is missing', async () => {
+    const badResponse = {
+      getSponsorInfo: {
+        attributes: { type: 'User_Sponsor_Session__c' },
+        // No GRS_ParticId__c
+        User_Sponsor_Name__c: 'TEST',
+      },
+      error: 'OK',
+    };
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+        entries: () => [['content-type', 'application/json']],
+      },
+      text: () => Promise.resolve(JSON.stringify({
+        actions: [{
+          returnValue: {
+            returnValue: JSON.stringify(badResponse),
+          },
+        }],
+      })),
+    });
+
+    await expect(getSponsorInfo()).rejects.toThrow(CanadaLifeApiError);
+  });
+
+  test('should throw when getSponsorInfo key is missing from response', async () => {
+    const noSponsorResponse = { someOtherData: true, error: 'OK' };
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+        entries: () => [['content-type', 'application/json']],
+      },
+      text: () => Promise.resolve(JSON.stringify({
+        actions: [{
+          returnValue: {
+            returnValue: JSON.stringify(noSponsorResponse),
+          },
+        }],
+      })),
+    });
+
+    await expect(getSponsorInfo()).rejects.toThrow(CanadaLifeApiError);
+  });
+
+  test('clearSponsorInfoCache should allow fresh fetch', async () => {
+    global.fetch.mockResolvedValueOnce(buildSponsorInfoFetchResponse('ENC_FIRST'));
+    await getSponsorInfo();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    clearSponsorInfoCache();
+
+    global.fetch.mockResolvedValueOnce(buildSponsorInfoFetchResponse('ENC_SECOND'));
+    const result = await getSponsorInfo();
+    expect(result.adminSystemId).toBe('ENC_SECOND');
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('Canada Life API - Account Functions', () => {
   const mockAccount = {
     agreementId: 'test-agreement-123',
@@ -610,6 +742,7 @@ describe('Canada Life API - Account Functions', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    clearSponsorInfoCache();
     stateManager.getState.mockReturnValue({
       auth: {
         canadalife: {
@@ -778,20 +911,10 @@ describe('Canada Life API - Account Functions', () => {
       expect(global.fetch).not.toHaveBeenCalled();
     });
 
-    test('should load accounts from API when cache empty and return consolidated structure', async () => {
-      global.GM_getValue.mockReturnValue('[]');
-
-      const apiAccounts = [
-        { EnglishShortName: 'RRSP', LongNameEnglish: 'RRSP Account', agreementId: '123' },
-      ];
-
-      const mockApiResponse = {
-        IPResult: {
-          MemberPlans: apiAccounts,
-        },
-      };
-
-      global.fetch.mockResolvedValue({
+    // Helper to build a member plans fetch response
+    function buildMemberPlansFetchResponse(apiAccounts) {
+      const mockApiResponse = { IPResult: { MemberPlans: apiAccounts } };
+      return {
         ok: true,
         status: 200,
         headers: {
@@ -799,13 +922,26 @@ describe('Canada Life API - Account Functions', () => {
           entries: () => [['content-type', 'application/json']],
         },
         text: () => Promise.resolve(JSON.stringify({
-          actions: [{
-            returnValue: {
-              returnValue: JSON.stringify(mockApiResponse),
-            },
-          }],
+          actions: [{ returnValue: { returnValue: JSON.stringify(mockApiResponse) } }],
         })),
-      });
+      };
+    }
+
+    // Helper to set up both getSponsorInfo + getMemberPlans fetch mocks
+    function mockAccountsApiFetch(apiAccounts) {
+      global.fetch
+        .mockResolvedValueOnce(buildSponsorInfoFetchResponse())
+        .mockResolvedValueOnce(buildMemberPlansFetchResponse(apiAccounts));
+    }
+
+    test('should load accounts from API when cache empty and return consolidated structure', async () => {
+      global.GM_getValue.mockReturnValue('[]');
+
+      const apiAccounts = [
+        { EnglishShortName: 'RRSP', LongNameEnglish: 'RRSP Account', agreementId: '123' },
+      ];
+
+      mockAccountsApiFetch(apiAccounts);
 
       const result = await loadCanadaLifeAccounts();
 
@@ -840,27 +976,7 @@ describe('Canada Life API - Account Functions', () => {
       });
 
       const freshApiAccounts = [{ EnglishShortName: 'NEW', LongNameEnglish: 'New Account', agreementId: '999' }];
-      const mockApiResponse = {
-        IPResult: {
-          MemberPlans: freshApiAccounts,
-        },
-      };
-
-      global.fetch.mockResolvedValue({
-        ok: true,
-        status: 200,
-        headers: {
-          get: () => 'application/json',
-          entries: () => [['content-type', 'application/json']],
-        },
-        text: () => Promise.resolve(JSON.stringify({
-          actions: [{
-            returnValue: {
-              returnValue: JSON.stringify(mockApiResponse),
-            },
-          }],
-        })),
-      });
+      mockAccountsApiFetch(freshApiAccounts);
 
       const result = await loadCanadaLifeAccounts(true);
 
@@ -898,27 +1014,7 @@ describe('Canada Life API - Account Functions', () => {
         { EnglishShortName: 'TFSA', LongNameEnglish: 'New TFSA Account', agreementId: '456' },
       ];
 
-      const mockApiResponse = {
-        IPResult: {
-          MemberPlans: freshApiAccounts,
-        },
-      };
-
-      global.fetch.mockResolvedValue({
-        ok: true,
-        status: 200,
-        headers: {
-          get: () => 'application/json',
-          entries: () => [['content-type', 'application/json']],
-        },
-        text: () => Promise.resolve(JSON.stringify({
-          actions: [{
-            returnValue: {
-              returnValue: JSON.stringify(mockApiResponse),
-            },
-          }],
-        })),
-      });
+      mockAccountsApiFetch(freshApiAccounts);
 
       const result = await loadCanadaLifeAccounts(true);
 
@@ -947,28 +1043,7 @@ describe('Canada Life API - Account Functions', () => {
       });
       global.GM_deleteValue = jest.fn();
 
-      const freshApiAccounts = [{ EnglishShortName: 'NEW', agreementId: '123' }];
-      const mockApiResponse = {
-        IPResult: {
-          MemberPlans: freshApiAccounts,
-        },
-      };
-
-      global.fetch.mockResolvedValue({
-        ok: true,
-        status: 200,
-        headers: {
-          get: () => 'application/json',
-          entries: () => [['content-type', 'application/json']],
-        },
-        text: () => Promise.resolve(JSON.stringify({
-          actions: [{
-            returnValue: {
-              returnValue: JSON.stringify(mockApiResponse),
-            },
-          }],
-        })),
-      });
+      mockAccountsApiFetch([{ EnglishShortName: 'NEW', agreementId: '123' }]);
 
       await loadCanadaLifeAccounts();
 
@@ -1003,31 +1078,9 @@ describe('Canada Life API - Account Functions', () => {
       });
 
       // API only returns account 123 (account 456 has been closed/transferred)
-      const freshApiAccounts = [
+      mockAccountsApiFetch([
         { EnglishShortName: 'RRSP-UPDATED', LongNameEnglish: 'Updated RRSP', agreementId: '123' },
-      ];
-
-      const mockApiResponse = {
-        IPResult: {
-          MemberPlans: freshApiAccounts,
-        },
-      };
-
-      global.fetch.mockResolvedValue({
-        ok: true,
-        status: 200,
-        headers: {
-          get: () => 'application/json',
-          entries: () => [['content-type', 'application/json']],
-        },
-        text: () => Promise.resolve(JSON.stringify({
-          actions: [{
-            returnValue: {
-              returnValue: JSON.stringify(mockApiResponse),
-            },
-          }],
-        })),
-      });
+      ]);
 
       const result = await loadCanadaLifeAccounts(true); // Force refresh
 
@@ -1081,31 +1134,9 @@ describe('Canada Life API - Account Functions', () => {
       });
 
       // API only returns account 123
-      const freshApiAccounts = [
+      mockAccountsApiFetch([
         { EnglishShortName: 'RRSP', LongNameEnglish: 'RRSP Account', agreementId: '123' },
-      ];
-
-      const mockApiResponse = {
-        IPResult: {
-          MemberPlans: freshApiAccounts,
-        },
-      };
-
-      global.fetch.mockResolvedValue({
-        ok: true,
-        status: 200,
-        headers: {
-          get: () => 'application/json',
-          entries: () => [['content-type', 'application/json']],
-        },
-        text: () => Promise.resolve(JSON.stringify({
-          actions: [{
-            returnValue: {
-              returnValue: JSON.stringify(mockApiResponse),
-            },
-          }],
-        })),
-      });
+      ]);
 
       const result = await loadCanadaLifeAccounts(true); // Force refresh
 
@@ -1135,31 +1166,9 @@ describe('Canada Life API - Account Functions', () => {
     test('should suppress loading and success toasts when silent is true', async () => {
       global.GM_getValue.mockReturnValue('[]');
 
-      const apiAccounts = [
+      mockAccountsApiFetch([
         { EnglishShortName: 'RRSP', LongNameEnglish: 'RRSP Account', agreementId: '123' },
-      ];
-
-      const mockApiResponse = {
-        IPResult: {
-          MemberPlans: apiAccounts,
-        },
-      };
-
-      global.fetch.mockResolvedValue({
-        ok: true,
-        status: 200,
-        headers: {
-          get: () => 'application/json',
-          entries: () => [['content-type', 'application/json']],
-        },
-        text: () => Promise.resolve(JSON.stringify({
-          actions: [{
-            returnValue: {
-              returnValue: JSON.stringify(mockApiResponse),
-            },
-          }],
-        })),
-      });
+      ]);
 
       await loadCanadaLifeAccounts({ forceRefresh: false, silent: true });
 
@@ -1170,31 +1179,9 @@ describe('Canada Life API - Account Functions', () => {
     test('should show toasts when silent is false (explicit)', async () => {
       global.GM_getValue.mockReturnValue('[]');
 
-      const apiAccounts = [
+      mockAccountsApiFetch([
         { EnglishShortName: 'RRSP', LongNameEnglish: 'RRSP Account', agreementId: '123' },
-      ];
-
-      const mockApiResponse = {
-        IPResult: {
-          MemberPlans: apiAccounts,
-        },
-      };
-
-      global.fetch.mockResolvedValue({
-        ok: true,
-        status: 200,
-        headers: {
-          get: () => 'application/json',
-          entries: () => [['content-type', 'application/json']],
-        },
-        text: () => Promise.resolve(JSON.stringify({
-          actions: [{
-            returnValue: {
-              returnValue: JSON.stringify(mockApiResponse),
-            },
-          }],
-        })),
-      });
+      ]);
 
       await loadCanadaLifeAccounts({ forceRefresh: false, silent: false });
 
@@ -1215,24 +1202,7 @@ describe('Canada Life API - Account Functions', () => {
         return defaultVal;
       });
 
-      const freshApiAccounts = [{ EnglishShortName: 'NEW', LongNameEnglish: 'New Account', agreementId: '999' }];
-      const mockApiResponse = { IPResult: { MemberPlans: freshApiAccounts } };
-
-      global.fetch.mockResolvedValue({
-        ok: true,
-        status: 200,
-        headers: {
-          get: () => 'application/json',
-          entries: () => [['content-type', 'application/json']],
-        },
-        text: () => Promise.resolve(JSON.stringify({
-          actions: [{
-            returnValue: {
-              returnValue: JSON.stringify(mockApiResponse),
-            },
-          }],
-        })),
-      });
+      mockAccountsApiFetch([{ EnglishShortName: 'NEW', LongNameEnglish: 'New Account', agreementId: '999' }]);
 
       const result = await loadCanadaLifeAccounts({ forceRefresh: true, silent: true });
 
@@ -1249,6 +1219,307 @@ describe('Canada Life API - Account Functions', () => {
       await expect(loadCanadaLifeAccounts(false)).rejects.toThrow('Network error');
       expect(toast.show).toHaveBeenCalledWith('Failed to load Canada Life accounts: Network error', 'error');
     });
+  });
+});
+
+describe('Canada Life API - getAuraContext', () => {
+  const savedWindow = {};
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // Save and clear $A from window
+    savedWindow.$A = global.window.$A;
+    delete global.window.$A;
+  });
+
+  afterEach(() => {
+    // Restore $A
+    if (savedWindow.$A !== undefined) {
+      global.window.$A = savedWindow.$A;
+    } else {
+      delete global.window.$A;
+    }
+  });
+
+  test('should use encodeForServer when $A.getContext().encodeForServer() returns a string', () => {
+    global.window.$A = {
+      getContext: jest.fn().mockReturnValue({
+        encodeForServer: jest.fn().mockReturnValue('{"mode":"PROD","fwuid":"dynamic-fwuid-123"}'),
+      }),
+    };
+
+    const result = getAuraContext();
+
+    expect(result).toBe('{"mode":"PROD","fwuid":"dynamic-fwuid-123"}');
+    expect(debugLog).toHaveBeenCalledWith('Extracted aura.context via $A.getContext().encodeForServer()');
+  });
+
+  test('should use encodeForServer when it returns an object', () => {
+    global.window.$A = {
+      getContext: jest.fn().mockReturnValue({
+        encodeForServer: jest.fn().mockReturnValue({ mode: 'PROD', fwuid: 'obj-fwuid' }),
+      }),
+    };
+
+    const result = getAuraContext();
+    const parsed = JSON.parse(result);
+
+    expect(parsed.fwuid).toBe('obj-fwuid');
+    expect(parsed.mode).toBe('PROD');
+    expect(debugLog).toHaveBeenCalledWith('Extracted aura.context via $A.getContext().encodeForServer()');
+  });
+
+  test('should build manually from context.fwuid when encodeForServer is unavailable', () => {
+    global.window.$A = {
+      getContext: jest.fn().mockReturnValue({
+        fwuid: 'manual-fwuid-456',
+        mode: 'PROD',
+        loaded: { 'APPLICATION@markup://siteforce:communityApp': 'test-hash' },
+      }),
+    };
+
+    const result = getAuraContext();
+    const parsed = JSON.parse(result);
+
+    expect(parsed.fwuid).toBe('manual-fwuid-456');
+    expect(parsed.mode).toBe('PROD');
+    expect(parsed.app).toBe('siteforce:communityApp');
+    expect(parsed.loaded).toEqual({ 'APPLICATION@markup://siteforce:communityApp': 'test-hash' });
+    expect(debugLog).toHaveBeenCalledWith(
+      'Built aura.context manually from $A.getContext() properties',
+      { fwuid: 'manual-fwuid-456' },
+    );
+  });
+
+  test('should use getEncodedFwuid() when fwuid property is missing', () => {
+    global.window.$A = {
+      getContext: jest.fn().mockReturnValue({
+        getEncodedFwuid: jest.fn().mockReturnValue('encoded-fwuid-789'),
+        mode: 'PROD',
+        loaded: {},
+      }),
+    };
+
+    const result = getAuraContext();
+    const parsed = JSON.parse(result);
+
+    expect(parsed.fwuid).toBe('encoded-fwuid-789');
+  });
+
+  test('should fall back to hardcoded constant when $A is unavailable', () => {
+    // $A is already deleted in beforeEach
+
+    const result = getAuraContext();
+    const parsed = JSON.parse(result);
+
+    expect(parsed.mode).toBe('PROD');
+    expect(parsed.fwuid).toBeTruthy();
+    expect(parsed.app).toBe('siteforce:communityApp');
+    expect(debugLog).toHaveBeenCalledWith('WARNING: Using hardcoded fallback aura.context — this may become stale');
+  });
+
+  test('should fall back gracefully when $A.getContext throws', () => {
+    global.window.$A = {
+      getContext: jest.fn().mockImplementation(() => {
+        throw new Error('Aura framework not initialized');
+      }),
+    };
+
+    const result = getAuraContext();
+    const parsed = JSON.parse(result);
+
+    expect(parsed.mode).toBe('PROD');
+    expect(parsed.fwuid).toBeTruthy();
+    expect(debugLog).toHaveBeenCalledWith('Error extracting dynamic aura.context, using fallback:', expect.any(Error));
+  });
+
+  test('should fall back when encodeForServer returns null', () => {
+    global.window.$A = {
+      getContext: jest.fn().mockReturnValue({
+        encodeForServer: jest.fn().mockReturnValue(null),
+        // No fwuid either
+      }),
+    };
+
+    const result = getAuraContext();
+    const parsed = JSON.parse(result);
+
+    // Should use fallback
+    expect(parsed.fwuid).toBeTruthy();
+    expect(debugLog).toHaveBeenCalledWith('WARNING: Using hardcoded fallback aura.context — this may become stale');
+  });
+});
+
+describe('Canada Life API - Generalized Error Detection', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    stateManager.getState.mockReturnValue({
+      auth: {
+        canadalife: {
+          token: 'valid-aura-token',
+        },
+      },
+    });
+  });
+
+  const mockPayload = {
+    actions: [{
+      id: '123',
+      descriptor: 'test',
+      params: { test: 'data' },
+    }],
+  };
+
+  test('should detect memberPlansHasAPIFailure flag', async () => {
+    const errorResponse = {
+      IPResult: {
+        memberPlansHasAPIFailure: true,
+        error: 'OK',
+      },
+    };
+
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+        entries: () => [['content-type', 'application/json']],
+      },
+      text: () => Promise.resolve(JSON.stringify(errorResponse)),
+    });
+
+    await expect(makeAuraApiCall(mockPayload)).rejects.toThrow(CanadaLifeApiError);
+    await expect(makeAuraApiCall(mockPayload)).rejects.toThrow(/memberPlansHasAPIFailure/);
+  });
+
+  test('should detect activityReportsHasApiFailure flag (backward compat)', async () => {
+    const errorResponse = {
+      IPResult: {
+        activityReportsHasApiFailure: true,
+      },
+    };
+
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+        entries: () => [['content-type', 'application/json']],
+      },
+      text: () => Promise.resolve(JSON.stringify(errorResponse)),
+    });
+
+    await expect(makeAuraApiCall(mockPayload)).rejects.toThrow(CanadaLifeApiError);
+  });
+
+  test('should detect multiple failure flags simultaneously', async () => {
+    const errorResponse = {
+      IPResult: {
+        activityReportsHasApiFailure: true,
+        memberPlansHasAPIFailure: true,
+      },
+    };
+
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+        entries: () => [['content-type', 'application/json']],
+      },
+      text: () => Promise.resolve(JSON.stringify(errorResponse)),
+    });
+
+    await expect(makeAuraApiCall(mockPayload)).rejects.toThrow(CanadaLifeApiError);
+    expect(debugLog).toHaveBeenCalledWith(
+      expect.stringContaining('API failure flag(s) detected'),
+      expect.any(Object),
+    );
+  });
+
+  test('should not trigger on HasApiFailure flags set to false', async () => {
+    const response = {
+      IPResult: {
+        activityReportsHasApiFailure: false,
+        memberPlansHasAPIFailure: false,
+        MemberPlans: [{ agreementId: '123' }],
+      },
+    };
+
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+        entries: () => [['content-type', 'application/json']],
+      },
+      text: () => Promise.resolve(JSON.stringify(response)),
+    });
+
+    // Should not throw — failure flags are false
+    const result = await makeAuraApiCall(mockPayload);
+    expect(result.IPResult.MemberPlans).toBeDefined();
+  });
+
+  test('should log COOSE warning when detected in response', async () => {
+    const responseWithCoose = {
+      actions: [
+        {
+          id: '164;a',
+          state: 'SUCCESS',
+          returnValue: { returnValue: '{"IPResult":{"memberPlansHasAPIFailure":true}}' },
+        },
+        {
+          id: 'COOSE',
+          state: 'warning',
+          returnValue: 'This page has changes since the last refresh.',
+        },
+      ],
+    };
+
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+        entries: () => [['content-type', 'application/json']],
+      },
+      text: () => Promise.resolve(JSON.stringify(responseWithCoose)),
+    });
+
+    // Should throw because of memberPlansHasAPIFailure, but also log COOSE
+    await expect(makeAuraApiCall(mockPayload)).rejects.toThrow(CanadaLifeApiError);
+    expect(debugLog).toHaveBeenCalledWith(
+      'COOSE (Client Out Of Sync Error) detected in response:',
+      expect.objectContaining({ id: 'COOSE' }),
+    );
+  });
+
+  test('should include failure flag names in error details', async () => {
+    const errorResponse = {
+      IPResult: {
+        memberPlansHasAPIFailure: true,
+      },
+    };
+
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+        entries: () => [['content-type', 'application/json']],
+      },
+      text: () => Promise.resolve(JSON.stringify(errorResponse)),
+    });
+
+    try {
+      await makeAuraApiCall(mockPayload);
+      // Should not reach here
+      expect(true).toBe(false);
+    } catch (error) {
+      expect(error).toBeInstanceOf(CanadaLifeApiError);
+      expect(error.errorDetails).toEqual({ memberPlansHasAPIFailure: true });
+    }
   });
 });
 
