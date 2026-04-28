@@ -438,15 +438,15 @@ async function fetchQuestradeOrders(accountId, fromDate) {
  * Includes ALL transaction types (trades, dividends, fees, etc.)
  * @param {string} accountId - Questrade account ID
  * @param {string} fromDate - Start date in YYYY-MM-DD format
- * @param {Object} progressDialog - Optional progress dialog
+ * @param {Function|null} onProgress - Optional callback for progress updates: (message: string) => void
  * @returns {Promise<Array>} Array of processed transactions with details
  */
-async function fetchAndProcessActivityTransactions(accountId, fromDate, progressDialog = null) {
+async function fetchAndProcessActivityTransactions(accountId, fromDate, onProgress: ((message: string) => void) | null = null) {
   try {
     debugLog(`Fetching activity transactions for account ${accountId} from ${fromDate}`);
 
-    if (progressDialog) {
-      progressDialog.updateProgress(accountId, 'processing', 'Loading transactions from Questrade...');
+    if (onProgress) {
+      onProgress('Loading transactions from Questrade...');
     }
 
     // Fetch all transactions since the date (including trades)
@@ -459,12 +459,8 @@ async function fetchAndProcessActivityTransactions(accountId, fromDate, progress
 
     debugLog(`Fetched ${transactions.length} activity transactions (including trades)`);
 
-    if (progressDialog) {
-      progressDialog.updateProgress(
-        accountId,
-        'processing',
-        `Loading transaction details (0/${transactions.length})...`,
-      );
+    if (onProgress) {
+      onProgress(`Loading transaction details (0/${transactions.length})...`);
     }
 
     // Fetch details for each transaction
@@ -472,12 +468,8 @@ async function fetchAndProcessActivityTransactions(accountId, fromDate, progress
     for (let i = 0; i < transactions.length; i += 1) {
       const tx = transactions[i];
 
-      if (progressDialog && i % 5 === 0) {
-        progressDialog.updateProgress(
-          accountId,
-          'processing',
-          `Loading transaction details (${i + 1}/${transactions.length})...`,
-        );
+      if (onProgress && i % 5 === 0) {
+        onProgress(`Loading transaction details (${i + 1}/${transactions.length})...`);
       }
 
       // Fetch full details using transactionUrl
@@ -519,16 +511,16 @@ async function fetchAndProcessActivityTransactions(accountId, fromDate, progress
  * @param {string} accountName - Account name for display
  * @param {string} fromDate - Start date for transactions
  * @param {string} monarchAccountId - Monarch account ID to upload to
- * @param {Object} progressDialog - Optional progress dialog
+ * @param {Function|null} onProgress - Optional callback for progress updates: (message: string) => void
  * @param {Set<string>} orderSignatures - Optional set of order signatures for cross-source trade dedup
  * @returns {Promise<Object>} Upload result
  */
-async function processAndUploadActivityTransactions(accountId, accountName, fromDate, monarchAccountId, progressDialog = null, orderSignatures = null) {
+async function processAndUploadActivityTransactions(accountId, accountName, fromDate, monarchAccountId, onProgress: ((message: string) => void) | null = null, orderSignatures = null) {
   try {
     debugLog(`Processing activity transactions for account ${accountName} (${accountId})`);
 
     // Fetch and process activity transactions
-    const processedTransactions = await fetchAndProcessActivityTransactions(accountId, fromDate, progressDialog);
+    const processedTransactions = await fetchAndProcessActivityTransactions(accountId, fromDate, onProgress);
 
     if (processedTransactions.length === 0) {
       debugLog('No activity transactions to upload');
@@ -573,16 +565,12 @@ async function processAndUploadActivityTransactions(accountId, accountName, from
       };
     }
 
-    if (progressDialog) {
+    if (onProgress) {
       const dupParts = [];
       if (filterResult.duplicateCount > 0) dupParts.push(`${filterResult.duplicateCount} duplicates`);
       if (crossDedupCount > 0) dupParts.push(`${crossDedupCount} matched by orders`);
       const dupMsg = dupParts.length > 0 ? ` (${dupParts.join(', ')} skipped)` : '';
-      progressDialog.updateProgress(
-        accountId,
-        'processing',
-        `Converting ${newProcessedTransactions.length} transactions to CSV${dupMsg}...`,
-      );
+      onProgress(`Converting ${newProcessedTransactions.length} transactions to CSV${dupMsg}...`);
     }
 
     // Convert to Monarch CSV format
@@ -596,8 +584,8 @@ async function processAndUploadActivityTransactions(accountId, accountName, from
     const toDate = getTodayLocal();
     const filename = `questrade_activity_${accountId}_${fromDate}_to_${toDate}.csv`;
 
-    if (progressDialog) {
-      progressDialog.updateProgress(accountId, 'processing', `Uploading ${newProcessedTransactions.length} activity transactions...`);
+    if (onProgress) {
+      onProgress(`Uploading ${newProcessedTransactions.length} activity transactions...`);
     }
 
     const uploadSuccess = await monarchApi.uploadTransactions(
@@ -651,15 +639,15 @@ async function processAndUploadActivityTransactions(accountId, accountName, from
  * @param {string} accountName - Account name for display
  * @param {string} fromDate - Start date for transactions
  * @param {string} monarchAccountId - Monarch account ID to upload to
- * @param {Object} progressDialog - Optional progress dialog
+ * @param {Function|null} onProgress - Optional callback for progress updates: (message: string) => void
  * @returns {Promise<Object>} Upload result
  */
-async function processAndUploadOrders(accountId, accountName, fromDate, monarchAccountId, progressDialog = null) {
+async function processAndUploadOrders(accountId, accountName, fromDate, monarchAccountId, onProgress: ((message: string) => void) | null = null) {
   try {
     debugLog(`Processing orders for account ${accountName} (${accountId})`);
 
-    if (progressDialog) {
-      progressDialog.updateProgress(accountId, 'processing', 'Loading orders from Questrade...');
+    if (onProgress) {
+      onProgress('Loading orders from Questrade...');
     }
 
     // Fetch orders
@@ -703,8 +691,8 @@ async function processAndUploadOrders(accountId, accountName, fromDate, monarchA
       };
     }
 
-    if (progressDialog) {
-      progressDialog.updateProgress(accountId, 'processing', 'Resolving order categories...');
+    if (onProgress) {
+      onProgress('Resolving order categories...');
     }
 
     // Resolve categories for all orders
@@ -713,8 +701,8 @@ async function processAndUploadOrders(accountId, accountName, fromDate, monarchA
     const ordersWithResolvedCategories = await resolveCategoriesForOrders(ordersToUpload, { skipCategorization });
 
     // Convert orders to Monarch CSV format
-    if (progressDialog) {
-      progressDialog.updateProgress(accountId, 'processing', `Converting ${ordersToUpload.length} orders to CSV...`);
+    if (onProgress) {
+      onProgress(`Converting ${ordersToUpload.length} orders to CSV...`);
     }
 
     const csvData = convertQuestradeOrdersToMonarchCSV(ordersWithResolvedCategories, accountName);
@@ -727,8 +715,8 @@ async function processAndUploadOrders(accountId, accountName, fromDate, monarchA
     const toDate = getTodayLocal();
     const filename = `questrade_orders_${accountId}_${fromDate}_to_${toDate}.csv`;
 
-    if (progressDialog) {
-      progressDialog.updateProgress(accountId, 'processing', `Uploading ${ordersToUpload.length} orders...`);
+    if (onProgress) {
+      onProgress(`Uploading ${ordersToUpload.length} orders...`);
     }
 
     const uploadSuccess = await monarchApi.uploadTransactions(
@@ -813,8 +801,11 @@ async function processAndUploadTransactions(accountId, accountName, fromDate, pr
 
     // Process orders (trades) — also produces signatures for cross-source dedup
     let orderSignatures = null;
+    const ordersOnProgress = progressDialog
+      ? (msg) => progressDialog.updateProgress(accountId, 'processing', msg)
+      : null;
     try {
-      results.orders = await processAndUploadOrders(accountId, accountName, fromDate, monarchAccount.id, progressDialog);
+      results.orders = await processAndUploadOrders(accountId, accountName, fromDate, monarchAccount.id, ordersOnProgress);
       // Extract order signatures for activity trade deduplication
       orderSignatures = results.orders?.orderSignatures || null;
     } catch (orderError) {
@@ -827,8 +818,11 @@ async function processAndUploadTransactions(accountId, accountName, fromDate, pr
     }
 
     // Process activity transactions (all types, with cross-source trade dedup)
+    const activityOnProgress = progressDialog
+      ? (msg) => progressDialog.updateProgress(accountId, 'processing', msg)
+      : null;
     try {
-      results.activity = await processAndUploadActivityTransactions(accountId, accountName, fromDate, monarchAccount.id, progressDialog, orderSignatures);
+      results.activity = await processAndUploadActivityTransactions(accountId, accountName, fromDate, monarchAccount.id, activityOnProgress, orderSignatures);
     } catch (activityError) {
       debugLog('Error processing activity transactions:', activityError);
       results.activity = {
@@ -899,12 +893,12 @@ async function processAndUploadTransactions(accountId, accountName, fromDate, pr
  * @param {Object} progressDialog - Optional progress dialog
  * @returns {Promise<Array>} Array of processed transactions with details
  */
-async function fetchAndProcessAllActivityTransactions(accountId, progressDialog = null) {
+async function fetchAndProcessAllActivityTransactions(accountId, onProgress: ((message: string) => void) | null = null) {
   try {
     debugLog(`Fetching ALL activity transactions for account ${accountId}`);
 
-    if (progressDialog) {
-      progressDialog.updateProgress(accountId, 'processing', 'Loading all transactions from Questrade...');
+    if (onProgress) {
+      onProgress('Loading all transactions from Questrade...');
     }
 
     // Fetch ALL transactions (no date filter, including trades)
@@ -917,12 +911,8 @@ async function fetchAndProcessAllActivityTransactions(accountId, progressDialog 
 
     debugLog(`Fetched ${transactions.length} total activity transactions (including trades)`);
 
-    if (progressDialog) {
-      progressDialog.updateProgress(
-        accountId,
-        'processing',
-        `Loading transaction details (0/${transactions.length})...`,
-      );
+    if (onProgress) {
+      onProgress(`Loading transaction details (0/${transactions.length})...`);
     }
 
     // Fetch details for each transaction
@@ -930,12 +920,8 @@ async function fetchAndProcessAllActivityTransactions(accountId, progressDialog 
     for (let i = 0; i < transactions.length; i += 1) {
       const tx = transactions[i];
 
-      if (progressDialog && i % 10 === 0) {
-        progressDialog.updateProgress(
-          accountId,
-          'processing',
-          `Loading transaction details (${i + 1}/${transactions.length})...`,
-        );
+      if (onProgress && i % 10 === 0) {
+        onProgress(`Loading transaction details (${i + 1}/${transactions.length})...`);
       }
 
       // Fetch full details using transactionUrl
@@ -975,12 +961,12 @@ async function fetchAndProcessAllActivityTransactions(accountId, progressDialog 
  * @param {Object} progressDialog - Optional progress dialog
  * @returns {Promise<Object>} Upload result
  */
-async function uploadActivityForAccount(accountId, accountName, monarchAccountId, progressDialog = null) {
+async function uploadActivityForAccount(accountId, accountName, monarchAccountId, onProgress: ((message: string) => void) | null = null) {
   try {
     debugLog(`Uploading all activity for account ${accountName} (${accountId})`);
 
     // Fetch and process ALL activity transactions
-    const processedTransactions = await fetchAndProcessAllActivityTransactions(accountId, progressDialog);
+    const processedTransactions = await fetchAndProcessAllActivityTransactions(accountId, onProgress);
 
     if (processedTransactions.length === 0) {
       debugLog('No activity transactions to upload');
@@ -1014,15 +1000,11 @@ async function uploadActivityForAccount(accountId, accountName, monarchAccountId
       };
     }
 
-    if (progressDialog) {
+    if (onProgress) {
       const dupMsg = filterResult.duplicateCount > 0
         ? ` (${filterResult.duplicateCount} duplicates skipped)`
         : '';
-      progressDialog.updateProgress(
-        accountId,
-        'processing',
-        `Converting ${newProcessedTransactions.length} transactions to CSV${dupMsg}...`,
-      );
+      onProgress(`Converting ${newProcessedTransactions.length} transactions to CSV${dupMsg}...`);
     }
 
     // Convert to Monarch CSV format
@@ -1036,8 +1018,8 @@ async function uploadActivityForAccount(accountId, accountName, monarchAccountId
     const toDate = getTodayLocal();
     const filename = `questrade_all_activity_${accountId}_${toDate}.csv`;
 
-    if (progressDialog) {
-      progressDialog.updateProgress(accountId, 'processing', `Uploading ${newProcessedTransactions.length} activity transactions...`);
+    if (onProgress) {
+      onProgress(`Uploading ${newProcessedTransactions.length} activity transactions...`);
     }
 
     const uploadSuccess = await monarchApi.uploadTransactions(
@@ -1117,7 +1099,8 @@ export async function uploadSingleAccountActivityToMonarch(accountId, accountNam
 
     try {
       // Upload activity for this account
-      const result = await uploadActivityForAccount(accountId, accountName, monarchAccount.id, progressDialog);
+      const singleOnProgress = (msg) => progressDialog.updateProgress(accountId, 'processing', msg);
+      const result = await uploadActivityForAccount(accountId, accountName, monarchAccount.id, singleOnProgress);
 
       progressDialog.updateProgress(accountId, result.success ? 'success' : 'error', result.message);
 
@@ -1218,7 +1201,8 @@ export async function uploadAllAccountsActivityToMonarch() {
         }
 
         // Upload activity for this account
-        const result = await uploadActivityForAccount(accountId, accountName, monarchAccount.id, progressDialog);
+        const bulkOnProgress = (msg) => progressDialog.updateProgress(accountId, 'processing', msg);
+        const result = await uploadActivityForAccount(accountId, accountName, monarchAccount.id, bulkOnProgress);
 
         progressDialog.updateProgress(accountId, result.success ? 'success' : 'error', result.message);
 
