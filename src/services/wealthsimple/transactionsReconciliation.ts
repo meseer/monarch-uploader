@@ -76,10 +76,14 @@ function cleanSystemNotesFromNotes(notes: string | null | undefined): string {
 /**
  * Update dividend notes when a pending dividend settles.
  * Replaces "Upcoming dividend on {symbol}" with "Dividend on {symbol}"
- * so the notes reflect the settled state.
+ * and removes the "Expected dividends: ..." line (no longer needed once settled).
  */
 function updateSettledDividendNotes(notes: string): string {
-  return notes.replace(/^Upcoming dividend on /m, 'Dividend on ');
+  let updated = notes.replace(/^Upcoming dividend on /m, 'Dividend on ');
+  updated = updated.replace(/^Expected dividends: .+\n?/m, '');
+  // Clean up any resulting double newlines
+  updated = updated.replace(/\n{2,}/g, '\n');
+  return updated.trim();
 }
 
 /**

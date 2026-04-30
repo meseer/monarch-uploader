@@ -153,6 +153,15 @@ export function formatDividendNotes(tx: WealthsimpleTransaction): string {
 
   if (tx.amount === null || tx.amount === undefined) {
     noteLines.push(`Upcoming dividend on ${symbol}`);
+    // Calculate expected dividend amount from holdings and rate
+    if (tx.assetQuantity !== null && tx.assetQuantity !== undefined && tx.grossDividendRate !== null && tx.grossDividendRate !== undefined) {
+      const qty = parseFloat(String(tx.assetQuantity));
+      const rate = parseFloat(String(tx.grossDividendRate));
+      if (!isNaN(qty) && !isNaN(rate) && qty > 0 && rate > 0) {
+        const expectedAmount = Math.round(qty * rate * 100) / 100;
+        noteLines.push(`Expected dividends: ${currency}$${formatAmount(expectedAmount)}`);
+      }
+    }
   } else if (tx.subType === 'MANUFACTURED_DIVIDEND') {
     noteLines.push(`Dividend on lended ${symbol} shares: ${currency}$${amount}`);
   } else {
