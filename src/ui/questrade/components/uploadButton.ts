@@ -9,9 +9,9 @@ import { debugLog, calculateFromDateWithLookback, getTodayLocal, formatDate } fr
 import { STORAGE } from '../../../core/config';
 import stateManager from '../../../core/state';
 import toast from '../../toast';
-import { processAccountBalanceHistory } from '../../../services/questrade/account';
 import { ensureMonarchAuthentication } from '../../components/monarchLoginLink';
-import { syncAllAccountsToMonarch } from '../../../services/questrade/sync';
+import { showProgressDialog } from '../../components/progressDialog';
+import syncService, { syncAllAccountsToMonarch } from '../../../services/questrade/sync';
 import { uploadAllAccountsActivityToMonarch, uploadSingleAccountActivityToMonarch } from '../../../services/questrade/transactions';
 import {
   getAccountCreationDate,
@@ -156,6 +156,7 @@ function createButtonGroup(): HTMLDivElement {
 
 /**
  * Creates a single-account upload button that responds to state changes.
+ * Shows a progress dialog with step-by-step details (same as all-accounts sync).
  * Automatically determines the start date using the same logic as the all-accounts sync:
  * - Subsequent sync: last sync date minus lookback period
  * - First sync: account creation date
@@ -180,21 +181,55 @@ function createSingleAccountUploadButton(fallbackAccountId: string, fallbackAcco
       ? currentState.currentAccount.nickname
       : fallbackAccountName;
 
+    let progressDialog: ReturnType<typeof showProgressDialog> | null = null;
+
     try {
       // Automatically calculate dates (same logic as all-accounts sync)
       const fromDate = calculateSingleAccountStartDate(currentAccountId);
       const toDate = getTodayLocal();
 
-      // Process upload directly without date picker
-      await processAccountBalanceHistory(
+      // Create progress dialog for single account (same as Wealthsimple pattern)
+      const accountsForDialog = [{
+        key: currentAccountId,
+        nickname: currentAccountName,
+        name: currentAccountName,
+      }];
+      progressDialog = showProgressDialog(accountsForDialog, `Syncing ${currentAccountName} to Monarch`);
+
+      // Set up cancel callback
+      let isCancelled = false;
+      progressDialog.onCancel(() => {
+        debugLog('Single account sync cancellation requested');
+        isCancelled = true;
+        toast.show('Sync cancelled by user', 'info');
+      });
+
+      // Check for cancellation before sync
+      if (isCancelled) {
+        progressDialog.hideCancel();
+        return;
+      }
+
+      // Sync account with progress dialog (balance + positions + orders + activity)
+      await syncService.syncAccountToMonarch(
         currentAccountId,
         currentAccountName,
         fromDate,
         toDate,
+        progressDialog,
       );
+
+      // Show success summary
+      progressDialog.showSummary({ success: 1, failed: 0, skipped: 0 });
+      progressDialog.hideCancel();
     } catch (error) {
-      toast.show(`Error: ${(error as Error).message}`, 'error');
       debugLog('Error in single account sync:', error);
+      toast.show(`Sync failed: ${(error as Error).message}`, 'error');
+
+      if (progressDialog) {
+        progressDialog.showSummary({ success: 0, failed: 1, skipped: 0 });
+        progressDialog.hideCancel();
+      }
     }
   });
 
