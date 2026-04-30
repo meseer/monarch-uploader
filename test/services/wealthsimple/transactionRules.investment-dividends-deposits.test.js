@@ -247,7 +247,7 @@ describe('Wealthsimple Transaction Rules Engine - Investment Dividends & Deposit
         const result = rule.process(transaction);
 
         expect(result).not.toBeNull();
-        // amount:null means pending (not yet paid out) ’ "Upcoming dividend on {symbol}"
+        // amount:null means pending (not yet paid out) â€™ "Upcoming dividend on {symbol}"
         expect(result.notes).toBe('Upcoming dividend on VFV');
       });
 
@@ -264,7 +264,7 @@ describe('Wealthsimple Transaction Rules Engine - Investment Dividends & Deposit
         const result = rule.process(transaction);
 
         expect(result).not.toBeNull();
-        // amount:undefined means pending (not yet paid out) ’ "Upcoming dividend on {symbol}"
+        // amount:undefined means pending (not yet paid out) â€™ "Upcoming dividend on {symbol}"
         expect(result.notes).toBe('Upcoming dividend on AAPL');
       });
 
@@ -299,7 +299,7 @@ describe('Wealthsimple Transaction Rules Engine - Investment Dividends & Deposit
         expect(result.category).toBe('Dividends & Capital Gains');
         expect(result.merchant).toBe('Unknown');
         expect(result.originalStatement).toBe('DIVIDEND::Unknown');
-        // No amount field (undefined) ’ treated as pending ’ "Upcoming dividend on Unknown"
+        // No amount field (undefined) â€™ treated as pending â€™ "Upcoming dividend on Unknown"
         expect(result.notes).toBe('Upcoming dividend on Unknown');
         expect(result.technicalDetails).toBe('');
       });
@@ -318,7 +318,7 @@ describe('Wealthsimple Transaction Rules Engine - Investment Dividends & Deposit
         expect(result.category).toBe('Dividends & Capital Gains');
         expect(result.merchant).toBe('Unknown');
         expect(result.originalStatement).toBe('DIVIDEND:MANUFACTURED_DIVIDEND:Unknown');
-        // No amount field (undefined) ’ treated as pending ’ "Upcoming dividend on Unknown"
+        // No amount field (undefined) â€™ treated as pending â€™ "Upcoming dividend on Unknown"
         expect(result.notes).toBe('Upcoming dividend on Unknown');
       });
 
@@ -394,11 +394,124 @@ describe('Wealthsimple Transaction Rules Engine - Investment Dividends & Deposit
         const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
         const result = rule.process(pendingDividendTx);
 
+        expect(result.notes).toContain('Expected dividends: CAD$2.06');
         expect(result.notes).toContain('Holdings on record date: 34.3537 shares');
         expect(result.notes).toContain('Gross dividend rate: CAD$0.06 per share');
         expect(result.notes).toContain('Announcement date: Feb 19, 2026');
         expect(result.notes).toContain('Record date: Feb 26, 2026');
         expect(result.notes).toContain('Payable date: Mar 3, 2026');
+      });
+
+      it('should include expected dividends line calculated from holdings Ã— rate', () => {
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const tx = {
+          type: 'DIVIDEND',
+          subType: null,
+          assetSymbol: 'VFV',
+          amount: null,
+          currency: 'CAD',
+          assetQuantity: 100,
+          grossDividendRate: 0.25,
+        };
+        const result = rule.process(tx);
+
+        expect(result.notes).toContain('Expected dividends: CAD$25');
+      });
+
+      it('should include expected dividends with USD currency', () => {
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const tx = {
+          type: 'DIVIDEND',
+          subType: 'DIY_DIVIDEND',
+          assetSymbol: 'AAPL',
+          amount: null,
+          currency: 'USD',
+          assetQuantity: 50,
+          grossDividendRate: 0.96,
+        };
+        const result = rule.process(tx);
+
+        expect(result.notes).toContain('Expected dividends: USD$48');
+      });
+
+      it('should NOT include expected dividends when assetQuantity is null', () => {
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const tx = {
+          type: 'DIVIDEND',
+          subType: null,
+          assetSymbol: 'VFV',
+          amount: null,
+          currency: 'CAD',
+          assetQuantity: null,
+          grossDividendRate: 0.25,
+        };
+        const result = rule.process(tx);
+
+        expect(result.notes).not.toContain('Expected dividends');
+      });
+
+      it('should NOT include expected dividends when grossDividendRate is null', () => {
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const tx = {
+          type: 'DIVIDEND',
+          subType: null,
+          assetSymbol: 'VFV',
+          amount: null,
+          currency: 'CAD',
+          assetQuantity: 100,
+          grossDividendRate: null,
+        };
+        const result = rule.process(tx);
+
+        expect(result.notes).not.toContain('Expected dividends');
+      });
+
+      it('should NOT include expected dividends when both fields are missing', () => {
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const tx = {
+          type: 'DIVIDEND',
+          subType: null,
+          assetSymbol: 'VFV',
+          amount: null,
+          currency: 'CAD',
+        };
+        const result = rule.process(tx);
+
+        expect(result.notes).not.toContain('Expected dividends');
+      });
+
+      it('should NOT include expected dividends for settled dividends (amount present)', () => {
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const tx = {
+          type: 'DIVIDEND',
+          subType: null,
+          assetSymbol: 'VFV',
+          amount: 25,
+          currency: 'CAD',
+          assetQuantity: 100,
+          grossDividendRate: 0.25,
+        };
+        const result = rule.process(tx);
+
+        expect(result.notes).not.toContain('Expected dividends');
+        expect(result.notes).toContain('Dividend on VFV: CAD$25');
+      });
+
+      it('should handle string values for assetQuantity and grossDividendRate', () => {
+        const rule = INVESTMENT_DIVIDEND_TRANSACTION_RULES.find((r) => r.id === 'dividend');
+        const tx = {
+          type: 'DIVIDEND',
+          subType: null,
+          assetSymbol: 'ZHY',
+          amount: null,
+          currency: 'CAD',
+          assetQuantity: '34.3537',
+          grossDividendRate: '0.060000',
+        };
+        const result = rule.process(tx);
+
+        // 34.3537 * 0.06 = 2.061222
+        expect(result.notes).toContain('Expected dividends: CAD$2.06');
       });
 
       it('should NOT include withholding tax line when withholdingTaxAmount is 0', () => {
