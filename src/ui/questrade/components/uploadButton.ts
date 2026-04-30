@@ -5,11 +5,11 @@
 
 declare function GM_getValue(key: string, defaultValue?: unknown): unknown;
 
-import { debugLog } from '../../../core/utils';
+import { debugLog, calculateFromDateWithLookback, getTodayLocal, formatDate } from '../../../core/utils';
 import { STORAGE } from '../../../core/config';
 import stateManager from '../../../core/state';
 import toast from '../../toast';
-import { getDateRange, processAccountBalanceHistory } from '../../../services/questrade/account';
+import { processAccountBalanceHistory } from '../../../services/questrade/account';
 import { ensureMonarchAuthentication } from '../../components/monarchLoginLink';
 import { syncAllAccountsToMonarch } from '../../../services/questrade/sync';
 import { uploadAllAccountsActivityToMonarch, uploadSingleAccountActivityToMonarch } from '../../../services/questrade/transactions';
@@ -19,6 +19,35 @@ import {
   uploadFullBalanceHistoryForAllAccounts,
 } from '../../../services/questrade/balance';
 import { showDatePickerPromise } from '../../components/datePicker';
+
+/**
+ * Calculate the start date for a single account sync using the same logic
+ * as the all-accounts sync:
+ * - Subsequent sync: last sync date minus lookback period
+ * - First sync: account creation date
+ * - Fallback: 2 weeks ago
+ */
+export function calculateSingleAccountStartDate(accountId: string): string {
+  // Try to get date from last sync with lookback period applied
+  const lastDate = calculateFromDateWithLookback('questrade', accountId);
+  if (lastDate && /^\d{4}-\d{2}-\d{2}$/.test(lastDate)) {
+    debugLog(`Single account sync ${accountId} - using lookback date: ${lastDate}`);
+    return lastDate;
+  }
+
+  // No last upload date - this is a first sync
+  // Use account's creation date if available
+  const createdOn = getAccountCreationDate(accountId);
+  if (createdOn && /^\d{4}-\d{2}-\d{2}$/.test(createdOn)) {
+    debugLog(`Single account sync ${accountId} first sync - using creation date: ${createdOn}`);
+    return createdOn;
+  }
+
+  // Fallback to 2 weeks ago if no creation date available
+  const twoWeeksAgo = formatDate(new Date(Date.now() - 12096e5));
+  debugLog(`Single account sync ${accountId} first sync - no creation date, using fallback: ${twoWeeksAgo}`);
+  return twoWeeksAgo;
+}
 
 interface ButtonOptions {
   color?: string;
@@ -126,7 +155,11 @@ function createButtonGroup(): HTMLDivElement {
 }
 
 /**
- * Creates a single-account upload button that responds to state changes
+ * Creates a single-account upload button that responds to state changes.
+ * Automatically determines the start date using the same logic as the all-accounts sync:
+ * - Subsequent sync: last sync date minus lookback period
+ * - First sync: account creation date
+ * - Fallback: 2 weeks ago
  * @param fallbackAccountId - Fallback account ID if state is not available
  * @param fallbackAccountName - Fallback account name if state is not available
  * @returns Upload button element
@@ -147,78 +180,21 @@ function createSingleAccountUploadButton(fallbackAccountId: string, fallbackAcco
       ? currentState.currentAccount.nickname
       : fallbackAccountName;
 
-    // Get date range for current account
-    const { fromDate, toDate } = getDateRange(currentAccountId);
     try {
-      // Create modal form
-      const modal = document.createElement('div');
-      modal.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background-color: rgba(0, 0, 0, 0.5);
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        z-index: 10000;
-      `;
+      // Automatically calculate dates (same logic as all-accounts sync)
+      const fromDate = calculateSingleAccountStartDate(currentAccountId);
+      const toDate = getTodayLocal();
 
-      // Create form
-      const form = document.createElement('form');
-      form.style.cssText = `
-        background-color: white;
-        padding: 20px;
-        border-radius: 8px;
-        width: 400px;
-        max-width: 90%;
-      `;
-
-      // Add title
-      const title = document.createElement('h3');
-      title.textContent = `Upload ${currentAccountName} Balance History`;
-      title.style.cssText = 'margin-top: 0; margin-bottom: 15px;';
-      form.appendChild(title);
-
-      // Add date pickers
-      const fromDatePicker = createDatePicker('fromDate', 'From Date:', fromDate);
-      form.appendChild(fromDatePicker);
-
-      const toDatePicker = createDatePicker('toDate', 'To Date:', toDate);
-      form.appendChild(toDatePicker);
-
-      // Add buttons
-      const buttonGroup = createButtonGroup();
-
-      const cancelButton = createButton('Cancel', () => {
-        modal.remove();
-      }, { color: '#6c757d' });
-      buttonGroup.appendChild(cancelButton);
-
-      const uploadButton = createButton('Upload', async () => {
-        const selectedFromDate = (document.getElementById('fromDate') as HTMLInputElement).value;
-        const selectedToDate = (document.getElementById('toDate') as HTMLInputElement).value;
-
-        // Remove modal
-        modal.remove();
-
-        // Process upload
-        await processAccountBalanceHistory(
-          currentAccountId,
-          currentAccountName,
-          selectedFromDate,
-          selectedToDate,
-        );
-      }, { color: '#28a745' });
-      buttonGroup.appendChild(uploadButton);
-
-      form.appendChild(buttonGroup);
-      modal.appendChild(form);
-      document.body.appendChild(modal);
+      // Process upload directly without date picker
+      await processAccountBalanceHistory(
+        currentAccountId,
+        currentAccountName,
+        fromDate,
+        toDate,
+      );
     } catch (error) {
       toast.show(`Error: ${(error as Error).message}`, 'error');
-      debugLog('Error creating upload form:', error);
+      debugLog('Error in single account sync:', error);
     }
   });
 
