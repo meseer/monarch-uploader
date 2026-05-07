@@ -404,6 +404,91 @@ describe('CSV Conversion Utilities', () => {
         expect(result).not.toContain('PURCHASE / REF123');
       });
 
+      test('should add FX notes for pending foreign transactions', () => {
+        const transactions = [
+          {
+            date: '2026-05-05',
+            merchant: { name: 'TADEOS MEXICAN RESTAUR' },
+            amount: { value: 114.81 },
+            isPending: true,
+            pendingId: 'rb-tx:abc123def456789a',
+            foreign: {
+              originalAmount: { value: '84.28', currency: 'USD' },
+              conversionRate: { source: '0.0', parsedValue: 0 },
+            },
+          },
+        ];
+
+        const result = convertTransactionsToMonarchCSV(transactions, 'Rogers Mastercard');
+        expect(result).toContain('84.28 USD @ pending');
+        expect(result).toContain('rb-tx:abc123def456789a');
+        // Should NOT contain exchange fee for pending
+        expect(result).not.toContain('Exchange fee');
+      });
+
+      test('should add FX notes with conversion rate for settled foreign transactions', () => {
+        const transactions = [
+          {
+            date: '2026-05-04',
+            merchant: { name: 'TADEOS MEXICAN RESTAUR' },
+            amount: { value: 139.31 },
+            activityType: 'TRANS',
+            referenceNumber: '72700696125900010079992',
+            foreign: {
+              originalAmount: { value: '99.77', currency: 'USD' },
+              conversionRate: 1.362233136,
+              exchangeFee: { value: '3.40', currency: 'CAD' },
+            },
+          },
+        ];
+
+        const result = convertTransactionsToMonarchCSV(transactions, 'Rogers Mastercard', {
+          storeTransactionDetailsInNotes: true,
+        });
+        expect(result).toContain('99.77 USD @ 1.362233136');
+        expect(result).toContain('Exchange fee: 3.40 CAD');
+        // Should also contain transaction details since storeTransactionDetailsInNotes is true
+        expect(result).toContain('TRANS / 72700696125900010079992');
+      });
+
+      test('should not add FX notes for domestic CAD transactions', () => {
+        const transactions = [
+          {
+            date: '2024-01-15',
+            merchant: { name: 'LOCAL STORE' },
+            amount: { value: 25.00 },
+            activityType: 'PURCHASE',
+            referenceNumber: 'REF123',
+          },
+        ];
+
+        const result = convertTransactionsToMonarchCSV(transactions, 'Rogers Mastercard', {
+          storeTransactionDetailsInNotes: true,
+        });
+        expect(result).not.toContain('@ pending');
+        expect(result).not.toContain('Exchange fee');
+        expect(result).toContain('PURCHASE / REF123');
+      });
+
+      test('should show N/A rate for settled foreign transaction with zero conversion rate', () => {
+        const transactions = [
+          {
+            date: '2026-05-04',
+            merchant: { name: 'FOREIGN STORE' },
+            amount: { value: 50.00 },
+            foreign: {
+              originalAmount: { value: '35.00', currency: 'EUR' },
+              conversionRate: 0,
+            },
+          },
+        ];
+
+        const result = convertTransactionsToMonarchCSV(transactions, 'Rogers Mastercard');
+        expect(result).toContain('35.00 EUR @ N/A');
+      });
+    });
+
+    describe('Foreign currency transaction support', () => {
       test('should handle mixed settled and pending transactions', () => {
         const transactions = [
           {
@@ -1460,7 +1545,7 @@ describe('CSV Conversion Utilities', () => {
       expect(result).toContain('Uncategorized');
     });
 
-    test('should have inverted amount signs (charge ’ negative, payment ’ positive)', () => {
+    test('should have inverted amount signs (charge â€™ negative, payment â€™ positive)', () => {
       const result = convertMbnaTransactionsToMonarchCSV(sampleSettled, 'MBNA Mastercard');
       expect(result).toContain('-77.82');
       expect(result).toContain('13.32');

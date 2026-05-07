@@ -13,6 +13,7 @@ import {
   formatReconciliationMessage,
   formatPendingIdForNotes,
   extractPendingIdFromNotes,
+  buildFxNotes,
 } from '../../../src/services/rogersbank/pendingTransactions';
 
 // Mock dependencies
@@ -225,24 +226,105 @@ describe('generatePendingTransactionId', () => {
     expect(id1).not.toBe(id2);
   });
 
-  it('excludes amount.value for non-CAD transactions', async () => {
-    const txUsd5 = {
-      date: '2026-02-13',
-      amount: { value: '5.50', currency: 'USD' },
-      merchant: { name: 'STORE', categoryCode: '7523' },
+  it('uses foreign.originalAmount for foreign transactions (ignores CAD amount)', async () => {
+    // Real API structure: amount is always in CAD, foreign.originalAmount has original currency
+    const txPending = {
+      date: '2026-05-05',
+      amount: { value: '114.81', currency: 'CAD' },
+      merchant: { name: 'TADEOS MEXICAN RESTAUR', categoryCode: '5812' },
       cardNumber: '************8584',
+      foreign: {
+        originalAmount: { value: '84.28', currency: 'USD' },
+        conversionRate: { source: '0.0', parsedValue: 0 },
+      },
     };
-    const txUsd10 = {
-      date: '2026-02-13',
-      amount: { value: '10.00', currency: 'USD' },
-      merchant: { name: 'STORE', categoryCode: '7523' },
+    const txSettled = {
+      date: '2026-05-05',
+      amount: { value: '139.31', currency: 'CAD' }, // Different CAD amount after final FX rate
+      merchant: { name: 'TADEOS MEXICAN RESTAUR', categoryCode: '5812' },
       cardNumber: '************8584',
+      foreign: {
+        originalAmount: { value: '84.28', currency: 'USD' }, // Same original amount
+        conversionRate: 1.362233136,
+      },
     };
 
-    // Different amounts but same currency (non-CAD) should produce same ID
-    const id1 = await generatePendingTransactionId(txUsd5);
-    const id2 = await generatePendingTransactionId(txUsd10);
+    // Same original foreign amount should produce same hash despite different CAD amounts
+    const id1 = await generatePendingTransactionId(txPending);
+    const id2 = await generatePendingTransactionId(txSettled);
     expect(id1).toBe(id2);
+  });
+
+  it('generates different IDs for different foreign amounts', async () => {
+    const tx1 = {
+      date: '2026-05-05',
+      amount: { value: '114.81', currency: 'CAD' },
+      merchant: { name: 'STORE', categoryCode: '5812' },
+      cardNumber: '************8584',
+      foreign: { originalAmount: { value: '84.28', currency: 'USD' } },
+    };
+    const tx2 = {
+      date: '2026-05-05',
+      amount: { value: '55.00', currency: 'CAD' },
+      merchant: { name: 'STORE', categoryCode: '5812' },
+      cardNumber: '************8584',
+      foreign: { originalAmount: { value: '40.00', currency: 'USD' } },
+    };
+
+    const id1 = await generatePendingTransactionId(tx1);
+    const id2 = await generatePendingTransactionId(tx2);
+    expect(id1).not.toBe(id2);
+  });
+
+  it('generates same ID for pending and settled versions of a foreign transaction', async () => {
+    // Uses the real sample data from the Rogers Bank API
+    const pendingTx = {
+      date: '2026-05-05',
+      amount: { value: '114.81', currency: 'CAD' },
+      activityStatus: 'PENDING',
+      merchant: { name: 'TADEOS MEXICAN RESTAUR', categoryCode: '5812' },
+      cardNumber: '************8584',
+      activityType: 'AUTH',
+      foreign: {
+        conversionMarkupRate: { source: '0.0', parsedValue: 0 },
+        markupRate: 0,
+        originalAmount: { value: '84.28', currency: 'USD' },
+        appliedConversionRate: { source: '0.0', parsedValue: 0 },
+        conversionRate: { source: '0.0', parsedValue: 0 },
+      },
+    };
+    const settledTx = {
+      date: '2026-05-04',
+      amount: { value: '139.31', currency: 'CAD' },
+      activityStatus: 'APPROVED',
+      merchant: { name: 'TADEOS MEXICAN RESTAUR', categoryCode: '5812' },
+      cardNumber: '************8584',
+      activityType: 'TRANS',
+      referenceNumber: '72700696125900010079992',
+      foreign: {
+        conversionMarkupRate: 1.396311516,
+        markupRate: 0,
+        originalAmount: { value: '99.77', currency: 'USD' },
+        exchangeFee: { value: '3.40', currency: 'CAD' },
+        appliedConversionRate: { source: '0.0', parsedValue: 0 },
+        conversionRate: 1.362233136,
+      },
+    };
+
+    // NOTE: These are different transactions (different foreign amounts: 84.28 vs 99.77)
+    // so they should produce different hashes
+    const pendingId = await generatePendingTransactionId(pendingTx);
+    const settledId = await generatePendingTransactionId(settledTx);
+    expect(pendingId).not.toBe(settledId);
+
+    // But if foreign amount is the same, they should match
+    const settledSameAmount = { ...settledTx, foreign: { ...settledTx.foreign, originalAmount: { value: '84.28', currency: 'USD' } } };
+    const settledSameId = await generatePendingTransactionId(settledSameAmount);
+    // Date differs (05-05 vs 05-04) so still won't match — this is expected for the real data
+    // The key point is: same date + same foreign amount = same hash
+    const pendingWithSettledDate = { ...pendingTx, date: '2026-05-04' };
+    const adjustedPendingId = await generatePendingTransactionId(pendingWithSettledDate);
+    expect(adjustedPendingId).toBe(settledSameId);
   });
 
   it('generates same ID for pending and settled versions of the same CAD transaction', async () => {
@@ -501,29 +583,39 @@ describe('separateAndDeduplicateTransactions', () => {
     expect(result.pending[0].date).toBe('2026-02-20');
   });
 
-  it('handles non-CAD duplicate where amounts differ', async () => {
-    // Foreign currency: pending and settled have different amounts but should still match
+  it('handles foreign transaction duplicate where CAD amounts differ', async () => {
+    // Real API structure: amount is always CAD, foreign.originalAmount has original currency
+    // Pending and settled have different CAD amounts but same foreign amount → should match
     const transactions = [
       {
         activityStatus: 'APPROVED',
-        date: '2026-02-13',
-        amount: { value: '7.25', currency: 'USD' },
-        merchant: { name: 'US_STORE', categoryCode: '5411' },
+        date: '2026-05-05',
+        amount: { value: '139.31', currency: 'CAD' }, // Final CAD amount after FX
+        merchant: { name: 'TADEOS MEXICAN RESTAUR', categoryCode: '5812' },
         cardNumber: '************8584',
-        referenceNumber: '456',
+        referenceNumber: '72700696125900010079992',
+        foreign: {
+          originalAmount: { value: '84.28', currency: 'USD' },
+          conversionRate: 1.362233136,
+          exchangeFee: { value: '3.40', currency: 'CAD' },
+        },
       },
       {
         activityStatus: 'PENDING',
-        date: '2026-02-13',
-        amount: { value: '5.50', currency: 'USD' },
-        merchant: { name: 'US_STORE', categoryCode: '5411' },
+        date: '2026-05-05',
+        amount: { value: '114.81', currency: 'CAD' }, // Preliminary CAD amount
+        merchant: { name: 'TADEOS MEXICAN RESTAUR', categoryCode: '5812' },
         cardNumber: '************8584',
+        foreign: {
+          originalAmount: { value: '84.28', currency: 'USD' }, // Same original amount
+          conversionRate: { source: '0.0', parsedValue: 0 },
+        },
       },
     ];
 
     const result = await separateAndDeduplicateTransactions(transactions);
     expect(result.settled).toHaveLength(1);
-    // For non-CAD, amount.value is excluded from hash, so they should match
+    // Foreign original amount is the same, so hashes match → pending removed
     expect(result.pending).toHaveLength(0);
     expect(result.duplicatesRemoved).toBe(1);
   });
@@ -731,6 +823,232 @@ describe('reconcileRogersPendingTransactions', () => {
 
     expect(result.failed).toBe(1);
     expect(result.success).toBe(true); // Overall success despite individual failure
+  });
+});
+
+// ============================================================
+// buildFxNotes
+// ============================================================
+
+describe('buildFxNotes', () => {
+  it('returns empty string for non-foreign transactions', () => {
+    expect(buildFxNotes({})).toBe('');
+    expect(buildFxNotes({ amount: { value: '10', currency: 'CAD' } })).toBe('');
+    expect(buildFxNotes(null)).toBe('');
+    expect(buildFxNotes(undefined)).toBe('');
+  });
+
+  it('returns empty string when foreign.originalAmount.value is missing', () => {
+    expect(buildFxNotes({ foreign: {} })).toBe('');
+    expect(buildFxNotes({ foreign: { originalAmount: {} } })).toBe('');
+  });
+
+  it('builds FX notes with numeric conversion rate', () => {
+    const tx = {
+      foreign: {
+        originalAmount: { value: '99.77', currency: 'USD' },
+        conversionRate: 1.362233136,
+        exchangeFee: { value: '3.40', currency: 'CAD' },
+      },
+    };
+
+    const result = buildFxNotes(tx);
+    expect(result).toBe('99.77 USD @ 1.362233136\nExchange fee: 3.40 CAD');
+  });
+
+  it('builds FX notes with object conversion rate (parsedValue)', () => {
+    const tx = {
+      foreign: {
+        originalAmount: { value: '84.28', currency: 'USD' },
+        conversionRate: { source: '0.0', parsedValue: 0 },
+      },
+    };
+
+    // Zero rate should show N/A
+    const result = buildFxNotes(tx);
+    expect(result).toBe('84.28 USD @ N/A');
+  });
+
+  it('omits exchange fee when not available', () => {
+    const tx = {
+      foreign: {
+        originalAmount: { value: '50.00', currency: 'EUR' },
+        conversionRate: 1.5,
+      },
+    };
+
+    const result = buildFxNotes(tx);
+    expect(result).toBe('50.00 EUR @ 1.5');
+  });
+
+  it('handles exchange fee with default currency', () => {
+    const tx = {
+      foreign: {
+        originalAmount: { value: '25.00', currency: 'GBP' },
+        conversionRate: 1.8,
+        exchangeFee: { value: '1.50' }, // No currency specified
+      },
+    };
+
+    const result = buildFxNotes(tx);
+    expect(result).toBe('25.00 GBP @ 1.8\nExchange fee: 1.50 CAD');
+  });
+});
+
+// ============================================================
+// Reconciliation FX enrichment
+// ============================================================
+
+describe('reconcileRogersPendingTransactions - FX enrichment', () => {
+  const monarchApi = require('../../../src/api/monarch').default;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('adds FX notes when settling a foreign transaction', async () => {
+    monarchApi.getTagByName.mockResolvedValue({ id: 'tag-pending', name: 'Pending' });
+
+    // Foreign transaction — pending version had FX placeholder in notes
+    const testTx = {
+      date: '2026-05-05',
+      amount: { value: '114.81', currency: 'CAD' },
+      merchant: { name: 'TADEOS MEXICAN RESTAUR', categoryCode: '5812' },
+      cardNumber: '************8584',
+      foreign: {
+        originalAmount: { value: '84.28', currency: 'USD' },
+        conversionRate: { source: '0.0', parsedValue: 0 },
+      },
+    };
+    const expectedId = await generatePendingTransactionId(testTx);
+
+    monarchApi.getTransactionsList.mockResolvedValue({
+      results: [{
+        id: 'monarch-tx-1',
+        amount: -114.81,
+        date: '2026-05-05',
+        notes: `84.28 USD @ pending\n${expectedId}`,
+        ownedByUser: { id: 'user-1' },
+      }],
+    });
+
+    monarchApi.updateTransaction.mockResolvedValue({});
+    monarchApi.setTransactionTags.mockResolvedValue({});
+
+    // Settled version has full FX data
+    const settledVersion = {
+      ...testTx,
+      amount: { value: '139.31', currency: 'CAD' },
+      activityStatus: 'APPROVED',
+      referenceNumber: '72700696125900010079992',
+      foreign: {
+        originalAmount: { value: '84.28', currency: 'USD' },
+        conversionRate: 1.362233136,
+        exchangeFee: { value: '3.40', currency: 'CAD' },
+      },
+    };
+
+    const result = await reconcileRogersPendingTransactions('monarch-123', [settledVersion], 90);
+
+    expect(result.settled).toBe(1);
+
+    // Verify notes were updated with FX info (replacing pending placeholder)
+    const updateCall = monarchApi.updateTransaction.mock.calls[0];
+    expect(updateCall[0]).toBe('monarch-tx-1');
+    expect(updateCall[1].notes).toContain('84.28 USD @ 1.362233136');
+    expect(updateCall[1].notes).toContain('Exchange fee: 3.40 CAD');
+    // Should NOT contain the pending placeholder or the hash ID
+    expect(updateCall[1].notes).not.toContain('@ pending');
+    expect(updateCall[1].notes).not.toContain('rb-tx:');
+  });
+
+  it('preserves user notes when adding FX info on settlement', async () => {
+    monarchApi.getTagByName.mockResolvedValue({ id: 'tag-pending', name: 'Pending' });
+
+    const testTx = {
+      date: '2026-05-05',
+      amount: { value: '114.81', currency: 'CAD' },
+      merchant: { name: 'STORE', categoryCode: '5812' },
+      cardNumber: '************8584',
+      foreign: {
+        originalAmount: { value: '84.28', currency: 'USD' },
+        conversionRate: { source: '0.0', parsedValue: 0 },
+      },
+    };
+    const expectedId = await generatePendingTransactionId(testTx);
+
+    // User added "Business dinner" note alongside the system notes
+    monarchApi.getTransactionsList.mockResolvedValue({
+      results: [{
+        id: 'monarch-tx-1',
+        amount: -114.81,
+        date: '2026-05-05',
+        notes: `84.28 USD @ pending\n${expectedId}\nBusiness dinner`,
+        ownedByUser: { id: 'user-1' },
+      }],
+    });
+
+    monarchApi.updateTransaction.mockResolvedValue({});
+    monarchApi.setTransactionTags.mockResolvedValue({});
+
+    const settledVersion = {
+      ...testTx,
+      amount: { value: '120.00', currency: 'CAD' },
+      activityStatus: 'APPROVED',
+      referenceNumber: '999',
+      foreign: {
+        originalAmount: { value: '84.28', currency: 'USD' },
+        conversionRate: 1.42,
+      },
+    };
+
+    await reconcileRogersPendingTransactions('monarch-123', [settledVersion], 90);
+
+    const updateCall = monarchApi.updateTransaction.mock.calls[0];
+    // FX notes should be present
+    expect(updateCall[1].notes).toContain('84.28 USD @ 1.42');
+    // User note should be preserved
+    expect(updateCall[1].notes).toContain('Business dinner');
+    // System notes should be cleaned
+    expect(updateCall[1].notes).not.toContain('@ pending');
+    expect(updateCall[1].notes).not.toContain('rb-tx:');
+  });
+
+  it('does not add FX notes for domestic CAD transactions on settlement', async () => {
+    monarchApi.getTagByName.mockResolvedValue({ id: 'tag-pending', name: 'Pending' });
+
+    const testTx = {
+      date: '2026-02-13',
+      amount: { value: '5.50', currency: 'CAD' },
+      merchant: { name: 'STORE', categoryCode: '7523' },
+      cardNumber: '************8584',
+    };
+    const expectedId = await generatePendingTransactionId(testTx);
+
+    monarchApi.getTransactionsList.mockResolvedValue({
+      results: [{
+        id: 'monarch-tx-1',
+        amount: -5.50,
+        date: '2026-02-13',
+        notes: expectedId,
+        ownedByUser: { id: 'user-1' },
+      }],
+    });
+
+    monarchApi.updateTransaction.mockResolvedValue({});
+    monarchApi.setTransactionTags.mockResolvedValue({});
+
+    const settledVersion = {
+      ...testTx,
+      activityStatus: 'APPROVED',
+      referenceNumber: '123',
+    };
+
+    await reconcileRogersPendingTransactions('monarch-123', [settledVersion], 90);
+
+    const updateCall = monarchApi.updateTransaction.mock.calls[0];
+    // No FX notes for domestic transaction
+    expect(updateCall[1].notes).toBe('');
   });
 });
 

@@ -69,8 +69,12 @@ export function getLocalDateFromActivityId(activityId) {
  *
  * Fields used for hashing:
  * - date: Transaction date (YYYY-MM-DD)
- * - amount.value: Only if currency is CAD (foreign currency amounts change on settlement)
- * - amount.currency: Always included
+ * - For foreign transactions (has foreign.originalAmount):
+ *   - foreign.originalAmount.value: Stable across pending/settled
+ *   - foreign.originalAmount.currency: Foreign currency code (e.g. "USD")
+ * - For domestic (CAD) transactions:
+ *   - amount.value: CAD amount (stable for domestic transactions)
+ *   - amount.currency: Always "CAD"
  * - merchant.name: Merchant name
  * - merchant.categoryCode: Merchant category code (MCC)
  * - cardNumber: Masked card number
@@ -79,13 +83,15 @@ export function getLocalDateFromActivityId(activityId) {
  * @returns {Promise<string>} Generated ID in format rb-tx:{hash16}
  */
 export async function generatePendingTransactionId(tx) {
-  const isCad = tx.amount?.currency === 'CAD';
+  // Foreign transactions have foreign.originalAmount which is stable across pending/settled
+  // The CAD amount changes based on FX rate at settlement time, so we must NOT use it for foreign tx
+  const hasForeignAmount = Boolean(tx.foreign?.originalAmount?.value);
 
   const hashInput = [
     tx.date || '',
-    // Only include amount value for CAD transactions (foreign currency amounts change on settlement)
-    isCad ? (tx.amount?.value || '') : '',
-    tx.amount?.currency || '',
+    // Use foreign original amount for foreign tx, CAD amount for domestic tx
+    hasForeignAmount ? (tx.foreign.originalAmount.value || '') : (tx.amount?.value || ''),
+    hasForeignAmount ? (tx.foreign.originalAmount.currency || '') : (tx.amount?.currency || ''),
     tx.merchant?.name || '',
     tx.merchant?.categoryCode || '',
     tx.cardNumber || '',
@@ -151,7 +157,42 @@ export function extractPendingIdFromNotes(notes) {
 }
 
 /**
- * Remove Rogers Bank system notes (pending transaction ID) from notes
+ * Build FX notes for a settled foreign transaction
+ * Format: "99.77 USD @ 1.3622\nExchange fee: 3.40 CAD"
+ *
+ * @param {Object} settledTx - Settled Rogers Bank transaction with foreign data
+ * @returns {string} FX notes string, or empty string if not a foreign transaction
+ */
+export function buildFxNotes(settledTx) {
+  if (!settledTx?.foreign?.originalAmount?.value) {
+    return '';
+  }
+
+  const foreignAmount = settledTx.foreign.originalAmount.value;
+  const foreignCurrency = settledTx.foreign.originalAmount.currency || '';
+
+  // Get conversion rate (can be a number or an object with parsedValue)
+  const rawRate = settledTx.foreign.conversionRate;
+  const conversionRate = typeof rawRate === 'number'
+    ? rawRate
+    : (rawRate?.parsedValue || 0);
+
+  const rateStr = conversionRate > 0 ? conversionRate.toString() : 'N/A';
+
+  const parts = [`${foreignAmount} ${foreignCurrency} @ ${rateStr}`];
+
+  // Include exchange fee if available
+  if (settledTx.foreign.exchangeFee?.value) {
+    const feeAmount = settledTx.foreign.exchangeFee.value;
+    const feeCurrency = settledTx.foreign.exchangeFee.currency || 'CAD';
+    parts.push(`Exchange fee: ${feeAmount} ${feeCurrency}`);
+  }
+
+  return parts.join('\n');
+}
+
+/**
+ * Remove Rogers Bank system notes (pending transaction ID and FX pending info) from notes
  * Preserves any user-added notes or other content
  * @param {string} notes - Transaction notes
  * @returns {string} Cleaned notes
@@ -361,8 +402,22 @@ export async function reconcileRogersPendingTransactions(monarchAccountId, allTr
           // Calculate the settled amount (Rogers amounts are positive, negate for credit card)
           const settledAmount = -(parseFloat(settledTx.amount?.value) || 0);
 
-          // Clean the notes - remove pending ID but keep user notes
-          const cleanedNotes = cleanPendingIdFromNotes(notes);
+          // Clean the notes - remove pending ID and pending FX info, keep user notes
+          let cleanedNotes = cleanPendingIdFromNotes(notes);
+
+          // Remove pending FX placeholder (e.g. "84.28 USD @ pending") since we'll replace with real FX info
+          cleanedNotes = cleanedNotes.replace(/[\d.]+ [A-Z]{3} @ pending/g, '').trim();
+          // Clean up any leftover whitespace/newlines from removal
+          cleanedNotes = cleanedNotes.replace(/\n{2,}/g, '\n').replace(/^\n+|\n+$/g, '').trim();
+
+          // Build FX notes for the settled transaction (if foreign)
+          const fxNotes = buildFxNotes(settledTx);
+
+          // Combine: FX notes first, then any user-added notes
+          const finalNotesParts: string[] = [];
+          if (fxNotes) finalNotesParts.push(fxNotes);
+          if (cleanedNotes) finalNotesParts.push(cleanedNotes);
+          const finalNotes = finalNotesParts.join('\n');
 
           // Check if amount has changed
           const amountChanged = monarchTx.amount !== settledAmount;
@@ -371,11 +426,12 @@ export async function reconcileRogersPendingTransactions(monarchAccountId, allTr
             oldAmount: monarchTx.amount,
             newAmount: settledAmount,
             amountChanged,
+            hasFxNotes: Boolean(fxNotes),
           });
 
-          // Update notes (clean pending ID)
+          // Update notes (replace pending ID/FX placeholder with settled FX info)
           await monarchApi.updateTransaction(monarchTxId, {
-            notes: cleanedNotes,
+            notes: finalNotes,
             ownerUserId: monarchTx.ownedByUser?.id || null,
           });
 
