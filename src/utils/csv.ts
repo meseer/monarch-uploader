@@ -29,6 +29,11 @@ interface RogersBankTransaction {
   isPending?: boolean;
   pendingId?: string;
   resolvedMonarchCategory?: string | null;
+  foreign?: {
+    originalAmount?: { value?: string; currency?: string };
+    conversionRate?: number | { source?: string; parsedValue?: number };
+    exchangeFee?: { value?: string; currency?: string };
+  };
   [key: string]: unknown;
 }
 
@@ -230,6 +235,32 @@ export function convertTransactionsToMonarchCSV(
       const details = `${transaction.activityType || ''} / ${transaction.referenceNumber || ''}`.trim();
       if (details && details !== '/') {
         notesParts.push(details);
+      }
+    }
+
+    // Add FX information for foreign currency transactions
+    if (transaction.foreign?.originalAmount?.value) {
+      const foreignAmount = transaction.foreign.originalAmount.value;
+      const foreignCurrency = transaction.foreign.originalAmount.currency || '';
+
+      if (isPending) {
+        // Pending: FX rate not yet available
+        notesParts.push(`${foreignAmount} ${foreignCurrency} @ pending`);
+      } else {
+        // Settled: include actual conversion rate
+        const conversionRate = typeof transaction.foreign.conversionRate === 'number'
+          ? transaction.foreign.conversionRate
+          : (transaction.foreign.conversionRate as { parsedValue?: number })?.parsedValue || 0;
+
+        const rateStr = conversionRate > 0 ? conversionRate.toString() : 'N/A';
+        notesParts.push(`${foreignAmount} ${foreignCurrency} @ ${rateStr}`);
+
+        // Include exchange fee if available
+        if (transaction.foreign.exchangeFee?.value) {
+          const feeAmount = transaction.foreign.exchangeFee.value;
+          const feeCurrency = transaction.foreign.exchangeFee.currency || 'CAD';
+          notesParts.push(`Exchange fee: ${feeAmount} ${feeCurrency}`);
+        }
       }
     }
 
