@@ -35,6 +35,12 @@ describe('Merchant Mapping Utilities', () => {
       expect(applyMerchantMapping('tst-mcdonald\'s restaurant')).toBe('Mcdonald\'s Restaurant');
     });
 
+    test('should remove TST* prefix (Toast asterisk variant)', () => {
+      expect(applyMerchantMapping('TST*KEDAI MAKAN CAPITO')).toBe('Kedai Makan Capito');
+      expect(applyMerchantMapping('tst*some restaurant')).toBe('Some Restaurant');
+      expect(applyMerchantMapping('TST*COFFEE SHOP')).toBe('Coffee Shop');
+    });
+
     test('should remove SQ * prefix (Square transactions)', () => {
       expect(applyMerchantMapping('SQ *COFFEE SHOP')).toBe('Coffee Shop');
       expect(applyMerchantMapping('sq *local bakery')).toBe('Local Bakery');
