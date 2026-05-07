@@ -38,7 +38,8 @@ interface SuffixConfig {
  * Each prefix should be lowercase for consistent matching
  */
 const PREFIXES_TO_REMOVE: PrefixConfig[] = [
-  { prefix: 'tst-', description: 'Toast transactions' },
+  { prefix: 'tst*', description: 'Toast transactions (asterisk)' },
+  { prefix: 'tst-', description: 'Toast transactions (dash)' },
   { prefix: 'sq *', description: 'Square transactions' },
   { prefix: 'sp ', description: 'SP transactions' },
   { prefix: 'ls ', description: 'Lightspeed transactions' },
