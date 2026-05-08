@@ -65,6 +65,14 @@ describe('Merchant Mapping Utilities', () => {
       expect(applyMerchantMapping('NOTSPORTPY*SOMETHING')).toBe('Notsportpy*something');
     });
 
+    test('should remove CPI*CPI* prefix (CPI vending transactions)', () => {
+      expect(applyMerchantMapping('CPI*CPI*CANTEEN VENDIN')).toBe('Canteen Vendin');
+      expect(applyMerchantMapping('cpi*cpi*some merchant')).toBe('Some Merchant');
+      expect(applyMerchantMapping('CPI*CPI*COFFEE MACHINE')).toBe('Coffee Machine');
+      // Should not affect merchants that don't start with CPI*CPI*
+      expect(applyMerchantMapping('NOTCPI*SOMETHING')).toBe('Notcpi*something');
+    });
+
     test('should transform Impark variants to standardized name', () => {
       expect(applyMerchantMapping('Impark00661600u')).toBe('Impark');
       expect(applyMerchantMapping('IMPARK12345678')).toBe('Impark');
