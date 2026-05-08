@@ -13,6 +13,7 @@ import {
   formatCryptoOrderNotes,
   formatCryptoSwapNotes,
 } from '../../../src/services/wealthsimple/transactionRules';
+import { formatInvestmentOrderNotes } from '../../../src/services/wealthsimple/transactionRulesHelpers';
 import { STORAGE } from '../../../src/core/config';
 
 describe('Wealthsimple Transaction Rules Engine - Investment Grants & Crypto', () => {
@@ -366,6 +367,158 @@ describe('Wealthsimple Transaction Rules Engine - Investment Grants & Crypto', (
       const result = formatManagedOrderNotes(activity, managedActivity, false);
 
       expect(result).toBe('Bought 3.5 shares of Vanguard S&P 500 Index ETF (VFV) at CAD$142.86 per share\nTotal CAD$500');
+    });
+  });
+
+  describe('formatManagedOrderNotes - negative quantity (sell orders)', () => {
+    it('should use absolute value of negative quantity for sell orders', () => {
+      const activity = {
+        type: 'MANAGED_SELL',
+        currency: 'USD',
+        assetSymbol: 'GSWO',
+        amount: 70.63,
+        assetName: 'Global Sustainable World Equity Fund',
+      };
+      const managedActivity = {
+        quantity: '-1.1279',
+        fxRate: '1.0',
+        marketPrice: { amount: '62.57', currency: 'USD' },
+      };
+
+      const result = formatManagedOrderNotes(activity, managedActivity, true);
+
+      expect(result).toBe('Sold 1.1279 shares of Global Sustainable World Equity Fund (GSWO) at USD$62.57 per share\nTotal USD$70.63');
+    });
+
+    it('should use absolute value of negative quantity for buy orders too', () => {
+      const activity = {
+        type: 'MANAGED_BUY',
+        currency: 'CAD',
+        assetSymbol: 'VFV',
+        amount: 100.00,
+        assetName: 'Vanguard S&P 500 Index ETF',
+      };
+      const managedActivity = {
+        quantity: '-2.5',
+        fxRate: '1.0',
+        marketPrice: { amount: '40.00', currency: 'CAD' },
+      };
+
+      const result = formatManagedOrderNotes(activity, managedActivity, false);
+
+      expect(result).toBe('Bought 2.5 shares of Vanguard S&P 500 Index ETF (VFV) at CAD$40 per share\nTotal CAD$100');
+    });
+  });
+
+  describe('formatInvestmentOrderNotes - managed order isSell detection', () => {
+    it('should pass isSell=true for MANAGED_SELL transactions', () => {
+      const activity = {
+        type: 'MANAGED_SELL',
+        currency: 'USD',
+        assetSymbol: 'GSWO',
+        amount: 70.63,
+        assetName: 'Global Sustainable World Equity Fund',
+      };
+      const extendedOrder = {
+        isManagedOrderData: true,
+        quantity: '-1.1279',
+        fxRate: '1.0',
+        marketPrice: { amount: '62.57', currency: 'USD' },
+      };
+
+      const result = formatInvestmentOrderNotes(activity, extendedOrder);
+
+      expect(result).toBe('Sold 1.1279 shares of Global Sustainable World Equity Fund (GSWO) at USD$62.57 per share\nTotal USD$70.63');
+    });
+
+    it('should pass isSell=false for MANAGED_BUY transactions', () => {
+      const activity = {
+        type: 'MANAGED_BUY',
+        currency: 'CAD',
+        assetSymbol: 'EEMV',
+        amount: 9.22,
+        assetName: 'iShares Edge MSCI Min Vol Emerging Mkt ETF',
+      };
+      const extendedOrder = {
+        isManagedOrderData: true,
+        quantity: '0.8257',
+        fxRate: '1.0',
+        marketPrice: { amount: '11.165', currency: 'CAD' },
+      };
+
+      const result = formatInvestmentOrderNotes(activity, extendedOrder);
+
+      expect(result).toBe('Bought 0.8257 shares of iShares Edge MSCI Min Vol Emerging Mkt ETF (EEMV) at CAD$11.165 per share\nTotal CAD$9.22');
+    });
+
+    it('should pass isSell=true for DIY_SELL transactions with managed order data', () => {
+      const activity = {
+        type: 'DIY_SELL',
+        currency: 'CAD',
+        assetSymbol: 'XAW',
+        amount: 150.25,
+        assetName: 'iShares Core MSCI All Country World ex Canada Index ETF',
+      };
+      const extendedOrder = {
+        isManagedOrderData: true,
+        quantity: '-5.5',
+        fxRate: '1.0',
+        marketPrice: { amount: '27.32', currency: 'CAD' },
+      };
+
+      const result = formatInvestmentOrderNotes(activity, extendedOrder);
+
+      expect(result).toBe('Sold 5.5 shares of iShares Core MSCI All Country World ex Canada Index ETF (XAW) at CAD$27.32 per share\nTotal CAD$150.25');
+    });
+  });
+
+  describe('MANAGED_SELL rule - integration test', () => {
+    it('should produce Sold notes for MANAGED_SELL with enrichment data', () => {
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'managed-sell');
+      const tx = {
+        type: 'MANAGED_SELL',
+        externalCanonicalId: 'order-123',
+        currency: 'USD',
+        assetSymbol: 'GSWO',
+        amount: 70.63,
+        assetName: 'Global Sustainable World Equity Fund',
+      };
+      const enrichmentMap = new Map();
+      enrichmentMap.set('order-123', {
+        isManagedOrderData: true,
+        quantity: '-1.1279',
+        fxRate: '1.0',
+        marketPrice: { amount: '62.57', currency: 'USD' },
+      });
+
+      const result = rule.process(tx, enrichmentMap);
+
+      expect(result.category).toBe('Sell');
+      expect(result.notes).toBe('Sold 1.1279 shares of Global Sustainable World Equity Fund (GSWO) at USD$62.57 per share\nTotal USD$70.63');
+    });
+
+    it('should produce Bought notes for MANAGED_BUY with enrichment data', () => {
+      const rule = INVESTMENT_BUY_SELL_TRANSACTION_RULES.find((r) => r.id === 'managed-buy');
+      const tx = {
+        type: 'MANAGED_BUY',
+        externalCanonicalId: 'order-456',
+        currency: 'CAD',
+        assetSymbol: 'EEMV',
+        amount: 9.22,
+        assetName: 'iShares Edge MSCI Min Vol Emerging Mkt ETF',
+      };
+      const enrichmentMap = new Map();
+      enrichmentMap.set('order-456', {
+        isManagedOrderData: true,
+        quantity: '0.8257',
+        fxRate: '1.0',
+        marketPrice: { amount: '11.165', currency: 'CAD' },
+      });
+
+      const result = rule.process(tx, enrichmentMap);
+
+      expect(result.category).toBe('Buy');
+      expect(result.notes).toBe('Bought 0.8257 shares of iShares Edge MSCI Min Vol Emerging Mkt ETF (EEMV) at CAD$11.165 per share\nTotal CAD$9.22');
     });
   });
 

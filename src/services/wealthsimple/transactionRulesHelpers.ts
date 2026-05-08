@@ -254,7 +254,8 @@ export function formatInvestmentOrderNotes(
   // Check if this is managed order data (from FetchActivityByOrdersServiceOrderId)
   // Managed order data has isManagedOrderData marker and marketPrice field
   if (extendedOrder.isManagedOrderData) {
-    return formatManagedOrderNotes(activity, extendedOrder);
+    const isSell = activity.type === 'MANAGED_SELL' || activity.type === 'DIY_SELL';
+    return formatManagedOrderNotes(activity, extendedOrder, isSell);
   }
 
   // Full extended order data from FetchSoOrdersExtendedOrder (DIY orders)
@@ -305,8 +306,8 @@ export function formatManagedOrderNotes(
     return `${action} order ${symbol}\nTotal ${activityCurrency}$${totalAmount}`;
   }
 
-  // Extract data from managed order response
-  const quantity = formatAmount(managedOrderData.quantity ?? 0);
+  // Extract data from managed order response (use absolute value for sell orders)
+  const quantity = formatAmount(Math.abs(managedOrderData.quantity ?? 0));
   const marketPrice = managedOrderData.marketPrice;
 
   // If marketPrice is missing, fall back to minimal notes
