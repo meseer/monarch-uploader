@@ -65,11 +65,21 @@ describe('Merchant Mapping Utilities', () => {
       expect(applyMerchantMapping('NOTSPORTPY*SOMETHING')).toBe('Notsportpy*something');
     });
 
-    test('should remove CPI*CPI* prefix (CPI vending transactions)', () => {
+    test('should remove CPI*CPI* prefix (CPI double-prefix vending transactions)', () => {
       expect(applyMerchantMapping('CPI*CPI*CANTEEN VENDIN')).toBe('Canteen Vendin');
       expect(applyMerchantMapping('cpi*cpi*some merchant')).toBe('Some Merchant');
       expect(applyMerchantMapping('CPI*CPI*COFFEE MACHINE')).toBe('Coffee Machine');
       // Should not affect merchants that don't start with CPI*CPI*
+      expect(applyMerchantMapping('NOTCPI*SOMETHING')).toBe('Notcpi*something');
+    });
+
+    test('should remove CPI* prefix (CPI vending transactions)', () => {
+      expect(applyMerchantMapping('CPI*CANTEEN VENDING EV')).toBe('Canteen Vending Ev');
+      expect(applyMerchantMapping('cpi*some merchant')).toBe('Some Merchant');
+      expect(applyMerchantMapping('CPI*COFFEE MACHINE')).toBe('Coffee Machine');
+      // Double prefix should still be handled by CPI*CPI* rule
+      expect(applyMerchantMapping('CPI*CPI*CANTEEN VENDIN')).toBe('Canteen Vendin');
+      // Should not affect merchants that don't start with CPI*
       expect(applyMerchantMapping('NOTCPI*SOMETHING')).toBe('Notcpi*something');
     });
 
