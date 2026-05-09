@@ -31,6 +31,7 @@ interface RogersBankTransaction {
   resolvedMonarchCategory?: string | null;
   foreign?: {
     originalAmount?: { value?: string; currency?: string };
+    conversionMarkupRate?: number;
     conversionRate?: number | { source?: string; parsedValue?: number };
     exchangeFee?: { value?: string; currency?: string };
   };
@@ -247,10 +248,11 @@ export function convertTransactionsToMonarchCSV(
         // Pending: FX rate not yet available
         notesParts.push(`${foreignAmount} ${foreignCurrency} @ pending`);
       } else {
-        // Settled: include actual conversion rate
-        const conversionRate = typeof transaction.foreign.conversionRate === 'number'
-          ? transaction.foreign.conversionRate
-          : (transaction.foreign.conversionRate as { parsedValue?: number })?.parsedValue || 0;
+        // Settled: prefer conversionMarkupRate (includes markup fee) over base conversionRate
+        const conversionRate = transaction.foreign.conversionMarkupRate
+          || (typeof transaction.foreign.conversionRate === 'number'
+            ? transaction.foreign.conversionRate
+            : (transaction.foreign.conversionRate as { parsedValue?: number })?.parsedValue || 0);
 
         const rateStr = conversionRate > 0 ? conversionRate.toString() : 'N/A';
         notesParts.push(`${foreignAmount} ${foreignCurrency} @ ${rateStr}`);
