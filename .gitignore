@@ -15,6 +15,9 @@
 .DS_Store
 *.code-workspace
 
+# Claude Code
+.claude/todos.md
+
 # Logs
 logs
 *.log
