@@ -486,6 +486,51 @@ describe('CSV Conversion Utilities', () => {
         const result = convertTransactionsToMonarchCSV(transactions, 'Rogers Mastercard');
         expect(result).toContain('35.00 EUR @ N/A');
       });
+
+      test('should prefer conversionMarkupRate over conversionRate when available', () => {
+        const transactions = [
+          {
+            date: '2026-05-07',
+            merchant: { name: '8th Pine Joint Ventu' },
+            amount: { value: 1020.74 },
+            activityType: 'TRANS',
+            referenceNumber: '12302026127001094097228',
+            foreign: {
+              conversionMarkupRate: 1.396265645,
+              originalAmount: { value: '731.05', currency: 'USD' },
+              conversionRate: 1.362205048,
+              exchangeFee: { value: '24.90', currency: 'CAD' },
+            },
+          },
+        ];
+
+        const result = convertTransactionsToMonarchCSV(transactions, 'Rogers Mastercard', {
+          storeTransactionDetailsInNotes: true,
+        });
+        // Should use conversionMarkupRate (1.396265645) instead of conversionRate (1.362205048)
+        expect(result).toContain('731.05 USD @ 1.396265645');
+        expect(result).not.toContain('1.362205048');
+        expect(result).toContain('Exchange fee: 24.90 CAD');
+      });
+
+      test('should fall back to conversionRate when conversionMarkupRate is not present', () => {
+        const transactions = [
+          {
+            date: '2026-05-04',
+            merchant: { name: 'FOREIGN STORE' },
+            amount: { value: 139.31 },
+            foreign: {
+              originalAmount: { value: '99.77', currency: 'USD' },
+              conversionRate: 1.362233136,
+              exchangeFee: { value: '3.40', currency: 'CAD' },
+            },
+          },
+        ];
+
+        const result = convertTransactionsToMonarchCSV(transactions, 'Rogers Mastercard');
+        expect(result).toContain('99.77 USD @ 1.362233136');
+        expect(result).toContain('Exchange fee: 3.40 CAD');
+      });
     });
 
     describe('Foreign currency transaction support', () => {
