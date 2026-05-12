@@ -356,6 +356,68 @@ describe('generatePendingTransactionId', () => {
     const id = await generatePendingTransactionId(tx);
     expect(id).toMatch(/^rb-tx:[a-f0-9]{16}$/);
   });
+
+  it('produces same hash for pending (truncated to 21 chars) and settled (23 chars) merchant names', async () => {
+    // Rogers Bank truncates pending descriptions to ~21 chars and settled to ~23 chars.
+    // The hash should use only the first 20 chars so both versions match.
+    const fullMerchantName = 'DILLY DALLY KIDS STORE'; // 22 chars (settled)
+    const truncatedMerchantName = 'DILLY DALLY KIDS STO'; // 20 chars (pending, truncated at 21 but we use 20)
+
+    const pendingTx = {
+      date: '2026-03-15',
+      amount: { value: '45.99', currency: 'CAD' },
+      activityStatus: 'PENDING',
+      merchant: { name: truncatedMerchantName, categoryCode: '5641' },
+      cardNumber: '************8584',
+    };
+    const settledTx = {
+      date: '2026-03-15',
+      amount: { value: '45.99', currency: 'CAD' },
+      activityStatus: 'APPROVED',
+      merchant: { name: fullMerchantName, categoryCode: '5641' },
+      cardNumber: '************8584',
+    };
+
+    const pendingId = await generatePendingTransactionId(pendingTx);
+    const settledId = await generatePendingTransactionId(settledTx);
+    expect(pendingId).toBe(settledId);
+  });
+
+  it('produces same hash regardless of characters beyond position 20', async () => {
+    // Even longer merchant names should match as long as the first 20 chars are identical
+    const name23Chars = 'ABCDEFGHIJ1234567890XYZ'; // 23 chars
+    const name21Chars = 'ABCDEFGHIJ1234567890X'; // 21 chars
+    const name20Chars = 'ABCDEFGHIJ1234567890'; // 20 chars
+
+    const baseTx = {
+      date: '2026-04-01',
+      amount: { value: '100.00', currency: 'CAD' },
+      merchant: { categoryCode: '5411' },
+      cardNumber: '************1234',
+    };
+
+    const id23 = await generatePendingTransactionId({ ...baseTx, merchant: { ...baseTx.merchant, name: name23Chars } });
+    const id21 = await generatePendingTransactionId({ ...baseTx, merchant: { ...baseTx.merchant, name: name21Chars } });
+    const id20 = await generatePendingTransactionId({ ...baseTx, merchant: { ...baseTx.merchant, name: name20Chars } });
+
+    expect(id23).toBe(id21);
+    expect(id23).toBe(id20);
+  });
+
+  it('still differentiates merchants whose first 20 chars differ', async () => {
+    // Merchants with different first 20 chars should still produce different hashes
+    const baseTx = {
+      date: '2026-04-01',
+      amount: { value: '50.00', currency: 'CAD' },
+      merchant: { categoryCode: '5411' },
+      cardNumber: '************1234',
+    };
+
+    const id1 = await generatePendingTransactionId({ ...baseTx, merchant: { ...baseTx.merchant, name: 'STORE AAAAAAAAAAAAAA' } });
+    const id2 = await generatePendingTransactionId({ ...baseTx, merchant: { ...baseTx.merchant, name: 'STORE BBBBBBBBBBBBBBB' } });
+
+    expect(id1).not.toBe(id2);
+  });
 });
 
 // ============================================================
