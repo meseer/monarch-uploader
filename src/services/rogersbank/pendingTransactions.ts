@@ -65,6 +65,16 @@ export function getLocalDateFromActivityId(activityId) {
 }
 
 /**
+ * Maximum merchant name length used in hash computation.
+ *
+ * Rogers Bank truncates pending transaction descriptions to ~21 characters and
+ * settled descriptions to ~23 characters. To ensure both versions produce the
+ * same hash, we truncate to 20 characters (1 char below the pending limit for
+ * extra safety).
+ */
+const MERCHANT_NAME_HASH_LENGTH = 20;
+
+/**
  * Generate a deterministic pending transaction ID by hashing stable transaction fields
  *
  * Fields used for hashing:
@@ -75,7 +85,9 @@ export function getLocalDateFromActivityId(activityId) {
  * - For domestic (CAD) transactions:
  *   - amount.value: CAD amount (stable for domestic transactions)
  *   - amount.currency: Always "CAD"
- * - merchant.name: Merchant name
+ * - merchant.name: First 20 characters of merchant name (truncated to avoid
+ *   hash mismatches caused by Rogers Bank's different description length limits
+ *   for pending vs settled transactions)
  * - merchant.categoryCode: Merchant category code (MCC)
  * - cardNumber: Masked card number
  *
@@ -92,7 +104,7 @@ export async function generatePendingTransactionId(tx) {
     // Use foreign original amount for foreign tx, CAD amount for domestic tx
     hasForeignAmount ? (tx.foreign.originalAmount.value || '') : (tx.amount?.value || ''),
     hasForeignAmount ? (tx.foreign.originalAmount.currency || '') : (tx.amount?.currency || ''),
-    tx.merchant?.name || '',
+    (tx.merchant?.name || '').substring(0, MERCHANT_NAME_HASH_LENGTH),
     tx.merchant?.categoryCode || '',
     tx.cardNumber || '',
   ].join('|');
