@@ -8,7 +8,7 @@ declare function GM_registerMenuCommand(name: string, callback: () => void): voi
 declare function GM_getValue(key: string, defaultValue?: unknown): unknown;
 
 // Import core modules
-import { STORAGE } from './core/config';
+import authService from './services/auth';
 import {
   debugLog,
   clearAllGmStorage,
@@ -133,8 +133,8 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
       // Initialize Rogers Bank components
       initializeRogersBankApp();
 
-      // Initialize Monarch token monitoring (event-driven, no polling)
-      initializeMonarchTokenMonitoring();
+      // Initialize Monarch credential monitoring
+      initializeMonarchCredentialMonitoring();
       return;
     }
 
@@ -146,7 +146,7 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
     if (modularMatch) {
       debugLog(`Running on modular integration site: ${modularMatch.manifest.displayName}`);
       initializeModularIntegrationApp(modularMatch.manifest.id);
-      initializeMonarchTokenMonitoring();
+      initializeMonarchCredentialMonitoring();
       return;
     }
 
@@ -360,9 +360,8 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
       // Check Questrade token status
       checkTokenStatus();
 
-      // Check if we have a Monarch token
-      const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN) as string;
-      stateManager.setMonarchAuth(monarchToken);
+      // Check Monarch session credentials
+      loadMonarchCredentials();
 
       // Update UI with status
       const { indicators } = stateManager.getState().ui;
@@ -380,9 +379,8 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
       // Check CanadaLife token status
       checkCanadaLifeTokenStatus();
 
-      // Check if we have a Monarch token
-      const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN) as string;
-      stateManager.setMonarchAuth(monarchToken);
+      // Check Monarch session credentials
+      loadMonarchCredentials();
     } catch (error) {
       debugLog('Error checking CanadaLife status:', error);
     }
@@ -465,35 +463,45 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
       // Check Wealthsimple auth status
       checkWealthsimpleAuth();
 
-      // Check if we have a Monarch token
-      const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN) as string;
-      stateManager.setMonarchAuth(monarchToken);
+      // Check Monarch session credentials
+      loadMonarchCredentials();
     } catch (error) {
       debugLog('Error checking Wealthsimple status:', error);
     }
   }
 
   /**
-   * Initialize Monarch token monitoring with event-driven detection
+   * Load Monarch session credentials into state.
+   * Reads CSRF token and session expiry from GM storage.
    */
-  function initializeMonarchTokenMonitoring(): void {
-    try {
-      // Check initial Monarch token state
-      const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN) as string;
-      stateManager.setMonarchAuth(monarchToken);
-
-      // Set up storage event listener for Monarch token changes
-      window.addEventListener('storage', (event: StorageEvent) => {
-        if (event.key === STORAGE.MONARCH_TOKEN) {
-          debugLog('Monarch token changed via storage event');
-          const newToken = GM_getValue(STORAGE.MONARCH_TOKEN) as string;
-          stateManager.setMonarchAuth(newToken);
-        }
+  function loadMonarchCredentials(): void {
+    const credentials = authService.getMonarchCredentials();
+    if (credentials) {
+      stateManager.setMonarchAuth({
+        csrfToken: credentials.csrfToken,
+        sessionExpiresAt: credentials.sessionExpiresAt,
       });
+    } else {
+      stateManager.setMonarchAuth(null);
+    }
+  }
 
-      debugLog('Monarch token monitoring initialized');
+  /**
+   * Initialize Monarch credential monitoring with event-driven detection
+   */
+  function initializeMonarchCredentialMonitoring(): void {
+    try {
+      // Check initial Monarch credential state
+      loadMonarchCredentials();
+
+      // Set up periodic check for credential changes (GM storage doesn't emit events cross-tab)
+      setInterval(() => {
+        loadMonarchCredentials();
+      }, 10000);
+
+      debugLog('Monarch credential monitoring initialized');
     } catch (error) {
-      debugLog('Error initializing Monarch token monitoring:', error);
+      debugLog('Error initializing Monarch credential monitoring:', error);
     }
   }
 

@@ -6,7 +6,8 @@
 declare function GM_getValue(key: string, defaultValue?: unknown): unknown;
 
 import { debugLog } from '../../core/utils';
-import { STORAGE, COLORS, WEALTHSIMPLE_UI } from '../../core/config';
+import { COLORS, WEALTHSIMPLE_UI } from '../../core/config';
+import authService from '../../services/auth';
 import stateManager from '../../core/state';
 import wealthsimpleApi from '../../api/wealthsimple';
 import toast from '../toast';
@@ -379,7 +380,7 @@ function updateConnectionStatus(connectionStatus: HTMLElement): void {
   if (!connectionStatus) return;
   try {
     const wealthsimpleAuth = wealthsimpleApi.checkAuth();
-    const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN);
+    const monarchCredentials = authService.getMonarchCredentials();
     const wealthsimpleIndicator = connectionStatus.querySelector('.wealthsimple-status') as HTMLElement | null;
     if (wealthsimpleIndicator) {
       if (wealthsimpleAuth.authenticated && wealthsimpleAuth.expiresAt) {
@@ -397,7 +398,7 @@ function updateConnectionStatus(connectionStatus: HTMLElement): void {
     }
     const monarchIndicator = connectionStatus.querySelector('.monarch-status') as HTMLElement | null;
     if (monarchIndicator) {
-      if (monarchToken) {
+      if (monarchCredentials) {
         monarchIndicator.textContent = 'Monarch: Connected';
         monarchIndicator.style.color = '#28a745';
       } else {

@@ -4,8 +4,8 @@
  */
 
 import { debugLog, getCurrentInstitution } from '../../core/utils';
-import { STORAGE, API } from '../../core/config';
-import { checkMonarchAuth } from '../../services/auth';
+import { API, STORAGE } from '../../core/config';
+import authService, { checkMonarchAuth } from '../../services/auth';
 import toast from '../toast';
 import { createMonarchLoginLink } from './monarchLoginLink';
 import {
@@ -31,7 +31,6 @@ import {
 declare function GM_addElement(parent: HTMLElement, tagName: string, attributes: Record<string, string>): HTMLElement;
 declare function GM_getValue(key: string, defaultValue?: unknown): unknown;
 declare function GM_setValue(key: string, value: unknown): void;
-declare function GM_deleteValue(key: string): void;
 
 interface TabDefinition {
   id: string;
@@ -642,14 +641,14 @@ function renderMonarchTab(container: HTMLElement): void {
 
   if (authStatus.authenticated) {
     statusDetails.innerHTML = `
-      <strong>Status:</strong> Your authentication token is stored and ready to use.<br>
-      <strong>Usage:</strong> This token is used to authenticate with Monarch Money's API for transaction uploads.
+      <strong>Status:</strong> Your session credentials are stored and ready to use.<br>
+      <strong>Usage:</strong> These credentials are used to authenticate with Monarch Money's API for transaction uploads.
     `;
   } else {
     // MIGRATION: Use dynamic Monarch app URL
     statusDetails.innerHTML = `
-      <strong>Status:</strong> No authentication token found.<br>
-      <strong>To connect:</strong> Visit <a href="${API.MONARCH_APP_URL}" target="_blank" style="color: var(--mu-link-color, #0073b1); text-decoration: none;">Monarch Money</a> and log in. The token will be automatically captured.
+      <strong>Status:</strong> No session credentials found.<br>
+      <strong>To connect:</strong> Visit <a href="${API.MONARCH_APP_URL}" target="_blank" style="color: var(--mu-link-color, #0073b1); text-decoration: none;">Monarch Money</a> and log in. Your session will be automatically captured.
     `;
   }
 
@@ -658,7 +657,7 @@ function renderMonarchTab(container: HTMLElement): void {
 
   // Token Management Section (only show if authenticated)
   if (authStatus.authenticated) {
-    const tokenSection = createSection('Token Management', '🔑', 'Manage your stored authentication token');
+    const tokenSection = createSection('Session Management', '🔑', 'Manage your stored session credentials');
 
     const tokenContainer = document.createElement('div');
     tokenContainer.style.cssText = 'margin: 15px 0;';
@@ -666,12 +665,12 @@ function renderMonarchTab(container: HTMLElement): void {
     // Token info
     const tokenInfo = document.createElement('div');
     tokenInfo.style.cssText = 'margin-bottom: 15px; font-size: 14px; color: var(--mu-text-secondary, #666);';
-    tokenInfo.textContent = 'Your authentication token is securely stored locally and is used to access Monarch Money\'s API.';
+    tokenInfo.textContent = 'Your session credentials are securely stored locally and are used to access Monarch Money\'s API.';
     tokenContainer.appendChild(tokenInfo);
 
-    // Remove token button
+    // Remove credentials button
     const removeButton = document.createElement('button');
-    removeButton.textContent = 'Remove Authentication Token';
+    removeButton.textContent = 'Remove Session Credentials';
     removeButton.style.cssText = `
       padding: 10px 16px;
       border: none;
@@ -688,14 +687,14 @@ function renderMonarchTab(container: HTMLElement): void {
       // MIGRATION: Use dynamic domain in message
       const monarchDomain = API.MONARCH_APP_URL.replace('https://app.', '');
       const confirmed = await showConfirmDialog(
-        `Are you sure you want to remove your Monarch Money authentication token?\n\nThis will disconnect the application from your Monarch Money account. You will need to log in again at ${monarchDomain} to reconnect.`,
+        `Are you sure you want to remove your Monarch Money session credentials?\n\nThis will disconnect the application from your Monarch Money account. You will need to log in again at ${monarchDomain} to reconnect.`,
       );
 
       if (confirmed) {
-        // Remove the token
-        GM_deleteValue(STORAGE.MONARCH_TOKEN);
-        toast.show('Monarch Money authentication token removed', 'info');
-        debugLog('Monarch token removed by user');
+        // Remove credentials
+        authService.clearMonarchCredentials();
+        toast.show('Monarch Money session credentials removed', 'info');
+        debugLog('Monarch credentials removed by user');
 
         // Refresh the tab to show updated status using proper tab rendering
         const tabContainer = document.querySelector('.settings-tab-content') as HTMLElement | null;

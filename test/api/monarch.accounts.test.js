@@ -24,9 +24,9 @@ import { debugLog } from '../../src/core/utils';
 // Mock all external dependencies
 jest.mock('../../src/services/auth', () => ({
   checkMonarchAuth: jest.fn(),
-  getMonarchToken: jest.fn(),
+  getMonarchCredentials: jest.fn(),
   setupMonarchTokenCapture: jest.fn(),
-  saveMonarchToken: jest.fn(),
+  clearMonarchCredentials: jest.fn(),
 }));
 
 jest.mock('../../src/core/state', () => ({
@@ -57,9 +57,9 @@ describe('Monarch API - Accounts', () => {
     globalThis.GM_getValue = mockGMGetValue;
     authService.checkMonarchAuth.mockReturnValue({
       authenticated: true,
-      token: 'test-token-123',
+      credentials: { csrfToken: 'test-csrf-token-123', sessionExpiresAt: '2099-12-31T23:59:59Z' },
     });
-    authService.getMonarchToken.mockReturnValue('test-token-123');
+    authService.getMonarchCredentials.mockReturnValue({ csrfToken: 'test-csrf-token-123', sessionExpiresAt: '2099-12-31T23:59:59Z' });
     stateManager.getState.mockReturnValue({
       currentAccount: { nickname: 'Test Account', name: 'Test Name' },
     });
@@ -188,12 +188,11 @@ describe('Monarch API - Accounts', () => {
     test('handles authentication errors', async () => {
       authService.checkMonarchAuth.mockReturnValue({
         authenticated: false,
-        token: null,
       });
 
       await expect(getHoldings(['account123']))
         .rejects
-        .toThrow('Monarch token not found.');
+        .toThrow('Monarch session not found.');
     });
 
     test('handles GraphQL errors', async () => {
@@ -311,12 +310,11 @@ describe('Monarch API - Accounts', () => {
     test('handles authentication errors', async () => {
       authService.checkMonarchAuth.mockReturnValue({
         authenticated: false,
-        token: null,
       });
 
       await expect(getFilteredAccounts({}))
         .rejects
-        .toThrow('Monarch token not found.');
+        .toThrow('Monarch session not found.');
     });
 
     test('handles network errors', async () => {
@@ -472,12 +470,11 @@ describe('Monarch API - Accounts', () => {
     test('handles authentication errors', async () => {
       authService.checkMonarchAuth.mockReturnValue({
         authenticated: false,
-        token: null,
       });
 
       await expect(updateAccount({ id: 'account123' }))
         .rejects
-        .toThrow('Monarch token not found.');
+        .toThrow('Monarch session not found.');
     });
 
     test('handles network errors', async () => {
@@ -570,12 +567,11 @@ describe('Monarch API - Accounts', () => {
     test('handles authentication errors', async () => {
       authService.checkMonarchAuth.mockReturnValue({
         authenticated: false,
-        token: null,
       });
 
       await expect(getCreditLimit('account123'))
         .rejects
-        .toThrow('Monarch token not found.');
+        .toThrow('Monarch session not found.');
     });
   });
 
@@ -878,14 +874,13 @@ describe('Monarch API - Accounts', () => {
     test('handles authentication errors', async () => {
       authService.checkMonarchAuth.mockReturnValue({
         authenticated: false,
-        token: null,
       });
 
       await expect(getTransactionsList({
         accountIds: ['232004378673314879'],
         startDate: '2025-01-01',
         endDate: '2025-12-31',
-      })).rejects.toThrow('Monarch token not found.');
+      })).rejects.toThrow('Monarch session not found.');
     });
 
     test('handles network errors', async () => {
@@ -1135,12 +1130,11 @@ describe('Monarch API - Accounts', () => {
     test('handles authentication errors', async () => {
       authService.checkMonarchAuth.mockReturnValue({
         authenticated: false,
-        token: null,
       });
 
       await expect(getHouseholdTransactionTags())
         .rejects
-        .toThrow('Monarch token not found.');
+        .toThrow('Monarch session not found.');
     });
 
     test('handles network errors', async () => {
@@ -1314,12 +1308,11 @@ describe('Monarch API - Accounts', () => {
     test('handles authentication errors', async () => {
       authService.checkMonarchAuth.mockReturnValue({
         authenticated: false,
-        token: null,
       });
 
       await expect(getTagByName('Pending'))
         .rejects
-        .toThrow('Monarch token not found.');
+        .toThrow('Monarch session not found.');
     });
 
     test('handles network errors', async () => {

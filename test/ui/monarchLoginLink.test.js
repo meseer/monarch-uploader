@@ -15,7 +15,7 @@ jest.mock('../../src/core/utils', () => ({
 
 jest.mock('../../src/core/config', () => ({
   STORAGE: {
-    MONARCH_TOKEN: 'monarch_token',
+    MONARCH_CSRF_TOKEN: 'monarch_csrf_token', MONARCH_SESSION_EXPIRES_AT: 'monarch_session_expires_at',
   },
   API: {
     MONARCH_APP_URL: 'https://app.monarch.com',
@@ -174,16 +174,20 @@ describe('Monarch Login Link Component', () => {
   });
 
   describe('isMonarchConnected', () => {
-    test('should return true when token exists', () => {
-      global.GM_getValue.mockReturnValue('mock-token');
+    test('should return true when credentials exist', () => {
+      global.GM_getValue.mockImplementation((key) => {
+        if (key === 'monarch_csrf_token') return 'mock-csrf-token';
+        if (key === 'monarch_session_expires_at') return '2099-01-01T00:00:00Z';
+        return null;
+      });
 
       const result = isMonarchConnected();
 
       expect(result).toBe(true);
-      expect(global.GM_getValue).toHaveBeenCalledWith('monarch_token');
+      expect(global.GM_getValue).toHaveBeenCalledWith('monarch_csrf_token');
     });
 
-    test('should return false when token is null', () => {
+    test('should return false when csrf token is null', () => {
       global.GM_getValue.mockReturnValue(null);
 
       const result = isMonarchConnected();
@@ -191,8 +195,11 @@ describe('Monarch Login Link Component', () => {
       expect(result).toBe(false);
     });
 
-    test('should return false when token is empty string', () => {
-      global.GM_getValue.mockReturnValue('');
+    test('should return false when csrf token is empty string', () => {
+      global.GM_getValue.mockImplementation((key) => {
+        if (key === 'monarch_csrf_token') return '';
+        return null;
+      });
 
       const result = isMonarchConnected();
 

@@ -25,7 +25,7 @@ jest.mock('../../src/core/config', () => ({
     ROGERSBANK_LAST_UPLOAD_DATE_PREFIX: 'rogersbank_last_upload_date_',
     ROGERSBANK_UPLOADED_REFS_PREFIX: 'rogersbank_uploaded_refs_',
     ROGERSBANK_CATEGORY_MAPPINGS: 'rogersbank_category_mappings',
-    MONARCH_TOKEN: 'monarch_token',
+    MONARCH_CSRF_TOKEN: 'monarch_csrf_token', MONARCH_SESSION_EXPIRES_AT: 'monarch_session_expires_at',
     WEALTHSIMPLE_ACCOUNTS_LIST: 'wealthsimple_accounts_list',
     WEALTHSIMPLE_CONFIG: 'wealthsimple_config',
     QUESTRADE_CONFIG: 'questrade_config',
@@ -272,7 +272,7 @@ describe('Settings Modal Component', () => {
 
       const tabContent = modal.querySelector('.settings-tab-content');
       expect(tabContent.textContent).toContain('Connected to Monarch Money');
-      expect(tabContent.textContent).toContain('Token Management');
+      expect(tabContent.textContent).toContain('Session Management');
     });
 
     test('should handle token removal when authenticated', () => {
@@ -285,7 +285,7 @@ describe('Settings Modal Component', () => {
       monarchTab.click();
 
       const removeButton = Array.from(modal.querySelectorAll('button'))
-        .find((btn) => btn.textContent === 'Remove Authentication Token');
+        .find((btn) => btn.textContent === 'Remove Session Credentials');
       expect(removeButton).toBeTruthy();
 
       removeButton.dispatchEvent(new Event('mouseover'));

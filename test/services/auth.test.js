@@ -1,11 +1,16 @@
 /**
  * Auth Service Tests
+ *
+ * Tests for Monarch session-based authentication (csrf token + session cookies)
+ * and Questrade token-based authentication.
  */
 
 import authService, {
   AuthError,
-  getMonarchToken,
+  getMonarchCredentials,
   checkMonarchAuth,
+  isSessionExpired,
+  clearMonarchCredentials,
 } from '../../src/services/auth';
 import {
   getQuestradeToken,
@@ -155,62 +160,176 @@ describe('Auth Service', () => {
     });
   });
 
-  describe('Monarch Authentication', () => {
-    test('getMonarchToken should return null when no token exists', () => {
-      // Mock GM_getValue to return null
-      global.GM_getValue.mockReturnValueOnce(null);
+  describe('Monarch Authentication (Session-based)', () => {
+    describe('getMonarchCredentials', () => {
+      test('should return null when no csrf token is stored', () => {
+        global.GM_getValue.mockReturnValue(undefined);
 
-      const result = getMonarchToken();
-      expect(result).toBeNull();
-      expect(stateManager.setMonarchAuth).toHaveBeenCalledWith(null);
-    });
-
-    test('getMonarchToken should return token when it exists', () => {
-      // Mock GM_getValue to return a token
-      global.GM_getValue.mockReturnValueOnce('monarch_test_token');
-
-      const result = getMonarchToken();
-      expect(result).toBe('monarch_test_token');
-      expect(stateManager.setMonarchAuth).toHaveBeenCalledWith('monarch_test_token');
-    });
-
-    test('checkMonarchAuth should return status when authenticated', () => {
-      // Mock GM_getValue to return a valid token
-      global.GM_getValue.mockReturnValueOnce('monarch_test_token');
-
-      const result = checkMonarchAuth();
-
-      expect(result.authenticated).toBe(true);
-      expect(result.token).toBe('monarch_test_token');
-    });
-
-    test('checkMonarchAuth should return not authenticated when no token', () => {
-      // Mock GM_getValue to return null
-      global.GM_getValue.mockReturnValueOnce(null);
-
-      const result = checkMonarchAuth();
-
-      expect(result.authenticated).toBe(false);
-      expect(result.message).toBe('Not authenticated with Monarch Money');
-    });
-  });
-
-  describe('Token Management', () => {
-    test('saveMonarchToken should store a Monarch token', () => {
-      authService.saveMonarchToken('new_monarch_token');
-      expect(GM_setValue).toHaveBeenCalledWith(STORAGE.MONARCH_TOKEN, 'new_monarch_token');
-      expect(stateManager.setMonarchAuth).toHaveBeenCalledWith('new_monarch_token');
-    });
-
-    test('saveMonarchToken should throw AuthError on error', () => {
-      // Mock GM_setValue to throw an error
-      global.GM_setValue.mockImplementationOnce(() => {
-        throw new Error('Storage error');
+        const result = getMonarchCredentials();
+        expect(result).toBeNull();
       });
 
-      expect(() => {
-        authService.saveMonarchToken('new_token');
-      }).toThrow(AuthError);
+      test('should return credentials when csrf token exists', () => {
+        global.GM_getValue.mockImplementation((key) => {
+          if (key === STORAGE.MONARCH_CSRF_TOKEN) return 'test_csrf_token';
+          if (key === STORAGE.MONARCH_SESSION_EXPIRES_AT) return '2099-12-31T23:59:59Z';
+          return undefined;
+        });
+
+        const result = getMonarchCredentials();
+        expect(result).toEqual({
+          csrfToken: 'test_csrf_token',
+          sessionExpiresAt: '2099-12-31T23:59:59Z',
+        });
+      });
+
+      test('should return credentials with null sessionExpiresAt when only csrf token exists', () => {
+        global.GM_getValue.mockImplementation((key) => {
+          if (key === STORAGE.MONARCH_CSRF_TOKEN) return 'test_csrf_token';
+          return undefined;
+        });
+
+        const result = getMonarchCredentials();
+        expect(result).toEqual({
+          csrfToken: 'test_csrf_token',
+          sessionExpiresAt: null,
+        });
+      });
+    });
+
+    describe('isSessionExpired', () => {
+      test('should return true when expiresAt is null', () => {
+        expect(isSessionExpired(null)).toBe(true);
+      });
+
+      test('should return true when session is expired', () => {
+        const pastDate = '2020-01-01T00:00:00Z';
+        expect(isSessionExpired(pastDate)).toBe(true);
+      });
+
+      test('should return false when session is valid (far future)', () => {
+        const futureDate = '2099-12-31T23:59:59Z';
+        expect(isSessionExpired(futureDate)).toBe(false);
+      });
+
+      test('should return true when session expires within 60-second buffer', () => {
+        // Set Date.now to a known time
+        const mockNow = 1700000000000;
+        jest.spyOn(Date, 'now').mockReturnValue(mockNow);
+
+        // Session expires in 30 seconds (within 60-second buffer)
+        const nearExpiry = new Date(mockNow + 30000).toISOString();
+        expect(isSessionExpired(nearExpiry)).toBe(true);
+      });
+
+      test('should return false when session expires beyond 60-second buffer', () => {
+        const mockNow = 1700000000000;
+        jest.spyOn(Date, 'now').mockReturnValue(mockNow);
+
+        // Session expires in 120 seconds (beyond 60-second buffer)
+        const safeExpiry = new Date(mockNow + 120000).toISOString();
+        expect(isSessionExpired(safeExpiry)).toBe(false);
+      });
+
+      test('should return true for invalid date strings', () => {
+        expect(isSessionExpired('not-a-date')).toBe(true);
+      });
+    });
+
+    describe('checkMonarchAuth', () => {
+      test('should return authenticated when valid credentials exist with future expiry', () => {
+        global.GM_getValue.mockImplementation((key) => {
+          if (key === STORAGE.MONARCH_CSRF_TOKEN) return 'valid_csrf_token';
+          if (key === STORAGE.MONARCH_SESSION_EXPIRES_AT) return '2099-12-31T23:59:59Z';
+          return undefined;
+        });
+
+        const result = checkMonarchAuth();
+
+        expect(result.authenticated).toBe(true);
+        expect(result.message).toBe('Authenticated with Monarch Money');
+        expect(result.credentials).toEqual({
+          csrfToken: 'valid_csrf_token',
+          sessionExpiresAt: '2099-12-31T23:59:59Z',
+        });
+        expect(stateManager.setMonarchAuth).toHaveBeenCalledWith({
+          csrfToken: 'valid_csrf_token',
+          sessionExpiresAt: '2099-12-31T23:59:59Z',
+        });
+      });
+
+      test('should return not authenticated when no credentials exist', () => {
+        global.GM_getValue.mockReturnValue(undefined);
+
+        const result = checkMonarchAuth();
+
+        expect(result.authenticated).toBe(false);
+        expect(result.message).toContain('Not authenticated');
+        expect(result.credentials).toBeUndefined();
+        expect(stateManager.setMonarchAuth).toHaveBeenCalledWith(null);
+      });
+
+      test('should return not authenticated when session is expired', () => {
+        global.GM_getValue.mockImplementation((key) => {
+          if (key === STORAGE.MONARCH_CSRF_TOKEN) return 'expired_csrf_token';
+          if (key === STORAGE.MONARCH_SESSION_EXPIRES_AT) return '2020-01-01T00:00:00Z';
+          return undefined;
+        });
+
+        const result = checkMonarchAuth();
+
+        expect(result.authenticated).toBe(false);
+        expect(result.message).toContain('expired');
+      });
+    });
+
+    describe('clearMonarchCredentials', () => {
+      test('should clear stored credentials and update state', () => {
+        clearMonarchCredentials();
+
+        expect(global.GM_setValue).toHaveBeenCalledWith(STORAGE.MONARCH_CSRF_TOKEN, '');
+        expect(global.GM_setValue).toHaveBeenCalledWith(STORAGE.MONARCH_SESSION_EXPIRES_AT, '');
+        expect(stateManager.setMonarchAuth).toHaveBeenCalledWith(null);
+      });
+    });
+
+    describe('saveMonarchCredentials', () => {
+      test('should store csrf token and session expiry', () => {
+        authService.saveMonarchCredentials('new_csrf_token', '2099-12-31T23:59:59Z');
+
+        expect(global.GM_setValue).toHaveBeenCalledWith(STORAGE.MONARCH_CSRF_TOKEN, 'new_csrf_token');
+        expect(global.GM_setValue).toHaveBeenCalledWith(STORAGE.MONARCH_SESSION_EXPIRES_AT, '2099-12-31T23:59:59Z');
+        expect(stateManager.setMonarchAuth).toHaveBeenCalledWith({
+          csrfToken: 'new_csrf_token',
+          sessionExpiresAt: '2099-12-31T23:59:59Z',
+        });
+      });
+
+      test('should store only csrf token when no expiry provided', () => {
+        authService.saveMonarchCredentials('csrf_only');
+
+        expect(global.GM_setValue).toHaveBeenCalledWith(STORAGE.MONARCH_CSRF_TOKEN, 'csrf_only');
+        expect(stateManager.setMonarchAuth).toHaveBeenCalledWith({
+          csrfToken: 'csrf_only',
+          sessionExpiresAt: null,
+        });
+      });
+
+      test('should throw AuthError on storage failure', () => {
+        global.GM_setValue.mockImplementationOnce(() => {
+          throw new Error('Storage error');
+        });
+
+        expect(() => {
+          authService.saveMonarchCredentials('test_token');
+        }).toThrow(AuthError);
+      });
+
+      test('should not save when csrf token is empty', () => {
+        authService.saveMonarchCredentials('');
+
+        expect(global.GM_setValue).not.toHaveBeenCalled();
+      });
     });
   });
 });

@@ -21,9 +21,9 @@ import { debugLog } from '../../src/core/utils';
 // Mock all external dependencies
 jest.mock('../../src/services/auth', () => ({
   checkMonarchAuth: jest.fn(),
-  getMonarchToken: jest.fn(),
+  getMonarchCredentials: jest.fn(),
   setupMonarchTokenCapture: jest.fn(),
-  saveMonarchToken: jest.fn(),
+  clearMonarchCredentials: jest.fn(),
 }));
 
 jest.mock('../../src/core/state', () => ({
@@ -54,9 +54,9 @@ describe('Monarch API - Transactions', () => {
     globalThis.GM_getValue = mockGMGetValue;
     authService.checkMonarchAuth.mockReturnValue({
       authenticated: true,
-      token: 'test-token-123',
+      credentials: { csrfToken: 'test-csrf-token-123', sessionExpiresAt: '2099-12-31T23:59:59Z' },
     });
-    authService.getMonarchToken.mockReturnValue('test-token-123');
+    authService.getMonarchCredentials.mockReturnValue({ csrfToken: 'test-csrf-token-123', sessionExpiresAt: '2099-12-31T23:59:59Z' });
     stateManager.getState.mockReturnValue({
       currentAccount: { nickname: 'Test Account', name: 'Test Name' },
     });
@@ -306,12 +306,11 @@ describe('Monarch API - Transactions', () => {
     test('handles authentication errors', async () => {
       authService.checkMonarchAuth.mockReturnValue({
         authenticated: false,
-        token: null,
       });
 
       await expect(updateTransaction('232589874618203361', { amount: -5.6 }))
         .rejects
-        .toThrow('Monarch token not found.');
+        .toThrow('Monarch session not found.');
     });
 
     test('handles 401 authentication error', async () => {
@@ -323,10 +322,10 @@ describe('Monarch API - Transactions', () => {
 
       await expect(updateTransaction('232589874618203361', { amount: -5.6 }))
         .rejects
-        .toThrow('Monarch Auth Error (401): Token was invalid or expired.');
+        .toThrow('Monarch Auth Error: Session was invalid or expired. Please open Monarch Money to refresh.');
 
-      expect(authService.saveMonarchToken).toHaveBeenCalledWith(null);
-      expect(stateManager.setMonarchAuth).toHaveBeenCalledWith(null);
+      expect(authService.clearMonarchCredentials).toHaveBeenCalled();
+      
     });
 
     test('handles network errors', async () => {
@@ -599,12 +598,11 @@ describe('Monarch API - Transactions', () => {
     test('handles authentication errors', async () => {
       authService.checkMonarchAuth.mockReturnValue({
         authenticated: false,
-        token: null,
       });
 
       await expect(setTransactionTags('232589874618203361', []))
         .rejects
-        .toThrow('Monarch token not found.');
+        .toThrow('Monarch session not found.');
     });
 
     test('handles 401 authentication error', async () => {
@@ -616,10 +614,10 @@ describe('Monarch API - Transactions', () => {
 
       await expect(setTransactionTags('232589874618203361', []))
         .rejects
-        .toThrow('Monarch Auth Error (401): Token was invalid or expired.');
+        .toThrow('Monarch Auth Error: Session was invalid or expired. Please open Monarch Money to refresh.');
 
-      expect(authService.saveMonarchToken).toHaveBeenCalledWith(null);
-      expect(stateManager.setMonarchAuth).toHaveBeenCalledWith(null);
+      expect(authService.clearMonarchCredentials).toHaveBeenCalled();
+      
     });
 
     test('handles network errors', async () => {
@@ -743,12 +741,11 @@ describe('Monarch API - Transactions', () => {
     test('handles authentication errors', async () => {
       authService.checkMonarchAuth.mockReturnValue({
         authenticated: false,
-        token: null,
       });
 
       await expect(deleteTransaction('232663379465502547'))
         .rejects
-        .toThrow('Monarch token not found.');
+        .toThrow('Monarch session not found.');
     });
 
     test('handles 401 authentication error', async () => {
@@ -760,10 +757,10 @@ describe('Monarch API - Transactions', () => {
 
       await expect(deleteTransaction('232663379465502547'))
         .rejects
-        .toThrow('Monarch Auth Error (401): Token was invalid or expired.');
+        .toThrow('Monarch Auth Error: Session was invalid or expired. Please open Monarch Money to refresh.');
 
-      expect(authService.saveMonarchToken).toHaveBeenCalledWith(null);
-      expect(stateManager.setMonarchAuth).toHaveBeenCalledWith(null);
+      expect(authService.clearMonarchCredentials).toHaveBeenCalled();
+      
     });
 
     test('handles network errors', async () => {
@@ -997,12 +994,11 @@ describe('Monarch API - Transactions', () => {
     test('handles authentication errors', async () => {
       authService.checkMonarchAuth.mockReturnValue({
         authenticated: false,
-        token: null,
       });
 
       await expect(getAccountsByType())
         .rejects
-        .toThrow('Monarch token not found.');
+        .toThrow('Monarch session not found.');
     });
 
     test('handles network errors', async () => {
@@ -1026,10 +1022,10 @@ describe('Monarch API - Transactions', () => {
 
       await expect(getAccountsByType())
         .rejects
-        .toThrow('Monarch Auth Error (401): Token was invalid or expired.');
+        .toThrow('Monarch Auth Error: Session was invalid or expired. Please open Monarch Money to refresh.');
 
-      expect(authService.saveMonarchToken).toHaveBeenCalledWith(null);
-      expect(stateManager.setMonarchAuth).toHaveBeenCalledWith(null);
+      expect(authService.clearMonarchCredentials).toHaveBeenCalled();
+      
     });
 
     test('uses provided filters in request', async () => {
@@ -1165,12 +1161,11 @@ describe('Monarch API - Transactions', () => {
     test('handles authentication errors', async () => {
       authService.checkMonarchAuth.mockReturnValue({
         authenticated: false,
-        token: null,
       });
 
       await expect(setCreditLimit('account123', 20000))
         .rejects
-        .toThrow('Monarch token not found.');
+        .toThrow('Monarch session not found.');
     });
 
     test('sets limit to zero', async () => {

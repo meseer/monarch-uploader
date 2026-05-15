@@ -4,16 +4,15 @@
  */
 
 import { debugLog } from '../../core/utils';
-import { STORAGE, COLORS } from '../../core/config';
+import { COLORS } from '../../core/config';
 import stateManager from '../../core/state';
 import canadalife, { type CanadaLifeAuthStatus } from '../../api/canadalife';
+import authService from '../../services/auth';
 import toast from '../toast';
 import { createConnectionStatus } from './components/connectionStatus';
 import { createCanadaLifeUploadButton } from './components/uploadButton';
 import { showSettingsModal } from '../components/settingsModal';
 import { createMonarchLoginLink } from '../components/monarchLoginLink';
-
-declare function GM_getValue(key: string): unknown;
 
 /**
  * Creates and appends the main UI container to CanadaLife navigation
@@ -246,7 +245,7 @@ function updateConnectionStatus(connectionStatus: HTMLElement): void {
   try {
     // Get current auth status
     const canadalifeAuth: CanadaLifeAuthStatus = canadalife.checkAuth();
-    const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN);
+    const monarchCredentials = authService.getMonarchCredentials();
 
     // Update CanadaLife status
     const canadalifeIndicator = connectionStatus.querySelector('.canadalife-status') as HTMLElement | null;
@@ -266,7 +265,7 @@ function updateConnectionStatus(connectionStatus: HTMLElement): void {
       // Clear existing content
       monarchIndicator.innerHTML = '';
 
-      if (monarchToken) {
+      if (monarchCredentials) {
         monarchIndicator.textContent = 'Monarch: Connected';
         monarchIndicator.style.color = '#28a745';
       } else {

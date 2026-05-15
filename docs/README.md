@@ -51,6 +51,7 @@ Immutable records of significant architectural decisions and the reasoning behin
 | [ADR-004](decisions/004-docs-folder-reorganization.md) | Reorganize Documentation into docs/ | Accepted | 2026-02-20 |
 | [ADR-005](decisions/005-typescript-migration.md) | Migrate Codebase to TypeScript | Accepted | 2026-03-06 |
 | [ADR-006](decisions/006-shared-type-system.md) | Introduce Shared Monarch Domain Type System | Accepted | 2026-03-11 |
+| [ADR-007](decisions/007-monarch-session-cookie-auth.md) | Migrate Monarch Auth from Token to Session Cookie | Accepted | 2026-05-14 |
 
 See [`decisions/README.md`](decisions/README.md) for ADR conventions and the template.
 
