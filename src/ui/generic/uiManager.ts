@@ -16,15 +16,13 @@
  */
 
 import { debugLog } from '../../core/utils';
-import { STORAGE } from '../../core/config';
 import toast from '../toast';
 import { showSettingsModal } from '../components/settingsModal';
 import { createConnectionStatus, updateInstitutionStatus, updateMonarchStatus } from './components/connectionStatus';
 import { createUploadButton } from './components/uploadButton';
 import { createMonarchLoginLink } from '../components/monarchLoginLink';
 import { prepareAndSyncAccount } from '../../services/common/syncOrchestrator';
-
-declare function GM_getValue(key: string): unknown;
+import authService from '../../services/auth';
 
 // ──────────────────────────────────────────────────────────────
 // Types
@@ -538,13 +536,13 @@ function updateConnectionStatusDisplay(connectionStatus: HTMLElement, registryEn
   const state = getUIState(manifest.id);
 
   try {
-    const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN);
+    const monarchCredentials = authService.getMonarchCredentials();
 
     // Update institution indicator
     updateInstitutionStatus(connectionStatus, manifest.displayName, state.institutionConnected);
 
     // Update Monarch indicator with login link
-    updateMonarchStatus(connectionStatus, Boolean(monarchToken), () => {
+    updateMonarchStatus(connectionStatus, Boolean(monarchCredentials), () => {
       const loginLink = createMonarchLoginLink('Login to Monarch', () => {
         updateConnectionStatusDisplay(connectionStatus, registryEntry);
       });

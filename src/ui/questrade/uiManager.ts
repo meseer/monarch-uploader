@@ -6,7 +6,7 @@
 declare function GM_getValue(key: string, defaultValue?: unknown): unknown;
 
 import { debugLog, isQuestradeAllAccountsPage, getLastUpdateDate } from '../../core/utils';
-import { STORAGE } from '../../core/config';
+import authService from '../../services/auth';
 import stateManager from '../../core/state';
 import questradeApi from '../../api/questrade';
 import toast from '../toast';
@@ -95,9 +95,9 @@ export function updateStatusIndicators(indicators: StatusIndicators | null): voi
     }
   }
   if (indicators.monarch) {
-    const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN);
+    const monarchCredentials = authService.getMonarchCredentials();
     indicators.monarch.innerHTML = '';
-    if (monarchToken) {
+    if (monarchCredentials) {
       indicators.monarch.textContent = 'Monarch: Connected';
       indicators.monarch.style.color = '#28a745';
     } else {

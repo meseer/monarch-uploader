@@ -4,7 +4,8 @@
  */
 
 import { debugLog } from '../../core/utils';
-import { STORAGE, API } from '../../core/config';
+import { API } from '../../core/config';
+import authService from '../../services/auth';
 import stateManager from '../../core/state';
 import toast from '../toast';
 
@@ -117,16 +118,16 @@ function monitorPopupForLogin(popup: Window, onSuccess: (() => void) | null): vo
         debugLog('Monarch login popup was closed');
         cleanup();
 
-        const token = GM_getValue(STORAGE.MONARCH_TOKEN);
-        if (token) {
+        const credentials = authService.getMonarchCredentials();
+        if (credentials) {
           handleSuccessfulLogin(onSuccess);
         }
         return;
       }
 
-      const token = GM_getValue(STORAGE.MONARCH_TOKEN);
-      if (token) {
-        debugLog('Monarch token detected, login successful');
+      const credentials = authService.getMonarchCredentials();
+      if (credentials) {
+        debugLog('Monarch credentials detected, login successful');
         cleanup();
 
         try {
@@ -187,8 +188,8 @@ function handleSuccessfulLogin(onSuccess: (() => void) | null): void {
  * @returns True if connected, false otherwise
  */
 export function isMonarchConnected(): boolean {
-  const token = GM_getValue(STORAGE.MONARCH_TOKEN);
-  return Boolean(token);
+  const credentials = authService.getMonarchCredentials();
+  return Boolean(credentials?.csrfToken);
 }
 
 /**

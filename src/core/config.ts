@@ -29,7 +29,8 @@ export const STORAGE = {
   // Global settings
   DEVELOPMENT_MODE: 'development_mode', // Global development mode toggle
   ACCOUNTS_LIST: 'questrade_accounts_list',
-  MONARCH_TOKEN: 'monarch_graphql_token',
+  MONARCH_CSRF_TOKEN: 'monarch_csrf_token',
+  MONARCH_SESSION_EXPIRES_AT: 'monarch_session_expires_at',
   // Account lists with enhanced properties (skip flags, etc.)
   WEALTHSIMPLE_ACCOUNTS_LIST: 'wealthsimple_accounts_list',
   ROGERSBANK_ACCOUNTS_LIST: 'rogersbank_accounts_list',

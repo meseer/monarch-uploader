@@ -4,7 +4,8 @@
  */
 
 import { debugLog } from '../../core/utils';
-import { STORAGE, COLORS } from '../../core/config';
+import { COLORS } from '../../core/config';
+import authService from '../../services/auth';
 import stateManager from '../../core/state';
 import rogersbank, { type RogersBankAuthStatus } from '../../api/rogersbank';
 import toast from '../toast';
@@ -382,7 +383,7 @@ function updateConnectionStatus(connectionStatus: HTMLElement): void {
 
   try {
     const rogersbankAuth: RogersBankAuthStatus = rogersbank.checkRogersBankAuth();
-    const monarchToken = GM_getValue(STORAGE.MONARCH_TOKEN);
+    const monarchCredentials = authService.getMonarchCredentials();
 
     const rogersbankIndicator = connectionStatus.querySelector('.rogersbank-status') as HTMLElement | null;
     if (rogersbankIndicator) {
@@ -408,7 +409,7 @@ function updateConnectionStatus(connectionStatus: HTMLElement): void {
     if (monarchIndicator) {
       monarchIndicator.innerHTML = '';
 
-      if (monarchToken) {
+      if (monarchCredentials) {
         monarchIndicator.textContent = 'Monarch: Connected';
         monarchIndicator.style.color = '#28a745';
       } else {

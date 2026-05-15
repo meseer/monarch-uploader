@@ -11,9 +11,9 @@ global.GM_xmlhttpRequest = mockGM_xmlhttpRequest;
 jest.mock('../../src/services/auth', () => ({
   checkMonarchAuth: jest.fn(() => ({
     authenticated: true,
-    token: 'mock-token',
+    credentials: { csrfToken: 'mock-csrf-token', sessionExpiresAt: '2099-12-31T23:59:59Z' },
   })),
-  saveMonarchToken: jest.fn(),
+  clearMonarchCredentials: jest.fn(),
 }));
 
 jest.mock('../../src/core/state', () => ({

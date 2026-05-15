@@ -25,7 +25,7 @@ jest.mock('../../../src/core/utils', () => ({
 
 jest.mock('../../../src/core/config', () => ({
   STORAGE: {
-    MONARCH_TOKEN: 'monarch_token',
+    MONARCH_CSRF_TOKEN: 'monarch_csrf_token', MONARCH_SESSION_EXPIRES_AT: 'monarch_session_expires_at',
     DEVELOPMENT_MODE: 'development_mode',
   },
 }));

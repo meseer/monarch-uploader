@@ -32,7 +32,8 @@ interface QuestradeAuth {
 }
 
 interface MonarchAuth {
-  token: string | null;
+  csrfToken: string | null;
+  sessionExpiresAt: string | null;
 }
 
 interface CanadaLifeAuth {
@@ -102,7 +103,8 @@ class StateManager {
           expiresAt: 0,
         },
         monarch: {
-          token: null,
+          csrfToken: null,
+          sessionExpiresAt: null,
         },
         canadalife: {
           token: null,
@@ -177,11 +179,11 @@ class StateManager {
   }
 
   /**
-   * Update Monarch authentication token
+   * Update Monarch authentication credentials (CSRF token + session expiry)
    */
-  setMonarchAuth(token: string | null): void {
+  setMonarchAuth(credentials: { csrfToken: string | null; sessionExpiresAt: string | null } | null): void {
     const prevState = { ...this.state };
-    this.state.auth.monarch = { token };
+    this.state.auth.monarch = credentials || { csrfToken: null, sessionExpiresAt: null };
 
     this.notifyListeners('auth', prevState, this.state);
   }

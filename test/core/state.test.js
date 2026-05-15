@@ -44,7 +44,8 @@ describe('StateManager', () => {
           expiresAt: 0,
         },
         monarch: {
-          token: null,
+          csrfToken: null,
+          sessionExpiresAt: null,
         },
         canadalife: {
           token: null,
@@ -204,21 +205,23 @@ describe('StateManager', () => {
   });
 
   describe('setMonarchAuth', () => {
-    it('should update Monarch auth token', () => {
-      testStateManager.setMonarchAuth('monarch-token-456');
+    it('should update Monarch auth credentials', () => {
+      testStateManager.setMonarchAuth({ csrfToken: 'monarch-csrf-456', sessionExpiresAt: '2099-12-31T23:59:59Z' });
 
       const state = testStateManager.getState();
       expect(state.auth.monarch).toEqual({
-        token: 'monarch-token-456',
+        csrfToken: 'monarch-csrf-456',
+        sessionExpiresAt: '2099-12-31T23:59:59Z',
       });
     });
 
-    it('should handle null token', () => {
+    it('should handle null credentials', () => {
       testStateManager.setMonarchAuth(null);
 
       const state = testStateManager.getState();
       expect(state.auth.monarch).toEqual({
-        token: null,
+        csrfToken: null,
+        sessionExpiresAt: null,
       });
     });
 
@@ -226,7 +229,7 @@ describe('StateManager', () => {
       const listener = jest.fn();
       testStateManager.addListener('auth', listener);
 
-      testStateManager.setMonarchAuth('monarch-token-test');
+      testStateManager.setMonarchAuth({ csrfToken: 'monarch-csrf-test', sessionExpiresAt: null });
 
       expect(listener).toHaveBeenCalledTimes(1);
     });
@@ -426,7 +429,7 @@ describe('StateManager', () => {
       testStateManager.addListener('*', wildcardListener);
 
       testStateManager.setAccount('test-account', 'Test Account');
-      testStateManager.setMonarchAuth('test-token');
+      testStateManager.setMonarchAuth({ csrfToken: 'test-csrf', sessionExpiresAt: null });
 
       expect(wildcardListener).toHaveBeenCalledTimes(2);
     });
@@ -473,7 +476,7 @@ describe('StateManager', () => {
       // Perform various state changes
       testStateManager.setAccount('account1', 'Account 1');
       testStateManager.setQuestradeAuth({ token: 'token1', expires_at: 1640995200 });
-      testStateManager.setMonarchAuth('monarch-token');
+      testStateManager.setMonarchAuth({ csrfToken: 'monarch-csrf', sessionExpiresAt: null });
 
       expect(accountListener).toHaveBeenCalledTimes(1);
       expect(authListener).toHaveBeenCalledTimes(2);
@@ -484,7 +487,7 @@ describe('StateManager', () => {
       // Make multiple changes
       testStateManager.setAccount('final-account', 'Final Account');
       testStateManager.setQuestradeAuth({ token: 'final-token', expires_at: 1640995200 });
-      testStateManager.setMonarchAuth('final-monarch-token');
+      testStateManager.setMonarchAuth({ csrfToken: 'final-monarch-csrf', sessionExpiresAt: null });
       testStateManager.setCanadaLifeAuth('final-canadalife-token');
       testStateManager.setRogersBankAuth({ username: 'final-user' });
 
@@ -492,7 +495,7 @@ describe('StateManager', () => {
 
       expect(state.currentAccount.id).toBe('final-account');
       expect(state.auth.questrade.token).toBe('final-token');
-      expect(state.auth.monarch.token).toBe('final-monarch-token');
+      expect(state.auth.monarch.csrfToken).toBe('final-monarch-csrf');
       expect(state.auth.canadalife.token).toBe('final-canadalife-token');
       expect(state.auth.rogersbank.credentials.username).toBe('final-user');
     });
