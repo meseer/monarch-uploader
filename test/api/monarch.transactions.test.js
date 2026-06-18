@@ -1055,8 +1055,18 @@ describe('Monarch API - Transactions', () => {
       deactivatedAt: null,
       includeBalanceInNetWorth: true,
       type: { name: 'credit', display: 'Credit Cards' },
+      subtype: { name: 'credit_card', display: 'Credit Card' },
       ownedByUser: null,
       limit: 15000,
+      invertSyncedBalance: false,
+      useAvailableBalance: false,
+      hideFromList: false,
+      hideTransactionsFromReports: false,
+      excludeFromDebtPaydown: false,
+      apr: null,
+      interestRate: null,
+      plannedPayment: null,
+      minimumPayment: null,
     };
 
     const mockUpdatedAccount = {
@@ -1198,6 +1208,164 @@ describe('Monarch API - Transactions', () => {
       const result = await setCreditLimit('account123', 0);
 
       expect(result.limit).toBe(0);
+    });
+
+    test('preserves invertSyncedBalance when updating credit limit', async () => {
+      const accountWithInvertedBalance = {
+        ...mockCreditAccount,
+        invertSyncedBalance: true,
+      };
+
+      let updateInput = null;
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+
+        if (data.operationName === 'Web_GetFilteredAccounts') {
+          setTimeout(() => options.onload({
+            status: 200,
+            responseText: JSON.stringify({
+              data: { accounts: [accountWithInvertedBalance] },
+            }),
+          }), 0);
+        } else if (data.operationName === 'Common_UpdateAccount') {
+          updateInput = data.variables.input;
+          setTimeout(() => options.onload({
+            status: 200,
+            responseText: JSON.stringify({
+              data: {
+                updateAccount: {
+                  account: { ...accountWithInvertedBalance, limit: 20000 },
+                  errors: null,
+                },
+              },
+            }),
+          }), 0);
+        }
+      });
+
+      await setCreditLimit('account123', 20000);
+
+      expect(updateInput).not.toBeNull();
+      expect(updateInput.invertSyncedBalance).toBe(true);
+      expect(updateInput.limit).toBe(20000);
+    });
+
+    test('preserves all account settings when updating credit limit', async () => {
+      const accountWithCustomSettings = {
+        ...mockCreditAccount,
+        invertSyncedBalance: true,
+        useAvailableBalance: true,
+        hideFromList: true,
+        hideTransactionsFromReports: true,
+        excludeFromDebtPaydown: true,
+        apr: 19.99,
+        interestRate: 0.1999,
+        plannedPayment: 250,
+        minimumPayment: 25,
+        subtype: { name: 'line_of_credit', display: 'Line of Credit' },
+      };
+
+      let updateInput = null;
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+
+        if (data.operationName === 'Web_GetFilteredAccounts') {
+          setTimeout(() => options.onload({
+            status: 200,
+            responseText: JSON.stringify({
+              data: { accounts: [accountWithCustomSettings] },
+            }),
+          }), 0);
+        } else if (data.operationName === 'Common_UpdateAccount') {
+          updateInput = data.variables.input;
+          setTimeout(() => options.onload({
+            status: 200,
+            responseText: JSON.stringify({
+              data: {
+                updateAccount: {
+                  account: { ...accountWithCustomSettings, limit: 25000 },
+                  errors: null,
+                },
+              },
+            }),
+          }), 0);
+        }
+      });
+
+      await setCreditLimit('account123', 25000);
+
+      expect(updateInput).not.toBeNull();
+      expect(updateInput.invertSyncedBalance).toBe(true);
+      expect(updateInput.useAvailableBalance).toBe(true);
+      expect(updateInput.hideFromList).toBe(true);
+      expect(updateInput.hideTransactionsFromReports).toBe(true);
+      expect(updateInput.excludeFromDebtPaydown).toBe(true);
+      expect(updateInput.apr).toBe(19.99);
+      expect(updateInput.interestRate).toBe(0.1999);
+      expect(updateInput.plannedPayment).toBe(250);
+      expect(updateInput.minimumPayment).toBe(25);
+      expect(updateInput.subtype).toBe('line_of_credit');
+      expect(updateInput.limit).toBe(25000);
+    });
+
+    test('falls back to defaults when account fields are missing', async () => {
+      const minimalAccount = {
+        id: 'account123',
+        displayName: 'Sparse Card',
+        displayBalance: -100,
+        dataProvider: '',
+        isManual: true,
+        deactivatedAt: null,
+        includeBalanceInNetWorth: true,
+        type: { name: 'credit', display: 'Credit Cards' },
+        ownedByUser: null,
+        // Missing: subtype, invertSyncedBalance, useAvailableBalance, etc.
+      };
+
+      let updateInput = null;
+
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+
+        if (data.operationName === 'Web_GetFilteredAccounts') {
+          setTimeout(() => options.onload({
+            status: 200,
+            responseText: JSON.stringify({
+              data: { accounts: [minimalAccount] },
+            }),
+          }), 0);
+        } else if (data.operationName === 'Common_UpdateAccount') {
+          updateInput = data.variables.input;
+          setTimeout(() => options.onload({
+            status: 200,
+            responseText: JSON.stringify({
+              data: {
+                updateAccount: {
+                  account: { ...minimalAccount, limit: 5000 },
+                  errors: null,
+                },
+              },
+            }),
+          }), 0);
+        }
+      });
+
+      await setCreditLimit('account123', 5000);
+
+      expect(updateInput).not.toBeNull();
+      expect(updateInput.subtype).toBe('credit_card');
+      expect(updateInput.invertSyncedBalance).toBe(false);
+      expect(updateInput.useAvailableBalance).toBe(false);
+      expect(updateInput.hideFromList).toBe(false);
+      expect(updateInput.hideTransactionsFromReports).toBe(false);
+      expect(updateInput.excludeFromDebtPaydown).toBe(false);
+      expect(updateInput.apr).toBeNull();
+      expect(updateInput.interestRate).toBeNull();
+      expect(updateInput.plannedPayment).toBeNull();
+      expect(updateInput.minimumPayment).toBeNull();
+      expect(updateInput.limit).toBe(5000);
     });
   });
 });
