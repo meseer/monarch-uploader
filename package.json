@@ -1,6 +1,6 @@
 {
   "name": "monarch-uploader",
-  "version": "7.0.0",
+  "version": "7.0.3",
   "description": "Violentmonkey userscript for uploading Questrade, Wealthsimple, Canada Life, and Rogers Bank data to Monarch Money",
   "main": "dist/monarch-uploader.user.js",
   "scripts": {
@@ -44,16 +44,16 @@
     "@types/tampermonkey": "^5.0.5",
     "babel-loader": "^10.0.0",
     "c8": "^11.0.0",
-    "eslint": "^10.4.0",
+    "eslint": "^10.5.0",
     "globals": "^17.6.0",
     "jest": "^30.4.2",
     "jest-environment-jsdom": "^30.4.1",
-    "knip": "^6.14.2",
-    "terser-webpack-plugin": "^5.6.0",
+    "knip": "^6.16.1",
+    "terser-webpack-plugin": "^5.6.1",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.60.0",
+    "typescript-eslint": "^8.60.1",
     "webpack": "^5.107.2",
-    "webpack-cli": "^7.0.2"
+    "webpack-cli": "^7.0.3"
   },
   "overrides": {
     "rimraf": "^5.0.0",
