@@ -8,7 +8,8 @@ import monarchApi from '../../api/monarch';
 import wealthsimpleApi from '../../api/wealthsimple';
 import { INVESTMENT_TRANSACTION_RULES } from './transactionsInvestment';
 import { CASH_TRANSACTION_RULES } from './transactionRules';
-import type { WealthsimpleTransaction } from './transactionRulesHelpers';
+import { convertToLocalDate } from './transactionsHelpers';
+import type { WealthsimpleTransaction, ExtendedOrder } from './transactionRulesHelpers';
 
 /**
  * Custom prefix for Wealthsimple transaction IDs stored in Monarch notes
@@ -258,10 +259,13 @@ async function fetchEnrichmentForTransaction(
  * that was used at upload time. Fetches enrichment data if needed.
  *
  * @param wsTx - Settled Wealthsimple transaction
+ * @param prefetchedEnrichment - Optional pre-fetched enrichment map to avoid duplicate API calls.
+ *   When provided, the function skips the enrichment fetch and uses this map directly.
  * @returns Regenerated notes string, or null if no rule matched or notes are empty
  */
 export async function regenerateSettledNotes(
   wsTx: Record<string, unknown>,
+  prefetchedEnrichment?: Map<string, unknown>,
 ): Promise<string | null> {
   const tx = wsTx as unknown as WealthsimpleTransaction;
 
@@ -281,15 +285,19 @@ export async function regenerateSettledNotes(
     return null;
   }
 
-  debugLog(`[ws-reconciliation:notes] Matched rule "${matchedRule.id}" for type=${tx.type}, fetching enrichment...`);
-
-  // Fetch enrichment data (e.g., extended order details for buy/sell)
+  // Fetch enrichment data (e.g., extended order details for buy/sell) unless caller pre-fetched
   let enrichmentMap: Map<string, unknown>;
-  try {
-    enrichmentMap = await fetchEnrichmentForTransaction(wsTx);
-  } catch (error) {
-    debugLog('[ws-reconciliation:notes] Failed to fetch enrichment, proceeding without it:', error);
-    enrichmentMap = new Map();
+  if (prefetchedEnrichment) {
+    enrichmentMap = prefetchedEnrichment;
+    debugLog(`[ws-reconciliation:notes] Matched rule "${matchedRule.id}" for type=${tx.type}, using prefetched enrichment`);
+  } else {
+    debugLog(`[ws-reconciliation:notes] Matched rule "${matchedRule.id}" for type=${tx.type}, fetching enrichment...`);
+    try {
+      enrichmentMap = await fetchEnrichmentForTransaction(wsTx);
+    } catch (error) {
+      debugLog('[ws-reconciliation:notes] Failed to fetch enrichment, proceeding without it:', error);
+      enrichmentMap = new Map();
+    }
   }
 
   const result = matchedRule.process(tx, enrichmentMap);
@@ -302,6 +310,61 @@ export async function regenerateSettledNotes(
 
   debugLog(`[ws-reconciliation:notes] Regenerated notes via rule "${matchedRule.id}": "${notes.substring(0, 80)}..."`);
   return notes;
+}
+
+/**
+ * Transaction types whose settlement date comes from `extendedOrder.filledAt` (DIY/options orders).
+ */
+const FILLED_AT_DATE_TYPES = new Set([
+  'DIY_BUY', 'DIY_SELL',
+  'OPTIONS_BUY', 'OPTIONS_SELL', 'OPTIONS_ASSIGN', 'OPTIONS_SHORT_EXPIRY',
+]);
+
+/**
+ * Compute the settlement date for a settled Wealthsimple transaction.
+ *
+ * Priority:
+ * 1. DIVIDEND → `payableDate` (matches upload-time logic in transactionsInvestment.ts)
+ * 2. DIY/Options orders → `extendedOrder.filledAt` from enrichment (if available)
+ * 3. Fallback → `occurredAt` (managed orders, crypto orders, transfers, deposits, etc.)
+ *
+ * @param wsTx - Settled Wealthsimple transaction
+ * @param enrichmentMap - Enrichment map keyed by externalCanonicalId
+ * @returns Settlement date in YYYY-MM-DD format, or null if no date can be derived
+ */
+export function getSettlementDate(
+  wsTx: Record<string, unknown>,
+  enrichmentMap: Map<string, unknown>,
+): string | null {
+  const type = wsTx.type as string | undefined;
+
+  // Dividends: use payableDate (matches upload-time behavior)
+  if (type === 'DIVIDEND') {
+    const payableDate = wsTx.payableDate as string | undefined;
+    if (payableDate) {
+      return payableDate;
+    }
+  }
+
+  // DIY/Options orders: use extendedOrder.filledAt when available
+  if (type && FILLED_AT_DATE_TYPES.has(type)) {
+    const externalId = wsTx.externalCanonicalId as string | undefined;
+    if (externalId) {
+      const enrichment = enrichmentMap.get(externalId) as ExtendedOrder | undefined;
+      const filledAt = enrichment?.filledAt as string | undefined;
+      if (filledAt) {
+        return convertToLocalDate(filledAt) || null;
+      }
+    }
+  }
+
+  // Fallback: occurredAt (managed orders, crypto, transfers, deposits, withdrawals, etc.)
+  const occurredAt = wsTx.occurredAt as string | undefined;
+  if (occurredAt) {
+    return convertToLocalDate(occurredAt) || null;
+  }
+
+  return null;
 }
 
 // ── Reconciliation ────────────────────────────────────────────────────────────
@@ -396,11 +459,20 @@ export async function reconcileWealthsimpleFetchedPending(
             cleanedNotes = updateSettledDividendNotes(cleanedNotes);
           }
 
+          // Fetch enrichment data once and share it between notes regeneration
+          // and settlement date computation to avoid duplicate API calls.
+          let enrichmentMap: Map<string, unknown> = new Map();
+          try {
+            enrichmentMap = await fetchEnrichmentForTransaction(wsTx);
+          } catch (enrichError) {
+            debugLog(`[ws-reconciliation] Failed to fetch enrichment for ${wsTransactionId}:`, enrichError);
+          }
+
           // Regenerate notes using the rules engine with settled transaction data.
           // This updates fill prices/quantities that were 0 when the order was pending.
           // Only replaces when the regenerated notes actually differ from existing ones.
           try {
-            const regeneratedNotes = await regenerateSettledNotes(wsTx);
+            const regeneratedNotes = await regenerateSettledNotes(wsTx, enrichmentMap);
             if (regeneratedNotes !== null && !cleanedNotes.includes(regeneratedNotes)) {
               debugLog(`[ws-reconciliation] Updating notes for ${wsTransactionId}: old="${cleanedNotes.substring(0, 60)}" new="${regeneratedNotes.substring(0, 60)}"`);
               cleanedNotes = regeneratedNotes;
@@ -409,12 +481,23 @@ export async function reconcileWealthsimpleFetchedPending(
             debugLog(`[ws-reconciliation] Failed to regenerate notes for ${wsTransactionId}, keeping cleaned notes:`, notesError);
           }
 
+          // Compute settlement date — may differ from submission date for limit orders, options, etc.
+          const settledDate = getSettlementDate(wsTx, enrichmentMap);
+          const currentDate = monarchTx.date as string | undefined;
+          const dateChanged = settledDate !== null && settledDate !== currentDate;
+
           const amountChanged = monarchTx.amount !== settledAmount;
 
-          await monarchApi.updateTransaction(monarchTxId, {
+          const notesUpdatePayload: Record<string, unknown> = {
             notes: cleanedNotes,
             ownerUserId: (monarchTx.ownedByUser as Record<string, unknown>)?.id || null,
-          });
+          };
+          if (dateChanged) {
+            notesUpdatePayload.date = settledDate;
+            debugLog(`[ws-reconciliation] Updating date for ${wsTransactionId}: ${currentDate} → ${settledDate}`);
+          }
+
+          await monarchApi.updateTransaction(monarchTxId, notesUpdatePayload);
 
           if (amountChanged) {
             await monarchApi.updateTransaction(monarchTxId, {

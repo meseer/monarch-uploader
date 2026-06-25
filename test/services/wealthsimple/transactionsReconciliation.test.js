@@ -11,6 +11,7 @@ import {
   reconcileWealthsimpleFetchedPending,
   reconcilePendingTransactions,
   regenerateSettledNotes,
+  getSettlementDate,
   formatReconciliationMessage,
   formatTransactionIdForNotes,
 } from '../../../src/services/wealthsimple/transactionsReconciliation';
@@ -80,6 +81,7 @@ beforeEach(() => {
 const makeMonarchTx = (id, notes, overrides = {}) => ({
   id,
   amount: -25.0,
+  date: '2026-01-10',
   notes,
   tags: [{ id: 'tag-pending', name: 'Pending' }],
   ownedByUser: { id: 'user-1' },
@@ -305,6 +307,112 @@ describe('regenerateSettledNotes', () => {
   });
 });
 
+// ── getSettlementDate ───────────────────────────────────────
+
+describe('getSettlementDate', () => {
+  it('returns payableDate for DIVIDEND transactions', () => {
+    const wsTx = {
+      type: 'DIVIDEND',
+      externalCanonicalId: 'div-123',
+      payableDate: '2026-02-15',
+      occurredAt: '2026-02-10T12:00:00Z',
+    };
+    expect(getSettlementDate(wsTx, new Map())).toBe('2026-02-15');
+  });
+
+  it('falls back to occurredAt for DIVIDEND with no payableDate', () => {
+    const wsTx = {
+      type: 'DIVIDEND',
+      externalCanonicalId: 'div-123',
+      occurredAt: '2026-02-10T12:00:00Z',
+    };
+    expect(getSettlementDate(wsTx, new Map())).toBe('2026-02-10');
+  });
+
+  it('returns extendedOrder.filledAt for DIY_BUY when present in enrichment', () => {
+    const wsTx = {
+      type: 'DIY_BUY',
+      externalCanonicalId: 'order-abc',
+      occurredAt: '2026-01-05T12:00:00Z',
+    };
+    const enrichment = new Map([['order-abc', { filledAt: '2026-01-09T15:30:00Z' }]]);
+    expect(getSettlementDate(wsTx, enrichment)).toBe('2026-01-09');
+  });
+
+  it('returns extendedOrder.filledAt for DIY_SELL when present', () => {
+    const wsTx = {
+      type: 'DIY_SELL',
+      externalCanonicalId: 'order-xyz',
+      occurredAt: '2026-01-05T12:00:00Z',
+    };
+    const enrichment = new Map([['order-xyz', { filledAt: '2026-01-08T10:00:00Z' }]]);
+    expect(getSettlementDate(wsTx, enrichment)).toBe('2026-01-08');
+  });
+
+  it('returns extendedOrder.filledAt for OPTIONS_BUY when present', () => {
+    const wsTx = {
+      type: 'OPTIONS_BUY',
+      externalCanonicalId: 'order-opt',
+      occurredAt: '2026-01-05T12:00:00Z',
+    };
+    const enrichment = new Map([['order-opt', { filledAt: '2026-01-07T14:00:00Z' }]]);
+    expect(getSettlementDate(wsTx, enrichment)).toBe('2026-01-07');
+  });
+
+  it('falls back to occurredAt for DIY orders when enrichment has no filledAt', () => {
+    const wsTx = {
+      type: 'DIY_BUY',
+      externalCanonicalId: 'order-abc',
+      occurredAt: '2026-01-05T12:00:00Z',
+    };
+    const enrichment = new Map([['order-abc', { orderType: 'BUY' /* no filledAt */ }]]);
+    expect(getSettlementDate(wsTx, enrichment)).toBe('2026-01-05');
+  });
+
+  it('falls back to occurredAt for DIY orders when enrichment map is empty', () => {
+    const wsTx = {
+      type: 'DIY_BUY',
+      externalCanonicalId: 'order-abc',
+      occurredAt: '2026-01-05T12:00:00Z',
+    };
+    expect(getSettlementDate(wsTx, new Map())).toBe('2026-01-05');
+  });
+
+  it('uses occurredAt for MANAGED_BUY (managed orders do not have filledAt)', () => {
+    const wsTx = {
+      type: 'MANAGED_BUY',
+      externalCanonicalId: 'order-managed',
+      occurredAt: '2026-01-12T09:00:00Z',
+    };
+    const enrichment = new Map([['order-managed', { quantity: 5, isManagedOrderData: true }]]);
+    expect(getSettlementDate(wsTx, enrichment)).toBe('2026-01-12');
+  });
+
+  it('uses occurredAt for CRYPTO_BUY', () => {
+    const wsTx = {
+      type: 'CRYPTO_BUY',
+      externalCanonicalId: 'order-crypto',
+      occurredAt: '2026-01-15T20:00:00Z',
+    };
+    expect(getSettlementDate(wsTx, new Map())).toBe('2026-01-15');
+  });
+
+  it('uses occurredAt for SPEND/credit card transactions', () => {
+    const wsTx = {
+      type: 'SPEND',
+      subType: 'PURCHASE',
+      externalCanonicalId: 'credit-transaction-abc',
+      occurredAt: '2026-01-20T15:00:00Z',
+    };
+    expect(getSettlementDate(wsTx, new Map())).toBe('2026-01-20');
+  });
+
+  it('returns null when no date is available', () => {
+    const wsTx = { type: 'SPEND' };
+    expect(getSettlementDate(wsTx, new Map())).toBe(null);
+  });
+});
+
 // ── reconcileWealthsimpleFetchedPending (Phase 2) ───────────
 
 describe('reconcileWealthsimpleFetchedPending', () => {
@@ -313,7 +421,7 @@ describe('reconcileWealthsimpleFetchedPending', () => {
       const monarchTx = makeMonarchTx(
         'mtx-1',
         'Limit order Buy 100 VFV @ 15.50 Limit GTC\nFilled 0 @ USD$0, fees: USD$0\nTotal USD$0\nws-tx:order-abc123',
-        { amount: 0 },
+        { amount: 0, date: '2026-01-05' },
       );
 
       mockMonarchApi.updateTransaction.mockResolvedValue({});
@@ -437,6 +545,123 @@ describe('reconcileWealthsimpleFetchedPending', () => {
       expect(updatedNotes).not.toContain('Expected dividends');
       // ws-tx ID should be removed
       expect(updatedNotes).not.toContain('ws-tx:');
+    });
+
+    it('updates date to extendedOrder.filledAt when limit order settles later', async () => {
+      const monarchTx = makeMonarchTx(
+        'mtx-date',
+        'Limit order Buy 100 VFV @ 15.50 Limit GTC\nFilled 0 @ USD$0, fees: USD$0\nTotal USD$0\nws-tx:order-date-1',
+        { amount: 0, date: '2026-01-05' },
+      );
+
+      mockMonarchApi.updateTransaction.mockResolvedValue({});
+      mockMonarchApi.setTransactionTags.mockResolvedValue({});
+
+      const wsTx = makeWsTx('order-date-1', {
+        type: 'DIY_BUY',
+        subType: 'LIMIT_ORDER',
+        status: null,
+        unifiedStatus: 'COMPLETED',
+        amount: 330,
+        currency: 'USD',
+        assetSymbol: 'VFV',
+        amountSign: 'negative',
+        occurredAt: '2026-01-05T10:00:00Z',
+      });
+
+      mockWealthsimpleApi.fetchExtendedOrder.mockResolvedValue({
+        orderType: 'BUY',
+        submittedQuantity: 100,
+        filledQuantity: 22,
+        averageFilledPrice: 15,
+        filledTotalFee: 0,
+        limitPrice: 15.5,
+        timeInForce: 'GTC',
+        filledAt: '2026-01-09T15:30:00Z',
+      });
+
+      const result = await reconcileWealthsimpleFetchedPending(
+        pendingTag,
+        [monarchTx],
+        [wsTx],
+        'SELF_DIRECTED_TFSA',
+      );
+
+      expect(result.settled).toBe(1);
+
+      const notesUpdateCall = mockMonarchApi.updateTransaction.mock.calls[0];
+      expect(notesUpdateCall[0]).toBe('mtx-date');
+      expect(notesUpdateCall[1].date).toBe('2026-01-09');
+
+      // Enrichment should only be fetched once even though both notes & date use it
+      expect(mockWealthsimpleApi.fetchExtendedOrder).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not include date in update when settlement date equals current date', async () => {
+      const monarchTx = makeMonarchTx(
+        'mtx-same-date',
+        'Some pending notes\nws-tx:credit-transaction-same',
+        { amount: -25, date: '2026-01-10' },
+      );
+
+      mockMonarchApi.updateTransaction.mockResolvedValue({});
+      mockMonarchApi.setTransactionTags.mockResolvedValue({});
+
+      const wsTx = makeWsTx('credit-transaction-same', {
+        status: 'settled',
+        amount: 25,
+        amountSign: 'negative',
+        occurredAt: '2026-01-10T12:00:00Z',
+      });
+
+      const result = await reconcileWealthsimpleFetchedPending(
+        pendingTag,
+        [monarchTx],
+        [wsTx],
+        'CREDIT_CARD',
+      );
+
+      expect(result.settled).toBe(1);
+
+      const notesUpdateCall = mockMonarchApi.updateTransaction.mock.calls[0];
+      expect(notesUpdateCall[1].date).toBeUndefined();
+    });
+
+    it('updates date to payableDate when a pending dividend settles', async () => {
+      const monarchTx = makeMonarchTx(
+        'mtx-div-date',
+        'Upcoming dividend on ZHY\nExpected dividends: CAD$2.06\nws-tx:div-future',
+        { amount: 0, date: '2026-02-01' },
+      );
+
+      mockMonarchApi.updateTransaction.mockResolvedValue({});
+      mockMonarchApi.setTransactionTags.mockResolvedValue({});
+
+      const wsTx = makeWsTx('div-future', {
+        type: 'DIVIDEND',
+        subType: 'CASH_DIVIDEND',
+        status: null,
+        unifiedStatus: 'COMPLETED',
+        amount: 2.06,
+        currency: 'CAD',
+        assetSymbol: 'ZHY',
+        assetQuantity: 34.3537,
+        amountSign: 'positive',
+        payableDate: '2026-02-15',
+        occurredAt: '2026-02-10T12:00:00Z',
+      });
+
+      const result = await reconcileWealthsimpleFetchedPending(
+        pendingTag,
+        [monarchTx],
+        [wsTx],
+        'MANAGED_RESP',
+      );
+
+      expect(result.settled).toBe(1);
+
+      const notesUpdateCall = mockMonarchApi.updateTransaction.mock.calls[0];
+      expect(notesUpdateCall[1].date).toBe('2026-02-15');
     });
 
     it('handles notes regeneration failure gracefully', async () => {
