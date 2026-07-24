@@ -101,6 +101,17 @@ describe('Merchant Mapping Utilities', () => {
       expect(applyMerchantMapping('NotSpotify Store')).toBe('Notspotify Store');
     });
 
+    test('should transform Eurest-Amazon office cafeteria to standardized name', () => {
+      expect(applyMerchantMapping('EUREST-AMAZONYVR21-634')).toBe('Eurest - Amazon YVR21');
+      expect(applyMerchantMapping('eurest-amazonyvr21-634')).toBe('Eurest - Amazon YVR21');
+      expect(applyMerchantMapping('EUREST-AMAZONSEA47-100')).toBe('Eurest - Amazon SEA47');
+      // No trailing number segment
+      expect(applyMerchantMapping('EUREST-AMAZONYVR21')).toBe('Eurest - Amazon YVR21');
+      // Should not transform unrelated merchants that don't match the pattern
+      expect(applyMerchantMapping('EUREST OTHER MERCHANT')).toBe('Eurest Other Merchant');
+      expect(applyMerchantMapping('EUREST-OTHERCOMPANY-123')).toBe('Eurest-othercompany-123');
+    });
+
     test('should transform Coinbase variants to standardized name', () => {
       expect(applyMerchantMapping('COINBASE RTL-KQP9WV9C')).toBe('Coinbase');
       expect(applyMerchantMapping('Coinbase RTL-ABC12345')).toBe('Coinbase');

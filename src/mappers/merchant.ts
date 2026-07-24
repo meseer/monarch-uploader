@@ -239,6 +239,24 @@ export function applyMerchantMapping(merchantName: string, options: MerchantMapp
     });
   }
 
+  // Rule 3c: Transform Eurest-Amazon office cafeteria transactions
+  // e.g., "EUREST-AMAZONYVR21-634" -> "Eurest - Amazon YVR21"
+  // Returns early to preserve building code casing (e.g., "YVR21") from subsequent
+  // title-casing and store-number stripping rules.
+  const eurestAmazonMatch = transformed.match(/^EUREST-AMAZON([A-Z0-9]+?)(?:-\d+)?$/i);
+  if (eurestAmazonMatch) {
+    const buildingCode = eurestAmazonMatch[1].toUpperCase();
+    const originalEurest = transformed;
+    transformed = `Eurest - Amazon ${buildingCode}`;
+    debugLog('Transformed Eurest-Amazon merchant to standardized name:', {
+      original: originalEurest,
+      transformed,
+    });
+    transformed = transformed.replace(/\s+/g, ' ').trim();
+    debugLog('Merchant mapping applied:', { original: merchantName, transformed, options });
+    return transformed;
+  }
+
   // Rule 4: Strip store numbers (configurable)
   transformed = stripStoreNumbers(transformed, shouldStripStoreNumbers);
 
