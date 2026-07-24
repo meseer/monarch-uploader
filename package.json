@@ -45,7 +45,7 @@
     "babel-loader": "^10.0.0",
     "c8": "^11.0.0",
     "eslint": "^10.7.0",
-    "globals": "^17.6.0",
+    "globals": "^17.7.0",
     "jest": "^30.4.2",
     "jest-environment-jsdom": "^30.4.1",
     "knip": "^6.27.0",
