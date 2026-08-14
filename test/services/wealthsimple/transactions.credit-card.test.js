@@ -618,6 +618,87 @@ describe('Wealthsimple Transaction Service - Credit Card', () => {
       expect(showMonarchCategorySelector).toHaveBeenCalledTimes(1);
     });
 
+    it('should skip already-uploaded settled transactions before categorization (externalCanonicalId)', async () => {
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-already-uploaded',
+          occurredAt: '2025-01-15T10:30:00.000000+00:00',
+          type: 'CREDIT_CARD',
+          subType: 'PURCHASE',
+          status: 'settled',
+          spendMerchant: 'Uncategorized Merchant',
+          amount: 50.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [], categoryGroups: [] });
+      applyWealthsimpleCategoryMapping.mockReturnValue({
+        needsManualSelection: true,
+        bankCategory: 'Uncategorized Merchant',
+        suggestedCategory: 'Shopping',
+        similarityScore: 0.5,
+      });
+
+      const uploadedIds = new Set(['tx-already-uploaded']);
+
+      const result = await fetchAndProcessCreditCardTransactions(
+        mockConsolidatedAccount,
+        '2025-01-01',
+        '2025-01-31',
+        { uploadedTransactionIds: uploadedIds },
+      );
+
+      // Transaction should be filtered out before categorization
+      expect(result).toEqual([]);
+      // Category selector must never be invoked for an already-uploaded transaction
+      expect(showMonarchCategorySelector).not.toHaveBeenCalled();
+    });
+
+    it('should skip already-uploaded settled transactions that lack externalCanonicalId (canonicalId fallback)', async () => {
+      // Regression: early dedup must use getTransactionId (which falls back to
+      // canonicalId) so already-uploaded transactions without externalCanonicalId
+      // do not get re-categorized every sync before the final dedup discards them.
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: null,
+          canonicalId: 'canonical-already-uploaded',
+          occurredAt: '2025-01-15T10:30:00.000000+00:00',
+          type: 'CREDIT_CARD',
+          subType: 'PURCHASE',
+          status: 'settled',
+          spendMerchant: 'Uncategorized Merchant',
+          amount: 50.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [], categoryGroups: [] });
+      applyWealthsimpleCategoryMapping.mockReturnValue({
+        needsManualSelection: true,
+        bankCategory: 'Uncategorized Merchant',
+        suggestedCategory: 'Shopping',
+        similarityScore: 0.5,
+      });
+
+      // Stored using the same key getTransactionId produces (canonicalId fallback)
+      const uploadedIds = new Set(['canonical-already-uploaded']);
+
+      const result = await fetchAndProcessCreditCardTransactions(
+        mockConsolidatedAccount,
+        '2025-01-01',
+        '2025-01-31',
+        { uploadedTransactionIds: uploadedIds },
+      );
+
+      // Transaction should be filtered out before categorization
+      expect(result).toEqual([]);
+      // Category selector must never be invoked for an already-uploaded transaction
+      expect(showMonarchCategorySelector).not.toHaveBeenCalled();
+    });
+
     it('should save category selection when rememberMapping=true', async () => {
       const mockRawTransactions = [
         {

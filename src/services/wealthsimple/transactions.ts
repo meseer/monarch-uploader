@@ -371,7 +371,7 @@ export async function fetchAndProcessCreditCardTransactions(
 
     const notYetUploadedTransactions = syncableTransactions.filter((tx) => {
       const isSettled = tx.status === 'settled';
-      const isAlreadyUploaded = uploadedTransactionIds.has(tx.externalCanonicalId ?? '');
+      const isAlreadyUploaded = uploadedTransactionIds.has(getTransactionId(tx));
       if (isSettled && isAlreadyUploaded) return false;
       return true;
     });
@@ -453,7 +453,7 @@ export async function fetchAndProcessCashTransactions(
     const notYetUploadedTransactions = syncableTransactions.filter((tx) => {
       const uStatus = (tx as Record<string, unknown>).unifiedStatus as string | null | undefined;
       const isCompleted = uStatus === 'COMPLETED';
-      const isAlreadyUploaded = uploadedTransactionIds.has(tx.externalCanonicalId ?? '');
+      const isAlreadyUploaded = uploadedTransactionIds.has(getTransactionId(tx));
       if (isCompleted && isAlreadyUploaded) return false;
       return true;
     });
@@ -744,7 +744,7 @@ export async function fetchAndProcessLineOfCreditTransactions(
 
     const notYetUploadedTransactions = syncableTransactions.filter((tx) => {
       const isCompleted = tx.status === 'settled' || tx.status === 'completed';
-      const isAlreadyUploaded = uploadedTransactionIds.has(tx.externalCanonicalId ?? '');
+      const isAlreadyUploaded = uploadedTransactionIds.has(getTransactionId(tx));
       if (isCompleted && isAlreadyUploaded) return false;
       return true;
     });
