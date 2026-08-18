@@ -331,10 +331,10 @@ export async function resolveCategoriesForTransactions(
           if (transaction.resolvedMonarchCategory) {
             return transaction;
           }
-          if (oneTimeAssignments.has(transaction.id)) {
-            return { ...transaction, resolvedMonarchCategory: oneTimeAssignments.get(transaction.id) };
-          }
           const upperKey = transaction.categoryKey ? transaction.categoryKey.toUpperCase() : '';
+          if (oneTimeAssignments.has(upperKey)) {
+            return { ...transaction, resolvedMonarchCategory: oneTimeAssignments.get(upperKey) };
+          }
           if (sessionMappings.has(upperKey)) {
             return { ...transaction, resolvedMonarchCategory: sessionMappings.get(upperKey) };
           }
@@ -352,11 +352,11 @@ export async function resolveCategoriesForTransactions(
         debugLog(`User selected category mapping (saved as rule): ${categoryToResolve.bankCategory} -> ${sel.name}`);
         toast.show(`Saved rule: "${categoryToResolve.bankCategory}" → "${sel.name}"`, 'debug');
       } else {
-        const transactionId = categoryToResolve.exampleTransaction?.id;
-        if (transactionId) {
-          oneTimeAssignments.set(transactionId, sel.name as string);
-          debugLog(`User selected category mapping (one-time for ${transactionId}): ${categoryToResolve.bankCategory} -> ${sel.name}`);
-        }
+        // Apply to all transactions with this category key for the current sync only.
+        // Keyed by categoryKey (not a single transaction id) so every transaction that
+        // shares the merchant is categorized, while intentionally NOT persisting a rule.
+        oneTimeAssignments.set(upperBankCategory, sel.name as string);
+        debugLog(`User selected category mapping (one-time for "${categoryToResolve.bankCategory}"): ${categoryToResolve.bankCategory} -> ${sel.name}`);
         toast.show(`Assigned once: "${categoryToResolve.bankCategory}" → "${sel.name}"`, 'debug');
       }
 
@@ -373,12 +373,12 @@ export async function resolveCategoriesForTransactions(
       return transaction;
     }
 
-    if (oneTimeAssignments.has(transaction.id)) {
-      return { ...transaction, resolvedMonarchCategory: oneTimeAssignments.get(transaction.id) };
-    }
-
     const categoryKey = transaction.categoryKey;
     const upperCategoryKey = categoryKey ? categoryKey.toUpperCase() : '';
+
+    if (oneTimeAssignments.has(upperCategoryKey)) {
+      return { ...transaction, resolvedMonarchCategory: oneTimeAssignments.get(upperCategoryKey) };
+    }
 
     if (sessionMappings.has(upperCategoryKey)) {
       return { ...transaction, resolvedMonarchCategory: sessionMappings.get(upperCategoryKey) };

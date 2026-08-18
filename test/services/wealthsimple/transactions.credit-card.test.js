@@ -9,7 +9,7 @@ import {
 } from '../../../src/services/wealthsimple/transactions';
 import wealthsimpleApi from '../../../src/api/wealthsimple';
 import monarchApi from '../../../src/api/monarch';
-import { applyWealthsimpleCategoryMapping } from '../../../src/mappers/category';
+import { applyWealthsimpleCategoryMapping, saveUserWealthsimpleCategorySelection } from '../../../src/mappers/category';
 import { showMonarchCategorySelector } from '../../../src/ui/components/categorySelector';
 
 // Mock dependencies
@@ -455,9 +455,11 @@ describe('Wealthsimple Transaction Service - Credit Card', () => {
       ).rejects.toThrow('API Error');
     });
 
-    it('should use one-time category selection (assignmentType=once) for only the specific transaction', async () => {
-      // With "Assign Once", the category should ONLY apply to the specific transaction
-      // Other transactions with the same merchant should NOT automatically get the category
+    it('should apply one-time category (assignmentType=once) to all same-merchant transactions this sync', async () => {
+      // With "Assign Once", the selected category applies to ALL transactions that
+      // share the merchant for the current sync (but is NOT persisted as a rule).
+      // Regression: previously only the example transaction was categorized and any
+      // subsequent same-merchant transactions were incorrectly left "Uncategorized".
       const mockRawTransactions = [
         {
           externalCanonicalId: 'tx-1',
@@ -490,29 +492,15 @@ describe('Wealthsimple Transaction Service - Credit Card', () => {
         categoryGroups: [],
       });
 
-      // First call returns needsManualSelection, subsequent calls should still return needsManualSelection
-      // because "Assign Once" doesn't save to persistent storage
-      applyWealthsimpleCategoryMapping
-        .mockReturnValueOnce({
-          needsManualSelection: true,
-          bankCategory: 'New Unique Merchant',
-          suggestedCategory: 'Shopping',
-          similarityScore: 0.5,
-        })
-        // Re-check during processing (still needsManualSelection since not saved)
-        .mockReturnValueOnce({
-          needsManualSelection: true,
-          bankCategory: 'New Unique Merchant',
-          suggestedCategory: 'Shopping',
-          similarityScore: 0.5,
-        })
-        // Final resolution also indicates no saved mapping (assignmentType=once doesn't save)
-        .mockReturnValue({
-          needsManualSelection: true,
-          bankCategory: 'New Unique Merchant',
-          suggestedCategory: 'Shopping',
-          similarityScore: 0.5,
-        });
+      // "Assign Once" never persists a mapping, so applyWealthsimpleCategoryMapping
+      // always reports needsManualSelection. The one-time assignment (keyed by
+      // category key) is what resolves the remaining same-merchant transactions.
+      applyWealthsimpleCategoryMapping.mockReturnValue({
+        needsManualSelection: true,
+        bankCategory: 'New Unique Merchant',
+        suggestedCategory: 'Shopping',
+        similarityScore: 0.5,
+      });
 
       // Mock the category selector to return selection with assignmentType='once'
       showMonarchCategorySelector.mockImplementation((bankCategory, callback) => {
@@ -529,16 +517,16 @@ describe('Wealthsimple Transaction Service - Credit Card', () => {
         '2025-01-31',
       );
 
-      // With "Assign Once":
-      // - First transaction (tx-1) gets "Food" (the one user selected for)
-      // - Second transaction (tx-2) gets "Uncategorized" (NOT automatically assigned)
-      // This is the intended behavior - "Assign Once" means ONLY that transaction
+      // With "Assign Once": both same-merchant transactions get "Food" for this sync
       expect(result).toHaveLength(2);
       expect(result[0].resolvedMonarchCategory).toBe('Food');
-      expect(result[1].resolvedMonarchCategory).toBe('Uncategorized');
+      expect(result[1].resolvedMonarchCategory).toBe('Food');
 
       // Should only show selector once (for unique merchant - deduplication still happens)
       expect(showMonarchCategorySelector).toHaveBeenCalledTimes(1);
+
+      // "Assign Once" must NOT persist a rule
+      expect(saveUserWealthsimpleCategorySelection).not.toHaveBeenCalled();
     });
 
     it('should apply category to all matching merchants when assignmentType=rule', async () => {
