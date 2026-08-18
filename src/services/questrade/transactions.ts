@@ -20,6 +20,7 @@ import toast from '../../ui/toast';
 import { convertQuestradeOrdersToMonarchCSV, convertQuestradeTransactionsToMonarchCSV } from '../../utils/csv';
 import { applyCategoryMapping, saveUserCategorySelection, calculateAllCategorySimilarities } from '../../mappers/category';
 import { showMonarchCategorySelector } from '../../ui/components/categorySelector';
+import { handleCategorySelection, resolveFromSession } from '../common/categorySelection';
 import {
   getTransactionIdsFromArray,
   getRetentionSettingsFromAccount,
@@ -277,6 +278,13 @@ async function resolveCategoriesForOrders(orders, options: { skipCategorization?
   const uniqueActions = new Map(); // Use Map to store action with example order
   const actionsToResolve = [];
 
+  // Session maps for the current sync. 'rule' selections persist via
+  // saveUserCategorySelection and populate sessionMappings; 'once' selections
+  // populate oneTimeAssignments only (no persistence). Both keyed by
+  // upper-cased action so all matching orders resolve this sync.
+  const sessionMappings = new Map<string, string>();
+  const oneTimeAssignments = new Map<string, string>();
+
   orders.forEach((order) => {
     const action = order.action || 'Unknown';
 
@@ -348,18 +356,40 @@ async function resolveCategoriesForOrders(orders, options: { skipCategorization?
         throw new Error(`Category selection cancelled for "${actionToResolve.bankCategory}". Upload aborted.`);
       }
 
-      // Handle "Skip All (this sync)" response
-      // Handle "Skip single" - don't save as rule, just continue to next
       const selCat = selectedCategory as Record<string, unknown>;
-      if (selCat.skipped) {
+
+      // Interpret the selection: 'rule' persists via saveUserCategorySelection,
+      // 'once' applies to all matching orders this sync without persisting.
+      const outcome = handleCategorySelection({
+        sourceKey: (actionToResolve.bankCategory as string).toUpperCase(),
+        persistKey: actionToResolve.bankCategory as string,
+        selection: selCat,
+        sessionMappings,
+        oneTimeAssignments,
+        persist: (key, category) => saveUserCategorySelection(key, category),
+      });
+
+      // Handle "Skip single" - don't save as rule, just continue to next
+      if (outcome.skipped) {
         debugLog(`Skipped categorization for "${actionToResolve.bankCategory}" (single transaction)`);
         continue;
       }
 
-      if (selCat.skipAll === true) {
+      // Handle "Skip All (this sync)" response
+      if (outcome.skipAll) {
         debugLog('User chose "Skip All" - setting Uncategorized for all remaining Questrade orders');
         return orders.map((order) => {
           const action = order.action || 'Unknown';
+          const upperAction = action.toUpperCase();
+          // Session selections made before Skip All still apply this sync
+          const sessionCategory = resolveFromSession({
+            sourceKey: upperAction,
+            oneTimeAssignments,
+            sessionMappings,
+          });
+          if (sessionCategory) {
+            return { ...order, resolvedMonarchCategory: sessionCategory, originalAction: action };
+          }
           const mappingResult = applyCategoryMapping(action, availableCategories);
           // Already-resolved categories keep their mapping, unresolved get Uncategorized
           const resolvedCategory = typeof mappingResult === 'string' ? mappingResult : 'Uncategorized';
@@ -371,10 +401,7 @@ async function resolveCategoriesForOrders(orders, options: { skipCategorization?
         });
       }
 
-      // Save the user's selection for future use
-      saveUserCategorySelection(actionToResolve.bankCategory, selCat.name as string);
       debugLog(`User selected category mapping: ${actionToResolve.bankCategory} -> ${selCat.name}`);
-
       toast.show(`Mapped "${actionToResolve.bankCategory}" to "${selCat.name}"`, 'debug');
     }
   }
@@ -382,6 +409,21 @@ async function resolveCategoriesForOrders(orders, options: { skipCategorization?
   // Now resolve all categories (they should all have mappings now)
   const resolvedOrders = orders.map((order) => {
     const action = order.action || 'Unknown';
+
+    // Session selections (once > rule) apply to all matching orders this sync,
+    // including one-time assignments that were intentionally not persisted.
+    const sessionCategory = resolveFromSession({
+      sourceKey: action.toUpperCase(),
+      oneTimeAssignments,
+      sessionMappings,
+    });
+    if (sessionCategory) {
+      return {
+        ...order,
+        resolvedMonarchCategory: sessionCategory,
+        originalAction: action,
+      };
+    }
 
     const mappingResult = applyCategoryMapping(action, availableCategories);
 

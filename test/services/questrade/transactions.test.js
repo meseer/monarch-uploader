@@ -381,6 +381,103 @@ describe('Questrade Transactions Service', () => {
       );
     });
 
+    it('should NOT persist a rule for "Assign Once" but apply to all matching orders this sync', async () => {
+      const mockOrders = [
+        {
+          orderUuid: 'uuid1',
+          status: 'Executed',
+          action: 'Buy',
+          security: { displayName: 'AAPL' },
+          dollarValue: 1000,
+        },
+        {
+          orderUuid: 'uuid2',
+          status: 'Executed',
+          action: 'Buy', // Same action as uuid1
+          security: { displayName: 'MSFT' },
+          dollarValue: 500,
+        },
+      ];
+
+      questradeApi.fetchOrders = jest.fn().mockResolvedValue({ data: mockOrders });
+      accountService.getAccountData.mockReturnValue({
+        skipCategorization: false,
+        uploadedTransactions: [],
+      });
+
+      const { applyCategoryMapping, saveUserCategorySelection } = require('../../../src/mappers/category');
+      // "Assign Once" never persists, so mapping keeps reporting needsManualSelection
+      applyCategoryMapping.mockReturnValue({
+        needsManualSelection: true,
+        bankCategory: 'Buy',
+      });
+
+      const { showMonarchCategorySelector } = require('../../../src/ui/components/categorySelector');
+      // User clicks "Assign Once"
+      showMonarchCategorySelector.mockImplementation((bankCategory, callback) => {
+        callback({ id: 'cat1', name: 'Investment', assignmentType: 'once' });
+      });
+
+      const result = await transactionsService.processAndUploadTransactions(
+        'account123',
+        'Test Account',
+        '2025-01-01',
+      );
+
+      expect(result.success).toBe(true);
+      // Prompted only once for the shared action
+      expect(showMonarchCategorySelector).toHaveBeenCalledTimes(1);
+      // "Assign Once" must NOT persist a rule
+      expect(saveUserCategorySelection).not.toHaveBeenCalled();
+      // Both orders get the chosen category this sync
+      expect(convertQuestradeOrdersToMonarchCSV).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ orderUuid: 'uuid1', resolvedMonarchCategory: 'Investment' }),
+          expect.objectContaining({ orderUuid: 'uuid2', resolvedMonarchCategory: 'Investment' }),
+        ]),
+        expect.any(String),
+      );
+    });
+
+    it('should persist a rule for "Save as Rule" (assignmentType=rule)', async () => {
+      const mockOrders = [
+        {
+          orderUuid: 'uuid1',
+          status: 'Executed',
+          action: 'Buy',
+          security: { displayName: 'AAPL' },
+          dollarValue: 1000,
+        },
+      ];
+
+      questradeApi.fetchOrders = jest.fn().mockResolvedValue({ data: mockOrders });
+      accountService.getAccountData.mockReturnValue({
+        skipCategorization: false,
+        uploadedTransactions: [],
+      });
+
+      const { applyCategoryMapping, saveUserCategorySelection } = require('../../../src/mappers/category');
+      // First check needs manual selection; after "rule" persists, mapping resolves
+      applyCategoryMapping
+        .mockReturnValueOnce({ needsManualSelection: true, bankCategory: 'Buy' })
+        .mockReturnValue('Investment');
+
+      const { showMonarchCategorySelector } = require('../../../src/ui/components/categorySelector');
+      showMonarchCategorySelector.mockImplementation((bankCategory, callback) => {
+        callback({ id: 'cat1', name: 'Investment', assignmentType: 'rule' });
+      });
+
+      const result = await transactionsService.processAndUploadTransactions(
+        'account123',
+        'Test Account',
+        '2025-01-01',
+      );
+
+      expect(result.success).toBe(true);
+      // "Save as Rule" persists the mapping
+      expect(saveUserCategorySelection).toHaveBeenCalledWith('Buy', 'Investment');
+    });
+
     it('should save order UUIDs to consolidated storage after successful upload', async () => {
       const mockOrders = [
         {

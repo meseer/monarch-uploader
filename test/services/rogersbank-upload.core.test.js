@@ -860,6 +860,145 @@ describe('Rogers Bank Upload Service - Core - Error Handling, Balance Upload, Tr
       );
     });
 
+    test('should NOT persist a rule for "Assign Once" but apply to all matching tx this sync', async () => {
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+
+      calculateFromDateWithLookback.mockReturnValue('2024-01-01');
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
+      monarchApi.uploadBalance.mockResolvedValue(true);
+
+      // Two transactions sharing the same bank category
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          activitySummary: {
+            totalCount: 2,
+            activities: [
+              {
+                referenceNumber: 'REF1',
+                activityStatus: 'APPROVED',
+                transactionAmount: -25.00,
+                description: 'Merchant A',
+                activityDate: '2024-01-10',
+                merchant: { categoryDescription: 'Unknown Category' },
+              },
+              {
+                referenceNumber: 'REF2',
+                activityStatus: 'APPROVED',
+                transactionAmount: -40.00,
+                description: 'Merchant B',
+                activityDate: '2024-01-11',
+                merchant: { categoryDescription: 'Unknown Category' },
+              },
+            ],
+          },
+        }),
+      });
+
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [{ name: 'Shopping' }] });
+
+      // "Assign Once" never persists, so mapping keeps reporting needsManualSelection
+      applyCategoryMapping.mockReturnValue({
+        needsManualSelection: true,
+        bankCategory: 'Unknown Category',
+        suggestedCategory: 'Shopping',
+        similarityScore: 0.1,
+      });
+
+      // User clicks "Assign Once"
+      showMonarchCategorySelector.mockImplementation((bankCategory, callback) => {
+        callback({ id: 'cat1', name: 'Shopping', assignmentType: 'once' });
+      });
+
+      const saveUserCategorySelection = jest.requireMock('../../src/mappers/category').saveUserCategorySelection;
+      convertTransactionsToMonarchCSV.mockReturnValue('csv,data');
+      monarchApi.uploadTransactions.mockResolvedValue(true);
+
+      const result = await uploadRogersBankToMonarch();
+
+      expect(result.success).toBe(true);
+      // Prompted only once for the shared category
+      expect(showMonarchCategorySelector).toHaveBeenCalledTimes(1);
+      // "Assign Once" must NOT persist a rule
+      expect(saveUserCategorySelection).not.toHaveBeenCalled();
+      // Both transactions get the chosen category this sync
+      expect(convertTransactionsToMonarchCSV).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ referenceNumber: 'REF1', resolvedMonarchCategory: 'Shopping' }),
+          expect.objectContaining({ referenceNumber: 'REF2', resolvedMonarchCategory: 'Shopping' }),
+        ]),
+        expect.any(String),
+        expect.any(Object),
+      );
+    });
+
+    test('should persist a rule for "Save as Rule" (assignmentType=rule)', async () => {
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+
+      calculateFromDateWithLookback.mockReturnValue('2024-01-01');
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
+      monarchApi.uploadBalance.mockResolvedValue(true);
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          activitySummary: {
+            totalCount: 1,
+            activities: [
+              {
+                referenceNumber: 'REF1',
+                activityStatus: 'APPROVED',
+                transactionAmount: -25.00,
+                description: 'Merchant A',
+                activityDate: '2024-01-10',
+                merchant: { categoryDescription: 'Unknown Category' },
+              },
+            ],
+          },
+        }),
+      });
+
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [{ name: 'Shopping' }] });
+
+      // First check needs manual selection; after "rule" persists, mapping resolves
+      applyCategoryMapping
+        .mockReturnValueOnce({
+          needsManualSelection: true,
+          bankCategory: 'Unknown Category',
+          suggestedCategory: 'Shopping',
+          similarityScore: 0.1,
+        })
+        .mockReturnValue('Shopping');
+
+      showMonarchCategorySelector.mockImplementation((bankCategory, callback) => {
+        callback({ id: 'cat1', name: 'Shopping', assignmentType: 'rule' });
+      });
+
+      const saveUserCategorySelection = jest.requireMock('../../src/mappers/category').saveUserCategorySelection;
+      convertTransactionsToMonarchCSV.mockReturnValue('csv,data');
+      monarchApi.uploadTransactions.mockResolvedValue(true);
+
+      const result = await uploadRogersBankToMonarch();
+
+      expect(result.success).toBe(true);
+      // "Save as Rule" persists the mapping
+      expect(saveUserCategorySelection).toHaveBeenCalledWith('Unknown Category', 'Shopping');
+    });
+
     test('should handle category selection cancellation', async () => {
       getRogersBankCredentials.mockReturnValue({
         authToken: 'test-token',

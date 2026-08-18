@@ -17,6 +17,7 @@ import { convertTransactionsToMonarchCSV } from '../utils/csv';
 import { showDatePickerWithOptionsPromise } from '../ui/components/datePicker';
 import { applyCategoryMapping, saveUserCategorySelection, calculateAllCategorySimilarities } from '../mappers/category';
 import { showMonarchCategorySelector } from '../ui/components/categorySelector';
+import { handleCategorySelection, resolveFromSession } from './common/categorySelection';
 import { showProgressDialog } from '../ui/components/progressDialog';
 import {
   getTransactionIdsFromArray,
@@ -206,6 +207,13 @@ async function resolveCategoriesForTransactions(transactions, options: ResolveCa
   // Track categories that have been resolved via "Skip All" to apply empty category
   let skipAllTriggered = false;
 
+  // Session maps for the current sync. 'rule' selections persist via
+  // saveUserCategorySelection and populate sessionMappings; 'once' selections
+  // populate oneTimeAssignments only (no persistence). Both keyed by
+  // upper-cased bank category so all matching transactions resolve this sync.
+  const sessionMappings = new Map<string, string>();
+  const oneTimeAssignments = new Map<string, string>();
+
   transactions.forEach((transaction) => {
     // Skip FEES transactions — they are auto-categorized as "Financial Fees"
     // and should never trigger manual category prompts
@@ -256,20 +264,29 @@ async function resolveCategoriesForTransactions(transactions, options: ResolveCa
         throw new Error(`Category selection cancelled for "${categoryToResolve.bankCategory}".`);
       }
 
+      // Interpret the selection: 'rule' persists via saveUserCategorySelection,
+      // 'once' applies to all matching transactions this sync without persisting.
+      const outcome = handleCategorySelection({
+        sourceKey: (categoryToResolve.bankCategory as string).toUpperCase(),
+        persistKey: categoryToResolve.bankCategory as string,
+        selection: selectedCategory,
+        sessionMappings,
+        oneTimeAssignments,
+        persist: (key, category) => saveUserCategorySelection(key, category),
+      });
+
       // Handle "Skip All (this sync)" response
-      if (selectedCategory.skipAll === true) {
+      if (outcome.skipAll) {
         debugLog('User chose "Skip All" - setting Uncategorized for all remaining Rogers Bank transactions');
         skipAllTriggered = true;
         break;
       }
 
       // Handle "Skip single" - don't save as rule, just continue to next
-      if (selectedCategory.skipped) {
+      if (outcome.skipped) {
         debugLog(`Skipped categorization for "${categoryToResolve.bankCategory}" (single transaction)`);
         continue;
       }
-
-      saveUserCategorySelection(categoryToResolve.bankCategory, selectedCategory.name as string);
     }
   }
 
@@ -290,6 +307,17 @@ async function resolveCategoriesForTransactions(transactions, options: ResolveCa
     if (transaction.activityClassification === 'CASH' && transaction.activityCategory === 'CASH') {
       debugLog(`Auto-categorizing CASH transaction as "Cash & ATM": ${transaction.merchant?.name || 'N/A'}`);
       return { ...transaction, resolvedMonarchCategory: 'Cash & ATM', originalBankCategory: bankCategory };
+    }
+
+    // Session selections (once > rule) apply to all matching transactions this
+    // sync, including one-time assignments that were intentionally not persisted.
+    const sessionCategory = resolveFromSession({
+      sourceKey: bankCategory.toUpperCase(),
+      oneTimeAssignments,
+      sessionMappings,
+    });
+    if (sessionCategory) {
+      return { ...transaction, resolvedMonarchCategory: sessionCategory, originalBankCategory: bankCategory };
     }
 
     const mappingResult = applyCategoryMapping(bankCategory, availableCategories);

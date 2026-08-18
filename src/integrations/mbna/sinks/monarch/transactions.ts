@@ -13,6 +13,7 @@ import { debugLog, stringSimilarity } from '../../../../core/utils';
 import { applyMerchantMapping } from '../../../../mappers/merchant';
 import { INTEGRATIONS } from '../../../../core/integrationCapabilities';
 import { getCategoryMapping, setCategoryMapping } from '../../../../services/common/configStore';
+import { handleCategorySelection, resolveFromSession } from '../../../../services/common/categorySelection';
 import { calculateAllCategorySimilarities } from '../../../../mappers/category';
 import { showMonarchCategorySelector } from '../../../../ui/components/categorySelector';
 import type { SimilarityInfo } from '../../../../types/monarch';
@@ -70,6 +71,7 @@ export interface DuplicateFilterResult {
 /** Category selection result from the category selector UI */
 interface CategorySelectionResult {
   name?: string;
+  assignmentType?: string;
   skipped?: boolean;
   skipAll?: boolean;
 }
@@ -272,6 +274,13 @@ export async function resolveMbnaCategories(
     debugLog('MBNA: Failed to fetch Monarch categories:', error);
   }
 
+  // Session maps for the current sync. Rule selections persist (setCategoryMapping)
+  // and populate sessionMappings; one-time selections populate oneTimeAssignments
+  // only (no persistence). Both are keyed by merchant so all same-merchant
+  // transactions are resolved this sync.
+  const sessionMappings = new Map<string, string>();
+  const oneTimeAssignments = new Map<string, string>();
+
   // Resolve categories: stored mappings → auto-match → collect for manual prompt
   const resolvedMap = new Map<number, string>(); // tx index → resolvedMonarchCategory
   const uniqueMerchants = new Map<string, { resolved?: string; needsManual?: boolean; exampleTx?: ProcessedMbnaTransaction }>();
@@ -348,22 +357,30 @@ export async function resolveMbnaCategories(
         throw new Error(`Category selection cancelled for "${merchant}".`);
       }
 
-      if (selectedCategory.skipAll === true) {
+      // Interpret the selection: 'rule' persists via setCategoryMapping, 'once'
+      // applies to all same-merchant transactions this sync without persisting.
+      const outcome = handleCategorySelection({
+        sourceKey: merchant,
+        selection: selectedCategory,
+        sessionMappings,
+        oneTimeAssignments,
+        persist: (key, category) => setCategoryMapping(INTEGRATIONS.MBNA, key, category),
+      });
+
+      if (outcome.skipAll) {
         debugLog('MBNA: User chose "Skip All" — setting Uncategorized for remaining');
         skipAllTriggered = true;
         uniqueMerchants.set(merchant, { resolved: 'Uncategorized' });
         continue;
       }
 
-      if (selectedCategory.skipped) {
+      if (outcome.skipped) {
         debugLog(`MBNA: Skipped categorization for "${merchant}"`);
         uniqueMerchants.set(merchant, { resolved: 'Uncategorized' });
         continue;
       }
 
-      // Save user selection for future syncs
-      setCategoryMapping(INTEGRATIONS.MBNA, merchant, selectedCategory.name!);
-      uniqueMerchants.set(merchant, { resolved: selectedCategory.name });
+      uniqueMerchants.set(merchant, { resolved: outcome.assigned });
     }
   } else if (merchantsNeedingManual.length > 0) {
     // No categories available — set Uncategorized
@@ -380,6 +397,18 @@ export async function resolveMbnaCategories(
     }
 
     const merchant = tx.merchant || '';
+
+    // Session selections (once > rule) apply to all same-merchant transactions
+    // this sync, even those not chosen as the example transaction.
+    const sessionCategory = resolveFromSession({
+      sourceKey: merchant,
+      oneTimeAssignments,
+      sessionMappings,
+    });
+    if (sessionCategory) {
+      return { ...tx, resolvedMonarchCategory: sessionCategory };
+    }
+
     const merchantInfo = uniqueMerchants.get(merchant);
     const category = merchantInfo?.resolved || 'Uncategorized';
     return { ...tx, resolvedMonarchCategory: category };
