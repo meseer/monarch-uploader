@@ -442,30 +442,18 @@ export async function fetchAndProcessInvestmentTransactions(
       return [];
     }
 
-    // Step 3: Filter out already-uploaded completed transactions
-    // Most investment transactions use unifiedStatus; only INTERNAL_TRANSFER uses status
-    const notYetUploadedTransactions = syncableTransactions.filter((tx) => {
-      const txId = getTransactionId(tx);
-      const isAlreadyUploaded = uploadedTransactionIds.has(txId);
-
-      // Determine if transaction is completed based on type
-      let isCompleted: boolean;
-      if (usesUnifiedStatus(tx)) {
-        isCompleted = (tx as Record<string, unknown>).unifiedStatus === 'COMPLETED';
-      } else {
-        isCompleted = tx.status === 'settled' || tx.status === 'completed';
-      }
-
-      // Skip only completed transactions that are already uploaded
-      if (isCompleted && isAlreadyUploaded) {
-        return false;
-      }
-      return true;
-    });
+    // Step 3: Filter out any already-uploaded transaction (completed OR pending) BEFORE
+    // categorization. Pending transaction IDs are stored after upload, so a previously-
+    // uploaded pending transaction that is still pending must not be re-categorized.
+    // Pending → settled transitions are handled separately by the reconciliation step
+    // (which operates on the raw fetch, not this deduplicated list).
+    const notYetUploadedTransactions = syncableTransactions.filter(
+      (tx) => !uploadedTransactionIds.has(getTransactionId(tx)),
+    );
 
     const uploadedSkipCount = syncableTransactions.length - notYetUploadedTransactions.length;
     if (uploadedSkipCount > 0) {
-      debugLog(`Skipped ${uploadedSkipCount} already-uploaded completed transactions`);
+      debugLog(`Skipped ${uploadedSkipCount} already-uploaded transactions`);
     }
 
     if (notYetUploadedTransactions.length === 0) {

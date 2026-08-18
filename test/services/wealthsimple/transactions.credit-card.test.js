@@ -699,6 +699,48 @@ describe('Wealthsimple Transaction Service - Credit Card', () => {
       expect(showMonarchCategorySelector).not.toHaveBeenCalled();
     });
 
+    it('should skip already-uploaded PENDING (authorized) transactions before categorization', async () => {
+      // Regression: an already-uploaded PENDING transaction that is still pending must
+      // NOT be re-categorized. Its ID is stored after the first upload, so the early
+      // dedup filter must skip it regardless of status (the final dedup by ID then
+      // prevents a duplicate, but only after categorization already happened).
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-pending-already-uploaded',
+          occurredAt: '2025-01-15T10:30:00.000000+00:00',
+          type: 'CREDIT_CARD',
+          subType: 'PURCHASE',
+          status: 'authorized', // still pending
+          spendMerchant: 'Uncategorized Merchant',
+          amount: 50.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [], categoryGroups: [] });
+      applyWealthsimpleCategoryMapping.mockReturnValue({
+        needsManualSelection: true,
+        bankCategory: 'Uncategorized Merchant',
+        suggestedCategory: 'Shopping',
+        similarityScore: 0.5,
+      });
+
+      const uploadedIds = new Set(['tx-pending-already-uploaded']);
+
+      const result = await fetchAndProcessCreditCardTransactions(
+        { ...mockConsolidatedAccount, includePendingTransactions: true },
+        '2025-01-01',
+        '2025-01-31',
+        { uploadedTransactionIds: uploadedIds },
+      );
+
+      // Transaction should be filtered out before categorization
+      expect(result).toEqual([]);
+      // Category selector must never be invoked for an already-uploaded pending transaction
+      expect(showMonarchCategorySelector).not.toHaveBeenCalled();
+    });
+
     it('should save category selection when rememberMapping=true', async () => {
       const mockRawTransactions = [
         {
