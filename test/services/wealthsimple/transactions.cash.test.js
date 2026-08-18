@@ -1119,6 +1119,40 @@ describe('Wealthsimple Transaction Service - Cash', () => {
       });
     });
 
+    it('should skip already-uploaded PENDING transactions before manual categorization', async () => {
+      // Regression: an already-uploaded CASH transaction that is still pending
+      // (unifiedStatus IN_PROGRESS) must NOT be re-shown for manual categorization.
+      // Its ID is stored after the first upload, so the early dedup filter must skip
+      // it regardless of status.
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: 'tx-pending-already-uploaded',
+          occurredAt: '2026-01-15T10:00:00.000000+00:00',
+          type: 'UNKNOWN_TYPE',
+          subType: 'UNKNOWN_SUBTYPE',
+          unifiedStatus: 'IN_PROGRESS', // still pending
+          amount: 50.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+
+      const uploadedIds = new Set(['tx-pending-already-uploaded']);
+
+      const result = await fetchAndProcessCashTransactions(
+        { ...mockCashAccount, includePendingTransactions: true },
+        '2026-01-01',
+        '2026-01-31',
+        { uploadedTransactionIds: uploadedIds },
+      );
+
+      // Transaction should be filtered out before categorization
+      expect(result).toEqual([]);
+      // Manual categorization dialog must never be invoked for an already-uploaded pending transaction
+      expect(showManualTransactionCategorization).not.toHaveBeenCalled();
+    });
+
     it('should throw error when user cancels manual categorization', async () => {
       const mockRawTransactions = [
         {

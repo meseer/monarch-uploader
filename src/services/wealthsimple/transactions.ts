@@ -369,16 +369,18 @@ export async function fetchAndProcessCreditCardTransactions(
       return [];
     }
 
-    const notYetUploadedTransactions = syncableTransactions.filter((tx) => {
-      const isSettled = tx.status === 'settled';
-      const isAlreadyUploaded = uploadedTransactionIds.has(getTransactionId(tx));
-      if (isSettled && isAlreadyUploaded) return false;
-      return true;
-    });
+    // Skip any already-uploaded transaction (settled OR pending) BEFORE categorization.
+    // Pending transaction IDs are stored after upload, so a previously-uploaded pending
+    // transaction that is still pending must not be re-categorized. Pending → settled
+    // transitions are handled separately by the reconciliation step (which operates on
+    // the raw fetch, not this deduplicated list).
+    const notYetUploadedTransactions = syncableTransactions.filter(
+      (tx) => !uploadedTransactionIds.has(getTransactionId(tx)),
+    );
 
     const uploadedSkipCount = syncableTransactions.length - notYetUploadedTransactions.length;
     if (uploadedSkipCount > 0) {
-      debugLog(`Skipped ${uploadedSkipCount} already-uploaded settled transactions`);
+      debugLog(`Skipped ${uploadedSkipCount} already-uploaded transactions`);
     }
 
     if (notYetUploadedTransactions.length === 0) {
@@ -450,17 +452,18 @@ export async function fetchAndProcessCashTransactions(
       return [];
     }
 
-    const notYetUploadedTransactions = syncableTransactions.filter((tx) => {
-      const uStatus = (tx as Record<string, unknown>).unifiedStatus as string | null | undefined;
-      const isCompleted = uStatus === 'COMPLETED';
-      const isAlreadyUploaded = uploadedTransactionIds.has(getTransactionId(tx));
-      if (isCompleted && isAlreadyUploaded) return false;
-      return true;
-    });
+    // Skip any already-uploaded transaction (completed OR pending) BEFORE categorization.
+    // Pending transaction IDs are stored after upload, so a previously-uploaded pending
+    // transaction that is still pending must not be re-categorized. Pending → settled
+    // transitions are handled separately by the reconciliation step (which operates on
+    // the raw fetch, not this deduplicated list).
+    const notYetUploadedTransactions = syncableTransactions.filter(
+      (tx) => !uploadedTransactionIds.has(getTransactionId(tx)),
+    );
 
     const uploadedSkipCount = syncableTransactions.length - notYetUploadedTransactions.length;
     if (uploadedSkipCount > 0) {
-      debugLog(`Skipped ${uploadedSkipCount} already-uploaded COMPLETED transactions`);
+      debugLog(`Skipped ${uploadedSkipCount} already-uploaded transactions`);
     }
 
     if (notYetUploadedTransactions.length === 0) {
@@ -742,15 +745,17 @@ export async function fetchAndProcessLineOfCreditTransactions(
 
     if (syncableTransactions.length === 0) return [];
 
-    const notYetUploadedTransactions = syncableTransactions.filter((tx) => {
-      const isCompleted = tx.status === 'settled' || tx.status === 'completed';
-      const isAlreadyUploaded = uploadedTransactionIds.has(getTransactionId(tx));
-      if (isCompleted && isAlreadyUploaded) return false;
-      return true;
-    });
+    // Skip any already-uploaded transaction (completed OR pending) BEFORE categorization.
+    // Pending transaction IDs are stored after upload, so a previously-uploaded pending
+    // transaction that is still pending must not be re-categorized. Pending → settled
+    // transitions are handled separately by the reconciliation step (which operates on
+    // the raw fetch, not this deduplicated list).
+    const notYetUploadedTransactions = syncableTransactions.filter(
+      (tx) => !uploadedTransactionIds.has(getTransactionId(tx)),
+    );
 
     const uploadedSkipCount = syncableTransactions.length - notYetUploadedTransactions.length;
-    if (uploadedSkipCount > 0) debugLog(`Skipped ${uploadedSkipCount} already-uploaded completed transactions`);
+    if (uploadedSkipCount > 0) debugLog(`Skipped ${uploadedSkipCount} already-uploaded transactions`);
 
     if (notYetUploadedTransactions.length === 0) {
       debugLog('No new transactions to process after filtering already-uploaded');
