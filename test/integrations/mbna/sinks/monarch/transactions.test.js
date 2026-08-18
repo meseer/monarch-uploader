@@ -374,6 +374,55 @@ describe('MBNA Transaction Processing', () => {
       expect(showMonarchCategorySelector).toHaveBeenCalledTimes(1);
     });
 
+    it('should NOT persist a rule for "Assign Once" but apply to all same-merchant tx this sync', async () => {
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({
+        categories: [{ name: 'Shopping', id: 'cat-1' }],
+      });
+      stringSimilarity.mockReturnValue(0.3);
+
+      showMonarchCategorySelector.mockImplementation((_merchant, callback) => {
+        callback({ name: 'Shopping', assignmentType: 'once' });
+      });
+
+      const transactions = [
+        { merchant: 'Amazon.ca', autoCategory: null, date: '2026-02-15', amount: -50 },
+        { merchant: 'Amazon.ca', autoCategory: null, date: '2026-02-16', amount: -30 },
+      ];
+
+      const result = await resolveMbnaCategories(transactions, 'acc-123');
+
+      // Both same-merchant transactions get the chosen category this sync
+      expect(result[0].resolvedMonarchCategory).toBe('Shopping');
+      expect(result[1].resolvedMonarchCategory).toBe('Shopping');
+      // Prompted only once (dedup by merchant)
+      expect(showMonarchCategorySelector).toHaveBeenCalledTimes(1);
+      // "Assign Once" must NOT persist a rule
+      expect(setCategoryMapping).not.toHaveBeenCalled();
+    });
+
+    it('should persist a rule for "Save as Rule" (assignmentType=rule)', async () => {
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({
+        categories: [{ name: 'Shopping', id: 'cat-1' }],
+      });
+      stringSimilarity.mockReturnValue(0.3);
+
+      showMonarchCategorySelector.mockImplementation((_merchant, callback) => {
+        callback({ name: 'Shopping', assignmentType: 'rule' });
+      });
+
+      const transactions = [
+        { merchant: 'Amazon.ca', autoCategory: null, date: '2026-02-15', amount: -50 },
+        { merchant: 'Amazon.ca', autoCategory: null, date: '2026-02-16', amount: -30 },
+      ];
+
+      const result = await resolveMbnaCategories(transactions, 'acc-123');
+
+      expect(result[0].resolvedMonarchCategory).toBe('Shopping');
+      expect(result[1].resolvedMonarchCategory).toBe('Shopping');
+      // "Save as Rule" persists the mapping
+      expect(setCategoryMapping).toHaveBeenCalledWith('mbna', 'Amazon.ca', 'Shopping');
+    });
+
     it('should read skipCategorization from account data', async () => {
       accountService.getAccountData.mockReturnValue({ skipCategorization: true });
 
