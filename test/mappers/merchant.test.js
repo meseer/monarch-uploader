@@ -65,6 +65,24 @@ describe('Merchant Mapping Utilities', () => {
       expect(applyMerchantMapping('NOTSPORTPY*SOMETHING')).toBe('Notsportpy*something');
     });
 
+    test('should remove PAYPAL * prefix (PayPal transactions)', () => {
+      expect(applyMerchantMapping('Paypal *Parclick')).toBe('Parclick');
+      expect(applyMerchantMapping('PAYPAL *SOME MERCHANT')).toBe('Some Merchant');
+      expect(applyMerchantMapping('paypal *lowercase shop')).toBe('Lowercase Shop');
+      // Bare PayPal is preserved (no prefix to strip)
+      expect(applyMerchantMapping('PAYPAL')).toBe('Paypal');
+      // Should not affect merchants that merely contain PayPal
+      expect(applyMerchantMapping('NOTPAYPAL *SOMETHING')).toBe('Notpaypal *something');
+    });
+
+    test('should remove PP * prefix (PayPal short-form transactions)', () => {
+      expect(applyMerchantMapping('PP *UBER EATS')).toBe('Uber Eats');
+      expect(applyMerchantMapping('pp *some merchant')).toBe('Some Merchant');
+      expect(applyMerchantMapping('Pp *Parclick')).toBe('Parclick');
+      // Should not affect merchants that merely contain PP
+      expect(applyMerchantMapping('SHOPPING PP STORE')).toBe('Shopping Pp Store');
+    });
+
     test('should remove CPI*CPI* prefix (CPI double-prefix vending transactions)', () => {
       expect(applyMerchantMapping('CPI*CPI*CANTEEN VENDIN')).toBe('Canteen Vendin');
       expect(applyMerchantMapping('cpi*cpi*some merchant')).toBe('Some Merchant');
@@ -314,8 +332,8 @@ describe('Merchant Mapping Utilities', () => {
         { input: 'SQ *CORNER COFFEE SHOP', expected: 'Corner Coffee Shop' },
         // No prefix � asterisk strip � 'AMZN MKTP US' � 'Amzn Mktp Us'
         { input: 'AMZN MKTP US*ABC123DEF', expected: 'Amzn Mktp Us' },
-        // Not Amazon/AMZN so asterisk NOT stripped, title case applied
-        { input: 'PAYPAL *MERCHANTNAME', expected: 'Paypal *merchantname' },
+        // PAYPAL * prefix removed, leaving the underlying merchant
+        { input: 'PAYPAL *MERCHANTNAME', expected: 'Merchantname' },
         // Not Amazon/AMZN so asterisk NOT stripped, title case applied
         { input: 'GOOGLE *YOUTUBE PREMIUM', expected: 'Google *youtube Premium' },
       ];
