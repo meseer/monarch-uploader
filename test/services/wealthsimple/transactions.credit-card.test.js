@@ -729,6 +729,84 @@ describe('Wealthsimple Transaction Service - Credit Card', () => {
       expect(showMonarchCategorySelector).not.toHaveBeenCalled();
     });
 
+    it('should skip a settled transaction whose ID gained a suffix after settling', async () => {
+      // Regression: Wealthsimple appends one dash-separated segment to the
+      // externalCanonicalId when card activity settles. Without variant-aware
+      // dedup, the settled version looks brand new and the user is prompted to
+      // categorize the same purchase again.
+      const pendingId = 'card-activity-00000000527000993851-VI-00-0306231535741989-QIRIAS';
+      const settledId = `${pendingId}-0tk4pfcsob83`;
+
+      const mockRawTransactions = [
+        {
+          externalCanonicalId: settledId,
+          occurredAt: '2025-01-15T10:30:00.000000+00:00',
+          type: 'CREDIT_CARD',
+          subType: 'PURCHASE',
+          status: 'settled',
+          spendMerchant: 'Settled Merchant Name',
+          amount: 52.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [], categoryGroups: [] });
+      applyWealthsimpleCategoryMapping.mockReturnValue({
+        needsManualSelection: true,
+        bankCategory: 'Settled Merchant Name',
+        suggestedCategory: 'Shopping',
+        similarityScore: 0.5,
+      });
+
+      // Only the PENDING ID was stored on the previous sync
+      const uploadedIds = new Set([pendingId]);
+
+      const result = await fetchAndProcessCreditCardTransactions(
+        { ...mockConsolidatedAccount, includePendingTransactions: true },
+        '2025-01-01',
+        '2025-01-31',
+        { uploadedTransactionIds: uploadedIds },
+      );
+
+      expect(result).toEqual([]);
+      expect(showMonarchCategorySelector).not.toHaveBeenCalled();
+    });
+
+    it('should still process an unrelated transaction that merely shares a prefix-like ID', async () => {
+      const pendingId = 'card-activity-00000000527000993851-VI-00-0306231535741989-QIRIAS';
+
+      const mockRawTransactions = [
+        {
+          // Two extra segments — NOT a settled variant, must be treated as new
+          externalCanonicalId: `${pendingId}-aaa-bbb`,
+          occurredAt: '2025-01-16T10:30:00.000000+00:00',
+          type: 'CREDIT_CARD',
+          subType: 'PURCHASE',
+          status: 'settled',
+          spendMerchant: 'Different Merchant',
+          amount: 10.00,
+          amountSign: 'negative',
+        },
+      ];
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue(mockRawTransactions);
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [], categoryGroups: [] });
+      applyWealthsimpleCategoryMapping.mockReturnValue('Shopping');
+
+      const uploadedIds = new Set([pendingId]);
+
+      const result = await fetchAndProcessCreditCardTransactions(
+        { ...mockConsolidatedAccount, includePendingTransactions: true },
+        '2025-01-01',
+        '2025-01-31',
+        { uploadedTransactionIds: uploadedIds },
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe(`${pendingId}-aaa-bbb`);
+    });
+
     it('should save category selection when rememberMapping=true', async () => {
       const mockRawTransactions = [
         {

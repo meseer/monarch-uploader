@@ -11,7 +11,6 @@ import wealthsimpleApi from '../api/wealthsimple';
 import {
   resolveWealthsimpleAccountMapping,
   uploadWealthsimpleBalance,
-  uploadWealthsimpleTransactions,
   markAccountAsSkipped,
   syncAccountListWithAPI,
   getAccountData,
@@ -21,6 +20,11 @@ import {
   type ConsolidatedAccount,
 } from './wealthsimple/account';
 import {
+  fetchRawTransactions,
+  executePendingReconciliationStep,
+  executeTransactionSyncStep,
+} from './wealthsimple/syncSteps';
+import {
   getDefaultDateRange,
   extractDateFromISO,
   accountNeedsBalanceReconstruction,
@@ -29,9 +33,8 @@ import {
   reconstructBalanceFromTransactions,
 } from './wealthsimple/balance';
 import { isInvestmentAccount, processAccountPositions, processCashPositions } from './wealthsimple/positions';
-import { fetchAndProcessTransactions, reconcileWealthsimpleFetchedPending, formatReconciliationMessage } from './wealthsimple/transactions';
-import { type ReconciliationResult } from './wealthsimple/transactionsReconciliation';
-import { fetchMonarchPendingTransactions } from './common/pendingReconciliation';
+import { fetchAndProcessTransactions, formatReconciliationMessage } from './wealthsimple/transactions';
+import { fetchMonarchPendingTransactions, type FetchPendingResult } from './common/pendingReconciliation';
 import { showDatePickerWithOptionsPromise } from '../ui/components/datePicker';
 import { showProgressDialog } from '../ui/components/progressDialog';
 
@@ -253,25 +256,55 @@ function calculateDaysBetween(fromDate: string, toDate: string): number {
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 }
 
+/** Result of the Phase 1 Monarch pending fetch */
+interface Phase1Outcome {
+  /** Phase 1 result, or null when the fetch failed */
+  result: FetchPendingResult | null;
+  /** Error message when the fetch failed, otherwise null */
+  error: string | null;
+  /** Fetch start date, possibly extended to cover old pending transactions */
+  fromDate: string;
+}
+
 /**
- * Format transaction count message for display in step status
+ * Phase 1: Fetch Monarch pending transactions before the Wealthsimple fetch.
+ *
+ * Runs first so the source fetch window can be extended to cover the oldest
+ * pending transaction. Failures are returned (not thrown) so the caller can
+ * report the pending reconciliation step as an error while still syncing
+ * balance/positions.
+ *
+ * @param accountId - Wealthsimple account ID (for logging)
+ * @param monarchAccountId - Monarch account ID
+ * @param fromDate - Current fetch start date
+ * @param retentionDays - Account transaction retention window in days
+ * @returns Phase 1 outcome with the (possibly extended) fromDate
  */
-function formatTransactionCountMessage(synced: number, skipped: number): string {
-  const parts: string[] = [];
+async function executePhase1PendingFetch(
+  accountId: string,
+  monarchAccountId: string,
+  fromDate: string,
+  retentionDays: number,
+): Promise<Phase1Outcome> {
+  try {
+    debugLog(`[ws-upload] Phase 1: Fetching Monarch pending txs for ${accountId} (retentionDays=${retentionDays})`);
+    const result = await fetchMonarchPendingTransactions(monarchAccountId, retentionDays);
 
-  if (synced > 0) {
-    parts.push(`${synced} synced`);
+    let effectiveFromDate = fromDate;
+    if (result.oldestPendingDate) {
+      const extendedFromDate = computeExtendedFromDate(fromDate, result.oldestPendingDate, retentionDays);
+      if (extendedFromDate !== fromDate) {
+        debugLog(`[ws-upload] Extended fetch window from ${fromDate} to ${extendedFromDate} (oldest pending: ${result.oldestPendingDate})`);
+        effectiveFromDate = extendedFromDate;
+      }
+    }
+
+    return { result, error: null, fromDate: effectiveFromDate };
+  } catch (phase1Error: unknown) {
+    const message = (phase1Error as Error).message || 'Failed to fetch pending transactions';
+    debugLog('[ws-upload] Phase 1 error (reported on pending step, sync continues):', phase1Error);
+    return { result: null, error: message, fromDate };
   }
-
-  if (skipped > 0) {
-    parts.push(`${skipped} skipped`);
-  }
-
-  if (parts.length === 0) {
-    return 'No transactions';
-  }
-
-  return parts.join(', ');
 }
 
 /**
@@ -301,12 +334,14 @@ export function buildSyncStepsForAccount(consolidatedAccount: ConsolidatedAccoun
   const steps: Array<{ key: string; name: string }> = [];
   const accountType = consolidatedAccount.wealthsimpleAccount?.type || '';
 
-  if (WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType)) {
-    steps.push({ key: 'transactions', name: 'Transaction sync' });
-  }
-
+  // Pending reconciliation runs BEFORE transaction upload so settled transaction
+  // IDs land in the dedup store and the settled version is not re-uploaded.
   if (WEALTHSIMPLE_PENDING_RECONCILIATION_TYPES.has(accountType)) {
     steps.push({ key: 'pendingReconciliation', name: 'Pending reconciliation' });
+  }
+
+  if (WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType)) {
+    steps.push({ key: 'transactions', name: 'Transaction sync' });
   }
 
   if (accountType === 'CREDIT_CARD') {
@@ -557,104 +592,69 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(
 
     // Phase 1: Fetch Monarch pending transactions BEFORE source fetch
     // This allows us to extend the source fetch window to cover old pending transactions
-    let phase1Result: Awaited<ReturnType<typeof fetchMonarchPendingTransactions>> | null = null;
     const needsReconciliation = WEALTHSIMPLE_PENDING_RECONCILIATION_TYPES.has(accountType);
+    let phase1Result: FetchPendingResult | null = null;
+    let phase1Error: string | null = null;
 
     if (needsReconciliation) {
-      try {
-        const retentionDays = consolidatedAccount.transactionRetentionDays ?? TRANSACTION_RETENTION_DEFAULTS.DAYS;
-        debugLog(`[ws-upload] Phase 1: Fetching Monarch pending txs for ${account.id} (retentionDays=${retentionDays})`);
-        phase1Result = await fetchMonarchPendingTransactions(monarchAccount.id, retentionDays);
-
-        if (phase1Result.oldestPendingDate) {
-          const retentionForExtension = consolidatedAccount.transactionRetentionDays ?? TRANSACTION_RETENTION_DEFAULTS.DAYS;
-          const extendedFromDate = computeExtendedFromDate(actualFromDate, phase1Result.oldestPendingDate, retentionForExtension);
-          if (extendedFromDate !== actualFromDate) {
-            debugLog(`[ws-upload] Extended fetch window from ${actualFromDate} to ${extendedFromDate} (oldest pending: ${phase1Result.oldestPendingDate})`);
-            actualFromDate = extendedFromDate;
-          }
-        }
-      } catch (phase1Error: unknown) {
-        debugLog('[ws-upload] Phase 1 error (non-fatal, continuing):', phase1Error);
-      }
+      const retentionDays = consolidatedAccount.transactionRetentionDays ?? TRANSACTION_RETENTION_DEFAULTS.DAYS;
+      const phase1 = await executePhase1PendingFetch(account.id, monarchAccount.id, actualFromDate, retentionDays);
+      phase1Result = phase1.result;
+      phase1Error = phase1.error;
+      actualFromDate = phase1.fromDate;
     }
 
-    // Step 1: Transaction sync (using potentially extended actualFromDate)
-    let rawWealthsimpleTransactions: unknown[] | null = null;
-    let transactionsSyncedCount = 0;
+    // Step 1: Fetch raw Wealthsimple transactions (using potentially extended actualFromDate)
+    let rawWealthsimpleTransactions: unknown[] = [];
+    const supportsTransactions = WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType);
 
-    if (WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType)) {
-      progressDialog.updateStepStatus(account.id, 'transactions', 'processing', 'Fetching from WS...');
-
-      try {
-        rawWealthsimpleTransactions = (await wealthsimpleApi.fetchTransactions(account.id, actualFromDate)) as unknown[];
-        const fetchedCount = rawWealthsimpleTransactions?.length || 0;
-        debugLog(`Fetched ${fetchedCount} raw transactions for account ${account.id}`);
-        progressDialog.updateStepStatus(account.id, 'transactions', 'processing', `Fetched ${fetchedCount}`);
-      } catch (fetchError: unknown) {
-        debugLog('Error fetching raw transactions:', fetchError);
-        rawWealthsimpleTransactions = [];
-      }
-
-      const onTransactionProgress = (stage: string) => {
-        progressDialog.updateStepStatus(account.id, 'transactions', 'processing', stage);
-      };
-
-      const transactionsResult = await uploadWealthsimpleTransactions(
-        account.id,
-        monarchAccount.id,
-        actualFromDate,
-        toDate,
-        { rawTransactions: rawWealthsimpleTransactions, onProgress: onTransactionProgress },
-      );
-
-      if (transactionsResult && transactionsResult.success) {
-        transactionsSyncedCount = transactionsResult.synced || 0;
-        const txMessage = formatTransactionCountMessage(transactionsResult.synced, transactionsResult.skipped);
-        progressDialog.updateStepStatus(account.id, 'transactions', 'success', txMessage);
-      } else if (transactionsResult && transactionsResult.unsupported) {
-        progressDialog.updateStepStatus(account.id, 'transactions', 'skipped', 'Not supported');
-      } else {
-        const errorMsg = transactionsResult?.error || 'Sync failed';
-        progressDialog.updateStepStatus(account.id, 'transactions', 'error', errorMsg);
-      }
+    if (supportsTransactions) {
+      rawWealthsimpleTransactions = await fetchRawTransactions(account.id, actualFromDate, progressDialog);
     }
 
-    // Step 2: Pending transaction reconciliation (Phase 2 with pre-fetched Monarch data)
+    // Step 2: Pending reconciliation (Phase 2) — MUST run BEFORE the transaction upload
+    // so settled transaction IDs are recorded in the dedup store and the settled
+    // version is not uploaded to Monarch as a brand-new duplicate.
     if (needsReconciliation) {
-      progressDialog.updateStepStatus(account.id, 'pendingReconciliation', 'processing', 'Reconciling pending');
-
       try {
-        let reconciliationResult: ReconciliationResult;
+        const reconciliationResult = await executePendingReconciliationStep({
+          accountId: account.id,
+          accountType,
+          phase1Result,
+          phase1Error,
+          rawTransactions: rawWealthsimpleTransactions,
+          stripStoreNumbers: consolidatedAccount.stripStoreNumbers !== false,
+          progressDialog,
+        });
 
-        if (phase1Result && phase1Result.noPendingTag) {
-          reconciliationResult = { success: true, settled: 0, cancelled: 0, failed: 0, error: null, noPendingTag: true } as ReconciliationResult;
-        } else if (phase1Result && (phase1Result.noPendingTransactions || phase1Result.monarchPendingTransactions.length === 0)) {
-          reconciliationResult = { success: true, settled: 0, cancelled: 0, failed: 0, error: null, noPendingTransactions: true } as ReconciliationResult;
-        } else if (phase1Result && phase1Result.pendingTag) {
-          reconciliationResult = await reconcileWealthsimpleFetchedPending(
-            phase1Result.pendingTag,
-            phase1Result.monarchPendingTransactions,
-            (rawWealthsimpleTransactions || []) as Record<string, unknown>[],
-            accountType,
-          );
-        } else {
-          // Phase 1 failed or wasn't run — report as no pending
-          reconciliationResult = { success: true, settled: 0, cancelled: 0, failed: 0, error: null, noPendingTransactions: true } as ReconciliationResult;
+        // Phase 1 failures already report their own error status
+        if (phase1Result) {
+          const reconciliationMessage = formatReconciliationMessage(reconciliationResult);
+          const reconciliationStatus = reconciliationResult.success ? 'success' : 'error';
+          progressDialog.updateStepStatus(account.id, 'pendingReconciliation', reconciliationStatus, reconciliationMessage);
         }
-
-        const reconciliationMessage = formatReconciliationMessage(reconciliationResult as ReconciliationResult) as string;
-        const reconciliationStatus = reconciliationResult.success ? 'success' : 'error';
-
-        progressDialog.updateStepStatus(account.id, 'pendingReconciliation', reconciliationStatus, reconciliationMessage);
-        debugLog(`Pending reconciliation completed for ${account.id}:`, reconciliationResult);
       } catch (reconciliationError: unknown) {
         debugLog('Error during pending transaction reconciliation:', reconciliationError);
         progressDialog.updateStepStatus(account.id, 'pendingReconciliation', 'error', (reconciliationError as Error).message);
       }
     }
 
-    // Step 3: Credit limit sync
+    // Step 3: Transaction sync (skips IDs recorded by reconciliation above)
+    let transactionsSyncedCount = 0;
+
+    if (supportsTransactions) {
+      const txStepResult = await executeTransactionSyncStep({
+        accountId: account.id,
+        monarchAccountId: monarchAccount.id,
+        fromDate: actualFromDate,
+        toDate,
+        rawTransactions: rawWealthsimpleTransactions,
+        progressDialog,
+      });
+      transactionsSyncedCount = txStepResult.synced;
+    }
+
+    // Step 4: Credit limit sync
     if (accountType === 'CREDIT_CARD') {
       progressDialog.updateStepStatus(account.id, 'creditLimit', 'processing', 'Syncing credit limit');
 
@@ -674,7 +674,7 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(
       }
     }
 
-    // Step 4: Balance upload
+    // Step 5: Balance upload
     progressDialog.updateStepStatus(account.id, 'balance', 'processing', 'Uploading balance');
 
     const balanceSuccess = await uploadWealthsimpleBalance(
@@ -716,7 +716,7 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(
       return { success: false };
     }
 
-    // Step 5: Position sync (for investment accounts only)
+    // Step 6: Position sync (for investment accounts only)
     if (isInvestmentAccount(accountType)) {
       if (monarchAccount.isManual && monarchAccount.manualInvestmentsTrackingMethod !== 'holdings') {
         progressDialog.updateStepStatus(account.id, 'positions', 'skipped', 'Manual accounts without holdings tracking');
@@ -749,7 +749,7 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(
       }
     }
 
-    // Step 6: Cash sync (for investment accounts only)
+    // Step 7: Cash sync (for investment accounts only)
     if (isInvestmentAccount(accountType)) {
       if (monarchAccount.isManual && monarchAccount.manualInvestmentsTrackingMethod !== 'holdings') {
         progressDialog.updateStepStatus(account.id, 'cashSync', 'skipped', 'Manual accounts without holdings tracking');

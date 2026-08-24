@@ -8,7 +8,8 @@ import monarchApi from '../../api/monarch';
 import wealthsimpleApi from '../../api/wealthsimple';
 import { INVESTMENT_TRANSACTION_RULES } from './transactionsInvestment';
 import { CASH_TRANSACTION_RULES } from './transactionRules';
-import { convertToLocalDate } from './transactionsHelpers';
+import { convertToLocalDate, processCreditCardTransaction } from './transactionsHelpers';
+import { resolveWsTransactionByPendingId } from './transactionIdMatching';
 import type { WealthsimpleTransaction, ExtendedOrder } from './transactionRulesHelpers';
 
 /**
@@ -267,6 +268,44 @@ export async function regenerateSettledNotes(
   wsTx: Record<string, unknown>,
   prefetchedEnrichment?: Map<string, unknown>,
 ): Promise<string | null> {
+  const ruleResult = await applySettledTransactionRules(wsTx, prefetchedEnrichment);
+
+  if (!ruleResult) {
+    return null;
+  }
+
+  const notes = ruleResult.notes || '';
+
+  if (!notes) {
+    debugLog(`[ws-reconciliation:notes] Rule "${ruleResult.ruleId}" produced empty notes`);
+    return null;
+  }
+
+  debugLog(`[ws-reconciliation:notes] Regenerated notes via rule "${ruleResult.ruleId}": "${notes.substring(0, 80)}..."`);
+  return notes;
+}
+
+/** Result of running the rules engine against a settled transaction */
+interface SettledRuleResult {
+  ruleId: string;
+  merchant?: string;
+  notes?: string;
+}
+
+/**
+ * Run the transaction rules engine against a settled transaction.
+ *
+ * Shared by notes regeneration and merchant-name refresh so the rules
+ * engine is only matched once per settled transaction.
+ *
+ * @param wsTx - Settled Wealthsimple transaction
+ * @param prefetchedEnrichment - Optional pre-fetched enrichment map
+ * @returns Rule result (id, merchant, notes) or null when no rule matched
+ */
+async function applySettledTransactionRules(
+  wsTx: Record<string, unknown>,
+  prefetchedEnrichment?: Map<string, unknown>,
+): Promise<SettledRuleResult | null> {
   const tx = wsTx as unknown as WealthsimpleTransaction;
 
   // Try investment rules first (more specific), then cash rules
@@ -301,15 +340,60 @@ export async function regenerateSettledNotes(
   }
 
   const result = matchedRule.process(tx, enrichmentMap);
-  const notes = result.notes || '';
 
-  if (!notes) {
-    debugLog(`[ws-reconciliation:notes] Rule "${matchedRule.id}" produced empty notes`);
+  return {
+    ruleId: matchedRule.id,
+    merchant: result.merchant,
+    notes: result.notes,
+  };
+}
+
+/**
+ * Resolve the merchant name for a settled transaction.
+ *
+ * Wealthsimple frequently changes `spendMerchant` between the authorization
+ * and settlement records (e.g. a generic acquirer descriptor becomes the real
+ * merchant name), so the Monarch merchant name is refreshed on settle.
+ *
+ * Deliberately narrow: only card spend activity (the transactions whose
+ * `spendMerchant` actually changes at settlement) is considered. Transactions
+ * without a `spendMerchant` derive their merchant deterministically from
+ * type/subType, which do not change, so refreshing them would only risk
+ * overwriting a good name with a placeholder.
+ *
+ * Credit card purchases have no rules-engine entry — they are processed by
+ * `processCreditCardTransaction`, so that path is used for CREDIT_CARD accounts.
+ *
+ * @param wsTx - Settled Wealthsimple transaction
+ * @param accountType - WS account type
+ * @param ruleResult - Rules-engine result (null when no rule matched)
+ * @param stripStoreNumbers - Account setting for merchant name cleanup
+ * @returns Merchant name, or null when it should not be refreshed
+ */
+function resolveSettledMerchantName(
+  wsTx: Record<string, unknown>,
+  accountType: string,
+  ruleResult: SettledRuleResult | null,
+  stripStoreNumbers: boolean,
+): string | null {
+  const spendMerchant = wsTx.spendMerchant;
+  if (typeof spendMerchant !== 'string' || spendMerchant.trim() === '') {
     return null;
   }
 
-  debugLog(`[ws-reconciliation:notes] Regenerated notes via rule "${matchedRule.id}": "${notes.substring(0, 80)}..."`);
-  return notes;
+  if (ruleResult?.merchant) {
+    return ruleResult.merchant;
+  }
+
+  if (accountType === 'CREDIT_CARD') {
+    const processed = processCreditCardTransaction(
+      wsTx as unknown as WealthsimpleTransaction,
+      { stripStoreNumbers },
+    );
+    return processed.merchant || null;
+  }
+
+  return null;
 }
 
 /**
@@ -375,32 +459,148 @@ export interface ReconciliationResult {
   cancelled: number;
   failed: number;
   error: string | null;
+  /**
+   * Current (settled) Wealthsimple transaction IDs for every reconciled transaction.
+   * The caller persists these to the dedup store so the settled version is not
+   * re-uploaded as a new transaction. Mirrors the common reconciliation contract.
+   */
+  settledRefIds: string[];
   noPendingTag?: boolean;
   noPendingTransactions?: boolean;
 }
 
+/** Options for reconcileWealthsimpleFetchedPending */
+export interface WealthsimpleReconcileOptions {
+  /** Account setting controlling merchant name cleanup (default: true) */
+  stripStoreNumbers?: boolean;
+}
+
+/** Build an empty reconciliation result */
+function emptyReconciliationResult(): ReconciliationResult {
+  return { success: true, settled: 0, cancelled: 0, failed: 0, error: null, settledRefIds: [] };
+}
+
 /**
- * Reconcile pending transactions for a Wealthsimple account
+ * Update a Monarch pending transaction to reflect its settled Wealthsimple counterpart.
+ *
+ * Applies (in this order): notes + date, merchant name, amount, then tag removal.
+ * Amount/date/merchant are only sent when they actually changed to keep the
+ * number of Monarch mutations minimal.
+ *
+ * @param params - Settle parameters
+ * @returns void
  */
+async function settleMonarchTransaction({
+  monarchTx,
+  wsTx,
+  wsTransactionId,
+  accountType,
+  stripStoreNumbers,
+}: {
+  monarchTx: Record<string, unknown>;
+  wsTx: Record<string, unknown>;
+  wsTransactionId: string;
+  accountType: string;
+  stripStoreNumbers: boolean;
+}): Promise<void> {
+  const monarchTxId = monarchTx.id as string;
+  const notes = (monarchTx.notes as string) || '';
+  const ownerUserId = (monarchTx.ownedByUser as Record<string, unknown>)?.id || null;
+
+  const isNegative = wsTx.amountSign === 'negative';
+  const settledAmount = isNegative ? -Math.abs(wsTx.amount as number) : Math.abs(wsTx.amount as number);
+
+  let cleanedNotes = cleanSystemNotesFromNotes(notes);
+  if (wsTx.type === 'DIVIDEND') {
+    cleanedNotes = updateSettledDividendNotes(cleanedNotes);
+  }
+
+  // Fetch enrichment data once and share it between rules processing
+  // and settlement date computation to avoid duplicate API calls.
+  let enrichmentMap: Map<string, unknown> = new Map();
+  try {
+    enrichmentMap = await fetchEnrichmentForTransaction(wsTx);
+  } catch (enrichError) {
+    debugLog(`[ws-reconciliation] Failed to fetch enrichment for ${wsTransactionId}:`, enrichError);
+  }
+
+  // Run the rules engine once for both notes and merchant name.
+  // Fill prices/quantities that were 0 while pending become available on settle.
+  let ruleResult: SettledRuleResult | null = null;
+  try {
+    ruleResult = await applySettledTransactionRules(wsTx, enrichmentMap);
+  } catch (ruleError) {
+    debugLog(`[ws-reconciliation] Failed to apply rules for ${wsTransactionId}:`, ruleError);
+  }
+
+  const regeneratedNotes = ruleResult?.notes || null;
+  if (regeneratedNotes && !cleanedNotes.includes(regeneratedNotes)) {
+    debugLog(`[ws-reconciliation] Updating notes for ${wsTransactionId}: old="${cleanedNotes.substring(0, 60)}" new="${regeneratedNotes.substring(0, 60)}"`);
+    cleanedNotes = regeneratedNotes;
+  }
+
+  // Compute settlement date — may differ from submission date for limit orders, options, etc.
+  const settledDate = getSettlementDate(wsTx, enrichmentMap);
+  const currentDate = monarchTx.date as string | undefined;
+  const dateChanged = settledDate !== null && settledDate !== currentDate;
+
+  const notesUpdatePayload: Record<string, unknown> = {
+    notes: cleanedNotes,
+    ownerUserId,
+  };
+  if (dateChanged) {
+    notesUpdatePayload.date = settledDate;
+    debugLog(`[ws-reconciliation] Updating date for ${wsTransactionId}: ${currentDate} → ${settledDate}`);
+  }
+
+  await monarchApi.updateTransaction(monarchTxId, notesUpdatePayload);
+
+  // Wealthsimple often replaces a generic authorization descriptor with the real
+  // merchant name once the transaction settles, so refresh it in Monarch.
+  const settledMerchant = resolveSettledMerchantName(wsTx, accountType, ruleResult, stripStoreNumbers);
+  const currentMerchant = (monarchTx.merchant as Record<string, unknown> | undefined)?.name as string | undefined;
+  if (settledMerchant && settledMerchant !== currentMerchant) {
+    debugLog(`[ws-reconciliation] Updating merchant for ${wsTransactionId}: "${currentMerchant}" → "${settledMerchant}"`);
+    await monarchApi.updateTransaction(monarchTxId, {
+      name: settledMerchant,
+      ownerUserId,
+    });
+  }
+
+  if (monarchTx.amount !== settledAmount) {
+    await monarchApi.updateTransaction(monarchTxId, {
+      amount: settledAmount,
+      ownerUserId,
+    });
+  }
+
+  await monarchApi.setTransactionTags(monarchTxId, []);
+}
+
 /**
  * Phase 2: Reconcile pre-fetched Monarch pending transactions against Wealthsimple data.
  *
  * Uses externalCanonicalId-based matching (not hash-based like the common service).
- * Accepts pre-fetched pendingTag and monarchPendingTransactions from the shared Phase 1.
+ * Because Wealthsimple appends a suffix segment to the ID when card activity
+ * settles, lookups fall back to a conservative pending → settled variant match
+ * (see `transactionIdMatching`).
  *
  * @param pendingTag - Monarch "Pending" tag object
  * @param monarchPendingTransactions - Pre-fetched Monarch transactions with Pending tag
  * @param wealthsimpleTransactions - Current WS transactions (with extended date range)
  * @param accountType - WS account type for status determination
- * @returns Reconciliation result
+ * @param options - Reconciliation options (merchant cleanup settings)
+ * @returns Reconciliation result including settledRefIds
  */
 export async function reconcileWealthsimpleFetchedPending(
   pendingTag: { id: string; name: string },
   monarchPendingTransactions: Array<Record<string, unknown>>,
   wealthsimpleTransactions: Record<string, unknown>[],
   accountType = 'CREDIT_CARD',
+  options: WealthsimpleReconcileOptions = {},
 ): Promise<ReconciliationResult> {
-  const result: ReconciliationResult = { success: true, settled: 0, cancelled: 0, failed: 0, error: null };
+  const result = emptyReconciliationResult();
+  const stripStoreNumbers = options.stripStoreNumbers !== false;
 
   try {
     debugLog('[ws-reconciliation:phase2] Starting reconciliation', {
@@ -425,22 +625,24 @@ export async function reconcileWealthsimpleFetchedPending(
         const monarchTxId = monarchTx.id as string;
         const notes = (monarchTx.notes as string) || '';
 
-        const wsTransactionId = extractTransactionIdFromNotes(notes);
+        const pendingId = extractTransactionIdFromNotes(notes);
 
-        if (!wsTransactionId) {
+        if (!pendingId) {
           debugLog(`[ws-reconciliation:phase2] Could not extract WS ID from notes: "${notes}", skipping`);
           continue;
         }
 
-        const wsTx = wsTransactionMap.get(wsTransactionId);
+        // Resolve exactly, or via the pending → settled ID suffix variant
+        const match = resolveWsTransactionByPendingId(wsTransactionMap, pendingId);
 
-        if (!wsTx) {
-          debugLog(`[ws-reconciliation:phase2] ${wsTransactionId} not found in WS, deleting`);
+        if (!match) {
+          debugLog(`[ws-reconciliation:phase2] ${pendingId} not found in WS, deleting`);
           await monarchApi.deleteTransaction(monarchTxId);
           result.cancelled += 1;
           continue;
         }
 
+        const { transactionId: wsTransactionId, transaction: wsTx } = match;
         const statusInfo = getTransactionStatusForReconciliation(wsTx, accountType);
 
         if (statusInfo.isPending) {
@@ -451,62 +653,17 @@ export async function reconcileWealthsimpleFetchedPending(
         if (statusInfo.isSettled) {
           debugLog(`[ws-reconciliation:phase2] ${wsTransactionId} settled, updating`);
 
-          const isNegative = wsTx.amountSign === 'negative';
-          const settledAmount = isNegative ? -Math.abs(wsTx.amount as number) : Math.abs(wsTx.amount as number);
+          await settleMonarchTransaction({
+            monarchTx,
+            wsTx,
+            wsTransactionId,
+            accountType,
+            stripStoreNumbers,
+          });
 
-          let cleanedNotes = cleanSystemNotesFromNotes(notes);
-          if (wsTx.type === 'DIVIDEND') {
-            cleanedNotes = updateSettledDividendNotes(cleanedNotes);
-          }
-
-          // Fetch enrichment data once and share it between notes regeneration
-          // and settlement date computation to avoid duplicate API calls.
-          let enrichmentMap: Map<string, unknown> = new Map();
-          try {
-            enrichmentMap = await fetchEnrichmentForTransaction(wsTx);
-          } catch (enrichError) {
-            debugLog(`[ws-reconciliation] Failed to fetch enrichment for ${wsTransactionId}:`, enrichError);
-          }
-
-          // Regenerate notes using the rules engine with settled transaction data.
-          // This updates fill prices/quantities that were 0 when the order was pending.
-          // Only replaces when the regenerated notes actually differ from existing ones.
-          try {
-            const regeneratedNotes = await regenerateSettledNotes(wsTx, enrichmentMap);
-            if (regeneratedNotes !== null && !cleanedNotes.includes(regeneratedNotes)) {
-              debugLog(`[ws-reconciliation] Updating notes for ${wsTransactionId}: old="${cleanedNotes.substring(0, 60)}" new="${regeneratedNotes.substring(0, 60)}"`);
-              cleanedNotes = regeneratedNotes;
-            }
-          } catch (notesError) {
-            debugLog(`[ws-reconciliation] Failed to regenerate notes for ${wsTransactionId}, keeping cleaned notes:`, notesError);
-          }
-
-          // Compute settlement date — may differ from submission date for limit orders, options, etc.
-          const settledDate = getSettlementDate(wsTx, enrichmentMap);
-          const currentDate = monarchTx.date as string | undefined;
-          const dateChanged = settledDate !== null && settledDate !== currentDate;
-
-          const amountChanged = monarchTx.amount !== settledAmount;
-
-          const notesUpdatePayload: Record<string, unknown> = {
-            notes: cleanedNotes,
-            ownerUserId: (monarchTx.ownedByUser as Record<string, unknown>)?.id || null,
-          };
-          if (dateChanged) {
-            notesUpdatePayload.date = settledDate;
-            debugLog(`[ws-reconciliation] Updating date for ${wsTransactionId}: ${currentDate} → ${settledDate}`);
-          }
-
-          await monarchApi.updateTransaction(monarchTxId, notesUpdatePayload);
-
-          if (amountChanged) {
-            await monarchApi.updateTransaction(monarchTxId, {
-              amount: settledAmount,
-              ownerUserId: (monarchTx.ownedByUser as Record<string, unknown>)?.id || null,
-            });
-          }
-
-          await monarchApi.setTransactionTags(monarchTxId, []);
+          // Record the CURRENT (settled) ID so the caller can persist it to the
+          // dedup store — otherwise the settled version is uploaded as a duplicate.
+          result.settledRefIds.push(wsTransactionId);
           result.settled += 1;
           continue;
         }
@@ -540,8 +697,9 @@ export async function reconcilePendingTransactions(
   wealthsimpleTransactions: Record<string, unknown>[],
   lookbackDays: number,
   accountType = 'CREDIT_CARD',
+  options: WealthsimpleReconcileOptions = {},
 ): Promise<ReconciliationResult> {
-  const emptyResult: ReconciliationResult = { success: true, settled: 0, cancelled: 0, failed: 0, error: null };
+  const emptyResult = emptyReconciliationResult();
 
   try {
     // Import shared Phase 1 (lazy to avoid circular deps)
@@ -561,6 +719,7 @@ export async function reconcilePendingTransactions(
       phase1.monarchPendingTransactions,
       wealthsimpleTransactions,
       accountType,
+      options,
     );
   } catch (error) {
     debugLog('Error during pending transaction reconciliation:', error);
