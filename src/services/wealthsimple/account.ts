@@ -23,6 +23,7 @@ import {
   uploadBalanceToMonarch,
 } from './balance';
 import { fetchAndProcessTransactions } from './transactions';
+import { isAlreadyUploaded } from './transactionIdMatching';
 import { type WealthsimpleTransaction } from './transactionRulesHelpers';
 import { convertWealthsimpleTransactionsToMonarchCSV } from '../../utils/csv';
 import {
@@ -521,9 +522,11 @@ export async function uploadWealthsimpleTransactions(
 
     debugLog(`Found ${processedTransactions.length} processed transactions (after early filtering)`);
 
-    // Final duplicate check (belt-and-suspenders, should be few/none after early filtering)
+    // Final duplicate check (belt-and-suspenders, should be few/none after early filtering).
+    // Variant-aware because Wealthsimple appends a suffix segment to the transaction ID
+    // when card activity settles.
     const newTransactions = processedTransactions.filter(
-      (transaction) => !uploadedTransactionIds.has(transaction.id),
+      (transaction) => !isAlreadyUploaded(uploadedTransactionIds, transaction.id),
     );
 
     const duplicateCount = processedTransactions.length - newTransactions.length;
@@ -609,6 +612,51 @@ export async function uploadWealthsimpleTransactions(
     debugLog('Error uploading Wealthsimple transactions:', error);
     toast.show(`Transaction upload failed: ${(error as Error).message}`, 'error');
     return { success: false, synced: 0, skipped: 0, total: 0, error: (error as Error).message };
+  }
+}
+
+/**
+ * Persist reconciled settled transaction IDs to the account's dedup store.
+ *
+ * Wealthsimple changes the transaction ID when card activity settles, so the
+ * settled ID must be recorded after reconciliation — otherwise the settled
+ * version is uploaded to Monarch as a brand-new (duplicate) transaction and
+ * the user is asked to categorize it again.
+ *
+ * @param accountId - Wealthsimple account ID
+ * @param settledRefIds - Settled transaction IDs returned by reconciliation
+ * @returns true when IDs were persisted (or there were none to persist)
+ */
+export function saveReconciledSettledIds(accountId: string, settledRefIds: string[]): boolean {
+  if (!settledRefIds || settledRefIds.length === 0) {
+    return true;
+  }
+
+  try {
+    const accountData = getAccountData(accountId);
+    if (!accountData) {
+      debugLog(`Cannot save reconciled settled IDs: account ${accountId} not found`);
+      return false;
+    }
+
+    const existingTransactions = migrateLegacyTransactions(accountData.uploadedTransactions || []) as StoredTransaction[];
+    const retentionSettings = getRetentionSettingsFromAccount(accountData);
+
+    const updatedUploadedTransactions = mergeAndRetainTransactions(
+      existingTransactions,
+      settledRefIds,
+      retentionSettings,
+    ) as StoredTransaction[];
+
+    updateAccountInList(accountId, {
+      uploadedTransactions: updatedUploadedTransactions,
+    });
+
+    debugLog(`Saved ${settledRefIds.length} reconciled settled transaction ID(s) for account ${accountId}, total after retention: ${updatedUploadedTransactions.length}`);
+    return true;
+  } catch (error: unknown) {
+    debugLog('Error saving reconciled settled transaction IDs:', error);
+    return false;
   }
 }
 

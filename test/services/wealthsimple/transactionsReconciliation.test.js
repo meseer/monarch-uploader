@@ -847,3 +847,158 @@ describe('formatReconciliationMessage', () => {
     expect(formatReconciliationMessage({ settled: 1, cancelled: 0, failed: 2 })).toBe('1 settled, 2 failed');
   });
 });
+
+// ── Regression: pending → settled ID suffix change ──────────
+
+describe('reconcileWealthsimpleFetchedPending — settled ID suffix change (regression)', () => {
+  const WS_PENDING_ID = 'card-activity-00000000527000993851-VI-00-0306231535741989-QIRIAS';
+  const WS_SETTLED_ID = `${WS_PENDING_ID}-0tk4pfcsob83`;
+
+  beforeEach(() => {
+    mockMonarchApi.updateTransaction.mockResolvedValue({});
+    mockMonarchApi.setTransactionTags.mockResolvedValue({});
+    mockMonarchApi.deleteTransaction.mockResolvedValue(true);
+  });
+
+  it('settles the pending Monarch transaction instead of deleting it when the WS ID gained a suffix', async () => {
+    const monarchTx = makeMonarchTx('mtx-suffix', `PURCHASE / ws-tx:${WS_PENDING_ID}`, {
+      amount: -50,
+      merchant: { id: 'm-1', name: 'SQ *ACQUIRER' },
+    });
+
+    const settledWsTx = makeWsTx(WS_SETTLED_ID, {
+      status: 'settled',
+      amount: 52,
+      amountSign: 'negative',
+      spendMerchant: 'COFFEE SHOP',
+      occurredAt: '2026-01-10T12:00:00Z',
+    });
+
+    const result = await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [settledWsTx],
+      'CREDIT_CARD',
+    );
+
+    expect(result.settled).toBe(1);
+    expect(result.cancelled).toBe(0);
+    expect(result.failed).toBe(0);
+    expect(mockMonarchApi.deleteTransaction).not.toHaveBeenCalled();
+    expect(mockMonarchApi.setTransactionTags).toHaveBeenCalledWith('mtx-suffix', []);
+  });
+
+  it('returns the SETTLED ID in settledRefIds so the caller can dedup the settled version', async () => {
+    const monarchTx = makeMonarchTx('mtx-refids', `ws-tx:${WS_PENDING_ID}`, { amount: -50 });
+    const settledWsTx = makeWsTx(WS_SETTLED_ID, {
+      status: 'settled',
+      amount: 50,
+      amountSign: 'negative',
+      spendMerchant: 'COFFEE SHOP',
+    });
+
+    const result = await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [settledWsTx],
+      'CREDIT_CARD',
+    );
+
+    expect(result.settledRefIds).toEqual([WS_SETTLED_ID]);
+  });
+
+  it('updates the Monarch merchant name when the settled record has a different merchant', async () => {
+    const monarchTx = makeMonarchTx('mtx-merchant', `ws-tx:${WS_PENDING_ID}`, {
+      amount: -50,
+      merchant: { id: 'm-1', name: 'SQ *ACQUIRER' },
+    });
+
+    const settledWsTx = makeWsTx(WS_SETTLED_ID, {
+      status: 'settled',
+      amount: 50,
+      amountSign: 'negative',
+      spendMerchant: 'COFFEE SHOP',
+    });
+
+    await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [settledWsTx],
+      'CREDIT_CARD',
+    );
+
+    const merchantCall = mockMonarchApi.updateTransaction.mock.calls.find((call) => 'name' in call[1]);
+    expect(merchantCall).toBeDefined();
+    expect(merchantCall[0]).toBe('mtx-merchant');
+    expect(merchantCall[1].name).toBe('COFFEE SHOP');
+  });
+
+  it('does not send a merchant update when the settled merchant already matches Monarch', async () => {
+    const monarchTx = makeMonarchTx('mtx-same-merchant', `ws-tx:${WS_PENDING_ID}`, {
+      amount: -50,
+      merchant: { id: 'm-1', name: 'COFFEE SHOP' },
+    });
+
+    const settledWsTx = makeWsTx(WS_SETTLED_ID, {
+      status: 'settled',
+      amount: 50,
+      amountSign: 'negative',
+      spendMerchant: 'COFFEE SHOP',
+    });
+
+    await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [settledWsTx],
+      'CREDIT_CARD',
+    );
+
+    const merchantCall = mockMonarchApi.updateTransaction.mock.calls.find((call) => 'name' in call[1]);
+    expect(merchantCall).toBeUndefined();
+  });
+
+  it('still deletes truly cancelled pending transactions', async () => {
+    const monarchTx = makeMonarchTx('mtx-cancelled', `ws-tx:${WS_PENDING_ID}`, { amount: -50 });
+
+    const unrelatedWsTx = makeWsTx('card-activity-unrelated-ID', {
+      status: 'settled',
+      amount: 10,
+      amountSign: 'negative',
+      spendMerchant: 'OTHER',
+    });
+
+    const result = await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [unrelatedWsTx],
+      'CREDIT_CARD',
+    );
+
+    expect(result.cancelled).toBe(1);
+    expect(result.settled).toBe(0);
+    expect(mockMonarchApi.deleteTransaction).toHaveBeenCalledWith('mtx-cancelled');
+  });
+
+  it('takes no action when the suffixed WS transaction is still authorized', async () => {
+    const monarchTx = makeMonarchTx('mtx-still-pending', `ws-tx:${WS_PENDING_ID}`, { amount: -50 });
+
+    const stillPendingWsTx = makeWsTx(WS_SETTLED_ID, {
+      status: 'authorized',
+      amount: 50,
+      amountSign: 'negative',
+      spendMerchant: 'COFFEE SHOP',
+    });
+
+    const result = await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [stillPendingWsTx],
+      'CREDIT_CARD',
+    );
+
+    expect(result.settled).toBe(0);
+    expect(result.cancelled).toBe(0);
+    expect(mockMonarchApi.deleteTransaction).not.toHaveBeenCalled();
+    expect(mockMonarchApi.updateTransaction).not.toHaveBeenCalled();
+  });
+});

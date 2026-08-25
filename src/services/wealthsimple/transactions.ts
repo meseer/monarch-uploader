@@ -34,6 +34,8 @@ import {
 
 import { fetchAndProcessInvestmentTransactions } from './transactionsInvestment';
 
+import { isAlreadyUploaded } from './transactionIdMatching';
+
 import {
   reconcilePendingTransactions,
   reconcileWealthsimpleFetchedPending,
@@ -374,8 +376,10 @@ export async function fetchAndProcessCreditCardTransactions(
     // transaction that is still pending must not be re-categorized. Pending → settled
     // transitions are handled separately by the reconciliation step (which operates on
     // the raw fetch, not this deduplicated list).
+    // Uses variant-aware matching because Wealthsimple appends a suffix segment to the
+    // transaction ID when card activity settles.
     const notYetUploadedTransactions = syncableTransactions.filter(
-      (tx) => !uploadedTransactionIds.has(getTransactionId(tx)),
+      (tx) => !isAlreadyUploaded(uploadedTransactionIds, getTransactionId(tx)),
     );
 
     const uploadedSkipCount = syncableTransactions.length - notYetUploadedTransactions.length;
@@ -457,8 +461,10 @@ export async function fetchAndProcessCashTransactions(
     // transaction that is still pending must not be re-categorized. Pending → settled
     // transitions are handled separately by the reconciliation step (which operates on
     // the raw fetch, not this deduplicated list).
+    // Uses variant-aware matching because Wealthsimple appends a suffix segment to the
+    // transaction ID when card activity settles.
     const notYetUploadedTransactions = syncableTransactions.filter(
-      (tx) => !uploadedTransactionIds.has(getTransactionId(tx)),
+      (tx) => !isAlreadyUploaded(uploadedTransactionIds, getTransactionId(tx)),
     );
 
     const uploadedSkipCount = syncableTransactions.length - notYetUploadedTransactions.length;
@@ -750,8 +756,10 @@ export async function fetchAndProcessLineOfCreditTransactions(
     // transaction that is still pending must not be re-categorized. Pending → settled
     // transitions are handled separately by the reconciliation step (which operates on
     // the raw fetch, not this deduplicated list).
+    // Uses variant-aware matching because Wealthsimple appends a suffix segment to the
+    // transaction ID when card activity settles.
     const notYetUploadedTransactions = syncableTransactions.filter(
-      (tx) => !uploadedTransactionIds.has(getTransactionId(tx)),
+      (tx) => !isAlreadyUploaded(uploadedTransactionIds, getTransactionId(tx)),
     );
 
     const uploadedSkipCount = syncableTransactions.length - notYetUploadedTransactions.length;

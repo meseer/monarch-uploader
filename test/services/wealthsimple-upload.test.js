@@ -556,6 +556,44 @@ describe('Wealthsimple Upload Service', () => {
       expect(stepKeys).not.toContain('positions');
       expect(stepKeys).not.toContain('cashSync');
     });
+
+    it('orders pendingReconciliation BEFORE transactions', () => {
+      // Regression: reconciliation must run first so settled transaction IDs are
+      // recorded in the dedup store, preventing the settled version of a pending
+      // transaction from being uploaded to Monarch as a new duplicate.
+      isInvestmentAccount.mockReturnValue(false);
+
+      const consolidatedAccount = {
+        wealthsimpleAccount: { id: 'cc-1', type: 'CREDIT_CARD' },
+      };
+      const stepKeys = buildSyncStepsForAccount(consolidatedAccount).map((s) => s.key);
+
+      expect(stepKeys.indexOf('pendingReconciliation')).toBeGreaterThanOrEqual(0);
+      expect(stepKeys.indexOf('pendingReconciliation')).toBeLessThan(stepKeys.indexOf('transactions'));
+    });
+
+    it('orders pendingReconciliation before transactions for investment accounts too', () => {
+      isInvestmentAccount.mockReturnValue(true);
+
+      const consolidatedAccount = {
+        wealthsimpleAccount: { id: 'tfsa-1', type: 'SELF_DIRECTED_TFSA' },
+      };
+      const stepKeys = buildSyncStepsForAccount(consolidatedAccount).map((s) => s.key);
+
+      expect(stepKeys.indexOf('pendingReconciliation')).toBeLessThan(stepKeys.indexOf('transactions'));
+    });
+
+    it('has no pendingReconciliation step for PORTFOLIO_LINE_OF_CREDIT but keeps transactions', () => {
+      isInvestmentAccount.mockReturnValue(false);
+
+      const consolidatedAccount = {
+        wealthsimpleAccount: { id: 'loc-1', type: 'PORTFOLIO_LINE_OF_CREDIT' },
+      };
+      const stepKeys = buildSyncStepsForAccount(consolidatedAccount).map((s) => s.key);
+
+      expect(stepKeys).not.toContain('pendingReconciliation');
+      expect(stepKeys).toContain('transactions');
+    });
   });
 
   describe('clearLastUploadDate', () => {

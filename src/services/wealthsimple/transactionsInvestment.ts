@@ -25,6 +25,7 @@ import {
 } from './transactionRules';
 import { type WealthsimpleTransaction } from './transactionRulesHelpers';
 import { collectEftTransferIds, convertToLocalDate, type ProcessedTransaction } from './transactionsHelpers';
+import { isAlreadyUploaded } from './transactionIdMatching';
 import type { ConsolidatedAccountBase } from '../../types/wealthsimple';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -447,8 +448,10 @@ export async function fetchAndProcessInvestmentTransactions(
     // uploaded pending transaction that is still pending must not be re-categorized.
     // Pending → settled transitions are handled separately by the reconciliation step
     // (which operates on the raw fetch, not this deduplicated list).
+    // Uses variant-aware matching because Wealthsimple appends a suffix segment to the
+    // transaction ID when card activity settles.
     const notYetUploadedTransactions = syncableTransactions.filter(
-      (tx) => !uploadedTransactionIds.has(getTransactionId(tx)),
+      (tx) => !isAlreadyUploaded(uploadedTransactionIds, getTransactionId(tx)),
     );
 
     const uploadedSkipCount = syncableTransactions.length - notYetUploadedTransactions.length;
