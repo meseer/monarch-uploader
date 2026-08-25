@@ -14,11 +14,16 @@ import {
   fetchIdentityPositions,
 } from './wealthsimplePositions';
 import {
+  fetchCreditCardAccountSummary,
+  fetchCreditCardActivity,
+} from './wealthsimpleCreditCard';
+import {
   fetchFundingIntents,
   fetchFundingIntentStatusSummary,
-  fetchCreditCardAccountSummary,
   fetchInternalTransfer,
   fetchFundsTransfer,
+} from './wealthsimpleFunding';
+import {
   fetchActivityByOrdersServiceOrderId,
   fetchExtendedOrder,
   fetchCorporateActionChildActivities,
@@ -1088,6 +1093,7 @@ export default {
   fetchIdentityPositions,
   fetchManagedPortfolioPositions,
   fetchCreditCardAccountSummary,
+  fetchCreditCardActivity,
   fetchFundingIntents,
   fetchFundingIntentStatusSummary,
   fetchInternalTransfer,

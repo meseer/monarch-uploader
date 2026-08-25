@@ -54,13 +54,26 @@ export interface WealthsimpleTransaction {
   [key: string]: unknown;
 }
 
+/**
+ * Foreign-currency and reward details for a card spend transaction.
+ *
+ * Populated from either:
+ * - `FetchSpendTransactions` (CASH accounts) — `foreignAmount` is truncated
+ * - `FetchCreditCardActivity` (CREDIT_CARD accounts) — `originalAmount` carries
+ *   the precise, unrounded foreign amount
+ */
 export interface SpendDetails {
   isForeign?: boolean | null;
+  /** Precise foreign amount (credit card activity only), e.g. "-29.29" */
+  originalAmount?: number | string | null;
+  originalCurrency?: string | null;
+  /** Truncated foreign amount (spend transactions), e.g. -29 */
   foreignAmount?: number | string | null;
   foreignCurrency?: string | null;
   foreignExchangeRate?: number | string | null;
   hasReward?: boolean | null;
-  rewardAmount?: number | null;
+  rewardAmount?: number | string | null;
+  rewardRate?: number | string | null;
   [key: string]: unknown;
 }
 
@@ -137,32 +150,147 @@ interface WealthsimpleAccountEntry {
 
 // ── Functions ─────────────────────────────────────────────────────────────────
 
+/** Options for formatSpendNotes */
+export interface FormatSpendNotesOptions {
+  /**
+   * Whether the transaction has settled. Foreign amounts, FX rates and reward
+   * amounts are only populated by Wealthsimple after settlement, so no notes are
+   * produced while a transaction is still pending/authorized.
+   */
+  isSettled?: boolean;
+}
+
 /**
- * Format spend transaction notes from spend details
- * Adds foreign currency info and reward info if applicable
+ * Resolve the foreign currency code for a spend/card transaction.
  *
- * @param spendDetails - Spend transaction details from FetchSpendTransactions API
- * @returns Formatted notes string or empty string if no relevant details
+ * Prefers `originalCurrency` (credit card activity) over `foreignCurrency`
+ * (spend transactions) — both carry the same code, but only one is present
+ * depending on the enrichment source.
+ *
+ * @param spendDetails - Spend/card activity details
+ * @returns Uppercase currency code, or null when not a foreign transaction
  */
-export function formatSpendNotes(spendDetails: SpendDetails | null | undefined): string {
+export function getForeignCurrencyCode(spendDetails: SpendDetails | null | undefined): string | null {
+  if (!spendDetails || spendDetails.isForeign !== true) {
+    return null;
+  }
+
+  const code = spendDetails.originalCurrency || spendDetails.foreignCurrency;
+  if (!code || typeof code !== 'string') {
+    return null;
+  }
+
+  return code.toUpperCase();
+}
+
+/**
+ * Resolve the precise foreign amount as an unrounded absolute-value string.
+ *
+ * `originalAmount` (credit card activity) is preferred because `foreignAmount`
+ * from the activity feed is truncated (e.g. -29 instead of -29.29).
+ *
+ * @param spendDetails - Spend/card activity details
+ * @returns Absolute amount string, or null when unavailable
+ */
+function getForeignAmountString(spendDetails: SpendDetails): string | null {
+  const raw = spendDetails.originalAmount ?? spendDetails.foreignAmount;
+  if (raw === null || raw === undefined || raw === '') {
+    return null;
+  }
+
+  const parsed = typeof raw === 'number' ? raw : parseFloat(String(raw));
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  // Strip the sign only — never round, the exact value matters here
+  return String(Math.abs(parsed));
+}
+
+/**
+ * Build the foreign-currency note line, or null when data is incomplete.
+ *
+ * @param spendDetails - Spend/card activity details
+ * @returns "Amount: 29.29 EUR (rate: 1.610106)" or null
+ */
+function buildForeignAmountNote(spendDetails: SpendDetails): string | null {
+  const currency = getForeignCurrencyCode(spendDetails);
+  const amount = getForeignAmountString(spendDetails);
+  const rate = spendDetails.foreignExchangeRate;
+
+  if (!currency || !amount || rate === null || rate === undefined || rate === '') {
+    debugLog('Skipping foreign amount note — incomplete FX data', {
+      hasCurrency: Boolean(currency),
+      hasAmount: Boolean(amount),
+      hasRate: rate !== null && rate !== undefined && rate !== '',
+    });
+    return null;
+  }
+
+  return `Amount: ${amount} ${currency} (rate: ${rate})`;
+}
+
+/**
+ * Build the rewards note line, or null when no reward was earned.
+ *
+ * @param spendDetails - Spend/card activity details
+ * @returns "Rewards: 0.94 (rate: 0.02)" / "Rewards: 0.94" or null
+ */
+function buildRewardNote(spendDetails: SpendDetails): string | null {
+  if (spendDetails.hasReward !== true) {
+    return null;
+  }
+
+  const amount = spendDetails.rewardAmount;
+  if (amount === null || amount === undefined || amount === '') {
+    return null;
+  }
+
+  const rate = spendDetails.rewardRate;
+  if (rate === null || rate === undefined || rate === '') {
+    return `Rewards: ${amount}`;
+  }
+
+  return `Rewards: ${amount} (rate: ${rate})`;
+}
+
+/**
+ * Format spend transaction notes from spend/card activity details.
+ *
+ * Adds foreign currency info and reward info — but only for settled
+ * transactions. Wealthsimple does not populate the foreign amount, FX rate or
+ * reward amount until settlement, so producing a note while pending would emit
+ * placeholder values that are never corrected.
+ *
+ * @param spendDetails - Details from FetchSpendTransactions or FetchCreditCardActivity
+ * @param options - Formatting options (settled status)
+ * @returns Formatted notes string, or empty string when there is nothing to add
+ */
+export function formatSpendNotes(
+  spendDetails: SpendDetails | null | undefined,
+  options: FormatSpendNotesOptions = {},
+): string {
   if (!spendDetails) {
+    return '';
+  }
+
+  // Pending transactions have no FX rate or confirmed reward yet
+  if (options.isSettled !== true) {
     return '';
   }
 
   const notes: string[] = [];
 
-  // Add foreign currency details if applicable
   if (spendDetails.isForeign === true) {
-    const foreignAmount = spendDetails.foreignAmount ?? 'N/A';
-    const foreignCurrency = spendDetails.foreignCurrency ?? 'N/A';
-    const foreignExchangeRate = spendDetails.foreignExchangeRate ?? 'N/A';
-    notes.push(`Amount: ${foreignAmount} ${foreignCurrency} (rate: ${foreignExchangeRate})`);
+    const foreignNote = buildForeignAmountNote(spendDetails);
+    if (foreignNote) {
+      notes.push(foreignNote);
+    }
   }
 
-  // Add reward details if applicable
-  if (spendDetails.hasReward === true) {
-    const rewardAmount = spendDetails.rewardAmount ?? 0;
-    notes.push(`Rewards: ${rewardAmount}`);
+  const rewardNote = buildRewardNote(spendDetails);
+  if (rewardNote) {
+    notes.push(rewardNote);
   }
 
   return notes.join('\n');

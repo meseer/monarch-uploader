@@ -7,10 +7,10 @@ import { debugLog } from '../../core/utils';
 import monarchApi from '../../api/monarch';
 import wealthsimpleApi from '../../api/wealthsimple';
 import { INVESTMENT_TRANSACTION_RULES } from './transactionsInvestment';
-import { CASH_TRANSACTION_RULES } from './transactionRules';
+import { CASH_TRANSACTION_RULES, formatSpendNotes, getForeignCurrencyCode } from './transactionRules';
 import { convertToLocalDate, processCreditCardTransaction } from './transactionsHelpers';
 import { resolveWsTransactionByPendingId } from './transactionIdMatching';
-import type { WealthsimpleTransaction, ExtendedOrder } from './transactionRulesHelpers';
+import type { WealthsimpleTransaction, ExtendedOrder, SpendDetails } from './transactionRulesHelpers';
 
 /**
  * Custom prefix for Wealthsimple transaction IDs stored in Monarch notes
@@ -187,13 +187,59 @@ const INVESTMENT_BUY_SELL_TYPES = new Set([
 const STATIC_SECURITY_IDS = new Set(['sec-s-cad', 'sec-s-usd']);
 
 /**
+ * Fetch spend/card-activity enrichment for a settled card transaction.
+ *
+ * Two distinct sources depending on the account type:
+ * - CREDIT_CARD purchases → `FetchCreditCardActivity` (`FetchSpendTransactions`
+ *   returns 403 for credit card accounts, and this is the only source of the
+ *   precise `originalAmount`)
+ * - CASH SPEND/PREPAID → `FetchSpendTransactions`
+ *
+ * Both are stored under the `spend:{id}` key so the rules engine and the note
+ * formatter can consume either source interchangeably.
+ *
+ * @param wsTx - Settled Wealthsimple transaction
+ * @param accountType - WS account type
+ * @param enrichmentMap - Map to populate
+ */
+async function addCardEnrichment(
+  wsTx: Record<string, unknown>,
+  accountType: string,
+  enrichmentMap: Map<string, unknown>,
+): Promise<void> {
+  const externalCanonicalId = wsTx.externalCanonicalId as string | undefined;
+  if (!externalCanonicalId) return;
+
+  if (accountType === 'CREDIT_CARD' && wsTx.subType === 'PURCHASE') {
+    const activity = await wealthsimpleApi.fetchCreditCardActivity(externalCanonicalId);
+    if (activity) {
+      enrichmentMap.set(`spend:${externalCanonicalId}`, activity);
+    }
+    return;
+  }
+
+  if (wsTx.type === 'SPEND') {
+    const accountId = wsTx.accountId as string | undefined;
+    if (!accountId) return;
+    const spendMap = await wealthsimpleApi.fetchSpendTransactions(accountId, [externalCanonicalId]);
+    const details = spendMap.get(externalCanonicalId);
+    if (details) {
+      enrichmentMap.set(`spend:${externalCanonicalId}`, details);
+    }
+  }
+}
+
+/**
  * Fetch enrichment data for a single settled transaction.
  * Mirrors the enrichment logic from transactionsInvestment.ts but for a single tx.
  *
- * @returns Enrichment map with 0 or 1 entries keyed by the transaction's canonical ID
+ * @param wsTx - Settled Wealthsimple transaction
+ * @param accountType - WS account type (selects the card-activity API to use)
+ * @returns Enrichment map keyed by the transaction's canonical ID (or `spend:{id}`)
  */
 async function fetchEnrichmentForTransaction(
   wsTx: Record<string, unknown>,
+  accountType: string = 'CREDIT_CARD',
 ): Promise<Map<string, unknown>> {
   const enrichmentMap = new Map<string, unknown>();
   const txType = wsTx.type as string | undefined;
@@ -201,6 +247,9 @@ async function fetchEnrichmentForTransaction(
   const canonicalId = wsTx.canonicalId as string | undefined;
 
   if (!txType) return enrichmentMap;
+
+  // Card spend transactions need FX/reward details, which only exist once settled
+  await addCardEnrichment(wsTx, accountType, enrichmentMap);
 
   // Buy/sell orders need extended order data
   if (INVESTMENT_BUY_SELL_TYPES.has(txType) && externalCanonicalId) {
@@ -397,6 +446,68 @@ function resolveSettledMerchantName(
 }
 
 /**
+ * Resolve settled notes and currency tag for a card spend transaction.
+ *
+ * Credit card purchases have no rules-engine entry (they are processed by
+ * `processCreditCardTransaction`), so their FX/reward notes must be built
+ * directly from the card-activity enrichment here.
+ *
+ * @param wsTx - Settled Wealthsimple transaction
+ * @param enrichmentMap - Enrichment map containing `spend:{id}` details
+ * @returns Notes string and currency code (either may be empty/null)
+ */
+function resolveSettledCardDetails(
+  wsTx: Record<string, unknown>,
+  enrichmentMap: Map<string, unknown>,
+): { notes: string; foreignCurrency: string | null } {
+  const externalCanonicalId = wsTx.externalCanonicalId as string | undefined;
+  const details = externalCanonicalId
+    ? (enrichmentMap.get(`spend:${externalCanonicalId}`) as SpendDetails | undefined)
+    : undefined;
+
+  if (!details) {
+    return { notes: '', foreignCurrency: null };
+  }
+
+  return {
+    notes: formatSpendNotes(details, { isSettled: true }),
+    foreignCurrency: getForeignCurrencyCode(details),
+  };
+}
+
+/**
+ * Apply the currency tag for a settled foreign transaction, or clear all tags.
+ *
+ * The "Pending" tag must always be removed once a transaction settles. When the
+ * transaction turns out to be foreign, the ISO currency code replaces it so the
+ * transaction remains filterable in Monarch — matching what the CSV import does
+ * for transactions that were already settled on first upload.
+ *
+ * A tag that does not yet exist in the household cannot be created through this
+ * mutation, so in that case tags are simply cleared and the gap is logged.
+ *
+ * @param monarchTxId - Monarch transaction ID
+ * @param foreignCurrency - ISO currency code, or null for domestic transactions
+ */
+async function applySettledTags(monarchTxId: string, foreignCurrency: string | null): Promise<void> {
+  if (!foreignCurrency) {
+    await monarchApi.setTransactionTags(monarchTxId, []);
+    return;
+  }
+
+  const currencyTag = await monarchApi.getTagByName(foreignCurrency);
+
+  if (!currencyTag) {
+    debugLog(`[ws-reconciliation] Monarch tag "${foreignCurrency}" does not exist — clearing tags instead`);
+    await monarchApi.setTransactionTags(monarchTxId, []);
+    return;
+  }
+
+  debugLog(`[ws-reconciliation] Applying currency tag "${foreignCurrency}" to ${monarchTxId}`);
+  await monarchApi.setTransactionTags(monarchTxId, [currencyTag.id]);
+}
+
+/**
  * Transaction types whose settlement date comes from `extendedOrder.filledAt` (DIY/options orders).
  */
 const FILLED_AT_DATE_TYPES = new Set([
@@ -519,7 +630,7 @@ async function settleMonarchTransaction({
   // and settlement date computation to avoid duplicate API calls.
   let enrichmentMap: Map<string, unknown> = new Map();
   try {
-    enrichmentMap = await fetchEnrichmentForTransaction(wsTx);
+    enrichmentMap = await fetchEnrichmentForTransaction(wsTx, accountType);
   } catch (enrichError) {
     debugLog(`[ws-reconciliation] Failed to fetch enrichment for ${wsTransactionId}:`, enrichError);
   }
@@ -533,7 +644,11 @@ async function settleMonarchTransaction({
     debugLog(`[ws-reconciliation] Failed to apply rules for ${wsTransactionId}:`, ruleError);
   }
 
-  const regeneratedNotes = ruleResult?.notes || null;
+  // Credit card purchases have no rules-engine entry, so their FX/reward notes
+  // come straight from the card-activity enrichment.
+  const cardDetails = resolveSettledCardDetails(wsTx, enrichmentMap);
+
+  const regeneratedNotes = ruleResult?.notes || cardDetails.notes || null;
   if (regeneratedNotes && !cleanedNotes.includes(regeneratedNotes)) {
     debugLog(`[ws-reconciliation] Updating notes for ${wsTransactionId}: old="${cleanedNotes.substring(0, 60)}" new="${regeneratedNotes.substring(0, 60)}"`);
     cleanedNotes = regeneratedNotes;
@@ -574,7 +689,8 @@ async function settleMonarchTransaction({
     });
   }
 
-  await monarchApi.setTransactionTags(monarchTxId, []);
+  // Removes the "Pending" tag, and applies the currency tag when foreign
+  await applySettledTags(monarchTxId, cardDetails.foreignCurrency);
 }
 
 /**

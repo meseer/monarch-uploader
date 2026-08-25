@@ -74,6 +74,8 @@ interface WealthsimpleTransaction {
   notes?: string;
   technicalDetails?: string;
   resolvedMonarchCategory?: string | null;
+  /** ISO currency code for a settled foreign transaction (imported as a Monarch tag) */
+  foreignCurrency?: string | null;
   [key: string]: unknown;
 }
 
@@ -406,6 +408,27 @@ function buildWealthsimpleNotes({ memo, technicalDetails, formattedTxId, include
 }
 
 /**
+ * Resolve the Tags column value for a Wealthsimple transaction.
+ *
+ * Pending transactions carry the "Pending" tag (used by reconciliation to find
+ * them again). Settled foreign transactions carry the ISO currency code so they
+ * can be filtered in Monarch. A pending transaction never has FX data available
+ * yet, so the two cases never overlap — the currency tag is added at settlement
+ * by the reconciliation step.
+ *
+ * @param transaction - Processed Wealthsimple transaction
+ * @param isPending - Whether the transaction is pending
+ * @returns Tag value for the CSV Tags column (empty string when none)
+ */
+function resolveWealthsimpleTags(transaction: WealthsimpleTransaction, isPending: boolean): string {
+  if (isPending) {
+    return 'Pending';
+  }
+
+  return transaction.foreignCurrency || '';
+}
+
+/**
  * Convert Wealthsimple transactions to Monarch CSV format
  * Handles both credit card transactions (using status field) and CASH transactions (using isPending flag)
  */
@@ -465,7 +488,7 @@ export function convertWealthsimpleTransactionsToMonarchCSV(
       'Original Statement': transaction.originalMerchant || '',
       Notes: notes,
       Amount: transaction.amount || 0,
-      Tags: isPending ? 'Pending' : '',
+      Tags: resolveWealthsimpleTags(transaction, isPending),
     };
   });
 

@@ -3,7 +3,7 @@
 <!-- Badge section -->
 [![CI](https://github.com/meseer/monarch-uploader/actions/workflows/ci.yml/badge.svg)](https://github.com/meseer/monarch-uploader/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/meseer/monarch-uploader/branch/main/graph/badge.svg)](https://codecov.io/gh/meseer/monarch-uploader)
-[![Version](https://img.shields.io/badge/version-7.1.0-blue)](https://github.com/meseer/monarch-uploader)
+[![Version](https://img.shields.io/badge/version-7.2.0-blue)](https://github.com/meseer/monarch-uploader)
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 
 A userscript that automatically syncs balance history, transactions, holdings, and more from Canadian financial institutions to [Monarch Money](https://www.monarchmoney.com/).
@@ -74,6 +74,7 @@ On the first sync, the script will walk you through a brief setup:
 3. **Account mapping** — For each institution account, you can choose to: **create a new Monarch account** (recommended), **map to an existing** Monarch account, or **skip** the account sync entirely. This mapping is saved for future syncs.
 4. **Category mapping** — For each transaction category, you can map it to a Monarch category as a one-time choice or save it as a reusable rule. Alternatively, you can skip sync-time category mapping entirely and rely on Monarch's built-in categorization rules, which are applied after every sync regardless.
 5. **Pending transactions** — The script uploads pending transactions by default and updates them after they settle. To track pending status, the script adds a **"Pending"** tag and a transaction ID to the Monarch transaction's notes. Please keep these details on pending transactions to allow the script to manage them properly — you can add other details to the notes as desired, and they will be retained when the transaction settles (as long as the settled transaction keeps the same date and merchant). Some institutions report the same transaction as both pending and settled for a short period; the script will do its best to deduplicate these, but if transaction details differ (date, description, etc.), you may temporarily see duplicates in Monarch until the institution stops reporting it as pending. Pending transaction sync can be turned off in settings if desired.
+6. **Foreign currency transactions** — For Wealthsimple card purchases made in a foreign currency, the script adds the original amount and the applied exchange rate to the transaction's notes (e.g. `Amount: 29.29 EUR (rate: 1.610106)`), plus a tag with the currency code (e.g. `EUR`) so you can filter them in Monarch. These details are only available once the transaction settles, so they are added at settlement rather than while the transaction is still pending.
 
 ## Development
 

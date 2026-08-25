@@ -80,16 +80,55 @@ interface LocRuleResult {
 // ── Helper functions ─────────────────────────────────────────────────────────
 
 /**
- * Collect PURCHASE transaction IDs from credit card transactions that need spend details enrichment
+ * Collect settled PURCHASE transaction IDs from credit card transactions that
+ * need card-activity enrichment (FX details + rewards).
+ *
+ * Only settled purchases are collected: Wealthsimple does not populate the
+ * foreign amount, FX rate or reward amount until settlement, so fetching for
+ * pending purchases would cost a request per transaction and return nothing
+ * usable.
  */
 function collectCreditCardPurchaseIds(transactions: WealthsimpleTransaction[]): string[] {
   const purchaseIds: string[] = [];
   for (const tx of transactions) {
-    if (tx.subType === 'PURCHASE' && tx.externalCanonicalId) {
+    if (tx.subType === 'PURCHASE' && tx.status === 'settled' && tx.externalCanonicalId) {
       purchaseIds.push(tx.externalCanonicalId);
     }
   }
   return purchaseIds;
+}
+
+/**
+ * Fetch card-activity details for settled credit card purchases.
+ *
+ * Uses `FetchCreditCardActivity` (one request per transaction) rather than the
+ * batched `FetchSpendTransactions`, which returns 403 Forbidden for
+ * `ca-credit-card-*` accounts. This API is also the only source of the precise
+ * (unrounded) foreign amount via `originalAmount`.
+ *
+ * @param purchaseIds - Settled purchase transaction IDs
+ * @param onProgress - Optional progress reporter
+ * @returns Map of transaction ID to activity details
+ */
+async function fetchCreditCardPurchaseDetails(
+  purchaseIds: string[],
+  onProgress?: (message: string) => void,
+): Promise<Map<string, unknown>> {
+  const detailsMap = new Map<string, unknown>();
+
+  for (let i = 0; i < purchaseIds.length; i++) {
+    const id = purchaseIds[i];
+    const progressNum = i + 1;
+    debugLog(`Fetching credit card activity (${progressNum}/${purchaseIds.length}): ${id}`);
+    if (onProgress) onProgress(`Card activity details (${progressNum}/${purchaseIds.length})`);
+
+    const details = await wealthsimpleApi.fetchCreditCardActivity(id);
+    if (details) {
+      detailsMap.set(id, details);
+    }
+  }
+
+  return detailsMap;
 }
 
 /**
@@ -294,6 +333,7 @@ function processCashTransaction(
     technicalDetails: ruleResult.technicalDetails || '',
     needsCategoryMapping: ruleResult.needsCategoryMapping || false,
     categoryKey: ruleResult.categoryKey || ruleResult.merchant,
+    foreignCurrency: ruleResult.foreignCurrency || null,
     aftDetails: ruleResult.aftDetails || null,
   };
 }
@@ -396,9 +436,9 @@ export async function fetchAndProcessCreditCardTransactions(
     let spendDetailsMap = new Map<string, unknown>();
 
     if (purchaseTransactionIds.length > 0) {
-      debugLog(`Fetching spend transaction details for ${purchaseTransactionIds.length} PURCHASE transaction(s)...`);
-      spendDetailsMap = (await wealthsimpleApi.fetchSpendTransactions(accountId, purchaseTransactionIds)) as Map<string, unknown>;
-      debugLog(`Fetched ${spendDetailsMap.size} spend transaction detail(s)`);
+      debugLog(`Fetching card activity details for ${purchaseTransactionIds.length} settled PURCHASE transaction(s)...`);
+      spendDetailsMap = await fetchCreditCardPurchaseDetails(purchaseTransactionIds, options.onProgress);
+      debugLog(`Fetched ${spendDetailsMap.size} card activity detail(s)`);
     }
 
     const processedTransactions = notYetUploadedTransactions.map((transaction) =>
