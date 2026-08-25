@@ -24,9 +24,10 @@ jest.mock('../../../src/ui/components/categorySelector', () => ({
   showManualTransactionCategorization: jest.fn(),
 }));
 
-// Set up default mock for fetchSpendTransactions to return empty Map
+// Set up default mocks for the card enrichment APIs
 beforeEach(() => {
   wealthsimpleApi.fetchSpendTransactions = jest.fn().mockResolvedValue(new Map());
+  wealthsimpleApi.fetchCreditCardActivity = jest.fn().mockResolvedValue(null);
 });
 
 describe('Wealthsimple Transaction Service - Credit Card', () => {
@@ -858,6 +859,161 @@ describe('Wealthsimple Transaction Service - Credit Card', () => {
       // Transaction should have the selected category
       expect(result).toHaveLength(1);
       expect(result[0].resolvedMonarchCategory).toBe('Shopping');
+    });
+  });
+
+  describe('foreign currency enrichment', () => {
+    /**
+     * FetchCreditCardActivity replaced FetchSpendTransactions for credit card
+     * accounts, which started returning 403 Forbidden for ca-credit-card-* IDs.
+     */
+    const buildPurchase = (id, status) => ({
+      externalCanonicalId: id,
+      occurredAt: '2025-01-15T10:30:00.000000+00:00',
+      type: 'CREDIT_CARD',
+      subType: 'PURCHASE',
+      status,
+      spendMerchant: 'CAFE BERLIN',
+      amount: 47.16,
+      amountSign: 'negative',
+    });
+
+    const FOREIGN_ACTIVITY = {
+      id: 'tx-fx',
+      status: 'settled',
+      isForeign: true,
+      originalAmount: '-29.29',
+      originalCurrency: 'EUR',
+      foreignAmount: -29,
+      foreignCurrency: 'EUR',
+      foreignExchangeRate: '1.610106',
+      hasReward: true,
+      rewardAmount: '0.94',
+      rewardRate: '0.02',
+    };
+
+    beforeEach(() => {
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [], categoryGroups: [] });
+      applyWealthsimpleCategoryMapping.mockReturnValue('Shopping');
+    });
+
+    it('fetches card activity per settled purchase instead of the batched spend API', async () => {
+      wealthsimpleApi.fetchTransactions.mockResolvedValue([buildPurchase('tx-fx', 'settled')]);
+      wealthsimpleApi.fetchCreditCardActivity.mockResolvedValue(FOREIGN_ACTIVITY);
+
+      await fetchAndProcessCreditCardTransactions(
+        mockConsolidatedAccount,
+        '2025-01-01',
+        '2025-01-31',
+      );
+
+      expect(wealthsimpleApi.fetchCreditCardActivity).toHaveBeenCalledWith('tx-fx');
+      expect(wealthsimpleApi.fetchSpendTransactions).not.toHaveBeenCalled();
+    });
+
+    it('adds FX notes with the precise original amount and the reward rate', async () => {
+      wealthsimpleApi.fetchTransactions.mockResolvedValue([buildPurchase('tx-fx', 'settled')]);
+      wealthsimpleApi.fetchCreditCardActivity.mockResolvedValue(FOREIGN_ACTIVITY);
+
+      const result = await fetchAndProcessCreditCardTransactions(
+        mockConsolidatedAccount,
+        '2025-01-01',
+        '2025-01-31',
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].notes).toBe('Amount: 29.29 EUR (rate: 1.610106)\nRewards: 0.94 (rate: 0.02)');
+      expect(result[0].foreignCurrency).toBe('EUR');
+    });
+
+    it('does not fetch card activity for a pending purchase', async () => {
+      wealthsimpleApi.fetchTransactions.mockResolvedValue([buildPurchase('tx-pending', 'authorized')]);
+
+      const result = await fetchAndProcessCreditCardTransactions(
+        { ...mockConsolidatedAccount, includePendingTransactions: true },
+        '2025-01-01',
+        '2025-01-31',
+      );
+
+      expect(wealthsimpleApi.fetchCreditCardActivity).not.toHaveBeenCalled();
+      expect(result).toHaveLength(1);
+      // No placeholder note while pending — FX data does not exist yet
+      expect(result[0].notes).toBe('');
+      expect(result[0].foreignCurrency).toBeNull();
+    });
+
+    it('leaves notes and currency empty for a settled domestic purchase', async () => {
+      wealthsimpleApi.fetchTransactions.mockResolvedValue([buildPurchase('tx-domestic', 'settled')]);
+      wealthsimpleApi.fetchCreditCardActivity.mockResolvedValue({
+        id: 'tx-domestic',
+        status: 'settled',
+        isForeign: false,
+        originalAmount: '-47.16',
+        originalCurrency: 'CAD',
+        hasReward: false,
+      });
+
+      const result = await fetchAndProcessCreditCardTransactions(
+        mockConsolidatedAccount,
+        '2025-01-01',
+        '2025-01-31',
+      );
+
+      expect(result[0].notes).toBe('');
+      expect(result[0].foreignCurrency).toBeNull();
+    });
+
+    it('continues processing when the card activity fetch returns null', async () => {
+      wealthsimpleApi.fetchTransactions.mockResolvedValue([buildPurchase('tx-fail', 'settled')]);
+      wealthsimpleApi.fetchCreditCardActivity.mockResolvedValue(null);
+
+      const result = await fetchAndProcessCreditCardTransactions(
+        mockConsolidatedAccount,
+        '2025-01-01',
+        '2025-01-31',
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].notes).toBe('');
+      expect(result[0].foreignCurrency).toBeNull();
+    });
+
+    it('reports card activity fetch progress', async () => {
+      wealthsimpleApi.fetchTransactions.mockResolvedValue([buildPurchase('tx-fx', 'settled')]);
+      wealthsimpleApi.fetchCreditCardActivity.mockResolvedValue(FOREIGN_ACTIVITY);
+      const onProgress = jest.fn();
+
+      await fetchAndProcessCreditCardTransactions(
+        mockConsolidatedAccount,
+        '2025-01-01',
+        '2025-01-31',
+        { onProgress },
+      );
+
+      expect(onProgress).toHaveBeenCalledWith('Card activity details (1/1)');
+    });
+
+    it('does not fetch card activity for non-purchase subtypes', async () => {
+      wealthsimpleApi.fetchTransactions.mockResolvedValue([
+        {
+          externalCanonicalId: 'tx-payment',
+          occurredAt: '2025-01-15T10:30:00.000000+00:00',
+          type: 'CREDIT_CARD',
+          subType: 'PAYMENT',
+          status: 'settled',
+          spendMerchant: null,
+          amount: 100,
+          amountSign: 'positive',
+        },
+      ]);
+
+      await fetchAndProcessCreditCardTransactions(
+        mockConsolidatedAccount,
+        '2025-01-01',
+        '2025-01-31',
+      );
+
+      expect(wealthsimpleApi.fetchCreditCardActivity).not.toHaveBeenCalled();
     });
   });
 

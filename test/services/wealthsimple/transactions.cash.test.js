@@ -1359,6 +1359,73 @@ describe('Wealthsimple Transaction Service - Cash', () => {
       expect(result[0].id).toBe('tx-atm-reimbursement');
       expect(result[0].resolvedMonarchCategory).toBe('Cash & ATM');
     });
+
+    describe('foreign currency SPEND/PREPAID transactions', () => {
+      const buildPrepaid = (id, status) => ({
+        externalCanonicalId: id,
+        occurredAt: '2026-01-15T10:00:00.000000+00:00',
+        type: 'SPEND',
+        subType: 'PREPAID',
+        status,
+        spendMerchant: 'US STORE',
+        amount: 114.81,
+        amountSign: 'negative',
+      });
+
+      beforeEach(() => {
+        monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [], categoryGroups: [] });
+        applyWealthsimpleCategoryMapping.mockReturnValue('Shopping');
+      });
+
+      it('adds no FX note while the purchase is pending (regression: "N/A N/A (rate: N/A)")', async () => {
+        // Wealthsimple reports isForeign=true but leaves every FX value null until
+        // the transaction settles.
+        wealthsimpleApi.fetchTransactions.mockResolvedValue([buildPrepaid('spend-pending', 'authorized')]);
+        wealthsimpleApi.fetchSpendTransactions.mockResolvedValue(new Map([
+          ['spend-pending', {
+            isForeign: true,
+            foreignAmount: null,
+            foreignCurrency: null,
+            foreignExchangeRate: null,
+            hasReward: false,
+          }],
+        ]));
+
+        const result = await fetchAndProcessCashTransactions(
+          { ...mockCashAccount, includePendingTransactions: true },
+          '2026-01-01',
+          '2026-01-31',
+        );
+
+        expect(result).toHaveLength(1);
+        expect(result[0].notes).toBe('');
+        expect(result[0].notes).not.toContain('N/A');
+        expect(result[0].foreignCurrency).toBeNull();
+      });
+
+      it('adds the FX note and currency once the purchase has settled', async () => {
+        wealthsimpleApi.fetchTransactions.mockResolvedValue([buildPrepaid('spend-settled', 'settled')]);
+        wealthsimpleApi.fetchSpendTransactions.mockResolvedValue(new Map([
+          ['spend-settled', {
+            isForeign: true,
+            foreignAmount: 84.28,
+            foreignCurrency: 'USD',
+            foreignExchangeRate: 1.3622,
+            hasReward: false,
+          }],
+        ]));
+
+        const result = await fetchAndProcessCashTransactions(
+          mockCashAccount,
+          '2026-01-01',
+          '2026-01-31',
+        );
+
+        expect(result).toHaveLength(1);
+        expect(result[0].notes).toBe('Amount: 84.28 USD (rate: 1.3622)');
+        expect(result[0].foreignCurrency).toBe('USD');
+      });
+    });
   });
 
 });

@@ -47,6 +47,8 @@ jest.mock('../../../src/api/wealthsimple', () => ({
     fetchCorporateActionChildActivities: jest.fn(),
     fetchShortOptionPositionExpiryDetail: jest.fn(),
     fetchSecurity: jest.fn(),
+    fetchCreditCardActivity: jest.fn(),
+    fetchSpendTransactions: jest.fn(),
   },
 }));
 
@@ -1000,5 +1002,190 @@ describe('reconcileWealthsimpleFetchedPending — settled ID suffix change (regr
     expect(result.cancelled).toBe(0);
     expect(mockMonarchApi.deleteTransaction).not.toHaveBeenCalled();
     expect(mockMonarchApi.updateTransaction).not.toHaveBeenCalled();
+  });
+});
+
+// ── Foreign currency notes + tag on settle ──────────────────
+
+describe('reconcileWealthsimpleFetchedPending — foreign currency on settle', () => {
+  const WS_PENDING_ID = 'card-activity-00000000527000993851-VI-00-0306231535741989-QIRIAS';
+  const WS_SETTLED_ID = `${WS_PENDING_ID}-0tk4pfcsob83`;
+
+  /** Settled foreign card activity as returned by FetchCreditCardActivity */
+  const FOREIGN_ACTIVITY = {
+    id: WS_SETTLED_ID,
+    status: 'settled',
+    isForeign: true,
+    originalAmount: '-29.29',
+    originalCurrency: 'EUR',
+    foreignAmount: -29,
+    foreignCurrency: 'EUR',
+    foreignExchangeRate: '1.610106',
+    hasReward: true,
+    rewardAmount: '0.94',
+    rewardRate: '0.02',
+  };
+
+  const buildSettledCardTx = () => makeWsTx(WS_SETTLED_ID, {
+    type: 'CREDIT_CARD',
+    subType: 'PURCHASE',
+    status: 'settled',
+    amount: 47.16,
+    amountSign: 'negative',
+    spendMerchant: 'CAFE BERLIN',
+    occurredAt: '2026-01-10T12:00:00Z',
+  });
+
+  beforeEach(() => {
+    mockMonarchApi.updateTransaction.mockResolvedValue({});
+    mockMonarchApi.setTransactionTags.mockResolvedValue({});
+    mockMonarchApi.deleteTransaction.mockResolvedValue(true);
+    mockMonarchApi.getTagByName.mockResolvedValue({ id: 'tag-eur', name: 'EUR' });
+    mockWealthsimpleApi.fetchCreditCardActivity.mockResolvedValue(FOREIGN_ACTIVITY);
+  });
+
+  it('fetches card activity details for the settled credit card purchase', async () => {
+    const monarchTx = makeMonarchTx('mtx-fx', `ws-tx:${WS_PENDING_ID}`, { amount: -47.16 });
+
+    await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [buildSettledCardTx()],
+      'CREDIT_CARD',
+    );
+
+    expect(mockWealthsimpleApi.fetchCreditCardActivity).toHaveBeenCalledWith(WS_SETTLED_ID);
+    // The batched spend API is 403 for credit cards and must not be used here
+    expect(mockWealthsimpleApi.fetchSpendTransactions).not.toHaveBeenCalled();
+  });
+
+  it('adds FX notes to the settled Monarch transaction (regression: notes were lost on settle)', async () => {
+    // The pending upload wrote no FX note (data did not exist yet), so the settle
+    // step is the only opportunity to add it.
+    const monarchTx = makeMonarchTx('mtx-fx-notes', `ws-tx:${WS_PENDING_ID}`, { amount: -47.16 });
+
+    const result = await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [buildSettledCardTx()],
+      'CREDIT_CARD',
+    );
+
+    expect(result.settled).toBe(1);
+
+    const notesCall = mockMonarchApi.updateTransaction.mock.calls.find((call) => 'notes' in call[1]);
+    expect(notesCall[1].notes).toContain('Amount: 29.29 EUR (rate: 1.610106)');
+    expect(notesCall[1].notes).toContain('Rewards: 0.94 (rate: 0.02)');
+    expect(notesCall[1].notes).not.toContain('N/A');
+  });
+
+  it('applies the currency tag instead of clearing all tags', async () => {
+    const monarchTx = makeMonarchTx('mtx-fx-tag', `ws-tx:${WS_PENDING_ID}`, { amount: -47.16 });
+
+    await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [buildSettledCardTx()],
+      'CREDIT_CARD',
+    );
+
+    expect(mockMonarchApi.getTagByName).toHaveBeenCalledWith('EUR');
+    expect(mockMonarchApi.setTransactionTags).toHaveBeenCalledWith('mtx-fx-tag', ['tag-eur']);
+  });
+
+  it('clears tags when the currency tag does not exist in Monarch yet', async () => {
+    mockMonarchApi.getTagByName.mockResolvedValue(null);
+    const monarchTx = makeMonarchTx('mtx-no-tag', `ws-tx:${WS_PENDING_ID}`, { amount: -47.16 });
+
+    const result = await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [buildSettledCardTx()],
+      'CREDIT_CARD',
+    );
+
+    // The Pending tag must still be removed even when the currency tag is missing
+    expect(mockMonarchApi.setTransactionTags).toHaveBeenCalledWith('mtx-no-tag', []);
+    expect(result.settled).toBe(1);
+  });
+
+  it('clears tags for a settled domestic purchase', async () => {
+    mockWealthsimpleApi.fetchCreditCardActivity.mockResolvedValue({
+      id: WS_SETTLED_ID,
+      status: 'settled',
+      isForeign: false,
+      originalAmount: '-47.16',
+      originalCurrency: 'CAD',
+      hasReward: false,
+    });
+
+    const monarchTx = makeMonarchTx('mtx-domestic', `ws-tx:${WS_PENDING_ID}`, { amount: -47.16 });
+
+    await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [buildSettledCardTx()],
+      'CREDIT_CARD',
+    );
+
+    expect(mockMonarchApi.getTagByName).not.toHaveBeenCalled();
+    expect(mockMonarchApi.setTransactionTags).toHaveBeenCalledWith('mtx-domestic', []);
+  });
+
+  it('still settles (clearing tags) when the card activity fetch returns null', async () => {
+    mockWealthsimpleApi.fetchCreditCardActivity.mockResolvedValue(null);
+    const monarchTx = makeMonarchTx('mtx-null-activity', `ws-tx:${WS_PENDING_ID}`, { amount: -47.16 });
+
+    const result = await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [buildSettledCardTx()],
+      'CREDIT_CARD',
+    );
+
+    expect(result.settled).toBe(1);
+    expect(result.failed).toBe(0);
+    expect(mockMonarchApi.setTransactionTags).toHaveBeenCalledWith('mtx-null-activity', []);
+  });
+
+  it('uses the spend API (not card activity) for a CASH SPEND/PREPAID transaction', async () => {
+    mockWealthsimpleApi.fetchSpendTransactions.mockResolvedValue(new Map([
+      ['spend-tx-1', {
+        isForeign: true,
+        foreignAmount: 84.28,
+        foreignCurrency: 'USD',
+        foreignExchangeRate: 1.3622,
+        hasReward: false,
+      }],
+    ]));
+    mockMonarchApi.getTagByName.mockResolvedValue({ id: 'tag-usd', name: 'USD' });
+
+    const monarchTx = makeMonarchTx('mtx-cash-fx', 'ws-tx:spend-tx-1', { amount: -114.81 });
+
+    const settledSpendTx = makeWsTx('spend-tx-1', {
+      accountId: 'ca-cash-abc',
+      type: 'SPEND',
+      subType: 'PREPAID',
+      status: 'settled',
+      amount: 114.81,
+      amountSign: 'negative',
+      spendMerchant: 'US STORE',
+      occurredAt: '2026-01-10T12:00:00Z',
+    });
+
+    const result = await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [settledSpendTx],
+      'CASH',
+    );
+
+    expect(result.settled).toBe(1);
+    expect(mockWealthsimpleApi.fetchSpendTransactions).toHaveBeenCalledWith('ca-cash-abc', ['spend-tx-1']);
+    expect(mockWealthsimpleApi.fetchCreditCardActivity).not.toHaveBeenCalled();
+
+    const notesCall = mockMonarchApi.updateTransaction.mock.calls.find((call) => 'notes' in call[1]);
+    expect(notesCall[1].notes).toContain('Amount: 84.28 USD (rate: 1.3622)');
+    expect(mockMonarchApi.setTransactionTags).toHaveBeenCalledWith('mtx-cash-fx', ['tag-usd']);
   });
 });

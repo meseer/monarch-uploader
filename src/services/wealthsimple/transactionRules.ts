@@ -8,6 +8,7 @@ import { applyMerchantMapping } from '../../mappers/merchant';
 
 import {
   formatSpendNotes,
+  getForeignCurrencyCode,
   formatTransferNotes,
   formatPrettyDate,
   formatManagedOrderNotes,
@@ -56,6 +57,7 @@ import {
 
 export {
   formatSpendNotes,
+  getForeignCurrencyCode,
   formatTransferNotes,
   formatPrettyDate,
 
@@ -102,6 +104,8 @@ interface TransactionRuleResult {
   technicalDetails: string;
   needsCategoryMapping?: boolean;
   categoryKey?: string;
+  /** ISO currency code for a settled foreign transaction (used as a Monarch tag) */
+  foreignCurrency?: string | null;
   aftDetails?: { aftTransactionCategory: string; aftTransactionType: string; aftOriginatorName: string };
   billPayDetails?: { billPayCompanyName: string; billPayPayeeNickname: string; redactedExternalAccountNumber: string };
   p2pDetails?: { type: string; subType: string; p2pHandle: string };
@@ -179,7 +183,9 @@ export const CASH_TRANSACTION_RULES: CashTransactionRule[] = [
       const originalMerchant = (tx.spendMerchant as string | null | undefined) || 'Unknown Merchant';
       const cleanedMerchant = applyMerchantMapping(originalMerchant, { stripStoreNumbers: true });
       const spendDetails = (enrichmentMap?.get(`spend:${tx.externalCanonicalId}`) as SpendDetails | null) || null;
-      const notes = formatSpendNotes(spendDetails);
+      // FX/reward data is only populated after settlement — see formatSpendNotes
+      const isSettled = tx.status === 'settled';
+      const notes = formatSpendNotes(spendDetails, { isSettled });
       return {
         category: null,
         merchant: cleanedMerchant,
@@ -188,6 +194,7 @@ export const CASH_TRANSACTION_RULES: CashTransactionRule[] = [
         technicalDetails: '',
         needsCategoryMapping: true,
         categoryKey: cleanedMerchant,
+        foreignCurrency: isSettled ? getForeignCurrencyCode(spendDetails) : null,
       };
     },
   },

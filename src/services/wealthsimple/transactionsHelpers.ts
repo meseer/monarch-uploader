@@ -13,6 +13,7 @@ import toast from '../../ui/toast';
 import {
   formatOriginalStatement,
   formatSpendNotes,
+  getForeignCurrencyCode,
   getTransactionId,
 } from './transactionRules';
 import { type WealthsimpleTransaction } from './transactionRulesHelpers';
@@ -35,6 +36,8 @@ export interface ProcessedTransaction {
   isPending?: boolean;
   technicalDetails?: string;
   needsCategoryMapping?: boolean;
+  /** ISO currency code for a settled foreign transaction (uploaded as a Monarch tag) */
+  foreignCurrency?: string | null;
   aftDetails?: {
     aftTransactionCategory: string;
     aftTransactionType: string;
@@ -119,11 +122,16 @@ export function processCreditCardTransaction(
   const isNegative = transaction.amountSign === 'negative';
   const finalAmount = isNegative ? -Math.abs(transaction.amount ?? 0) : Math.abs(transaction.amount ?? 0);
 
+  // FX and reward values are only populated by Wealthsimple after settlement
+  const isSettled = transaction.status === 'settled';
+
   let notes = '';
+  let foreignCurrency: string | null = null;
   if (transaction.subType === 'PURCHASE' && spendDetailsMap) {
-    const spendDetails = spendDetailsMap.get(transaction.externalCanonicalId ?? '');
+    const spendDetails = spendDetailsMap.get(transaction.externalCanonicalId ?? '') as Parameters<typeof formatSpendNotes>[0];
     if (spendDetails) {
-      notes = formatSpendNotes(spendDetails as Parameters<typeof formatSpendNotes>[0]);
+      notes = formatSpendNotes(spendDetails, { isSettled });
+      foreignCurrency = isSettled ? getForeignCurrencyCode(spendDetails) : null;
     }
   }
 
@@ -137,6 +145,7 @@ export function processCreditCardTransaction(
     subType: transaction.subType,
     status: transaction.status as string | null | undefined,
     notes,
+    foreignCurrency,
     categoryKey: cleanedMerchant,
   };
 }
