@@ -49,20 +49,20 @@ describe('mergeSettledNotes', () => {
   it('returns only the settled block when there are no existing notes', () => {
     const result = mergeSettledNotes({
       existingNotes: '',
-      settledNotes: 'Amount: 29.29 EUR (rate: 1.610106)\nRewards: 0.94 (rate: 0.02)',
+      settledNotes: 'Amount: 29.29 EUR (rate: 1.610106)\nRewards: 0.94 (rate: 2%)',
     });
 
-    expect(result).toBe('Amount: 29.29 EUR (rate: 1.610106)\nRewards: 0.94 (rate: 0.02)');
+    expect(result).toBe('Amount: 29.29 EUR (rate: 1.610106)\nRewards: 0.94 (rate: 2%)');
   });
 
   it('preserves a user memo and appends the settled block at the end', () => {
     const result = mergeSettledNotes({
       existingNotes: 'Gift for Anna',
-      settledNotes: 'Amount: 29.29 EUR (rate: 1.610106)\nRewards: 0.94 (rate: 0.02)',
+      settledNotes: 'Amount: 29.29 EUR (rate: 1.610106)\nRewards: 0.94 (rate: 2%)',
     });
 
     expect(result).toBe(
-      'Gift for Anna\n\nAmount: 29.29 EUR (rate: 1.610106)\nRewards: 0.94 (rate: 0.02)',
+      'Gift for Anna\n\nAmount: 29.29 EUR (rate: 1.610106)\nRewards: 0.94 (rate: 2%)',
     );
   });
 
@@ -76,11 +76,21 @@ describe('mergeSettledNotes', () => {
   });
 
   it('is idempotent — does not duplicate an already-present settled block', () => {
-    const settledNotes = 'Amount: 29.29 EUR (rate: 1.610106)\nRewards: 0.94 (rate: 0.02)';
+    const settledNotes = 'Amount: 29.29 EUR (rate: 1.610106)\nRewards: 0.94 (rate: 2%)';
     const once = mergeSettledNotes({ existingNotes: 'Gift for Anna', settledNotes });
     const twice = mergeSettledNotes({ existingNotes: once, settledNotes });
 
     expect(twice).toBe(once);
+  });
+
+  it('replaces a legacy decimal-rate rewards line with the percentage version', () => {
+    const result = mergeSettledNotes({
+      existingNotes: 'Gift for Anna\nRewards: 0.94 (rate: 0.02)',
+      settledNotes: 'Rewards: 0.94 (rate: 2%)',
+    });
+
+    expect(result).toBe('Gift for Anna\n\nRewards: 0.94 (rate: 2%)');
+    expect(result).not.toContain('rate: 0.02');
   });
 
   it('replaces a stale automated line whose values changed on settle', () => {

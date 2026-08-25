@@ -1075,7 +1075,7 @@ describe('reconcileWealthsimpleFetchedPending — foreign currency on settle', (
 
     const notesCall = mockMonarchApi.updateTransaction.mock.calls.find((call) => 'notes' in call[1]);
     expect(notesCall[1].notes).toContain('Amount: 29.29 EUR (rate: 1.610106)');
-    expect(notesCall[1].notes).toContain('Rewards: 0.94 (rate: 0.02)');
+    expect(notesCall[1].notes).toContain('Rewards: 0.94 (rate: 2%)');
     expect(notesCall[1].notes).not.toContain('N/A');
   });
 
@@ -1276,7 +1276,7 @@ describe('reconcileWealthsimpleFetchedPending — user notes preserved on settle
     const notes = getNotesUpdate();
     expect(notes).toContain('Gift for Anna');
     expect(notes).toContain('Split with Bob');
-    expect(notes).toContain('Rewards: 0.94 (rate: 0.02)');
+    expect(notes).toContain('Rewards: 0.94 (rate: 2%)');
   });
 
   it('keeps a user memo written after the transaction-type prefix form', async () => {
@@ -1304,7 +1304,7 @@ describe('reconcileWealthsimpleFetchedPending — user notes preserved on settle
     // removal did not land, so the transaction is still tagged Pending.
     const monarchTx = makeMonarchTx(
       'mtx-idempotent',
-      `Gift for Anna\n\nAmount: 29.29 EUR (rate: 1.610106)\nRewards: 0.94 (rate: 0.02)\nws-tx:${WS_PENDING_ID}`,
+      `Gift for Anna\n\nAmount: 29.29 EUR (rate: 1.610106)\nRewards: 0.94 (rate: 2%)\nws-tx:${WS_PENDING_ID}`,
       { amount: -47.16 },
     );
 
