@@ -922,7 +922,7 @@ describe('Wealthsimple Transaction Service - Credit Card', () => {
       );
 
       expect(result).toHaveLength(1);
-      expect(result[0].notes).toBe('Amount: 29.29 EUR (rate: 1.610106)\nRewards: 0.94 (rate: 0.02)');
+      expect(result[0].notes).toBe('Amount: 29.29 EUR (rate: 1.610106)\nRewards: 0.94 (rate: 2%)');
       expect(result[0].foreignCurrency).toBe('EUR');
     });
 

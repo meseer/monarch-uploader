@@ -107,10 +107,41 @@ describe('formatSpendNotes', () => {
     expect(notes).not.toContain('1.61 ');
   });
 
-  it('includes the reward amount and rate for a settled transaction', () => {
+  it('includes the reward amount and rate as a percentage for a settled transaction', () => {
     const notes = formatSpendNotes(CREDIT_CARD_FX_DETAILS, { isSettled: true });
 
-    expect(notes).toContain('Rewards: 0.94 (rate: 0.02)');
+    expect(notes).toContain('Rewards: 0.94 (rate: 2%)');
+    // The raw decimal rate must never leak into the note
+    expect(notes).not.toContain('rate: 0.02');
+  });
+
+  it('formats a fractional reward rate without float artifacts', () => {
+    const notes = formatSpendNotes(
+      { ...CREDIT_CARD_FX_DETAILS, rewardRate: '0.0125' },
+      { isSettled: true },
+    );
+
+    expect(notes).toContain('Rewards: 0.94 (rate: 1.25%)');
+    expect(notes).not.toContain('1.2500000000000002');
+  });
+
+  it('accepts a numeric reward rate', () => {
+    const notes = formatSpendNotes(
+      { ...CREDIT_CARD_FX_DETAILS, rewardRate: 0.02 },
+      { isSettled: true },
+    );
+
+    expect(notes).toContain('Rewards: 0.94 (rate: 2%)');
+  });
+
+  it('omits the reward rate when it is not a parseable number', () => {
+    const notes = formatSpendNotes(
+      { isForeign: false, hasReward: true, rewardAmount: '0.94', rewardRate: 'not-a-number' },
+      { isSettled: true },
+    );
+
+    expect(notes).toBe('Rewards: 0.94');
+    expect(notes).not.toContain('NaN');
   });
 
   it('places the FX line before the rewards line', () => {
@@ -127,7 +158,7 @@ describe('formatSpendNotes', () => {
     );
 
     expect(notes).toContain('Rewards: 0.94');
-    expect(notes).not.toContain('rate: 0.02');
+    expect(notes).not.toContain('rate: 2%');
   });
 
   it('omits the rewards line entirely when hasReward is false', () => {
@@ -154,7 +185,7 @@ describe('formatSpendNotes', () => {
     expect(notes).not.toContain('Amount:');
     expect(notes).not.toContain('N/A');
     // The rewards line is unaffected by the missing FX rate
-    expect(notes).toContain('Rewards: 0.94 (rate: 0.02)');
+    expect(notes).toContain('Rewards: 0.94 (rate: 2%)');
   });
 
   it('omits the FX line when the amount is missing rather than printing N/A', () => {
@@ -195,7 +226,7 @@ describe('formatSpendNotes', () => {
       { isSettled: true },
     );
 
-    expect(notes).toBe('Rewards: 0.25 (rate: 0.01)');
+    expect(notes).toBe('Rewards: 0.25 (rate: 1%)');
   });
 });
 

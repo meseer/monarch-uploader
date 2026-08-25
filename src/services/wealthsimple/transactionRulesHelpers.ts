@@ -231,10 +231,32 @@ function buildForeignAmountNote(spendDetails: SpendDetails): string | null {
 }
 
 /**
+ * Convert a decimal reward rate into a human-readable percentage.
+ *
+ * Wealthsimple returns the rate as a decimal fraction (e.g. "0.02"), which reads
+ * poorly in notes — percentages match how the reward is advertised.
+ *
+ * - `"0.02"` → `"2%"`
+ * - `"0.0125"` → `"1.25%"` (toFixed avoids float artifacts like 1.2500000000000002)
+ *
+ * @param rate - Reward rate as a decimal fraction
+ * @returns Percentage string, or null when the rate is not a finite number
+ */
+function formatRewardRateAsPercent(rate: number | string): string | null {
+  const parsed = typeof rate === 'number' ? rate : parseFloat(String(rate));
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  // toFixed then parseFloat strips both float artifacts and trailing zeros
+  return `${parseFloat((parsed * 100).toFixed(4))}%`;
+}
+
+/**
  * Build the rewards note line, or null when no reward was earned.
  *
  * @param spendDetails - Spend/card activity details
- * @returns "Rewards: 0.94 (rate: 0.02)" / "Rewards: 0.94" or null
+ * @returns "Rewards: 0.94 (rate: 2%)" / "Rewards: 0.94" or null
  */
 function buildRewardNote(spendDetails: SpendDetails): string | null {
   if (spendDetails.hasReward !== true) {
@@ -251,7 +273,13 @@ function buildRewardNote(spendDetails: SpendDetails): string | null {
     return `Rewards: ${amount}`;
   }
 
-  return `Rewards: ${amount} (rate: ${rate})`;
+  const ratePercent = formatRewardRateAsPercent(rate);
+  if (!ratePercent) {
+    debugLog('Skipping reward rate — unparseable value', { rate });
+    return `Rewards: ${amount}`;
+  }
+
+  return `Rewards: ${amount} (rate: ${ratePercent})`;
 }
 
 /**
