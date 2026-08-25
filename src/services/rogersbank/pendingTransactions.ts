@@ -12,6 +12,7 @@
 
 import { debugLog, formatDate } from '../../core/utils';
 import monarchApi from '../../api/monarch';
+import { computeSettledTagIds } from '../common/pendingReconciliation';
 
 /**
  * Prefix for Rogers Bank generated transaction IDs stored in Monarch notes
@@ -455,8 +456,11 @@ export async function reconcileRogersPendingTransactions(monarchAccountId, allTr
             });
           }
 
-          // Remove Pending tag
-          await monarchApi.setTransactionTags(monarchTxId, []);
+          // Remove Pending tag, preserving any tags the user applied while pending
+          await monarchApi.setTransactionTags(
+            monarchTxId,
+            computeSettledTagIds(monarchTx.tags, pendingTag.id),
+          );
 
           // Collect dedup key for dedup store
           // Use referenceNumber when available, fall back to hash ID for ref-less transactions

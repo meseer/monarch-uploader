@@ -18,6 +18,7 @@
 
 import { debugLog, formatDate } from '../../../../core/utils';
 import monarchApi from '../../../../api/monarch';
+import { computeSettledTagIds } from '../../../../services/common/pendingReconciliation';
 import type { MbnaRawTransaction } from '../../source/balanceReconstruction';
 
 // ── Interfaces ──────────────────────────────────────────────
@@ -54,6 +55,7 @@ interface MonarchTransaction {
   notes?: string;
   amount?: number;
   ownedByUser?: { id: string } | null;
+  tags?: Array<{ id: string }>;
 }
 
 // ── Constants ───────────────────────────────────────────────
@@ -377,8 +379,11 @@ export async function reconcileMbnaPendingTransactions(
             });
           }
 
-          // Remove Pending tag
-          await monarchApi.setTransactionTags(monarchTxId, []);
+          // Remove Pending tag, preserving any tags the user applied while pending
+          await monarchApi.setTransactionTags(
+            monarchTxId,
+            computeSettledTagIds(monarchTx.tags, pendingTag.id),
+          );
 
           result.settled += 1;
           continue;

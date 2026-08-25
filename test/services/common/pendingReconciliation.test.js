@@ -6,6 +6,7 @@ import {
   generatePendingTransactionId,
   extractPendingIdFromNotes,
   cleanPendingIdFromNotes,
+  computeSettledTagIds,
   separateAndDeduplicateTransactions,
   reconcilePendingTransactions,
   reconcileFetchedPendingTransactions,
@@ -116,6 +117,83 @@ describe('cleanPendingIdFromNotes', () => {
   it('should not remove wrong prefix', () => {
     const cleaned = cleanPendingIdFromNotes('rb-tx', 'mbna-tx:abc123def4567890');
     expect(cleaned).toBe('mbna-tx:abc123def4567890');
+  });
+});
+
+describe('computeSettledTagIds', () => {
+  it('removes the Pending tag when it is the only tag', () => {
+    expect(computeSettledTagIds([{ id: 'tag-pending' }], 'tag-pending')).toEqual([]);
+  });
+
+  it('preserves user-applied tags while removing Pending', () => {
+    const tags = [
+      { id: 'tag-pending', name: 'Pending' },
+      { id: 'tag-reimbursable', name: 'Reimbursable' },
+      { id: 'tag-business', name: 'Business' },
+    ];
+
+    expect(computeSettledTagIds(tags, 'tag-pending')).toEqual([
+      'tag-reimbursable',
+      'tag-business',
+    ]);
+  });
+
+  it('appends the additional tag after the preserved tags', () => {
+    const tags = [
+      { id: 'tag-pending', name: 'Pending' },
+      { id: 'tag-reimbursable', name: 'Reimbursable' },
+    ];
+
+    expect(computeSettledTagIds(tags, 'tag-pending', 'tag-eur')).toEqual([
+      'tag-reimbursable',
+      'tag-eur',
+    ]);
+  });
+
+  it('does not duplicate the additional tag when it is already present', () => {
+    const tags = [
+      { id: 'tag-pending', name: 'Pending' },
+      { id: 'tag-eur', name: 'EUR' },
+    ];
+
+    expect(computeSettledTagIds(tags, 'tag-pending', 'tag-eur')).toEqual(['tag-eur']);
+  });
+
+  it('adds the additional tag when no other tags remain', () => {
+    expect(computeSettledTagIds([{ id: 'tag-pending' }], 'tag-pending', 'tag-usd')).toEqual(['tag-usd']);
+  });
+
+  it('ignores a null/undefined/empty additional tag', () => {
+    const tags = [{ id: 'tag-pending' }, { id: 'tag-user' }];
+
+    expect(computeSettledTagIds(tags, 'tag-pending', null)).toEqual(['tag-user']);
+    expect(computeSettledTagIds(tags, 'tag-pending', undefined)).toEqual(['tag-user']);
+    expect(computeSettledTagIds(tags, 'tag-pending', '')).toEqual(['tag-user']);
+  });
+
+  it('handles null/undefined/empty existing tags', () => {
+    expect(computeSettledTagIds(null, 'tag-pending')).toEqual([]);
+    expect(computeSettledTagIds(undefined, 'tag-pending')).toEqual([]);
+    expect(computeSettledTagIds([], 'tag-pending')).toEqual([]);
+  });
+
+  it('still adds the additional tag when there are no existing tags', () => {
+    expect(computeSettledTagIds(undefined, 'tag-pending', 'tag-eur')).toEqual(['tag-eur']);
+  });
+
+  it('deduplicates repeated existing tags', () => {
+    const tags = [{ id: 'tag-user' }, { id: 'tag-user' }, { id: 'tag-pending' }];
+    expect(computeSettledTagIds(tags, 'tag-pending')).toEqual(['tag-user']);
+  });
+
+  it('skips malformed tag entries without an id', () => {
+    const tags = [{ id: 'tag-user' }, {}, null, { id: '' }, { id: 'tag-pending' }];
+    expect(computeSettledTagIds(tags, 'tag-pending')).toEqual(['tag-user']);
+  });
+
+  it('is a no-op on tags when the transaction never carried the Pending tag', () => {
+    const tags = [{ id: 'tag-user' }];
+    expect(computeSettledTagIds(tags, 'tag-pending')).toEqual(['tag-user']);
   });
 });
 

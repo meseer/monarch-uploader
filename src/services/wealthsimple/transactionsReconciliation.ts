@@ -11,6 +11,7 @@ import { CASH_TRANSACTION_RULES, formatSpendNotes, getForeignCurrencyCode } from
 import { convertToLocalDate, processCreditCardTransaction } from './transactionsHelpers';
 import { resolveWsTransactionByPendingId } from './transactionIdMatching';
 import { cleanSystemNotesFromNotes, updateSettledDividendNotes, mergeSettledNotes } from './settledNotes';
+import { computeSettledTagIds } from '../common/pendingReconciliation';
 import type { WealthsimpleTransaction, ExtendedOrder, SpendDetails } from './transactionRulesHelpers';
 
 /**
@@ -440,35 +441,52 @@ function resolveSettledCardDetails(
 }
 
 /**
- * Apply the currency tag for a settled foreign transaction, or clear all tags.
+ * Apply the settled tag set: remove "Pending", keep every user-applied tag, and
+ * add the ISO currency code when the transaction turns out to be foreign.
  *
  * The "Pending" tag must always be removed once a transaction settles. When the
- * transaction turns out to be foreign, the ISO currency code replaces it so the
- * transaction remains filterable in Monarch — matching what the CSV import does
- * for transactions that were already settled on first upload.
+ * transaction is foreign, the ISO currency code is added so the transaction
+ * remains filterable in Monarch — matching what the CSV import does for
+ * transactions that were already settled on first upload.
+ *
+ * Tags the user applied while the transaction was pending are preserved:
+ * `setTransactionTags` replaces the whole tag list, so the full desired set is
+ * computed by `computeSettledTagIds` rather than sent as a bare array.
  *
  * A tag that does not yet exist in the household cannot be created through this
- * mutation, so in that case tags are simply cleared and the gap is logged.
+ * mutation, so in that case only "Pending" is removed and the gap is logged.
  *
  * @param monarchTxId - Monarch transaction ID
+ * @param existingTags - Tags currently on the Monarch transaction
+ * @param pendingTagId - ID of the Monarch "Pending" tag
  * @param foreignCurrency - ISO currency code, or null for domestic transactions
  */
-async function applySettledTags(monarchTxId: string, foreignCurrency: string | null): Promise<void> {
-  if (!foreignCurrency) {
-    await monarchApi.setTransactionTags(monarchTxId, []);
-    return;
+async function applySettledTags({
+  monarchTxId,
+  existingTags,
+  pendingTagId,
+  foreignCurrency,
+}: {
+  monarchTxId: string;
+  existingTags: Array<{ id: string }> | undefined;
+  pendingTagId: string;
+  foreignCurrency: string | null;
+}): Promise<void> {
+  let currencyTagId: string | null = null;
+
+  if (foreignCurrency) {
+    const currencyTag = await monarchApi.getTagByName(foreignCurrency);
+
+    if (currencyTag) {
+      debugLog(`[ws-reconciliation] Applying currency tag "${foreignCurrency}" to ${monarchTxId}`);
+      currencyTagId = currencyTag.id;
+    } else {
+      debugLog(`[ws-reconciliation] Monarch tag "${foreignCurrency}" does not exist — removing "Pending" only`);
+    }
   }
 
-  const currencyTag = await monarchApi.getTagByName(foreignCurrency);
-
-  if (!currencyTag) {
-    debugLog(`[ws-reconciliation] Monarch tag "${foreignCurrency}" does not exist — clearing tags instead`);
-    await monarchApi.setTransactionTags(monarchTxId, []);
-    return;
-  }
-
-  debugLog(`[ws-reconciliation] Applying currency tag "${foreignCurrency}" to ${monarchTxId}`);
-  await monarchApi.setTransactionTags(monarchTxId, [currencyTag.id]);
+  const tagIds = computeSettledTagIds(existingTags, pendingTagId, currencyTagId);
+  await monarchApi.setTransactionTags(monarchTxId, tagIds);
 }
 
 /**
@@ -571,12 +589,14 @@ async function settleMonarchTransaction({
   wsTransactionId,
   accountType,
   stripStoreNumbers,
+  pendingTagId,
 }: {
   monarchTx: Record<string, unknown>;
   wsTx: Record<string, unknown>;
   wsTransactionId: string;
   accountType: string;
   stripStoreNumbers: boolean;
+  pendingTagId: string;
 }): Promise<void> {
   const monarchTxId = monarchTx.id as string;
   const notes = (monarchTx.notes as string) || '';
@@ -662,8 +682,14 @@ async function settleMonarchTransaction({
     });
   }
 
-  // Removes the "Pending" tag, and applies the currency tag when foreign
-  await applySettledTags(monarchTxId, cardDetails.foreignCurrency);
+  // Removes the "Pending" tag, keeps user-applied tags, and adds the currency
+  // tag when the settled transaction turns out to be foreign
+  await applySettledTags({
+    monarchTxId,
+    existingTags: monarchTx.tags as Array<{ id: string }> | undefined,
+    pendingTagId,
+    foreignCurrency: cardDetails.foreignCurrency,
+  });
 }
 
 /**
@@ -748,6 +774,7 @@ export async function reconcileWealthsimpleFetchedPending(
             wsTransactionId,
             accountType,
             stripStoreNumbers,
+            pendingTagId: pendingTag.id,
           });
 
           // Record the CURRENT (settled) ID so the caller can persist it to the
