@@ -10,6 +10,7 @@ import { INVESTMENT_TRANSACTION_RULES } from './transactionsInvestment';
 import { CASH_TRANSACTION_RULES, formatSpendNotes, getForeignCurrencyCode } from './transactionRules';
 import { convertToLocalDate, processCreditCardTransaction } from './transactionsHelpers';
 import { resolveWsTransactionByPendingId } from './transactionIdMatching';
+import { cleanSystemNotesFromNotes, updateSettledDividendNotes, mergeSettledNotes } from './settledNotes';
 import type { WealthsimpleTransaction, ExtendedOrder, SpendDetails } from './transactionRulesHelpers';
 
 /**
@@ -49,43 +50,6 @@ function extractTransactionIdFromNotes(notes: string | null | undefined): string
   }
 
   return match[0];
-}
-
-/**
- * Remove Wealthsimple system notes (transaction ID) from notes
- * Preserves any user-added notes (memo, technical details)
- */
-function cleanSystemNotesFromNotes(notes: string | null | undefined): string {
-  if (!notes || typeof notes !== 'string') {
-    return '';
-  }
-
-  let cleaned = notes;
-
-  cleaned = cleaned.replace(/\w+\s*\/\s*ws-tx:[\w-]+/g, '');
-  cleaned = cleaned.replace(/ws-tx:[\w-]+/g, '');
-  cleaned = cleaned.replace(/\w+\s*\/\s*credit-transaction-[\w-]+/g, '');
-  cleaned = cleaned.replace(/credit-transaction-[\w-]+/g, '');
-
-  cleaned = cleaned.replace(/^\s*[/|]\s*/g, '');
-  cleaned = cleaned.replace(/\s*[/|]\s*$/g, '');
-  cleaned = cleaned.replace(/\n+$/g, '');
-  cleaned = cleaned.replace(/ +/g, ' ');
-
-  return cleaned.trim();
-}
-
-/**
- * Update dividend notes when a pending dividend settles.
- * Replaces "Upcoming dividend on {symbol}" with "Dividend on {symbol}"
- * and removes the "Expected dividends: ..." line (no longer needed once settled).
- */
-function updateSettledDividendNotes(notes: string): string {
-  let updated = notes.replace(/^Upcoming dividend on /m, 'Dividend on ');
-  updated = updated.replace(/^Expected dividends: .+\n?/m, '');
-  // Clean up any resulting double newlines
-  updated = updated.replace(/\n{2,}/g, '\n');
-  return updated.trim();
 }
 
 /**
@@ -648,10 +612,19 @@ async function settleMonarchTransaction({
   // come straight from the card-activity enrichment.
   const cardDetails = resolveSettledCardDetails(wsTx, enrichmentMap);
 
+  // Merge (never overwrite): the Notes field may contain a memo the user typed
+  // while the transaction was pending, and that must survive settlement.
   const regeneratedNotes = ruleResult?.notes || cardDetails.notes || null;
-  if (regeneratedNotes && !cleanedNotes.includes(regeneratedNotes)) {
-    debugLog(`[ws-reconciliation] Updating notes for ${wsTransactionId}: old="${cleanedNotes.substring(0, 60)}" new="${regeneratedNotes.substring(0, 60)}"`);
-    cleanedNotes = regeneratedNotes;
+  if (regeneratedNotes) {
+    const mergedNotes = mergeSettledNotes({
+      existingNotes: cleanedNotes,
+      settledNotes: regeneratedNotes,
+    });
+
+    if (mergedNotes !== cleanedNotes) {
+      debugLog(`[ws-reconciliation] Updating notes for ${wsTransactionId}: old="${cleanedNotes.substring(0, 60)}" new="${mergedNotes.substring(0, 60)}"`);
+      cleanedNotes = mergedNotes;
+    }
   }
 
   // Compute settlement date — may differ from submission date for limit orders, options, etc.

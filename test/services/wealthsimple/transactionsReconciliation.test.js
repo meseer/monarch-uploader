@@ -1189,3 +1189,224 @@ describe('reconcileWealthsimpleFetchedPending — foreign currency on settle', (
     expect(mockMonarchApi.setTransactionTags).toHaveBeenCalledWith('mtx-cash-fx', ['tag-usd']);
   });
 });
+
+// ── User notes preserved on settle (regression) ─────────────
+
+describe('reconcileWealthsimpleFetchedPending — user notes preserved on settle', () => {
+  const WS_PENDING_ID = 'card-activity-00000000527000993851-VI-00-0306231535741989-QIRIAS';
+  const WS_SETTLED_ID = `${WS_PENDING_ID}-0tk4pfcsob83`;
+
+  const FOREIGN_ACTIVITY = {
+    id: WS_SETTLED_ID,
+    status: 'settled',
+    isForeign: true,
+    originalAmount: '-29.29',
+    originalCurrency: 'EUR',
+    foreignAmount: -29,
+    foreignCurrency: 'EUR',
+    foreignExchangeRate: '1.610106',
+    hasReward: true,
+    rewardAmount: '0.94',
+    rewardRate: '0.02',
+  };
+
+  const buildSettledCardTx = () => makeWsTx(WS_SETTLED_ID, {
+    type: 'CREDIT_CARD',
+    subType: 'PURCHASE',
+    status: 'settled',
+    amount: 47.16,
+    amountSign: 'negative',
+    spendMerchant: 'CAFE BERLIN',
+    occurredAt: '2026-01-10T12:00:00Z',
+  });
+
+  const getNotesUpdate = () => {
+    const call = mockMonarchApi.updateTransaction.mock.calls.find((c) => 'notes' in c[1]);
+    return call[1].notes;
+  };
+
+  beforeEach(() => {
+    mockMonarchApi.updateTransaction.mockResolvedValue({});
+    mockMonarchApi.setTransactionTags.mockResolvedValue({});
+    mockMonarchApi.deleteTransaction.mockResolvedValue(true);
+    mockMonarchApi.getTagByName.mockResolvedValue({ id: 'tag-eur', name: 'EUR' });
+    mockWealthsimpleApi.fetchCreditCardActivity.mockResolvedValue(FOREIGN_ACTIVITY);
+  });
+
+  it('keeps a user memo added to a pending foreign credit card transaction', async () => {
+    const monarchTx = makeMonarchTx(
+      'mtx-user-note',
+      `Gift for Anna\nws-tx:${WS_PENDING_ID}`,
+      { amount: -47.16 },
+    );
+
+    const result = await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [buildSettledCardTx()],
+      'CREDIT_CARD',
+    );
+
+    expect(result.settled).toBe(1);
+
+    const notes = getNotesUpdate();
+    // User memo survives...
+    expect(notes).toContain('Gift for Anna');
+    // ...the ws-tx marker is gone...
+    expect(notes).not.toContain('ws-tx:');
+    // ...and the automated FX block is appended AFTER the user content
+    expect(notes).toContain('Amount: 29.29 EUR (rate: 1.610106)');
+    expect(notes.indexOf('Gift for Anna')).toBeLessThan(notes.indexOf('Amount: 29.29 EUR'));
+  });
+
+  it('keeps a multi-line user memo', async () => {
+    const monarchTx = makeMonarchTx(
+      'mtx-multiline-note',
+      `Gift for Anna\nSplit with Bob\nws-tx:${WS_PENDING_ID}`,
+      { amount: -47.16 },
+    );
+
+    await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [buildSettledCardTx()],
+      'CREDIT_CARD',
+    );
+
+    const notes = getNotesUpdate();
+    expect(notes).toContain('Gift for Anna');
+    expect(notes).toContain('Split with Bob');
+    expect(notes).toContain('Rewards: 0.94 (rate: 0.02)');
+  });
+
+  it('keeps a user memo written after the transaction-type prefix form', async () => {
+    const monarchTx = makeMonarchTx(
+      'mtx-prefixed-note',
+      `Reimburse from work\nPURCHASE / ws-tx:${WS_PENDING_ID}`,
+      { amount: -47.16 },
+    );
+
+    await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [buildSettledCardTx()],
+      'CREDIT_CARD',
+    );
+
+    const notes = getNotesUpdate();
+    expect(notes).toContain('Reimburse from work');
+    expect(notes).not.toContain('ws-tx:');
+    expect(notes).toContain('Amount: 29.29 EUR (rate: 1.610106)');
+  });
+
+  it('does not duplicate the automated FX block when it is already present', async () => {
+    // Simulates a re-run where a previous settle wrote the FX block but the tag
+    // removal did not land, so the transaction is still tagged Pending.
+    const monarchTx = makeMonarchTx(
+      'mtx-idempotent',
+      `Gift for Anna\n\nAmount: 29.29 EUR (rate: 1.610106)\nRewards: 0.94 (rate: 0.02)\nws-tx:${WS_PENDING_ID}`,
+      { amount: -47.16 },
+    );
+
+    await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [buildSettledCardTx()],
+      'CREDIT_CARD',
+    );
+
+    const notes = getNotesUpdate();
+    expect(notes).toContain('Gift for Anna');
+    expect(notes.match(/Amount: 29\.29 EUR/g)).toHaveLength(1);
+    expect(notes.match(/Rewards: 0\.94/g)).toHaveLength(1);
+  });
+
+  it('keeps a user memo on a settled CASH SPEND/PREPAID foreign transaction', async () => {
+    mockWealthsimpleApi.fetchSpendTransactions.mockResolvedValue(new Map([
+      ['spend-tx-note', {
+        isForeign: true,
+        foreignAmount: 84.28,
+        foreignCurrency: 'USD',
+        foreignExchangeRate: 1.3622,
+        hasReward: false,
+      }],
+    ]));
+    mockMonarchApi.getTagByName.mockResolvedValue({ id: 'tag-usd', name: 'USD' });
+
+    const monarchTx = makeMonarchTx(
+      'mtx-cash-user-note',
+      'Conference travel\nws-tx:spend-tx-note',
+      { amount: -114.81 },
+    );
+
+    const settledSpendTx = makeWsTx('spend-tx-note', {
+      accountId: 'ca-cash-abc',
+      type: 'SPEND',
+      subType: 'PREPAID',
+      status: 'settled',
+      amount: 114.81,
+      amountSign: 'negative',
+      spendMerchant: 'US STORE',
+      occurredAt: '2026-01-10T12:00:00Z',
+    });
+
+    const result = await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [settledSpendTx],
+      'CASH',
+    );
+
+    expect(result.settled).toBe(1);
+
+    const notes = getNotesUpdate();
+    expect(notes).toContain('Conference travel');
+    expect(notes).toContain('Amount: 84.28 USD (rate: 1.3622)');
+  });
+
+  it('keeps a user memo on a settled investment order and refreshes the fill values', async () => {
+    const monarchTx = makeMonarchTx(
+      'mtx-order-note',
+      'Retirement top-up\nFilled 0 @ USD$0, fees: USD$0\nTotal USD$0\nws-tx:order-note-1',
+      { amount: 0, date: '2026-01-05' },
+    );
+
+    mockWealthsimpleApi.fetchExtendedOrder.mockResolvedValue({
+      orderType: 'BUY',
+      submittedQuantity: 100,
+      filledQuantity: 22,
+      averageFilledPrice: 15,
+      filledTotalFee: 0,
+      limitPrice: 15.5,
+      timeInForce: 'GTC',
+    });
+
+    const wsTx = makeWsTx('order-note-1', {
+      type: 'DIY_BUY',
+      subType: 'LIMIT_ORDER',
+      status: null,
+      unifiedStatus: 'COMPLETED',
+      amount: 330,
+      currency: 'USD',
+      assetSymbol: 'VFV',
+      amountSign: 'negative',
+      occurredAt: '2026-01-05T10:00:00Z',
+    });
+
+    const result = await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [wsTx],
+      'SELF_DIRECTED_TFSA',
+    );
+
+    expect(result.settled).toBe(1);
+
+    const notes = getNotesUpdate();
+    expect(notes).toContain('Retirement top-up');
+    expect(notes).toContain('Filled 22');
+    // Stale pending fill values must not linger
+    expect(notes).not.toContain('Filled 0 @');
+    expect(notes).not.toContain('Total USD$0');
+  });
+});
