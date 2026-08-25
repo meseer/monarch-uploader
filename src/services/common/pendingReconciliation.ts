@@ -161,6 +161,43 @@ export function cleanPendingIdFromNotes(txIdPrefix: string, notes: string): stri
 }
 
 /**
+ * Compute the tag IDs a transaction should carry once it settles.
+ *
+ * `setTransactionTags` is a replace-all mutation, so the full desired tag list
+ * must be sent on every call. Passing an empty array (as earlier versions did)
+ * silently discarded every tag the user had applied while the transaction was
+ * pending — this helper keeps them.
+ *
+ * The "Pending" tag is always removed. `additionalTagId` lets a caller add a
+ * tag at settlement (Wealthsimple adds the ISO currency code for foreign card
+ * transactions) and is applied idempotently, so re-running reconciliation on an
+ * already-settled transaction never duplicates it.
+ *
+ * @param existingTags - Tags currently on the Monarch transaction
+ * @param pendingTagId - ID of the Monarch "Pending" tag (removed)
+ * @param additionalTagId - Optional tag ID to add (ignored when null/undefined)
+ * @returns Tag IDs to send to `setTransactionTags`
+ */
+export function computeSettledTagIds(
+  existingTags: Array<{ id: string }> | null | undefined,
+  pendingTagId: string,
+  additionalTagId?: string | null,
+): string[] {
+  const tagIds = (existingTags || [])
+    .map((tag) => tag?.id)
+    .filter((id): id is string => Boolean(id) && id !== pendingTagId);
+
+  // Deduplicate — a transaction should never carry the same tag twice
+  const uniqueTagIds = Array.from(new Set(tagIds));
+
+  if (additionalTagId && !uniqueTagIds.includes(additionalTagId)) {
+    uniqueTagIds.push(additionalTagId);
+  }
+
+  return uniqueTagIds;
+}
+
+/**
  * Build hash ID maps for a set of raw transactions using the getPendingIdFields hook.
  *
  * @param {string} txIdPrefix - Integration prefix
@@ -376,10 +413,10 @@ export async function reconcileFetchedPendingTransactions({
           }
 
           // Remove Pending tag, preserving other tags
-          const tags = (monarchTx.tags || []) as Array<{ id: string; name?: string }>;
-          const remainingTagIds = tags
-            .filter((tag) => tag.id !== pendingTag.id)
-            .map((tag) => tag.id);
+          const remainingTagIds = computeSettledTagIds(
+            monarchTx.tags as Array<{ id: string }> | undefined,
+            pendingTag.id,
+          );
           await monarchApi.setTransactionTags(monarchTxId, remainingTagIds);
 
           // Collect settled ref ID for dedup store

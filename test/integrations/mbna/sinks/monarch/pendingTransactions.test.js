@@ -7,10 +7,24 @@ import {
   isPendingTransaction,
   isSettledTransaction,
   separateAndDeduplicateTransactions,
+  reconcileMbnaPendingTransactions,
   formatReconciliationMessage,
   formatPendingIdForNotes,
   extractPendingIdFromNotes,
 } from '../../../../../src/integrations/mbna/sinks/monarch/pendingTransactions';
+
+jest.mock('../../../../../src/api/monarch', () => ({
+  __esModule: true,
+  default: {
+    getTagByName: jest.fn(),
+    getTransactionsList: jest.fn(),
+    updateTransaction: jest.fn(),
+    setTransactionTags: jest.fn(),
+    deleteTransaction: jest.fn(),
+  },
+}));
+
+const monarchApi = require('../../../../../src/api/monarch').default;
 
 describe('MBNA Pending Transactions', () => {
   describe('isPendingTransaction', () => {
@@ -179,6 +193,99 @@ describe('MBNA Pending Transactions', () => {
 
     it('should not match rb-tx IDs (Rogers Bank)', () => {
       expect(extractPendingIdFromNotes('rb-tx:1234567890abcdef')).toBeNull();
+    });
+  });
+
+  describe('reconcileMbnaPendingTransactions', () => {
+    /** MBNA transaction whose hash is used as the pending ID in Monarch notes */
+    const settledTx = {
+      transactionDate: '2026-02-13',
+      description: 'Amazon.ca',
+      amount: 42.5,
+      endingIn: '1234',
+      referenceNumber: '123456789',
+    };
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      monarchApi.getTagByName.mockResolvedValue({ id: 'tag-pending', name: 'Pending' });
+      monarchApi.updateTransaction.mockResolvedValue({});
+      monarchApi.setTransactionTags.mockResolvedValue({});
+      monarchApi.deleteTransaction.mockResolvedValue({});
+    });
+
+    it('removes only the Pending tag when it is the sole tag', async () => {
+      const pendingId = await generatePendingTransactionId(settledTx);
+
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [{
+          id: 'monarch-tx-1',
+          amount: 42.5,
+          notes: pendingId,
+          tags: [{ id: 'tag-pending', name: 'Pending' }],
+          ownedByUser: { id: 'user-1' },
+        }],
+      });
+
+      const result = await reconcileMbnaPendingTransactions('monarch-123', [], [settledTx], 90);
+
+      expect(result.settled).toBe(1);
+      expect(monarchApi.setTransactionTags).toHaveBeenCalledWith('monarch-tx-1', []);
+    });
+
+    it('preserves user-applied tags when removing the Pending tag on settle', async () => {
+      // Regression: setTransactionTags replaces the whole tag list, so sending []
+      // used to discard every tag the user applied while the transaction was pending.
+      const pendingId = await generatePendingTransactionId(settledTx);
+
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [{
+          id: 'monarch-tx-tagged',
+          amount: 42.5,
+          notes: pendingId,
+          tags: [
+            { id: 'tag-pending', name: 'Pending' },
+            { id: 'tag-reimbursable', name: 'Reimbursable' },
+            { id: 'tag-shared', name: 'Shared' },
+          ],
+          ownedByUser: { id: 'user-1' },
+        }],
+      });
+
+      const result = await reconcileMbnaPendingTransactions('monarch-123', [], [settledTx], 90);
+
+      expect(result.settled).toBe(1);
+      expect(monarchApi.setTransactionTags).toHaveBeenCalledWith(
+        'monarch-tx-tagged',
+        ['tag-reimbursable', 'tag-shared'],
+      );
+    });
+
+    it('handles a settling transaction with no tags array', async () => {
+      const pendingId = await generatePendingTransactionId(settledTx);
+
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [{
+          id: 'monarch-tx-no-tags',
+          amount: 42.5,
+          notes: pendingId,
+          ownedByUser: null,
+        }],
+      });
+
+      const result = await reconcileMbnaPendingTransactions('monarch-123', [], [settledTx], 90);
+
+      expect(result.settled).toBe(1);
+      expect(monarchApi.setTransactionTags).toHaveBeenCalledWith('monarch-tx-no-tags', []);
+    });
+
+    it('returns noPendingTag when the Pending tag does not exist', async () => {
+      monarchApi.getTagByName.mockResolvedValue(null);
+
+      const result = await reconcileMbnaPendingTransactions('monarch-123', [], [], 90);
+
+      expect(result.noPendingTag).toBe(true);
+      expect(monarchApi.setTransactionTags).not.toHaveBeenCalled();
     });
   });
 

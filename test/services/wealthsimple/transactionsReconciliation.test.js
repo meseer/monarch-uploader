@@ -62,8 +62,11 @@ jest.mock('../../../src/mappers/category', () => ({
   getCategoryMappings: jest.fn(() => ({})),
 }));
 
-// Mock the shared Phase 1 for the convenience wrapper
+// Mock the shared Phase 1 for the convenience wrapper.
+// Everything else (e.g. the pure computeSettledTagIds helper) keeps its real
+// implementation so the settle path exercises the production tag logic.
 jest.mock('../../../src/services/common/pendingReconciliation', () => ({
+  ...jest.requireActual('../../../src/services/common/pendingReconciliation'),
   fetchMonarchPendingTransactions: jest.fn(),
 }));
 
@@ -1187,6 +1190,229 @@ describe('reconcileWealthsimpleFetchedPending — foreign currency on settle', (
     const notesCall = mockMonarchApi.updateTransaction.mock.calls.find((call) => 'notes' in call[1]);
     expect(notesCall[1].notes).toContain('Amount: 84.28 USD (rate: 1.3622)');
     expect(mockMonarchApi.setTransactionTags).toHaveBeenCalledWith('mtx-cash-fx', ['tag-usd']);
+  });
+});
+
+// ── User tags preserved on settle (regression) ──────────────
+
+/**
+ * Regression coverage for tags being wiped when a pending transaction settled.
+ *
+ * `setTransactionTags` replaces the whole tag list, so the settle step used to
+ * send `[]` (domestic) or `[currencyTag]` (foreign) and silently discarded every
+ * tag the user had applied while the transaction was pending.
+ */
+describe('reconcileWealthsimpleFetchedPending — user tags preserved on settle', () => {
+  const WS_PENDING_ID = 'card-activity-00000000527000993851-VI-00-0306231535741989-QIRIAS';
+  const WS_SETTLED_ID = `${WS_PENDING_ID}-0tk4pfcsob83`;
+
+  const FOREIGN_ACTIVITY = {
+    id: WS_SETTLED_ID,
+    status: 'settled',
+    isForeign: true,
+    originalAmount: '-29.29',
+    originalCurrency: 'EUR',
+    foreignAmount: -29,
+    foreignCurrency: 'EUR',
+    foreignExchangeRate: '1.610106',
+    hasReward: true,
+    rewardAmount: '0.94',
+    rewardRate: '0.02',
+  };
+
+  const DOMESTIC_ACTIVITY = {
+    id: WS_SETTLED_ID,
+    status: 'settled',
+    isForeign: false,
+    originalAmount: '-47.16',
+    originalCurrency: 'CAD',
+    hasReward: false,
+  };
+
+  const buildSettledCardTx = () => makeWsTx(WS_SETTLED_ID, {
+    type: 'CREDIT_CARD',
+    subType: 'PURCHASE',
+    status: 'settled',
+    amount: 47.16,
+    amountSign: 'negative',
+    spendMerchant: 'CAFE BERLIN',
+    occurredAt: '2026-01-10T12:00:00Z',
+  });
+
+  /** Pending Monarch tx carrying both the Pending tag and user-applied tags */
+  const makeTaggedMonarchTx = (id, extraTags) => makeMonarchTx(id, `ws-tx:${WS_PENDING_ID}`, {
+    amount: -47.16,
+    tags: [{ id: 'tag-pending', name: 'Pending' }, ...extraTags],
+  });
+
+  beforeEach(() => {
+    mockMonarchApi.updateTransaction.mockResolvedValue({});
+    mockMonarchApi.setTransactionTags.mockResolvedValue({});
+    mockMonarchApi.deleteTransaction.mockResolvedValue(true);
+    mockMonarchApi.getTagByName.mockResolvedValue({ id: 'tag-eur', name: 'EUR' });
+    mockWealthsimpleApi.fetchCreditCardActivity.mockResolvedValue(FOREIGN_ACTIVITY);
+  });
+
+  it('keeps a user tag and adds the currency tag for a settled foreign purchase', async () => {
+    const monarchTx = makeTaggedMonarchTx('mtx-fx-user-tag', [
+      { id: 'tag-reimbursable', name: 'Reimbursable' },
+    ]);
+
+    const result = await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [buildSettledCardTx()],
+      'CREDIT_CARD',
+    );
+
+    expect(result.settled).toBe(1);
+    expect(mockMonarchApi.setTransactionTags).toHaveBeenCalledWith(
+      'mtx-fx-user-tag',
+      ['tag-reimbursable', 'tag-eur'],
+    );
+  });
+
+  it('keeps multiple user tags on a settled foreign purchase', async () => {
+    const monarchTx = makeTaggedMonarchTx('mtx-fx-multi-tag', [
+      { id: 'tag-reimbursable', name: 'Reimbursable' },
+      { id: 'tag-travel', name: 'Travel' },
+    ]);
+
+    await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [buildSettledCardTx()],
+      'CREDIT_CARD',
+    );
+
+    expect(mockMonarchApi.setTransactionTags).toHaveBeenCalledWith(
+      'mtx-fx-multi-tag',
+      ['tag-reimbursable', 'tag-travel', 'tag-eur'],
+    );
+  });
+
+  it('keeps a user tag on a settled DOMESTIC purchase (was wiped to [])', async () => {
+    mockWealthsimpleApi.fetchCreditCardActivity.mockResolvedValue(DOMESTIC_ACTIVITY);
+
+    const monarchTx = makeTaggedMonarchTx('mtx-domestic-user-tag', [
+      { id: 'tag-reimbursable', name: 'Reimbursable' },
+    ]);
+
+    const result = await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [buildSettledCardTx()],
+      'CREDIT_CARD',
+    );
+
+    expect(result.settled).toBe(1);
+    expect(mockMonarchApi.getTagByName).not.toHaveBeenCalled();
+    expect(mockMonarchApi.setTransactionTags).toHaveBeenCalledWith(
+      'mtx-domestic-user-tag',
+      ['tag-reimbursable'],
+    );
+  });
+
+  it('keeps user tags when the currency tag does not exist in Monarch yet', async () => {
+    mockMonarchApi.getTagByName.mockResolvedValue(null);
+
+    const monarchTx = makeTaggedMonarchTx('mtx-missing-currency-tag', [
+      { id: 'tag-reimbursable', name: 'Reimbursable' },
+    ]);
+
+    const result = await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [buildSettledCardTx()],
+      'CREDIT_CARD',
+    );
+
+    expect(result.settled).toBe(1);
+    // Pending is still removed, and the user tag survives the missing currency tag
+    expect(mockMonarchApi.setTransactionTags).toHaveBeenCalledWith(
+      'mtx-missing-currency-tag',
+      ['tag-reimbursable'],
+    );
+  });
+
+  it('does not duplicate the currency tag when re-settling an already-tagged transaction', async () => {
+    // Idempotency: a later sync may re-process a transaction that already
+    // carries the currency tag (e.g. a previous run failed after tagging).
+    const monarchTx = makeTaggedMonarchTx('mtx-idempotent-tag', [
+      { id: 'tag-eur', name: 'EUR' },
+    ]);
+
+    await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [buildSettledCardTx()],
+      'CREDIT_CARD',
+    );
+
+    expect(mockMonarchApi.setTransactionTags).toHaveBeenCalledWith(
+      'mtx-idempotent-tag',
+      ['tag-eur'],
+    );
+  });
+
+  it('keeps a user tag on a settled CASH SPEND/PREPAID transaction', async () => {
+    mockWealthsimpleApi.fetchSpendTransactions.mockResolvedValue(new Map([
+      ['spend-tx-1', {
+        isForeign: true,
+        foreignAmount: 84.28,
+        foreignCurrency: 'USD',
+        foreignExchangeRate: 1.3622,
+        hasReward: false,
+      }],
+    ]));
+    mockMonarchApi.getTagByName.mockResolvedValue({ id: 'tag-usd', name: 'USD' });
+
+    const monarchTx = makeMonarchTx('mtx-cash-user-tag', 'ws-tx:spend-tx-1', {
+      amount: -114.81,
+      tags: [
+        { id: 'tag-pending', name: 'Pending' },
+        { id: 'tag-shared', name: 'Shared' },
+      ],
+    });
+
+    const settledSpendTx = makeWsTx('spend-tx-1', {
+      accountId: 'ca-cash-abc',
+      type: 'SPEND',
+      subType: 'PREPAID',
+      status: 'settled',
+      amount: 114.81,
+      amountSign: 'negative',
+      spendMerchant: 'US STORE',
+      occurredAt: '2026-01-10T12:00:00Z',
+    });
+
+    const result = await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [settledSpendTx],
+      'CASH',
+    );
+
+    expect(result.settled).toBe(1);
+    expect(mockMonarchApi.setTransactionTags).toHaveBeenCalledWith(
+      'mtx-cash-user-tag',
+      ['tag-shared', 'tag-usd'],
+    );
+  });
+
+  it('still removes only the Pending tag when it is the sole tag', async () => {
+    mockWealthsimpleApi.fetchCreditCardActivity.mockResolvedValue(DOMESTIC_ACTIVITY);
+
+    const monarchTx = makeTaggedMonarchTx('mtx-pending-only', []);
+
+    await reconcileWealthsimpleFetchedPending(
+      pendingTag,
+      [monarchTx],
+      [buildSettledCardTx()],
+      'CREDIT_CARD',
+    );
+
+    expect(mockMonarchApi.setTransactionTags).toHaveBeenCalledWith('mtx-pending-only', []);
   });
 });
 

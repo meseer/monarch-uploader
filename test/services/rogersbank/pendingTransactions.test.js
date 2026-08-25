@@ -827,6 +827,51 @@ describe('reconcileRogersPendingTransactions', () => {
     expect(monarchApi.setTransactionTags).toHaveBeenCalledWith('monarch-tx-1', []);
   });
 
+  it('preserves user-applied tags when removing the Pending tag on settle', async () => {
+    // Regression: setTransactionTags replaces the whole tag list, so sending []
+    // used to discard every tag the user applied while the transaction was pending.
+    monarchApi.getTagByName.mockResolvedValue({ id: 'tag-pending', name: 'Pending' });
+
+    const testTx = {
+      date: '2026-02-13',
+      amount: { value: '5.50', currency: 'CAD' },
+      merchant: { name: 'STORE', categoryCode: '7523' },
+      cardNumber: '************8584',
+    };
+    const expectedId = await generatePendingTransactionId(testTx);
+
+    monarchApi.getTransactionsList.mockResolvedValue({
+      results: [{
+        id: 'monarch-tx-tagged',
+        amount: -5.50,
+        date: '2026-02-13',
+        notes: expectedId,
+        tags: [
+          { id: 'tag-pending', name: 'Pending' },
+          { id: 'tag-reimbursable', name: 'Reimbursable' },
+        ],
+        ownedByUser: { id: 'user-1' },
+      }],
+    });
+
+    monarchApi.updateTransaction.mockResolvedValue({});
+    monarchApi.setTransactionTags.mockResolvedValue({});
+
+    const settledVersion = {
+      ...testTx,
+      activityStatus: 'APPROVED',
+      referenceNumber: '123',
+    };
+
+    const result = await reconcileRogersPendingTransactions('monarch-123', [settledVersion], 90);
+
+    expect(result.settled).toBe(1);
+    expect(monarchApi.setTransactionTags).toHaveBeenCalledWith(
+      'monarch-tx-tagged',
+      ['tag-reimbursable'],
+    );
+  });
+
   it('deletes cancelled transactions not found in Rogers data', async () => {
     monarchApi.getTagByName.mockResolvedValue({ id: 'tag-pending', name: 'Pending' });
     monarchApi.getTransactionsList.mockResolvedValue({
