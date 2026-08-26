@@ -80,18 +80,22 @@ interface LocRuleResult {
 // ── Helper functions ─────────────────────────────────────────────────────────
 
 /**
- * Collect settled PURCHASE transaction IDs from credit card transactions that
- * need card-activity enrichment (FX details + rewards).
+ * Collect PURCHASE transaction IDs from credit card transactions that need
+ * card-activity enrichment (FX details + rewards).
  *
- * Only settled purchases are collected: Wealthsimple does not populate the
- * foreign amount, FX rate or reward amount until settlement, so fetching for
- * pending purchases would cost a request per transaction and return nothing
- * usable.
+ * Pending (authorized) purchases are included: Wealthsimple populates the FX
+ * fields inconsistently and many foreign authorizations already carry the
+ * original amount, currency and exchange rate before they settle. Fetching them
+ * while pending surfaces that data immediately, and the settled sync refreshes
+ * it via reconciliation.
+ *
+ * The caller filters out already-uploaded transactions before this runs, so a
+ * pending purchase costs at most one request per sync in which it is new.
  */
 function collectCreditCardPurchaseIds(transactions: WealthsimpleTransaction[]): string[] {
   const purchaseIds: string[] = [];
   for (const tx of transactions) {
-    if (tx.subType === 'PURCHASE' && tx.status === 'settled' && tx.externalCanonicalId) {
+    if (tx.subType === 'PURCHASE' && tx.externalCanonicalId) {
       purchaseIds.push(tx.externalCanonicalId);
     }
   }
@@ -99,14 +103,14 @@ function collectCreditCardPurchaseIds(transactions: WealthsimpleTransaction[]): 
 }
 
 /**
- * Fetch card-activity details for settled credit card purchases.
+ * Fetch card-activity details for credit card purchases.
  *
  * Uses `FetchCreditCardActivity` (one request per transaction) rather than the
  * batched `FetchSpendTransactions`, which returns 403 Forbidden for
  * `ca-credit-card-*` accounts. This API is also the only source of the precise
  * (unrounded) foreign amount via `originalAmount`.
  *
- * @param purchaseIds - Settled purchase transaction IDs
+ * @param purchaseIds - Purchase transaction IDs (settled or pending)
  * @param onProgress - Optional progress reporter
  * @returns Map of transaction ID to activity details
  */
@@ -436,7 +440,7 @@ export async function fetchAndProcessCreditCardTransactions(
     let spendDetailsMap = new Map<string, unknown>();
 
     if (purchaseTransactionIds.length > 0) {
-      debugLog(`Fetching card activity details for ${purchaseTransactionIds.length} settled PURCHASE transaction(s)...`);
+      debugLog(`Fetching card activity details for ${purchaseTransactionIds.length} PURCHASE transaction(s)...`);
       spendDetailsMap = await fetchCreditCardPurchaseDetails(purchaseTransactionIds, options.onProgress);
       debugLog(`Fetched ${spendDetailsMap.size} card activity detail(s)`);
     }

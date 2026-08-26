@@ -152,7 +152,7 @@ const INVESTMENT_BUY_SELL_TYPES = new Set([
 const STATIC_SECURITY_IDS = new Set(['sec-s-cad', 'sec-s-usd']);
 
 /**
- * Fetch spend/card-activity enrichment for a settled card transaction.
+ * Fetch spend/card-activity enrichment for a card transaction.
  *
  * Two distinct sources depending on the account type:
  * - CREDIT_CARD purchases → `FetchCreditCardActivity` (`FetchSpendTransactions`
@@ -213,7 +213,7 @@ async function fetchEnrichmentForTransaction(
 
   if (!txType) return enrichmentMap;
 
-  // Card spend transactions need FX/reward details, which only exist once settled
+  // Card spend transactions need FX/reward details
   await addCardEnrichment(wsTx, accountType, enrichmentMap);
 
   // Buy/sell orders need extended order data
@@ -435,7 +435,7 @@ function resolveSettledCardDetails(
   }
 
   return {
-    notes: formatSpendNotes(details, { isSettled: true }),
+    notes: formatSpendNotes(details),
     foreignCurrency: getForeignCurrencyCode(details),
   };
 }

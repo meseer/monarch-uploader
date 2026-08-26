@@ -36,7 +36,7 @@ export interface ProcessedTransaction {
   isPending?: boolean;
   technicalDetails?: string;
   needsCategoryMapping?: boolean;
-  /** ISO currency code for a settled foreign transaction (uploaded as a Monarch tag) */
+  /** ISO currency code for a foreign transaction (uploaded as a Monarch tag) */
   foreignCurrency?: string | null;
   aftDetails?: {
     aftTransactionCategory: string;
@@ -122,16 +122,17 @@ export function processCreditCardTransaction(
   const isNegative = transaction.amountSign === 'negative';
   const finalAmount = isNegative ? -Math.abs(transaction.amount ?? 0) : Math.abs(transaction.amount ?? 0);
 
-  // FX and reward values are only populated by Wealthsimple after settlement
-  const isSettled = transaction.status === 'settled';
-
+  // Notes and the currency tag are driven by the data that is actually present.
+  // Some foreign card authorizations already carry the FX rate and the original
+  // amount/currency before settling, so they are surfaced immediately rather
+  // than being withheld until settlement.
   let notes = '';
   let foreignCurrency: string | null = null;
   if (transaction.subType === 'PURCHASE' && spendDetailsMap) {
     const spendDetails = spendDetailsMap.get(transaction.externalCanonicalId ?? '') as Parameters<typeof formatSpendNotes>[0];
     if (spendDetails) {
-      notes = formatSpendNotes(spendDetails, { isSettled });
-      foreignCurrency = isSettled ? getForeignCurrencyCode(spendDetails) : null;
+      notes = formatSpendNotes(spendDetails);
+      foreignCurrency = getForeignCurrencyCode(spendDetails);
     }
   }
 

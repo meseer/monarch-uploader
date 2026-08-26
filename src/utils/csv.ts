@@ -74,7 +74,7 @@ interface WealthsimpleTransaction {
   notes?: string;
   technicalDetails?: string;
   resolvedMonarchCategory?: string | null;
-  /** ISO currency code for a settled foreign transaction (imported as a Monarch tag) */
+  /** ISO currency code for a foreign transaction (imported as a Monarch tag) */
   foreignCurrency?: string | null;
   [key: string]: unknown;
 }
@@ -410,22 +410,35 @@ function buildWealthsimpleNotes({ memo, technicalDetails, formattedTxId, include
 /**
  * Resolve the Tags column value for a Wealthsimple transaction.
  *
- * Pending transactions carry the "Pending" tag (used by reconciliation to find
- * them again). Settled foreign transactions carry the ISO currency code so they
- * can be filtered in Monarch. A pending transaction never has FX data available
- * yet, so the two cases never overlap — the currency tag is added at settlement
- * by the reconciliation step.
+ * Two independent tags may apply and both are emitted when relevant:
+ * - "Pending" — required by reconciliation to find the transaction again
+ * - the ISO currency code — lets foreign transactions be filtered in Monarch
+ *
+ * Wealthsimple populates FX data inconsistently: some foreign card
+ * authorizations already carry the currency before settling, so a pending
+ * foreign transaction gets both tags (`Pending,EUR`). Monarch's CSV import reads
+ * multiple tags as a comma-separated list within the quoted Tags field, and
+ * `escapeCSVField` adds the quoting.
+ *
+ * At settlement, reconciliation removes only "Pending" and keeps the currency
+ * tag (see `computeSettledTagIds`), so the tag set stays correct either way.
  *
  * @param transaction - Processed Wealthsimple transaction
  * @param isPending - Whether the transaction is pending
  * @returns Tag value for the CSV Tags column (empty string when none)
  */
 function resolveWealthsimpleTags(transaction: WealthsimpleTransaction, isPending: boolean): string {
+  const tags: string[] = [];
+
   if (isPending) {
-    return 'Pending';
+    tags.push('Pending');
   }
 
-  return transaction.foreignCurrency || '';
+  if (transaction.foreignCurrency) {
+    tags.push(transaction.foreignCurrency);
+  }
+
+  return tags.join(',');
 }
 
 /**
