@@ -104,7 +104,7 @@ interface TransactionRuleResult {
   technicalDetails: string;
   needsCategoryMapping?: boolean;
   categoryKey?: string;
-  /** ISO currency code for a settled foreign transaction (used as a Monarch tag) */
+  /** ISO currency code for a foreign transaction (used as a Monarch tag) */
   foreignCurrency?: string | null;
   aftDetails?: { aftTransactionCategory: string; aftTransactionType: string; aftOriginatorName: string };
   billPayDetails?: { billPayCompanyName: string; billPayPayeeNickname: string; redactedExternalAccountNumber: string };
@@ -183,9 +183,10 @@ export const CASH_TRANSACTION_RULES: CashTransactionRule[] = [
       const originalMerchant = (tx.spendMerchant as string | null | undefined) || 'Unknown Merchant';
       const cleanedMerchant = applyMerchantMapping(originalMerchant, { stripStoreNumbers: true });
       const spendDetails = (enrichmentMap?.get(`spend:${tx.externalCanonicalId}`) as SpendDetails | null) || null;
-      // FX/reward data is only populated after settlement — see formatSpendNotes
-      const isSettled = tx.status === 'settled';
-      const notes = formatSpendNotes(spendDetails, { isSettled });
+      // Notes and the currency tag are data-driven, not status-driven: some
+      // foreign authorizations already carry the FX rate before settling, and
+      // those that don't simply yield an empty note — see formatSpendNotes
+      const notes = formatSpendNotes(spendDetails);
       return {
         category: null,
         merchant: cleanedMerchant,
@@ -194,7 +195,7 @@ export const CASH_TRANSACTION_RULES: CashTransactionRule[] = [
         technicalDetails: '',
         needsCategoryMapping: true,
         categoryKey: cleanedMerchant,
-        foreignCurrency: isSettled ? getForeignCurrencyCode(spendDetails) : null,
+        foreignCurrency: getForeignCurrencyCode(spendDetails),
       };
     },
   },

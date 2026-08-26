@@ -150,16 +150,6 @@ interface WealthsimpleAccountEntry {
 
 // ── Functions ─────────────────────────────────────────────────────────────────
 
-/** Options for formatSpendNotes */
-export interface FormatSpendNotesOptions {
-  /**
-   * Whether the transaction has settled. Foreign amounts, FX rates and reward
-   * amounts are only populated by Wealthsimple after settlement, so no notes are
-   * produced while a transaction is still pending/authorized.
-   */
-  isSettled?: boolean;
-}
-
 /**
  * Resolve the foreign currency code for a spend/card transaction.
  *
@@ -285,25 +275,23 @@ function buildRewardNote(spendDetails: SpendDetails): string | null {
 /**
  * Format spend transaction notes from spend/card activity details.
  *
- * Adds foreign currency info and reward info — but only for settled
- * transactions. Wealthsimple does not populate the foreign amount, FX rate or
- * reward amount until settlement, so producing a note while pending would emit
- * placeholder values that are never corrected.
+ * Purely data-driven: each note line is emitted only when the values it needs
+ * are actually present. This matters because Wealthsimple populates the FX
+ * fields inconsistently — some foreign card authorizations already carry
+ * `originalAmount`, `originalCurrency` and `foreignExchangeRate` before they
+ * settle, while others only get them at settlement.
+ *
+ * Gating on settlement status would discard the data that IS available while
+ * pending; gating on the data itself gives the note as soon as it can be built
+ * and never emits placeholder values. `mergeSettledNotes` later replaces the
+ * pending line with the settled one (same normalized label), so an early note
+ * is never duplicated or left stale.
  *
  * @param spendDetails - Details from FetchSpendTransactions or FetchCreditCardActivity
- * @param options - Formatting options (settled status)
  * @returns Formatted notes string, or empty string when there is nothing to add
  */
-export function formatSpendNotes(
-  spendDetails: SpendDetails | null | undefined,
-  options: FormatSpendNotesOptions = {},
-): string {
+export function formatSpendNotes(spendDetails: SpendDetails | null | undefined): string {
   if (!spendDetails) {
-    return '';
-  }
-
-  // Pending transactions have no FX rate or confirmed reward yet
-  if (options.isSettled !== true) {
     return '';
   }
 

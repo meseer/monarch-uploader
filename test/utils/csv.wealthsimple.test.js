@@ -432,9 +432,10 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
         expect(dataRow.endsWith(',')).toBe(true);
       });
 
-      test('prefers the Pending tag over the currency tag while the transaction is pending', () => {
-        // A pending transaction never has FX data yet, but the Pending tag is required
-        // for reconciliation — the currency tag is applied at settlement instead.
+      test('emits both the Pending and currency tags for a pending foreign transaction', () => {
+        // Wealthsimple populates FX data for some authorizations before they settle,
+        // so both tags apply: "Pending" for reconciliation and the currency code for
+        // filtering. Monarch reads multiple tags as a comma-separated list.
         // Notes are cleared here so the row stays on a single line (pending notes
         // otherwise contain a newline before the ws-tx: ID).
         const result = convertWealthsimpleTransactionsToMonarchCSV(
@@ -443,8 +444,29 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
         );
 
         const dataRow = result.split('\n')[1];
+        expect(dataRow.endsWith(',"Pending,EUR"')).toBe(true);
+      });
+
+      test('emits only the Pending tag for a pending domestic transaction', () => {
+        const result = convertWealthsimpleTransactionsToMonarchCSV(
+          [buildForeignTransaction({ status: 'authorized', notes: '', foreignCurrency: null })],
+          'Test Account',
+        );
+
+        const dataRow = result.split('\n')[1];
         expect(dataRow.endsWith(',Pending')).toBe(true);
-        expect(dataRow).not.toContain(',EUR');
+        expect(dataRow).not.toContain('EUR');
+      });
+
+      test('includes the FX notes alongside both tags while pending', () => {
+        const result = convertWealthsimpleTransactionsToMonarchCSV(
+          [buildForeignTransaction({ status: 'authorized' })],
+          'Test Account',
+        );
+
+        expect(result).toContain('Amount: 29.29 EUR (rate: 1.610106)');
+        expect(result).toContain('ws-tx:tx-fx');
+        expect(result).toContain('"Pending,EUR"');
       });
 
       test('tags each transaction with its own currency', () => {

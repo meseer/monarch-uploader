@@ -897,7 +897,7 @@ describe('Wealthsimple Transaction Service - Credit Card', () => {
       applyWealthsimpleCategoryMapping.mockReturnValue('Shopping');
     });
 
-    it('fetches card activity per settled purchase instead of the batched spend API', async () => {
+    it('fetches card activity per purchase instead of the batched spend API', async () => {
       wealthsimpleApi.fetchTransactions.mockResolvedValue([buildPurchase('tx-fx', 'settled')]);
       wealthsimpleApi.fetchCreditCardActivity.mockResolvedValue(FOREIGN_ACTIVITY);
 
@@ -926,8 +926,16 @@ describe('Wealthsimple Transaction Service - Credit Card', () => {
       expect(result[0].foreignCurrency).toBe('EUR');
     });
 
-    it('does not fetch card activity for a pending purchase', async () => {
+    it('fetches card activity for a pending purchase and surfaces the FX data', async () => {
+      // Wealthsimple already populates the FX fields for some authorizations, so
+      // the data must be fetched and used rather than withheld until settlement.
       wealthsimpleApi.fetchTransactions.mockResolvedValue([buildPurchase('tx-pending', 'authorized')]);
+      wealthsimpleApi.fetchCreditCardActivity.mockResolvedValue({
+        ...FOREIGN_ACTIVITY,
+        id: 'tx-pending',
+        status: 'authorized',
+        hasReward: false,
+      });
 
       const result = await fetchAndProcessCreditCardTransactions(
         { ...mockConsolidatedAccount, includePendingTransactions: true },
@@ -935,14 +943,37 @@ describe('Wealthsimple Transaction Service - Credit Card', () => {
         '2025-01-31',
       );
 
-      expect(wealthsimpleApi.fetchCreditCardActivity).not.toHaveBeenCalled();
+      expect(wealthsimpleApi.fetchCreditCardActivity).toHaveBeenCalledWith('tx-pending');
       expect(result).toHaveLength(1);
-      // No placeholder note while pending — FX data does not exist yet
+      expect(result[0].notes).toBe('Amount: 29.29 EUR (rate: 1.610106)');
+      expect(result[0].foreignCurrency).toBe('EUR');
+    });
+
+    it('leaves notes empty for a pending purchase whose FX data is not populated yet', async () => {
+      wealthsimpleApi.fetchTransactions.mockResolvedValue([buildPurchase('tx-pending-bare', 'authorized')]);
+      wealthsimpleApi.fetchCreditCardActivity.mockResolvedValue({
+        id: 'tx-pending-bare',
+        status: 'authorized',
+        isForeign: true,
+        originalAmount: null,
+        originalCurrency: null,
+        foreignExchangeRate: null,
+        hasReward: false,
+      });
+
+      const result = await fetchAndProcessCreditCardTransactions(
+        { ...mockConsolidatedAccount, includePendingTransactions: true },
+        '2025-01-01',
+        '2025-01-31',
+      );
+
+      expect(result).toHaveLength(1);
+      // No placeholder note — the FX values genuinely do not exist yet
       expect(result[0].notes).toBe('');
       expect(result[0].foreignCurrency).toBeNull();
     });
 
-    it('leaves notes and currency empty for a settled domestic purchase', async () => {
+    it('leaves notes and currency empty for a domestic purchase', async () => {
       wealthsimpleApi.fetchTransactions.mockResolvedValue([buildPurchase('tx-domestic', 'settled')]);
       wealthsimpleApi.fetchCreditCardActivity.mockResolvedValue({
         id: 'tx-domestic',
