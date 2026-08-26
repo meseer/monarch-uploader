@@ -2,6 +2,7 @@ name: Dependabot Auto-Merge
 
 on:
   pull_request:
+    types: [opened, reopened, synchronize]
 
 permissions:
   contents: write
@@ -18,16 +19,13 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
+      # NOTE: No approval step. The `main` ruleset requires 0 approving reviews,
+      # and GITHUB_TOKEN is not permitted to approve PRs
+      # ("GitHub Actions is not permitted to approve pull requests"),
+      # which previously made this workflow fail even though auto-merge succeeded.
       - name: Auto-merge patch and minor updates
         if: steps.metadata.outputs.update-type != 'version-update:semver-major'
         run: gh pr merge --auto --squash "$PR_URL"
-        env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Approve PR
-        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
-        run: gh pr review --approve "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
