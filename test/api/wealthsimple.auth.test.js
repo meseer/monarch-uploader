@@ -135,7 +135,7 @@ describe('Wealthsimple API Client - Auth & Accounts', () => {
 
       wealthsimpleApi.setupTokenMonitoring();
 
-      // saveTokenData now writes to configStore via setAuth ’ GM_setValue(WEALTHSIMPLE_CONFIG, ...)
+      // saveTokenData now writes to configStore via setAuth â€™ GM_setValue(WEALTHSIMPLE_CONFIG, ...)
       expect(GM_setValue).toHaveBeenCalledWith(
         STORAGE.WEALTHSIMPLE_CONFIG,
         expect.stringContaining('test-token'),
@@ -699,6 +699,264 @@ describe('Wealthsimple API Client - Auth & Accounts', () => {
       await expect(wealthsimpleApi.fetchAccounts()).rejects.toThrow(
         'Server error',
       );
+    });
+  });
+
+  describe('fetchAccounts pagination', () => {
+    beforeEach(() => {
+      const futureDate = new Date(Date.now() + 3600000).toISOString();
+      setupConfigStoreAuth({
+        accessToken: 'test-token',
+        identityId: 'identity-123',
+        expiresAt: futureDate,
+      });
+    });
+
+    /**
+     * Build an open, non-archived account edge node.
+     */
+    const buildEdge = (id) => ({
+      node: {
+        id,
+        status: 'open',
+        archivedAt: null,
+        unifiedAccountType: 'CASH',
+        type: 'ca_cash',
+        nickname: `Account ${id}`,
+        currency: 'CAD',
+      },
+    });
+
+    /**
+     * Mock GM_xmlhttpRequest to serve a sequence of accounts pages.
+     * Records each request's parsed body on `requests`.
+     */
+    const mockPages = (pages, requests) => {
+      let call = 0;
+      GM_xmlhttpRequest.mockImplementation(({ data, onload }) => {
+        if (requests) {
+          requests.push(JSON.parse(data));
+        }
+        const page = pages[Math.min(call, pages.length - 1)];
+        call += 1;
+        onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: { identity: { id: 'identity-123', accounts: page } },
+          }),
+        });
+      });
+    };
+
+    it('should accumulate accounts across multiple pages', async () => {
+      mockPages([
+        {
+          edges: [buildEdge('acc-1'), buildEdge('acc-2')],
+          pageInfo: { hasNextPage: true, endCursor: 'cursor-1' },
+        },
+        {
+          edges: [buildEdge('acc-3')],
+          pageInfo: { hasNextPage: true, endCursor: 'cursor-2' },
+        },
+        {
+          edges: [buildEdge('acc-4')],
+          pageInfo: { hasNextPage: false, endCursor: null },
+        },
+      ]);
+
+      const result = await wealthsimpleApi.fetchAccounts();
+
+      expect(result).toHaveLength(4);
+      expect(result.map((a) => a.id)).toEqual(['acc-1', 'acc-2', 'acc-3', 'acc-4']);
+      expect(GM_xmlhttpRequest).toHaveBeenCalledTimes(3);
+    });
+
+    it('should thread the endCursor into the next page request', async () => {
+      const requests = [];
+      mockPages([
+        {
+          edges: [buildEdge('acc-1')],
+          pageInfo: { hasNextPage: true, endCursor: 'cursor-abc' },
+        },
+        {
+          edges: [buildEdge('acc-2')],
+          pageInfo: { hasNextPage: false, endCursor: null },
+        },
+      ], requests);
+
+      await wealthsimpleApi.fetchAccounts();
+
+      expect(requests).toHaveLength(2);
+      // First page must not send a cursor
+      expect(requests[0].variables.cursor).toBeUndefined();
+      // Second page must carry the first page's endCursor
+      expect(requests[1].variables.cursor).toBe('cursor-abc');
+    });
+
+    it('should stop after one page when hasNextPage is false', async () => {
+      mockPages([
+        {
+          edges: [buildEdge('acc-1')],
+          pageInfo: { hasNextPage: false, endCursor: 'cursor-1' },
+        },
+      ]);
+
+      const result = await wealthsimpleApi.fetchAccounts();
+
+      expect(result).toHaveLength(1);
+      expect(GM_xmlhttpRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it('should stop after one page when pageInfo is absent', async () => {
+      mockPages([
+        { edges: [buildEdge('acc-1')] },
+      ]);
+
+      const result = await wealthsimpleApi.fetchAccounts();
+
+      expect(result).toHaveLength(1);
+      expect(GM_xmlhttpRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it('should stop when hasNextPage is true but endCursor is missing', async () => {
+      mockPages([
+        {
+          edges: [buildEdge('acc-1')],
+          pageInfo: { hasNextPage: true, endCursor: null },
+        },
+      ]);
+
+      const result = await wealthsimpleApi.fetchAccounts();
+
+      expect(result).toHaveLength(1);
+      expect(GM_xmlhttpRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it('should stop when the cursor does not advance', async () => {
+      // Page 1 hands out cursor-stuck; page 2 returns the same cursor forever.
+      let call = 0;
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        call += 1;
+        onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              identity: {
+                id: 'identity-123',
+                accounts: {
+                  edges: [buildEdge(`acc-${call}`)],
+                  pageInfo: { hasNextPage: true, endCursor: 'cursor-stuck' },
+                },
+              },
+            },
+          }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchAccounts();
+
+      // Page 1 requested with no cursor, page 2 with cursor-stuck which then
+      // repeats -> loop must break rather than spin forever.
+      expect(GM_xmlhttpRequest).toHaveBeenCalledTimes(2);
+      expect(result).toHaveLength(2);
+    });
+
+    it('should cap pagination at the max page limit', async () => {
+      // Always advertise another page with a fresh cursor so only the cap stops us.
+      let call = 0;
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        call += 1;
+        onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              identity: {
+                id: 'identity-123',
+                accounts: {
+                  edges: [buildEdge(`acc-${call}`)],
+                  pageInfo: { hasNextPage: true, endCursor: `cursor-${call}` },
+                },
+              },
+            },
+          }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchAccounts();
+
+      // ACCOUNTS_MAX_PAGES is 20
+      expect(GM_xmlhttpRequest).toHaveBeenCalledTimes(20);
+      expect(result).toHaveLength(20);
+    });
+
+    it('should filter closed and archived accounts across pages', async () => {
+      mockPages([
+        {
+          edges: [
+            buildEdge('open-1'),
+            {
+              node: {
+                id: 'closed-1',
+                status: 'closed',
+                archivedAt: null,
+                unifiedAccountType: 'CASH',
+                type: 'ca_cash',
+                nickname: 'Closed',
+                currency: 'CAD',
+              },
+            },
+          ],
+          pageInfo: { hasNextPage: true, endCursor: 'cursor-1' },
+        },
+        {
+          edges: [
+            {
+              node: {
+                id: 'archived-1',
+                status: 'open',
+                archivedAt: '2026-01-01T00:00:00Z',
+                unifiedAccountType: 'CASH',
+                type: 'ca_cash',
+                nickname: 'Archived',
+                currency: 'CAD',
+              },
+            },
+            buildEdge('open-2'),
+          ],
+          pageInfo: { hasNextPage: false, endCursor: null },
+        },
+      ]);
+
+      const result = await wealthsimpleApi.fetchAccounts();
+
+      expect(result.map((a) => a.id)).toEqual(['open-1', 'open-2']);
+    });
+
+    it('should stop paginating when a later page has no accounts connection', async () => {
+      let call = 0;
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        call += 1;
+        const body = call === 1
+          ? {
+            identity: {
+              id: 'identity-123',
+              accounts: {
+                edges: [buildEdge('acc-1')],
+                pageInfo: { hasNextPage: true, endCursor: 'cursor-1' },
+              },
+            },
+          }
+          : {};
+        onload({
+          status: 200,
+          responseText: JSON.stringify({ data: body }),
+        });
+      });
+
+      const result = await wealthsimpleApi.fetchAccounts();
+
+      expect(GM_xmlhttpRequest).toHaveBeenCalledTimes(2);
+      expect(result.map((a) => a.id)).toEqual(['acc-1']);
     });
   });
 

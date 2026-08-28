@@ -607,14 +607,10 @@ async function enrichCreditCardNicknames(accounts: WealthsimpleApiAccount[]): Pr
 }
 
 /**
- * Fetch all Wealthsimple accounts using GraphQL
- * @returns Array of account objects
+ * GraphQL query for listing all accounts on an identity.
+ * Paginated via the `cursor` variable — see fetchAccounts().
  */
-async function fetchAccounts(): Promise<WealthsimpleApiAccount[]> {
-  try {
-    debugLog('Fetching Wealthsimple accounts via GraphQL...');
-
-    const query = `query FetchAllAccounts($identityId: ID!, $filter: AccountsFilter = {}, $pageSize: Int = 25, $cursor: String) {
+const FETCH_ALL_ACCOUNTS_QUERY = `query FetchAllAccounts($identityId: ID!, $filter: AccountsFilter = {}, $pageSize: Int = 25, $cursor: String) {
   identity(id: $identityId) {
     id
     accounts(filter: $filter, first: $pageSize, after: $cursor) {
@@ -645,47 +641,124 @@ async function fetchAccounts(): Promise<WealthsimpleApiAccount[]> {
   }
 }`;
 
-    const variables = {
-      filter: {},
-      pageSize: 50,
-      cursor: '',
-    };
+/** Accounts requested per page. */
+const ACCOUNTS_PAGE_SIZE = 50;
 
-    const response = await makeGraphQLQuery('FetchAllAccounts', query, variables);
+/**
+ * Maximum pages to request when listing accounts.
+ * Guards against an infinite loop if the API ever returns a non-advancing cursor.
+ * At ACCOUNTS_PAGE_SIZE=50 this allows up to 1000 accounts.
+ */
+const ACCOUNTS_MAX_PAGES = 20;
 
-    if (!response || !response.identity || !response.identity.accounts) {
-      debugLog('No accounts data in response');
-      return [];
-    }
+/**
+ * Map a raw account edge node to our account shape.
+ * @param account - Raw account node from the FetchAllAccounts response
+ * @returns Normalized account object
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapAccountNode(account: any): WealthsimpleApiAccount {
+  const unifiedType = account.unifiedAccountType || account.type;
+
+  // For accounts with user-set nicknames, use them
+  // For accounts without nicknames, generate default name using last 4 of account ID
+  // Note: For credit cards, fetchAndCacheWealthsimpleAccounts will update
+  // the nickname with the actual card's last 4 digits
+  const nickname = account.nickname || generateAccountName(unifiedType, account.id.slice(-4));
+
+  return {
+    id: account.id,
+    type: unifiedType,
+    nickname,
+    // Flag to indicate if this account needs nickname enrichment (credit card without user nickname)
+    needsNicknameEnrichment: !account.nickname && unifiedType === 'CREDIT_CARD',
+    currency: account.currency,
+    branch: account.branch,
+    rawType: account.type,
+    createdAt: account.createdAt,
+  };
+}
+
+/**
+ * Fetch a single page of accounts.
+ * @param cursor - Opaque cursor from the previous page, or null for the first page
+ * @returns Raw edges plus the next cursor (null when there are no further pages)
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function fetchAccountsPage(cursor: string | null): Promise<{ edges: any[]; nextCursor: string | null }> {
+  // Only send `cursor` when we actually have one — the API treats an empty
+  // string differently from an absent value.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const variables: Record<string, any> = {
+    filter: {},
+    pageSize: ACCOUNTS_PAGE_SIZE,
+  };
+  if (cursor) {
+    variables.cursor = cursor;
+  }
+
+  const response = await makeGraphQLQuery('FetchAllAccounts', FETCH_ALL_ACCOUNTS_QUERY, variables);
+
+  const connection = response?.identity?.accounts;
+  if (!connection) {
+    debugLog('No accounts data in response');
+    return { edges: [], nextCursor: null };
+  }
+
+  const edges = Array.isArray(connection.edges) ? connection.edges : [];
+
+  // Only continue when the API explicitly reports another page AND gives us a
+  // cursor to advance with. A missing pageInfo terminates pagination.
+  const pageInfo = connection.pageInfo;
+  const nextCursor = pageInfo?.hasNextPage === true && pageInfo.endCursor ? pageInfo.endCursor : null;
+
+  return { edges, nextCursor };
+}
+
+/**
+ * Fetch all Wealthsimple accounts using GraphQL.
+ * Walks every page of the accounts connection so users with more than
+ * ACCOUNTS_PAGE_SIZE accounts are not silently truncated.
+ * @returns Array of open, non-archived account objects
+ */
+async function fetchAccounts(): Promise<WealthsimpleApiAccount[]> {
+  try {
+    debugLog('Fetching Wealthsimple accounts via GraphQL...');
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allEdges: any[] = [];
+    let cursor: string | null = null;
+    let pageCount = 0;
+
+    do {
+      const { edges, nextCursor } = await fetchAccountsPage(cursor);
+      allEdges.push(...edges);
+      pageCount += 1;
+
+      // Stop if the cursor did not advance — protects against a stuck cursor
+      // returning the same page forever.
+      if (nextCursor && nextCursor === cursor) {
+        debugLog('Accounts pagination cursor did not advance, stopping');
+        break;
+      }
+
+      cursor = nextCursor;
+
+      if (cursor && pageCount >= ACCOUNTS_MAX_PAGES) {
+        debugLog(`Reached accounts pagination cap of ${ACCOUNTS_MAX_PAGES} pages, stopping`);
+        break;
+      }
+    } while (cursor);
+
+    debugLog(`Fetched ${allEdges.length} account edge(s) across ${pageCount} page(s)`);
 
     // Filter and map accounts
-    const accounts = response.identity.accounts.edges
+    const accounts = allEdges
       .filter((edge) => {
-        const account = edge.node;
-        return account.status === 'open' && account.archivedAt === null;
+        const account = edge?.node;
+        return account && account.status === 'open' && account.archivedAt === null;
       })
-      .map((edge) => {
-        const account = edge.node;
-        const unifiedType = account.unifiedAccountType || account.type;
-
-        // For accounts with user-set nicknames, use them
-        // For accounts without nicknames, generate default name using last 4 of account ID
-        // Note: For credit cards, fetchAndCacheWealthsimpleAccounts will update
-        // the nickname with the actual card's last 4 digits
-        const nickname = account.nickname || generateAccountName(unifiedType, account.id.slice(-4));
-
-        return {
-          id: account.id,
-          type: unifiedType,
-          nickname,
-          // Flag to indicate if this account needs nickname enrichment (credit card without user nickname)
-          needsNicknameEnrichment: !account.nickname && unifiedType === 'CREDIT_CARD',
-          currency: account.currency,
-          branch: account.branch,
-          rawType: account.type,
-          createdAt: account.createdAt,
-        };
-      });
+      .map((edge) => mapAccountNode(edge.node));
 
     debugLog(`Fetched ${accounts.length} active Wealthsimple accounts`, accounts);
     return accounts;
