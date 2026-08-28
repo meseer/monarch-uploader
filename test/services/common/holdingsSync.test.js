@@ -387,6 +387,66 @@ describe('detectAndRemoveDeletedHoldings', () => {
     );
   });
 
+  test('prefers the live mapping key when several keys share a holdingId', async () => {
+    // A stale mapping key (from an older key scheme) and the current key both
+    // reference the same Monarch holding. The stale key is enumerated first.
+    const positions = [{ id: 'sec-s-eemv', symbol: 'EEMV' }];
+
+    monarchApi.getHoldings.mockResolvedValue(buildHoldings([
+      { securityId: 'monarch-sec-eemv', holdings: [{ id: 'h-eemv', ticker: 'EEMV' }] },
+    ]));
+
+    accountService.getHoldingsMappings.mockReturnValue({
+      'pos-2': { securityId: 'monarch-sec-eemv', holdingId: 'h-eemv', symbol: 'EEMV' },
+      'sec-s-eemv': { securityId: 'monarch-sec-eemv', holdingId: 'h-eemv', symbol: 'EEMV' },
+    });
+
+    const result = await detectAndRemoveDeletedHoldings('int', 'acc', 'macc', positions, hooks);
+
+    // The live key matches a current position, so the holding must be kept
+    expect(result.deleted).toBe(0);
+    expect(result.autoRepaired).toBe(0);
+    expect(monarchApi.deleteHolding).not.toHaveBeenCalled();
+    expect(accountService.saveHoldingMapping).not.toHaveBeenCalled();
+  });
+
+  test('prefers the live mapping key regardless of key ordering', async () => {
+    // Same as above but with the live key enumerated first
+    const positions = [{ id: 'sec-s-eemv', symbol: 'EEMV' }];
+
+    monarchApi.getHoldings.mockResolvedValue(buildHoldings([
+      { securityId: 'monarch-sec-eemv', holdings: [{ id: 'h-eemv', ticker: 'EEMV' }] },
+    ]));
+
+    accountService.getHoldingsMappings.mockReturnValue({
+      'sec-s-eemv': { securityId: 'monarch-sec-eemv', holdingId: 'h-eemv', symbol: 'EEMV' },
+      'pos-2': { securityId: 'monarch-sec-eemv', holdingId: 'h-eemv', symbol: 'EEMV' },
+    });
+
+    const result = await detectAndRemoveDeletedHoldings('int', 'acc', 'macc', positions, hooks);
+
+    expect(result.deleted).toBe(0);
+    expect(monarchApi.deleteHolding).not.toHaveBeenCalled();
+  });
+
+  test('still deletes when several keys share a holdingId but none is a current position', async () => {
+    const positions = []; // EEMV fully sold
+    monarchApi.getHoldings.mockResolvedValue(buildHoldings([
+      { securityId: 'monarch-sec-eemv', holdings: [{ id: 'h-eemv', ticker: 'EEMV' }] },
+    ]));
+    monarchApi.deleteHolding.mockResolvedValue(true);
+
+    accountService.getHoldingsMappings.mockReturnValue({
+      'pos-2': { securityId: 'monarch-sec-eemv', holdingId: 'h-eemv', symbol: 'EEMV' },
+      'sec-s-eemv': { securityId: 'monarch-sec-eemv', holdingId: 'h-eemv', symbol: 'EEMV' },
+    });
+
+    const result = await detectAndRemoveDeletedHoldings('int', 'acc', 'macc', positions, hooks);
+
+    expect(result.deleted).toBe(1);
+    expect(monarchApi.deleteHolding).toHaveBeenCalledWith('h-eemv');
+  });
+
   test('case 3: auto-repairs unmapped holding that matches position by ticker', async () => {
     const positions = [{ id: 'pos-aapl', symbol: 'AAPL' }];
 
