@@ -112,6 +112,43 @@ export function findExistingHolding(securityId: string, holdings: MonarchHolding
   return null;
 }
 
+/**
+ * Find the mapping entry that owns a Monarch holding.
+ *
+ * A holdingId can appear under more than one mapping key — for example when a
+ * key scheme changes and a stale entry still references the same holding, or
+ * when auto-repair writes a second key for an already-mapped holding. In that
+ * case the live entry (one whose key matches a current source position) must
+ * win, otherwise the caller would conclude the position was sold and delete a
+ * holding that is still active.
+ *
+ * @param mappings - Stored holdings mappings keyed by source security key
+ * @param holdingId - Monarch holding ID to look up
+ * @param currentPositionKeys - Keys of the positions currently held at the source
+ * @returns The matching [key, mapping] entry, or undefined when unmapped
+ */
+function findMappingEntryForHolding(
+  mappings: Record<string, HoldingMapping>,
+  holdingId: string,
+  currentPositionKeys: Set<string>,
+): [string, HoldingMapping] | undefined {
+  const matches = Object.entries(mappings).filter(([, mapping]) => mapping.holdingId === holdingId);
+
+  if (matches.length <= 1) {
+    return matches[0];
+  }
+
+  debugLog(`[holdingsSync] Holding ${holdingId} is referenced by ${matches.length} mapping keys: ${matches.map(([key]) => key).join(', ')}`);
+
+  const liveMatch = matches.find(([key]) => currentPositionKeys.has(key));
+  if (liveMatch) {
+    debugLog(`[holdingsSync] Preferring live mapping key ${liveMatch[0]} for holding ${holdingId}`);
+    return liveMatch;
+  }
+
+  return matches[0];
+}
+
 // ── Core Orchestration Functions ──────────────────────────────────────────────
 
 /**
@@ -293,8 +330,8 @@ export async function detectAndRemoveDeletedHoldings(
 
         if (!holdingId || !ticker) continue;
 
-        // Find mapping entry for this holdingId
-        const mappingEntry = Object.entries(mappings).find(([, m]) => m.holdingId === holdingId);
+        // Find mapping entry for this holdingId (prefers live keys when duplicated)
+        const mappingEntry = findMappingEntryForHolding(mappings, holdingId, currentPositionKeys);
 
         if (mappingEntry) {
           const [mappingKey, mappingData] = mappingEntry;
