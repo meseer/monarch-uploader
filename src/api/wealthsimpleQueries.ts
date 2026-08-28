@@ -61,21 +61,42 @@ interface SecurityDetails {
   [key: string]: unknown;
 }
 
-interface ManagedPortfolioPosition {
+interface MoneyAmount {
+  amount: string;
+  currency: string;
+}
+
+interface CurrentFinancialPositionSecurity {
   id?: string;
-  allocation?: number;
-  className?: string;
-  currency?: string;
-  description?: string;
-  fee?: number;
-  name?: string;
-  performance?: number;
-  symbol?: string;
-  type?: string;
-  value?: number;
-  category?: string;
-  quantity?: number;
+  securityType?: string;
+  assetClass?: string | null;
+  stock?: { name?: string; symbol?: string };
   [key: string]: unknown;
+}
+
+/**
+ * Position returned by FetchAccountCurrentFinancialPositions.
+ * Uses the same nested `security` shape as FetchIdentityPositions so managed
+ * and self-directed positions can share the same downstream handling.
+ */
+interface CurrentFinancialPosition {
+  id?: string;
+  quantity?: string;
+  percentageOfAccount?: string;
+  security?: CurrentFinancialPositionSecurity;
+  bookValue?: MoneyAmount;
+  totalValue?: MoneyAmount;
+  unrealizedReturns?: MoneyAmount;
+  /** Derived from bookValue / quantity — the API does not return averagePrice */
+  averagePrice?: MoneyAmount;
+  [key: string]: unknown;
+}
+
+interface CurrentFinancialPositionsOptions {
+  /** Include cash/currency positions (sec-c-cad, sec-c-usd). Default: true */
+  includeCash?: boolean;
+  /** Include managed portfolio positions. Default: true */
+  includeManaged?: boolean;
 }
 
 interface AccountCashBalances {
@@ -452,65 +473,151 @@ export async function fetchSecurity(securityId: string): Promise<SecurityDetails
 }
 
 /**
- * Fetch positions for a managed portfolio account using FetchAccountManagedPortfolioPositions
- * This API is used for MANAGED_* account types which have a different data structure
- * @param accountId - Wealthsimple account ID
- * @returns Array of position objects with full details from the API
+ * Derive an average price from bookValue / quantity.
+ *
+ * FetchAccountCurrentFinancialPositions does not return averagePrice, but
+ * downstream holdings sync uses it as the Monarch costBasis. Returns undefined
+ * when the quantity is zero/unparseable so callers fall back to 0.
+ *
+ * @param bookValue - Position book value
+ * @param quantity - Position quantity as returned by the API
+ * @returns Derived average price, or undefined when it cannot be computed
  */
-export async function fetchManagedPortfolioPositions(accountId: string): Promise<ManagedPortfolioPosition[]> {
+function deriveAveragePrice(bookValue: MoneyAmount | undefined, quantity: string | undefined): MoneyAmount | undefined {
+  if (!bookValue) return undefined;
+
+  const parsedQuantity = parseFloat(String(quantity));
+  if (!Number.isFinite(parsedQuantity) || parsedQuantity === 0) return undefined;
+
+  const parsedBookValue = parseFloat(String(bookValue.amount));
+  if (!Number.isFinite(parsedBookValue)) return undefined;
+
+  return {
+    amount: String(parsedBookValue / parsedQuantity),
+    currency: bookValue.currency,
+  };
+}
+
+/**
+ * Fetch current financial positions for an account using FetchAccountCurrentFinancialPositions
+ *
+ * This replaces the retired FetchAccountManagedPortfolioPositions operation (which now
+ * returns UNPROCESSABLE_ENTITY) and is used for MANAGED_* account types. Positions are
+ * returned in the same nested `security` shape as FetchIdentityPositions.
+ *
+ * @param accountId - Wealthsimple account ID (e.g., "resp-gjp2y-3a")
+ * @param options - Position filter options
+ * @returns Array of position objects with nested security details
+ */
+export async function fetchAccountCurrentFinancialPositions(
+  accountId: string,
+  options: CurrentFinancialPositionsOptions = {},
+): Promise<CurrentFinancialPosition[]> {
   try {
     if (!accountId) {
       throw new Error('Account ID is required');
     }
 
-    debugLog(`Fetching managed portfolio positions for account ${accountId}...`);
+    const { includeCash = true, includeManaged = true } = options;
+
+    debugLog(`Fetching current financial positions for account ${accountId} (includeCash=${includeCash}, includeManaged=${includeManaged})...`);
 
     // Use exact query as provided by Wealthsimple API
-    const query = `query FetchAccountManagedPortfolioPositions($accountId: ID!) {
-  account(id: $accountId) {
+    const query = `query FetchAccountCurrentFinancialPositions($id: ID!, $currency: Currency, $positionFilter: PositionFilter) {
+  account(id: $id) {
     id
-    positions {
-      ...ManagedPortfolioPosition
+    financials {
+      current(currency: $currency) {
+        id
+        positions(filter: $positionFilter) {
+          ...AccountCurrentFinancialPositions
+          __typename
+        }
+        __typename
+      }
       __typename
     }
     __typename
   }
 }
 
-fragment ManagedPortfolioPosition on Position {
-  id
-  allocation
-  className: class_name
-  currency
-  description
-  fee
-  name
-  performance
-  symbol
-  type
-  value
-  category
-  quantity
+fragment AccountCurrentFinancialPositions on PositionConnection {
+  edges {
+    node {
+      id
+      bookValue {
+        amount
+        cents
+        currency
+        __typename
+      }
+      percentageOfAccount
+      quantity
+      security {
+        id
+        securityType
+        assetClass
+        stock {
+          name
+          symbol
+          __typename
+        }
+        marginRates {
+          clientMarginRate
+          __typename
+        }
+        __typename
+      }
+      totalValue {
+        amount
+        cents
+        currency
+        __typename
+      }
+      unrealizedReturns {
+        amount
+        cents
+        currency
+        __typename
+      }
+      __typename
+    }
+    __typename
+  }
+  totalCount
   __typename
 }`;
 
     const variables = {
-      accountId,
+      id: accountId,
+      positionFilter: { includeCash, includeManaged },
     };
 
-    const response = await makeGraphQLQuery('FetchAccountManagedPortfolioPositions', query, variables);
+    const response = await makeGraphQLQuery('FetchAccountCurrentFinancialPositions', query, variables);
 
-    if (!response || !response.account || !response.account.positions) {
-      debugLog('No positions data in managed portfolio response');
+    const positionConnection = response?.account?.financials?.current?.positions;
+    if (!positionConnection || !positionConnection.edges) {
+      debugLog('No positions data in current financial positions response');
       return [];
     }
 
-    const positions: ManagedPortfolioPosition[] = response.account.positions;
-    debugLog(`Fetched ${positions.length} managed portfolio positions for account ${accountId}`);
+    const positions: CurrentFinancialPosition[] = positionConnection.edges
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .filter((edge: any) => edge?.node)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((edge: any) => {
+        const node = edge.node;
+        return {
+          ...node,
+          averagePrice: deriveAveragePrice(node.bookValue, node.quantity),
+        };
+      });
+
+    debugLog(`Fetched ${positions.length} current financial positions for account ${accountId} (totalCount: ${positionConnection.totalCount})`);
 
     return positions;
   } catch (error) {
-    debugLog(`Error fetching managed portfolio positions for account ${accountId}:`, error);
+    debugLog(`Error fetching current financial positions for account ${accountId}:`, error);
     throw error;
   }
 }

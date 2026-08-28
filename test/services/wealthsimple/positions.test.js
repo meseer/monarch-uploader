@@ -2,7 +2,7 @@
  * Wealthsimple Positions Service Tests
  */
 
-import {
+import positionsService, {
   isInvestmentAccount,
   fetchCashBalances,
   processCashPositions,
@@ -21,6 +21,7 @@ import { showMonarchSecuritySelector } from '../../../src/ui/components/security
 jest.mock('../../../src/api/wealthsimple', () => ({
   fetchAccountsWithBalance: jest.fn(),
   fetchIdentityPositions: jest.fn(),
+  fetchAccountCurrentFinancialPositions: jest.fn(),
 }));
 
 // Mock the Monarch API
@@ -110,6 +111,218 @@ describe('Wealthsimple Positions Service', () => {
 
     test('returns false for unknown type', () => {
       expect(isInvestmentAccount('UNKNOWN_TYPE')).toBe(false);
+    });
+  });
+
+  describe('fetchPositions - API routing', () => {
+    const managedPosition = {
+      id: 'pos-1',
+      quantity: '59.1236',
+      security: {
+        id: 'sec-s-eemv',
+        securityType: 'EXCHANGE_TRADED_FUND',
+        stock: { symbol: 'EEMV', name: 'iShares ETF' },
+      },
+    };
+
+    test('routes MANAGED_RESP_FAMILY to fetchAccountCurrentFinancialPositions', async () => {
+      wealthsimpleApi.fetchAccountCurrentFinancialPositions.mockResolvedValueOnce([managedPosition]);
+
+      const result = await positionsService.fetchPositions('resp-gjp2y-3a', 'MANAGED_RESP_FAMILY');
+
+      expect(wealthsimpleApi.fetchAccountCurrentFinancialPositions).toHaveBeenCalledWith('resp-gjp2y-3a');
+      expect(wealthsimpleApi.fetchIdentityPositions).not.toHaveBeenCalled();
+      expect(result).toEqual([managedPosition]);
+    });
+
+    test('routes all MANAGED_* types to fetchAccountCurrentFinancialPositions', async () => {
+      const managedTypes = ['MANAGED_RESP', 'MANAGED_NON_REGISTERED', 'MANAGED_TFSA', 'MANAGED_RRSP'];
+
+      for (const accountType of managedTypes) {
+        wealthsimpleApi.fetchAccountCurrentFinancialPositions.mockResolvedValueOnce([]);
+        // eslint-disable-next-line no-await-in-loop
+        await positionsService.fetchPositions('acct-1', accountType);
+      }
+
+      expect(wealthsimpleApi.fetchAccountCurrentFinancialPositions).toHaveBeenCalledTimes(managedTypes.length);
+      expect(wealthsimpleApi.fetchIdentityPositions).not.toHaveBeenCalled();
+    });
+
+    test('routes SELF_DIRECTED accounts to fetchIdentityPositions', async () => {
+      wealthsimpleApi.fetchIdentityPositions.mockResolvedValueOnce([managedPosition]);
+
+      const result = await positionsService.fetchPositions('rrsp-qthtmh-s', 'SELF_DIRECTED_RRSP');
+
+      expect(wealthsimpleApi.fetchIdentityPositions).toHaveBeenCalledWith('rrsp-qthtmh-s');
+      expect(wealthsimpleApi.fetchAccountCurrentFinancialPositions).not.toHaveBeenCalled();
+      expect(result).toEqual([managedPosition]);
+    });
+
+    test('wraps API errors in PositionsError', async () => {
+      wealthsimpleApi.fetchAccountCurrentFinancialPositions.mockRejectedValueOnce(new Error('UNPROCESSABLE_ENTITY'));
+
+      await expect(
+        positionsService.fetchPositions('resp-gjp2y-3a', 'MANAGED_RESP_FAMILY'),
+      ).rejects.toThrow(PositionsError);
+    });
+  });
+
+  describe('buildWealthsimpleHoldingsHooks', () => {
+    const cashPosition = {
+      id: 'pos-cash',
+      quantity: '378.51',
+      averagePrice: { amount: '1', currency: 'CAD' },
+      security: {
+        id: 'sec-c-cad',
+        securityType: 'CURRENCY',
+        stock: { symbol: 'CAD', name: 'CAD' },
+      },
+    };
+
+    const etfPosition = {
+      id: 'pos-etf',
+      quantity: '59.1236',
+      averagePrice: { amount: '78.7629', currency: 'CAD' },
+      security: {
+        id: 'sec-s-eemv',
+        securityType: 'EXCHANGE_TRADED_FUND',
+        stock: { symbol: 'EEMV', name: 'iShares ETF' },
+      },
+    };
+
+    test('uses cash-cad key and CUR:CAD symbol for CAD cash positions', () => {
+      const hooks = positionsService.buildWealthsimpleHoldingsHooks();
+
+      expect(hooks.getPositionKey(cashPosition)).toBe('cash-cad');
+      expect(hooks.getDisplaySymbol(cashPosition)).toBe('CUR:CAD');
+    });
+
+    test('uses cash-usd key and CUR:USD symbol for USD cash positions', () => {
+      const hooks = positionsService.buildWealthsimpleHoldingsHooks();
+      const usdCash = { ...cashPosition, security: { ...cashPosition.security, id: 'sec-c-usd', stock: { symbol: 'USD', name: 'USD' } } };
+
+      expect(hooks.getPositionKey(usdCash)).toBe('cash-usd');
+      expect(hooks.getDisplaySymbol(usdCash)).toBe('CUR:USD');
+    });
+
+    test('uses security.id key and stock symbol for non-cash positions', () => {
+      const hooks = positionsService.buildWealthsimpleHoldingsHooks();
+
+      expect(hooks.getPositionKey(etfPosition)).toBe('sec-s-eemv');
+      expect(hooks.getDisplaySymbol(etfPosition)).toBe('EEMV');
+    });
+
+    test('maps EXCHANGE_TRADED_FUND to etf with costBasis from averagePrice', () => {
+      const hooks = positionsService.buildWealthsimpleHoldingsHooks();
+
+      expect(hooks.buildHoldingUpdate(etfPosition)).toEqual({
+        quantity: 59.1236,
+        costBasis: 78.7629,
+        securityType: 'etf',
+      });
+    });
+
+    test('maps CURRENCY securityType to cash', () => {
+      const hooks = positionsService.buildWealthsimpleHoldingsHooks();
+
+      expect(hooks.buildHoldingUpdate(cashPosition)).toEqual({
+        quantity: 378.51,
+        costBasis: 1,
+        securityType: 'cash',
+      });
+    });
+
+    test('does not override getAutoRepairSourceId (keys must match getPositionKey)', () => {
+      const hooks = positionsService.buildWealthsimpleHoldingsHooks();
+
+      expect(hooks.getAutoRepairSourceId).toBeUndefined();
+    });
+  });
+
+  describe('resolveSecurityMapping - cash auto-mapping', () => {
+    test('auto-maps CAD cash position without prompting the user', async () => {
+      const position = {
+        quantity: '378.51',
+        security: {
+          id: 'sec-c-cad',
+          securityType: 'CURRENCY',
+          stock: { symbol: 'CAD', name: 'CAD' },
+        },
+      };
+
+      const result = await resolveSecurityMapping('resp-gjp2y-3a', position);
+
+      expect(result).toBe('207574838264130301');
+      expect(showMonarchSecuritySelector).not.toHaveBeenCalled();
+      expect(monarchApi.searchSecurities).not.toHaveBeenCalled();
+    });
+
+    test('auto-maps USD cash position without prompting the user', async () => {
+      const position = {
+        quantity: '10.5',
+        security: {
+          id: 'sec-c-usd',
+          securityType: 'CURRENCY',
+          stock: { symbol: 'USD', name: 'USD' },
+        },
+      };
+
+      const result = await resolveSecurityMapping('resp-gjp2y-3a', position);
+
+      expect(result).toBe('77359007714940929');
+      expect(showMonarchSecuritySelector).not.toHaveBeenCalled();
+    });
+
+    test('auto-maps CURRENCY positions with unknown security IDs by symbol', async () => {
+      const position = {
+        quantity: '5',
+        security: {
+          id: 'sec-c-unknown',
+          securityType: 'CURRENCY',
+          stock: { symbol: 'CAD', name: 'CAD' },
+        },
+      };
+
+      const result = await resolveSecurityMapping('resp-gjp2y-3a', position);
+
+      expect(result).toBe('207574838264130301');
+      expect(showMonarchSecuritySelector).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('detectAndRemoveDeletedHoldings - cash holdings', () => {
+    test('does not delete the cash holding when the cash position is present', async () => {
+      const currentPositions = [
+        {
+          quantity: '378.51',
+          security: { id: 'sec-c-cad', securityType: 'CURRENCY', stock: { symbol: 'CAD', name: 'CAD' } },
+        },
+      ];
+
+      const portfolio = {
+        aggregateHoldings: {
+          edges: [
+            {
+              node: {
+                security: { id: '207574838264130301' },
+                holdings: [{ id: 'hold-cash-cad', ticker: 'CUR:CAD', isManual: true }],
+              },
+            },
+          ],
+        },
+      };
+
+      monarchApi.getHoldings.mockResolvedValue(portfolio);
+
+      // Mapping stored under the cash-cad key (as written by getPositionKey)
+      accountService.getHoldingsMappings.mockReturnValue({
+        'cash-cad': { securityId: '207574838264130301', holdingId: 'hold-cash-cad', symbol: 'CUR:CAD' },
+      });
+
+      const result = await detectAndRemoveDeletedHoldings('resp-gjp2y-3a', 'monarch-account', currentPositions);
+
+      expect(result.deleted).toBe(0);
+      expect(monarchApi.deleteHolding).not.toHaveBeenCalled();
     });
   });
 
