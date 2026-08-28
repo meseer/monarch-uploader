@@ -807,8 +807,9 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(
     return { success: true };
   } catch (error: unknown) {
     debugLog(`Error uploading Wealthsimple account ${account.id}:`, error);
-    const errorSupportedTypes = ['CREDIT_CARD', 'PORTFOLIO_LINE_OF_CREDIT', 'CASH', 'CASH_USD'];
-    const firstStep = errorSupportedTypes.includes(accountType) ? 'transactions' : 'balance';
+    // Mirror the step ordering used above: transaction-capable accounts report
+    // errors against the 'transactions' step, everything else against 'balance'.
+    const firstStep = WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType) ? 'transactions' : 'balance';
     progressDialog.updateStepStatus(account.id, firstStep, 'error', (error as Error).message);
     return { success: false };
   }

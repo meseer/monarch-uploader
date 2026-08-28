@@ -4,7 +4,7 @@
  */
 
 import { debugLog, formatDate, parseLocalDate, getLookbackForInstitution } from '../../core/utils';
-import { WEALTHSIMPLE_BALANCE_RECONSTRUCTION_TYPES } from '../../core/config';
+import { WEALTHSIMPLE_BALANCE_RECONSTRUCTION_TYPES, WEALTHSIMPLE_CASH_LIKE_TYPES } from '../../core/config';
 import type { CurrentBalance, BalanceCheckpoint } from '../../types/monarch';
 import type { ConsolidatedAccountBase } from '../../types/wealthsimple';
 import stateManager from '../../core/state';
@@ -628,8 +628,9 @@ export async function uploadBalanceToMonarch(
 /**
  * Account types where balance can never be negative
  * These accounts will have negative balance entries filtered out
+ * Cash-like types (CASH, CASH_USD, HISA portfolios) all hold deposits only.
  */
-const NON_NEGATIVE_BALANCE_ACCOUNT_TYPES = new Set(['CASH', 'CASH_USD']);
+const NON_NEGATIVE_BALANCE_ACCOUNT_TYPES = WEALTHSIMPLE_CASH_LIKE_TYPES;
 
 /**
  * Filter out invalid balance entries for account types that cannot have negative balances

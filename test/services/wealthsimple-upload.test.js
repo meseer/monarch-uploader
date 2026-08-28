@@ -594,6 +594,22 @@ describe('Wealthsimple Upload Service', () => {
       expect(stepKeys).not.toContain('pendingReconciliation');
       expect(stepKeys).toContain('transactions');
     });
+
+    it('builds savings-account steps for HISA_PORTFOLIO_NON_REGISTERED', () => {
+      // HISA accounts hold no securities, so they must not get the holdings or
+      // cash-sync steps that investment accounts receive.
+      isInvestmentAccount.mockReturnValue(false);
+
+      const consolidatedAccount = {
+        wealthsimpleAccount: { id: 'non-registered-_O2LAk4_EQ', type: 'HISA_PORTFOLIO_NON_REGISTERED' },
+      };
+      const stepKeys = buildSyncStepsForAccount(consolidatedAccount).map((s) => s.key);
+
+      expect(stepKeys).toEqual(['pendingReconciliation', 'transactions', 'balance']);
+      expect(stepKeys).not.toContain('positions');
+      expect(stepKeys).not.toContain('cashSync');
+      expect(stepKeys).not.toContain('creditLimit');
+    });
   });
 
   describe('clearLastUploadDate', () => {

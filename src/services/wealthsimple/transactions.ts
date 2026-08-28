@@ -11,6 +11,7 @@
  */
 
 import { debugLog } from '../../core/utils';
+import { WEALTHSIMPLE_CASH_LIKE_TYPES } from '../../core/config';
 import wealthsimpleApi from '../../api/wealthsimple';
 import { showManualTransactionCategorization } from '../../ui/components/categorySelector';
 import toast from '../../ui/toast';
@@ -959,7 +960,9 @@ export async function fetchAndProcessTransactions(
   const accountType = consolidatedAccount.wealthsimpleAccount.type;
   debugLog(`Processing transactions for account type: ${accountType}`);
 
-  if (accountType === 'CASH' || accountType === 'CASH_USD') {
+  // Cash-like accounts (CASH, CASH_USD, HISA portfolios) share the same
+  // activity-feed shape and status semantics.
+  if (WEALTHSIMPLE_CASH_LIKE_TYPES.has(accountType)) {
     return fetchAndProcessCashTransactions(consolidatedAccount, fromDate, toDate, options);
   }
   if (accountType === 'CREDIT_CARD') {
