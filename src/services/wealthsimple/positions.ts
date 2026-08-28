@@ -6,7 +6,7 @@
  * Institution-specific logic lives here:
  * - Position fetching (managed vs self-directed API routing)
  * - Security mapping resolution (crypto auto-map, cash currencies, user prompts)
- * - Position data extraction (nested vs flat structure handling)
+ * - Position data extraction from the nested security structure
  * - Cash position handling (CAD/USD balances)
  *
  * Generic holding resolution/creation/deletion is delegated to the shared
@@ -37,30 +37,20 @@ interface PositionSecurity {
   quoteV2?: { price?: number | string };
 }
 
-/** Self-directed position (nested security structure) */
-interface SelfDirectedPosition {
-  security: PositionSecurity;
-  symbol?: undefined;
+/**
+ * Wealthsimple position (nested security structure).
+ *
+ * Both FetchIdentityPositions (self-directed) and
+ * FetchAccountCurrentFinancialPositions (managed) return this shape.
+ */
+interface WealthsimplePosition {
+  security?: PositionSecurity;
   id?: string;
   quantity?: string | number;
   averagePrice?: { amount?: string | number };
   totalValue?: { amount?: string | number };
   name?: string;
-  type?: string;
 }
-
-/** Managed portfolio position (flat structure with symbol directly on position) */
-interface ManagedPosition {
-  symbol: string;
-  security?: undefined;
-  id?: string;
-  quantity?: string | number;
-  value?: string | number;
-  name?: string;
-  type?: string;
-}
-
-type WealthsimplePosition = SelfDirectedPosition | ManagedPosition;
 
 interface HoldingMapping {
   securityId?: string;
@@ -105,7 +95,16 @@ const CASH_HOLDING_KEYS: Record<string, string> = {
 };
 
 /**
- * MANAGED_* account types that should use FetchAccountManagedPortfolioPositions API
+ * Wealthsimple security IDs for cash/currency positions, mapped to their currency code.
+ * Cash positions appear in FetchAccountCurrentFinancialPositions when includeCash is set.
+ */
+const WEALTHSIMPLE_CASH_SECURITY_IDS: Record<string, string> = {
+  'sec-c-cad': 'CAD',
+  'sec-c-usd': 'USD',
+};
+
+/**
+ * MANAGED_* account types that should use FetchAccountCurrentFinancialPositions API
  */
 const MANAGED_ACCOUNT_TYPES = new Set([
   'MANAGED_RESP_FAMILY',
@@ -170,7 +169,7 @@ export class PositionsError extends Error {
  * For stocks/ETFs: use stock symbol
  */
 function getSecuritySymbolForLookup(position: WealthsimplePosition): string | null {
-  const security = (position as SelfDirectedPosition).security;
+  const security = position.security;
   if (!security) {
     return null;
   }
@@ -190,15 +189,13 @@ function getSecuritySymbolForLookup(position: WealthsimplePosition): string | nu
 
 /**
  * Get security name for display
- * Handles both self-directed positions (nested structure) and managed positions (flat structure)
  */
 function getSecurityName(position: WealthsimplePosition): string {
-  // Managed positions have name directly on position
   if (position.name) {
     return position.name;
   }
 
-  const security = (position as SelfDirectedPosition).security;
+  const security = position.security;
   if (!security) {
     return 'Unknown';
   }
@@ -215,45 +212,45 @@ function getSecurityName(position: WealthsimplePosition): string {
 }
 
 /**
- * Check if a position is from the managed portfolio API (flat structure)
- * Managed positions have 'symbol' directly on the position object
- * Self-directed positions have nested security.stock.symbol
+ * Get the currency code for a cash/currency position, or null when not cash.
+ *
+ * Cash positions are identified by their Wealthsimple security ID (sec-c-cad,
+ * sec-c-usd) with a CURRENCY securityType fallback for unrecognized IDs.
  */
-function isManagedPositionFormat(position: WealthsimplePosition): position is ManagedPosition {
-  return (position as ManagedPosition).symbol !== undefined && !(position as SelfDirectedPosition).security;
+function getCashPositionCurrency(position: WealthsimplePosition): string | null {
+  const security = position.security;
+  if (!security) return null;
+
+  const currencyBySecurityId = security.id ? WEALTHSIMPLE_CASH_SECURITY_IDS[security.id] : undefined;
+  if (currencyBySecurityId) return currencyBySecurityId;
+
+  if (security.securityType === 'CURRENCY') {
+    const symbol = security.stock?.symbol;
+    if (symbol && CASH_HOLDING_KEYS[symbol]) return symbol;
+  }
+
+  return null;
 }
 
 /**
- * Check if a managed portfolio position is a cash currency position
- */
-function isManagedCashPosition(position: WealthsimplePosition): boolean {
-  if (!isManagedPositionFormat(position)) return false;
-  return position.symbol === 'CAD' || position.symbol === 'USD';
-}
-
-/**
- * Get the security ID key for a position
- * For managed positions: uses symbol (or cash-cad/cash-usd for currencies)
- * For self-directed positions: uses security.id
+ * Get the security ID key for a position.
+ * Cash positions use the stable cash-cad/cash-usd keys so mappings stay
+ * consistent with the dedicated cash sync step; all others use security.id.
  */
 function getPositionSecurityKey(position: WealthsimplePosition): string | undefined {
-  if (isManagedPositionFormat(position)) {
-    if (position.symbol === 'CAD') return CASH_HOLDING_KEYS.CAD;
-    if (position.symbol === 'USD') return CASH_HOLDING_KEYS.USD;
-    return position.id || position.symbol;
-  }
-  return (position as SelfDirectedPosition).security?.id;
+  const cashCurrency = getCashPositionCurrency(position);
+  if (cashCurrency) return CASH_HOLDING_KEYS[cashCurrency];
+
+  return position.security?.id;
 }
 
 /**
  * Get the symbol to display/lookup for any position type
  */
 function getPositionDisplaySymbol(position: WealthsimplePosition): string | null {
-  if (isManagedPositionFormat(position)) {
-    if (position.symbol === 'CAD') return 'CUR:CAD';
-    if (position.symbol === 'USD') return 'CUR:USD';
-    return position.symbol;
-  }
+  const cashCurrency = getCashPositionCurrency(position);
+  if (cashCurrency) return `CUR:${cashCurrency}`;
+
   return getSecuritySymbolForLookup(position);
 }
 
@@ -274,32 +271,20 @@ function buildWealthsimpleHoldingsHooks(): HoldingsSyncHooks {
     buildHoldingUpdate: (position) => {
       const wsPos = position as unknown as WealthsimplePosition;
       const quantity = Math.abs(parseFloat(String(wsPos.quantity)) || 0);
-      const sdPos = wsPos as SelfDirectedPosition;
-      const costBasis = parseFloat(String(sdPos.averagePrice?.amount)) || 0;
+      const costBasis = parseFloat(String(wsPos.averagePrice?.amount)) || 0;
       const updates: Record<string, unknown> = { quantity, costBasis };
 
-      if (isManagedPositionFormat(wsPos)) {
-        const managedTypeMap: Record<string, string> = {
-          exchange_traded_fund: 'etf',
-          currency: 'cash',
-          mutual_fund: 'mutualFund',
-          equity: 'equity',
-          bond: 'bond',
+      const securityType = wsPos.security?.securityType;
+      if (securityType) {
+        const typeMap: Record<string, string> = {
+          EQUITY: 'equity',
+          OPTION: 'option',
+          BOND: 'bond',
+          EXCHANGE_TRADED_FUND: 'etf',
+          MUTUAL_FUND: 'mutualFund',
+          CURRENCY: 'cash',
         };
-        const positionType = wsPos.type?.toLowerCase();
-        updates.securityType = (positionType && managedTypeMap[positionType]) ? managedTypeMap[positionType] : 'etf';
-      } else {
-        const securityType = sdPos.security?.securityType;
-        if (securityType) {
-          const typeMap: Record<string, string> = {
-            EQUITY: 'equity',
-            OPTION: 'option',
-            BOND: 'bond',
-            EXCHANGE_TRADED_FUND: 'etf',
-            MUTUAL_FUND: 'mutualFund',
-          };
-          updates.securityType = typeMap[securityType] || 'equity';
-        }
+        updates.securityType = typeMap[securityType] || 'equity';
       }
 
       return updates;
@@ -308,13 +293,11 @@ function buildWealthsimpleHoldingsHooks(): HoldingsSyncHooks {
     resolveSecurityMapping: (accountId, position) =>
       resolveSecurityMapping(accountId, position as unknown as WealthsimplePosition),
 
+    // Note: getAutoRepairSourceId is intentionally omitted so auto-repair reuses
+    // getPositionKey. Returning security.id here would diverge from the cash-cad /
+    // cash-usd keys used for cash positions and cause cash holdings to be deleted.
     getTickerForAutoRepair: (position) =>
       getSecuritySymbolForLookup(position as unknown as WealthsimplePosition),
-
-    getAutoRepairSourceId: (position) => {
-      const sdPos = position as unknown as SelfDirectedPosition;
-      return sdPos.security?.id || undefined;
-    },
   };
 }
 
@@ -323,7 +306,7 @@ function buildWealthsimpleHoldingsHooks(): HoldingsSyncHooks {
 /**
  * Fetch positions for a Wealthsimple account
  * Routes to appropriate API based on account type:
- * - MANAGED_* accounts: Uses FetchAccountManagedPortfolioPositions API
+ * - MANAGED_* accounts: Uses FetchAccountCurrentFinancialPositions API
  * - SELF_DIRECTED_* accounts: Uses FetchIdentityPositions API
  */
 async function fetchPositions(accountId: string, accountType: string | null = null): Promise<WealthsimplePosition[]> {
@@ -335,9 +318,9 @@ async function fetchPositions(accountId: string, accountType: string | null = nu
     }
 
     if (accountType && isManagedAccount(accountType)) {
-      debugLog(`Using FetchAccountManagedPortfolioPositions API for managed account ${accountId}`);
-      const positions = (await wealthsimpleApi.fetchManagedPortfolioPositions(accountId)) as WealthsimplePosition[];
-      debugLog(`Fetched ${positions.length} managed portfolio positions for account ${accountId}`);
+      debugLog(`Using FetchAccountCurrentFinancialPositions API for managed account ${accountId}`);
+      const positions = (await wealthsimpleApi.fetchAccountCurrentFinancialPositions(accountId)) as WealthsimplePosition[];
+      debugLog(`Fetched ${positions.length} current financial positions for account ${accountId}`);
       return Array.isArray(positions) ? positions : [];
     }
 
@@ -352,7 +335,7 @@ async function fetchPositions(accountId: string, accountType: string | null = nu
 
 /**
  * Resolve security mapping for a position
- * For managed positions with CAD/USD symbols, automatically maps to hardcoded Monarch security IDs
+ * For cash positions (CAD/USD), automatically maps to hardcoded Monarch security IDs
  */
 export async function resolveSecurityMapping(accountId: string, position: WealthsimplePosition): Promise<string | null> {
   try {
@@ -363,11 +346,11 @@ export async function resolveSecurityMapping(accountId: string, position: Wealth
 
     const symbol = getPositionDisplaySymbol(position);
 
-    // For managed cash positions (CAD/USD), automatically use hardcoded Monarch security IDs
-    if (isManagedCashPosition(position)) {
-      const managedPos = position as ManagedPosition;
-      const monarchSecurityId = MONARCH_CASH_SECURITY_IDS[managedPos.symbol];
-      debugLog(`Auto-mapped managed cash position ${managedPos.symbol} to Monarch security ${monarchSecurityId}`);
+    // For cash positions (CAD/USD), automatically use hardcoded Monarch security IDs
+    const cashCurrency = getCashPositionCurrency(position);
+    if (cashCurrency) {
+      const monarchSecurityId = MONARCH_CASH_SECURITY_IDS[cashCurrency];
+      debugLog(`Auto-mapped cash position ${cashCurrency} to Monarch security ${monarchSecurityId}`);
       return monarchSecurityId;
     }
 
@@ -379,9 +362,7 @@ export async function resolveSecurityMapping(accountId: string, position: Wealth
     }
 
     // For crypto positions, try auto-mapping to {symbol}-USD in Monarch
-    const securityType = isManagedPositionFormat(position)
-      ? position.type
-      : (position as SelfDirectedPosition).security?.securityType;
+    const securityType = position.security?.securityType;
 
     if (securityType === 'CRYPTOCURRENCY' || securityType === 'cryptocurrency') {
       const cryptoSearchTerm = `${symbol}-USD`;
@@ -408,16 +389,15 @@ export async function resolveSecurityMapping(accountId: string, position: Wealth
 
     debugLog(`No mapping found for ${symbol}, showing security selector`);
 
-    const sdPos = position as SelfDirectedPosition;
     const positionInfo = {
       security: {
         symbol,
         name: getSecurityName(position),
-        securityType: isManagedPositionFormat(position) ? position.type : sdPos.security?.securityType,
+        securityType,
       },
       openQuantity: Math.abs(parseFloat(String(position.quantity)) || 0),
-      currentMarketValue: parseFloat(String(isManagedPositionFormat(position) ? (position as ManagedPosition).value : sdPos.totalValue?.amount)) || 0,
-      currentPrice: parseFloat(String(sdPos.security?.quoteV2?.price)) || 0,
+      currentMarketValue: parseFloat(String(position.totalValue?.amount)) || 0,
+      currentPrice: parseFloat(String(position.security?.quoteV2?.price)) || 0,
     };
 
     const selectedSecurity = await new Promise<{ id: string; name: string } | null>((resolve) => {

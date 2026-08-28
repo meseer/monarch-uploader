@@ -29,7 +29,7 @@ import {
   fetchCorporateActionChildActivities,
   fetchShortOptionPositionExpiryDetail,
   fetchSecurity,
-  fetchManagedPortfolioPositions,
+  fetchAccountCurrentFinancialPositions,
   fetchAccountsWithBalance,
   fetchSpendTransactions,
   fetchCryptoOrder,
@@ -357,7 +357,7 @@ export async function makeGraphQLQuery(operationName: string, query: string, var
 
   // Inject identity ID into variables if not present
   // Note: FetchFundingIntent, FetchInternalTransfer, FetchFundsTransfer, FetchSoOrdersExtendedOrder, and FetchActivityByOrdersServiceOrderId don't accept identityId and return 403 if it's passed
-  const skipIdentityInjection = ['FetchFundingIntent', 'FetchFundingIntentStatusSummary', 'FetchInternalTransfer', 'FetchFundsTransfer', 'FetchSoOrdersExtendedOrder', 'FetchActivityByOrdersServiceOrderId', 'FetchCryptoOrder'];
+  const skipIdentityInjection = ['FetchFundingIntent', 'FetchFundingIntentStatusSummary', 'FetchInternalTransfer', 'FetchFundsTransfer', 'FetchSoOrdersExtendedOrder', 'FetchActivityByOrdersServiceOrderId', 'FetchCryptoOrder', 'FetchAccountCurrentFinancialPositions'];
   if (!variables.identityId && authStatus.identityId && !skipIdentityInjection.includes(operationName)) {
     variables.identityId = authStatus.identityId;
   }
@@ -1091,7 +1091,7 @@ export default {
   fetchTransactions,
   fetchBalanceHistory,
   fetchIdentityPositions,
-  fetchManagedPortfolioPositions,
+  fetchAccountCurrentFinancialPositions,
   fetchCreditCardAccountSummary,
   fetchCreditCardActivity,
   fetchFundingIntents,

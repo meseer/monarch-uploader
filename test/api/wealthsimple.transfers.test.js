@@ -2,7 +2,7 @@
  * Tests for Wealthsimple API Client - Transfers & Positions
  *
  * Covers: fetchInternalTransfer, fetchFundsTransfer, fetchShortOptionPositionExpiryDetail,
- * fetchManagedPortfolioPositions, fetchActivityByOrdersServiceOrderId, fetchExtendedOrder
+ * fetchAccountCurrentFinancialPositions, fetchActivityByOrdersServiceOrderId, fetchExtendedOrder
  */
 
 import wealthsimpleApi from '../../src/api/wealthsimple';
@@ -746,7 +746,61 @@ describe('Wealthsimple API Client - Transfers & Positions', () => {
     });
   });
 
-  describe('fetchManagedPortfolioPositions', () => {
+  describe('fetchAccountCurrentFinancialPositions', () => {
+    /**
+     * Build a FetchAccountCurrentFinancialPositions response with the given position nodes.
+     */
+    function buildPositionsResponse(nodes, totalCount = nodes.length) {
+      return {
+        account: {
+          id: 'resp-gjp2y-3a',
+          financials: {
+            current: {
+              id: 'resp-gjp2y-3a-CAD',
+              positions: {
+                totalCount,
+                edges: nodes.map((node) => ({ node, __typename: 'PositionEdge' })),
+                __typename: 'PositionConnection',
+              },
+              __typename: 'AccountCurrentFinancials',
+            },
+            __typename: 'AccountFinancials',
+          },
+          __typename: 'Account',
+        },
+      };
+    }
+
+    const cashNode = {
+      id: 'a4eb2a40a26f8f9d87801167db254843',
+      bookValue: { amount: '378.51', cents: 37851, currency: 'CAD' },
+      percentageOfAccount: '0.34',
+      quantity: '378.51',
+      totalValue: { amount: '378.51', cents: 37851, currency: 'CAD' },
+      unrealizedReturns: { amount: '0', cents: 0, currency: 'CAD' },
+      security: {
+        id: 'sec-c-cad',
+        securityType: 'CURRENCY',
+        assetClass: null,
+        stock: { name: 'CAD', symbol: 'CAD' },
+      },
+    };
+
+    const etfNode = {
+      id: 'ab97db8ec83b549e81656539211535a2',
+      bookValue: { amount: '4658.630110058713338059743838', cents: 465863, currency: 'CAD' },
+      percentageOfAccount: '5.64',
+      quantity: '59.1236',
+      totalValue: { amount: '6222.7236032108', cents: 622272, currency: 'CAD' },
+      unrealizedReturns: { amount: '1564.093493152086661940256162', cents: 156409, currency: 'CAD' },
+      security: {
+        id: 'sec-s-d2e3e5077e2f49e3b1e297044579a1f7',
+        securityType: 'EXCHANGE_TRADED_FUND',
+        assetClass: 'emerging_market_stocks',
+        stock: { name: 'iShares Inc. - MSCI Emerging Markets Min Vol Factor ETF', symbol: 'EEMV' },
+      },
+    };
+
     beforeEach(() => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
       setupConfigStoreAuth({
@@ -758,43 +812,121 @@ describe('Wealthsimple API Client - Transfers & Positions', () => {
 
     it('should require accountId parameter', async () => {
       await expect(
-        wealthsimpleApi.fetchManagedPortfolioPositions(null),
+        wealthsimpleApi.fetchAccountCurrentFinancialPositions(null),
       ).rejects.toThrow('Account ID is required');
 
       await expect(
-        wealthsimpleApi.fetchManagedPortfolioPositions(''),
+        wealthsimpleApi.fetchAccountCurrentFinancialPositions(''),
       ).rejects.toThrow('Account ID is required');
     });
 
-    it('should fetch managed portfolio positions successfully', async () => {
-      const mockResponse = {
-        account: {
-          id: 'resp-gjp2y-3a',
-          positions: [
-            { id: 'pos-1', symbol: 'CAD', quantity: '354.18', type: 'currency', name: 'CAD', value: '354.18' },
-            { id: 'pos-2', symbol: 'EEMV', quantity: '57.3763', type: 'exchange_traded_fund', name: 'iShares ETF', value: '5284.35' },
-          ],
-        },
+    it('should send the correct operation, id, and position filter', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({ status: 200, responseText: JSON.stringify({ data: buildPositionsResponse([]) }) });
+      });
+
+      await wealthsimpleApi.fetchAccountCurrentFinancialPositions('resp-gjp2y-3a');
+
+      const requestBody = JSON.parse(GM_xmlhttpRequest.mock.calls[0][0].data);
+      expect(requestBody.operationName).toBe('FetchAccountCurrentFinancialPositions');
+      expect(requestBody.variables.id).toBe('resp-gjp2y-3a');
+      expect(requestBody.variables.positionFilter).toEqual({ includeCash: true, includeManaged: true });
+    });
+
+    it('should NOT inject identityId (the API rejects it)', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({ status: 200, responseText: JSON.stringify({ data: buildPositionsResponse([]) }) });
+      });
+
+      await wealthsimpleApi.fetchAccountCurrentFinancialPositions('resp-gjp2y-3a');
+
+      const requestBody = JSON.parse(GM_xmlhttpRequest.mock.calls[0][0].data);
+      expect(requestBody.variables.identityId).toBeUndefined();
+    });
+
+    it('should honour includeCash and includeManaged overrides', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({ status: 200, responseText: JSON.stringify({ data: buildPositionsResponse([]) }) });
+      });
+
+      await wealthsimpleApi.fetchAccountCurrentFinancialPositions('resp-gjp2y-3a', {
+        includeCash: false,
+        includeManaged: false,
+      });
+
+      const requestBody = JSON.parse(GM_xmlhttpRequest.mock.calls[0][0].data);
+      expect(requestBody.variables.positionFilter).toEqual({ includeCash: false, includeManaged: false });
+    });
+
+    it('should map position edges to nested security positions', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({ status: 200, responseText: JSON.stringify({ data: buildPositionsResponse([cashNode, etfNode]) }) });
+      });
+
+      const result = await wealthsimpleApi.fetchAccountCurrentFinancialPositions('resp-gjp2y-3a');
+
+      expect(result).toHaveLength(2);
+      expect(result[0].security.id).toBe('sec-c-cad');
+      expect(result[0].security.securityType).toBe('CURRENCY');
+      expect(result[0].security.stock.symbol).toBe('CAD');
+      expect(result[0].quantity).toBe('378.51');
+      expect(result[1].security.stock.symbol).toBe('EEMV');
+      expect(result[1].security.securityType).toBe('EXCHANGE_TRADED_FUND');
+      expect(result[1].totalValue.amount).toBe('6222.7236032108');
+    });
+
+    it('should derive averagePrice from bookValue / quantity', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({ status: 200, responseText: JSON.stringify({ data: buildPositionsResponse([cashNode, etfNode]) }) });
+      });
+
+      const result = await wealthsimpleApi.fetchAccountCurrentFinancialPositions('resp-gjp2y-3a');
+
+      // Cash: 378.51 / 378.51 = 1
+      expect(parseFloat(result[0].averagePrice.amount)).toBeCloseTo(1, 6);
+      expect(result[0].averagePrice.currency).toBe('CAD');
+
+      // ETF: 4658.63011... / 59.1236 ≈ 78.7629
+      expect(parseFloat(result[1].averagePrice.amount)).toBeCloseTo(4658.630110058713 / 59.1236, 6);
+      expect(result[1].averagePrice.currency).toBe('CAD');
+    });
+
+    it('should leave averagePrice undefined for zero quantity (no divide-by-zero)', async () => {
+      const zeroQuantityNode = {
+        ...etfNode,
+        quantity: '0',
+        bookValue: { amount: '0', cents: 0, currency: 'CAD' },
       };
 
       GM_xmlhttpRequest.mockImplementation(({ onload }) => {
-        onload({ status: 200, responseText: JSON.stringify({ data: mockResponse }) });
+        onload({ status: 200, responseText: JSON.stringify({ data: buildPositionsResponse([zeroQuantityNode]) }) });
       });
 
-      const result = await wealthsimpleApi.fetchManagedPortfolioPositions('resp-gjp2y-3a');
+      const result = await wealthsimpleApi.fetchAccountCurrentFinancialPositions('resp-gjp2y-3a');
 
-      expect(result).toHaveLength(2);
-      expect(result[0].symbol).toBe('CAD');
-      expect(result[0].quantity).toBe('354.18');
-      expect(result[1].symbol).toBe('EEMV');
+      expect(result).toHaveLength(1);
+      expect(result[0].averagePrice).toBeUndefined();
     });
 
-    it('should return empty array when no positions', async () => {
+    it('should leave averagePrice undefined when bookValue is missing', async () => {
+      const noBookValueNode = { ...etfNode, bookValue: undefined };
+
       GM_xmlhttpRequest.mockImplementation(({ onload }) => {
-        onload({ status: 200, responseText: JSON.stringify({ data: { account: { positions: [] } } }) });
+        onload({ status: 200, responseText: JSON.stringify({ data: buildPositionsResponse([noBookValueNode]) }) });
       });
 
-      const result = await wealthsimpleApi.fetchManagedPortfolioPositions('test-account');
+      const result = await wealthsimpleApi.fetchAccountCurrentFinancialPositions('resp-gjp2y-3a');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].averagePrice).toBeUndefined();
+    });
+
+    it('should return empty array when there are no position edges', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({ status: 200, responseText: JSON.stringify({ data: buildPositionsResponse([], 0) }) });
+      });
+
+      const result = await wealthsimpleApi.fetchAccountCurrentFinancialPositions('test-account');
       expect(result).toEqual([]);
     });
 
@@ -803,8 +935,32 @@ describe('Wealthsimple API Client - Transfers & Positions', () => {
         onload({ status: 200, responseText: JSON.stringify({ data: {} }) });
       });
 
-      const result = await wealthsimpleApi.fetchManagedPortfolioPositions('test-account');
+      const result = await wealthsimpleApi.fetchAccountCurrentFinancialPositions('test-account');
       expect(result).toEqual([]);
+    });
+
+    it('should return empty array when financials data is missing', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({ status: 200, responseText: JSON.stringify({ data: { account: { id: 'test-account' } } }) });
+      });
+
+      const result = await wealthsimpleApi.fetchAccountCurrentFinancialPositions('test-account');
+      expect(result).toEqual([]);
+    });
+
+    it('should propagate GraphQL errors', async () => {
+      GM_xmlhttpRequest.mockImplementation(({ onload }) => {
+        onload({
+          status: 200,
+          responseText: JSON.stringify({
+            errors: [{ message: 'UNPROCESSABLE_ENTITY', extensions: { code: 'UNPROCESSABLE_ENTITY' } }],
+          }),
+        });
+      });
+
+      await expect(
+        wealthsimpleApi.fetchAccountCurrentFinancialPositions('resp-gjp2y-3a'),
+      ).rejects.toThrow('UNPROCESSABLE_ENTITY');
     });
   });
 
