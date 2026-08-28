@@ -67,6 +67,18 @@ export const TRANSACTION_RETENTION_DEFAULTS = {
   COUNT: 1000, // Keep last 1000 transactions
 } as const;
 
+// Wealthsimple account types processed with cash-account semantics.
+// These accounts read transaction state from `unifiedStatus` on the activity
+// feed, can never hold a negative balance, and have no holdings/positions.
+// HISA portfolio accounts are modelled by Wealthsimple as automated portfolios
+// but behave as high-interest savings accounts, so they belong here rather than
+// with the investment types.
+export const WEALTHSIMPLE_CASH_LIKE_TYPES = new Set([
+  'CASH',
+  'CASH_USD',
+  'HISA_PORTFOLIO_NON_REGISTERED',
+]);
+
 // Wealthsimple account types that support transaction upload
 // These accounts have transactions that can be synced to Monarch
 export const WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES = new Set([
@@ -74,6 +86,7 @@ export const WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES = new Set([
   'PORTFOLIO_LINE_OF_CREDIT',
   'CASH',
   'CASH_USD',
+  'HISA_PORTFOLIO_NON_REGISTERED',
   // Investment accounts - Managed
   'MANAGED_RESP_FAMILY',
   'MANAGED_RESP',
@@ -96,6 +109,7 @@ export const WEALTHSIMPLE_PENDING_RECONCILIATION_TYPES = new Set([
   'CREDIT_CARD',
   'CASH',
   'CASH_USD',
+  'HISA_PORTFOLIO_NON_REGISTERED',
   // Investment accounts - Managed
   'MANAGED_RESP_FAMILY',
   'MANAGED_RESP',

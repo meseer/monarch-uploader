@@ -4,6 +4,7 @@
  */
 
 import { debugLog } from '../../core/utils';
+import { WEALTHSIMPLE_CASH_LIKE_TYPES } from '../../core/config';
 import monarchApi from '../../api/monarch';
 import wealthsimpleApi from '../../api/wealthsimple';
 import { INVESTMENT_TRANSACTION_RULES } from './transactionsInvestment';
@@ -90,7 +91,9 @@ function getTransactionStatusForReconciliation(
   transaction: Record<string, unknown>,
   accountType: string,
 ): TransactionStatusInfo {
-  const isCashAccount = accountType === 'CASH' || accountType === 'CASH_USD';
+  // Cash-like accounts (CASH, CASH_USD, HISA portfolios) read state from
+  // unifiedStatus rather than the legacy `status` field.
+  const isCashAccount = WEALTHSIMPLE_CASH_LIKE_TYPES.has(accountType);
   const isInvestmentAccountType = INVESTMENT_ACCOUNT_TYPES.has(accountType);
 
   if (isCashAccount) {

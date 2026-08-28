@@ -156,6 +156,73 @@ describe('Wealthsimple Transaction Service - Cash', () => {
       // Investment accounts now support transaction sync
       expect(wealthsimpleApi.fetchTransactions).toHaveBeenCalledWith('test-id', '2025-01-01');
     });
+
+    it('should route HISA_PORTFOLIO_NON_REGISTERED to the cash transaction processor', async () => {
+      const hisaAccount = {
+        wealthsimpleAccount: {
+          id: 'non-registered-_O2LAk4_EQ',
+          nickname: 'HISA Savings',
+          type: 'HISA_PORTFOLIO_NON_REGISTERED',
+        },
+      };
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue([]);
+
+      const result = await fetchAndProcessTransactions(
+        hisaAccount,
+        '2025-01-01',
+        '2025-01-31',
+      );
+
+      expect(result).toEqual([]);
+      expect(wealthsimpleApi.fetchTransactions).toHaveBeenCalledWith('non-registered-_O2LAk4_EQ', '2025-01-01');
+    });
+
+    it('should process a HISA internal transfer using unifiedStatus (cash semantics)', async () => {
+      const hisaAccount = {
+        wealthsimpleAccount: {
+          id: 'non-registered-_O2LAk4_EQ',
+          nickname: 'HISA Savings',
+          type: 'HISA_PORTFOLIO_NON_REGISTERED',
+        },
+      };
+
+      // Real HISA activity feed payload. Note status='completed' (not 'settled')
+      // and unifiedStatus='COMPLETED' — only the cash path reads unifiedStatus,
+      // so the investment/default path would misclassify this transaction.
+      wealthsimpleApi.fetchTransactions.mockResolvedValue([
+        {
+          accountId: 'non-registered-_O2LAk4_EQ',
+          amount: '17085.67',
+          amountSign: 'positive',
+          canonicalId: 'funding_intent-EFXl9euZ63pcexpB9RLlycmGSS2-non-registered-_O2LAk4_EQ',
+          currency: 'CAD',
+          externalCanonicalId: 'funding_intent-EFXl9euZ63pcexpB9RLlycmGSS2',
+          groupId: 'funding_intent-EFXl9euZ63pcexpB9RLlycmGSS2',
+          occurredAt: '2026-08-28T17:45:28.058000+00:00',
+          opposingAccountId: 'ca-cash-msb-sEbK34jg1A',
+          status: 'completed',
+          subType: 'DESTINATION',
+          type: 'INTERNAL_TRANSFER',
+          transferType: 'partial_in_cash',
+          unifiedStatus: 'COMPLETED',
+        },
+      ]);
+      wealthsimpleApi.fetchInternalTransfer = jest.fn().mockResolvedValue(null);
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [] });
+
+      const result = await fetchAndProcessTransactions(
+        hisaAccount,
+        '2026-08-01',
+        '2026-08-31',
+      );
+
+      // The transaction must survive the COMPLETED filter and not be dropped
+      expect(result).toHaveLength(1);
+      expect(result[0].type).toBe('INTERNAL_TRANSFER');
+      expect(result[0].amount).toBe(17085.67);
+      expect(result[0].isPending).toBe(false);
+    });
   });
 
   describe('date conversion', () => {

@@ -25,6 +25,7 @@ const WEALTHSIMPLE_ACCOUNT_TYPE_DISPLAY_NAMES = {
   SELF_DIRECTED_RESP_FAMILY: 'Self Directed Family RESP',
   SELF_DIRECTED_RESP: 'Self Directed RESP',
   SELF_DIRECTED_NON_REGISTERED: 'Self Directed Non-Registered',
+  SELF_DIRECTED_NON_REGISTERED_MARGIN: 'Self Directed Non-Registered Margin',
   SELF_DIRECTED_TFSA: 'Self Directed TFSA',
   SELF_DIRECTED_RRSP: 'Self Directed RRSP',
   SELF_DIRECTED_CRYPTO: 'Self Directed Crypto',
@@ -32,6 +33,11 @@ const WEALTHSIMPLE_ACCOUNT_TYPE_DISPLAY_NAMES = {
   // Cash accounts
   CASH: 'Cash',
   CASH_USD: 'Cash USD',
+
+  // High-interest savings accounts
+  // Wealthsimple models these as automated portfolios, but they behave as
+  // savings accounts (no holdings, interest-bearing), so they map to depository.
+  HISA_PORTFOLIO_NON_REGISTERED: 'HISA Non-Registered',
 
   // Credit cards
   CREDIT_CARD: 'Credit Card',
@@ -55,6 +61,7 @@ const WEALTHSIMPLE_TO_MONARCH_ACCOUNT_TYPES: Record<string, MonarchAccountTypeMa
   SELF_DIRECTED_RESP_FAMILY: { type: 'brokerage', subtype: 'resp' },
   SELF_DIRECTED_RESP: { type: 'brokerage', subtype: 'resp' },
   SELF_DIRECTED_NON_REGISTERED: { type: 'brokerage', subtype: 'brokerage' },
+  SELF_DIRECTED_NON_REGISTERED_MARGIN: { type: 'brokerage', subtype: 'brokerage' },
   SELF_DIRECTED_TFSA: { type: 'brokerage', subtype: 'tfsa' },
   SELF_DIRECTED_RRSP: { type: 'brokerage', subtype: 'rrsp' },
   SELF_DIRECTED_CRYPTO: { type: 'brokerage', subtype: 'cryptocurrency' },
@@ -62,6 +69,9 @@ const WEALTHSIMPLE_TO_MONARCH_ACCOUNT_TYPES: Record<string, MonarchAccountTypeMa
   // Cash accounts
   CASH: { type: 'depository', subtype: 'checking' },
   CASH_USD: { type: 'depository', subtype: 'checking' },
+
+  // High-interest savings accounts
+  HISA_PORTFOLIO_NON_REGISTERED: { type: 'depository', subtype: 'savings' },
 
   // Credit cards
   CREDIT_CARD: { type: 'credit', subtype: 'credit_card' },
