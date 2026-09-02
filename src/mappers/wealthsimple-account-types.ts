@@ -33,6 +33,9 @@ const WEALTHSIMPLE_ACCOUNT_TYPE_DISPLAY_NAMES = {
   // Cash accounts
   CASH: 'Cash',
   CASH_USD: 'Cash USD',
+  // Youth Cash accounts behave like regular CASH accounts but are opened for
+  // kids and teenagers (raw Wealthsimple type is the same `ca_cash_msb`).
+  YOUTH_CASH: 'Youth Cash',
 
   // High-interest savings accounts
   // Wealthsimple models these as automated portfolios, but they behave as
@@ -69,6 +72,7 @@ const WEALTHSIMPLE_TO_MONARCH_ACCOUNT_TYPES: Record<string, MonarchAccountTypeMa
   // Cash accounts
   CASH: { type: 'depository', subtype: 'checking' },
   CASH_USD: { type: 'depository', subtype: 'checking' },
+  YOUTH_CASH: { type: 'depository', subtype: 'checking' },
 
   // High-interest savings accounts
   HISA_PORTFOLIO_NON_REGISTERED: { type: 'depository', subtype: 'savings' },

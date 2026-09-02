@@ -35,6 +35,7 @@ describe('Wealthsimple account type mappings', () => {
     test('maps cash accounts to depository checking', () => {
       expect(getMonarchAccountTypeMapping('CASH')).toEqual({ type: 'depository', subtype: 'checking' });
       expect(getMonarchAccountTypeMapping('CASH_USD')).toEqual({ type: 'depository', subtype: 'checking' });
+      expect(getMonarchAccountTypeMapping('YOUTH_CASH')).toEqual({ type: 'depository', subtype: 'checking' });
     });
 
     test('maps credit cards and lines of credit', () => {
@@ -72,12 +73,26 @@ describe('Wealthsimple account type mappings', () => {
         expect(getAccountTypeDisplayName('HISA_PORTFOLIO_NON_REGISTERED')).toBe('HISA Non-Registered');
       });
     });
+
+    describe('YOUTH_CASH', () => {
+      test('maps to depository checking, same as a regular CASH account', () => {
+        expect(getMonarchAccountTypeMapping('YOUTH_CASH')).toEqual({
+          type: 'depository',
+          subtype: 'checking',
+        });
+      });
+
+      test('has the expected display name', () => {
+        expect(getAccountTypeDisplayName('YOUTH_CASH')).toBe('Youth Cash');
+      });
+    });
   });
 
   describe('getAccountTypeDisplayName', () => {
     test('returns friendly names for known types', () => {
       expect(getAccountTypeDisplayName('CREDIT_CARD')).toBe('Credit Card');
       expect(getAccountTypeDisplayName('CASH_USD')).toBe('Cash USD');
+      expect(getAccountTypeDisplayName('YOUTH_CASH')).toBe('Youth Cash');
       expect(getAccountTypeDisplayName('MANAGED_RESP_FAMILY')).toBe('Managed Family RESP');
     });
 
@@ -92,6 +107,7 @@ describe('Wealthsimple account type capability sets', () => {
     test('contains the deposit-only account types', () => {
       expect(WEALTHSIMPLE_CASH_LIKE_TYPES.has('CASH')).toBe(true);
       expect(WEALTHSIMPLE_CASH_LIKE_TYPES.has('CASH_USD')).toBe(true);
+      expect(WEALTHSIMPLE_CASH_LIKE_TYPES.has('YOUTH_CASH')).toBe(true);
       expect(WEALTHSIMPLE_CASH_LIKE_TYPES.has('HISA_PORTFOLIO_NON_REGISTERED')).toBe(true);
     });
 
@@ -118,6 +134,28 @@ describe('Wealthsimple account type capability sets', () => {
 
     test('is NOT an investment account (no holdings or cash sync steps)', () => {
       expect(isInvestmentAccount('HISA_PORTFOLIO_NON_REGISTERED')).toBe(false);
+    });
+  });
+
+  describe('YOUTH_CASH registration', () => {
+    test('is treated with cash-account semantics', () => {
+      expect(WEALTHSIMPLE_CASH_LIKE_TYPES.has('YOUTH_CASH')).toBe(true);
+    });
+
+    test('supports transaction upload', () => {
+      expect(WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has('YOUTH_CASH')).toBe(true);
+    });
+
+    test('supports pending reconciliation', () => {
+      expect(WEALTHSIMPLE_PENDING_RECONCILIATION_TYPES.has('YOUTH_CASH')).toBe(true);
+    });
+
+    test('does NOT need balance reconstruction (balance comes from the API)', () => {
+      expect(WEALTHSIMPLE_BALANCE_RECONSTRUCTION_TYPES.has('YOUTH_CASH')).toBe(false);
+    });
+
+    test('is NOT an investment account (no holdings or cash sync steps)', () => {
+      expect(isInvestmentAccount('YOUTH_CASH')).toBe(false);
     });
   });
 

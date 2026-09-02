@@ -610,6 +610,22 @@ describe('Wealthsimple Upload Service', () => {
       expect(stepKeys).not.toContain('cashSync');
       expect(stepKeys).not.toContain('creditLimit');
     });
+
+    it('builds cash-account steps for YOUTH_CASH', () => {
+      // Youth Cash accounts behave exactly like regular CASH accounts: no
+      // holdings, no credit limit, and balance comes straight from the API.
+      isInvestmentAccount.mockReturnValue(false);
+
+      const consolidatedAccount = {
+        wealthsimpleAccount: { id: 'ca-cash-msb-qiVT16TVQQ', type: 'YOUTH_CASH' },
+      };
+      const stepKeys = buildSyncStepsForAccount(consolidatedAccount).map((s) => s.key);
+
+      expect(stepKeys).toEqual(['pendingReconciliation', 'transactions', 'balance']);
+      expect(stepKeys).not.toContain('positions');
+      expect(stepKeys).not.toContain('cashSync');
+      expect(stepKeys).not.toContain('creditLimit');
+    });
   });
 
   describe('clearLastUploadDate', () => {

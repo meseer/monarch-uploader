@@ -33,6 +33,9 @@ beforeEach(() => {
   wealthsimpleApi.fetchSpendTransactions = jest.fn().mockResolvedValue(new Map());
 });
 
+// Real Youth Cash account ID shape (`ca-cash-msb-*`, same raw type as CASH)
+const YOUTH_CASH_ACCOUNT_ID = 'ca-cash-msb-qiVT16TVQQ';
+
 describe('Wealthsimple Transaction Service - Cash', () => {
   const mockConsolidatedAccount = {
     wealthsimpleAccount: {
@@ -221,6 +224,72 @@ describe('Wealthsimple Transaction Service - Cash', () => {
       expect(result).toHaveLength(1);
       expect(result[0].type).toBe('INTERNAL_TRANSFER');
       expect(result[0].amount).toBe(17085.67);
+      expect(result[0].isPending).toBe(false);
+    });
+
+    it('should route YOUTH_CASH to the cash transaction processor', async () => {
+      const youthCashAccount = {
+        wealthsimpleAccount: {
+          id: YOUTH_CASH_ACCOUNT_ID,
+          nickname: 'Kid Spending',
+          type: 'YOUTH_CASH',
+        },
+      };
+
+      wealthsimpleApi.fetchTransactions.mockResolvedValue([]);
+
+      const result = await fetchAndProcessTransactions(
+        youthCashAccount,
+        '2025-01-01',
+        '2025-01-31',
+      );
+
+      expect(result).toEqual([]);
+      expect(wealthsimpleApi.fetchTransactions).toHaveBeenCalledWith(YOUTH_CASH_ACCOUNT_ID, '2025-01-01');
+    });
+
+    it('should process a YOUTH_CASH internal transfer using unifiedStatus (cash semantics)', async () => {
+      const youthCashAccount = {
+        wealthsimpleAccount: {
+          id: YOUTH_CASH_ACCOUNT_ID,
+          nickname: 'Kid Spending',
+          type: 'YOUTH_CASH',
+        },
+      };
+
+      // A parent funding the youth account arrives as an INTERNAL_TRANSFER with
+      // status='completed' and unifiedStatus='COMPLETED'. Only the cash path
+      // reads unifiedStatus, so the investment/default path would drop this.
+      wealthsimpleApi.fetchTransactions.mockResolvedValue([
+        {
+          accountId: YOUTH_CASH_ACCOUNT_ID,
+          amount: '25.00',
+          amountSign: 'positive',
+          canonicalId: `funding_intent-YouthFund1-${YOUTH_CASH_ACCOUNT_ID}`,
+          currency: 'CAD',
+          externalCanonicalId: 'funding_intent-YouthFund1',
+          groupId: 'funding_intent-YouthFund1',
+          occurredAt: '2026-09-02T18:20:00.000000+00:00',
+          opposingAccountId: 'ca-cash-msb-sEbK34jg1A',
+          status: 'completed',
+          subType: 'DESTINATION',
+          type: 'INTERNAL_TRANSFER',
+          transferType: 'partial_in_cash',
+          unifiedStatus: 'COMPLETED',
+        },
+      ]);
+      wealthsimpleApi.fetchInternalTransfer = jest.fn().mockResolvedValue(null);
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [] });
+
+      const result = await fetchAndProcessTransactions(
+        youthCashAccount,
+        '2026-09-01',
+        '2026-09-30',
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].type).toBe('INTERNAL_TRANSFER');
+      expect(result[0].amount).toBe(25.00);
       expect(result[0].isPending).toBe(false);
     });
   });
