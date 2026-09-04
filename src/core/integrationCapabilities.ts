@@ -5,7 +5,7 @@
  * Used by the settings UI to dynamically render appropriate options.
  */
 
-import { STORAGE, TRANSACTION_RETENTION_DEFAULTS } from './config';
+import { STORAGE, TRANSACTION_RETENTION_DEFAULTS, CARDHOLDER } from './config';
 import type { IntegrationManifest } from '../integrations/types';
 
 /**
@@ -41,6 +41,10 @@ export const ACCOUNT_SETTINGS = {
   INCLUDE_PENDING_TRANSACTIONS: 'includePendingTransactions',
   INVERT_BALANCE: 'invertBalance',
   SKIP_CATEGORIZATION: 'skipCategorization',
+  /** Owner column mapping mode: 'off' | 'on' */
+  CARDHOLDER_OWNER_MODE: 'cardholderOwnerMode',
+  /** Cardholder tag mode: 'off' | 'auto' | 'always' */
+  CARDHOLDER_TAG_MODE: 'cardholderTagMode',
 } as const;
 
 /**
@@ -58,6 +62,7 @@ interface LegacyIntegrationCapabilities {
   hasHoldings: boolean;
   hasBalanceReconstruction: boolean;
   hasCategorization: boolean;
+  hasCardholders: boolean;
   categoryMappingsStorageKey: string | null;
   categorySourceLabel: string | null;
   settings: string[];
@@ -80,6 +85,7 @@ export const INTEGRATION_CAPABILITIES: Record<string, LegacyIntegrationCapabilit
     hasHoldings: true,
     hasBalanceReconstruction: true, // For credit cards
     hasCategorization: true, // Merchant name to Monarch category mappings
+    hasCardholders: false, // No cardholder name in the Wealthsimple activity feed
     categoryMappingsStorageKey: STORAGE.WEALTHSIMPLE_CONFIG,
     categorySourceLabel: 'Merchant Name',
     settings: [
@@ -112,6 +118,7 @@ export const INTEGRATION_CAPABILITIES: Record<string, LegacyIntegrationCapabilit
     hasHoldings: true,
     hasBalanceReconstruction: false,
     hasCategorization: false,
+    hasCardholders: false,
     categoryMappingsStorageKey: null,
     categorySourceLabel: null,
     settings: [
@@ -140,6 +147,7 @@ export const INTEGRATION_CAPABILITIES: Record<string, LegacyIntegrationCapabilit
     hasHoldings: false, // Private mutual funds - no positions API
     hasBalanceReconstruction: false,
     hasCategorization: false, // Activity types map directly to Buy/Sell categories
+    hasCardholders: false, // Not a card product
     categoryMappingsStorageKey: null,
     categorySourceLabel: null,
     settings: [
@@ -164,6 +172,7 @@ export const INTEGRATION_CAPABILITIES: Record<string, LegacyIntegrationCapabilit
     hasHoldings: false, // Credit card only
     hasBalanceReconstruction: true,
     hasCategorization: true, // Bank category to Monarch category mappings
+    hasCardholders: true, // name.nameOnCard present on every activity
     categoryMappingsStorageKey: STORAGE.ROGERSBANK_CONFIG,
     categorySourceLabel: 'Bank Category',
     settings: [
@@ -173,6 +182,8 @@ export const INTEGRATION_CAPABILITIES: Record<string, LegacyIntegrationCapabilit
       ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS,
       ACCOUNT_SETTINGS.INVERT_BALANCE,
       ACCOUNT_SETTINGS.SKIP_CATEGORIZATION,
+      ACCOUNT_SETTINGS.CARDHOLDER_OWNER_MODE,
+      ACCOUNT_SETTINGS.CARDHOLDER_TAG_MODE,
     ],
     settingDefaults: {
       [ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES]: false,
@@ -181,6 +192,8 @@ export const INTEGRATION_CAPABILITIES: Record<string, LegacyIntegrationCapabilit
       [ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS]: true,
       [ACCOUNT_SETTINGS.INVERT_BALANCE]: false,
       [ACCOUNT_SETTINGS.SKIP_CATEGORIZATION]: false,
+      [ACCOUNT_SETTINGS.CARDHOLDER_OWNER_MODE]: CARDHOLDER.OWNER_MODE.OFF,
+      [ACCOUNT_SETTINGS.CARDHOLDER_TAG_MODE]: CARDHOLDER.TAG_MODE.OFF,
     },
   },
 };
@@ -209,6 +222,7 @@ function buildCapabilitiesFromManifest(manifest: IntegrationManifest): LegacyInt
     hasHoldings: manifest.capabilities?.hasHoldings || false,
     hasBalanceReconstruction: manifest.capabilities?.hasBalanceReconstruction || false,
     hasCategorization: manifest.capabilities?.hasCategorization || false,
+    hasCardholders: manifest.capabilities?.hasCardholders || false,
     categoryMappingsStorageKey: manifest.capabilities?.hasCategorization
       ? (manifest.storageKeys?.config || null) : null,
     categorySourceLabel: manifest.categoryConfig?.sourceLabel || null,

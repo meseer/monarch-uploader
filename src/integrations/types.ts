@@ -116,6 +116,11 @@ export interface IntegrationCapabilities {
   hasBalanceReconstruction: boolean;
   /** Supports category mappings (merchant → Monarch category) */
   hasCategorization: boolean;
+  /**
+   * Transactions carry a cardholder name, enabling Monarch Owner mapping
+   * and/or cardholder tagging. Requires an `extractCardholder` sync hook.
+   */
+  hasCardholders?: boolean;
 }
 
 export interface IntegrationCategoryConfig {
@@ -354,6 +359,8 @@ export interface SyncHooks {
   // Optional hooks (capability-dependent)
   /** Stable fields for pending transaction ID hashing */
   getPendingIdFields?: GetPendingIdFieldsHook;
+  /** Extract cardholder identity from a raw transaction (requires hasCardholders) */
+  extractCardholder?: ExtractCardholderHook;
   /** Get Monarch-normalized settled amount from a raw institution transaction */
   getSettledAmount?: (settledTx: Record<string, unknown>) => number;
   /** Build balance history for first-sync reconstruction */
@@ -407,6 +414,27 @@ export type BuildTransactionNotesHook = (
  * Get the set of stable field values to hash for pending transaction ID generation.
  */
 export type GetPendingIdFieldsHook = (tx: Record<string, unknown>) => string[];
+
+/**
+ * Cardholder identity extracted from a single raw institution transaction.
+ *
+ * `name` is the raw institution-reported name (typically uppercase, e.g.
+ * "MYKHAILO DELEGAN") and is used as the stable storage key for the
+ * cardholder → Monarch member mapping. Do not normalize it here.
+ */
+export interface CardholderInfo {
+  /** Raw cardholder name as reported by the institution */
+  name: string;
+  /** Last 4 digits of the card, if available (display/disambiguation only) */
+  cardLast4?: string | null;
+}
+
+/**
+ * Extract cardholder identity from a raw institution transaction.
+ * Returns null when the transaction has no associated cardholder
+ * (e.g. payments, credits, account-level adjustments).
+ */
+export type ExtractCardholderHook = (tx: Record<string, unknown>) => CardholderInfo | null;
 
 /**
  * Build balance history from statement/transaction data for first-sync reconstruction.

@@ -40,7 +40,11 @@ jest.mock('../../../src/ui/components/datePicker', () => ({
 }));
 
 jest.mock('../../../src/core/integrationCapabilities', () => ({
-  ACCOUNT_SETTINGS: { INCLUDE_PENDING_TRANSACTIONS: 'includePendingTransactions' },
+  ACCOUNT_SETTINGS: {
+    INCLUDE_PENDING_TRANSACTIONS: 'includePendingTransactions',
+    CARDHOLDER_OWNER_MODE: 'cardholderOwnerMode',
+    CARDHOLDER_TAG_MODE: 'cardholderTagMode',
+  },
 }));
 
 jest.mock('../../../src/services/common/accountService', () => ({
@@ -103,6 +107,22 @@ jest.mock('../../../src/services/common/pendingReconciliation', () => ({
 
 jest.mock('../../../src/utils/csv', () => ({
   convertToCSV: jest.fn(() => 'Date,Merchant\n2024-01-15,Amazon'),
+  MONARCH_CSV_COLUMNS: ['Date', 'Merchant', 'Category', 'Account', 'Original Statement', 'Notes', 'Amount', 'Tags', 'Owner'],
+  buildMonarchTags: jest.fn(({ isPending, cardholderTag } = {}) => [
+    isPending ? 'Pending' : null,
+    cardholderTag || null,
+  ].filter(Boolean).join(',')),
+}));
+
+// Cardholder support is opt-in per account and disabled by default, so the
+// orchestrator tests exercise the path where no cardholder work happens.
+jest.mock('../../../src/services/common/cardholders', () => ({
+  syncCardholders: jest.fn(() => Promise.resolve({ cardholders: {}, shouldTag: false, shouldMapOwner: false })),
+  applyCardholderFields: jest.fn((txs) => txs),
+}));
+
+jest.mock('../../../src/ui/components/cardholderSelector', () => ({
+  showCardholderSelector: jest.fn(() => Promise.resolve(null)),
 }));
 
 // Get references to the mocked modules

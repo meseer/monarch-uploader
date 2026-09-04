@@ -172,6 +172,10 @@ describe('Integration Capabilities', () => {
         expect(rb.hasHoldings).toBe(false);
       });
 
+      test('should support cardholders (name.nameOnCard is on every activity)', () => {
+        expect(rb.hasCardholders).toBe(true);
+      });
+
       test('should have transaction and pending settings but not strip store numbers', () => {
         expect(rb.settings).toContain(ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES);
         expect(rb.settings).toContain(ACCOUNT_SETTINGS.TRANSACTION_RETENTION_DAYS);
@@ -182,11 +186,39 @@ describe('Integration Capabilities', () => {
         expect(rb.settings).not.toContain(ACCOUNT_SETTINGS.STRIP_STORE_NUMBERS);
       });
 
+      test('should have cardholder owner and tag mode settings', () => {
+        expect(rb.settings).toContain(ACCOUNT_SETTINGS.CARDHOLDER_OWNER_MODE);
+        expect(rb.settings).toContain(ACCOUNT_SETTINGS.CARDHOLDER_TAG_MODE);
+      });
+
       test('should have correct default values', () => {
         expect(rb.settingDefaults[ACCOUNT_SETTINGS.SKIP_CATEGORIZATION]).toBe(false);
         expect(rb.settingDefaults[ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS]).toBe(true);
         expect(rb.settingDefaults[ACCOUNT_SETTINGS.INVERT_BALANCE]).toBe(false);
         expect(rb.settingDefaults[ACCOUNT_SETTINGS.STORE_TX_DETAILS_IN_NOTES]).toBe(false);
+      });
+
+      test('should default both cardholder modes to off so existing syncs are unchanged', () => {
+        expect(rb.settingDefaults[ACCOUNT_SETTINGS.CARDHOLDER_OWNER_MODE]).toBe('off');
+        expect(rb.settingDefaults[ACCOUNT_SETTINGS.CARDHOLDER_TAG_MODE]).toBe('off');
+      });
+    });
+  });
+
+  describe('hasCardholders across integrations', () => {
+    test('should be enabled only for card products that report a cardholder name', () => {
+      // Rogers exposes name.nameOnCard; the others have no cardholder concept
+      expect(hasCapability(INTEGRATIONS.ROGERSBANK, 'hasCardholders')).toBe(true);
+      expect(hasCapability(INTEGRATIONS.WEALTHSIMPLE, 'hasCardholders')).toBe(false);
+      expect(hasCapability(INTEGRATIONS.QUESTRADE, 'hasCardholders')).toBe(false);
+      expect(hasCapability(INTEGRATIONS.CANADALIFE, 'hasCardholders')).toBe(false);
+    });
+
+    test('should not expose cardholder settings on integrations without the capability', () => {
+      [INTEGRATIONS.WEALTHSIMPLE, INTEGRATIONS.QUESTRADE, INTEGRATIONS.CANADALIFE].forEach((id) => {
+        const caps = getCapabilities(id);
+        expect(caps.settings).not.toContain(ACCOUNT_SETTINGS.CARDHOLDER_OWNER_MODE);
+        expect(caps.settings).not.toContain(ACCOUNT_SETTINGS.CARDHOLDER_TAG_MODE);
       });
     });
   });

@@ -11,6 +11,7 @@
 import { debugLog, formatDate } from '../../../../core/utils';
 import { processMbnaTransactions, resolveMbnaCategories, type ProcessedMbnaTransaction } from './transactions';
 import { buildBalanceHistory, type MbnaRawTransaction, type MbnaStatementData } from '../../source/balanceReconstruction';
+import { extractMbnaCardholder } from '../../source/cardholderExtractor';
 import { formatBalanceHistoryForMonarch, type MonarchBalanceEntry } from './balanceFormatter';
 import type { SyncHooks, SyncCallbacks } from '../../../types';
 import type { MbnaApiClient, MbnaTransactionResult } from '../../source/api';
@@ -281,6 +282,7 @@ const mbnaSyncHooks: SyncHooks = {
 
   // Optional hooks
   getPendingIdFields,
+  extractCardholder: extractMbnaCardholder,
   getSettledAmount,
   buildBalanceHistory: buildBalanceHistoryHook as SyncHooks['buildBalanceHistory'],
   suggestStartDate: suggestStartDate as unknown as SyncHooks['suggestStartDate'],

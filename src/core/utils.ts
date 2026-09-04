@@ -876,6 +876,67 @@ export function getMinRetentionForInstitution(institutionType: string): number {
   }
 }
 
+/**
+ * Normalize a person's name for comparison purposes.
+ *
+ * Lowercases, collapses all whitespace runs to a single space, and trims.
+ * Used to compare institution cardholder names (typically uppercase, e.g.
+ * "MYKHAILO  DELEGAN") against Monarch household member names
+ * (e.g. "Mykhailo Delegan") without being defeated by case or spacing.
+ *
+ * @param name - Raw name string
+ * @returns Normalized name, or empty string for null/undefined/non-strings
+ */
+export function normalizePersonName(name: string | null | undefined): string {
+  if (!name || typeof name !== 'string') {
+    return '';
+  }
+  return name.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/**
+ * Convert an ALL-CAPS (or lowercase) person name to Title Case.
+ *
+ * Institution APIs typically report cardholder names in uppercase
+ * (e.g. "MYKHAILO DELEGAN"). This produces a human-friendly label
+ * ("Mykhailo Delegan") suitable for display and for use as a Monarch tag.
+ *
+ * Handles:
+ * - Multiple/irregular whitespace (collapsed to single spaces)
+ * - Hyphenated names: "JEAN-LUC" → "Jean-Luc"
+ * - Apostrophes: "O'BRIEN" → "O'Brien"
+ * - Single-letter initials: "J" → "J"
+ * - Already mixed-case input is left untouched (e.g. "McDonald" stays
+ *   "McDonald" rather than becoming "Mcdonald")
+ *
+ * @param name - Raw name string
+ * @returns Title-cased name, or empty string for null/undefined/non-strings
+ */
+export function toTitleCase(name: string | null | undefined): string {
+  if (!name || typeof name !== 'string') {
+    return '';
+  }
+
+  const collapsed = name.trim().replace(/\s+/g, ' ');
+  if (!collapsed) {
+    return '';
+  }
+
+  // Preserve intentional mixed casing (e.g. "McDonald", "Mykhailo Delegan").
+  // Only re-case when the input is entirely uppercase or entirely lowercase.
+  const isAllUpper = collapsed === collapsed.toUpperCase();
+  const isAllLower = collapsed === collapsed.toLowerCase();
+  if (!isAllUpper && !isAllLower) {
+    return collapsed;
+  }
+
+  // Capitalize the first letter of each word, and of each segment following
+  // a hyphen or apostrophe (so "JEAN-LUC" and "O'BRIEN" are handled).
+  return collapsed
+    .toLowerCase()
+    .replace(/(^|[\s\-'])([a-z])/g, (_match, prefix: string, letter: string) => prefix + letter.toUpperCase());
+}
+
 // Default export with all utility functions
 export default {
   formatDate,

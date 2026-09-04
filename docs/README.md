@@ -1,7 +1,7 @@
 # Monarch Uploader — Documentation
 
 > **Status:** Active  
-> **Updated:** 2026-03-12  
+> **Updated:** 2026-09-04  
 > **Author:** @meseer  
 
 All project documentation lives here. See the [root README](../README.md) for project setup and installation.
@@ -15,6 +15,7 @@ Architecture reference documents. These explain *how* the system works and *why*
 | Document | Status | Description |
 |----------|--------|-------------|
 | [Modular Integration Architecture](design/modular-integration-architecture.md) | **Active** | Core architecture: manifest, registry, source/sink, SyncHooks, generic UI |
+| [Cardholder → Owner & Tag Mapping](design/cardholder-mapping.md) | **Active** | Mapping institution cardholders to the Monarch Owner column and/or tags |
 | [Cloud Sync Design](design/cloud-sync.md) | Draft | Cross-device settings sync via Firebase |
 | [Metrics & Instrumentation](design/metrics-and-instrumentation.md) | Draft | Telemetry and usage analytics design |
 | [Eliminate Upload Services Plan](design/eliminate-upload-services-plan.md) | Draft | Refactoring upload services into the modular architecture |

@@ -43,21 +43,11 @@ import {
   getRetentionSettingsFromAccount,
   StoredTransaction,
 } from '../../utils/transactionStorage';
-import { convertToCSV } from '../../utils/csv';
+import { convertToCSV, MONARCH_CSV_COLUMNS, buildMonarchTags } from '../../utils/csv';
 import { showProgressDialog } from '../../ui/components/progressDialog';
 import { showDatePickerWithOptionsPromise } from '../../ui/components/datePicker';
-
-// ── Monarch CSV column definitions ──────────────────────────
-const MONARCH_CSV_COLUMNS = [
-  'Date',
-  'Merchant',
-  'Category',
-  'Account',
-  'Original Statement',
-  'Notes',
-  'Amount',
-  'Tags',
-];
+import { syncCardholders, applyCardholderFields } from './cardholders';
+import { showCardholderSelector } from '../../ui/components/cardholderSelector';
 
 /**
  * Build sync steps for the progress dialog based on capabilities and settings.
@@ -115,7 +105,8 @@ function convertTransactionsToMonarchCSV(transactions, accountName, buildTransac
     'Original Statement': tx.originalStatement || '',
     Notes: buildTransactionNotes(tx, { storeTransactionDetailsInNotes }),
     Amount: tx.amount || 0,
-    Tags: tx.isPending ? 'Pending' : '',
+    Tags: buildMonarchTags({ isPending: tx.isPending, cardholderTag: tx.cardholderTag }),
+    Owner: tx.cardholderOwner || '',
   }));
 
   debugLog('[orchestrator] Converted transactions for CSV:', {
@@ -238,6 +229,7 @@ async function fetchAndSeparateTransactions({
  * @param {boolean} params.storeTransactionDetailsInNotes - Notes setting
  * @param {Array} params.dedupSettled - Settled transactions (after pending/settled dedup)
  * @param {Array} params.dedupPending - Pending transactions (after pending/settled dedup)
+ * @param {Object|null} params.cardholderResolution - Result of syncCardholders (null when inactive)
  * @param {import('../../integrations/types').SyncHooks} params.hooks - Sync hooks
  * @param {Object} params.progressDialog - Progress dialog instance
  * @param {AbortController} params.abortController - Abort controller
@@ -245,15 +237,33 @@ async function fetchAndSeparateTransactions({
  */
 async function executeTransactionStep({
   integrationId, accountId, accountDisplayName, monarchAccountId, fromDate,
-  includePendingTransactions, storeTransactionDetailsInNotes, dedupSettled, dedupPending, hooks,
+  includePendingTransactions, storeTransactionDetailsInNotes, dedupSettled, dedupPending,
+  cardholderResolution, hooks,
   progressDialog, abortController,
 }) {
   if (abortController.signal.aborted) throw new Error('Cancelled');
 
+  // ── Annotate with cardholder owner/tag ───────────────────
+  // Applied to RAW transactions so the extractor sees institution field names.
+  // processTransactions passes these fields through to the normalized shape.
+  let settledForProcessing = dedupSettled;
+  let pendingForProcessing = dedupPending;
+
+  if (cardholderResolution && (cardholderResolution.shouldTag || cardholderResolution.shouldMapOwner)) {
+    const cardholderOptions = {
+      cardholders: cardholderResolution.cardholders,
+      extract: hooks.extractCardholder,
+      shouldTag: cardholderResolution.shouldTag,
+      shouldMapOwner: cardholderResolution.shouldMapOwner,
+    };
+    settledForProcessing = applyCardholderFields(dedupSettled, cardholderOptions);
+    pendingForProcessing = applyCardholderFields(dedupPending, cardholderOptions);
+  }
+
   // ── Process (normalize) ──────────────────────────────────
   progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Processing...');
 
-  const processed = hooks.processTransactions(dedupSettled, dedupPending, {
+  const processed = hooks.processTransactions(settledForProcessing, pendingForProcessing, {
     includePending: includePendingTransactions,
   });
 
@@ -526,6 +536,27 @@ export async function syncAccount({
       }
     }
 
+    // ── STEP 4.5: Cardholder discovery & owner/tag resolution ─
+    // Discovery reads ALL fetched transactions (not just new ones) so a second
+    // cardholder is found even when all their transactions were uploaded on a
+    // previous sync. Non-fatal: a failure leaves owner/tag unset for this sync.
+    let cardholderResolution = null;
+    if (fetchData && capabilities.hasCardholders && hooks.extractCardholder) {
+      try {
+        progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Resolving cardholders...');
+        cardholderResolution = await syncCardholders({
+          integrationId,
+          accountId,
+          transactions: [...fetchData.rawSettled, ...fetchData.rawPending],
+          extract: hooks.extractCardholder,
+          today: getTodayLocal(),
+          promptForMember: showCardholderSelector,
+        });
+      } catch (error) {
+        debugLog('[orchestrator] Cardholder resolution failed, continuing without owner/tag:', error);
+      }
+    }
+
     // ── STEP 4: Process, Dedup & Upload Transactions ───────
     if (fetchData) {
       txStepResult = await executeTransactionStep({
@@ -533,6 +564,7 @@ export async function syncAccount({
         includePendingTransactions, storeTransactionDetailsInNotes,
         dedupSettled: fetchData.dedupSettled,
         dedupPending: fetchData.dedupPending,
+        cardholderResolution,
         hooks, progressDialog, abortController,
       });
     }

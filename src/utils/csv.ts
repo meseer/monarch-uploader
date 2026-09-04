@@ -19,6 +19,16 @@ interface RogersBankCSVOptions {
   storeTransactionDetailsInNotes?: boolean;
 }
 
+/** Inputs for building the Monarch `Tags` column value */
+export interface MonarchTagInputs {
+  /** Adds the "Pending" tag, required for pending reconciliation */
+  isPending?: boolean;
+  /** Cardholder label (see services/common/cardholders) */
+  cardholderTag?: string | null;
+  /** Any additional tags, e.g. a foreign currency code */
+  extraTags?: Array<string | null | undefined>;
+}
+
 /** Rogers Bank transaction shape (loose, from JS callers) */
 interface RogersBankTransaction {
   date?: string;
@@ -29,6 +39,10 @@ interface RogersBankTransaction {
   isPending?: boolean;
   pendingId?: string;
   resolvedMonarchCategory?: string | null;
+  /** Monarch household member name for the Owner column (set by cardholder service) */
+  cardholderOwner?: string | null;
+  /** Cardholder label for the Tags column (set by cardholder service) */
+  cardholderTag?: string | null;
   foreign?: {
     originalAmount?: { value?: string; currency?: string };
     conversionMarkupRate?: number;
@@ -54,6 +68,10 @@ interface MbnaTransaction {
   pendingId?: string;
   resolvedMonarchCategory?: string | null;
   autoCategory?: string | null;
+  /** Monarch household member name for the Owner column */
+  cardholderOwner?: string | null;
+  /** Cardholder label for the Tags column */
+  cardholderTag?: string | null;
   [key: string]: unknown;
 }
 
@@ -172,8 +190,17 @@ export function convertToCSV(data: CSVRow[], columns: string[] | null = null): s
 // Institution-Specific CSV Converters
 // ============================================================================
 
-/** Monarch CSV column order */
-const MONARCH_CSV_COLUMNS = [
+/**
+ * Monarch CSV column order.
+ *
+ * `Owner` is matched by Monarch against household member `users[].name`.
+ * Unrecognised values are silently reverted to the household default, so an
+ * empty string is always safe when owner mapping is disabled.
+ *
+ * Exported so `syncOrchestrator` reuses this single definition rather than
+ * duplicating the column list.
+ */
+export const MONARCH_CSV_COLUMNS = [
   'Date',
   'Merchant',
   'Category',
@@ -182,7 +209,44 @@ const MONARCH_CSV_COLUMNS = [
   'Notes',
   'Amount',
   'Tags',
+  'Owner',
 ];
+
+/**
+ * Build the Monarch `Tags` column value.
+ *
+ * Monarch's CSV importer reads multiple tags as a comma-separated list within
+ * the quoted Tags field; `escapeCSVField` adds the quoting. Empty/duplicate
+ * values are dropped so callers can pass optional values unconditionally.
+ *
+ * Note on reconciliation: `computeSettledTagIds` removes only the "Pending"
+ * tag when a transaction settles, so cardholder and currency tags survive the
+ * pending → settled transition without any extra work.
+ *
+ * @returns Comma-separated tag list (empty string when there are no tags)
+ */
+export function buildMonarchTags({
+  isPending = false,
+  cardholderTag = null,
+  extraTags = [],
+}: MonarchTagInputs = {}): string {
+  const tags: string[] = [];
+
+  if (isPending) {
+    tags.push('Pending');
+  }
+
+  if (cardholderTag) {
+    tags.push(cardholderTag);
+  }
+
+  extraTags.forEach((tag) => {
+    if (tag) tags.push(tag);
+  });
+
+  // De-duplicate while preserving order
+  return [...new Set(tags)].join(',');
+}
 
 /**
  * Convert Rogers Bank transactions to Monarch CSV format
@@ -283,7 +347,8 @@ export function convertTransactionsToMonarchCSV(
       'Original Statement': transaction.merchant?.name || '',
       Notes: notes,
       Amount: -(transaction.amount?.value || 0), // Negate amount for Rogers transactions
-      Tags: isPending ? 'Pending' : '',
+      Tags: buildMonarchTags({ isPending, cardholderTag: transaction.cardholderTag }),
+      Owner: transaction.cardholderOwner || '',
     };
   });
 
@@ -349,7 +414,8 @@ export function convertMbnaTransactionsToMonarchCSV(
       Notes: notes,
       // Amount signs already inverted in transaction processing (MBNA charge → negative, payment → positive)
       Amount: transaction.amount || 0,
-      Tags: isPending ? 'Pending' : '',
+      Tags: buildMonarchTags({ isPending, cardholderTag: transaction.cardholderTag }),
+      Owner: transaction.cardholderOwner || '',
     };
   });
 
@@ -416,9 +482,7 @@ function buildWealthsimpleNotes({ memo, technicalDetails, formattedTxId, include
  *
  * Wealthsimple populates FX data inconsistently: some foreign card
  * authorizations already carry the currency before settling, so a pending
- * foreign transaction gets both tags (`Pending,EUR`). Monarch's CSV import reads
- * multiple tags as a comma-separated list within the quoted Tags field, and
- * `escapeCSVField` adds the quoting.
+ * foreign transaction gets both tags (`Pending,EUR`).
  *
  * At settlement, reconciliation removes only "Pending" and keeps the currency
  * tag (see `computeSettledTagIds`), so the tag set stays correct either way.
@@ -428,17 +492,10 @@ function buildWealthsimpleNotes({ memo, technicalDetails, formattedTxId, include
  * @returns Tag value for the CSV Tags column (empty string when none)
  */
 function resolveWealthsimpleTags(transaction: WealthsimpleTransaction, isPending: boolean): string {
-  const tags: string[] = [];
-
-  if (isPending) {
-    tags.push('Pending');
-  }
-
-  if (transaction.foreignCurrency) {
-    tags.push(transaction.foreignCurrency);
-  }
-
-  return tags.join(',');
+  return buildMonarchTags({
+    isPending,
+    extraTags: [transaction.foreignCurrency],
+  });
 }
 
 /**
@@ -502,6 +559,7 @@ export function convertWealthsimpleTransactionsToMonarchCSV(
       Notes: notes,
       Amount: transaction.amount || 0,
       Tags: resolveWealthsimpleTags(transaction, isPending),
+      Owner: '',
     };
   });
 
@@ -557,6 +615,7 @@ export function convertQuestradeOrdersToMonarchCSV(orders: QuestradeOrder[], acc
       Notes: notes,
       Amount: order.action === 'Sell' ? -Math.abs(amount) : Math.abs(amount),
       Tags: '', // Empty for now
+      Owner: '',
     };
   });
 
@@ -630,6 +689,7 @@ export function convertQuestradeTransactionsToMonarchCSV(
       Notes: ruleResult?.notes || '',
       Amount: amount,
       Tags: tags,
+      Owner: '',
     };
   });
 
@@ -709,6 +769,7 @@ export function parseCSV(csvString: string, hasHeader: boolean = true): Record<s
 export default {
   convertToCSV,
   convertTransactionsToMonarchCSV,
+  buildMonarchTags,
   parseCSV,
   escapeCSVField,
 };

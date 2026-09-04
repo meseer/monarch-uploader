@@ -6,6 +6,11 @@ import { jest } from '@jest/globals';
 import '../../setup';
 
 jest.mock('../../../src/core/config', () => ({
+  CARDHOLDER: {
+    SHARED_OWNER: 'Shared',
+    OWNER_MODE: { OFF: 'off', ON: 'on' },
+    TAG_MODE: { OFF: 'off', AUTO: 'auto', ALWAYS: 'always' },
+  },
   STORAGE: {},
   LOGO_CLOUDINARY_IDS: { CANADALIFE: 'canadalife-logo' },
   TRANSACTION_RETENTION_DEFAULTS: { DAYS: 91, COUNT: 1000 },

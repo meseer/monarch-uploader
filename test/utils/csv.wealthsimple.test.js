@@ -392,6 +392,8 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
         ...overrides,
       });
 
+      // Owner is the final Monarch CSV column and is always empty for
+      // Wealthsimple (no cardholder data), so rows end with ",<Tags>,".
       test('writes the currency code into the Tags column for a settled foreign transaction', () => {
         const result = convertWealthsimpleTransactionsToMonarchCSV(
           [buildForeignTransaction()],
@@ -399,7 +401,7 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
         );
 
         const dataRow = result.split('\n')[1];
-        expect(dataRow.endsWith(',EUR')).toBe(true);
+        expect(dataRow.endsWith(',EUR,')).toBe(true);
       });
 
       test('includes the FX notes alongside the currency tag', () => {
@@ -418,8 +420,9 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
           'Test Account',
         );
 
+        // Empty Tags followed by empty Owner
         const dataRow = result.split('\n')[1];
-        expect(dataRow.endsWith(',')).toBe(true);
+        expect(dataRow.endsWith(',,')).toBe(true);
       });
 
       test('leaves the Tags column empty when foreignCurrency is absent entirely', () => {
@@ -429,7 +432,7 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
         const result = convertWealthsimpleTransactionsToMonarchCSV([transaction], 'Test Account');
 
         const dataRow = result.split('\n')[1];
-        expect(dataRow.endsWith(',')).toBe(true);
+        expect(dataRow.endsWith(',,')).toBe(true);
       });
 
       test('emits both the Pending and currency tags for a pending foreign transaction', () => {
@@ -444,7 +447,7 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
         );
 
         const dataRow = result.split('\n')[1];
-        expect(dataRow.endsWith(',"Pending,EUR"')).toBe(true);
+        expect(dataRow.endsWith(',"Pending,EUR",')).toBe(true);
       });
 
       test('emits only the Pending tag for a pending domestic transaction', () => {
@@ -454,7 +457,7 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
         );
 
         const dataRow = result.split('\n')[1];
-        expect(dataRow.endsWith(',Pending')).toBe(true);
+        expect(dataRow.endsWith(',Pending,')).toBe(true);
         expect(dataRow).not.toContain('EUR');
       });
 
@@ -480,9 +483,9 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
         );
 
         const lines = result.split('\n');
-        expect(lines[1].endsWith(',EUR')).toBe(true);
-        expect(lines[2].endsWith(',USD')).toBe(true);
-        expect(lines[3].endsWith(',')).toBe(true);
+        expect(lines[1].endsWith(',EUR,')).toBe(true);
+        expect(lines[2].endsWith(',USD,')).toBe(true);
+        expect(lines[3].endsWith(',,')).toBe(true);
       });
     });
 

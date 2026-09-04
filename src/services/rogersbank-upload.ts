@@ -32,6 +32,9 @@ import {
   formatReconciliationMessage,
   formatPendingIdForNotes,
 } from './rogersbank/pendingTransactions';
+import { extractRogersCardholder } from './rogersbank/cardholderExtractor';
+import { syncCardholders, applyCardholderFields } from './common/cardholders';
+import { showCardholderSelector } from '../ui/components/cardholderSelector';
 
 /**
  * Extract Rogers account name from DOM
@@ -846,6 +849,24 @@ export async function uploadRogersBankToMonarch() {
     // Use only settled (APPROVED) transactions for balance reconstruction
     const allApprovedTx = allSettledTx;
 
+    // Resolve cardholders (Monarch Owner column and/or cardholder tag).
+    // Discovery reads ALL fetched transactions — not just new ones — so a second
+    // cardholder is detected even when all their transactions were uploaded on a
+    // previous sync. Non-fatal: a failure leaves Owner/tag unset for this sync.
+    let cardholderResolution = null;
+    try {
+      cardholderResolution = await syncCardholders({
+        integrationId: INTEGRATIONS.ROGERSBANK,
+        accountId: rogersAccountId,
+        transactions: allTransactions,
+        extract: extractRogersCardholder,
+        today: getTodayLocal(),
+        promptForMember: showCardholderSelector,
+      });
+    } catch (cardholderError) {
+      debugLog('Cardholder resolution failed, continuing without owner/tag:', cardholderError);
+    }
+
     // STEP 2: Pending transaction reconciliation
     // Runs BEFORE transaction upload so settled ref IDs are saved to dedup store,
     // preventing the settled version from being uploaded as a duplicate.
@@ -925,13 +946,23 @@ export async function uploadRogersBankToMonarch() {
         const skipCategorization = accountDataForSkip?.skipCategorization === true;
 
         // Prepare pending transactions with isPending flag and pendingId for CSV
-        const transactionsForCategorization = allNewTransactions.map((tx) => {
+        let transactionsForCategorization = allNewTransactions.map((tx) => {
           if (tx.generatedId) {
             // Pending transaction — add metadata for CSV
             return { ...tx, isPending: true, pendingId: formatPendingIdForNotes(tx.generatedId) };
           }
           return tx;
         });
+
+        // Annotate with cardholder Owner and/or tag for the CSV converter
+        if (cardholderResolution && (cardholderResolution.shouldTag || cardholderResolution.shouldMapOwner)) {
+          transactionsForCategorization = applyCardholderFields(transactionsForCategorization, {
+            cardholders: cardholderResolution.cardholders,
+            extract: extractRogersCardholder,
+            shouldTag: cardholderResolution.shouldTag,
+            shouldMapOwner: cardholderResolution.shouldMapOwner,
+          });
+        }
 
         const resolvedTx = await resolveCategoriesForTransactions(transactionsForCategorization, { skipCategorization });
 
