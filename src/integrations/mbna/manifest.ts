@@ -50,6 +50,7 @@ const manifest: IntegrationManifest = {
     hasHoldings: false,
     hasBalanceReconstruction: true,
     hasCategorization: true,
+    hasCardholders: true, // cardHolderName + endingIn present on transactions
   },
 
   // ── Category mapping config ───────────────────────────────
@@ -66,6 +67,8 @@ const manifest: IntegrationManifest = {
     { key: 'includePendingTransactions', default: true },
     { key: 'invertBalance', default: false },
     { key: 'skipCategorization', default: false },
+    { key: 'cardholderOwnerMode', default: 'off' },
+    { key: 'cardholderTagMode', default: 'off' },
   ],
 
   // ── Account creation defaults ─────────────────────────────

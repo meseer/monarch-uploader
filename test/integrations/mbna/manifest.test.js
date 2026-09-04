@@ -121,6 +121,8 @@ describe('MBNA Manifest', () => {
         'includePendingTransactions',
         'invertBalance',
         'skipCategorization',
+        'cardholderOwnerMode',
+        'cardholderTagMode',
       ]);
     });
 

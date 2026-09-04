@@ -23,6 +23,7 @@ import {
   createToggleSwitch,
   renderDebugJsonSection,
 } from './settingsModalHelpers';
+import { renderCardholderMappingsSection } from './settingsModalCardholders';
 
 declare function GM_addElement(parent: HTMLElement, tag: string, attrs: Record<string, string>): HTMLElement;
 
@@ -974,6 +975,7 @@ export function createGenericAccountCards(
     expandableContent.style.cssText = 'display: none; padding: 15px; background-color: var(--mu-bg-secondary, #f8f9fa); border-top: 1px solid var(--mu-border, #e0e0e0);';
 
     expandableContent.appendChild(renderAccountSettingsSection(integrationId, accountEntry, accountId, onRefresh));
+    expandableContent.appendChild(renderCardholderMappingsSection(integrationId, accountEntry, accountId, onRefresh));
     expandableContent.appendChild(renderTransactionsManagementSection(integrationId, accountEntry, accountId, onRefresh));
     expandableContent.appendChild(renderHoldingsMappingsSection(integrationId, accountEntry, accountId, onRefresh));
     expandableContent.appendChild(renderDebugJsonSection(integrationId, accountEntry as Record<string, unknown>, accountId, onRefresh));

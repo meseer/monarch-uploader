@@ -137,6 +137,31 @@ export const WEALTHSIMPLE_BALANCE_RECONSTRUCTION_TYPES = new Set([
   'PORTFOLIO_LINE_OF_CREDIT',
 ]);
 
+/**
+ * Cardholder → Monarch owner/tag mapping constants.
+ *
+ * Monarch's CSV importer matches the `Owner` column against household member
+ * `users[].name` values. Any unrecognised value is silently reverted to the
+ * household default, so `SHARED_OWNER` is safe to emit when a cardholder has
+ * no resolved household member.
+ */
+export const CARDHOLDER = {
+  /** Owner value emitted when no household member is resolved */
+  SHARED_OWNER: 'Shared',
+  /** Owner mapping modes */
+  OWNER_MODE: {
+    OFF: 'off',
+    ON: 'on',
+  },
+  /** Cardholder tag modes */
+  TAG_MODE: {
+    OFF: 'off',
+    /** Tag only once 2+ distinct cardholders have ever been discovered */
+    AUTO: 'auto',
+    ALWAYS: 'always',
+  },
+} as const;
+
 // Account status constants
 export const ACCOUNT_STATUS = {
   ACTIVE: 'active', // Account is active and returned by API

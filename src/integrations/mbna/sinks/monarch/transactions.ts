@@ -48,6 +48,10 @@ export interface ProcessedMbnaTransaction {
   pendingId: string | null;
   autoCategory: string | null;
   resolvedMonarchCategory?: string;
+  /** Monarch household member name for the Owner column (set by cardholder service) */
+  cardholderOwner?: string | null;
+  /** Cardholder label for the Tags column (set by cardholder service) */
+  cardholderTag?: string | null;
 }
 
 /** Result of processMbnaTransactions */
@@ -144,6 +148,11 @@ function processTransaction(tx: MbnaRawTransaction, options: ProcessTransactionO
     pendingId: pendingId || null,
     // Category will be resolved later via resolveCategoriesForTransactions
     autoCategory: autoCategory?.category || null,
+    // Pass through cardholder owner/tag annotations applied by the cardholder
+    // service to the RAW transaction before processing (undefined when the
+    // feature is disabled, which the CSV converter treats as empty).
+    cardholderOwner: (tx as Record<string, unknown>).cardholderOwner as string | undefined,
+    cardholderTag: (tx as Record<string, unknown>).cardholderTag as string | undefined,
   };
 }
 

@@ -7,6 +7,11 @@ import '../setup';
 
 // Mock all dependencies before importing the module under test
 jest.mock('../../src/core/config', () => ({
+  CARDHOLDER: {
+    SHARED_OWNER: 'Shared',
+    OWNER_MODE: { OFF: 'off', ON: 'on' },
+    TAG_MODE: { OFF: 'off', AUTO: 'auto', ALWAYS: 'always' },
+  },
   STORAGE: {},
   TRANSACTION_RETENTION_DEFAULTS: {
     DAYS: 91,
