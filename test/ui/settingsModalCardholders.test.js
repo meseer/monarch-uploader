@@ -49,6 +49,19 @@ jest.mock('../../src/ui/toast', () => ({
   default: { show: jest.fn() },
 }));
 
+// Minimal stand-in for the shared toggle switch: a checkbox that invokes the
+// change handler, which is all this widget depends on. `globalThis.document` is
+// used because jest.mock factories may not close over outer-scope variables.
+jest.mock('../../src/ui/components/settingsModalHelpers', () => ({
+  createToggleSwitch: jest.fn((isEnabled, onChange) => {
+    const input = globalThis.document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = isEnabled;
+    input.addEventListener('change', () => onChange(input.checked));
+    return input;
+  }),
+}));
+
 const { hasCapability } = require('../../src/core/integrationCapabilities');
 const accountService = require('../../src/services/common/accountService').default;
 const { getHouseholdMembers } = require('../../src/api/monarchHousehold');
@@ -123,10 +136,19 @@ describe('mode selectors', () => {
     expect($(`cardholder-tag-mode-${ACCOUNT_ID}`)).toBeTruthy();
   });
 
-  it('defaults the owner mode to off', () => {
+  it('renders the owner mode as a toggle rather than a dropdown', () => {
     render({});
 
-    expect($(`cardholder-owner-mode-${ACCOUNT_ID}-select`).value).toBe('off');
+    const toggle = $(`cardholder-owner-mode-${ACCOUNT_ID}-toggle`);
+    expect(toggle).toBeTruthy();
+    expect(toggle.querySelector('input[type="checkbox"]')).toBeTruthy();
+    expect($(`cardholder-owner-mode-${ACCOUNT_ID}-select`)).toBeNull();
+  });
+
+  it('defaults the owner mode toggle to off', () => {
+    render({});
+
+    expect($(`cardholder-owner-mode-${ACCOUNT_ID}-toggle`).querySelector('input').checked).toBe(false);
   });
 
   it('defaults the tag mode to off', () => {
@@ -135,10 +157,10 @@ describe('mode selectors', () => {
     expect($(`cardholder-tag-mode-${ACCOUNT_ID}-select`).value).toBe('off');
   });
 
-  it('reflects the persisted owner mode', () => {
+  it('reflects the persisted owner mode in the toggle', () => {
     render({ cardholderOwnerMode: 'on' });
 
-    expect($(`cardholder-owner-mode-${ACCOUNT_ID}-select`).value).toBe('on');
+    expect($(`cardholder-owner-mode-${ACCOUNT_ID}-toggle`).querySelector('input').checked).toBe(true);
   });
 
   it('offers off/auto/always for the tag mode', () => {
@@ -148,15 +170,27 @@ describe('mode selectors', () => {
     expect(values).toEqual(['off', 'auto', 'always']);
   });
 
-  it('persists an owner mode change', () => {
+  it('persists enabling owner mapping via the toggle', () => {
     render({});
 
-    const select = $(`cardholder-owner-mode-${ACCOUNT_ID}-select`);
-    select.value = 'on';
-    select.dispatchEvent(new Event('change'));
+    const input = $(`cardholder-owner-mode-${ACCOUNT_ID}-toggle`).querySelector('input');
+    input.checked = true;
+    input.dispatchEvent(new Event('change'));
 
     expect(accountService.updateAccountInList).toHaveBeenCalledWith(INTEGRATION, ACCOUNT_ID, {
       cardholderOwnerMode: 'on',
+    });
+  });
+
+  it('persists disabling owner mapping via the toggle', () => {
+    render({ cardholderOwnerMode: 'on' });
+
+    const input = $(`cardholder-owner-mode-${ACCOUNT_ID}-toggle`).querySelector('input');
+    input.checked = false;
+    input.dispatchEvent(new Event('change'));
+
+    expect(accountService.updateAccountInList).toHaveBeenCalledWith(INTEGRATION, ACCOUNT_ID, {
+      cardholderOwnerMode: 'off',
     });
   });
 
@@ -181,6 +215,28 @@ describe('mode selectors', () => {
     select.dispatchEvent(new Event('change'));
 
     expect(toast.show).toHaveBeenCalledWith('Failed to update setting', 'error');
+  });
+});
+
+describe('cardholder mapping header', () => {
+  it('labels the detected-cardholder list', () => {
+    render({ cardholders: { 'MYKHAILO DELEGAN': entry() } });
+
+    expect($(`cardholders-list-header-${INTEGRATION}-${ACCOUNT_ID}`).textContent)
+      .toBe('Cardholder mapping');
+  });
+
+  it('describes what the list contains', () => {
+    render({ cardholders: { 'MYKHAILO DELEGAN': entry() } });
+
+    expect($(`cardholders-list-header-desc-${INTEGRATION}-${ACCOUNT_ID}`).textContent)
+      .toContain('detected on this account');
+  });
+
+  it('is shown even when no cardholders have been detected yet', () => {
+    render({});
+
+    expect($(`cardholders-list-header-${INTEGRATION}-${ACCOUNT_ID}`)).toBeTruthy();
   });
 });
 

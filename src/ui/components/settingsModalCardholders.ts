@@ -20,6 +20,7 @@ import accountService from '../../services/common/accountService';
 import { getHouseholdMembers, type HouseholdMember } from '../../api/monarchHousehold';
 import { describeMatchType } from '../../services/common/cardholderMatching';
 import type { CardholderEntry, CardholderMap } from '../../services/common/cardholders';
+import { createToggleSwitch } from './settingsModalHelpers';
 import toast from '../toast';
 
 // ── Types ───────────────────────────────────────────────────
@@ -36,6 +37,57 @@ interface CardholderAccountEntry {
 const SHARED_VALUE = '__shared__';
 
 // ── Small UI helpers ────────────────────────────────────────
+
+/**
+ * Create a labelled toggle settings row.
+ *
+ * Used for the owner mode, which is a plain on/off choice — a toggle matches the
+ * other boolean settings in the account card rather than introducing a
+ * two-option dropdown.
+ */
+function createToggleSetting({
+  id,
+  title,
+  description,
+  isEnabled,
+  onChange,
+}: {
+  id: string;
+  title: string;
+  description: string;
+  isEnabled: boolean;
+  onChange: (isEnabled: boolean) => void;
+}): HTMLElement {
+  const row = document.createElement('div');
+  row.id = id;
+  row.style.cssText = 'display: flex; align-items: center; justify-content: space-between; gap: 12px; '
+    + 'padding: 8px 12px; background: var(--mu-bg-primary, white); border-radius: 6px; margin-bottom: 8px;';
+
+  const labelDiv = document.createElement('div');
+  labelDiv.style.cssText = 'flex-grow: 1; min-width: 0;';
+
+  const titleDiv = document.createElement('div');
+  titleDiv.style.cssText = 'font-weight: 500; font-size: 13px;';
+  titleDiv.textContent = title;
+  labelDiv.appendChild(titleDiv);
+
+  const descDiv = document.createElement('div');
+  descDiv.style.cssText = 'font-size: 11px; color: var(--mu-text-secondary, #666);';
+  descDiv.textContent = description;
+  labelDiv.appendChild(descDiv);
+
+  row.appendChild(labelDiv);
+
+  const toggleContainer = document.createElement('div');
+  toggleContainer.id = `${id}-toggle`;
+  toggleContainer.style.cssText = 'flex-shrink: 0;';
+  toggleContainer.appendChild(createToggleSwitch(isEnabled, onChange, false));
+  toggleContainer.addEventListener('click', (e: Event) => e.stopPropagation());
+  row.appendChild(toggleContainer);
+
+  row.addEventListener('click', (e: Event) => e.stopPropagation());
+  return row;
+}
 
 /**
  * Create a labelled `<select>` settings row.
@@ -337,22 +389,19 @@ function createModeSettings(
 ): DocumentFragment {
   const fragment = document.createDocumentFragment();
 
-  fragment.appendChild(createSelectSetting({
+  fragment.appendChild(createToggleSetting({
     id: `cardholder-owner-mode-${accountId}`,
     title: 'Map cardholder to Monarch owner',
     description: 'Sets the transaction Owner. Requires a matching Monarch household member; '
       + `unmapped cardholders use "${CARDHOLDER.SHARED_OWNER}".`,
-    options: [
-      { value: CARDHOLDER.OWNER_MODE.OFF, label: 'Off' },
-      { value: CARDHOLDER.OWNER_MODE.ON, label: 'On' },
-    ],
-    currentValue: ownerMode,
-    onChange: (value) => {
+    isEnabled: ownerMode === CARDHOLDER.OWNER_MODE.ON,
+    onChange: (isEnabled) => {
+      const value = isEnabled ? CARDHOLDER.OWNER_MODE.ON : CARDHOLDER.OWNER_MODE.OFF;
       const success = accountService.updateAccountInList(integrationId, accountId, {
         [ACCOUNT_SETTINGS.CARDHOLDER_OWNER_MODE]: value,
       });
       if (success) {
-        toast.show(`Owner mapping ${value === CARDHOLDER.OWNER_MODE.ON ? 'enabled' : 'disabled'}`, 'info');
+        toast.show(`Owner mapping ${isEnabled ? 'enabled' : 'disabled'}`, 'info');
         if (onRefresh) setTimeout(onRefresh, 300);
       } else {
         toast.show('Failed to update setting', 'error');
@@ -432,7 +481,22 @@ export function renderCardholderMappingsSection(
 
   const listContainer = document.createElement('div');
   listContainer.id = `cardholders-list-${integrationId}-${accountId}`;
-  listContainer.style.cssText = 'margin-top: 10px;';
+  listContainer.style.cssText = 'margin-top: 14px;';
+
+  // Sub-header so it's clear the rows below are discovered cardholders and
+  // their Monarch mappings, not more settings.
+  const listHeader = document.createElement('h5');
+  listHeader.id = `cardholders-list-header-${integrationId}-${accountId}`;
+  listHeader.textContent = 'Cardholder mapping';
+  listHeader.style.cssText = 'margin: 0 0 4px 0; font-size: 13px; font-weight: 600; color: var(--mu-text-primary, #333);';
+  listContainer.appendChild(listHeader);
+
+  const listHeaderDesc = document.createElement('div');
+  listHeaderDesc.id = `cardholders-list-header-desc-${integrationId}-${accountId}`;
+  listHeaderDesc.textContent = 'Cardholders detected on this account, their Monarch owner, '
+    + 'and the label used when tagging.';
+  listHeaderDesc.style.cssText = 'font-size: 11px; color: var(--mu-text-secondary, #666); margin-bottom: 8px;';
+  listContainer.appendChild(listHeaderDesc);
 
   if (cardholderNames.length === 0) {
     const empty = document.createElement('p');

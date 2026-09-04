@@ -117,6 +117,58 @@ describe('showCardholderSelector', () => {
     });
   });
 
+  describe('selectable cards', () => {
+    it('renders every option as a card with a data attribute rather than a visible radio', () => {
+      showCardholderSelector(baseParams());
+
+      const cards = $('cardholder-selector-options').querySelectorAll('[data-cardholder-option]');
+      expect(cards).toHaveLength(2); // Shared + one member
+
+      // The radio is retained for accessibility but visually hidden
+      const radio = $('cardholder-option-user-1').querySelector('input[type="radio"]');
+      expect(radio).toBeTruthy();
+      expect(radio.style.opacity).toBe('0');
+    });
+
+    it('gives every card the same fixed height and full width for visual consistency', () => {
+      showCardholderSelector(baseParams({
+        // One option has a sublabel and badge, the other does not — sizing must
+        // not depend on content.
+        members: [member(), member({ id: 'user-2', name: 'Liubov Monsar', displayName: 'Liubov Monsar' })],
+      }));
+
+      const cards = Array.from($('cardholder-selector-options').querySelectorAll('[data-cardholder-option]'));
+      const heights = cards.map((c) => c.style.height);
+      const widths = cards.map((c) => c.style.width);
+
+      expect(new Set(heights).size).toBe(1);
+      expect(heights[0]).toBe('56px');
+      expect(new Set(widths).size).toBe(1);
+      expect(widths[0]).toBe('100%');
+    });
+
+    it('visually highlights the pre-selected card only', () => {
+      showCardholderSelector(baseParams());
+
+      const selected = $('cardholder-option-user-1');
+      const unselected = $('cardholder-option-shared');
+
+      expect(selected.style.borderColor).toBe('rgb(40, 167, 69)');
+      expect(unselected.style.borderColor).not.toBe('rgb(40, 167, 69)');
+    });
+
+    it('moves the highlight when a different card is chosen', async () => {
+      showCardholderSelector(baseParams());
+
+      const shared = $('cardholder-option-shared');
+      shared.querySelector('input').checked = true;
+      shared.dispatchEvent(new Event('change', { bubbles: true }));
+
+      expect(shared.style.borderColor).toBe('rgb(40, 167, 69)');
+      expect($('cardholder-option-user-1').style.borderColor).not.toBe('rgb(40, 167, 69)');
+    });
+  });
+
   describe('pre-selection', () => {
     it('pre-selects the suggested member', () => {
       showCardholderSelector(baseParams());

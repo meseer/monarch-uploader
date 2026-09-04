@@ -53,10 +53,42 @@ function buildCardholderSubtitle(cardholderName: string, cardLast4: string | nul
   return cardLast4 ? `${cardholderName} · card ••${cardLast4}` : cardholderName;
 }
 
+/** Visual styling applied to the currently selected card */
+const SELECTED_CARD_STYLE = {
+  borderColor: '#28a745',
+  boxShadow: '0 0 0 2px rgba(40, 167, 69, 0.25)',
+  background: 'var(--mu-status-success-bg, #e8f5e9)',
+} as const;
+
+/** Visual styling applied to unselected cards */
+const UNSELECTED_CARD_STYLE = {
+  borderColor: 'var(--mu-border, #e0e0e0)',
+  boxShadow: 'none',
+  background: 'var(--mu-bg-primary, #fff)',
+} as const;
+
 /**
- * Create a single selectable option row.
+ * Apply selected/unselected styling to a card.
+ *
+ * Selection is communicated by border, ring, and background rather than a radio
+ * control, but the underlying radio input is kept (visually hidden) so the
+ * grouping stays keyboard- and screen-reader-accessible.
  */
-function createOptionRow({
+function paintCard(card: HTMLElement, isSelected: boolean): void {
+  const style = isSelected ? SELECTED_CARD_STYLE : UNSELECTED_CARD_STYLE;
+  card.style.borderColor = style.borderColor;
+  card.style.boxShadow = style.boxShadow;
+  card.style.background = style.background;
+}
+
+/**
+ * Create a single selectable option card.
+ *
+ * Cards are fixed-height and full-width so every option is the same size
+ * regardless of whether it has a sublabel or a "Suggested" badge — the text
+ * block is what flexes, not the card.
+ */
+function createOptionCard({
   id, value, label, sublabel, isSuggested,
 }: {
   id: string;
@@ -65,45 +97,54 @@ function createOptionRow({
   sublabel: string | null;
   isSuggested: boolean;
 }): HTMLLabelElement {
-  const row = document.createElement('label');
-  row.id = id;
-  row.style.cssText = `
+  const card = document.createElement('label');
+  card.id = id;
+  card.dataset.cardholderOption = value;
+  card.style.cssText = `
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 10px;
-    padding: 10px 12px;
-    border: 1px solid var(--mu-border, #e0e0e0);
-    border-radius: 6px;
+    box-sizing: border-box;
+    width: 100%;
+    height: 56px;
+    padding: 0 14px;
+    border: 2px solid var(--mu-border, #e0e0e0);
+    border-radius: 8px;
     margin-bottom: 8px;
     cursor: pointer;
     background: var(--mu-bg-primary, #fff);
-    transition: background-color 0.2s;
+    transition: border-color 0.15s, box-shadow 0.15s, background-color 0.15s;
   `;
 
+  // Kept for accessibility and form semantics, but visually hidden — the card
+  // itself is the affordance.
   const radio = document.createElement('input');
   radio.type = 'radio';
   radio.name = 'cardholder-member';
   radio.value = value;
   radio.checked = isSuggested;
-  radio.style.cssText = 'margin: 0; flex-shrink: 0;';
-  row.appendChild(radio);
+  radio.style.cssText = 'position: absolute; opacity: 0; width: 0; height: 0; margin: 0;';
+  card.appendChild(radio);
 
   const textWrapper = document.createElement('div');
-  textWrapper.style.cssText = 'flex-grow: 1; min-width: 0;';
+  textWrapper.style.cssText = 'flex-grow: 1; min-width: 0; overflow: hidden;';
 
   const labelDiv = document.createElement('div');
-  labelDiv.style.cssText = 'font-weight: 500; font-size: 14px; color: var(--mu-text-primary, #333);';
+  labelDiv.style.cssText = 'font-weight: 600; font-size: 14px; color: var(--mu-text-primary, #333); '
+    + 'white-space: nowrap; overflow: hidden; text-overflow: ellipsis;';
   labelDiv.textContent = label;
   textWrapper.appendChild(labelDiv);
 
   if (sublabel) {
     const sublabelDiv = document.createElement('div');
-    sublabelDiv.style.cssText = 'font-size: 11px; color: var(--mu-text-secondary, #666); margin-top: 2px;';
+    sublabelDiv.style.cssText = 'font-size: 11px; color: var(--mu-text-secondary, #666); margin-top: 2px; '
+      + 'white-space: nowrap; overflow: hidden; text-overflow: ellipsis;';
     sublabelDiv.textContent = sublabel;
     textWrapper.appendChild(sublabelDiv);
   }
 
-  row.appendChild(textWrapper);
+  card.appendChild(textWrapper);
 
   if (isSuggested) {
     const badge = document.createElement('span');
@@ -117,17 +158,29 @@ function createOptionRow({
       color: var(--mu-badge-text, #1565c0);
     `;
     badge.textContent = 'Suggested';
-    row.appendChild(badge);
+    card.appendChild(badge);
   }
 
-  row.addEventListener('mouseover', () => {
-    row.style.backgroundColor = 'var(--mu-bg-secondary, #f8f9fa)';
-  });
-  row.addEventListener('mouseout', () => {
-    row.style.backgroundColor = 'var(--mu-bg-primary, #fff)';
-  });
+  paintCard(card, isSuggested);
 
-  return row;
+  return card;
+}
+
+/**
+ * Wire card selection so clicking anywhere on a card selects it and repaints
+ * the whole group. Delegated from the container so it survives re-renders.
+ */
+function wireCardSelection(container: HTMLElement): void {
+  const repaint = () => {
+    container.querySelectorAll<HTMLElement>('[data-cardholder-option]').forEach((card) => {
+      const radio = card.querySelector<HTMLInputElement>('input[name="cardholder-member"]');
+      paintCard(card, Boolean(radio?.checked));
+    });
+  };
+
+  container.addEventListener('change', repaint);
+  // Clicking the label toggles the radio natively; repaint after that happens.
+  container.addEventListener('click', () => setTimeout(repaint, 0));
 }
 
 /**
@@ -236,7 +289,7 @@ export function showCardholderSelector({
     const hasSuggestion = Boolean(suggestedMemberId);
 
     // "Shared" is always the first option; pre-selected when nothing matched.
-    optionsContainer.appendChild(createOptionRow({
+    optionsContainer.appendChild(createOptionCard({
       id: 'cardholder-option-shared',
       value: SHARED_VALUE,
       label: CARDHOLDER.SHARED_OWNER,
@@ -256,7 +309,7 @@ export function showCardholderSelector({
         sublabelParts.push(describeMatchType(suggestedMatchType));
       }
 
-      optionsContainer.appendChild(createOptionRow({
+      optionsContainer.appendChild(createOptionCard({
         id: `cardholder-option-${member.id}`,
         value: member.id,
         label: member.name,
@@ -264,6 +317,8 @@ export function showCardholderSelector({
         isSuggested,
       }));
     });
+
+    wireCardSelection(optionsContainer);
 
     modal.appendChild(optionsContainer);
 
