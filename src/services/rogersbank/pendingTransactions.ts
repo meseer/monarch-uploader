@@ -13,6 +13,7 @@
 import { debugLog, formatDate } from '../../core/utils';
 import monarchApi from '../../api/monarch';
 import { computeSettledTagIds } from '../common/pendingReconciliation';
+import { shouldRetainTxIdInNotes, selectTagsByIds } from '../../core/markerTags';
 
 /**
  * Prefix for Rogers Bank generated transaction IDs stored in Monarch notes
@@ -207,6 +208,11 @@ export function buildFxNotes(settledTx) {
 /**
  * Remove Rogers Bank system notes (pending transaction ID and FX pending info) from notes
  * Preserves any user-added notes or other content
+ *
+ * Callers must first check `shouldRetainTxIdInNotes` — another marker tag may
+ * still need the rb-tx hash to find this transaction later.
+ * See `core/markerTags`.
+ *
  * @param {string} notes - Transaction notes
  * @returns {string} Cleaned notes
  */
@@ -272,6 +278,10 @@ export async function separateAndDeduplicateTransactions(transactions) {
   for (const tx of settled) {
     const hashId = await generatePendingTransactionId(tx);
     settledIdMap.set(hashId, tx);
+    // txHashId is attached unconditionally: post-upload passes (owner sync) need
+    // a stable id even for transactions that DO have a referenceNumber, because
+    // the notes hash is the only handle shared with the Monarch side.
+    tx.txHashId = hashId;
     if (!tx.referenceNumber) {
       tx.generatedId = hashId;
     }
@@ -310,6 +320,7 @@ export async function separateAndDeduplicateTransactions(transactions) {
   const dedupedPending = Array.from(pendingIdMap.entries()).map(([hashId, tx]) => ({
     ...tx,
     generatedId: hashId,
+    txHashId: hashId,
   }));
 
   return {
@@ -415,13 +426,24 @@ export async function reconcileRogersPendingTransactions(monarchAccountId, allTr
           // Calculate the settled amount (Rogers amounts are positive, negate for credit card)
           const settledAmount = -(parseFloat(settledTx.amount?.value) || 0);
 
+          // Remove Pending tag, preserving any tags the user applied while pending
+          const remainingTagIds = computeSettledTagIds(monarchTx.tags, pendingTag.id);
+
+          // Retain the rb-tx hash while any OTHER marker tag still needs it to
+          // find this transaction (e.g. an outstanding owner update).
+          const retainTxId = shouldRetainTxIdInNotes(selectTagsByIds(monarchTx.tags, remainingTagIds));
+
           // Clean the notes - remove pending ID and pending FX info, keep user notes
-          let cleanedNotes = cleanPendingIdFromNotes(notes);
+          let cleanedNotes = retainTxId ? notes : cleanPendingIdFromNotes(notes);
 
           // Remove pending FX placeholder (e.g. "84.28 USD @ pending") since we'll replace with real FX info
           cleanedNotes = cleanedNotes.replace(/[\d.]+ [A-Z]{3} @ pending/g, '').trim();
           // Clean up any leftover whitespace/newlines from removal
           cleanedNotes = cleanedNotes.replace(/\n{2,}/g, '\n').replace(/^\n+|\n+$/g, '').trim();
+
+          if (retainTxId) {
+            debugLog(`Retaining ${pendingId} in notes — another marker tag is still present`);
+          }
 
           // Build FX notes for the settled transaction (if foreign)
           const fxNotes = buildFxNotes(settledTx);
@@ -456,11 +478,7 @@ export async function reconcileRogersPendingTransactions(monarchAccountId, allTr
             });
           }
 
-          // Remove Pending tag, preserving any tags the user applied while pending
-          await monarchApi.setTransactionTags(
-            monarchTxId,
-            computeSettledTagIds(monarchTx.tags, pendingTag.id),
-          );
+          await monarchApi.setTransactionTags(monarchTxId, remainingTagIds);
 
           // Collect dedup key for dedup store
           // Use referenceNumber when available, fall back to hash ID for ref-less transactions

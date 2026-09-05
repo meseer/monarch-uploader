@@ -24,7 +24,7 @@
 
 import { debugLog, getTodayLocal, getLastUpdateDate, calculateFromDateWithLookback, formatDaysAgoLocal, computeExtendedFromDate } from '../../core/utils';
 import { ACCOUNT_SETTINGS } from '../../core/integrationCapabilities';
-import { TRANSACTION_RETENTION_DEFAULTS } from '../../core/config';
+import { TRANSACTION_RETENTION_DEFAULTS, CARDHOLDER } from '../../core/config';
 import stateManager from '../../core/state';
 import accountService from './accountService';
 import { resolveAccountMapping } from './accountMappingResolver';
@@ -44,10 +44,14 @@ import {
   StoredTransaction,
 } from '../../utils/transactionStorage';
 import { convertToCSV, MONARCH_CSV_COLUMNS, buildMonarchTags } from '../../utils/csv';
+import { resolveNotesTransactionId } from '../../core/markerTags';
 import { showProgressDialog } from '../../ui/components/progressDialog';
 import { showDatePickerWithOptionsPromise } from '../../ui/components/datePicker';
-import { syncCardholders, applyCardholderFields } from './cardholders';
+import {
+  syncCardholders, applyCardholderFields, collectOwnerAssignments, getOwnerMode,
+} from './cardholders';
 import { showCardholderSelector } from '../../ui/components/cardholderSelector';
+import { syncTransactionOwners, buildOwnerResolver, formatOwnerSyncMessage } from './ownerSync';
 
 /**
  * Build sync steps for the progress dialog based on capabilities and settings.
@@ -56,9 +60,12 @@ import { showCardholderSelector } from '../../ui/components/cardholderSelector';
  * @param {boolean} options.hasCreditLimit - Whether integration has credit limit capability
  * @param {boolean} options.includeTransactions - Whether to include transaction step
  * @param {boolean} options.includePending - Whether to include pending reconciliation step
+ * @param {boolean} options.includeOwnerSync - Whether to include the post-upload owner sync step
  * @returns {Array<{key: string, name: string}>} Step definitions
  */
-function buildSyncSteps({ hasCreditLimit = false, includeTransactions = true, includePending = true }) {
+function buildSyncSteps({
+  hasCreditLimit = false, includeTransactions = true, includePending = true, includeOwnerSync = false,
+}) {
   const steps = [];
 
   if (hasCreditLimit) {
@@ -73,8 +80,48 @@ function buildSyncSteps({ hasCreditLimit = false, includeTransactions = true, in
     steps.push({ key: 'transactions', name: 'Transaction sync' });
   }
 
+  // Owner sync must follow the upload — the rows it updates are the ones the
+  // upload just created.
+  if (includeOwnerSync) {
+    steps.push({ key: 'ownerSync', name: 'Owner sync' });
+  }
+
   steps.push({ key: 'balance', name: 'Balance upload' });
   return steps;
+}
+
+/**
+ * Execute the post-upload owner sync step.
+ *
+ * Applies Monarch Owner values that the CSV importer cannot carry. Entirely
+ * non-fatal: any failure is reported on the step and the sync continues.
+ *
+ * @param {Object} params - Parameters
+ * @param {string} params.accountId - Source account ID
+ * @param {string} params.monarchAccountId - Monarch account ID
+ * @param {string} params.txIdPrefix - Integration hash prefix
+ * @param {Map<string, string>} params.ownerAssignments - Notes id → Monarch user id
+ * @param {number} params.lookbackDays - Days to scan back in Monarch
+ * @param {Object} params.progressDialog - Progress dialog instance
+ * @returns {Promise<Object>} Owner sync result
+ */
+async function executeOwnerSyncStep({
+  accountId, monarchAccountId, txIdPrefix, ownerAssignments, lookbackDays, progressDialog,
+}) {
+  progressDialog.updateStepStatus(accountId, 'ownerSync', 'processing', 'Applying owners...');
+
+  const result = await syncTransactionOwners({
+    monarchAccountId,
+    txIdPrefix,
+    resolveOwnerForTxId: buildOwnerResolver(ownerAssignments),
+    lookbackDays,
+  });
+
+  const status = result.success === false ? 'error' : 'success';
+  progressDialog.updateStepStatus(accountId, 'ownerSync', status, formatOwnerSyncMessage(result));
+  debugLog('[orchestrator] Owner sync result:', result);
+
+  return result;
 }
 
 /**
@@ -97,17 +144,35 @@ function convertTransactionsToMonarchCSV(transactions, accountName, buildTransac
 
   const { storeTransactionDetailsInNotes = false } = options;
 
-  const monarchRows = transactions.map((tx) => ({
-    Date: tx.date || '',
-    Merchant: tx.merchant || '',
-    Category: tx.resolvedMonarchCategory ?? tx.autoCategory ?? 'Uncategorized',
-    Account: accountName,
-    'Original Statement': tx.originalStatement || '',
-    Notes: buildTransactionNotes(tx, { storeTransactionDetailsInNotes }),
-    Amount: tx.amount || 0,
-    Tags: buildMonarchTags({ isPending: tx.isPending, cardholderTag: tx.cardholderTag }),
-    Owner: tx.cardholderOwner || '',
-  }));
+  const monarchRows = transactions.map((tx) => {
+    // A resolved owner queues the row for the post-upload owner pass, which needs
+    // both the marker tag and the hash id in the notes to find it again.
+    const ownerSyncPending = Boolean(tx.cardholderOwnerUserId);
+    const notes = buildTransactionNotes(tx, { storeTransactionDetailsInNotes });
+    const notesTxId = resolveNotesTransactionId({
+      isPending: tx.isPending,
+      pendingId: tx.pendingId,
+      txHashId: tx.txHashId,
+      ownerSyncPending,
+    });
+
+    // The notes hook already appends the id for pending rows; only settled rows
+    // need it added here.
+    const needsTxId = Boolean(notesTxId) && !notes.includes(notesTxId);
+    const finalNotes = needsTxId ? [notes, notesTxId].filter(Boolean).join('\n') : notes;
+
+    return {
+      Date: tx.date || '',
+      Merchant: tx.merchant || '',
+      Category: tx.resolvedMonarchCategory ?? tx.autoCategory ?? 'Uncategorized',
+      Account: accountName,
+      'Original Statement': tx.originalStatement || '',
+      Notes: finalNotes,
+      Amount: tx.amount || 0,
+      Tags: buildMonarchTags({ isPending: tx.isPending, cardholderTag: tx.cardholderTag, ownerSyncPending }),
+      Owner: tx.cardholderOwner || '',
+    };
+  });
 
   debugLog('[orchestrator] Converted transactions for CSV:', {
     count: monarchRows.length,
@@ -260,6 +325,18 @@ async function executeTransactionStep({
     pendingForProcessing = applyCardholderFields(dedupPending, cardholderOptions);
   }
 
+  // Owner assignments are collected from ALL fetched transactions, not just the
+  // new ones about to be uploaded. The marker-tag queue legitimately holds rows
+  // from earlier syncs (deferred by the batch cap, previously unmatched, or
+  // interrupted mid-pass); building the resolver from new uploads alone would
+  // leave those permanently unresolvable and stuck with their marker — which
+  // would defeat the whole self-healing design. This mirrors the same reasoning
+  // that makes cardholder *discovery* read all fetched transactions.
+  const ownerAssignments = collectOwnerAssignments([
+    ...(settledForProcessing as Array<Record<string, unknown>>),
+    ...(pendingForProcessing as Array<Record<string, unknown>>),
+  ]);
+
   // ── Process (normalize) ──────────────────────────────────
   progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Processing...');
 
@@ -335,6 +412,9 @@ async function executeTransactionStep({
 
   return {
     success: transactionUploadSuccess,
+    // Notes id → Monarch user id across the whole fetch window, consumed by the
+    // owner sync step. Empty when owner mapping is off.
+    ownerAssignments,
   };
 }
 
@@ -447,11 +527,22 @@ export async function syncAccount({
   const includePendingTransactions = accountData?.[ACCOUNT_SETTINGS.INCLUDE_PENDING_TRANSACTIONS] !== false;
   const storeTransactionDetailsInNotes = accountData?.storeTransactionDetailsInNotes ?? false;
 
+  // Owner sync only applies when the account opted into owner mapping. The step
+  // needs a txIdPrefix too, since the notes hash is the correlation handle.
+  const ownerSyncEnabled = Boolean(capabilities.hasCardholders)
+    && Boolean(txIdPrefix)
+    && getOwnerMode(integrationId, accountId) === CARDHOLDER.OWNER_MODE.ON;
+
+  // Retention window doubles as the Monarch scan window for follow-up passes
+  const retentionLookbackDays = (accountData?.transactionRetentionDays as number | undefined)
+    ?? TRANSACTION_RETENTION_DEFAULTS.DAYS;
+
   // Initialize progress dialog steps
   progressDialog.initSteps(accountId, buildSyncSteps({
     hasCreditLimit: capabilities.hasCreditLimit,
     includeTransactions: capabilities.hasTransactions,
     includePending: includePendingTransactions,
+    includeOwnerSync: ownerSyncEnabled,
   }));
 
   const abortController = new AbortController();
@@ -566,6 +657,21 @@ export async function syncAccount({
         dedupPending: fetchData.dedupPending,
         cardholderResolution,
         hooks, progressDialog, abortController,
+      });
+    }
+
+    // ── STEP 4.9: Post-Upload Owner Sync ───────────────────
+    // Runs AFTER the upload in the SAME sync so a cardholder's transactions are
+    // attributed on the sync that uploads them, with no one-sync lag. Anything
+    // it cannot finish keeps its marker tag and is retried next sync.
+    if (ownerSyncEnabled && capabilities.hasTransactions) {
+      await executeOwnerSyncStep({
+        accountId,
+        monarchAccountId,
+        txIdPrefix,
+        ownerAssignments: txStepResult?.ownerAssignments ?? new Map(),
+        lookbackDays: retentionLookbackDays > 0 ? retentionLookbackDays : 365,
+        progressDialog,
       });
     }
 

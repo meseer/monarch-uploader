@@ -60,6 +60,13 @@ jest.mock('../../src/core/config', () => ({
     DAYS: 91,
     COUNT: 1000,
   },
+  // Cardholder owner/tag modes are read during sync to decide whether the
+  // post-upload owner sync step runs. Both default to 'off'.
+  CARDHOLDER: {
+    SHARED_OWNER: 'Shared',
+    OWNER_MODE: { OFF: 'off', ON: 'on' },
+    TAG_MODE: { OFF: 'off', AUTO: 'auto', ALWAYS: 'always' },
+  },
 }));
 
 jest.mock('../../src/core/state', () => ({
@@ -171,7 +178,13 @@ jest.mock('../../src/core/integrationCapabilities', () => ({
     INCLUDE_PENDING_TRANSACTIONS: 'includePendingTransactions',
     INVERT_BALANCE: 'invertBalance',
     SKIP_CATEGORIZATION: 'skipCategorization',
+    CARDHOLDER_OWNER_MODE: 'cardholderOwnerMode',
+    CARDHOLDER_TAG_MODE: 'cardholderTagMode',
   },
+  // The cardholder service reads these to decide whether owner mapping is on.
+  // Returning the "off" defaults keeps the feature inactive in these tests.
+  getSettingDefault: jest.fn(() => undefined),
+  hasCapability: jest.fn(() => false),
 }));
 
 jest.mock('../../src/services/rogersbank/pendingTransactions', () => ({

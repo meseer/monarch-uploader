@@ -15,6 +15,7 @@
 
 import { debugLog, formatDate } from '../../core/utils';
 import monarchApi from '../../api/monarch';
+import { shouldRetainTxIdInNotes, selectTagsByIds } from '../../core/markerTags';
 
 /** Result of the reconciliation process */
 export interface ReconciliationResult {
@@ -79,6 +80,24 @@ interface SeparateResult {
 }
 
 /**
+ * Attach the computed hash as `txHashId` to each transaction.
+ *
+ * Settled transactions need a stable id too: a transaction that settles before
+ * its first upload never gets a `generatedId`, yet the post-upload owner pass
+ * still has to correlate the Monarch row back to its source cardholder. The
+ * hash is the only identifier both sides can compute.
+ *
+ * @param idMap - hash → transaction, as built by `buildHashMaps`
+ * @returns New transaction objects with `txHashId` attached
+ */
+function attachHashIds(idMap: Map<string, unknown>): Array<Record<string, unknown>> {
+  return Array.from(idMap.entries()).map(([hashId, tx]) => ({
+    ...(tx as Record<string, unknown>),
+    txHashId: hashId,
+  }));
+}
+
+/**
  * Generate a deterministic pending transaction ID by hashing stable fields.
  *
  * Uses the Web Crypto API for SHA-256, returns the first 16 hex chars
@@ -135,7 +154,10 @@ export function extractPendingIdFromNotes(txIdPrefix: string, notes: string): st
 }
 
 /**
- * Remove pending transaction ID from notes, preserving user content.
+ * Remove the `{prefix}:{hash}` transaction ID from notes, preserving user content.
+ *
+ * Callers must first check `shouldRetainTxIdInNotes` — another marker tag may
+ * still need the id to find this transaction later. See `core/markerTags`.
  *
  * @param {string} txIdPrefix - Integration prefix (e.g., 'mbna-tx')
  * @param {string} notes - Transaction notes
@@ -395,12 +417,25 @@ export async function reconcileFetchedPendingTransactions({
           debugLog(`[reconciliation:phase2] Transaction ${pendingId} has settled, updating`);
 
           const settledAmount = getSettledAmount(settledTx);
-          const cleanedNotes = cleanPendingIdFromNotes(txIdPrefix, notes);
           const amountChanged = monarchTx.amount !== settledAmount;
 
-          // Update notes (clean pending ID)
+          // Remove Pending tag, preserving other tags
+          const existingTags = monarchTx.tags as Array<{ id: string; name?: string }> | undefined;
+          const remainingTagIds = computeSettledTagIds(existingTags, pendingTag.id);
+
+          // Retain the hash while any OTHER marker tag still needs it to find
+          // this transaction (e.g. an outstanding owner update). Stripping it
+          // unconditionally here used to orphan those follow-up passes.
+          const retainTxId = shouldRetainTxIdInNotes(selectTagsByIds(existingTags, remainingTagIds));
+          const finalNotes = retainTxId ? notes : cleanPendingIdFromNotes(txIdPrefix, notes);
+
+          if (retainTxId) {
+            debugLog(`[reconciliation:phase2] Retaining ${pendingId} in notes — another marker tag is still present`);
+          }
+
+          // Update notes (clean pending ID unless another marker still needs it)
           await monarchApi.updateTransaction(monarchTxId, {
-            notes: cleanedNotes,
+            notes: finalNotes,
             ownerUserId: (monarchTx.ownedByUser as Record<string, unknown>)?.id || null,
           });
 
@@ -412,11 +447,6 @@ export async function reconcileFetchedPendingTransactions({
             });
           }
 
-          // Remove Pending tag, preserving other tags
-          const remainingTagIds = computeSettledTagIds(
-            monarchTx.tags as Array<{ id: string }> | undefined,
-            pendingTag.id,
-          );
           await monarchApi.setTransactionTags(monarchTxId, remainingTagIds);
 
           // Collect settled ref ID for dedup store
@@ -542,11 +572,14 @@ export async function separateAndDeduplicateTransactions({ txIdPrefix, getPendin
   const dedupedPending = Array.from(pendingIdMap.entries()).map(([hashId, tx]) => ({
     ...(tx as Record<string, unknown>),
     generatedId: hashId,
+    txHashId: hashId,
     isPending: true as const,
   }));
 
   return {
-    settled,
+    // Settled transactions carry `txHashId` so post-upload passes can correlate
+    // them; `generatedId` stays pending-only to keep dedup semantics unchanged.
+    settled: attachHashIds(settledIdMap),
     pending: dedupedPending,
     pendingIdMap,
     settledIdMap,

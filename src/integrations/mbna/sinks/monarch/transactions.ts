@@ -46,12 +46,16 @@ export interface ProcessedMbnaTransaction {
   referenceNumber: string;
   isPending: boolean;
   pendingId: string | null;
+  /** Stable hash id, present on settled rows too (post-upload correlation) */
+  txHashId?: string | null;
   autoCategory: string | null;
   resolvedMonarchCategory?: string;
-  /** Monarch household member name for the Owner column (set by cardholder service) */
+  /** Monarch household member name, informational only (set by cardholder service) */
   cardholderOwner?: string | null;
   /** Cardholder label for the Tags column (set by cardholder service) */
   cardholderTag?: string | null;
+  /** Monarch user id to assign after upload (set by cardholder service) */
+  cardholderOwnerUserId?: string | null;
 }
 
 /** Result of processMbnaTransactions */
@@ -146,6 +150,8 @@ function processTransaction(tx: MbnaRawTransaction, options: ProcessTransactionO
     referenceNumber: tx.referenceNumber || '',
     isPending,
     pendingId: pendingId || null,
+    // Stable hash for post-upload correlation, attached during separation.
+    txHashId: (tx as Record<string, unknown>).txHashId as string | undefined,
     // Category will be resolved later via resolveCategoriesForTransactions
     autoCategory: autoCategory?.category || null,
     // Pass through cardholder owner/tag annotations applied by the cardholder
@@ -153,6 +159,7 @@ function processTransaction(tx: MbnaRawTransaction, options: ProcessTransactionO
     // feature is disabled, which the CSV converter treats as empty).
     cardholderOwner: (tx as Record<string, unknown>).cardholderOwner as string | undefined,
     cardholderTag: (tx as Record<string, unknown>).cardholderTag as string | undefined,
+    cardholderOwnerUserId: (tx as Record<string, unknown>).cardholderOwnerUserId as string | undefined,
   };
 }
 
