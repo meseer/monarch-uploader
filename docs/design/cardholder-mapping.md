@@ -1,7 +1,7 @@
 # Cardholder → Monarch Owner & Tag Mapping
 
 > **Status:** Active  
-> **Updated:** 2026-09-04  
+> **Updated:** 2026-09-05  
 > **Author:** @meseer  
 > **Note:** Implements [issue #165](https://github.com/meseer/monarch-uploader/issues/165). Owner mapping and cardholder tagging are both opt-in and off by default.
 
@@ -78,6 +78,82 @@ the property that keeps the feature invisible to users who have not opted in.
 
 ---
 
+## Three owner states, and why the distinction matters
+
+`ownerUserId` has two possible values but **three** meanings, and conflating the
+last two caused a real bug.
+
+| State | `ownerUserId` | `ownershipOverriddenAt` | Meaning |
+|-------|---------------|--------------------------|---------|
+| Specific member | a user id | set | that person owns it |
+| **Shared** | `null` | **set** | explicitly shared — a deliberate choice |
+| **Unset** | `null` | `null` | never chosen; inherits from the account |
+
+For **accounts** there are only two states: a specific owner, or Shared
+(`ownerUserId: null`, which is also Monarch's default for a new account). There
+is no account-level "unset".
+
+For **transactions** all three exist, and `ownedByUser` alone cannot tell Shared
+from unset — both report `null`. **`ownershipOverriddenAt` is the only
+discriminator**, which is why `getTransactionsList` requests it.
+
+### The bug this fixed
+
+`ownerSync` originally skipped rows where `ownedByUser` was set, to avoid
+clobbering a manual choice. But a transaction the user had explicitly set to
+**Shared** reads back as `ownedByUser: null` — indistinguishable from "never
+touched" — so the pass would happily **overwrite a deliberate Shared choice**
+with the cardholder's owner, violating the "never overwrite a manual choice"
+invariant.
+
+The guard is now:
+
+```
+skip if  ownedByUser?.id        → owned by a specific member
+skip if  ownershipOverriddenAt  → explicitly set, including deliberate Shared
+else     apply the cardholder's owner
+```
+
+Skipping on *any* explicit override also respects ownership Monarch set for its
+own reasons (a rule, say). That is the deliberate trade: better to leave a
+transaction alone than to fight the user or the platform over it.
+
+### What "unmapped" writes
+
+Nothing. An unmapped or explicitly-Shared cardholder produces no marker tag, no
+`updateTransaction`, and an **empty** `Owner` CSV column. The column used to
+print `"Shared"`, which implied we were assigning something; we never were.
+Leaving it empty lets Monarch's account-level owner govern, which is the
+intended behaviour.
+
+---
+
+## Account-level owner at creation time
+
+Since unmapped cardholders now defer to the account's owner, that owner needs to
+be settable — so the account creation dialog offers an **Account Owner** dropdown:
+**Shared** (pre-selected, matching Monarch's default) plus every household member.
+
+Two implementation notes:
+
+- **It takes two calls.** `CreateManualAccountMutationInput` has no owner field;
+  only `updateAccount` accepts `ownerUserId`. So a chosen member means
+  create → `updateAccount({ id, ownerUserId })`. Choosing Shared issues **no**
+  second call, since `null` is already the default.
+- **The result is verified, not assumed.** `updateAccount` reports field errors in
+  its payload rather than rejecting, so the returned `ownedByUser` is checked.
+
+Everything about it is non-fatal: the household fetch, the update call, and the
+verification. The account already exists by that point and creating it was the
+user's actual goal, so a failure warns via toast and leaves the owner to be set
+in Monarch. The dropdown is omitted entirely when there is nothing to choose —
+a single-member household, or a failed household fetch.
+
+The dialog is shared by **every** integration, so all account-creation flows gain
+the field, not just cardholder-capable cards.
+
+---
+
 ## Post-upload owner sync
 
 ### Correlation
@@ -91,6 +167,7 @@ into each affected row:
 |--------|---------|
 | `pendingOwnerUpdate` marker tag | how the pass **finds** the rows |
 | `{prefix}:{hash}` id in the notes | how the pass **identifies** which source transaction each row is |
+| `ownershipOverriddenAt` | how the pass knows **not to touch** an explicit choice |
 
 The id was previously written for pending rows only. Settled rows now get it too
 when an owner update is queued — otherwise a transaction that settled before its
@@ -115,8 +192,9 @@ unattributed until the following run.
 3. `getTransactionsList({ accountIds, tags: [markerTagId], startDate, endDate })`
    over the retention window.
 4. Match each row to a source cardholder via the id in its notes.
-5. **Skip any row that already has an owner** — never overwrite a manual choice.
-   This is also what makes the pass idempotent.
+5. **Skip any row whose ownership was explicitly set** — a specific member *or* a
+   deliberate Shared choice (see the three-state section above). Never overwrite
+   a manual choice. This is also what makes the pass idempotent.
 6. One `updateTransaction` per row: set `ownerUserId`, drop the marker tag
    (preserving all others), and apply the retention rule to the notes.
 7. Anything unmatched keeps its marker and is retried next sync.
@@ -244,6 +322,10 @@ Two fields deserve explanation:
   left the household entirely the entry reverts to unresolved — which stops it
   being queued at all.
 
+Note that `isShared` is an app-level record of the user's *prompt* answer, kept so
+we do not ask again. It is not sent to Monarch: both `isShared` and plain
+unresolved result in no owner assignment at all.
+
 ---
 
 ## Matching and prompting
@@ -350,8 +432,12 @@ These must not be broken by future changes:
 - **Never send `Owner` in `columnMapping`.** Monarch rejects the whole upload; see
   the constraints section above for the exact error.
 - **Never overwrite an owner a user set manually.** The owner sync pass skips any
-  row where `ownedByUser` is already populated, which is also what makes it
-  idempotent.
+  row with explicit ownership — checking **both** `ownedByUser` and
+  `ownershipOverriddenAt`, because a deliberate Shared choice reports a null
+  owner. Checking only `ownedByUser` silently overwrites Shared.
+- **`getTransactionsList` must keep requesting `ownershipOverriddenAt`.** Drop it
+  and the Shared guard silently stops working — the query would still succeed and
+  every field would read `undefined`.
 - **The notes id survives while any marker tag remains.** Both halves of that rule
   live in `core/markerTags`; any new marker tag must be added to `MARKER_TAGS` so
   the rule keeps covering it.
@@ -400,6 +486,8 @@ outside their Monarch household — are still served.
 - **Owner requires a matching Monarch household member.** Authorized cardholders
   who are not household members can never be mapped and are never queued for an
   owner update. This is surfaced in the settings widget rather than hidden.
+- **Account ownership can only be chosen at creation time** through this script.
+  Changing it later is done in Monarch; there is no settings-panel equivalent yet.
 - **One GraphQL request per transaction.** Unavoidable given the importer has no
   owner column. Bounded by `OWNER_SYNC_MAX_UPDATES_PER_SYNC` per sync.
 - **First-sync attribution may lag by one sync.** Only if the
@@ -409,9 +497,10 @@ outside their Monarch household — are still served.
   enabled (or before a second cardholder appeared) keep their original empty
   Owner and no tag.
 - **MBNA pending transactions are unverified.** `cardHolderName` is confirmed on
-  settled MBNA rows; if it is absent on pending rows, those upload with `Shared`
-  and keep it through settlement (reconciliation preserves tags but does not add
-  them). The extractor handles absence gracefully either way.
+  settled MBNA rows; if it is absent on pending rows, those upload with no owner
+  assigned (so the account default governs) and stay that way through settlement,
+  since reconciliation preserves tags but never adds them. The extractor handles
+  absence gracefully either way.
 
 ---
 

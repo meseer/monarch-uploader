@@ -29,8 +29,10 @@
  *
  * ## Safety properties
  *
- * - **Idempotent.** Rows that already have an owner are skipped, so re-running
- *   never disturbs a value the user set by hand.
+ * - **Idempotent.** Rows whose ownership was explicitly set are skipped, so
+ *   re-running never disturbs a value the user chose by hand. Crucially that
+ *   includes a deliberate **Shared** choice, which reports `ownedByUser: null`
+ *   and is only distinguishable via `ownershipOverriddenAt`.
  * - **Crash-safe / self-healing.** The marker tag *is* the queue. Anything not
  *   finished — because the batch cap was hit, the row could not be matched, or
  *   the sync died mid-pass — keeps its tag and its id and is picked up next
@@ -55,7 +57,10 @@ export interface OwnerSyncResult {
   success: boolean;
   /** Rows whose owner was set */
   updated: number;
-  /** Rows skipped because an owner was already set (never overwritten) */
+  /**
+   * Rows skipped because ownership was already explicitly set — either owned by
+   * a specific member, or deliberately Shared. Never overwritten.
+   */
   alreadyOwned: number;
   /** Rows whose source cardholder could not be resolved — retried next sync */
   unmatched: number;
@@ -95,7 +100,31 @@ interface MonarchTransactionRow {
   notes?: string;
   tags?: Array<{ id: string; name?: string }>;
   ownedByUser?: { id?: string } | null;
+  /** Set when ownership was chosen explicitly; null when inherited */
+  ownershipOverriddenAt?: string | null;
   [key: string]: unknown;
+}
+
+/**
+ * Whether a row's ownership was explicitly decided and must not be overwritten.
+ *
+ * Two cases, and the second is easy to miss:
+ *
+ * 1. `ownedByUser` is set — owned by a specific household member.
+ * 2. `ownershipOverriddenAt` is set but `ownedByUser` is null — the user
+ *    deliberately chose **Shared**.
+ *
+ * Case 2 is why checking `ownedByUser` alone is not enough: a deliberate Shared
+ * choice is indistinguishable from "never touched" by that field, so relying on
+ * it would silently overwrite the user's decision with the cardholder's owner.
+ *
+ * Treating any explicit override as off-limits also means ownership Monarch set
+ * for its own reasons (a rule, say) is respected. That is the safer default:
+ * we would rather leave a transaction alone than fight the user or the platform
+ * over it.
+ */
+function hasExplicitOwnership(row: MonarchTransactionRow): boolean {
+  return Boolean(row.ownedByUser?.id) || Boolean(row.ownershipOverriddenAt);
 }
 
 const EMPTY_RESULT: OwnerSyncResult = {
@@ -313,9 +342,12 @@ export async function syncTransactionOwners({
           continue;
         }
 
-        // Never overwrite a manual choice. Also what makes the pass idempotent.
-        if (row.ownedByUser?.id) {
-          debugLog(`[ownerSync] ${row.id} already owned by ${row.ownedByUser.id}, leaving as-is`);
+        // Never overwrite an explicit choice — including a deliberate "Shared",
+        // which looks unowned but carries ownershipOverriddenAt. Also what makes
+        // the pass idempotent.
+        if (hasExplicitOwnership(row)) {
+          debugLog(`[ownerSync] ${row.id} ownership already set explicitly `
+            + `(owner=${row.ownedByUser?.id ?? 'Shared'}, overriddenAt=${row.ownershipOverriddenAt ?? 'n/a'}), leaving as-is`);
           result.alreadyOwned += 1;
           continue;
         }

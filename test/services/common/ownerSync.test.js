@@ -43,12 +43,18 @@ const CARDHOLDER_TAG = { id: 'tag-mike', name: 'Mykhailo Delegan' };
 const TX_ID = 'rb-tx:abcdef0123456789';
 const OWNER_ID = '162625044845828370';
 
-/** A Monarch row queued for an owner update */
+/**
+ * A Monarch row queued for an owner update.
+ *
+ * `ownershipOverriddenAt: null` is the default because that is the state that
+ * makes a row eligible — ownership merely inherited from the account.
+ */
 const queuedRow = (overrides = {}) => ({
   id: 'monarch-tx-1',
   notes: TX_ID,
   tags: [MARKER_TAG],
   ownedByUser: null,
+  ownershipOverriddenAt: null,
   ...overrides,
 });
 
@@ -224,7 +230,7 @@ describe('syncTransactionOwners — happy path', () => {
   });
 });
 
-describe('syncTransactionOwners — never overwrites a manual owner', () => {
+describe('syncTransactionOwners — never overwrites an explicit choice', () => {
   it('skips a row that already has an owner', async () => {
     monarchApi.getTransactionsList.mockResolvedValue({
       results: [queuedRow({ ownedByUser: { id: 'someone-else' } })],
@@ -246,6 +252,81 @@ describe('syncTransactionOwners — never overwrites a manual owner', () => {
     await syncTransactionOwners(params());
 
     expect(monarchApi.updateTransaction).not.toHaveBeenCalled();
+  });
+
+  it('skips a row the user deliberately set to SHARED', async () => {
+    // The critical case. A deliberate Shared choice reports ownedByUser: null —
+    // identical to "never touched" — and is only distinguishable by
+    // ownershipOverriddenAt. Checking ownedByUser alone would silently overwrite
+    // the user's decision with the cardholder's owner.
+    monarchApi.getTransactionsList.mockResolvedValue({
+      results: [queuedRow({
+        ownedByUser: null,
+        ownershipOverriddenAt: '2026-09-01T12:00:00Z',
+      })],
+    });
+
+    const result = await syncTransactionOwners(params());
+
+    expect(monarchApi.updateTransaction).not.toHaveBeenCalled();
+    expect(monarchApi.setTransactionTags).not.toHaveBeenCalled();
+    expect(result.alreadyOwned).toBe(1);
+    expect(result.updated).toBe(0);
+  });
+
+  it('DOES set the owner when ownership was never explicitly decided', async () => {
+    // The mirror image: ownedByUser null AND ownershipOverriddenAt null means
+    // ownership is merely inherited from the account, so we may set it.
+    monarchApi.getTransactionsList.mockResolvedValue({
+      results: [queuedRow({ ownedByUser: null, ownershipOverriddenAt: null })],
+    });
+
+    const result = await syncTransactionOwners(params());
+
+    expect(monarchApi.updateTransaction).toHaveBeenCalledWith('monarch-tx-1', expect.objectContaining({
+      ownerUserId: OWNER_ID,
+    }));
+    expect(result.updated).toBe(1);
+  });
+
+  it('treats a missing ownershipOverriddenAt field as inherited', async () => {
+    // Defensive: an older cached row or a partial response should not block work
+    const row = queuedRow();
+    delete row.ownershipOverriddenAt;
+    monarchApi.getTransactionsList.mockResolvedValue({ results: [row] });
+
+    const result = await syncTransactionOwners(params());
+
+    expect(result.updated).toBe(1);
+  });
+
+  it('skips an explicitly-Shared row even when it also carries the Pending marker', async () => {
+    monarchApi.getTransactionsList.mockResolvedValue({
+      results: [queuedRow({
+        tags: [MARKER_TAG, PENDING_TAG],
+        ownedByUser: null,
+        ownershipOverriddenAt: '2026-09-01T12:00:00Z',
+      })],
+    });
+
+    const result = await syncTransactionOwners(params());
+
+    expect(monarchApi.updateTransaction).not.toHaveBeenCalled();
+    expect(result.alreadyOwned).toBe(1);
+  });
+
+  it('counts explicit-Shared rows in the same bucket as owned rows', async () => {
+    monarchApi.getTransactionsList.mockResolvedValue({
+      results: [
+        queuedRow({ id: 'tx-1', notes: 'rb-tx:1111111111111111', ownedByUser: { id: 'user-9' } }),
+        queuedRow({ id: 'tx-2', notes: 'rb-tx:2222222222222222', ownershipOverriddenAt: '2026-09-01T12:00:00Z' }),
+      ],
+    });
+
+    const result = await syncTransactionOwners(params());
+
+    expect(result.alreadyOwned).toBe(2);
+    expect(result.updated).toBe(0);
   });
 });
 
