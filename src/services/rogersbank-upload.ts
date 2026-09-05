@@ -8,7 +8,7 @@ import {
   getLastUpdateDate, formatDaysAgoLocal,
 } from '../core/utils';
 import toast from '../ui/toast';
-import { LOGO_CLOUDINARY_IDS } from '../core/config';
+import { LOGO_CLOUDINARY_IDS, CARDHOLDER } from '../core/config';
 import stateManager from '../core/state';
 import { getRogersBankCredentials, fetchRogersBankAccountDetails } from '../api/rogersbank';
 import monarchApi from '../api/monarch';
@@ -33,8 +33,11 @@ import {
   formatPendingIdForNotes,
 } from './rogersbank/pendingTransactions';
 import { extractRogersCardholder } from './rogersbank/cardholderExtractor';
-import { syncCardholders, applyCardholderFields } from './common/cardholders';
+import {
+  syncCardholders, applyCardholderFields, collectOwnerAssignments, getOwnerMode,
+} from './common/cardholders';
 import { showCardholderSelector } from '../ui/components/cardholderSelector';
+import { syncTransactionOwners, buildOwnerResolver, formatOwnerSyncMessage } from './common/ownerSync';
 
 /**
  * Extract Rogers account name from DOM
@@ -412,15 +415,30 @@ async function fetchRogersBankTransactions(fromDate, toDate, fullHistory = false
 }
 
 /**
- * Build sync steps for progress dialog
- * Order: credit limit → pending reconciliation → transactions → balance
- * (Reconciliation before transactions prevents duplicate uploads of settled transactions)
+ * Rogers Bank pending transaction ID prefix (without the trailing colon).
+ *
+ * `formatPendingIdForNotes` emits `rb-tx:{hash}`; the owner sync pass needs the
+ * bare prefix to read those ids back out of Monarch notes.
  */
-function buildRogersBankSteps(hasTransactions = true, includeCreditLimit = true, includePendingReconciliation = true) {
+const ROGERSBANK_TX_ID_PREFIX = 'rb-tx';
+
+/**
+ * Build sync steps for progress dialog
+ * Order: credit limit → pending reconciliation → transactions → owner sync → balance
+ * (Reconciliation before transactions prevents duplicate uploads of settled transactions;
+ * owner sync must follow the upload because it updates the rows the upload created)
+ */
+function buildRogersBankSteps(
+  hasTransactions = true,
+  includeCreditLimit = true,
+  includePendingReconciliation = true,
+  includeOwnerSync = false,
+) {
   const steps = [];
   if (includeCreditLimit) steps.push({ key: 'creditLimit', name: 'Credit limit sync' });
   if (includePendingReconciliation) steps.push({ key: 'pendingReconciliation', name: 'Pending reconciliation' });
   if (hasTransactions) steps.push({ key: 'transactions', name: 'Transaction sync' });
+  if (includeOwnerSync) steps.push({ key: 'ownerSync', name: 'Owner sync' });
   steps.push({ key: 'balance', name: 'Balance upload' });
   return steps;
 }
@@ -734,7 +752,11 @@ export async function uploadRogersBankToMonarch() {
       [{ key: rogersAccountId, nickname: rogersAccountName, name: 'Rogers Bank Upload' }],
       'Uploading Rogers Bank Data to Monarch Money',
     );
-    progressDialog.initSteps(rogersAccountId, buildRogersBankSteps(true, true));
+    // Owner sync only runs when this account opted into owner mapping.
+    const ownerSyncEnabled = getOwnerMode(INTEGRATIONS.ROGERSBANK, rogersAccountId)
+      === CARDHOLDER.OWNER_MODE.ON;
+
+    progressDialog.initSteps(rogersAccountId, buildRogersBankSteps(true, true, true, ownerSyncEnabled));
     progressDialog.onCancel(() => abortController.abort());
 
     // Resolve Monarch account mapping using accountService (consolidated storage first, legacy fallback)
@@ -914,6 +936,8 @@ export async function uploadRogersBankToMonarch() {
     let totalNewSettled = 0;
     let totalNewPending = 0;
     let totalDuplicates = 0;
+    // Notes id → Monarch user id, consumed by the owner sync step below
+    let ownerAssignments = new Map<string, string>();
 
     if (txResult.success && (allSettledTx.length > 0 || allPendingTx.length > 0)) {
       // Filter out already-uploaded settled transactions
@@ -962,6 +986,24 @@ export async function uploadRogersBankToMonarch() {
             shouldTag: cardholderResolution.shouldTag,
             shouldMapOwner: cardholderResolution.shouldMapOwner,
           });
+
+          // Collected from ALL fetched transactions, not just the new ones: the
+          // marker-tag queue legitimately holds rows from earlier syncs
+          // (deferred by the batch cap, previously unmatched, or interrupted),
+          // and those must stay resolvable or they would keep their marker
+          // forever.
+          const annotatedAll = applyCardholderFields(
+            [...allSettledTx, ...allPendingTx].map((tx) => (tx.generatedId
+              ? { ...tx, isPending: true, pendingId: formatPendingIdForNotes(tx.generatedId) }
+              : tx)),
+            {
+              cardholders: cardholderResolution.cardholders,
+              extract: extractRogersCardholder,
+              shouldTag: cardholderResolution.shouldTag,
+              shouldMapOwner: cardholderResolution.shouldMapOwner,
+            },
+          );
+          ownerAssignments = collectOwnerAssignments(annotatedAll as Array<Record<string, unknown>>);
         }
 
         const resolvedTx = await resolveCategoriesForTransactions(transactionsForCategorization, { skipCategorization });
@@ -1020,6 +1062,27 @@ export async function uploadRogersBankToMonarch() {
       }
     } else {
       progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', 'No transactions');
+    }
+
+    // STEP 3.5: Post-upload owner sync
+    // Monarch's CSV importer has no owner column, so the Owner value is applied
+    // here, after the upload, in the SAME sync (no attribution lag). Anything it
+    // cannot finish keeps its marker tag and is retried next sync.
+    if (ownerSyncEnabled) {
+      const ownerSyncResult = await syncTransactionOwners({
+        monarchAccountId: monarchAccount.id,
+        txIdPrefix: ROGERSBANK_TX_ID_PREFIX,
+        resolveOwnerForTxId: buildOwnerResolver(ownerAssignments),
+        lookbackDays: 90,
+      });
+
+      progressDialog.updateStepStatus(
+        rogersAccountId,
+        'ownerSync',
+        ownerSyncResult.success === false ? 'error' : 'success',
+        formatOwnerSyncMessage(ownerSyncResult),
+      );
+      debugLog('Rogers Bank owner sync result:', ownerSyncResult);
     }
 
     // STEP 4: Upload balance (after reconciliation so deleted pending transactions don't affect balance)

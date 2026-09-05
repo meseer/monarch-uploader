@@ -14,17 +14,44 @@ optionally to a **tag**, using one generic service shared by every integration.
 
 ## Monarch-side constraints
 
-These two facts are non-obvious and load-bearing for the whole design:
+### The CSV importer has no owner column — definitively
 
-1. **The `Owner` CSV column is matched against household member `users[].name`** —
-   not `displayName`, not the user `id`, not an email. We must emit the exact
-   `name` string returned by `Common_GetHouseholdMembers`.
-2. **A non-matching `Owner` value silently reverts to the household default.**
-   Monarch does not reject the import. This makes the feature fail-safe: a bad or
-   stale value degrades to today's behaviour rather than breaking a sync.
+**Do not try to map an owner column again.** It is not a matter of finding the
+right key name; the column does not exist. Any attempt fails the entire upload:
 
-Consequence: `displayName` is only ever a *matching hint* and a UI label. The
-value written to CSV always comes from the live household list.
+```
+Invalid column mapping: 'owned_by_user' is not a valid column.
+Valid columns: ['account', 'amount', 'category', 'data_provider_description',
+                'date', 'id', 'merchant_name', 'notes', 'tags']
+```
+
+That list is exhaustive and contains no owner field under any name. An *unmapped*
+column is silently ignored, but an *invalid key* is rejected — which is why this
+is a hard failure rather than a silent no-op.
+
+Consequences:
+
+- `MONARCH_CSV_OWNER_FIELD_KEY` is `''`, so `Owner` is never sent in
+  `columnMapping`. The override plumbing behind `STORAGE.MONARCH_CSV_OWNER_KEY`
+  is retained *only* so this closed avenue can be cheaply re-probed if Monarch
+  ever adds the column.
+- The `Owner` CSV column is still emitted, but purely as human-readable context
+  for anyone inspecting the generated file. Monarch never reads it.
+- The owner is applied **after** upload, by `services/common/ownerSync`.
+
+### Owner is set by GraphQL, not by import
+
+`updateTransaction(id, { ownerUserId })` uses
+`Web_TransactionDrawerUpdateTransaction` — the same mutation Monarch's own UI
+uses — so the owner is set with a stable, supported call. The cost is one request
+per transaction, which is why the pass is capped per sync (see
+`OWNER_SYNC_MAX_UPDATES_PER_SYNC`).
+
+Because the owner is now applied by ID, `monarchUserId` is the load-bearing
+field and `monarchUserName` is only a display label. (Under the earlier CSV
+design the *name* was load-bearing, since Monarch matched the column against
+`users[].name` and silently reverted anything unrecognised. That constraint no
+longer applies.)
 
 ---
 
@@ -38,13 +65,111 @@ value written to CSV always comes from the live household list.
 Both default to **off**, so no existing user sees any change until they opt in.
 The two are independent — Owner alone, tag alone, both, or neither are all valid.
 
-- **Owner `on`** — emits the resolved household member name, or
-  `CARDHOLDER.SHARED_OWNER` (`"Shared"`) when the cardholder has no mapping.
+- **Owner `on`** — queues a post-upload owner update for every transaction whose
+  cardholder resolves to a household member. Cardholders that are unmapped or
+  explicitly Shared are **not** queued: there is no owner to apply, so marking
+  them would strand a marker tag forever.
 - **Tag `auto`** — tags only once **two or more** cardholders have ever been
   discovered for the account (see below). **`always`** — always tags.
 
-When owner mapping is `off`, the `Owner` column is emitted empty, which is
-identical to the pre-feature behaviour for every integration.
+When owner mapping is `off`, no marker tag is emitted and the notes are
+byte-identical to the pre-feature output. This is enforced by test, because it is
+the property that keeps the feature invisible to users who have not opted in.
+
+---
+
+## Post-upload owner sync
+
+### Correlation
+
+The upload gives us nothing to correlate on: the response contains only
+`uploadedStatement { id, transactionCount }` — no per-transaction ids — and
+`getTransactionsList` has no statement-id filter. So the CSV writes two handles
+into each affected row:
+
+| Handle | Purpose |
+|--------|---------|
+| `pendingOwnerUpdate` marker tag | how the pass **finds** the rows |
+| `{prefix}:{hash}` id in the notes | how the pass **identifies** which source transaction each row is |
+
+The id was previously written for pending rows only. Settled rows now get it too
+when an owner update is queued — otherwise a transaction that settled before its
+first upload could never be matched back to its cardholder. This is gated on the
+owner marker so nothing changes for users who have not opted in.
+
+### Step order
+
+```
+credit limit → fetch Monarch pending → fetch source → reconcile
+            → upload → ownerSync → balance
+```
+
+Owner sync runs **after upload in the same sync**, deliberately. Deferring it to
+the next sync would be simpler but would leave every newly uploaded transaction
+unattributed until the following run.
+
+### The pass
+
+1. Skip entirely unless `cardholderOwnerMode === 'on'`.
+2. Resolve the `pendingOwnerUpdate` tag, with a short bounded retry (see below).
+3. `getTransactionsList({ accountIds, tags: [markerTagId], startDate, endDate })`
+   over the retention window.
+4. Match each row to a source cardholder via the id in its notes.
+5. **Skip any row that already has an owner** — never overwrite a manual choice.
+   This is also what makes the pass idempotent.
+6. One `updateTransaction` per row: set `ownerUserId`, drop the marker tag
+   (preserving all others), and apply the retention rule to the notes.
+7. Anything unmatched keeps its marker and is retried next sync.
+
+### Marker-tag retention invariant
+
+> Keep the `{prefix}:{hash}` id in the notes while **any** marker tag is present.
+> Strip it only when the last marker is removed.
+
+Marker tags are `Pending` and `pendingOwnerUpdate`. `core/markerTags` owns both
+halves of this rule — `resolveNotesTransactionId` (when to write an id) and
+`shouldRetainTxIdInNotes` (when to keep one) — so the two cannot drift apart.
+
+Two properties follow, and both were failure modes in earlier drafts:
+
+- **Crash-safe.** A transaction whose follow-up was interrupted keeps both its
+  marker and its id, so a later sync finds it and finishes the work. An earlier
+  in-memory handover design was rejected precisely because it could not survive
+  a partial failure.
+- **Order-independent.** Reconciliation and owner sync can run in any order, in
+  any sync, without knowing about each other. Each only asks "are any markers
+  left?".
+
+This is why reconciliation no longer strips the id unconditionally at settlement.
+That is not owner-mode awareness leaking into reconciliation — it is a local
+question about tags reconciliation already computes.
+
+### The resolver must span the whole fetch window
+
+The owner-id map is built from **all** fetched transactions, not just the ones
+being uploaded this sync. The marker-tag queue legitimately holds rows from
+earlier syncs — deferred by the batch cap, previously unmatched, or interrupted
+mid-pass — and building the resolver from new uploads alone would leave those
+permanently unresolvable and stuck with their marker, defeating the entire
+self-healing design. This mirrors the same reasoning that makes cardholder
+*discovery* read all fetched transactions.
+
+### Batch cap
+
+`OWNER_SYNC_MAX_UPDATES_PER_SYNC` (200) bounds the mutations per sync. A first
+sync can queue hundreds; the remainder is deferred to the next sync, which is
+safe because the marker tag *is* the queue.
+
+### Marker-tag visibility on the first sync
+
+The very first owner sync runs seconds after the import that **created** the
+`pendingOwnerUpdate` tag, and `getTagByName` is not guaranteed to see it
+immediately. The lookup therefore retries a small bounded number of times before
+giving up.
+
+Failing after those attempts is still safe — the rows keep their marker and are
+picked up next sync — so the retry stays deliberately short rather than blocking
+the sync. Worst case is degraded (one sync of attribution lag), never broken.
 
 ---
 
@@ -98,8 +223,8 @@ no new top-level GM keys):
       label: 'Mykhailo Delegan',           // title-cased; drives the TAG only
       cardLast4: '8584',                   // display / disambiguation
       firstSeen: '2026-09-04',
-      monarchUserId: '162625044845828370', // stable key; null when Shared/unresolved
-      monarchUserName: 'Mykhailo Delegan', // cached users[].name → the Owner value
+      monarchUserId: '162625044845828370', // the value actually assigned; null when Shared/unresolved
+      monarchUserName: 'Mykhailo Delegan', // display label only
       isShared: false,                     // true = user explicitly chose Shared
       matchType: 'manual'
     }
@@ -110,13 +235,14 @@ no new top-level GM keys):
 Two fields deserve explanation:
 
 - **`isShared`** distinguishes "the user deliberately chose Shared" (do not
-  prompt again) from "never asked" (do prompt). Both emit `Shared`, but only one
-  suppresses the prompt.
-- **`monarchUserName` is a cache, `monarchUserId` is the key.** If a household
-  member renames themselves in Monarch, a stale cached name would stop matching
-  and Monarch would silently revert the Owner value. So every sync refreshes
-  `monarchUserName` from the live household list, keyed on the ID. If the mapped
-  member has left the household entirely, the entry reverts to unresolved.
+  prompt again) from "never asked" (do prompt). Neither is queued for an owner
+  update, but only one suppresses the prompt.
+- **`monarchUserId` is what gets assigned; `monarchUserName` is only a label.**
+  The owner is set by ID via GraphQL, so a household rename cannot break the
+  assignment. The cached name is still refreshed from the live household list each
+  sync so the settings UI never shows a stale name, and if the mapped member has
+  left the household entirely the entry reverts to unresolved — which stops it
+  being queued at all.
 
 ---
 
@@ -166,8 +292,14 @@ Everything else is shared:
 | Matching strategies (pure) | `src/services/common/cardholderMatching.ts` |
 | Discovery, merge, resolution | `src/services/common/cardholders.ts` |
 | CSV columns + tag builder | `src/utils/csv.ts` (`MONARCH_CSV_COLUMNS`, `buildMonarchTags`) |
+| Marker tags + notes-id retention rule | `src/core/markerTags.ts` |
+| Post-upload owner assignment | `src/services/common/ownerSync.ts` |
 | Mapping prompt | `src/ui/components/cardholderSelector.ts` |
 | Settings widget | `src/ui/components/settingsModalCardholders.ts` |
+
+`markerTags` lives in `core/` rather than `services/` on purpose: `utils/csv.ts`
+needs the notes-id rule, and `utils` may not import from `services`. Keeping it in
+`core` makes every consumer's import legal.
 
 ### Per-integration extractors
 
@@ -189,8 +321,12 @@ Rogers confirmed to include both fields on **PENDING and APPROVED** activities.
 
 Household members are fetched **once per sync, lazily** — only when
 `hasCardholders` is set, owner mapping is on, and at least one cardholder needs
-resolving or refreshing. **A fetch failure is non-fatal**: it is logged, Owner
-degrades to `Shared`, and the sync continues.
+resolving or refreshing. **A fetch failure is non-fatal**: it is logged, no owner
+updates are queued for this sync, and the sync continues.
+
+The owner sync step itself is likewise non-fatal end to end — a whole-pass
+failure, a per-row failure, and a missing marker tag are all logged and skipped.
+Owner sync can never abort a sync.
 
 ### De-duplication of existing code
 
@@ -211,11 +347,19 @@ These must not be broken by future changes:
   Rogers already hashes `cardNumber` and MBNA already hashes `endingIn`, so cards
   are already differentiated. Adding the name would invalidate every stored
   `rb-tx:` / `mbna-tx:` hash and cause mass duplicate uploads.
-- **Reconciliation needs no changes.** `computeSettledTagIds` already preserves
-  non-`Pending` tags, so a cardholder tag survives the pending → settled
-  transition. Existing update calls already pass `ownerUserId`.
-- **`Owner` is always either a live household member `name` or `Shared`/empty.**
-  Never emit a cached name without refreshing it against the household list.
+- **Never send `Owner` in `columnMapping`.** Monarch rejects the whole upload; see
+  the constraints section above for the exact error.
+- **Never overwrite an owner a user set manually.** The owner sync pass skips any
+  row where `ownedByUser` is already populated, which is also what makes it
+  idempotent.
+- **The notes id survives while any marker tag remains.** Both halves of that rule
+  live in `core/markerTags`; any new marker tag must be added to `MARKER_TAGS` so
+  the rule keeps covering it.
+- **Only queue an owner update when one can actually be applied.** A row with no
+  resolved `monarchUserId` must not get the marker, or it would keep the marker
+  (and the id in its notes) forever.
+- **Both settings stay `off` by default**, so users who have not opted in see no
+  behaviour change and byte-identical CSV output.
 
 ---
 
@@ -229,10 +373,20 @@ cardholders from transactions gives the intended behaviour and avoids an extra
 HTTP call plus a second code path. Rogers has no equivalent endpoint, so
 transaction-derived discovery is also the only uniform approach.
 
-**Post-upload GraphQL owner assignment.** `updateTransaction(id, { ownerUserId })`
-exists and would let us set the owner without the CSV column, using a transient
-tag as a correlation key. It is strictly more expensive (one request per
-transaction) and only worth revisiting if the CSV column proves insufficient.
+**The `Owner` CSV column.** This was the original design and it does not work —
+Monarch's importer has no such column and rejects the upload outright. See the
+constraints section for the error. Superseded by the post-upload GraphQL pass.
+
+**In-memory handover from upload to owner sync.** Passing the uploaded rows
+directly to the owner pass in memory would avoid the marker tag entirely, but it
+cannot survive a partial failure: an interrupted sync would leave transactions
+permanently unattributed with nothing recording that work was outstanding. The
+marker tag makes the queue durable, which is the whole point.
+
+**Deferring owner sync to the next sync.** Simpler to implement — the marker tag
+already makes it safe — but it would leave every newly uploaded transaction
+unattributed until the following run. Running in the same sync after upload costs
+nothing extra and avoids the lag.
 
 **Tag-only (no Owner).** The original issue asked for a tag, but Monarch's native
 Owner field is semantically correct and filterable/reportable in ways a tag is
@@ -244,8 +398,13 @@ outside their Monarch household — are still served.
 ## Known limitations
 
 - **Owner requires a matching Monarch household member.** Authorized cardholders
-  who are not household members can never be mapped; they emit `Shared`. This is
-  surfaced in the settings widget rather than hidden.
+  who are not household members can never be mapped and are never queued for an
+  owner update. This is surfaced in the settings widget rather than hidden.
+- **One GraphQL request per transaction.** Unavoidable given the importer has no
+  owner column. Bounded by `OWNER_SYNC_MAX_UPDATES_PER_SYNC` per sync.
+- **First-sync attribution may lag by one sync.** Only if the
+  `pendingOwnerUpdate` tag has not propagated by the time the pass runs, and only
+  until the next sync. Degraded, never broken.
 - **No historical backfill.** Transactions uploaded before the feature was
   enabled (or before a second cardholder appeared) keep their original empty
   Owner and no tag.
@@ -258,7 +417,28 @@ outside their Monarch household — are still served.
 
 ## Follow-up work
 
+### Use Monarch's transaction-ID matching instead of scraping notes
+
+**This is the preferred long-term replacement for notes-hash correlation.**
+
+Monarch's CSV importer supports [*"Use transaction IDs to match transactions"*](https://help.monarch.com/hc/en-us/articles/4409682789908-Importing-Transactions-Manually#h_01K6Y94BW0034W98J2328NXFSP),
+and `id` **is** in the valid column list quoted above. That would let us send our
+`{prefix}:{hash}` as a first-class transaction id rather than smuggling it through
+the notes field, which would:
+
+- remove the id from user-visible notes entirely (currently the main cosmetic
+  cost of the feature);
+- remove the notes-scraping regex from both reconciliation and owner sync;
+- likely remove the need to retain the id at all, and with it the whole
+  marker-tag retention invariant.
+
+Deliberately deferred: it changes the correlation mechanism for pending
+reconciliation too, so it wants its own design pass and careful migration for
+transactions already carrying notes-embedded ids.
+
+### Smaller items
+
 - Verify `cardHolderName` presence on MBNA pending transactions.
 - Consider extending `hasCardholders` to Wealthsimple credit cards if a
   cardholder name is ever exposed in their activity feed.
-- Optional "re-tag last N days" action to backfill history, if requested.
+- Optional "re-own/re-tag last N days" action to backfill history, if requested.

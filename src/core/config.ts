@@ -28,6 +28,9 @@ export const API = {
 export const STORAGE = {
   // Global settings
   DEVELOPMENT_MODE: 'development_mode', // Global development mode toggle
+  // Experimental: override the columnMapping key used for the Owner CSV column.
+  // Set to '' to omit the Owner column from the mapping entirely.
+  MONARCH_CSV_OWNER_KEY: 'monarch_csv_owner_key',
   ACCOUNTS_LIST: 'questrade_accounts_list',
   MONARCH_CSRF_TOKEN: 'monarch_csrf_token',
   MONARCH_SESSION_EXPIRES_AT: 'monarch_session_expires_at',
@@ -136,6 +139,79 @@ export const WEALTHSIMPLE_BALANCE_RECONSTRUCTION_TYPES = new Set([
   'CREDIT_CARD',
   'PORTFOLIO_LINE_OF_CREDIT',
 ]);
+
+/**
+ * Monarch CSV importer field names, keyed by our CSV column header.
+ *
+ * The importer receives a `columnMapping` of {monarchFieldName: columnIndex}
+ * and reads ONLY the columns named there — an unmapped column is silently
+ * ignored rather than rejected. Keys follow Monarch's snake_case convention for
+ * its Transaction fields (`dataProviderDescription` → `data_provider_description`,
+ * `merchant.name` → `merchant_name`).
+ *
+ * `Account` is intentionally absent: the target account is already passed
+ * explicitly as `accountId` in the parse input, so mapping the column too risks
+ * a conflict.
+ */
+export const MONARCH_CSV_FIELD_KEYS: Record<string, string> = {
+  Date: 'date',
+  Merchant: 'merchant_name',
+  Category: 'category',
+  'Original Statement': 'data_provider_description',
+  Notes: 'notes',
+  Amount: 'amount',
+  Tags: 'tags',
+  // Owner is resolved separately via MONARCH_CSV_OWNER_FIELD_KEY so the key can
+  // be overridden at runtime while we determine what the parser accepts.
+} as const;
+
+/**
+ * `columnMapping` key for the Owner column.
+ *
+ * Empty because **Monarch's CSV importer has no owner column**. Sending one
+ * fails the whole upload:
+ *
+ *   "Invalid column mapping: 'owned_by_user' is not a valid column.
+ *    Valid columns: ['account', 'amount', 'category',
+ *    'data_provider_description', 'date', 'id', 'merchant_name', 'notes',
+ *    'tags']"
+ *
+ * Owner is therefore applied after upload by `services/common/ownerSync`.
+ * The key remains overridable via `STORAGE.MONARCH_CSV_OWNER_KEY` only so the
+ * closed avenue can be re-probed if Monarch ever adds the column.
+ */
+export const MONARCH_CSV_OWNER_FIELD_KEY = '';
+
+/**
+ * Monarch tags used as internal processing markers.
+ *
+ * These drive follow-up work after a CSV upload and are removed once that work
+ * completes. While ANY marker is still present on a transaction, its
+ * `{prefix}:{hash}` id is retained in the notes so the transaction can still be
+ * located; the step that removes the last marker also strips the id.
+ *
+ * That invariant is what makes the follow-up passes crash-safe: a transaction
+ * whose processing was interrupted keeps both its marker and its id, so a later
+ * sync can always find and finish it.
+ */
+export const MARKER_TAGS = {
+  /** Transaction is pending; drives pending reconciliation */
+  PENDING: 'Pending',
+  /** Transaction still needs its Monarch owner set; drives owner sync */
+  PENDING_OWNER_UPDATE: 'pendingOwnerUpdate',
+} as const;
+
+/** All marker tag names, for retention checks */
+export const ALL_MARKER_TAGS: readonly string[] = Object.values(MARKER_TAGS);
+
+/**
+ * Maximum owner updates attempted in a single sync.
+ *
+ * Owner sync issues one mutation per transaction. A first sync can produce
+ * hundreds, so the batch is capped and the remainder deferred to the next sync
+ * (the marker tag makes this safe) rather than firing an unbounded burst.
+ */
+export const OWNER_SYNC_MAX_UPDATES_PER_SYNC = 200;
 
 /**
  * Cardholder → Monarch owner/tag mapping constants.

@@ -108,10 +108,16 @@ jest.mock('../../../src/services/common/pendingReconciliation', () => ({
 jest.mock('../../../src/utils/csv', () => ({
   convertToCSV: jest.fn(() => 'Date,Merchant\n2024-01-15,Amazon'),
   MONARCH_CSV_COLUMNS: ['Date', 'Merchant', 'Category', 'Account', 'Original Statement', 'Notes', 'Amount', 'Tags', 'Owner'],
-  buildMonarchTags: jest.fn(({ isPending, cardholderTag } = {}) => [
+  buildMonarchTags: jest.fn(({ isPending, cardholderTag, ownerSyncPending } = {}) => [
     isPending ? 'Pending' : null,
+    ownerSyncPending ? 'pendingOwnerUpdate' : null,
     cardholderTag || null,
   ].filter(Boolean).join(',')),
+  resolveNotesTransactionId: jest.fn(({ isPending, pendingId, txHashId, ownerSyncPending } = {}) => {
+    if (isPending) return pendingId || txHashId || '';
+    if (ownerSyncPending) return txHashId || pendingId || '';
+    return '';
+  }),
 }));
 
 // Cardholder support is opt-in per account and disabled by default, so the
@@ -119,6 +125,17 @@ jest.mock('../../../src/utils/csv', () => ({
 jest.mock('../../../src/services/common/cardholders', () => ({
   syncCardholders: jest.fn(() => Promise.resolve({ cardholders: {}, shouldTag: false, shouldMapOwner: false })),
   applyCardholderFields: jest.fn((txs) => txs),
+  collectOwnerAssignments: jest.fn(() => new Map()),
+  // 'off' keeps the post-upload owner sync step out of the default workflow
+  getOwnerMode: jest.fn(() => 'off'),
+}));
+
+jest.mock('../../../src/services/common/ownerSync', () => ({
+  syncTransactionOwners: jest.fn(() => Promise.resolve({
+    success: true, updated: 0, alreadyOwned: 0, unmatched: 0, failed: 0, deferred: 0, error: null, noPendingOwners: true,
+  })),
+  buildOwnerResolver: jest.fn(() => () => null),
+  formatOwnerSyncMessage: jest.fn(() => 'None pending'),
 }));
 
 jest.mock('../../../src/ui/components/cardholderSelector', () => ({

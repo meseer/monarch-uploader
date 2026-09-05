@@ -6,11 +6,12 @@
  *
  * Two independent features are driven from a single discovered-cardholder map:
  *
- * - **Owner mapping** (`cardholderOwnerMode`: 'off' | 'on') — writes the
- *   Monarch `Owner` CSV column. Monarch matches this against household member
- *   `users[].name`; unrecognised values silently revert to the household
- *   default, so `CARDHOLDER.SHARED_OWNER` is emitted whenever a cardholder has
- *   no resolved member.
+ * - **Owner mapping** (`cardholderOwnerMode`: 'off' | 'on') — sets the Monarch
+ *   transaction Owner. Monarch's CSV importer has **no owner column**, so this
+ *   is applied by a post-upload GraphQL pass (`services/common/ownerSync`);
+ *   this service resolves the mapping and marks the affected rows via
+ *   `ownerSyncPending`. The `Owner` CSV column is still emitted, but only as
+ *   human-readable context in the generated file.
  * - **Cardholder tag** (`cardholderTagMode`: 'off' | 'auto' | 'always') — adds
  *   the cardholder's label to the Monarch `Tags` column. `auto` only tags once
  *   two or more distinct cardholders have ever been discovered for the account.
@@ -45,6 +46,7 @@ import { ACCOUNT_SETTINGS, getSettingDefault, hasCapability } from '../../core/i
 import accountService from './accountService';
 import { getHouseholdMembers, type HouseholdMember } from '../../api/monarchHousehold';
 import { findBestMemberMatch, type CardholderMatchType } from './cardholderMatching';
+import { resolveNotesTransactionId } from '../../core/markerTags';
 import type { CardholderInfo, ExtractCardholderHook } from '../../integrations/types';
 
 // ── Types ───────────────────────────────────────────────────
@@ -60,9 +62,9 @@ export interface CardholderEntry {
   /** Stable Monarch user id; null when Shared or unresolved */
   monarchUserId: string | null;
   /**
-   * Cached Monarch `users[].name`. This exact string is what gets written to
-   * the Owner CSV column. Refreshed each sync from the live household list
-   * (keyed on monarchUserId) so member renames don't cause silent reverts.
+   * Cached Monarch `users[].name`, used as the display label for the mapping.
+   * Refreshed each sync from the live household list (keyed on monarchUserId)
+   * so a member rename never leaves a stale name behind.
    */
   monarchUserName: string | null;
   /**
@@ -102,7 +104,7 @@ export interface CardholderResolution {
   cardholders: CardholderMap;
   /** Whether cardholder tags should be emitted this sync */
   shouldTag: boolean;
-  /** Whether the Owner column should be populated this sync */
+  /** Whether owner mapping is active this sync */
   shouldMapOwner: boolean;
 }
 
@@ -272,8 +274,8 @@ export function refreshMemberNames(
 
     const member = byId.get(entry.monarchUserId);
     if (!member) {
-      // Member no longer exists in the household — fall back to Shared so we
-      // never emit a name Monarch would reject.
+      // Member no longer exists in the household — revert to unresolved so we
+      // never try to assign an owner Monarch would reject.
       debugLog(`[cardholders] Mapped member ${entry.monarchUserId} for "${key}" no longer in household, reverting to Shared`);
       updated[key] = {
         ...entry, monarchUserId: null, monarchUserName: null, isShared: false, matchType: 'unresolved',
@@ -396,6 +398,26 @@ export function resolveOwner(
 }
 
 /**
+ * Resolve the Monarch user id a transaction's cardholder maps to.
+ *
+ * Returns null when the cardholder is absent, unmapped, or explicitly Shared —
+ * in all of those cases there is no owner to set, so nothing needs to be queued
+ * for the post-upload owner pass.
+ */
+export function resolveOwnerUserId(
+  tx: Record<string, unknown>,
+  cardholders: CardholderMap,
+  extract: ExtractCardholderHook,
+): string | null {
+  const info = safeExtract(extract, tx);
+
+  if (!info?.name) return null;
+
+  const entry = cardholders[info.name.trim()];
+  return entry?.monarchUserId || null;
+}
+
+/**
  * Resolve the cardholder tag value for a single transaction.
  * Returns an empty string when there is no cardholder to tag.
  */
@@ -414,8 +436,22 @@ export function resolveTag(
 }
 
 /**
- * Annotate transactions with `cardholderOwner` and/or `cardholderTag` fields
- * for the CSV converters to consume.
+ * Annotate transactions with the cardholder fields the CSV stage consumes.
+ *
+ * Three fields may be added:
+ * - `cardholderTag` — the label for the Tags column
+ * - `cardholderOwner` — the household member name, informational only (Monarch's
+ *   CSV importer has no owner column)
+ * - `cardholderOwnerUserId` — the Monarch user id to assign after upload
+ *
+ * `cardholderOwnerUserId` is the single source of truth for the owner feature
+ * downstream: the CSV layer derives the `pendingOwnerUpdate` marker from its
+ * presence, and the post-upload pass reads it to know what to assign.
+ *
+ * It is set **only** when the cardholder resolves to an actual household member.
+ * Rows resolving to Shared or left unmapped have no owner to apply, so marking
+ * them would queue work that could never complete and would leave the marker
+ * tag (and the id in the notes) stuck on them forever.
  *
  * Mutation-free: returns new transaction objects.
  */
@@ -438,12 +474,51 @@ export function applyCardholderFields<T extends Record<string, unknown>>(
     const annotated: Record<string, unknown> = { ...tx };
     if (shouldMapOwner) {
       annotated.cardholderOwner = resolveOwner(tx, cardholders, extract);
+      annotated.cardholderOwnerUserId = resolveOwnerUserId(tx, cardholders, extract);
     }
     if (shouldTag) {
       annotated.cardholderTag = resolveTag(tx, cardholders, extract);
     }
     return annotated as T;
   });
+}
+
+/**
+ * Build the `{prefix}:{hash}` id → Monarch user id map the post-upload owner
+ * pass needs.
+ *
+ * Keyed on exactly the id the CSV wrote into the notes (via
+ * `resolveNotesTransactionId`), so a row found in Monarch resolves back to the
+ * same owner decision that was made here. Rows without an owner or without an
+ * id contribute nothing.
+ *
+ * @param transactions - Transactions as handed to the CSV converter
+ * @returns Map of notes id → Monarch user id
+ */
+export function collectOwnerAssignments(
+  transactions: Array<Record<string, unknown>>,
+): Map<string, string> {
+  const assignments = new Map<string, string>();
+
+  if (!Array.isArray(transactions)) return assignments;
+
+  transactions.forEach((tx) => {
+    const ownerUserId = tx.cardholderOwnerUserId as string | null | undefined;
+    if (!ownerUserId) return;
+
+    const notesId = resolveNotesTransactionId({
+      isPending: tx.isPending === true,
+      pendingId: tx.pendingId as string | null | undefined,
+      txHashId: tx.txHashId as string | null | undefined,
+      ownerSyncPending: true,
+    });
+
+    if (notesId) {
+      assignments.set(notesId, ownerUserId);
+    }
+  });
+
+  return assignments;
 }
 
 // ── Orchestration ───────────────────────────────────────────
@@ -543,7 +618,9 @@ export default {
   getUnmappedCardholders,
   promptForUnmappedCardholders,
   resolveOwner,
+  resolveOwnerUserId,
   resolveTag,
   applyCardholderFields,
+  collectOwnerAssignments,
   syncCardholders,
 };

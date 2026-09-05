@@ -4,8 +4,17 @@
  */
 
 import { debugLog } from '../core/utils';
+import {
+  STORAGE,
+  MARKER_TAGS,
+  MONARCH_CSV_FIELD_KEYS,
+  MONARCH_CSV_OWNER_FIELD_KEY,
+} from '../core/config';
 import { applyMerchantMapping } from '../mappers/merchant';
 import { applyCategoryMapping } from '../mappers/category';
+// The notes-id rule lives with the retention rule it mirrors so the two halves
+// of the marker-tag invariant cannot drift apart.
+import { resolveNotesTransactionId } from '../core/markerTags';
 
 // ============================================================================
 // Types
@@ -25,6 +34,11 @@ export interface MonarchTagInputs {
   isPending?: boolean;
   /** Cardholder label (see services/common/cardholders) */
   cardholderTag?: string | null;
+  /**
+   * Adds the "pendingOwnerUpdate" marker tag, which queues this row for the
+   * post-upload owner sync pass (see services/common/ownerSync).
+   */
+  ownerSyncPending?: boolean;
   /** Any additional tags, e.g. a foreign currency code */
   extraTags?: Array<string | null | undefined>;
 }
@@ -38,11 +52,15 @@ interface RogersBankTransaction {
   referenceNumber?: string;
   isPending?: boolean;
   pendingId?: string;
+  /** Stable hash id present on settled rows too, for post-upload correlation */
+  txHashId?: string | null;
   resolvedMonarchCategory?: string | null;
-  /** Monarch household member name for the Owner column (set by cardholder service) */
+  /** Monarch household member name — informational only (see MONARCH_CSV_COLUMNS) */
   cardholderOwner?: string | null;
   /** Cardholder label for the Tags column (set by cardholder service) */
   cardholderTag?: string | null;
+  /** Monarch user id to assign after upload; presence queues the owner marker */
+  cardholderOwnerUserId?: string | null;
   foreign?: {
     originalAmount?: { value?: string; currency?: string };
     conversionMarkupRate?: number;
@@ -66,12 +84,16 @@ interface MbnaTransaction {
   referenceNumber?: string;
   isPending?: boolean;
   pendingId?: string;
+  /** Stable hash id present on settled rows too, for post-upload correlation */
+  txHashId?: string | null;
   resolvedMonarchCategory?: string | null;
   autoCategory?: string | null;
-  /** Monarch household member name for the Owner column */
+  /** Monarch household member name — informational only (see MONARCH_CSV_COLUMNS) */
   cardholderOwner?: string | null;
   /** Cardholder label for the Tags column */
   cardholderTag?: string | null;
+  /** Monarch user id to assign after upload; presence queues the owner marker */
+  cardholderOwnerUserId?: string | null;
   [key: string]: unknown;
 }
 
@@ -193,9 +215,11 @@ export function convertToCSV(data: CSVRow[], columns: string[] | null = null): s
 /**
  * Monarch CSV column order.
  *
- * `Owner` is matched by Monarch against household member `users[].name`.
- * Unrecognised values are silently reverted to the household default, so an
- * empty string is always safe when owner mapping is disabled.
+ * `Owner` is **never read by Monarch** — its importer has no owner column and
+ * rejects any attempt to map one (see `MONARCH_CSV_OWNER_FIELD_KEY`). The
+ * column is retained purely so a human inspecting the generated CSV can see the
+ * intended owner; the value is actually applied after upload by
+ * `services/common/ownerSync`.
  *
  * Exported so `syncOrchestrator` reuses this single definition rather than
  * duplicating the column list.
@@ -213,6 +237,57 @@ export const MONARCH_CSV_COLUMNS = [
 ];
 
 /**
+ * Build the `columnMapping` payload for Monarch's statement parser.
+ *
+ * Monarch reads ONLY the columns named in this mapping — an unmapped column is
+ * silently ignored rather than rejected. The mapping is derived from
+ * `MONARCH_CSV_COLUMNS` rather than hand-written so the two cannot drift apart;
+ * a hand-maintained literal is how the `Owner` column originally ended up
+ * unmapped and therefore invisible to the importer.
+ *
+ * The Owner key is read from GM storage so candidate keys can be tried without
+ * a rebuild (Monarch's accepted key name is unconfirmed):
+ *
+ *   GM_setValue('monarch_csv_owner_key', 'owner')   // try a different key
+ *   GM_setValue('monarch_csv_owner_key', '')        // omit Owner entirely
+ *
+ * @returns JSON string of {monarchFieldName: columnIndex}
+ */
+export function buildMonarchColumnMapping(): string {
+  const mapping: Record<string, number> = {};
+
+  MONARCH_CSV_COLUMNS.forEach((column, index) => {
+    const fieldKey = MONARCH_CSV_FIELD_KEYS[column];
+    if (fieldKey) {
+      mapping[fieldKey] = index;
+    }
+  });
+
+  // Owner is resolved separately so the key remains overridable at runtime.
+  const ownerIndex = MONARCH_CSV_COLUMNS.indexOf('Owner');
+  if (ownerIndex !== -1) {
+    let ownerKey = MONARCH_CSV_OWNER_FIELD_KEY;
+    try {
+      const override = GM_getValue(STORAGE.MONARCH_CSV_OWNER_KEY, undefined) as string | undefined;
+      if (override !== undefined) {
+        ownerKey = override;
+      }
+    } catch (error) {
+      debugLog('Could not read Owner column key override, using default:', error);
+    }
+
+    // An empty key intentionally omits Owner from the mapping.
+    if (ownerKey) {
+      mapping[ownerKey] = ownerIndex;
+    } else {
+      debugLog('Owner column key override is empty — omitting Owner from columnMapping');
+    }
+  }
+
+  return JSON.stringify(mapping);
+}
+
+/**
  * Build the Monarch `Tags` column value.
  *
  * Monarch's CSV importer reads multiple tags as a comma-separated list within
@@ -223,17 +298,27 @@ export const MONARCH_CSV_COLUMNS = [
  * tag when a transaction settles, so cardholder and currency tags survive the
  * pending → settled transition without any extra work.
  *
+ * `ownerSyncPending` adds the `pendingOwnerUpdate` marker, which is how the
+ * post-upload owner pass finds these rows again (the CSV upload returns no
+ * per-transaction ids, and no statement-id filter exists on the transaction
+ * query, so a tag is the only available correlation handle).
+ *
  * @returns Comma-separated tag list (empty string when there are no tags)
  */
 export function buildMonarchTags({
   isPending = false,
   cardholderTag = null,
+  ownerSyncPending = false,
   extraTags = [],
 }: MonarchTagInputs = {}): string {
   const tags: string[] = [];
 
   if (isPending) {
-    tags.push('Pending');
+    tags.push(MARKER_TAGS.PENDING);
+  }
+
+  if (ownerSyncPending) {
+    tags.push(MARKER_TAGS.PENDING_OWNER_UPDATE);
   }
 
   if (cardholderTag) {
@@ -332,9 +417,17 @@ export function convertTransactionsToMonarchCSV(
       }
     }
 
-    // For pending transactions, always include the generated hash ID for reconciliation
-    if (isPending && transaction.pendingId) {
-      notesParts.push(transaction.pendingId);
+    // Pending rows always carry their hash for reconciliation; settled rows
+    // carry it only when they still need a post-upload owner update.
+    const ownerSyncPending = Boolean(transaction.cardholderOwnerUserId);
+    const notesTxId = resolveNotesTransactionId({
+      isPending,
+      pendingId: transaction.pendingId,
+      txHashId: transaction.txHashId,
+      ownerSyncPending,
+    });
+    if (notesTxId) {
+      notesParts.push(notesTxId);
     }
 
     const notes = notesParts.join('\n');
@@ -347,7 +440,7 @@ export function convertTransactionsToMonarchCSV(
       'Original Statement': transaction.merchant?.name || '',
       Notes: notes,
       Amount: -(transaction.amount?.value || 0), // Negate amount for Rogers transactions
-      Tags: buildMonarchTags({ isPending, cardholderTag: transaction.cardholderTag }),
+      Tags: buildMonarchTags({ isPending, cardholderTag: transaction.cardholderTag, ownerSyncPending }),
       Owner: transaction.cardholderOwner || '',
     };
   });
@@ -393,9 +486,17 @@ export function convertMbnaTransactionsToMonarchCSV(
       notesParts.push(transaction.referenceNumber);
     }
 
-    // For pending transactions, always include the generated hash ID for reconciliation
-    if (isPending && transaction.pendingId) {
-      notesParts.push(transaction.pendingId);
+    // Pending rows always carry their hash for reconciliation; settled rows
+    // carry it only when they still need a post-upload owner update.
+    const ownerSyncPending = Boolean(transaction.cardholderOwnerUserId);
+    const notesTxId = resolveNotesTransactionId({
+      isPending,
+      pendingId: transaction.pendingId,
+      txHashId: transaction.txHashId,
+      ownerSyncPending,
+    });
+    if (notesTxId) {
+      notesParts.push(notesTxId);
     }
 
     const notes = notesParts.join('\n');
@@ -414,7 +515,7 @@ export function convertMbnaTransactionsToMonarchCSV(
       Notes: notes,
       // Amount signs already inverted in transaction processing (MBNA charge → negative, payment → positive)
       Amount: transaction.amount || 0,
-      Tags: buildMonarchTags({ isPending, cardholderTag: transaction.cardholderTag }),
+      Tags: buildMonarchTags({ isPending, cardholderTag: transaction.cardholderTag, ownerSyncPending }),
       Owner: transaction.cardholderOwner || '',
     };
   });
@@ -770,6 +871,7 @@ export default {
   convertToCSV,
   convertTransactionsToMonarchCSV,
   buildMonarchTags,
+  buildMonarchColumnMapping,
   parseCSV,
   escapeCSVField,
 };
