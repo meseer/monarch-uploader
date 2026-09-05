@@ -5,6 +5,8 @@
 
 import { debugLog } from '../../core/utils';
 import monarchApi from '../../api/monarch';
+import { getHouseholdMembers, type HouseholdMember } from '../../api/monarchHousehold';
+import { CARDHOLDER } from '../../core/config';
 import toast from '../toast';
 import { addModalKeyboardHandlers } from '../keyboardNavigation';
 
@@ -16,6 +18,15 @@ interface AccountCreationOptions {
   defaultIncludeInNetWorth?: boolean;
   trackingMethod?: 'balance' | 'holdings';
 }
+
+/**
+ * Sentinel `<option>` value for the Shared choice.
+ *
+ * Monarch models a shared account as `ownerUserId: null`, so this maps to "send
+ * no owner" rather than to any member id. An empty string keeps it distinct from
+ * every real user id.
+ */
+const SHARED_OWNER_VALUE = '';
 
 interface AccountSubtype {
   name: string;
@@ -96,6 +107,23 @@ export async function showAccountCreationDialog(
     return null;
   }
 
+  // Fetch household members for the owner dropdown.
+  //
+  // Non-fatal by design: account creation is the user's actual goal, so a
+  // household fetch failure omits the dropdown rather than blocking them. The
+  // owner can always be set in Monarch afterwards. A single-member household
+  // gets no dropdown either — there is nothing to choose between.
+  let householdMembers: HouseholdMember[] = [];
+  try {
+    const household = await getHouseholdMembers();
+    householdMembers = household.members || [];
+    debugLog(`Fetched ${householdMembers.length} household member(s) for the owner selector`);
+  } catch (error) {
+    debugLog('Could not fetch household members, omitting the owner selector:', error);
+  }
+
+  const showOwnerSelector = householdMembers.length > 1;
+
   return new Promise((resolve) => {
     // Set up keyboard navigation cleanup function
     let cleanupKeyboard = (): void => {};
@@ -164,6 +192,13 @@ export async function showAccountCreationDialog(
       defaultSubtype,
     );
     form.appendChild(subtypeGroup.container);
+
+    // Account Owner dropdown — Shared by default, matching Monarch's own default
+    let ownerGroup: DropdownGroupResult | null = null;
+    if (showOwnerSelector) {
+      ownerGroup = createOwnerDropdown('account-owner', 'Account Owner:', householdMembers);
+      form.appendChild(ownerGroup.container);
+    }
 
     // Initial Balance field (round to 2 decimal places) - hidden in holdings mode
     let balanceGroup: FormGroupResult | null = null;
@@ -352,6 +387,19 @@ export async function showAccountCreationDialog(
 
           debugLog(`Successfully created account with ID: ${accountId}`);
           toast.show(`Created account "${accountName}"`, 'info');
+        }
+
+        // Apply the chosen owner. Shared needs no call — Monarch's default for a
+        // new account is already shared (ownerUserId: null).
+        const selectedOwnerUserId = ownerGroup?.select.value || SHARED_OWNER_VALUE;
+        if (selectedOwnerUserId !== SHARED_OWNER_VALUE) {
+          const applied = await assignAccountOwner(accountId, selectedOwnerUserId);
+          if (!applied) {
+            toast.show(
+              'Account created, but the owner could not be set. You can set it in Monarch.',
+              'warning',
+            );
+          }
         }
 
         // Fetch the full account details to return
@@ -586,6 +634,105 @@ function createSubtypeDropdown(
   container.appendChild(select);
 
   return { container, label: labelEl, select };
+}
+
+/**
+ * Create the account owner dropdown.
+ *
+ * Monarch models account ownership as either a specific household member or
+ * **Shared** (`ownerUserId: null`), and Shared is Monarch's own default — so
+ * Shared is pre-selected here and requires no follow-up call.
+ *
+ * Members are listed by `displayName`, which is the label Monarch's UI shows.
+ * (Contrast the cardholder→transaction mapping, which caches `name`; here the
+ * value sent is the member **id**, so the label is purely cosmetic.)
+ */
+function createOwnerDropdown(
+  id: string,
+  label: string,
+  members: HouseholdMember[],
+): DropdownGroupResult {
+  const container = document.createElement('div');
+  container.id = `${id}-group`;
+  container.style.cssText = 'display: flex; flex-direction: column; gap: 5px;';
+
+  const labelEl = document.createElement('label');
+  labelEl.id = `${id}-label`;
+  labelEl.htmlFor = id;
+  labelEl.textContent = label;
+  labelEl.style.cssText = 'font-weight: bold; font-size: 0.9em;';
+
+  const select = document.createElement('select');
+  select.id = id;
+  select.style.cssText = `
+    padding: 8px;
+    border: 1px solid var(--mu-input-border, #ccc);
+    border-radius: 4px;
+    font-size: 1em;
+    background: var(--mu-input-bg, white);
+    color: var(--mu-text-primary, #333);
+  `;
+
+  // Shared first and pre-selected — matches Monarch's default for new accounts
+  const sharedOption = document.createElement('option');
+  sharedOption.value = SHARED_OWNER_VALUE;
+  sharedOption.textContent = CARDHOLDER.SHARED_OWNER;
+  sharedOption.selected = true;
+  select.appendChild(sharedOption);
+
+  [...members]
+    .sort((a, b) => (a.displayName || a.name || '').localeCompare(b.displayName || b.name || ''))
+    .forEach((member) => {
+      const option = document.createElement('option');
+      option.value = member.id;
+      option.textContent = member.displayName || member.name || member.id;
+      select.appendChild(option);
+    });
+
+  const hint = document.createElement('div');
+  hint.id = `${id}-hint`;
+  hint.style.cssText = 'font-size: 0.8em; color: var(--mu-text-secondary, #666);';
+  hint.textContent = 'Transactions in this account inherit this owner unless set individually.';
+
+  container.appendChild(labelEl);
+  container.appendChild(select);
+  container.appendChild(hint);
+
+  return { container, label: labelEl, select };
+}
+
+/**
+ * Assign an owner to a freshly created account.
+ *
+ * A separate call because `CreateManualAccountMutationInput` has no owner field —
+ * only `updateAccount` accepts `ownerUserId`.
+ *
+ * Non-fatal: the account already exists and that was the user's goal, so a
+ * failure here warns rather than throws. The result is verified against the
+ * returned `ownedByUser` because the mutation reports field errors in its
+ * payload rather than by rejecting.
+ *
+ * @returns True when the owner was applied and verified
+ */
+async function assignAccountOwner(accountId: string, ownerUserId: string): Promise<boolean> {
+  try {
+    const updated = await monarchApi.updateAccount({ id: accountId, ownerUserId });
+
+    if (updated?.ownedByUser?.id === ownerUserId) {
+      debugLog(`Assigned owner ${ownerUserId} to account ${accountId}`);
+      return true;
+    }
+
+    debugLog('Owner assignment did not take effect', {
+      accountId,
+      requested: ownerUserId,
+      actual: updated?.ownedByUser?.id ?? null,
+    });
+    return false;
+  } catch (error) {
+    debugLog(`Failed to assign owner to account ${accountId}:`, error);
+    return false;
+  }
 }
 
 /**

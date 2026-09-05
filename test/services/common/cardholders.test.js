@@ -534,29 +534,33 @@ describe('resolveOwner', () => {
       .toBe('Mykhailo Delegan');
   });
 
-  it('returns Shared for an unmapped cardholder', () => {
+  // Everything below returns EMPTY rather than "Shared". Nothing is assigned for
+  // these rows, so Monarch's account-level owner governs them. Printing "Shared"
+  // implied we were setting an owner, which we never do here.
+  it('returns empty for an unmapped cardholder', () => {
     expect(resolveOwner(rogersTx('MYKHAILO DELEGAN'), { 'MYKHAILO DELEGAN': entry() }, rogersExtract))
-      .toBe('Shared');
+      .toBe('');
   });
 
-  it('returns Shared for an explicitly Shared cardholder', () => {
+  it('returns empty for an explicitly Shared cardholder', () => {
+    // Deliberate Shared and never-mapped both mean "do not assign an owner"
     const cardholders = { 'MYKHAILO DELEGAN': entry({ isShared: true, matchType: 'manual' }) };
 
-    expect(resolveOwner(rogersTx('MYKHAILO DELEGAN'), cardholders, rogersExtract)).toBe('Shared');
+    expect(resolveOwner(rogersTx('MYKHAILO DELEGAN'), cardholders, rogersExtract)).toBe('');
   });
 
-  it('returns Shared for a transaction with no cardholder (e.g. a payment)', () => {
-    expect(resolveOwner({ description: 'PAYMENT' }, {}, rogersExtract)).toBe('Shared');
+  it('returns empty for a transaction with no cardholder (e.g. a payment)', () => {
+    expect(resolveOwner({ description: 'PAYMENT' }, {}, rogersExtract)).toBe('');
   });
 
-  it('returns Shared for a cardholder absent from the map', () => {
-    expect(resolveOwner(rogersTx('UNKNOWN PERSON'), {}, rogersExtract)).toBe('Shared');
+  it('returns empty for a cardholder absent from the map', () => {
+    expect(resolveOwner(rogersTx('UNKNOWN PERSON'), {}, rogersExtract)).toBe('');
   });
 
-  it('returns Shared when the extractor throws', () => {
+  it('returns empty when the extractor throws', () => {
     const throwing = () => { throw new Error('boom'); };
 
-    expect(resolveOwner(rogersTx('MYKHAILO DELEGAN'), {}, throwing)).toBe('Shared');
+    expect(resolveOwner(rogersTx('MYKHAILO DELEGAN'), {}, throwing)).toBe('');
   });
 });
 
@@ -589,13 +593,45 @@ describe('applyCardholderFields', () => {
     'MYKHAILO DELEGAN': entry({ monarchUserId: 'user-1', monarchUserName: 'Mykhailo Delegan', label: 'Mike' }),
   };
 
-  it('adds only the owner field when tagging is disabled', () => {
+  it('adds only the owner fields when tagging is disabled', () => {
     const [result] = applyCardholderFields([rogersTx('MYKHAILO DELEGAN')], {
       cardholders, extract: rogersExtract, shouldTag: false, shouldMapOwner: true,
     });
 
     expect(result.cardholderOwner).toBe('Mykhailo Delegan');
+    expect(result.cardholderOwnerUserId).toBe('user-1');
     expect(result.cardholderTag).toBeUndefined();
+  });
+
+  it('sets cardholderOwnerUserId — the field that actually drives assignment', () => {
+    const [result] = applyCardholderFields([rogersTx('MYKHAILO DELEGAN')], {
+      cardholders, extract: rogersExtract, shouldTag: false, shouldMapOwner: true,
+    });
+
+    expect(result.cardholderOwnerUserId).toBe('user-1');
+  });
+
+  it('leaves cardholderOwnerUserId null for an explicitly Shared cardholder', () => {
+    // Nothing to assign → no marker tag downstream → account default governs
+    const shared = { 'MYKHAILO DELEGAN': entry({ isShared: true, matchType: 'manual' }) };
+
+    const [result] = applyCardholderFields([rogersTx('MYKHAILO DELEGAN')], {
+      cardholders: shared, extract: rogersExtract, shouldTag: false, shouldMapOwner: true,
+    });
+
+    expect(result.cardholderOwnerUserId).toBeNull();
+    expect(result.cardholderOwner).toBe('');
+  });
+
+  it('leaves cardholderOwnerUserId null for an unmapped cardholder', () => {
+    const [result] = applyCardholderFields([rogersTx('MYKHAILO DELEGAN')], {
+      cardholders: { 'MYKHAILO DELEGAN': entry() },
+      extract: rogersExtract,
+      shouldTag: false,
+      shouldMapOwner: true,
+    });
+
+    expect(result.cardholderOwnerUserId).toBeNull();
   });
 
   it('adds only the tag field when owner mapping is disabled', () => {
@@ -733,14 +769,16 @@ describe('syncCardholders', () => {
     expect(promptForMember).not.toHaveBeenCalled();
   });
 
-  it('degrades to Shared and still persists when the household fetch fails', async () => {
+  it('assigns no owner but still persists when the household fetch fails', async () => {
+    // Non-fatal: the cardholder stays unresolved, so no owner is assigned this
+    // sync and Monarch's account-level owner governs those transactions.
     accountService.getAccountData.mockReturnValue({ cardholderOwnerMode: 'on', cardholderTagMode: 'off' });
     getHouseholdMembers.mockRejectedValue(new Error('network down'));
 
     const result = await syncCardholders(baseParams);
 
     expect(result.shouldMapOwner).toBe(true);
-    expect(result.cardholders['MYKHAILO DELEGAN'].monarchUserName).toBeNull();
+    expect(result.cardholders['MYKHAILO DELEGAN'].monarchUserId).toBeNull();
     expect(accountService.updateAccountInList).toHaveBeenCalled();
   });
 

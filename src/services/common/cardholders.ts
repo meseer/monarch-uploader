@@ -10,8 +10,12 @@
  *   transaction Owner. Monarch's CSV importer has **no owner column**, so this
  *   is applied by a post-upload GraphQL pass (`services/common/ownerSync`);
  *   this service resolves the mapping and marks the affected rows via
- *   `ownerSyncPending`. The `Owner` CSV column is still emitted, but only as
- *   human-readable context in the generated file.
+ *   `cardholderOwnerUserId`. The `Owner` CSV column is still emitted, but only
+ *   as human-readable context in the generated file.
+ *
+ *   Cardholders that are unmapped or explicitly Shared are left **untouched** —
+ *   no owner is assigned and no marker tag is emitted — so Monarch's
+ *   account-level owner governs those transactions.
  * - **Cardholder tag** (`cardholderTagMode`: 'off' | 'auto' | 'always') — adds
  *   the cardholder's label to the Monarch `Tags` column. `auto` only tags once
  *   two or more distinct cardholders have ever been discovered for the account.
@@ -275,8 +279,9 @@ export function refreshMemberNames(
     const member = byId.get(entry.monarchUserId);
     if (!member) {
       // Member no longer exists in the household — revert to unresolved so we
-      // never try to assign an owner Monarch would reject.
-      debugLog(`[cardholders] Mapped member ${entry.monarchUserId} for "${key}" no longer in household, reverting to Shared`);
+      // never try to assign an owner Monarch would reject. The transaction is
+      // then left untouched and the account-level owner governs it.
+      debugLog(`[cardholders] Mapped member ${entry.monarchUserId} for "${key}" no longer in household, reverting to unresolved`);
       updated[key] = {
         ...entry, monarchUserId: null, monarchUserName: null, isShared: false, matchType: 'unresolved',
       };
@@ -347,8 +352,9 @@ export async function promptForUnmappedCardholders(
     });
 
     if (!selection) {
-      // Cancelled — treat as Shared for this sync but do NOT persist,
-      // so the user is asked again next time.
+      // Cancelled — leave unmapped and do NOT persist, so the user is asked
+      // again next time rather than being silently locked into a wrong mapping.
+      // No owner is assigned for this cardholder in the meantime.
       debugLog(`[cardholders] Mapping prompt cancelled for "${cardholderName}", leaving unmapped`);
       continue;
     }
@@ -377,10 +383,23 @@ export async function promptForUnmappedCardholders(
 }
 
 /**
- * Resolve the Monarch Owner value for a single transaction.
+ * Resolve the display value for the informational `Owner` CSV column.
  *
- * Returns the mapped member's exact `users[].name`, or `CARDHOLDER.SHARED_OWNER`
- * when the cardholder is unmapped, explicitly Shared, or absent.
+ * Returns the mapped member's name, or an **empty string** when the cardholder
+ * is unmapped, explicitly Shared, or absent.
+ *
+ * Empty rather than `"Shared"` on purpose. Three distinct states collapse here:
+ *
+ * | State | Owner column | What happens in Monarch |
+ * |-------|--------------|-------------------------|
+ * | Mapped to a member | member name | owner assigned post-upload |
+ * | Explicitly Shared | empty | left alone → account default applies |
+ * | Never mapped | empty | left alone → account default applies |
+ *
+ * Only the first case is ever assigned. For the other two we deliberately do
+ * nothing, so Monarch's account-level owner (which the user can now choose at
+ * account-creation time) governs. Printing `"Shared"` implied we were setting
+ * something, which was misleading — nothing is sent for these rows at all.
  */
 export function resolveOwner(
   tx: Record<string, unknown>,
@@ -390,11 +409,11 @@ export function resolveOwner(
   const info = safeExtract(extract, tx);
 
   if (!info?.name) {
-    return CARDHOLDER.SHARED_OWNER;
+    return '';
   }
 
   const entry = cardholders[info.name.trim()];
-  return entry?.monarchUserName || CARDHOLDER.SHARED_OWNER;
+  return entry?.monarchUserName || '';
 }
 
 /**
@@ -532,8 +551,8 @@ export function collectOwnerAssignments(
  * 4. Refresh cached member names, then prompt for any unmapped cardholders
  * 5. Return the mode decisions for the CSV stage
  *
- * A household fetch failure is non-fatal: owner mapping degrades to `Shared`
- * for this sync and the sync continues.
+ * A household fetch failure is non-fatal: no owner updates are queued for this
+ * sync (so the account-level owner governs) and the sync continues.
  *
  * @returns Resolution containing the merged map and mode decisions
  */
@@ -592,7 +611,7 @@ export async function syncCardholders({
       }
     } catch (error) {
       debugLog('[cardholders] Failed to fetch Monarch household members, '
-        + 'falling back to Shared owner for this sync:', error);
+        + 'skipping owner assignment for this sync:', error);
     }
   }
 
