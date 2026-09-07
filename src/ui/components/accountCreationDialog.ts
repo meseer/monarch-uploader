@@ -7,6 +7,7 @@ import { debugLog } from '../../core/utils';
 import monarchApi from '../../api/monarch';
 import { getHouseholdMembers, type HouseholdMember } from '../../api/monarchHousehold';
 import { CARDHOLDER } from '../../core/config';
+import { isOwnerMappingAvailable } from '../../core/markerTags';
 import toast from '../toast';
 import { addModalKeyboardHandlers } from '../keyboardNavigation';
 
@@ -17,6 +18,15 @@ interface AccountCreationOptions {
   defaultBalance?: number;
   defaultIncludeInNetWorth?: boolean;
   trackingMethod?: 'balance' | 'holdings';
+  /**
+   * Whether the source integration exposes a cardholder name on its
+   * transactions (the `hasCardholders` capability).
+   *
+   * A **capability flag, not an integration id**, on purpose: this dialog is
+   * generic Monarch-account UI and has no business knowing about Rogers or
+   * MBNA. The caller resolves the capability and passes the answer.
+   */
+  supportsCardholders?: boolean;
 }
 
 /**
@@ -50,6 +60,17 @@ interface CreatedAccount {
   subtype?: { name: string };
   newlyCreated: boolean;
   manualInvestmentsTrackingMethod?: string;
+  /**
+   * Cardholder sync choices, present only when `supportsCardholders` was set.
+   *
+   * **Reported, not persisted.** These settings live on the *source* account
+   * entry, and this dialog only knows the Monarch account it just created — it
+   * has neither the integration id nor the source account id. The caller
+   * (which has both, and is already building an `upsertAccount` payload) folds
+   * these in, so persistence stays in the service layer where it belongs.
+   */
+  cardholderOwnerMode?: string;
+  cardholderTagMode?: string;
   [key: string]: unknown;
 }
 
@@ -71,6 +92,15 @@ interface DropdownGroupResult {
   select: HTMLSelectElement;
 }
 
+/** The cardholder sync controls and a reader for their current values */
+interface CardholderSectionResult {
+  container: HTMLDivElement;
+  ownerToggle: HTMLInputElement;
+  tagSelect: HTMLSelectElement;
+  /** Current choices, in the shape the account entry stores */
+  readValues: () => { cardholderOwnerMode: string; cardholderTagMode: string };
+}
+
 /**
  * Show account creation dialog
  */
@@ -84,6 +114,7 @@ export async function showAccountCreationDialog(
     defaultBalance = 0,
     defaultIncludeInNetWorth = true,
     trackingMethod = 'balance',
+    supportsCardholders = false,
   } = options;
 
   const isHoldingsMode = trackingMethod === 'holdings';
@@ -122,7 +153,10 @@ export async function showAccountCreationDialog(
     debugLog('Could not fetch household members, omitting the owner selector:', error);
   }
 
-  const showOwnerSelector = householdMembers.length > 1;
+  // Owner mapping needs 2+ members to mean anything; the rule is shared with the
+  // settings widget so the two cannot disagree about when it is offered.
+  const ownerMappingAvailable = isOwnerMappingAvailable(householdMembers.length);
+  const showOwnerSelector = ownerMappingAvailable;
 
   return new Promise((resolve) => {
     // Set up keyboard navigation cleanup function
@@ -216,6 +250,14 @@ export async function showAccountCreationDialog(
       );
       balanceGroup.input.step = '0.01';
       form.appendChild(balanceGroup.container);
+    }
+
+    // Cardholder sync section — only for integrations that expose a cardholder
+    // name. Rendered before balance so the ownership-related fields sit together.
+    let cardholderGroup: CardholderSectionResult | null = null;
+    if (supportsCardholders) {
+      cardholderGroup = createCardholderSection(ownerMappingAvailable);
+      form.appendChild(cardholderGroup.container);
     }
 
     // Include in Net Worth checkbox - hidden in holdings mode (always true for holdings accounts)
@@ -406,6 +448,11 @@ export async function showAccountCreationDialog(
         const accounts = await monarchApi.listAccounts(accountType) as unknown as Array<Record<string, unknown>>;
         const createdAccount = accounts.find((acc) => acc.id === accountId);
 
+        // Cardholder choices are REPORTED, not saved: they belong on the source
+        // account entry, whose id this dialog does not know. The caller folds
+        // them into the mapping write it is already performing.
+        const cardholderChoices = cardholderGroup?.readValues() ?? {};
+
         if (createdAccount) {
           cleanupKeyboard();
           overlay.remove();
@@ -415,6 +462,7 @@ export async function showAccountCreationDialog(
             ...createdAccount,
             newlyCreated: true,
             ...(isHoldingsMode && { manualInvestmentsTrackingMethod: 'holdings' }),
+            ...cardholderChoices,
           } as CreatedAccount);
         } else {
           // Fallback: return minimal account object
@@ -428,6 +476,7 @@ export async function showAccountCreationDialog(
             subtype: { name: accountSubtype },
             newlyCreated: true,
             ...(isHoldingsMode && { manualInvestmentsTrackingMethod: 'holdings' }),
+            ...cardholderChoices,
           });
         }
       } catch (error) {
@@ -699,6 +748,130 @@ function createOwnerDropdown(
   container.appendChild(hint);
 
   return { container, label: labelEl, select };
+}
+
+/**
+ * Create the cardholder sync section.
+ *
+ * Two independent controls, both defaulting to off so nothing changes for a user
+ * who ignores them:
+ *
+ * - **owner mapping** — a toggle, *disabled with a hint* when the household has
+ *   fewer than two members, since assigning every transaction to the only member
+ *   is exactly what the account-level owner already does
+ * - **cardholder tag** — always available; labelling who spent what is useful
+ *   even in a single-member household
+ *
+ * @param ownerMappingAvailable - Whether the household supports owner mapping
+ */
+function createCardholderSection(ownerMappingAvailable: boolean): CardholderSectionResult {
+  const container = document.createElement('div');
+  container.id = 'cardholder-sync-section';
+  container.style.cssText = 'display: flex; flex-direction: column; gap: 12px; '
+    + 'padding: 12px; border: 1px solid var(--mu-input-border, #ddd); border-radius: 6px;';
+
+  const heading = document.createElement('div');
+  heading.id = 'cardholder-sync-heading';
+  heading.textContent = 'Cardholder sync';
+  heading.style.cssText = 'font-weight: bold; font-size: 0.9em;';
+  container.appendChild(heading);
+
+  const intro = document.createElement('div');
+  intro.id = 'cardholder-sync-intro';
+  intro.style.cssText = 'font-size: 0.8em; color: var(--mu-text-secondary, #666);';
+  intro.textContent = 'This card reports who made each purchase. You can change these later in settings.';
+  container.appendChild(intro);
+
+  // ── Owner mapping toggle ──────────────────────────────────
+  const ownerRow = document.createElement('div');
+  ownerRow.id = 'cardholder-owner-mode-group';
+  ownerRow.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
+
+  const ownerLabelRow = document.createElement('div');
+  ownerLabelRow.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+
+  const ownerToggle = document.createElement('input');
+  ownerToggle.id = 'cardholder-owner-mode';
+  ownerToggle.type = 'checkbox';
+  ownerToggle.checked = false;
+  ownerToggle.disabled = !ownerMappingAvailable;
+  ownerToggle.style.cssText = `width: 18px; height: 18px; cursor: ${ownerMappingAvailable ? 'pointer' : 'not-allowed'};`;
+
+  const ownerLabel = document.createElement('label');
+  ownerLabel.id = 'cardholder-owner-mode-label';
+  ownerLabel.htmlFor = ownerToggle.id;
+  ownerLabel.textContent = 'Set transaction owner from cardholder';
+  const ownerLabelCursor = ownerMappingAvailable ? 'pointer' : 'default';
+  const ownerLabelDimming = ownerMappingAvailable ? '' : ' opacity: 0.6;';
+  ownerLabel.style.cssText = `font-size: 0.9em; cursor: ${ownerLabelCursor};${ownerLabelDimming}`;
+
+  ownerLabelRow.appendChild(ownerToggle);
+  ownerLabelRow.appendChild(ownerLabel);
+  ownerRow.appendChild(ownerLabelRow);
+
+  const ownerHint = document.createElement('div');
+  ownerHint.id = 'cardholder-owner-mode-hint';
+  ownerHint.style.cssText = 'font-size: 0.8em; color: var(--mu-text-secondary, #666); padding-left: 26px;';
+  ownerHint.textContent = ownerMappingAvailable
+    ? 'Assigns each transaction to the matching Monarch household member.'
+    : 'Not available for single-member households — the account owner already covers this.';
+  ownerRow.appendChild(ownerHint);
+
+  container.appendChild(ownerRow);
+
+  // ── Cardholder tag select ─────────────────────────────────
+  const tagRow = document.createElement('div');
+  tagRow.id = 'cardholder-tag-mode-group';
+  tagRow.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
+
+  const tagLabel = document.createElement('label');
+  tagLabel.id = 'cardholder-tag-mode-label';
+  tagLabel.htmlFor = 'cardholder-tag-mode';
+  tagLabel.textContent = 'Tag transactions with cardholder';
+  tagLabel.style.cssText = 'font-size: 0.9em;';
+
+  const tagSelect = document.createElement('select');
+  tagSelect.id = 'cardholder-tag-mode';
+  tagSelect.style.cssText = 'padding: 6px; border: 1px solid var(--mu-input-border, #ccc); '
+    + 'border-radius: 4px; font-size: 0.9em; background: var(--mu-input-bg, white); '
+    + 'color: var(--mu-text-primary, #333);';
+
+  [
+    { value: CARDHOLDER.TAG_MODE.OFF, label: 'Off' },
+    { value: CARDHOLDER.TAG_MODE.AUTO, label: 'Auto' },
+    { value: CARDHOLDER.TAG_MODE.ALWAYS, label: 'Always' },
+  ].forEach(({ value, label }) => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    option.selected = value === CARDHOLDER.TAG_MODE.OFF;
+    tagSelect.appendChild(option);
+  });
+
+  const tagHint = document.createElement('div');
+  tagHint.id = 'cardholder-tag-mode-hint';
+  tagHint.style.cssText = 'font-size: 0.8em; color: var(--mu-text-secondary, #666);';
+  tagHint.textContent = '"Auto" only tags once two or more cardholders have been detected.';
+
+  tagRow.appendChild(tagLabel);
+  tagRow.appendChild(tagSelect);
+  tagRow.appendChild(tagHint);
+
+  container.appendChild(tagRow);
+
+  return {
+    container,
+    ownerToggle,
+    tagSelect,
+    readValues: () => ({
+      // A disabled toggle can never be checked, so this stays 'off' for a
+      // single-member household without a separate guard.
+      cardholderOwnerMode: ownerToggle.checked
+        ? CARDHOLDER.OWNER_MODE.ON
+        : CARDHOLDER.OWNER_MODE.OFF,
+      cardholderTagMode: tagSelect.value || CARDHOLDER.TAG_MODE.OFF,
+    }),
+  };
 }
 
 /**

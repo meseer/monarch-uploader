@@ -1,7 +1,7 @@
 # Cardholder → Monarch Owner & Tag Mapping
 
 > **Status:** Active  
-> **Updated:** 2026-09-05  
+> **Updated:** 2026-09-07  
 > **Author:** @meseer  
 > **Note:** Implements [issue #165](https://github.com/meseer/monarch-uploader/issues/165). Owner mapping and cardholder tagging are both opt-in and off by default.
 
@@ -125,6 +125,59 @@ Nothing. An unmapped or explicitly-Shared cardholder produces no marker tag, no
 print `"Shared"`, which implied we were assigning something; we never were.
 Leaving it empty lets Monarch's account-level owner govern, which is the
 intended behaviour.
+
+---
+
+## Opting in during account creation
+
+Both cardholder settings default to **off**, so a user who never opens the
+settings modal never benefits from the feature. The account-creation dialog
+therefore offers them at the moment an account is first mapped:
+
+| Control | Default | Availability |
+|---------|---------|--------------|
+| Set transaction owner from cardholder | off | **Disabled** for single-member households |
+| Tag transactions with cardholder | Off | Always available |
+
+Owner mapping needs two or more household members to mean anything — with one,
+every transaction resolves to the same person, which is precisely what the
+account-level owner already expresses. The toggle is *disabled with a stated
+reason* rather than hidden, so the capability stays discoverable. Tagging has no
+such constraint: labelling who spent what is useful in a single-member household
+too.
+
+`isOwnerMappingAvailable()` in `core/markerTags` is the single source of that
+rule, used by both the creation dialog and the settings widget so the two cannot
+disagree. It lives in `core/` because UI must not import from `services` — pulling
+in the cardholder service would drag `accountService` and storage with it, which
+broke a test suite when first attempted.
+
+### The dialog is a pure form
+
+The dialog receives a **`supportsCardholders` capability flag**, deliberately not
+an integration id. It is generic Monarch-account UI shared by every integration
+and has no business knowing about Rogers or MBNA; handing it the *answer* rather
+than the means to look one up keeps that boundary intact. There is precedent —
+`balanceOnlyTracking` is already passed the same way.
+
+It then **reports** the chosen values on the resolved account rather than saving
+them, because:
+
+- the settings live on the **source** account entry, and the dialog only knows the
+  *Monarch* account it just created — it never learns the source account id;
+- storage writes belong in the service layer.
+
+`resolveAccountMapping` (and the Rogers equivalent) folds the reported values into
+the `upsertAccount` payload it is **already** building, so there is one write and
+no ordering concern about whether the account entry exists yet.
+
+### Known gap
+
+The controls appear only when a Monarch account is **created**. A user who maps to
+an **existing** Monarch account is not asked and silently gets `off`/`off`. Both
+settings remain fully editable in the settings modal afterwards, so this is a
+discoverability gap rather than a dead end. A separate post-mapping prompt would
+close it, at the cost of an extra modal in every first sync.
 
 ---
 
@@ -374,7 +427,8 @@ Everything else is shared:
 | Matching strategies (pure) | `src/services/common/cardholderMatching.ts` |
 | Discovery, merge, resolution | `src/services/common/cardholders.ts` |
 | CSV columns + tag builder | `src/utils/csv.ts` (`MONARCH_CSV_COLUMNS`, `buildMonarchTags`) |
-| Marker tags + notes-id retention rule | `src/core/markerTags.ts` |
+| Marker tags, notes-id retention rule, owner-mapping availability | `src/core/markerTags.ts` |
+| Cardholder opt-in during account creation | `src/ui/components/accountCreationDialog.ts` |
 | Post-upload owner assignment | `src/services/common/ownerSync.ts` |
 | Mapping prompt | `src/ui/components/cardholderSelector.ts` |
 | Settings widget | `src/ui/components/settingsModalCardholders.ts` |
@@ -488,6 +542,9 @@ outside their Monarch household — are still served.
   owner update. This is surfaced in the settings widget rather than hidden.
 - **Account ownership can only be chosen at creation time** through this script.
   Changing it later is done in Monarch; there is no settings-panel equivalent yet.
+- **Cardholder sync can only be opted into at creation time**, and only when a
+  Monarch account is created rather than selected. Changing it later is done in
+  the settings modal.
 - **One GraphQL request per transaction.** Unavoidable given the importer has no
   owner column. Bounded by `OWNER_SYNC_MAX_UPDATES_PER_SYNC` per sync.
 - **First-sync attribution may lag by one sync.** Only if the

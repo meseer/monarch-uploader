@@ -15,6 +15,7 @@ import {
   shouldRetainTxIdInNotes,
   selectTagsByIds,
   resolveNotesTransactionId,
+  isOwnerMappingAvailable,
 } from '../../src/core/markerTags';
 
 // Realistic tag fixtures: Monarch returns tag objects with id + name
@@ -22,6 +23,32 @@ const PENDING = { id: 'tag-pending', name: 'Pending' };
 const OWNER = { id: 'tag-owner', name: 'pendingOwnerUpdate' };
 const USER_TAG = { id: 'tag-eur', name: 'EUR' };
 const CARDHOLDER_TAG = { id: 'tag-mike', name: 'Mykhailo Delegan' };
+
+// Lives in core/ so the account-creation dialog and the settings widget can both
+// use it without importing from services — one rule, two surfaces, no drift.
+describe('isOwnerMappingAvailable', () => {
+  it('is unavailable for a single-member household', () => {
+    // Assigning every transaction to the only member is exactly what the
+    // account-level owner already expresses
+    expect(isOwnerMappingAvailable(1)).toBe(false);
+  });
+
+  it('is available from two members up', () => {
+    expect(isOwnerMappingAvailable(2)).toBe(true);
+    expect(isOwnerMappingAvailable(5)).toBe(true);
+  });
+
+  it('is unavailable for an empty household', () => {
+    expect(isOwnerMappingAvailable(0)).toBe(false);
+  });
+
+  it('is unavailable when the count is unknown', () => {
+    // e.g. the household fetch failed — fail closed rather than offering a
+    // control that cannot work
+    expect(isOwnerMappingAvailable(undefined)).toBe(false);
+    expect(isOwnerMappingAvailable(null)).toBe(false);
+  });
+});
 
 // Marker recognition is intentionally not exported — it is exercised through
 // `shouldRetainTxIdInNotes`, which is the only decision callers should make.

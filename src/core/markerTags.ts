@@ -40,6 +40,30 @@ export interface NotesIdInputs {
   ownerSyncPending?: boolean;
 }
 
+/**
+ * Whether owner mapping can do anything useful for this household.
+ *
+ * Owner mapping assigns a transaction to a specific household member, so it
+ * needs at least two members to be meaningful — with one, every transaction
+ * resolves to the same person, which is exactly what the account-level owner
+ * already expresses.
+ *
+ * Lives in `core/` rather than the cardholder service because both the generic
+ * account-creation dialog and the settings widget need it, and UI must not pull
+ * in `services` (importing the cardholder service would drag `accountService`
+ * and storage along with it). One home for the rule is what stops the two
+ * surfaces disagreeing about when the control is offered.
+ *
+ * Cardholder *tagging* has no such requirement — labelling who spent what is
+ * useful even in a single-member household — so tagging is always available.
+ *
+ * @param memberCount - Number of Monarch household members
+ * @returns True when owner mapping should be offered
+ */
+export function isOwnerMappingAvailable(memberCount: number): boolean {
+  return (memberCount ?? 0) > 1;
+}
+
 /** Normalize a tag name for comparison (Monarch tag names are case-insensitive) */
 function normalizeTagName(name: string | null | undefined): string {
   return (name || '').trim().toLowerCase();

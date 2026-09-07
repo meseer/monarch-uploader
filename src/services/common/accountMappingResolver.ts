@@ -13,9 +13,40 @@
 
 import { debugLog } from '../../core/utils';
 import monarchApi from '../../api/monarch';
+import { hasCapability, ACCOUNT_SETTINGS } from '../../core/integrationCapabilities';
 import accountService from './accountService';
 import toast from '../../ui/toast';
 import { showMonarchAccountSelectorWithCreate } from '../../ui/components/accountSelectorWithCreate';
+
+/**
+ * Pull the cardholder sync choices out of the dialog's result.
+ *
+ * The creation dialog reports these rather than saving them — it knows the
+ * Monarch account it created but not the *source* account these settings live
+ * on. Folding them into the mapping write keeps persistence in the service layer
+ * and avoids a second write.
+ *
+ * Returns an empty object when the dialog did not offer the controls (integration
+ * without the capability, or an existing account was selected), so the mapping
+ * payload is unchanged for everyone else.
+ */
+function extractCardholderSettings(
+  monarchAccount: Record<string, unknown>,
+): Record<string, string> {
+  const settings: Record<string, string> = {};
+
+  const ownerMode = monarchAccount[ACCOUNT_SETTINGS.CARDHOLDER_OWNER_MODE];
+  const tagMode = monarchAccount[ACCOUNT_SETTINGS.CARDHOLDER_TAG_MODE];
+
+  if (typeof ownerMode === 'string') {
+    settings[ACCOUNT_SETTINGS.CARDHOLDER_OWNER_MODE] = ownerMode;
+  }
+  if (typeof tagMode === 'string') {
+    settings[ACCOUNT_SETTINGS.CARDHOLDER_TAG_MODE] = tagMode;
+  }
+
+  return settings;
+}
 
 /** Parameters for resolveAccountMapping */
 interface ResolveAccountMappingParams {
@@ -81,6 +112,9 @@ export async function resolveAccountMapping({
   const createDefaults = {
     defaultName: accountDisplayName,
     ...(manifest.accountCreateDefaults || {}),
+    // A capability flag, not an integration id: the dialog stays generic
+    // Monarch-account UI and only needs to know whether to offer the controls.
+    supportsCardholders: hasCapability(integrationId, 'hasCardholders'),
   } as Record<string, unknown>;
 
   const monarchAccountRaw = await new Promise((resolve) => {
@@ -118,7 +152,9 @@ export async function resolveAccountMapping({
     return { skipped: true };
   }
 
-  // 6. Save mapping
+  // 6. Save mapping, including any cardholder sync choices made in the dialog
+  const cardholderSettings = extractCardholderSettings(monarchAccount);
+
   const mappingData = {
     [manifest.accountKeyName]: buildAccountEntry(account),
     monarchAccount: {
@@ -127,8 +163,13 @@ export async function resolveAccountMapping({
     },
     syncEnabled: true,
     lastSyncDate: null,
+    ...cardholderSettings,
   };
   accountService.upsertAccount(integrationId, mappingData);
+
+  if (Object.keys(cardholderSettings).length > 0) {
+    debugLog(`[${integrationId}] Cardholder sync settings from creation dialog:`, cardholderSettings);
+  }
 
   debugLog(`[${integrationId}] Account mapping saved:`, accountDisplayName, '→', monarchAccount.displayName);
   toast.show(`Mapped: ${accountDisplayName} → ${monarchAccount.displayName}`, 'success', 3000);
