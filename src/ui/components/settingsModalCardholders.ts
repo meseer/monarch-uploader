@@ -19,6 +19,7 @@ import { ACCOUNT_SETTINGS, hasCapability } from '../../core/integrationCapabilit
 import accountService from '../../services/common/accountService';
 import { getHouseholdMembers, type HouseholdMember } from '../../api/monarchHousehold';
 import { describeMatchType } from '../../services/common/cardholderMatching';
+import { isOwnerMappingAvailable } from '../../core/markerTags';
 import type { CardholderEntry, CardholderMap } from '../../services/common/cardholders';
 import { createToggleSwitch } from './settingsModalHelpers';
 import toast from '../toast';
@@ -51,12 +52,18 @@ function createToggleSetting({
   description,
   isEnabled,
   onChange,
+  disabled = false,
+  disabledHint,
 }: {
   id: string;
   title: string;
   description: string;
   isEnabled: boolean;
   onChange: (isEnabled: boolean) => void;
+  /** Renders the row non-interactive and dimmed */
+  disabled?: boolean;
+  /** Explains WHY it is unavailable — a disabled control with no reason is hostile */
+  disabledHint?: string;
 }): HTMLElement {
   const row = document.createElement('div');
   row.id = id;
@@ -76,14 +83,37 @@ function createToggleSetting({
   descDiv.textContent = description;
   labelDiv.appendChild(descDiv);
 
+  // A disabled control with no stated reason is hostile, so the hint replaces
+  // the usual description emphasis when the row is unavailable.
+  if (disabled && disabledHint) {
+    const hintDiv = document.createElement('div');
+    hintDiv.id = `${id}-hint`;
+    hintDiv.style.cssText = 'font-size: 11px; color: var(--mu-text-secondary, #666); font-style: italic; margin-top: 2px;';
+    hintDiv.textContent = disabledHint;
+    labelDiv.appendChild(hintDiv);
+  }
+
   row.appendChild(labelDiv);
 
   const toggleContainer = document.createElement('div');
   toggleContainer.id = `${id}-toggle`;
-  toggleContainer.style.cssText = 'flex-shrink: 0;';
-  toggleContainer.appendChild(createToggleSwitch(isEnabled, onChange, false));
+  toggleContainer.style.cssText = `flex-shrink: 0;${disabled ? ' opacity: 0.5; pointer-events: none;' : ''}`;
+  // Swallow the change when disabled rather than relying on pointer-events
+  // alone, so a keyboard or programmatic activation cannot write the setting.
+  toggleContainer.appendChild(createToggleSwitch(
+    isEnabled,
+    (value: boolean) => {
+      if (disabled) return;
+      onChange(value);
+    },
+    false,
+  ));
   toggleContainer.addEventListener('click', (e: Event) => e.stopPropagation());
   row.appendChild(toggleContainer);
+
+  if (disabled) {
+    row.style.opacity = '0.75';
+  }
 
   row.addEventListener('click', (e: Event) => e.stopPropagation());
   return row;
@@ -386,15 +416,21 @@ function createModeSettings(
   ownerMode: string,
   tagMode: string,
   onRefresh: (() => void) | null,
+  ownerMappingAvailable: boolean = true,
 ): DocumentFragment {
   const fragment = document.createDocumentFragment();
 
   fragment.appendChild(createToggleSetting({
     id: `cardholder-owner-mode-${accountId}`,
     title: 'Map cardholder to Monarch owner',
+    // Unmapped cardholders assign nothing at all — the account-level owner
+    // governs them. They do NOT get set to "Shared".
     description: 'Sets the transaction Owner. Requires a matching Monarch household member; '
-      + `unmapped cardholders use "${CARDHOLDER.SHARED_OWNER}".`,
+      + 'unmapped cardholders are left to the account owner.',
     isEnabled: ownerMode === CARDHOLDER.OWNER_MODE.ON,
+    // Same rule as the account-creation dialog, from one shared helper
+    disabled: !ownerMappingAvailable,
+    disabledHint: 'Not available for single-member households — the account owner already covers this.',
     onChange: (isEnabled) => {
       const value = isEnabled ? CARDHOLDER.OWNER_MODE.ON : CARDHOLDER.OWNER_MODE.OFF;
       const success = accountService.updateAccountInList(integrationId, accountId, {
@@ -473,7 +509,24 @@ export function renderCardholderMappingsSection(
   const ownerMode = accountEntry.cardholderOwnerMode ?? CARDHOLDER.OWNER_MODE.OFF;
   const tagMode = accountEntry.cardholderTagMode ?? CARDHOLDER.TAG_MODE.OFF;
 
-  section.appendChild(createModeSettings(integrationId, accountId, ownerMode, tagMode, onRefresh));
+  // The mode rows render immediately with owner mapping assumed available, then
+  // are re-rendered once the household size is known. Assuming available first
+  // avoids briefly showing the control as disabled to a multi-member household,
+  // which would be the more misleading of the two flickers.
+  const modeContainer = document.createElement('div');
+  modeContainer.id = `cardholders-modes-${integrationId}-${accountId}`;
+  modeContainer.appendChild(
+    createModeSettings(integrationId, accountId, ownerMode, tagMode, onRefresh, true),
+  );
+  section.appendChild(modeContainer);
+
+  /** Re-render the mode rows with the owner toggle disabled and explained */
+  const disableOwnerToggle = () => {
+    modeContainer.textContent = '';
+    modeContainer.appendChild(
+      createModeSettings(integrationId, accountId, ownerMode, tagMode, onRefresh, false),
+    );
+  };
 
   // ── Discovered cardholders ────────────────────────────────
   const cardholders = accountEntry.cardholders || {};
@@ -506,6 +559,7 @@ export function renderCardholderMappingsSection(
     empty.style.cssText = 'color: var(--mu-text-secondary, #666); font-style: italic; margin: 0; font-size: 12px;';
     listContainer.appendChild(empty);
     section.appendChild(listContainer);
+    // No cardholders and nothing to enrich, so no household request is made.
     return section;
   }
 
@@ -538,12 +592,30 @@ export function renderCardholderMappingsSection(
   listContainer.appendChild(list);
   section.appendChild(listContainer);
 
-  if (showMemberSelect) {
+  // ONE household fetch serves both consumers: the owner toggle's availability
+  // and the per-cardholder member selects. Fetching twice would double the
+  // request for no benefit.
+  //
+  // Only fetched when something actually needs it — with owner mapping off, the
+  // member selects are hidden and the toggle is the only consumer, so an
+  // account with no cardholders yet needs no request at all.
+  if (showMemberSelect || cardholderNames.length > 0) {
     getHouseholdMembers()
-      .then(({ members }) => renderRows(members, true))
+      .then(({ members }) => {
+        if (!isOwnerMappingAvailable(members.length)) {
+          disableOwnerToggle();
+        }
+        if (showMemberSelect) {
+          renderRows(members, true);
+        }
+      })
       .catch((error) => {
+        // Non-fatal: leave the toggle enabled and show persisted mappings
+        // read-only rather than hiding anything the user has configured.
         debugLog('[settingsCardholders] Failed to load Monarch household members:', error);
-        renderRows([], false);
+        if (showMemberSelect) {
+          renderRows([], false);
+        }
       });
   }
 

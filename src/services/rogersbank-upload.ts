@@ -25,7 +25,7 @@ import {
   getRetentionSettingsFromAccount,
 } from '../utils/transactionStorage';
 import accountService from './common/accountService';
-import { INTEGRATIONS, ACCOUNT_SETTINGS } from '../core/integrationCapabilities';
+import { INTEGRATIONS, ACCOUNT_SETTINGS, hasCapability } from '../core/integrationCapabilities';
 import {
   separateAndDeduplicateTransactions,
   reconcileRogersPendingTransactions,
@@ -798,6 +798,10 @@ export async function uploadRogersBankToMonarch() {
           currentBalance: { amount: currentBalance, currency: 'CAD' },
           accountType: 'Credit Card',
           warningMessage: accountWarningMessage,
+          // Rogers reports name.nameOnCard on every activity, so offer the
+          // cardholder sync controls during creation. A capability flag rather
+          // than an integration id keeps the dialog generic.
+          supportsCardholders: hasCapability(INTEGRATIONS.ROGERSBANK, 'hasCardholders'),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any);
       });
@@ -815,6 +819,18 @@ export async function uploadRogersBankToMonarch() {
         } catch (e) { /* ignore */ }
       }
 
+      // Cardholder sync choices are reported by the creation dialog rather than
+      // saved there (it has no source account id), so they are folded into this
+      // write. Read explicitly instead of relying on the monarchAccount spread,
+      // so the intent is visible and the keys cannot drift.
+      const cardholderSettings: Record<string, string> = {};
+      if (typeof monarchAccount[ACCOUNT_SETTINGS.CARDHOLDER_OWNER_MODE] === 'string') {
+        cardholderSettings[ACCOUNT_SETTINGS.CARDHOLDER_OWNER_MODE] = monarchAccount[ACCOUNT_SETTINGS.CARDHOLDER_OWNER_MODE];
+      }
+      if (typeof monarchAccount[ACCOUNT_SETTINGS.CARDHOLDER_TAG_MODE] === 'string') {
+        cardholderSettings[ACCOUNT_SETTINGS.CARDHOLDER_TAG_MODE] = monarchAccount[ACCOUNT_SETTINGS.CARDHOLDER_TAG_MODE];
+      }
+
       // Save mapping to consolidated storage using accountService.upsertAccount()
       // Include invertBalance flag: true for newly created manual accounts, false for linked accounts
       accountService.upsertAccount(INTEGRATIONS.ROGERSBANK, {
@@ -824,7 +840,12 @@ export async function uploadRogersBankToMonarch() {
         },
         monarchAccount,
         invertBalance: monarchAccount.newlyCreated === true,
+        ...cardholderSettings,
       });
+
+      if (Object.keys(cardholderSettings).length > 0) {
+        debugLog('Cardholder sync settings from creation dialog:', cardholderSettings);
+      }
     }
 
     // STEP 1: Sync credit limit
