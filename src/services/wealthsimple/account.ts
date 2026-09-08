@@ -23,7 +23,7 @@ import {
   uploadBalanceToMonarch,
 } from './balance';
 import { fetchAndProcessTransactions } from './transactions';
-import { isAlreadyUploaded } from './transactionIdMatching';
+import { isAlreadyUploaded, findMatchingUploadedId } from './transactionIdMatching';
 import { type WealthsimpleTransaction } from './transactionRulesHelpers';
 import { convertWealthsimpleTransactionsToMonarchCSV } from '../../utils/csv';
 import {
@@ -550,6 +550,13 @@ export async function uploadWealthsimpleTransactions(
     // Convert to Monarch CSV format with account-specific options
     const csvOptions = {
       storeTransactionDetailsInNotes: accountData.storeTransactionDetailsInNotes ?? false,
+      // The Id column must match the id the Monarch row was CREATED with.
+      // Wealthsimple appends a segment to `externalCanonicalId` when card
+      // activity settles, so a settled transaction's current id is not the one
+      // Monarch holds — the pending-era id is. This reuses the same variant
+      // matcher that pending reconciliation relies on, so both paths agree on
+      // what "the same transaction" means.
+      resolveUploadedId: (transactionId: string) => findMatchingUploadedId(uploadedTransactionIds, transactionId),
     };
     const csvData = convertWealthsimpleTransactionsToMonarchCSV(newTransactions as unknown as WealthsimpleTransaction[], accountName as string, csvOptions);
 

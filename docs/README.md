@@ -1,7 +1,7 @@
 # Monarch Uploader — Documentation
 
 > **Status:** Active  
-> **Updated:** 2026-09-04  
+> **Updated:** 2026-09-09  
 > **Author:** @meseer  
 
 All project documentation lives here. See the [root README](../README.md) for project setup and installation.
@@ -16,6 +16,7 @@ Architecture reference documents. These explain *how* the system works and *why*
 |----------|--------|-------------|
 | [Modular Integration Architecture](design/modular-integration-architecture.md) | **Active** | Core architecture: manifest, registry, source/sink, SyncHooks, generic UI |
 | [Cardholder → Owner & Tag Mapping](design/cardholder-mapping.md) | **Active** | Mapping institution cardholders to the Monarch Owner column and/or tags |
+| [Native Monarch Transaction IDs](design/monarch-native-transaction-ids.md) | Draft | Replacing notes-embedded `{prefix}:{hash}` ids with Monarch's CSV `id` column. Phase 1 (write ids) shipped; **later phases blocked upstream** — see ADR-008 |
 | [Cloud Sync Design](design/cloud-sync.md) | Draft | Cross-device settings sync via Firebase |
 | [Metrics & Instrumentation](design/metrics-and-instrumentation.md) | Draft | Telemetry and usage analytics design |
 | [Eliminate Upload Services Plan](design/eliminate-upload-services-plan.md) | Draft | Refactoring upload services into the modular architecture |
@@ -53,6 +54,7 @@ Immutable records of significant architectural decisions and the reasoning behin
 | [ADR-005](decisions/005-typescript-migration.md) | Migrate Codebase to TypeScript | Accepted | 2026-03-06 |
 | [ADR-006](decisions/006-shared-type-system.md) | Introduce Shared Monarch Domain Type System | Accepted | 2026-03-11 |
 | [ADR-007](decisions/007-monarch-session-cookie-auth.md) | Migrate Monarch Auth from Token to Session Cookie | Accepted | 2026-05-14 |
+| [ADR-008](decisions/008-monarch-csv-transaction-id-matching-does-not-work.md) | Monarch's CSV Transaction-ID Matching Does Not Work; Keep Notes-Based Tracking | Accepted | 2026-09-09 |
 
 See [`decisions/README.md`](decisions/README.md) for ADR conventions and the template.
 

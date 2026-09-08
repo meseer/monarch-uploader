@@ -3,6 +3,13 @@
  *
  * Covers: convertWealthsimpleTransactionsToMonarchCSV
  * (split out of csv.test.js to stay within the project file-size limit)
+ *
+ * Note on scope: assertions that an id is absent target the **Notes** column,
+ * not the whole CSV string. The `Id` column carries `ws-tx:{id}` on every row by
+ * design (Monarch's importer can match on it — see
+ * docs/design/monarch-native-transaction-ids.md), so a whole-CSV substring check
+ * would conflate the two mechanisms. What these tests are about is what the user
+ * sees in Notes.
  */
 
 import { convertWealthsimpleTransactionsToMonarchCSV } from '../../src/utils/csv';
@@ -19,6 +26,46 @@ jest.mock('../../src/mappers/merchant', () => ({
 jest.mock('../../src/mappers/category', () => ({
   applyCategoryMapping: jest.fn((category) => category || 'Uncategorized'),
 }));
+
+/**
+ * Read one named column out of a data row.
+ *
+ * Named rather than positional: the Monarch column list grows over time (`Owner`,
+ * then `Id`), so assertions like `endsWith(',EUR,')` quietly stop describing the
+ * Tags column the moment anything is appended. Quote-aware for commas, since
+ * Tags legitimately holds `"Pending,EUR"`.
+ */
+const field = (csv, rowIndex, columnName) => {
+  const splitRow = (row) => {
+    const values = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < row.length; i += 1) {
+      const ch = row[i];
+      if (ch === '"') {
+        if (inQuotes && row[i + 1] === '"') {
+          current += '"';
+          i += 1;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (ch === ',' && !inQuotes) {
+        values.push(current);
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+
+    values.push(current);
+    return values;
+  };
+
+  const lines = csv.split('\n');
+  const header = splitRow(lines[0]);
+  return splitRow(lines[rowIndex + 1])[header.indexOf(columnName)];
+};
 
 describe('CSV Conversion Utilities - Wealthsimple', () => {
   beforeEach(() => {
@@ -81,7 +128,7 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
       );
 
       // Settled transactions should NOT have transaction ID in notes
-      expect(result).not.toContain('tx-unique-123');
+      expect(field(result, 0, 'Notes')).toBe('');
       expect(result).not.toContain('PURCHASE');
     });
 
@@ -106,7 +153,7 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
 
       // Notes should be empty when disabled
       expect(result).not.toContain('PURCHASE');
-      expect(result).not.toContain('tx-unique-123');
+      expect(field(result, 0, 'Notes')).toBe('');
     });
 
     test('should default to NOT including transaction details in notes', () => {
@@ -126,7 +173,7 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
       const result = convertWealthsimpleTransactionsToMonarchCSV(transactions, 'Test Account');
 
       // Notes should be empty when disabled (default)
-      expect(result).not.toContain('tx-unique-123');
+      expect(field(result, 0, 'Notes')).toBe('');
     });
 
     test('should handle empty options object', () => {
@@ -143,7 +190,7 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
       const result = convertWealthsimpleTransactionsToMonarchCSV(transactions, 'Test Account', {});
 
       // Notes should be empty when disabled (default)
-      expect(result).not.toContain('tx-unique-123');
+      expect(field(result, 0, 'Notes')).toBe('');
     });
 
     test('should handle transactions without subType', () => {
@@ -166,7 +213,7 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
         { storeTransactionDetailsInNotes: true },
       );
       // Settled transactions should NOT have transaction ID in notes
-      expect(resultWithDetails).not.toContain('tx123');
+      expect(field(resultWithDetails, 0, 'Notes')).toBe('');
 
       const resultWithoutDetails = convertWealthsimpleTransactionsToMonarchCSV(
         transactions,
@@ -275,11 +322,9 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
       ];
 
       const result = convertWealthsimpleTransactionsToMonarchCSV(transactions, 'Test Account');
+
       // Tags column should be empty for settled transactions
-      const lines = result.split('\n');
-      const dataRow = lines[1]; // Second line is data
-      // The last field (Tags) should be empty
-      expect(dataRow.endsWith(',')).toBe(true);
+      expect(field(result, 0, 'Tags')).toBe('');
     });
 
     test('should always include transaction ID in notes for authorized transactions', () => {
@@ -330,7 +375,7 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
       );
 
       // Notes should NOT contain transaction ID for settled transactions when setting is disabled
-      expect(result).not.toContain('tx-settled-456');
+      expect(field(result, 0, 'Notes')).toBe('');
     });
 
     test('should handle mixed settled and authorized transactions correctly', () => {
@@ -368,12 +413,13 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
 
       // First transaction (settled) should NOT have Pending tag or transaction ID in notes
       expect(lines[1]).toContain('SETTLED MERCHANT');
-      expect(lines[1]).not.toContain('tx-settled');
+      expect(field(result, 0, 'Notes')).toBe('');
+      expect(field(result, 0, 'Tags')).toBe('');
 
       // Second transaction (authorized) should have Pending tag and transaction ID in notes
       expect(lines[2]).toContain('PENDING MERCHANT');
-      expect(lines[2]).toContain('Pending');
-      expect(lines[2]).toContain('tx-pending');
+      expect(field(result, 1, 'Tags')).toBe('Pending');
+      expect(field(result, 1, 'Notes')).toBe('ws-tx:tx-pending');
     });
 
     describe('Foreign currency tag', () => {
@@ -392,16 +438,13 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
         ...overrides,
       });
 
-      // Owner is the final Monarch CSV column and is always empty for
-      // Wealthsimple (no cardholder data), so rows end with ",<Tags>,".
       test('writes the currency code into the Tags column for a settled foreign transaction', () => {
         const result = convertWealthsimpleTransactionsToMonarchCSV(
           [buildForeignTransaction()],
           'Test Account',
         );
 
-        const dataRow = result.split('\n')[1];
-        expect(dataRow.endsWith(',EUR,')).toBe(true);
+        expect(field(result, 0, 'Tags')).toBe('EUR');
       });
 
       test('includes the FX notes alongside the currency tag', () => {
@@ -420,9 +463,9 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
           'Test Account',
         );
 
-        // Empty Tags followed by empty Owner
-        const dataRow = result.split('\n')[1];
-        expect(dataRow.endsWith(',,')).toBe(true);
+        expect(field(result, 0, 'Tags')).toBe('');
+        // Wealthsimple has no cardholder data, so Owner is always empty
+        expect(field(result, 0, 'Owner')).toBe('');
       });
 
       test('leaves the Tags column empty when foreignCurrency is absent entirely', () => {
@@ -431,8 +474,7 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
 
         const result = convertWealthsimpleTransactionsToMonarchCSV([transaction], 'Test Account');
 
-        const dataRow = result.split('\n')[1];
-        expect(dataRow.endsWith(',,')).toBe(true);
+        expect(field(result, 0, 'Tags')).toBe('');
       });
 
       test('emits both the Pending and currency tags for a pending foreign transaction', () => {
@@ -446,8 +488,7 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
           'Test Account',
         );
 
-        const dataRow = result.split('\n')[1];
-        expect(dataRow.endsWith(',"Pending,EUR",')).toBe(true);
+        expect(field(result, 0, 'Tags')).toBe('Pending,EUR');
       });
 
       test('emits only the Pending tag for a pending domestic transaction', () => {
@@ -456,9 +497,8 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
           'Test Account',
         );
 
-        const dataRow = result.split('\n')[1];
-        expect(dataRow.endsWith(',Pending,')).toBe(true);
-        expect(dataRow).not.toContain('EUR');
+        expect(field(result, 0, 'Tags')).toBe('Pending');
+        expect(result).not.toContain('EUR');
       });
 
       test('includes the FX notes alongside both tags while pending', () => {
@@ -482,10 +522,147 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
           'Test Account',
         );
 
-        const lines = result.split('\n');
-        expect(lines[1].endsWith(',EUR,')).toBe(true);
-        expect(lines[2].endsWith(',USD,')).toBe(true);
-        expect(lines[3].endsWith(',,')).toBe(true);
+        expect(field(result, 0, 'Tags')).toBe('EUR');
+        expect(field(result, 1, 'Tags')).toBe('USD');
+        expect(field(result, 2, 'Tags')).toBe('');
+      });
+    });
+
+    describe('Id column', () => {
+      // Monarch's importer can match transactions on an `id` column, so the same
+      // `ws-tx:{id}` string the notes carry is also emitted as a column. See
+      // docs/design/monarch-native-transaction-ids.md.
+      const wsTx = (overrides = {}) => ({
+        id: 'card-activity-123-VI-00-456-ABC',
+        date: '2024-01-15',
+        merchant: 'STARBUCKS',
+        originalMerchant: 'STARBUCKS #1234',
+        amount: -5.50,
+        status: 'settled',
+        resolvedMonarchCategory: 'Dining & Drinks',
+        notes: '',
+        ...overrides,
+      });
+
+      test('writes the prefixed id for a settled transaction', () => {
+        // Note the asymmetry with the notes, which deliberately omit the id on
+        // settled rows: the column is not user-visible, so it is unconditional.
+        const result = convertWealthsimpleTransactionsToMonarchCSV([wsTx()], 'Test Account');
+
+        expect(field(result, 0, 'Id')).toBe('ws-tx:card-activity-123-VI-00-456-ABC');
+        expect(field(result, 0, 'Notes')).toBe('');
+      });
+
+      test('writes the same id a pending row puts in its notes', () => {
+        const result = convertWealthsimpleTransactionsToMonarchCSV(
+          [wsTx({ status: 'authorized' })],
+          'Test Account',
+        );
+
+        const id = 'ws-tx:card-activity-123-VI-00-456-ABC';
+        expect(field(result, 0, 'Id')).toBe(id);
+        expect(field(result, 0, 'Notes')).toBe(id);
+      });
+
+      test('leaves the Id column empty when the transaction has no id', () => {
+        // An empty Id must never look like a real match key
+        const transaction = wsTx();
+        delete transaction.id;
+
+        const result = convertWealthsimpleTransactionsToMonarchCSV([transaction], 'Test Account');
+
+        expect(field(result, 0, 'Id')).toBe('');
+      });
+
+      describe('resolveUploadedId — the settlement id change', () => {
+        // Wealthsimple appends a segment to externalCanonicalId when card
+        // activity settles:
+        //   pending: card-activity-…-QIRIAS
+        //   settled: card-activity-…-QIRIAS-0tk4pfcsob83
+        //
+        // The Monarch row was created with the PENDING id, so that is the only
+        // value an `id` match can hit. resolveUploadedId supplies it.
+        const PENDING_ID = 'card-activity-527000993851-VI-00-0306231535741989-QIRIAS';
+        const SETTLED_ID = `${PENDING_ID}-0tk4pfcsob83`;
+
+        test('uses the pending-era id for a settled transaction that was uploaded while pending', () => {
+          const result = convertWealthsimpleTransactionsToMonarchCSV(
+            [wsTx({ id: SETTLED_ID })],
+            'Test Account',
+            { resolveUploadedId: (id) => (id === SETTLED_ID ? PENDING_ID : null) },
+          );
+
+          expect(field(result, 0, 'Id')).toBe(`ws-tx:${PENDING_ID}`);
+        });
+
+        test('falls back to the transaction\'s own id when it was never uploaded', () => {
+          // A brand-new transaction creates its own Monarch row, so its own id
+          // is the correct match key.
+          const result = convertWealthsimpleTransactionsToMonarchCSV(
+            [wsTx({ id: SETTLED_ID })],
+            'Test Account',
+            { resolveUploadedId: () => null },
+          );
+
+          expect(field(result, 0, 'Id')).toBe(`ws-tx:${SETTLED_ID}`);
+        });
+
+        test('falls back to the transaction\'s own id when no resolver is supplied', () => {
+          const result = convertWealthsimpleTransactionsToMonarchCSV(
+            [wsTx({ id: SETTLED_ID })],
+            'Test Account',
+          );
+
+          expect(field(result, 0, 'Id')).toBe(`ws-tx:${SETTLED_ID}`);
+        });
+
+        test('tolerates a resolver returning undefined', () => {
+          const result = convertWealthsimpleTransactionsToMonarchCSV(
+            [wsTx({ id: SETTLED_ID })],
+            'Test Account',
+            { resolveUploadedId: () => undefined },
+          );
+
+          expect(field(result, 0, 'Id')).toBe(`ws-tx:${SETTLED_ID}`);
+        });
+
+        test('leaves the NOTES carrying the current id, not the uploaded one', () => {
+          // Pending reconciliation resolves the variant itself and reads the
+          // notes; changing what the notes carry would break it. The two
+          // mechanisms are deliberately independent until Phase 3.
+          const result = convertWealthsimpleTransactionsToMonarchCSV(
+            [wsTx({ id: SETTLED_ID, status: 'authorized' })],
+            'Test Account',
+            { resolveUploadedId: () => PENDING_ID },
+          );
+
+          expect(field(result, 0, 'Notes')).toBe(`ws-tx:${SETTLED_ID}`);
+          expect(field(result, 0, 'Id')).toBe(`ws-tx:${PENDING_ID}`);
+        });
+
+        test('is not called for a transaction with no id', () => {
+          const resolveUploadedId = jest.fn();
+          const transaction = wsTx();
+          delete transaction.id;
+
+          convertWealthsimpleTransactionsToMonarchCSV([transaction], 'Test Account', { resolveUploadedId });
+
+          expect(resolveUploadedId).not.toHaveBeenCalled();
+        });
+
+        test('resolves each row independently', () => {
+          const result = convertWealthsimpleTransactionsToMonarchCSV(
+            [
+              wsTx({ id: SETTLED_ID }),
+              wsTx({ id: 'tx-never-seen', merchant: 'OTHER' }),
+            ],
+            'Test Account',
+            { resolveUploadedId: (id) => (id === SETTLED_ID ? PENDING_ID : null) },
+          );
+
+          expect(field(result, 0, 'Id')).toBe(`ws-tx:${PENDING_ID}`);
+          expect(field(result, 1, 'Id')).toBe('ws-tx:tx-never-seen');
+        });
       });
     });
 
@@ -513,9 +690,8 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
         );
 
         // Only the Interac memo should appear in notes
-        expect(result).toContain('Rent payment for January');
+        expect(field(result, 0, 'Notes')).toBe('Rent payment for January');
         expect(result).not.toContain('E_TRANSFER');
-        expect(result).not.toContain('funding_intent-abc123');
       });
 
       test('should include memo and technical details only for settled transactions (storeTransactionDetailsInNotes has no effect on transaction ID)', () => {
@@ -543,8 +719,8 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
         // Settled transactions: include memo and technical details, but NOT transaction ID
         expect(result).toContain('Payment for groceries');
         expect(result).toContain('Auto Deposit: No; Reference Number: CAkJgEwf');
-        // Transaction ID is never stored for settled transactions
-        expect(result).not.toContain('ws-tx:funding_intent-def456');
+        // Transaction ID is never stored in the NOTES for settled transactions
+        expect(field(result, 0, 'Notes')).not.toContain('ws-tx:funding_intent-def456');
         expect(result).not.toContain('E_TRANSFER');
       });
 
@@ -712,8 +888,8 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
         // Settled transactions include memo and technical details, but NOT transaction ID
         expect(result).toContain('Testing interac notes');
         expect(result).toContain('Auto Deposit: No; Reference Number: CAkJgEwf');
-        // Transaction ID is never stored for settled transactions
-        expect(result).not.toContain('ws-tx:funding_intent-fullformat');
+        // Transaction ID is never stored in the NOTES for settled transactions
+        expect(field(result, 0, 'Notes')).not.toContain('ws-tx:funding_intent-fullformat');
         expect(result).not.toContain('E_TRANSFER /');
       });
 
@@ -739,9 +915,8 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
           { storeTransactionDetailsInNotes: true },
         );
 
-        // Settled transactions: only memo, no transaction ID
-        expect(result).toContain('Just a memo');
-        expect(result).not.toContain('ws-tx:funding_intent-memoonly');
+        // Settled transactions: only memo, no transaction ID in the notes
+        expect(field(result, 0, 'Notes')).toBe('Just a memo');
         expect(result).not.toContain('E_TRANSFER /');
       });
 
@@ -767,9 +942,8 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
           { storeTransactionDetailsInNotes: true },
         );
 
-        // Settled transactions: only technical details, no transaction ID
-        expect(result).toContain('Auto Deposit: Yes; Reference Number: XYZ789');
-        expect(result).not.toContain('ws-tx:funding_intent-techonly2');
+        // Settled transactions: only technical details, no transaction ID in the notes
+        expect(field(result, 0, 'Notes')).toBe('Auto Deposit: Yes; Reference Number: XYZ789');
         expect(result).not.toContain('E_TRANSFER /');
       });
     });

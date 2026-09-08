@@ -12,7 +12,8 @@
  */
 
 import { debugLog } from '../../../../core/utils';
-import { convertToCSV } from '../../../../utils/csv';
+import { convertToCSV, MONARCH_CSV_COLUMNS } from '../../../../utils/csv';
+import { resolveMonarchTransactionId } from '../../../../core/transactionIds';
 import type { ProcessedMbnaTransaction } from './transactions';
 
 /** Options for MBNA CSV conversion */
@@ -31,6 +32,8 @@ interface MonarchCSVRow {
   Notes: string;
   Amount: number;
   Tags: string;
+  Owner: string;
+  Id: string;
   [key: string]: string | number;
 }
 
@@ -40,6 +43,11 @@ interface MonarchCSVRow {
  * Supports both settled and pending transactions:
  * - Settled transactions: standard CSV row with no tags
  * - Pending transactions: "Pending" tag and generated hash ID in notes (for reconciliation)
+ *
+ * NOTE: MBNA's live sync path is `services/common/syncOrchestrator`, not this
+ * file — nothing in production calls it today. It is kept in sync with the
+ * canonical column set anyway so that whoever does wire it up does not
+ * silently ship a CSV missing `Owner`/`Id`.
  *
  * @param transactions - Array of processed MBNA transaction objects (from processMbnaTransactions)
  * @param accountName - MBNA account name for the Account column
@@ -56,18 +64,6 @@ export function convertMbnaTransactionsToMonarchCSV(
   }
 
   const { storeTransactionDetailsInNotes = false } = options;
-
-  // Define Monarch CSV columns
-  const columns = [
-    'Date',
-    'Merchant',
-    'Category',
-    'Account',
-    'Original Statement',
-    'Notes',
-    'Amount',
-    'Tags',
-  ];
 
   // Transform transactions to Monarch format
   const monarchRows: MonarchCSVRow[] = transactions.map((transaction) => {
@@ -103,6 +99,16 @@ export function convertMbnaTransactionsToMonarchCSV(
       // Amount signs already inverted in transaction processing (MBNA charge → negative, payment → positive)
       Amount: transaction.amount || 0,
       Tags: isPending ? 'Pending' : '',
+      Owner: transaction.cardholderOwner || '',
+      // The `mbna-tx:{hash16}` hash, NOT `referenceNumber`: MBNA reports
+      // `referenceNumber: "TEMP"` until a transaction settles (it is how pending
+      // rows are detected), so it is identical across all pending rows and then
+      // changes at settlement — the two properties an id used for matching must
+      // not have. The hash is derived from fields that survive settlement.
+      Id: resolveMonarchTransactionId({
+        txHashId: transaction.txHashId,
+        pendingId: transaction.pendingId,
+      }),
     };
   });
 
@@ -114,5 +120,5 @@ export function convertMbnaTransactionsToMonarchCSV(
     sample: monarchRows[0],
   });
 
-  return convertToCSV(monarchRows, columns);
+  return convertToCSV(monarchRows, MONARCH_CSV_COLUMNS);
 }
