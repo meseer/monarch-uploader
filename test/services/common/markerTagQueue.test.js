@@ -17,6 +17,9 @@ import monarchApi from '../../../src/api/monarch';
 
 jest.mock('../../../src/core/utils', () => ({
   debugLog: jest.fn(),
+  logInfo: jest.fn(),
+  logWarning: jest.fn(),
+  logError: jest.fn(),
   formatDate: jest.fn((date) => {
     const d = date instanceof Date ? date : new Date(date);
     const year = d.getFullYear();

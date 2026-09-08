@@ -27,6 +27,9 @@ Object.defineProperty(global.document, 'querySelector', {
 // Mock dependencies
 jest.mock('../../src/core/utils', () => ({
   debugLog: jest.fn(),
+  logInfo: jest.fn(),
+  logWarning: jest.fn(),
+  logError: jest.fn(),
   formatDate: jest.fn((date) => {
     if (date instanceof Date) {
       return date.toISOString().split('T')[0];
@@ -96,6 +99,16 @@ jest.mock('../../src/api/monarch', () => ({
     setCreditLimit: jest.fn().mockResolvedValue(true),
     setAccountLogo: jest.fn().mockResolvedValue(true),
     validateAndRefreshAccountMapping: jest.fn(),
+    // Reached by the post-sync pending-status pass, which reads the Pending tag queue
+    getTagByName: jest.fn().mockResolvedValue(null),
+    getTransactionsList: jest.fn().mockResolvedValue({ results: [] }),
+    updateTransaction: jest.fn().mockResolvedValue({}),
+    updateTransactionWithPending: jest.fn().mockResolvedValue({ transaction: {}, pendingApplied: true }),
+    setTransactionTags: jest.fn().mockResolvedValue({}),
+    deleteTransaction: jest.fn().mockResolvedValue(true),
+    isPendingFieldSupported: jest.fn(() => true),
+    hasPendingFieldBeenProbed: jest.fn(() => false),
+    getPendingFieldProbe: jest.fn(() => null),
   },
 }));
 

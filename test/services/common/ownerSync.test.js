@@ -21,6 +21,9 @@ import {
 
 jest.mock('../../../src/core/utils', () => ({
   debugLog: jest.fn(),
+  logInfo: jest.fn(),
+  logWarning: jest.fn(),
+  logError: jest.fn(),
   formatDate: jest.fn((d) => d.toISOString().split('T')[0]),
 }));
 
@@ -100,6 +103,8 @@ describe('syncTransactionOwners — native pending flag piggyback', () => {
       'monarch-tx-1',
       expect.objectContaining({ ownerUserId: OWNER_ID }),
       true,
+      // 4th argument labels the probing pass in diagnostics
+      'ownerSync',
     );
     expect(monarchApi.updateTransaction).not.toHaveBeenCalled();
   });

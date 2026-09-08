@@ -34,6 +34,19 @@ export const STORAGE = {
   ACCOUNTS_LIST: 'questrade_accounts_list',
   MONARCH_CSRF_TOKEN: 'monarch_csrf_token',
   MONARCH_SESSION_EXPIRES_AT: 'monarch_session_expires_at',
+  /**
+   * Last observed verdict on whether Monarch accepts the undocumented `pending`
+   * field on `updateTransaction`.
+   *
+   * Persisted purely as a diagnostic: the verdict is decided by a probe whose
+   * evidence otherwise lives only in the console, and a page navigation or an
+   * expired session destroys it. Writing it down means the answer survives, and
+   * can be reported on a later sync.
+   *
+   * NOT read as a decision input — the runtime latch is deliberately
+   * session-scoped so Monarch adding support is picked up on the next reload.
+   */
+  MONARCH_PENDING_FIELD_PROBE: 'monarch_pending_field_probe',
   // Account lists with enhanced properties (skip flags, etc.)
   WEALTHSIMPLE_ACCOUNTS_LIST: 'wealthsimple_accounts_list',
   ROGERSBANK_ACCOUNTS_LIST: 'rogersbank_accounts_list',

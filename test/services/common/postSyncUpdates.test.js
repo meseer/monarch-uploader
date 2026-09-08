@@ -17,6 +17,9 @@ import { syncPendingStatuses } from '../../../src/services/common/pendingStatusS
 
 jest.mock('../../../src/core/utils', () => ({
   debugLog: jest.fn(),
+  logInfo: jest.fn(),
+  logWarning: jest.fn(),
+  logError: jest.fn(),
 }));
 
 jest.mock('../../../src/services/common/ownerSync', () => ({

@@ -16,6 +16,9 @@ import monarchApi from '../../../src/api/monarch';
 
 jest.mock('../../../src/core/utils', () => ({
   debugLog: jest.fn(),
+  logInfo: jest.fn(),
+  logWarning: jest.fn(),
+  logError: jest.fn(),
   formatDate: jest.fn((date) => {
     const d = date instanceof Date ? date : new Date(date);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -29,6 +32,9 @@ jest.mock('../../../src/api/monarch', () => ({
     getTransactionsList: jest.fn(),
     updateTransactionWithPending: jest.fn(),
     isPendingFieldSupported: jest.fn(),
+    // Read when reporting an unsupported field, so the log can cite the actual
+    // evidence and the pass that produced it.
+    getPendingFieldProbe: jest.fn(() => null),
   },
 }));
 
@@ -53,6 +59,7 @@ describe('pendingStatusSync', () => {
     // Optimistic by default, matching a fresh session
     monarchApi.isPendingFieldSupported.mockReturnValue(true);
     monarchApi.updateTransactionWithPending.mockResolvedValue({ transaction: {}, pendingApplied: true });
+    monarchApi.getPendingFieldProbe.mockReturnValue(null);
   });
 
   describe('nothing to do', () => {
@@ -83,7 +90,10 @@ describe('pendingStatusSync', () => {
       const result = await syncPendingStatuses(params);
 
       expect(result.flagged).toBe(1);
-      expect(monarchApi.updateTransactionWithPending).toHaveBeenCalledWith('tx-1', {}, true);
+      // The 4th argument labels the probing pass in diagnostics
+      expect(monarchApi.updateTransactionWithPending).toHaveBeenCalledWith(
+        'tx-1', {}, true, 'pendingStatusSync',
+      );
     });
 
     test('does not touch notes or tags when flagging', async () => {
@@ -119,7 +129,9 @@ describe('pendingStatusSync', () => {
       expect(result.flagged).toBe(1);
       expect(result.alreadyPending).toBe(2);
       expect(monarchApi.updateTransactionWithPending).toHaveBeenCalledTimes(1);
-      expect(monarchApi.updateTransactionWithPending).toHaveBeenCalledWith('tx-2', {}, true);
+      expect(monarchApi.updateTransactionWithPending).toHaveBeenCalledWith(
+        'tx-2', {}, true, 'pendingStatusSync',
+      );
     });
 
     test('counts a row with no id as failed rather than crashing', async () => {
@@ -156,7 +168,7 @@ describe('pendingStatusSync', () => {
 
     test('reports unsupported rather than failed', async () => {
       queueContains({ id: 'tx-1', pending: false }, { id: 'tx-2', pending: false });
-      monarchApi.updateTransactionWithPending.mockResolvedValueOnce({ transaction: {}, pendingApplied: false });
+      monarchApi.updateTransactionWithPending.mockResolvedValue({ transaction: {}, pendingApplied: false });
       monarchApi.isPendingFieldSupported.mockReturnValueOnce(true).mockReturnValue(false);
 
       const result = await syncPendingStatuses(params);
@@ -164,6 +176,7 @@ describe('pendingStatusSync', () => {
       // A missing platform feature is not a sync failure
       expect(result.success).toBe(true);
       expect(result.failed).toBe(0);
+      expect(result.unsupported).toBe(true);
     });
 
     test('issues no mutations at all when already latched before the pass', async () => {
@@ -173,6 +186,70 @@ describe('pendingStatusSync', () => {
       const result = await syncPendingStatuses(params);
 
       expect(monarchApi.updateTransactionWithPending).not.toHaveBeenCalled();
+      expect(result.unsupported).toBe(true);
+    });
+
+    test('reports that an EARLIER pass reached the verdict, not this one', async () => {
+      // The failure mode this exists to prevent: claiming "Monarch does not accept
+      // the field" when this pass never tested it. The deciding probe usually runs
+      // in owner sync or the settle path.
+      queueContains({ id: 'tx-1', pending: false }, { id: 'tx-2', pending: false });
+      monarchApi.isPendingFieldSupported.mockReturnValue(false);
+      monarchApi.getPendingFieldProbe.mockReturnValue({
+        verdict: 'rejected',
+        detail: 'Unknown argument "pending"',
+        context: 'ownerSync',
+        transactionId: 'monarch-tx-9',
+        at: '2026-09-07T18:32:00.000Z',
+      });
+
+      const result = await syncPendingStatuses(params);
+
+      expect(result.alreadyUnsupported).toBe(true);
+      expect(result.unsupported).toBe(true);
+      expect(monarchApi.updateTransactionWithPending).not.toHaveBeenCalled();
+    });
+
+    test('does NOT claim it was already unsupported when this pass proved it', async () => {
+      queueContains({ id: 'tx-1', pending: false }, { id: 'tx-2', pending: false });
+      monarchApi.updateTransactionWithPending.mockResolvedValue({ transaction: {}, pendingApplied: false });
+      monarchApi.isPendingFieldSupported.mockReturnValueOnce(true).mockReturnValue(false);
+
+      const result = await syncPendingStatuses(params);
+
+      expect(result.ignored).toBe(1);
+      expect(result.unsupported).toBe(true);
+      expect(result.alreadyUnsupported).toBeUndefined();
+    });
+
+    test('cites the probe evidence in a warning so it is never lost', async () => {
+      const { logWarning } = require('../../../src/core/utils');
+      queueContains({ id: 'tx-1', pending: false });
+      monarchApi.isPendingFieldSupported.mockReturnValue(false);
+      monarchApi.getPendingFieldProbe.mockReturnValue({
+        verdict: 'rejected',
+        detail: 'Unknown argument "pending" on field UpdateTransactionMutationInput',
+        context: 'ownerSync',
+        transactionId: 'monarch-tx-9',
+        at: '2026-09-07T18:32:00.000Z',
+      });
+
+      await syncPendingStatuses(params);
+
+      const message = logWarning.mock.calls.map((call) => call.join(' ')).join('\n');
+      expect(message).toContain('Unknown argument "pending"');
+      expect(message).toContain('ownerSync');
+      expect(message).toContain('monarch-tx-9');
+    });
+
+    test('survives a missing probe record without crashing', async () => {
+      queueContains({ id: 'tx-1', pending: false });
+      monarchApi.isPendingFieldSupported.mockReturnValue(false);
+      monarchApi.getPendingFieldProbe.mockReturnValue(null);
+
+      const result = await syncPendingStatuses(params);
+
+      expect(result.success).toBe(true);
       expect(result.unsupported).toBe(true);
     });
   });

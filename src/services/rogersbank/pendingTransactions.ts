@@ -474,7 +474,7 @@ export async function reconcileRogersPendingTransactions(monarchAccountId, allTr
           await monarchApi.updateTransactionWithPending(monarchTxId, {
             notes: finalNotes,
             ownerUserId: monarchTx.ownedByUser?.id || null,
-          }, false);
+          }, false, 'rogersReconciliation');
 
           // Update amount only if it changed
           if (amountChanged) {

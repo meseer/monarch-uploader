@@ -51,6 +51,9 @@ import { computeSettledTagIds } from './pendingReconciliation';
 import { shouldRetainTxIdInNotes, selectTagsByIds } from '../../core/markerTags';
 import { fetchMarkerQueue, type MarkerQueueRow } from './markerTagQueue';
 
+/** Identifier for this pass in pending-field probe diagnostics */
+const PROBE_CONTEXT = 'ownerSync';
+
 // ── Types ───────────────────────────────────────────────────
 
 /** Outcome of an owner sync pass */
@@ -226,7 +229,9 @@ async function applyOwnerToRow({
   let pendingApplied = false;
 
   if (shouldFlagPending) {
-    const outcome = await monarchApi.updateTransactionWithPending(transactionId, updates, true);
+    const outcome = await monarchApi.updateTransactionWithPending(
+      transactionId, updates, true, PROBE_CONTEXT,
+    );
     pendingApplied = outcome.pendingApplied;
   } else {
     await monarchApi.updateTransaction(transactionId, updates);

@@ -12,6 +12,9 @@ import '../setup';
 import {
   updateTransactionWithPending,
   isPendingFieldSupported,
+  hasPendingFieldBeenProbed,
+  getPendingFieldProbe,
+  getPersistedPendingFieldProbe,
   resetPendingFieldSupport,
 } from '../../src/api/monarch';
 import authService from '../../src/services/auth';
@@ -31,6 +34,9 @@ jest.mock('../../src/core/state', () => ({
 
 jest.mock('../../src/core/utils', () => ({
   debugLog: jest.fn(),
+  logInfo: jest.fn(),
+  logWarning: jest.fn(),
+  logError: jest.fn(),
 }));
 
 jest.mock('../../src/ui/components/accountSelectorWithCreate', () => ({
@@ -39,6 +45,8 @@ jest.mock('../../src/ui/components/accountSelectorWithCreate', () => ({
 
 describe('Monarch API - native pending field', () => {
   let mockGMXmlHttpRequest;
+  /** Backing store for the GM_getValue/GM_setValue stubs */
+  let gmStore;
 
   /**
    * Queue GraphQL responses, one per request, in order.
@@ -90,8 +98,12 @@ describe('Monarch API - native pending field', () => {
 
     mockGMXmlHttpRequest = jest.fn();
     globalThis.GM_xmlhttpRequest = mockGMXmlHttpRequest;
-    globalThis.GM_setValue = jest.fn();
-    globalThis.GM_getValue = jest.fn();
+
+    // A real in-memory store, so the persistence behaviour is genuinely
+    // exercised rather than asserted against an inert stub.
+    gmStore = {};
+    globalThis.GM_setValue = jest.fn((key, value) => { gmStore[key] = value; });
+    globalThis.GM_getValue = jest.fn((key, fallback) => (key in gmStore ? gmStore[key] : fallback));
 
     authService.checkMonarchAuth.mockReturnValue({
       authenticated: true,
@@ -275,6 +287,172 @@ describe('Monarch API - native pending field', () => {
   describe('isPendingFieldSupported', () => {
     test('is optimistic before the first probe', () => {
       expect(isPendingFieldSupported()).toBe(true);
+    });
+
+    test('reports whether the field has been probed at all', async () => {
+      // Distinguishing "unprobed" from "probed and supported" is what stops a
+      // later pass claiming a verdict nothing has actually established.
+      expect(hasPendingFieldBeenProbed()).toBe(false);
+
+      respondWith({ id: 'tx-1', pending: true });
+      await updateTransactionWithPending('tx-1', {}, true);
+
+      expect(hasPendingFieldBeenProbed()).toBe(true);
+    });
+  });
+
+  describe('error classification', () => {
+    /**
+     * Failures that are NOT evidence about the field.
+     *
+     * Attributing any of these to `pending` would disable the feature for the
+     * whole session on the strength of a transient blip, and — worse — report a
+     * confident but false verdict. This was a real bug: a logged-out session
+     * produced "Monarch does not accept the pending field".
+     */
+    const unrelatedFailures = [
+      ['an expired session', 'Monarch Auth Error: Session was invalid or expired.'],
+      ['a server error', 'Monarch API Error: 500'],
+      ['a missing session', 'Monarch session not found. Please open Monarch Money in another tab.'],
+    ];
+
+    test.each(unrelatedFailures)('does NOT blame the field for %s', async (_label, message) => {
+      respondWith({ error: message });
+
+      await expect(updateTransactionWithPending('tx-1', { notes: 'hello' }, true, 'ownerSync'))
+        .rejects.toThrow();
+
+      // Field left unprobed, so it gets a fair test next time
+      expect(isPendingFieldSupported()).toBe(true);
+      expect(hasPendingFieldBeenProbed()).toBe(false);
+      expect(getPendingFieldProbe()).toBeNull();
+    });
+
+    test('does not retry an unrelated failure', async () => {
+      // Retrying would double the damage of a real outage.
+      respondWith({ error: 'Monarch Auth Error: Session was invalid or expired.' });
+
+      await expect(updateTransactionWithPending('tx-1', { notes: 'hello' }, true))
+        .rejects.toThrow();
+
+      expect(mockGMXmlHttpRequest).toHaveBeenCalledTimes(1);
+    });
+
+    test('DOES blame the field for a GraphQL validation error naming it', async () => {
+      respondWith(
+        { error: '[{"message":"Unknown argument \\"pending\\" on field UpdateTransactionMutationInput"}]' },
+        { id: 'tx-1', notes: 'hello' },
+      );
+
+      const result = await updateTransactionWithPending('tx-1', { notes: 'hello' }, true, 'ownerSync');
+
+      expect(result.pendingApplied).toBe(false);
+      expect(isPendingFieldSupported()).toBe(false);
+    });
+  });
+
+  describe('probe record', () => {
+    test('records a rejection with the verbatim error, context and transaction', async () => {
+      // This record is the whole point: without it a later pass can only say
+      // "unsupported", with no evidence and no idea which pass decided.
+      const monarchError = '[{"message":"Unknown argument \\"pending\\""}]';
+      respondWith({ error: monarchError }, { id: 'tx-7', notes: 'hello' });
+
+      await updateTransactionWithPending('tx-7', { notes: 'hello' }, true, 'ownerSync');
+
+      const probe = getPendingFieldProbe();
+      expect(probe).toMatchObject({
+        verdict: 'rejected',
+        context: 'ownerSync',
+        transactionId: 'tx-7',
+      });
+      expect(probe.detail).toContain('Unknown argument');
+      expect(probe.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    });
+
+    test('records a silent ignore distinctly from a rejection', async () => {
+      // The two verdicts imply completely different next steps, so they must
+      // never be collapsed into one.
+      respondWith({ id: 'tx-8', pending: false });
+
+      await updateTransactionWithPending('tx-8', {}, true, 'pendingStatusSync');
+
+      const probe = getPendingFieldProbe();
+      expect(probe.verdict).toBe('ignored');
+      expect(probe.detail).toContain('requested true');
+      expect(probe.detail).toContain('returned false');
+      expect(probe.context).toBe('pendingStatusSync');
+    });
+
+    test('records a success verdict', async () => {
+      respondWith({ id: 'tx-9', pending: true });
+
+      await updateTransactionWithPending('tx-9', {}, true, 'rogersReconciliation');
+
+      expect(getPendingFieldProbe()).toMatchObject({
+        verdict: 'supported',
+        context: 'rogersReconciliation',
+      });
+    });
+
+    test('is cleared by resetPendingFieldSupport', async () => {
+      respondWith({ id: 'tx-1', pending: false });
+      await updateTransactionWithPending('tx-1', {}, true);
+      expect(getPendingFieldProbe()).not.toBeNull();
+
+      resetPendingFieldSupport();
+
+      expect(getPendingFieldProbe()).toBeNull();
+    });
+  });
+
+  describe('persistence', () => {
+    test('persists a rejection so the verdict survives a lost console', async () => {
+      // The evidence was lost once already to a page navigation; writing it down
+      // means the answer can always be read back.
+      respondWith(
+        { error: '[{"message":"Unknown argument \\"pending\\""}]' },
+        { id: 'tx-1', notes: 'hello' },
+      );
+
+      await updateTransactionWithPending('tx-1', { notes: 'hello' }, true, 'ownerSync');
+
+      const persisted = getPersistedPendingFieldProbe();
+      expect(persisted).toMatchObject({ verdict: 'rejected', context: 'ownerSync' });
+      expect(persisted.detail).toContain('Unknown argument');
+    });
+
+    test('persists a success verdict too', async () => {
+      respondWith({ id: 'tx-1', pending: true });
+
+      await updateTransactionWithPending('tx-1', {}, true, 'ownerSync');
+
+      expect(getPersistedPendingFieldProbe()).toMatchObject({ verdict: 'supported' });
+    });
+
+    test('survives the session latch being reset', async () => {
+      respondWith({ id: 'tx-1', pending: false });
+      await updateTransactionWithPending('tx-1', {}, true, 'ownerSync');
+
+      // The runtime latch is session-scoped, but the written record is not —
+      // that asymmetry is deliberate.
+      resetPendingFieldSupport();
+
+      expect(getPendingFieldProbe()).toBeNull();
+      expect(getPersistedPendingFieldProbe()).toMatchObject({ verdict: 'ignored' });
+    });
+
+    test('a storage failure never breaks the update', async () => {
+      globalThis.GM_setValue = jest.fn(() => { throw new Error('storage quota exceeded'); });
+      respondWith({ id: 'tx-1', pending: true });
+
+      const result = await updateTransactionWithPending('tx-1', { notes: 'hello' }, true);
+
+      expect(result.pendingApplied).toBe(true);
+    });
+
+    test('returns null when nothing has been persisted', () => {
+      expect(getPersistedPendingFieldProbe()).toBeNull();
     });
   });
 });

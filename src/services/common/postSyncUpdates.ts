@@ -32,7 +32,8 @@
  * @module services/common/postSyncUpdates
  */
 
-import { debugLog } from '../../core/utils';
+import { debugLog, logInfo } from '../../core/utils';
+import monarchApi from '../../api/monarch';
 import { syncTransactionOwners, buildOwnerResolver, formatOwnerSyncMessage, type OwnerSyncResult } from './ownerSync';
 import { syncPendingStatuses, formatPendingStatusMessage, type PendingStatusSyncResult } from './pendingStatusSync';
 
@@ -191,6 +192,33 @@ function resolveStatus(result: PassOutcome): string {
 }
 
 /**
+ * Emit one line summarising this session's verdict on the native `pending` field.
+ *
+ * Deliberately a single `info` line rather than scattered debug output: the
+ * verdict is the one thing worth reporting while the feature is still being
+ * validated, and hunting for it across a long debug log — or losing it to a page
+ * navigation — is exactly the problem this solves.
+ */
+function logPendingFieldVerdict(): void {
+  if (!monarchApi.hasPendingFieldBeenProbed()) {
+    logInfo('[postSync] Monarch native "pending" field: NOT PROBED this sync '
+      + '(nothing needed the flag set or cleared)');
+    return;
+  }
+
+  const probe = monarchApi.getPendingFieldProbe();
+
+  if (monarchApi.isPendingFieldSupported()) {
+    logInfo('[postSync] Monarch native "pending" field: SUPPORTED'
+      + `${probe ? ` (confirmed by ${probe.context})` : ''}`);
+    return;
+  }
+
+  logInfo('[postSync] Monarch native "pending" field: UNSUPPORTED — '
+    + `${probe ? `${probe.verdict} during ${probe.context}: ${probe.detail}` : 'no probe record available'}`);
+}
+
+/**
  * Run every applicable post-sync pass, reporting each on its own step.
  *
  * Must be called **after** the transaction upload (the rows being updated are the
@@ -234,6 +262,12 @@ export async function runPostSyncUpdates(
       results[pass.key] = { success: false, error: message };
       progressDialog.updateStepStatus(ctx.accountId, pass.key, 'error', message);
     }
+  }
+
+  // Report the pending-field verdict once, after every pass that could have
+  // probed it has run.
+  if (ctx.pendingStatusEnabled) {
+    logPendingFieldVerdict();
   }
 
   return results;

@@ -19,6 +19,9 @@ import {
 // Mock dependencies
 jest.mock('../../../src/core/utils', () => ({
   debugLog: jest.fn(),
+  logInfo: jest.fn(),
+  logWarning: jest.fn(),
+  logError: jest.fn(),
   formatDate: jest.fn((date) => {
     const d = date instanceof Date ? date : new Date(date);
     return d.toISOString().split('T')[0];
@@ -1212,6 +1215,8 @@ describe('reconcileRogersPendingTransactions - native pending status', () => {
       'monarch-tx-1',
       expect.objectContaining({ notes: expect.any(String) }),
       false,
+      // 4th argument labels the probing call site in diagnostics
+      'rogersReconciliation',
     );
   });
 

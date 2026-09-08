@@ -40,10 +40,13 @@
  * @module services/common/pendingStatusSync
  */
 
-import { debugLog } from '../../core/utils';
+import { debugLog, logWarning } from '../../core/utils';
 import { MARKER_TAGS, OWNER_SYNC_MAX_UPDATES_PER_SYNC } from '../../core/config';
 import monarchApi from '../../api/monarch';
 import { fetchMarkerQueue, type MarkerQueueRow } from './markerTagQueue';
+
+/** Identifier for this pass in probe diagnostics */
+const PROBE_CONTEXT = 'pendingStatusSync';
 
 // ── Types ───────────────────────────────────────────────────
 
@@ -62,6 +65,16 @@ export interface PendingStatusSyncResult {
   deferred: number;
   /** Monarch does not accept the `pending` field; the pass stopped early */
   unsupported?: boolean;
+  /**
+   * The field was already proven unsupported *before* this pass ran, so this pass
+   * issued no mutation and tested nothing itself.
+   *
+   * Kept distinct from `unsupported` so the log never implies this pass reached a
+   * conclusion it did not: the deciding probe usually happens in an earlier pass
+   * (owner sync, or the settle path), and saying otherwise sends debugging in the
+   * wrong direction.
+   */
+  alreadyUnsupported?: boolean;
   /** The `Pending` tag does not exist, so nothing could be queued */
   noPendingTag?: boolean;
   /** No transaction carried the `Pending` tag */
@@ -147,6 +160,10 @@ export async function syncPendingStatuses({
       // issue pointless mutations for every remaining row.
       if (!monarchApi.isPendingFieldSupported()) {
         result.unsupported = true;
+        // Nothing attempted yet ⇒ an earlier pass decided this, not this one.
+        if (result.flagged === 0 && result.ignored === 0) {
+          result.alreadyUnsupported = true;
+        }
         break;
       }
 
@@ -167,7 +184,9 @@ export async function syncPendingStatuses({
           continue;
         }
 
-        const { pendingApplied } = await monarchApi.updateTransactionWithPending(row.id, {}, true);
+        const { pendingApplied } = await monarchApi.updateTransactionWithPending(
+          row.id, {}, true, PROBE_CONTEXT,
+        );
 
         if (pendingApplied) {
           result.flagged += 1;
@@ -184,7 +203,19 @@ export async function syncPendingStatuses({
     }
 
     if (result.unsupported) {
-      debugLog('[pendingStatus] Monarch does not accept the "pending" field — stopping early');
+      // Report the actual evidence and where it came from. A bare "unsupported"
+      // is unactionable, and actively misleading when the verdict was reached by
+      // a different pass earlier in the sync.
+      const probe = monarchApi.getPendingFieldProbe();
+      const origin = result.alreadyUnsupported
+        ? 'was proven unsupported earlier this session'
+        : 'was proven unsupported by this pass';
+      const evidence = probe
+        ? `${probe.verdict} during ${probe.context} on transaction ${probe.transactionId}: ${probe.detail}`
+        : 'no probe record available';
+
+      logWarning(`[pendingStatus] Skipping ${rows.length} tagged transaction(s) — `
+        + `the "pending" field ${origin} (${evidence})`);
     }
 
     if (result.deferred > 0) {
