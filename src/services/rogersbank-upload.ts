@@ -37,7 +37,7 @@ import {
   syncCardholders, applyCardholderFields, collectOwnerAssignments, getOwnerMode,
 } from './common/cardholders';
 import { showCardholderSelector } from '../ui/components/cardholderSelector';
-import { syncTransactionOwners, buildOwnerResolver, formatOwnerSyncMessage } from './common/ownerSync';
+import { buildPostSyncSteps, runPostSyncUpdates, type PostSyncContext } from './common/postSyncUpdates';
 
 /**
  * Extract Rogers account name from DOM
@@ -424,21 +424,24 @@ const ROGERSBANK_TX_ID_PREFIX = 'rb-tx';
 
 /**
  * Build sync steps for progress dialog
- * Order: credit limit → pending reconciliation → transactions → owner sync → balance
+ * Order: credit limit → pending reconciliation → transactions → post-sync passes → balance
  * (Reconciliation before transactions prevents duplicate uploads of settled transactions;
- * owner sync must follow the upload because it updates the rows the upload created)
+ * the post-sync passes must follow the upload because they update the rows it created)
+ *
+ * The post-sync steps come from `buildPostSyncSteps` rather than being listed
+ * here, so the steps shown always match the passes that actually run.
  */
 function buildRogersBankSteps(
+  postSyncContext: PostSyncContext,
   hasTransactions = true,
   includeCreditLimit = true,
   includePendingReconciliation = true,
-  includeOwnerSync = false,
 ) {
   const steps = [];
   if (includeCreditLimit) steps.push({ key: 'creditLimit', name: 'Credit limit sync' });
   if (includePendingReconciliation) steps.push({ key: 'pendingReconciliation', name: 'Pending reconciliation' });
   if (hasTransactions) steps.push({ key: 'transactions', name: 'Transaction sync' });
-  if (includeOwnerSync) steps.push({ key: 'ownerSync', name: 'Owner sync' });
+  steps.push(...buildPostSyncSteps(postSyncContext));
   steps.push({ key: 'balance', name: 'Balance upload' });
   return steps;
 }
@@ -752,11 +755,25 @@ export async function uploadRogersBankToMonarch() {
       [{ key: rogersAccountId, nickname: rogersAccountName, name: 'Rogers Bank Upload' }],
       'Uploading Rogers Bank Data to Monarch Money',
     );
-    // Owner sync only runs when this account opted into owner mapping.
-    const ownerSyncEnabled = getOwnerMode(INTEGRATIONS.ROGERSBANK, rogersAccountId)
-      === CARDHOLDER.OWNER_MODE.ON;
+    // Context for the post-upload passes. Built before the steps are declared so
+    // the declared steps and the executed passes are driven by the same facts.
+    // `monarchAccountId` and `ownerAssignments` are filled in later, once the
+    // account is resolved and the transaction step has run.
+    const postSyncContext: PostSyncContext = {
+      accountId: rogersAccountId,
+      monarchAccountId: '',
+      txIdPrefix: ROGERSBANK_TX_ID_PREFIX,
+      lookbackDays: 90,
+      // Owner sync only runs when this account opted into owner mapping.
+      ownerSyncEnabled: getOwnerMode(INTEGRATIONS.ROGERSBANK, rogersAccountId)
+        === CARDHOLDER.OWNER_MODE.ON,
+      // Rogers is the first integration to reconcile Monarch's native pending
+      // status; its settle path clears the flag, so enabling it here is safe.
+      pendingStatusEnabled: true,
+      ownerAssignments: new Map<string, string>(),
+    };
 
-    progressDialog.initSteps(rogersAccountId, buildRogersBankSteps(true, true, true, ownerSyncEnabled));
+    progressDialog.initSteps(rogersAccountId, buildRogersBankSteps(postSyncContext));
     progressDialog.onCancel(() => abortController.abort());
 
     // Resolve Monarch account mapping using accountService (consolidated storage first, legacy fallback)
@@ -957,8 +974,6 @@ export async function uploadRogersBankToMonarch() {
     let totalNewSettled = 0;
     let totalNewPending = 0;
     let totalDuplicates = 0;
-    // Notes id → Monarch user id, consumed by the owner sync step below
-    let ownerAssignments = new Map<string, string>();
 
     if (txResult.success && (allSettledTx.length > 0 || allPendingTx.length > 0)) {
       // Filter out already-uploaded settled transactions
@@ -1024,7 +1039,7 @@ export async function uploadRogersBankToMonarch() {
               shouldMapOwner: cardholderResolution.shouldMapOwner,
             },
           );
-          ownerAssignments = collectOwnerAssignments(annotatedAll as Array<Record<string, unknown>>);
+          postSyncContext.ownerAssignments = collectOwnerAssignments(annotatedAll as Array<Record<string, unknown>>);
         }
 
         const resolvedTx = await resolveCategoriesForTransactions(transactionsForCategorization, { skipCategorization });
@@ -1085,26 +1100,14 @@ export async function uploadRogersBankToMonarch() {
       progressDialog.updateStepStatus(rogersAccountId, 'transactions', 'success', 'No transactions');
     }
 
-    // STEP 3.5: Post-upload owner sync
-    // Monarch's CSV importer has no owner column, so the Owner value is applied
-    // here, after the upload, in the SAME sync (no attribution lag). Anything it
-    // cannot finish keeps its marker tag and is retried next sync.
-    if (ownerSyncEnabled) {
-      const ownerSyncResult = await syncTransactionOwners({
-        monarchAccountId: monarchAccount.id,
-        txIdPrefix: ROGERSBANK_TX_ID_PREFIX,
-        resolveOwnerForTxId: buildOwnerResolver(ownerAssignments),
-        lookbackDays: 90,
-      });
-
-      progressDialog.updateStepStatus(
-        rogersAccountId,
-        'ownerSync',
-        ownerSyncResult.success === false ? 'error' : 'success',
-        formatOwnerSyncMessage(ownerSyncResult),
-      );
-      debugLog('Rogers Bank owner sync result:', ownerSyncResult);
-    }
+    // STEP 3.5: Post-upload passes (owner sync, native pending status)
+    // These fill in fields Monarch's CSV importer cannot carry, so they must run
+    // after the upload — they update the very rows it created — and after
+    // reconciliation, so settled rows have already lost their marker tags.
+    // Running them in the SAME sync avoids a one-sync attribution lag; anything
+    // they cannot finish keeps its marker tag and is retried next sync.
+    postSyncContext.monarchAccountId = monarchAccount.id;
+    await runPostSyncUpdates(postSyncContext, progressDialog);
 
     // STEP 4: Upload balance (after reconciliation so deleted pending transactions don't affect balance)
     progressDialog.updateStepStatus(rogersAccountId, 'balance', 'processing', 'Preparing...');

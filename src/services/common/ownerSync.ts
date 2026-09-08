@@ -44,11 +44,12 @@
  * @module services/common/ownerSync
  */
 
-import { debugLog, formatDate } from '../../core/utils';
+import { debugLog } from '../../core/utils';
 import { MARKER_TAGS, OWNER_SYNC_MAX_UPDATES_PER_SYNC } from '../../core/config';
 import monarchApi from '../../api/monarch';
 import { computeSettledTagIds } from './pendingReconciliation';
 import { shouldRetainTxIdInNotes, selectTagsByIds } from '../../core/markerTags';
+import { fetchMarkerQueue, type MarkerQueueRow } from './markerTagQueue';
 
 // ── Types ───────────────────────────────────────────────────
 
@@ -68,6 +69,11 @@ export interface OwnerSyncResult {
   failed: number;
   /** Rows left for the next sync because the per-sync cap was reached */
   deferred: number;
+  /**
+   * Rows whose Monarch-native `pending` flag was set as part of the same owner
+   * mutation. Only ever non-zero when the caller opted in via `flagPending`.
+   */
+  pendingFlagged: number;
   error: string | null;
   /** The `pendingOwnerUpdate` tag was absent, so nothing could be queued */
   noMarkerTag?: boolean;
@@ -90,20 +96,22 @@ export interface OwnerSyncParams {
   lookbackDays: number;
   /** Cap on mutations issued this sync (defaults to the configured limit) */
   maxUpdates?: number;
+  /**
+   * Also mark rows that still carry the `Pending` marker as Monarch-native
+   * pending, in the *same* mutation that sets the owner.
+   *
+   * Opt-in per caller rather than automatic: a transaction should only be
+   * flagged natively pending by an integration whose settle path also clears the
+   * flag, and that rollout is staged. Callers that do not pass this stay
+   * byte-identical to the pre-feature behaviour.
+   */
+  flagPending?: boolean;
   /** Injected delay, for tests. Defaults to setTimeout. */
   sleep?: (ms: number) => Promise<void>;
 }
 
 /** A Monarch transaction as returned by `getTransactionsList` */
-interface MonarchTransactionRow {
-  id?: string;
-  notes?: string;
-  tags?: Array<{ id: string; name?: string }>;
-  ownedByUser?: { id?: string } | null;
-  /** Set when ownership was chosen explicitly; null when inherited */
-  ownershipOverriddenAt?: string | null;
-  [key: string]: unknown;
-}
+type MonarchTransactionRow = MarkerQueueRow;
 
 /**
  * Whether a row's ownership was explicitly decided and must not be overwritten.
@@ -134,52 +142,9 @@ const EMPTY_RESULT: OwnerSyncResult = {
   unmatched: 0,
   failed: 0,
   deferred: 0,
+  pendingFlagged: 0,
   error: null,
 };
-
-/**
- * Attempts made to resolve the marker tag before giving up for this sync.
- *
- * The very first owner sync runs seconds after the import that *created* the
- * `pendingOwnerUpdate` tag, and the tag list is not guaranteed to reflect it
- * immediately. A short bounded retry converts the common case from "silently
- * deferred a whole sync" into "resolved now". Failing after these attempts is
- * still safe — the rows keep their marker and are picked up next sync — so the
- * retry stays deliberately short rather than blocking the sync.
- */
-const MARKER_TAG_LOOKUP_ATTEMPTS = 3;
-
-/** Delay between marker tag lookup attempts (ms) */
-const MARKER_TAG_LOOKUP_DELAY_MS = 1000;
-
-/** Default sleep used between marker tag lookup attempts */
-function defaultSleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
-/**
- * Resolve the marker tag, retrying briefly while it may still be propagating.
- *
- * @returns The tag, or null if it could not be resolved this sync
- */
-async function resolveMarkerTag(
-  sleep: (ms: number) => Promise<void>,
-): Promise<{ id: string; name: string } | null> {
-  for (let attempt = 1; attempt <= MARKER_TAG_LOOKUP_ATTEMPTS; attempt += 1) {
-    const tag = await monarchApi.getTagByName(MARKER_TAGS.PENDING_OWNER_UPDATE);
-    if (tag) return tag;
-
-    if (attempt < MARKER_TAG_LOOKUP_ATTEMPTS) {
-      debugLog(`[ownerSync] "${MARKER_TAGS.PENDING_OWNER_UPDATE}" tag not visible yet `
-        + `(attempt ${attempt}/${MARKER_TAG_LOOKUP_ATTEMPTS}), retrying...`);
-      await sleep(MARKER_TAG_LOOKUP_DELAY_MS);
-    }
-  }
-
-  return null;
-}
 
 // ── Helpers ─────────────────────────────────────────────────
 
@@ -216,46 +181,14 @@ export function stripTxIdFromNotes(txIdPrefix: string, notes: string | null | un
 }
 
 /**
- * Fetch the transactions currently queued for an owner update.
+ * Whether a row still carries the `Pending` marker tag.
  *
- * @returns The marker tag and the rows carrying it (both null/empty when
- *   there is nothing to do)
+ * Read from the tags the row will keep *after* its owner marker is removed, so
+ * the answer reflects the row's post-update state.
  */
-async function fetchOwnerUpdateQueue(
-  monarchAccountId: string,
-  lookbackDays: number,
-  sleep: (ms: number) => Promise<void>,
-): Promise<{
-  markerTag: { id: string; name: string } | null;
-  rows: MonarchTransactionRow[];
-}> {
-  const markerTag = await resolveMarkerTag(sleep);
-
-  if (!markerTag) {
-    // Reached when the tag genuinely does not exist (no row has ever been
-    // marked) or when it has not propagated after the retries. Either way the
-    // rows keep their marker in Monarch, so the next sync finds them.
-    debugLog(`[ownerSync] No "${MARKER_TAGS.PENDING_OWNER_UPDATE}" tag in Monarch yet — deferring to the next sync`);
-    return { markerTag: null, rows: [] };
-  }
-
-  const today = new Date();
-  const startDate = new Date(today);
-  startDate.setDate(startDate.getDate() - lookbackDays);
-
-  // Look ahead a year: users can edit dates, and future-dated rows must not be
-  // orphaned with a stuck marker tag.
-  const endDate = new Date(today);
-  endDate.setFullYear(endDate.getFullYear() + 1);
-
-  const listResult = await monarchApi.getTransactionsList({
-    accountIds: [monarchAccountId],
-    tags: [markerTag.id],
-    startDate: formatDate(startDate),
-    endDate: formatDate(endDate),
-  });
-
-  return { markerTag, rows: (listResult.results || []) as unknown as MonarchTransactionRow[] };
+function isStillPending(remainingTags: Array<{ name?: string }>): boolean {
+  const pendingName = MARKER_TAGS.PENDING.toLowerCase();
+  return remainingTags.some((tag) => (tag?.name || '').trim().toLowerCase() === pendingName);
 }
 
 /**
@@ -263,26 +196,41 @@ async function fetchOwnerUpdateQueue(
  *
  * The notes keep the hash id whenever another marker (e.g. `Pending`) still
  * needs it — see `core/markerTags`.
+ *
+ * When `flagPending` is on and the row is still pending, the Monarch-native
+ * `pending` flag rides along in the **same** mutation. Bundling it costs no extra
+ * request and, because the write is defensive, cannot cost the owner update
+ * either: if the field is rejected the owner is applied by the retry.
+ *
+ * @returns Whether the native pending flag was actually stored
  */
 async function applyOwnerToRow({
-  row, txIdPrefix, markerTagId, ownerUserId,
+  row, txIdPrefix, markerTagId, ownerUserId, flagPending,
 }: {
   row: MonarchTransactionRow;
   txIdPrefix: string;
   markerTagId: string;
   ownerUserId: string;
-}): Promise<void> {
+  flagPending: boolean;
+}): Promise<boolean> {
   const transactionId = row.id as string;
   const notes = row.notes || '';
 
   const remainingTagIds = computeSettledTagIds(row.tags, markerTagId);
-  const retainTxId = shouldRetainTxIdInNotes(selectTagsByIds(row.tags, remainingTagIds));
+  const remainingTags = selectTagsByIds(row.tags, remainingTagIds);
+  const retainTxId = shouldRetainTxIdInNotes(remainingTags);
   const finalNotes = retainTxId ? notes : stripTxIdFromNotes(txIdPrefix, notes);
 
-  await monarchApi.updateTransaction(transactionId, {
-    ownerUserId,
-    notes: finalNotes,
-  });
+  const updates = { ownerUserId, notes: finalNotes };
+  const shouldFlagPending = flagPending && isStillPending(remainingTags);
+  let pendingApplied = false;
+
+  if (shouldFlagPending) {
+    const outcome = await monarchApi.updateTransactionWithPending(transactionId, updates, true);
+    pendingApplied = outcome.pendingApplied;
+  } else {
+    await monarchApi.updateTransaction(transactionId, updates);
+  }
 
   // Drop the marker last: if this throws, the row keeps its marker and its id
   // and the next sync simply repeats the (idempotent) update.
@@ -291,7 +239,11 @@ async function applyOwnerToRow({
   debugLog(`[ownerSync] Set owner ${ownerUserId} on ${transactionId}`, {
     retainedTxIdInNotes: retainTxId,
     remainingTagCount: remainingTagIds.length,
+    pendingFlagRequested: shouldFlagPending,
+    pendingFlagApplied: pendingApplied,
   });
+
+  return pendingApplied;
 }
 
 // ── Orchestration ───────────────────────────────────────────
@@ -311,12 +263,18 @@ export async function syncTransactionOwners({
   resolveOwnerForTxId,
   lookbackDays,
   maxUpdates = OWNER_SYNC_MAX_UPDATES_PER_SYNC,
-  sleep = defaultSleep,
+  flagPending = false,
+  sleep,
 }: OwnerSyncParams): Promise<OwnerSyncResult> {
   const result: OwnerSyncResult = { ...EMPTY_RESULT };
 
   try {
-    const { markerTag, rows } = await fetchOwnerUpdateQueue(monarchAccountId, lookbackDays, sleep);
+    const { markerTag, rows } = await fetchMarkerQueue({
+      monarchAccountId,
+      tagName: MARKER_TAGS.PENDING_OWNER_UPDATE,
+      lookbackDays,
+      sleep,
+    });
 
     if (!markerTag) {
       return { ...result, noMarkerTag: true };
@@ -363,10 +321,11 @@ export async function syncTransactionOwners({
           continue;
         }
 
-        await applyOwnerToRow({
-          row, txIdPrefix, markerTagId: markerTag.id, ownerUserId,
+        const pendingApplied = await applyOwnerToRow({
+          row, txIdPrefix, markerTagId: markerTag.id, ownerUserId, flagPending,
         });
         result.updated += 1;
+        if (pendingApplied) result.pendingFlagged += 1;
       } catch (rowError) {
         debugLog(`[ownerSync] Error updating ${row.id}:`, rowError);
         result.failed += 1;
@@ -408,6 +367,7 @@ export function formatOwnerSyncMessage(result: OwnerSyncResult): string {
   const parts: string[] = [];
 
   if (result.updated > 0) parts.push(`${result.updated} owner${result.updated === 1 ? '' : 's'} set`);
+  if (result.pendingFlagged > 0) parts.push(`${result.pendingFlagged} pending flagged`);
   if (result.alreadyOwned > 0) parts.push(`${result.alreadyOwned} already set`);
   if (result.unmatched > 0) parts.push(`${result.unmatched} unmatched`);
   if (result.deferred > 0) parts.push(`${result.deferred} deferred`);

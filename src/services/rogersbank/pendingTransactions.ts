@@ -465,10 +465,16 @@ export async function reconcileRogersPendingTransactions(monarchAccountId, allTr
           });
 
           // Update notes (replace pending ID/FX placeholder with settled FX info)
-          await monarchApi.updateTransaction(monarchTxId, {
+          // and clear Monarch's native pending flag in the same mutation.
+          //
+          // Clearing it here is the counterpart to setting it post-upload: without
+          // this, a transaction we marked natively pending would stay pending in
+          // Monarch forever, even after losing its Pending tag. The write is
+          // defensive — if the field is unsupported the notes update still lands.
+          await monarchApi.updateTransactionWithPending(monarchTxId, {
             notes: finalNotes,
             ownerUserId: monarchTx.ownedByUser?.id || null,
-          });
+          }, false);
 
           // Update amount only if it changed
           if (amountChanged) {

@@ -30,6 +30,9 @@ jest.mock('../../../src/api/monarch', () => ({
     getTagByName: jest.fn(),
     getTransactionsList: jest.fn(),
     updateTransaction: jest.fn(),
+    // Used instead of updateTransaction when the caller opts into bundling
+    // Monarch's native pending flag into the owner mutation.
+    updateTransactionWithPending: jest.fn(),
     setTransactionTags: jest.fn(),
   },
 }));
@@ -73,7 +76,111 @@ beforeEach(() => {
   monarchApi.getTagByName.mockResolvedValue(MARKER_TAG);
   monarchApi.getTransactionsList.mockResolvedValue({ results: [queuedRow()] });
   monarchApi.updateTransaction.mockResolvedValue({ id: 'monarch-tx-1' });
+  monarchApi.updateTransactionWithPending.mockResolvedValue({
+    transaction: { id: 'monarch-tx-1' },
+    pendingApplied: true,
+  });
   monarchApi.setTransactionTags.mockResolvedValue({ id: 'monarch-tx-1' });
+});
+
+describe('syncTransactionOwners — native pending flag piggyback', () => {
+  /** A row that is queued for an owner update AND still pending */
+  const pendingQueuedRow = () => queuedRow({ tags: [MARKER_TAG, PENDING_TAG] });
+
+  it('bundles pending: true into the owner mutation for a still-pending row', async () => {
+    // One mutation, not two: the flag rides along with the owner update.
+    monarchApi.getTransactionsList.mockResolvedValue({ results: [pendingQueuedRow()] });
+
+    const result = await syncTransactionOwners(params({ flagPending: true }));
+
+    expect(result.updated).toBe(1);
+    expect(result.pendingFlagged).toBe(1);
+    expect(monarchApi.updateTransactionWithPending).toHaveBeenCalledTimes(1);
+    expect(monarchApi.updateTransactionWithPending).toHaveBeenCalledWith(
+      'monarch-tx-1',
+      expect.objectContaining({ ownerUserId: OWNER_ID }),
+      true,
+    );
+    expect(monarchApi.updateTransaction).not.toHaveBeenCalled();
+  });
+
+  it('does not flag a row that no longer carries the Pending tag', async () => {
+    // A settled row must not be pushed back into a pending state.
+    monarchApi.getTransactionsList.mockResolvedValue({ results: [queuedRow()] });
+
+    const result = await syncTransactionOwners(params({ flagPending: true }));
+
+    expect(result.updated).toBe(1);
+    expect(result.pendingFlagged).toBe(0);
+    expect(monarchApi.updateTransactionWithPending).not.toHaveBeenCalled();
+    expect(monarchApi.updateTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves behaviour byte-identical when the caller does not opt in', async () => {
+    // Integrations whose settle path does not clear the flag must be untouched.
+    monarchApi.getTransactionsList.mockResolvedValue({ results: [pendingQueuedRow()] });
+
+    const result = await syncTransactionOwners(params());
+
+    expect(result.updated).toBe(1);
+    expect(result.pendingFlagged).toBe(0);
+    expect(monarchApi.updateTransactionWithPending).not.toHaveBeenCalled();
+    expect(monarchApi.updateTransaction).toHaveBeenCalledWith(
+      'monarch-tx-1',
+      expect.objectContaining({ ownerUserId: OWNER_ID }),
+    );
+  });
+
+  it('still sets the owner when the pending flag is not applied', async () => {
+    // The API wrapper retries without the field, so the owner update must land.
+    monarchApi.getTransactionsList.mockResolvedValue({ results: [pendingQueuedRow()] });
+    monarchApi.updateTransactionWithPending.mockResolvedValue({
+      transaction: { id: 'monarch-tx-1' },
+      pendingApplied: false,
+    });
+
+    const result = await syncTransactionOwners(params({ flagPending: true }));
+
+    expect(result.updated).toBe(1);
+    expect(result.pendingFlagged).toBe(0);
+    expect(result.failed).toBe(0);
+    // The marker tag is still removed — the owner work is done
+    expect(monarchApi.setTransactionTags).toHaveBeenCalledWith('monarch-tx-1', [PENDING_TAG.id]);
+  });
+
+  it('retains the tx id in the notes because the Pending marker still needs it', async () => {
+    monarchApi.getTransactionsList.mockResolvedValue({ results: [pendingQueuedRow()] });
+
+    await syncTransactionOwners(params({ flagPending: true }));
+
+    const [, updates] = monarchApi.updateTransactionWithPending.mock.calls[0];
+    expect(updates.notes).toContain(TX_ID);
+  });
+
+  it('counts the row as failed when the bundled mutation throws', async () => {
+    monarchApi.getTransactionsList.mockResolvedValue({ results: [pendingQueuedRow()] });
+    monarchApi.updateTransactionWithPending.mockRejectedValue(new Error('network down'));
+
+    const result = await syncTransactionOwners(params({ flagPending: true }));
+
+    expect(result.failed).toBe(1);
+    expect(result.updated).toBe(0);
+    // Marker survives so the next sync retries
+    expect(monarchApi.setTransactionTags).not.toHaveBeenCalled();
+  });
+
+  it('reports flagged rows in the progress message', async () => {
+    expect(formatOwnerSyncMessage({
+      success: true,
+      updated: 2,
+      alreadyOwned: 0,
+      unmatched: 0,
+      failed: 0,
+      deferred: 0,
+      pendingFlagged: 2,
+      error: null,
+    })).toBe('2 owners set, 2 pending flagged');
+  });
 });
 
 describe('extractTxIdFromNotes', () => {

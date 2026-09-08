@@ -31,6 +31,10 @@ jest.mock('../../../src/api/monarch', () => ({
     getTagByName: jest.fn(),
     getTransactionsList: jest.fn(),
     updateTransaction: jest.fn(),
+    // The settle path bundles Monarch's native `pending: false` into the notes
+    // update, so it goes through this defensive wrapper rather than
+    // updateTransaction directly.
+    updateTransactionWithPending: jest.fn().mockResolvedValue({ transaction: {}, pendingApplied: true }),
     setTransactionTags: jest.fn(),
     deleteTransaction: jest.fn(),
   },
@@ -1060,7 +1064,7 @@ describe('reconcileRogersPendingTransactions - FX enrichment', () => {
     expect(result.settled).toBe(1);
 
     // Verify notes were updated with FX info (replacing pending placeholder)
-    const updateCall = monarchApi.updateTransaction.mock.calls[0];
+    const updateCall = monarchApi.updateTransactionWithPending.mock.calls[0];
     expect(updateCall[0]).toBe('monarch-tx-1');
     expect(updateCall[1].notes).toContain('84.28 USD @ 1.362233136');
     expect(updateCall[1].notes).toContain('Exchange fee: 3.40 CAD');
@@ -1111,7 +1115,7 @@ describe('reconcileRogersPendingTransactions - FX enrichment', () => {
 
     await reconcileRogersPendingTransactions('monarch-123', [settledVersion], 90);
 
-    const updateCall = monarchApi.updateTransaction.mock.calls[0];
+    const updateCall = monarchApi.updateTransactionWithPending.mock.calls[0];
     // FX notes should be present
     expect(updateCall[1].notes).toContain('84.28 USD @ 1.42');
     // User note should be preserved
@@ -1153,9 +1157,100 @@ describe('reconcileRogersPendingTransactions - FX enrichment', () => {
 
     await reconcileRogersPendingTransactions('monarch-123', [settledVersion], 90);
 
-    const updateCall = monarchApi.updateTransaction.mock.calls[0];
+    const updateCall = monarchApi.updateTransactionWithPending.mock.calls[0];
     // No FX notes for domestic transaction
     expect(updateCall[1].notes).toBe('');
+  });
+});
+
+// ============================================================
+// Reconciliation — Monarch-native pending status
+// ============================================================
+
+describe('reconcileRogersPendingTransactions - native pending status', () => {
+  const monarchApi = require('../../../src/api/monarch').default;
+
+  /** Build a settled transaction plus the Monarch row that should reconcile to it */
+  async function arrangeSettledTransaction() {
+    const testTx = {
+      date: '2026-02-13',
+      amount: { value: '5.50', currency: 'CAD' },
+      merchant: { name: 'STORE', categoryCode: '7523' },
+      cardNumber: '************8584',
+    };
+    const expectedId = await generatePendingTransactionId(testTx);
+
+    monarchApi.getTagByName.mockResolvedValue({ id: 'tag-pending', name: 'Pending' });
+    monarchApi.getTransactionsList.mockResolvedValue({
+      results: [{
+        id: 'monarch-tx-1',
+        amount: -5.50,
+        date: '2026-02-13',
+        notes: expectedId,
+        ownedByUser: { id: 'user-1' },
+      }],
+    });
+    monarchApi.setTransactionTags.mockResolvedValue({});
+
+    return { ...testTx, activityStatus: 'APPROVED', referenceNumber: '123' };
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('clears the native pending flag when a transaction settles', async () => {
+    const settledVersion = await arrangeSettledTransaction();
+    monarchApi.updateTransactionWithPending.mockResolvedValue({ transaction: {}, pendingApplied: true });
+
+    const result = await reconcileRogersPendingTransactions('monarch-123', [settledVersion], 90);
+
+    expect(result.settled).toBe(1);
+    // The flag must be cleared, or a transaction we flagged pending post-upload
+    // would stay pending in Monarch forever.
+    expect(monarchApi.updateTransactionWithPending).toHaveBeenCalledWith(
+      'monarch-tx-1',
+      expect.objectContaining({ notes: expect.any(String) }),
+      false,
+    );
+  });
+
+  it('clears the flag in the SAME mutation as the notes update', async () => {
+    const settledVersion = await arrangeSettledTransaction();
+    monarchApi.updateTransactionWithPending.mockResolvedValue({ transaction: {}, pendingApplied: true });
+
+    await reconcileRogersPendingTransactions('monarch-123', [settledVersion], 90);
+
+    // One combined call, not a separate mutation just for the flag
+    expect(monarchApi.updateTransactionWithPending).toHaveBeenCalledTimes(1);
+    const [, updates] = monarchApi.updateTransactionWithPending.mock.calls[0];
+    expect(updates).toHaveProperty('notes');
+    expect(updates).toHaveProperty('ownerUserId', 'user-1');
+  });
+
+  it('still settles the transaction when the pending field is unsupported', async () => {
+    const settledVersion = await arrangeSettledTransaction();
+    // The API wrapper absorbs the rejection and applies the rest of the update
+    monarchApi.updateTransactionWithPending.mockResolvedValue({ transaction: {}, pendingApplied: false });
+
+    const result = await reconcileRogersPendingTransactions('monarch-123', [settledVersion], 90);
+
+    // Settling must not depend on the undocumented field working
+    expect(result.settled).toBe(1);
+    expect(result.failed).toBe(0);
+    expect(monarchApi.setTransactionTags).toHaveBeenCalledWith('monarch-tx-1', []);
+  });
+
+  it('counts the row as failed when the combined update throws', async () => {
+    const settledVersion = await arrangeSettledTransaction();
+    monarchApi.updateTransactionWithPending.mockRejectedValue(new Error('network down'));
+
+    const result = await reconcileRogersPendingTransactions('monarch-123', [settledVersion], 90);
+
+    expect(result.failed).toBe(1);
+    expect(result.settled).toBe(0);
+    // Leaves the Pending tag in place so the next sync retries
+    expect(monarchApi.setTransactionTags).not.toHaveBeenCalled();
   });
 });
 
