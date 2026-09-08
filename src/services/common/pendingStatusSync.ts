@@ -48,6 +48,17 @@ import { fetchMarkerQueue, type MarkerQueueRow } from './markerTagQueue';
 /** Identifier for this pass in probe diagnostics */
 const PROBE_CONTEXT = 'pendingStatusSync';
 
+/**
+ * Consecutive per-row failures tolerated before abandoning the pass.
+ *
+ * The latch already stops a *field* problem after one mutation, but a systemic
+ * fault the latch cannot see — a server outage, a revoked permission — would
+ * otherwise fail once per queued row. A real run hammered 23 transactions that
+ * way. Three attempts is enough to rule out a one-off blip while keeping the
+ * blast radius small; the tag keeps every remaining row queued for next sync.
+ */
+const MAX_CONSECUTIVE_FAILURES = 3;
+
 // ── Types ───────────────────────────────────────────────────
 
 /** Outcome of a pending status sync pass */
@@ -63,6 +74,11 @@ export interface PendingStatusSyncResult {
   failed: number;
   /** Rows left for the next sync because the per-sync cap was reached */
   deferred: number;
+  /**
+   * The pass gave up after too many consecutive failures, indicating a systemic
+   * problem rather than a per-row one.
+   */
+  abortedAfterFailures?: boolean;
   /** Monarch does not accept the `pending` field; the pass stopped early */
   unsupported?: boolean;
   /**
@@ -155,7 +171,18 @@ export async function syncPendingStatuses({
 
     debugLog(`[pendingStatus] ${rows.length} transaction(s) tagged Pending`);
 
+    // Tracks a run of failures so a systemic fault stops the pass early.
+    let consecutiveFailures = 0;
+
     for (const row of rows) {
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        result.abortedAfterFailures = true;
+        logWarning(`[pendingStatus] Abandoning the pass after ${consecutiveFailures} consecutive `
+          + 'failures — this looks systemic, not per-row. The Pending tag keeps the '
+          + 'remaining transactions queued for the next sync.');
+        break;
+      }
+
       // Bail out entirely once the field is known unusable: continuing would
       // issue pointless mutations for every remaining row.
       if (!monarchApi.isPendingFieldSupported()) {
@@ -190,6 +217,7 @@ export async function syncPendingStatuses({
 
         if (pendingApplied) {
           result.flagged += 1;
+          consecutiveFailures = 0;
           debugLog(`[pendingStatus] Marked ${row.id} as natively pending`);
         } else {
           // The field was rejected or dropped. The latch is now set, so the next
@@ -199,6 +227,7 @@ export async function syncPendingStatuses({
       } catch (rowError) {
         debugLog(`[pendingStatus] Error updating ${row.id}:`, rowError);
         result.failed += 1;
+        consecutiveFailures += 1;
       }
     }
 
@@ -246,6 +275,11 @@ export function formatPendingStatusMessage(result: PendingStatusSyncResult): str
 
   if (result.unsupported) {
     return 'Not supported';
+  }
+
+  // A systemic abort is the headline, not a footnote appended to counts.
+  if (result.abortedAfterFailures) {
+    return `Stopped after ${result.failed} failures`;
   }
 
   const parts: string[] = [];

@@ -62,8 +62,10 @@ describe('Monarch API - native pending field', () => {
       call += 1;
 
       if (response?.error) {
+        // Default to a 200-with-GraphQL-errors response; `status` opts into a
+        // real HTTP failure, which is how Monarch refused the `pending` field.
         options.onload({
-          status: 200,
+          status: response.status ?? 200,
           responseText: JSON.stringify({
             errors: [{ message: response.error }],
           }),
@@ -301,53 +303,109 @@ describe('Monarch API - native pending field', () => {
     });
   });
 
-  describe('error classification', () => {
+  describe('the verdict is decided by experiment, not by error text', () => {
     /**
-     * Failures that are NOT evidence about the field.
+     * The real 400 Monarch returns for the `pending` field.
      *
-     * Attributing any of these to `pending` would disable the feature for the
-     * whole session on the strength of a transient blip, and — worse — report a
-     * confident but false verdict. This was a real bug: a logged-out session
-     * produced "Monarch does not accept the pending field".
+     * Note how uninformative it is — "Something went wrong while processing" with
+     * no mention of the field. Two earlier versions of this code tried to classify
+     * failures by pattern-matching the message and got it wrong in both
+     * directions: first blaming the field for auth errors, then refusing to blame
+     * it for exactly this response. The retry is a far better instrument.
      */
-    const unrelatedFailures = [
-      ['an expired session', 'Monarch Auth Error: Session was invalid or expired.'],
-      ['a server error', 'Monarch API Error: 500'],
-      ['a missing session', 'Monarch session not found. Please open Monarch Money in another tab.'],
-    ];
+    const MONARCH_400 = {
+      status: 400,
+      error: 'Something went wrong while processing: None on request_id: None.',
+    };
 
-    test.each(unrelatedFailures)('does NOT blame the field for %s', async (_label, message) => {
-      respondWith({ error: message });
-
-      await expect(updateTransactionWithPending('tx-1', { notes: 'hello' }, true, 'ownerSync'))
-        .rejects.toThrow();
-
-      // Field left unprobed, so it gets a fair test next time
-      expect(isPendingFieldSupported()).toBe(true);
-      expect(hasPendingFieldBeenProbed()).toBe(false);
-      expect(getPendingFieldProbe()).toBeNull();
-    });
-
-    test('does not retry an unrelated failure', async () => {
-      // Retrying would double the damage of a real outage.
-      respondWith({ error: 'Monarch Auth Error: Session was invalid or expired.' });
-
-      await expect(updateTransactionWithPending('tx-1', { notes: 'hello' }, true))
-        .rejects.toThrow();
-
-      expect(mockGMXmlHttpRequest).toHaveBeenCalledTimes(1);
-    });
-
-    test('DOES blame the field for a GraphQL validation error naming it', async () => {
-      respondWith(
-        { error: '[{"message":"Unknown argument \\"pending\\" on field UpdateTransactionMutationInput"}]' },
-        { id: 'tx-1', notes: 'hello' },
-      );
+    test('blames the field when removing it fixes the request', async () => {
+      // The controlled experiment: one variable changed between the two attempts.
+      respondWith(MONARCH_400, { id: 'tx-1', notes: 'hello' });
 
       const result = await updateTransactionWithPending('tx-1', { notes: 'hello' }, true, 'ownerSync');
 
       expect(result.pendingApplied).toBe(false);
       expect(isPendingFieldSupported()).toBe(false);
+      expect(getPendingFieldProbe()).toMatchObject({ verdict: 'rejected', context: 'ownerSync' });
+    });
+
+    test("still applies the caller's update when the field is blamed", async () => {
+      // The regression that mattered: 7.11.1 threw here, so owner sync rows failed.
+      respondWith(MONARCH_400, { id: 'tx-1', notes: 'hello' });
+
+      const result = await updateTransactionWithPending('tx-1', { notes: 'hello' }, true, 'ownerSync');
+
+      expect(result.transaction).toEqual(expect.objectContaining({ notes: 'hello' }));
+      expect(mockGMXmlHttpRequest).toHaveBeenCalledTimes(2);
+      expect(inputOfCall(1)).not.toHaveProperty('pending');
+    });
+
+    test('does NOT blame the field when the retry fails too', async () => {
+      // Failing both ways means the field was never the problem.
+      respondWith(
+        { status: 500, error: 'upstream exploded' },
+        { status: 500, error: 'upstream exploded' },
+      );
+
+      await expect(updateTransactionWithPending('tx-1', { notes: 'hello' }, true, 'ownerSync'))
+        .rejects.toThrow();
+
+      expect(isPendingFieldSupported()).toBe(true);
+      expect(getPendingFieldProbe()).toMatchObject({ verdict: 'inconclusive' });
+    });
+
+    test('records inconclusive — not rejected — when a 5xx is fixed by the retry', async () => {
+      // Removing the field appeared to help, but a server fault says nothing
+      // about the schema, so this must not latch.
+      respondWith({ status: 500, error: 'transient' }, { id: 'tx-1', notes: 'hello' });
+
+      const result = await updateTransactionWithPending('tx-1', { notes: 'hello' }, true, 'ownerSync');
+
+      expect(result.transaction).toEqual(expect.objectContaining({ notes: 'hello' }));
+      expect(isPendingFieldSupported()).toBe(true);
+      expect(getPendingFieldProbe()).toMatchObject({ verdict: 'inconclusive' });
+    });
+
+    test('blames the field for a 200-with-GraphQL-errors refusal', async () => {
+      // A GraphQL errors array is a refusal by definition, whatever the status.
+      respondWith(
+        { error: 'Unknown argument "pending"' },
+        { id: 'tx-1', notes: 'hello' },
+      );
+
+      await updateTransactionWithPending('tx-1', { notes: 'hello' }, true, 'ownerSync');
+
+      expect(isPendingFieldSupported()).toBe(false);
+      expect(getPendingFieldProbe().verdict).toBe('rejected');
+    });
+  });
+
+  describe('authentication failures', () => {
+    const authFailures = [
+      ['an expired session', 'Monarch Auth Error: Session was invalid or expired.'],
+      ['a missing session', 'Monarch session not found. Please open Monarch Money in another tab.'],
+    ];
+
+    test.each(authFailures)('rethrows immediately for %s', async (_label, message) => {
+      respondWith({ status: 401, error: message });
+
+      await expect(updateTransactionWithPending('tx-1', { notes: 'hello' }, true, 'ownerSync'))
+        .rejects.toThrow();
+
+      // No retry: credentials are already cleared, so a second attempt is futile
+      expect(mockGMXmlHttpRequest).toHaveBeenCalledTimes(1);
+    });
+
+    test('never records a verdict for an auth failure', async () => {
+      // This produced the original false "Monarch does not accept the pending
+      // field" report, so it is pinned explicitly.
+      respondWith({ status: 401, error: 'Monarch Auth Error: Session was invalid or expired.' });
+
+      await expect(updateTransactionWithPending('tx-1', {}, true, 'ownerSync')).rejects.toThrow();
+
+      expect(isPendingFieldSupported()).toBe(true);
+      expect(hasPendingFieldBeenProbed()).toBe(false);
+      expect(getPendingFieldProbe()).toBeNull();
     });
   });
 

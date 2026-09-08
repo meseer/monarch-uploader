@@ -109,6 +109,7 @@ jest.mock('../../src/api/monarch', () => ({
     isPendingFieldSupported: jest.fn(() => true),
     hasPendingFieldBeenProbed: jest.fn(() => false),
     getPendingFieldProbe: jest.fn(() => null),
+    getPersistedPendingFieldProbe: jest.fn(() => null),
   },
 }));
 

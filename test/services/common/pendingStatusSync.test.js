@@ -271,6 +271,70 @@ describe('pendingStatusSync', () => {
     });
   });
 
+  describe('systemic failure', () => {
+    /** Build N queued rows that all need flagging */
+    const rowsNeedingFlag = (n) => Array.from(
+      { length: n },
+      (_, i) => ({ id: `tx-${i}`, pending: false }),
+    );
+
+    test('abandons the pass after three consecutive failures', async () => {
+      // The failure this exists to prevent: a real run failed once per row for
+      // 23 rows. The latch cannot catch a fault it never learns about, so the
+      // pass has to notice for itself.
+      queueContains(...rowsNeedingFlag(23));
+      monarchApi.updateTransactionWithPending.mockRejectedValue(new Error('upstream exploded'));
+
+      const result = await syncPendingStatuses(params);
+
+      expect(monarchApi.updateTransactionWithPending).toHaveBeenCalledTimes(3);
+      expect(result.failed).toBe(3);
+      expect(result.abortedAfterFailures).toBe(true);
+    });
+
+    test('leaves the remaining rows queued rather than failing them', async () => {
+      queueContains(...rowsNeedingFlag(23));
+      monarchApi.updateTransactionWithPending.mockRejectedValue(new Error('upstream exploded'));
+
+      const result = await syncPendingStatuses(params);
+
+      // 20 rows were never touched; the Pending tag keeps them for next sync
+      expect(result.failed).toBeLessThan(23);
+      expect(result.success).toBe(true);
+    });
+
+    test('does not abort when failures are interleaved with successes', async () => {
+      // Isolated failures are a per-row problem, not a systemic one.
+      queueContains(...rowsNeedingFlag(6));
+      monarchApi.updateTransactionWithPending
+        .mockRejectedValueOnce(new Error('blip'))
+        .mockResolvedValueOnce({ transaction: {}, pendingApplied: true })
+        .mockRejectedValueOnce(new Error('blip'))
+        .mockResolvedValueOnce({ transaction: {}, pendingApplied: true })
+        .mockRejectedValueOnce(new Error('blip'))
+        .mockResolvedValueOnce({ transaction: {}, pendingApplied: true });
+
+      const result = await syncPendingStatuses(params);
+
+      expect(result.abortedAfterFailures).toBeUndefined();
+      expect(result.flagged).toBe(3);
+      expect(result.failed).toBe(3);
+    });
+
+    test('reports the abort as the headline in the step message', async () => {
+      expect(formatPendingStatusMessage({
+        success: true,
+        flagged: 0,
+        alreadyPending: 0,
+        ignored: 0,
+        failed: 3,
+        deferred: 0,
+        abortedAfterFailures: true,
+        error: null,
+      })).toBe('Stopped after 3 failures');
+    });
+  });
+
   describe('non-fatal behaviour', () => {
     test('counts a per-row error without aborting the remaining rows', async () => {
       queueContains({ id: 'tx-1', pending: false }, { id: 'tx-2', pending: false });

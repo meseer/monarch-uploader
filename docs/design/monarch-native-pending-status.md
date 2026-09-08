@@ -5,22 +5,40 @@
 > **Author:** @meseer  
 > **Note:** Rogers Bank only in this iteration. Monarch's `pending` mutation field is undocumented, so this is deliberately written to be harmless if the field does not work. Promote to **Active** and extend to MBNA/Wealthsimple once verified against the live API.
 
-## Status: awaiting a verdict
+## Status: Monarch appears to reject the field
 
-The first live run reported `unsupported: true` with `flagged: 0, ignored: 0` — i.e.
-the pass issued **no mutation at all**, because the latch had already been tripped
-by owner sync earlier in the same sync. The deciding error was logged at `debug`
-level and lost to a page navigation before it could be read.
+The second live run captured the answer. Monarch returns **HTTP 400** for
+`updateTransaction` when `pending` is present:
 
-That exposed two flaws, both fixed in 7.11.1 (see *Diagnostics* below):
+```json
+{"errors":[{"message":"Something went wrong while processing: None on request_id: None.",
+            "locations":[{"line":1,"column":49}]}]}
+```
 
-1. **The diagnostics were too weak to answer the question.** The verdict is the
-   entire point of the exercise, and it was invisible.
-2. **The error classification was wrong.** *Any* thrown error was treated as proof
-   the field is unsupported — including auth expiry, HTTP failures and network
-   faults, none of which say anything about the field. A transient blip would have
-   silently disabled the feature for the session **and reported a confident but
-   false verdict**.
+Column 49 of line 1 is the `$input` variable of the mutation, and the pending pass
+sends *only* `{ pending: … }` besides the id — so the field alone is enough to
+produce the 400. Note how uninformative the message is: it never mentions
+`pending`, which is precisely why classifying failures by their text was doomed.
+
+Getting to that answer took three iterations, and each dead end came from the same
+root cause — **the decision rested on interpreting an error message**:
+
+| Version | Behaviour | Failure mode |
+|---------|-----------|--------------|
+| 7.11.0 | Latched on *any* thrown error | Would blame the field for an auth blip |
+| 7.11.1 | Latched only on messages matching a pattern | Refused to blame the field for the very 400 that *was* the field; ownerSync rows then failed outright, and the summary claimed `NOT PROBED` |
+| 7.11.2 | **Differential probe** — retry without the field and compare | No message interpretation at all |
+
+Three further flaws surfaced along the way, all fixed in 7.11.2:
+
+1. **`callMonarchGraphQL` discarded the response body on non-200**, so the one
+   informative payload in the exchange never reached the code that needed it. This
+   blinded *every* Monarch call, not just this feature.
+2. **The verdict line lied.** It reported `NOT PROBED` while 23 rows had failed,
+   because "probed" was inferred from the latch rather than from whether an attempt
+   had been made.
+3. **A systemic fault cost one mutation per row.** The latch stops a *field*
+   problem after one attempt, but cannot see a fault it never learns about.
 
 ## Problem
 
@@ -120,10 +138,21 @@ Case 3 is only detectable because the mutation's response fragment selects
 `pending`. Without that check, an ignored field would be indistinguishable from
 success.
 
-Case 4 is the difference between a real verdict and a false one, and is decided by
-`isFieldRejectionError()`: messages containing `Monarch Auth Error`,
-`Monarch API Error` or `Monarch session not found` are never attributed to the
-field; a GraphQL validation error naming the field is.
+Cases 2–4 are distinguished by **experiment, not by reading the error text**:
+
+> Send the update with the field. If it fails, send the identical update *without*
+> the field. If the second attempt succeeds, the field was the cause.
+
+One variable, one comparison, no dependence on Monarch's wording — which matters
+because the real rejection message never mentions `pending` at all. Two earlier
+versions tried to classify by pattern-matching and were wrong in both directions.
+
+One refinement keeps an outage from masquerading as a schema verdict: the latch is
+only set when the original failure was a **client-side refusal** (4xx, or a
+response carrying GraphQL `errors`). A 5xx or network fault whose retry happens to
+succeed is recorded `inconclusive` and left **unlatched** — "we broke" says nothing
+about the schema. Auth failures short-circuit before the experiment, since
+credentials are already cleared and a retry is futile.
 
 The latch (`isPendingFieldSupported()`) is **session-scoped**, not persisted: a
 page reload is a free, self-healing re-probe if Monarch adds support later.
@@ -138,7 +167,7 @@ the verdict is treated as a first-class output rather than a log side-effect.
 **A probe record** accompanies every verdict:
 
 ```ts
-{ verdict: 'supported' | 'rejected' | 'ignored',
+{ verdict: 'supported' | 'rejected' | 'ignored' | 'inconclusive',
   detail,          // verbatim Monarch error, or the requested/returned mismatch
   context,         // which pass probed: ownerSync | pendingStatusSync | rogersReconciliation
   transactionId,
@@ -165,7 +194,15 @@ the verdict is treated as a first-class output rather than a log side-effect.
 | End-of-stage session verdict | `info` |
 
 `runPostSyncUpdates` closes with one line — `SUPPORTED` / `UNSUPPORTED (…)` /
-`NOT PROBED` — so there is a single line to read rather than a log to search.
+`PROBE INCONCLUSIVE (…)` / `NOT PROBED` — so there is a single line to read rather
+than a log to search. It also *replays the previously persisted verdict* at the
+start of the stage, so an answer recorded in an earlier session resurfaces without
+anyone having to go looking for it.
+
+`pendingStatusSync` additionally **abandons the pass after three consecutive
+failures**. The latch stops a *field* problem after one mutation, but cannot see a
+fault it never learns about; without this, a systemic failure cost one mutation per
+queued row (23, in the run that exposed it).
 
 **`pendingStatusSync` never overstates its knowledge.** `alreadyUnsupported`
 distinguishes "the latch was already tripped before this pass ran" from
@@ -300,20 +337,41 @@ Then confirm:
 5. A second sync with no new data reports "N already pending" and issues no
    mutations.
 
-The verdict is also written to storage, so it can be read back later even if the
-console is lost:
+The verdict is also written to `GM` storage, and **replayed as an `info` line at
+the start of the next sync's post-sync stage** — so it resurfaces on its own even
+if the console that produced it is long gone.
 
-```js
-GM_getValue('monarch_pending_field_probe')
-```
+Note that `GM_getValue` is *not* callable from the page console: `GM_*` APIs exist
+only inside the userscript sandbox. Reading the record back therefore happens via
+that replayed log line, or via the extension's own storage viewer.
 
-## Open question
+## Where this leaves the feature
 
-Whether Monarch's `updateTransaction` accepts `pending` at all. Everything above
-is structured so that the answer determines only how much benefit is gained —
-never whether the sync works.
+The evidence says `pending` is **not writable** via `updateTransaction`. The design
+anticipated that: the `Pending` tag remains the source of truth, and every part of
+the sync behaves exactly as it did before the feature existed. Nothing is broken by
+the answer being "no".
 
-If the answer is `rejected`, the verbatim error should say which input type refused
-the field, which tells us whether to try a different field name (`isPending`) or
-look for a dedicated mutation. Deliberately not guessed at in advance: one clean
-answer is worth more than two half-tested alternatives.
+Two honest options for the next iteration:
+
+1. **Probe alternatives once.** A differently-named input field (`isPending`), or a
+   dedicated status mutation. The probe machinery now exists, so trying one
+   candidate is cheap and the result will be unambiguous.
+2. **Accept tag-only and stop.** Mark this doc `Superseded`, keep the
+   infrastructure — `markerTagQueue`, `postSyncUpdates`, the response-body fix and
+   the differential probe are all valuable independently of this feature — and stop
+   guessing at an undocumented API.
+
+The decisive input would be **what Monarch's own web app sends when a transaction's
+pending state changes in the UI** — if that is even user-controllable. If the UI
+offers no such control, that is strong evidence the field is server-owned and
+read-only, which argues for option 2 without further experiments.
+
+## Lesson worth keeping
+
+The recurring mistake was inferring a *fact about a contract* from the *prose of an
+error message*. Three attempts failed that way. What finally worked was an
+experiment: change one variable, observe the difference. Where behaviour must be
+discovered rather than read from documentation, prefer a controlled retry over
+pattern-matching, and record the outcome somewhere durable — the answer is easy to
+lose and expensive to re-obtain.

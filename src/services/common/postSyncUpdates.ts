@@ -192,6 +192,26 @@ function resolveStatus(result: PassOutcome): string {
 }
 
 /**
+ * Surface the verdict recorded by a *previous* session.
+ *
+ * `GM_*` storage is unreachable from the page console, so the persisted record
+ * would otherwise be write-only. Replaying it at the start of the stage means the
+ * answer resurfaces on every sync without anyone having to go looking for it —
+ * which is what made the first failed run so hard to diagnose.
+ */
+function logPreviousPendingFieldVerdict(): void {
+  // Only interesting before this session has formed its own opinion.
+  if (monarchApi.hasPendingFieldBeenProbed()) return;
+
+  const previous = monarchApi.getPersistedPendingFieldProbe();
+  if (!previous) return;
+
+  logInfo('[postSync] Previously recorded verdict on the native "pending" field: '
+    + `${previous.verdict.toUpperCase()} (${previous.context} on ${previous.transactionId}, `
+    + `${previous.at}): ${previous.detail}`);
+}
+
+/**
  * Emit one line summarising this session's verdict on the native `pending` field.
  *
  * Deliberately a single `info` line rather than scattered debug output: the
@@ -200,22 +220,33 @@ function resolveStatus(result: PassOutcome): string {
  * navigation — is exactly the problem this solves.
  */
 function logPendingFieldVerdict(): void {
-  if (!monarchApi.hasPendingFieldBeenProbed()) {
-    logInfo('[postSync] Monarch native "pending" field: NOT PROBED this sync '
-      + '(nothing needed the flag set or cleared)');
+  const probe = monarchApi.getPendingFieldProbe();
+
+  // Latched unsupported ⇒ a definitive negative verdict.
+  if (!monarchApi.isPendingFieldSupported()) {
+    logInfo('[postSync] Monarch native "pending" field: UNSUPPORTED — '
+      + `${probe ? `${probe.verdict} during ${probe.context}: ${probe.detail}` : 'no probe record available'}`);
     return;
   }
 
-  const probe = monarchApi.getPendingFieldProbe();
+  // A probe ran and failed to conclude — the important middle case. Reporting
+  // this as "NOT PROBED" (as an earlier version did) hid real failures behind a
+  // message implying nothing had been attempted.
+  if (probe?.verdict === 'inconclusive') {
+    logInfo('[postSync] Monarch native "pending" field: PROBE INCONCLUSIVE — '
+      + 'the update failed with and without the field, so this says nothing about it '
+      + `(${probe.context} on ${probe.transactionId}): ${probe.detail}`);
+    return;
+  }
 
-  if (monarchApi.isPendingFieldSupported()) {
+  if (monarchApi.hasPendingFieldBeenProbed()) {
     logInfo('[postSync] Monarch native "pending" field: SUPPORTED'
       + `${probe ? ` (confirmed by ${probe.context})` : ''}`);
     return;
   }
 
-  logInfo('[postSync] Monarch native "pending" field: UNSUPPORTED — '
-    + `${probe ? `${probe.verdict} during ${probe.context}: ${probe.detail}` : 'no probe record available'}`);
+  logInfo('[postSync] Monarch native "pending" field: NOT PROBED this sync '
+    + '(nothing needed the flag set or cleared)');
 }
 
 /**
@@ -237,6 +268,10 @@ export async function runPostSyncUpdates(
   progressDialog: PostSyncProgressDialog,
 ): Promise<Record<string, PassOutcome>> {
   const results: Record<string, PassOutcome> = {};
+
+  if (ctx.pendingStatusEnabled) {
+    logPreviousPendingFieldVerdict();
+  }
 
   for (const pass of POST_SYNC_PASSES) {
     if (!pass.isEnabled(ctx)) continue;
