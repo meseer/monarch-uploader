@@ -8,6 +8,22 @@
  * All integrations now use consolidated account storage:
  * - uploadedTransactions is stored within each account entry in <integration>_accounts_list
  * - Use accountService to read/write account data including uploadedTransactions
+ *
+ * ## Ordering invariant
+ *
+ * `uploadedTransactions` is stored **oldest-first**: the head of the array is the
+ * oldest transaction and the tail is the most recent. New transactions are
+ * appended at the tail, so callers MUST pass new transactions oldest-first —
+ * i.e. in the order the source institution lists them, reversed first if that
+ * institution returns newest-first.
+ *
+ * This makes the array behave as a FIFO queue: retention pruning drops entries
+ * from the head (oldest) and keeps the tail (newest).
+ *
+ * Ordering is maintained purely at insertion time — no function here re-sorts a
+ * stored list. That way a bug in a caller's insertion order stays visible
+ * instead of being silently repaired. For display, use
+ * `getTransactionsNewestFirst`, which reverses the stored order.
  */
 
 import { TRANSACTION_RETENTION_DEFAULTS } from '../core/config';
@@ -17,10 +33,11 @@ import { debugLog, getTodayLocal, parseLocalDate } from '../core/utils';
 // Types
 // ============================================================================
 
-/** A stored transaction with ID and optional date */
+/** A stored transaction with ID, optional date and optional merchant name */
 export interface StoredTransaction {
   id: string;
   date: string | null;
+  merchant?: string | null;
 }
 
 /** Retention settings for transaction storage */
@@ -34,6 +51,19 @@ interface AccountDataWithRetention {
   transactionRetentionDays?: number;
   transactionRetentionCount?: number;
   [key: string]: unknown;
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * A retention limit of 0 (or any non-positive / invalid value) means "unlimited".
+ * This matches the settings UI copy ("0 = unlimited") and
+ * `validateLookbackVsRetention`, which already treats 0 as unlimited.
+ */
+function isUnlimited(limit: number): boolean {
+  return !Number.isFinite(limit) || limit <= 0;
 }
 
 // ============================================================================
@@ -67,66 +97,68 @@ export function migrateLegacyTransactions(legacyData: unknown[]): StoredTransact
   return legacyData.map((id) => ({
     id: typeof id === 'string' ? id : String(id),
     date: null, // Legacy transactions have no date
+    merchant: null, // Legacy transactions have no merchant
   }));
 }
 
 /**
- * Apply retention limits to transaction list
+ * Return a copy of a stored transaction list in reverse-chronological order
+ * (newest first) for display purposes.
+ *
+ * This is a plain reversal of the stored oldest-first order, NOT a re-sort:
+ * ordering is owned by insertion time, so an out-of-order stored list stays
+ * visibly out of order here rather than being silently corrected.
+ *
+ * @param transactions - Stored transactions (oldest-first)
+ * @returns New array in newest-first order
+ */
+export function getTransactionsNewestFirst(transactions: StoredTransaction[] | null | undefined): StoredTransaction[] {
+  if (!Array.isArray(transactions)) {
+    return [];
+  }
+  return [...transactions].reverse();
+}
+
+/**
+ * Apply retention limits to transaction list.
+ *
+ * Order-preserving: surviving entries keep their relative positions, so the
+ * oldest-first storage invariant is maintained. The count limit keeps the tail
+ * (newest) and drops from the head (oldest).
+ *
+ * A limit of 0 (or any non-positive value) means unlimited.
  */
 export function applyRetentionLimits(transactions: StoredTransaction[], settings: RetentionSettings): StoredTransaction[] {
   if (!Array.isArray(transactions) || transactions.length === 0) {
     return [];
   }
 
-  const today = parseLocalDate(getTodayLocal());
-  const cutoffDate = new Date(today);
-  cutoffDate.setDate(cutoffDate.getDate() - settings.days);
+  let retained = transactions;
 
-  // Separate dated and undated transactions
-  const datedTransactions = transactions.filter((tx) => tx.date !== null);
-  const undatedTransactions = transactions.filter((tx) => tx.date === null);
+  // ── Date-based retention ──────────────────────────────────
+  if (!isUnlimited(settings.days)) {
+    const today = parseLocalDate(getTodayLocal());
+    const cutoffDate = new Date(today);
+    cutoffDate.setDate(cutoffDate.getDate() - settings.days);
 
-  // Sort dated transactions by date (newest first)
-  datedTransactions.sort((a, b) => {
-    const dateA = parseLocalDate(a.date!);
-    const dateB = parseLocalDate(b.date!);
-    return dateB.getTime() - dateA.getTime();
-  });
+    // Undated (legacy) entries are dropped only once we have dated entries that
+    // are themselves older than the cutoff — at that point the legacy entries
+    // are provably older still.
+    const hasOldDatedTransactions = transactions.some((tx) => tx.date !== null && parseLocalDate(tx.date) < cutoffDate);
 
-  // Apply date-based retention to dated transactions
-  const recentDatedTransactions = datedTransactions.filter((tx) => {
-    const txDate = parseLocalDate(tx.date!);
-    return txDate >= cutoffDate;
-  });
-
-  // Check if we have any dated transactions older than the cutoff
-  const hasOldDatedTransactions = datedTransactions.some((tx) => {
-    const txDate = parseLocalDate(tx.date!);
-    return txDate < cutoffDate;
-  });
-
-  // Combine recent dated transactions with undated ones
-  let retained = [...recentDatedTransactions];
-
-  // Only keep undated transactions if we don't have old dated transactions
-  // (per requirement: remove undated only when we have dated ones older than limit)
-  if (!hasOldDatedTransactions) {
-    retained = [...retained, ...undatedTransactions];
+    // Single order-preserving pass so entries keep their original positions.
+    retained = transactions.filter((tx) => {
+      if (tx.date === null) {
+        return !hasOldDatedTransactions;
+      }
+      return parseLocalDate(tx.date) >= cutoffDate;
+    });
   }
 
-  // Apply count limit (keep most recent N transactions)
-  if (retained.length > settings.count) {
-    // Sort by date (newest first), with undated at the end
-    retained.sort((a, b) => {
-      if (a.date === null && b.date === null) return 0;
-      if (a.date === null) return 1;
-      if (b.date === null) return -1;
-      const dateA = parseLocalDate(a.date);
-      const dateB = parseLocalDate(b.date);
-      return dateB.getTime() - dateA.getTime();
-    });
-
-    retained = retained.slice(0, settings.count);
+  // ── Count-based retention ─────────────────────────────────
+  // Keep the newest entries, which live at the tail under oldest-first storage.
+  if (!isUnlimited(settings.count) && retained.length > settings.count) {
+    retained = retained.slice(-settings.count);
   }
 
   debugLog(`Transaction retention: ${transactions.length} -> ${retained.length} (days: ${settings.days}, count: ${settings.count})`);
@@ -135,8 +167,16 @@ export function applyRetentionLimits(transactions: StoredTransaction[], settings
 }
 
 /**
- * Merge new transactions with existing ones and apply retention limits
- * Pure logic function - can be used by any storage mechanism
+ * Merge new transactions with existing ones and apply retention limits.
+ * Pure logic function - can be used by any storage mechanism.
+ *
+ * New transactions are appended at the tail to preserve the oldest-first
+ * storage invariant, so `newTransactions` MUST be ordered oldest-first.
+ *
+ * @param existingTransactions - Currently stored transactions (oldest-first)
+ * @param newTransactions - New transactions to append, oldest-first
+ * @param retentionSettings - Retention limits to apply
+ * @param defaultDate - Date to stamp on entries that carry no date of their own
  */
 export function mergeAndRetainTransactions(
   existingTransactions: unknown[],
@@ -159,16 +199,17 @@ export function mergeAndRetainTransactions(
     })
     .map((tx) => {
       if (typeof tx === 'string') {
-        return { id: tx, date };
+        return { id: tx, date, merchant: null };
       }
-      // Preserve the date from the transaction if available
+      // Preserve the date and merchant from the transaction if available
       return {
         id: tx.id || String(tx),
         date: tx.date || date,
+        merchant: tx.merchant ?? null,
       };
     });
 
-  // Combine with existing
+  // Append at the tail — newest entries live at the end (oldest-first storage)
   const combined = [...migratedExisting, ...transactionsToAdd];
 
   // Apply retention limits

@@ -639,13 +639,15 @@ async function processAndUploadActivityTransactions(accountId, accountName, from
     );
 
     if (uploadSuccess) {
-      // Save transaction IDs for deduplication
+      // Save transaction IDs for deduplication. Merchant mirrors the CSV's
+      // Merchant column so the settings list shows what Monarch received.
       const transactionsWithDates = newProcessedTransactions.map((pt) => {
         const txId = getTransactionId(pt.transaction);
         const date = pt.details?.transactionDate || pt.transaction?.transactionDate || toDate;
         return {
           id: txId,
           date: date.includes('T') ? date.split('T')[0] : date,
+          merchant: pt.ruleResult?.merchant || null,
         };
       });
 
@@ -770,7 +772,8 @@ async function processAndUploadOrders(accountId, accountName, fromDate, monarchA
     );
 
     if (uploadSuccess) {
-      // Save order UUIDs with dates for successful uploads
+      // Save order UUIDs with dates for successful uploads. Merchant mirrors the
+      // CSV's Merchant column (the security display name).
       const transactionsWithDates = ordersToUpload.map((order) => {
         let date = toDate;
         if (order.updatedDateTime) {
@@ -780,6 +783,7 @@ async function processAndUploadOrders(accountId, accountName, fromDate, monarchA
         return {
           id: order.orderUuid,
           date,
+          merchant: order.security?.displayName || null,
         };
       }).filter((t) => t.id);
 
@@ -1073,13 +1077,15 @@ async function uploadActivityForAccount(accountId, accountName, monarchAccountId
     );
 
     if (uploadSuccess) {
-      // Save transaction IDs for deduplication
+      // Save transaction IDs for deduplication. Merchant mirrors the CSV's
+      // Merchant column so the settings list shows what Monarch received.
       const transactionsWithDates = newProcessedTransactions.map((pt) => {
         const txId = getTransactionId(pt.transaction);
         const date = pt.details?.transactionDate || pt.transaction?.transactionDate || toDate;
         return {
           id: txId,
           date: date.includes('T') ? date.split('T')[0] : date,
+          merchant: pt.ruleResult?.merchant || null,
         };
       });
 

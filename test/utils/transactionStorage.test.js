@@ -9,6 +9,7 @@ import {
   getRetentionSettingsFromAccount,
   getTransactionIdsFromArray,
   mergeAndRetainTransactions,
+  getTransactionsNewestFirst,
 } from '../../src/utils/transactionStorage';
 import { TRANSACTION_RETENTION_DEFAULTS } from '../../src/core/config';
 import * as utils from '../../src/core/utils';
@@ -84,9 +85,9 @@ describe('Transaction Storage Utilities', () => {
       const migrated = migrateLegacyTransactions(legacy);
 
       expect(migrated).toEqual([
-        { id: 'id1', date: null },
-        { id: 'id2', date: null },
-        { id: 'id3', date: null },
+        { id: 'id1', date: null, merchant: null },
+        { id: 'id2', date: null, merchant: null },
+        { id: 'id3', date: null, merchant: null },
       ]);
     });
 
@@ -117,9 +118,59 @@ describe('Transaction Storage Utilities', () => {
       const migrated = migrateLegacyTransactions(legacy);
 
       expect(migrated).toEqual([
-        { id: '123', date: null },
-        { id: '456', date: null },
+        { id: '123', date: null, merchant: null },
+        { id: '456', date: null, merchant: null },
       ]);
+    });
+  });
+
+  describe('getTransactionsNewestFirst', () => {
+    test('reverses the stored oldest-first order', () => {
+      const stored = [
+        { id: 'oldest', date: '2025-10-20' },
+        { id: 'middle', date: '2025-10-21' },
+        { id: 'newest', date: '2025-10-22' },
+      ];
+
+      const result = getTransactionsNewestFirst(stored);
+
+      expect(result.map((t) => t.id)).toEqual(['newest', 'middle', 'oldest']);
+    });
+
+    test('does not mutate the input array', () => {
+      const stored = [{ id: 'a', date: '2025-10-20' }, { id: 'b', date: '2025-10-21' }];
+
+      getTransactionsNewestFirst(stored);
+
+      expect(stored.map((t) => t.id)).toEqual(['a', 'b']);
+    });
+
+    test('is a plain reversal, not a re-sort (out-of-order input stays out of order)', () => {
+      // An insertion-order bug must remain visible rather than being corrected.
+      const misordered = [
+        { id: 'newest', date: '2025-10-22' },
+        { id: 'oldest', date: '2025-10-20' },
+      ];
+
+      const result = getTransactionsNewestFirst(misordered);
+
+      expect(result.map((t) => t.id)).toEqual(['oldest', 'newest']);
+    });
+
+    test('preserves merchant on each entry', () => {
+      const stored = [{ id: 'tx1', date: '2025-10-20', merchant: 'AMAZON' }];
+
+      const result = getTransactionsNewestFirst(stored);
+
+      expect(result[0].merchant).toBe('AMAZON');
+    });
+
+    test('returns empty array for null input', () => {
+      expect(getTransactionsNewestFirst(null)).toEqual([]);
+    });
+
+    test('returns empty array for undefined input', () => {
+      expect(getTransactionsNewestFirst(undefined)).toEqual([]);
     });
   });
 
@@ -191,21 +242,112 @@ describe('Transaction Storage Utilities', () => {
       expect(result.some((t) => t.id === 'old')).toBe(false);
     });
 
-    test('sorts by date with undated at end when applying count limit', () => {
+    test('count limit keeps the tail (newest) and drops from the head (oldest)', () => {
+      // Storage is oldest-first, so the newest entries live at the end.
       const transactions = [
-        { id: 'undated1', date: null },
-        { id: 'recent', date: '2025-10-23' },
-        { id: 'older', date: '2025-10-20' },
-        { id: 'undated2', date: null },
+        { id: 'oldest', date: '2025-10-20' },
+        { id: 'middle', date: '2025-10-21' },
+        { id: 'newest', date: '2025-10-22' },
       ];
       const settings = { days: 90, count: 2 };
 
       const result = applyRetentionLimits(transactions, settings);
 
-      expect(result.length).toBe(2);
-      // Most recent dated transactions should be kept
-      expect(result[0].id).toBe('recent');
-      expect(result[1].id).toBe('older');
+      expect(result.map((t) => t.id)).toEqual(['middle', 'newest']);
+    });
+
+    test('preserves the stored order rather than re-sorting', () => {
+      // An out-of-order list must come back out of order: ordering is owned by
+      // insertion time, so a caller bug stays visible.
+      const transactions = [
+        { id: 'b', date: '2025-10-22' },
+        { id: 'a', date: '2025-10-20' },
+        { id: 'c', date: '2025-10-21' },
+      ];
+      const settings = { days: 90, count: 1000 };
+
+      const result = applyRetentionLimits(transactions, settings);
+
+      expect(result.map((t) => t.id)).toEqual(['b', 'a', 'c']);
+    });
+
+    test('keeps undated legacy entries at their original position', () => {
+      const transactions = [
+        { id: 'undated1', date: null },
+        { id: 'undated2', date: null },
+        { id: 'dated', date: '2025-10-22' },
+      ];
+      const settings = { days: 30, count: 1000 };
+
+      const result = applyRetentionLimits(transactions, settings);
+
+      expect(result.map((t) => t.id)).toEqual(['undated1', 'undated2', 'dated']);
+    });
+
+    test('preserves merchant through retention', () => {
+      const transactions = [{ id: 'tx1', date: '2025-10-22', merchant: 'AMAZON' }];
+
+      const result = applyRetentionLimits(transactions, { days: 90, count: 1000 });
+
+      expect(result[0].merchant).toBe('AMAZON');
+    });
+
+    describe('unlimited retention (0)', () => {
+      test('days: 0 keeps transactions of any age', () => {
+        const transactions = [
+          { id: 'ancient', date: '2020-01-01' },
+          { id: 'recent', date: '2025-10-22' },
+        ];
+
+        const result = applyRetentionLimits(transactions, { days: 0, count: 1000 });
+
+        expect(result.map((t) => t.id)).toEqual(['ancient', 'recent']);
+      });
+
+      test('days: 0 keeps undated legacy entries', () => {
+        const transactions = [
+          { id: 'undated', date: null },
+          { id: 'ancient', date: '2020-01-01' },
+        ];
+
+        const result = applyRetentionLimits(transactions, { days: 0, count: 1000 });
+
+        expect(result.map((t) => t.id)).toEqual(['undated', 'ancient']);
+      });
+
+      test('count: 0 keeps every transaction', () => {
+        const transactions = Array.from({ length: 50 }, (_, i) => ({
+          id: `id${i}`,
+          date: '2025-10-22',
+        }));
+
+        const result = applyRetentionLimits(transactions, { days: 90, count: 0 });
+
+        expect(result.length).toBe(50);
+      });
+
+      test('days: 0 and count: 0 together keep everything', () => {
+        const transactions = [
+          { id: 'ancient', date: '2020-01-01' },
+          { id: 'undated', date: null },
+          { id: 'recent', date: '2025-10-22' },
+        ];
+
+        const result = applyRetentionLimits(transactions, { days: 0, count: 0 });
+
+        expect(result.map((t) => t.id)).toEqual(['ancient', 'undated', 'recent']);
+      });
+
+      test('treats negative limits as unlimited', () => {
+        const transactions = [
+          { id: 'ancient', date: '2020-01-01' },
+          { id: 'recent', date: '2025-10-22' },
+        ];
+
+        const result = applyRetentionLimits(transactions, { days: -1, count: -1 });
+
+        expect(result.length).toBe(2);
+      });
     });
   });
 
@@ -386,6 +528,61 @@ describe('Transaction Storage Utilities', () => {
       expect(result.find((t) => t.id === 'stringId').date).toBe(defaultDate);
       expect(result.find((t) => t.id === 'objectId').date).toBe('2025-10-22');
       expect(result.find((t) => t.id === 'objectWithoutDate').date).toBe(defaultDate);
+    });
+
+    test('appends new transactions at the tail, preserving oldest-first order', () => {
+      const existing = [
+        { id: 'old1', date: '2025-10-20' },
+        { id: 'old2', date: '2025-10-21' },
+      ];
+      // Callers pass new transactions oldest-first
+      const newTransactions = [
+        { id: 'new1', date: '2025-10-22' },
+        { id: 'new2', date: '2025-10-23' },
+      ];
+      const settings = { days: 90, count: 1000 };
+
+      const result = mergeAndRetainTransactions(existing, newTransactions, settings, '2025-10-24');
+
+      expect(result.map((t) => t.id)).toEqual(['old1', 'old2', 'new1', 'new2']);
+    });
+
+    test('count limit drops the oldest entries from the head', () => {
+      const existing = [
+        { id: 'oldest', date: '2025-10-20' },
+        { id: 'older', date: '2025-10-21' },
+      ];
+      const newTransactions = [{ id: 'newest', date: '2025-10-22' }];
+      const settings = { days: 90, count: 2 };
+
+      const result = mergeAndRetainTransactions(existing, newTransactions, settings, '2025-10-24');
+
+      expect(result.map((t) => t.id)).toEqual(['older', 'newest']);
+    });
+
+    test('preserves merchant from new transaction records', () => {
+      const existing = [];
+      const newTransactions = [
+        { id: 'tx1', date: '2025-10-22', merchant: 'AMAZON' },
+        { id: 'tx2', date: '2025-10-23', merchant: 'STARBUCKS' },
+      ];
+      const settings = { days: 90, count: 1000 };
+
+      const result = mergeAndRetainTransactions(existing, newTransactions, settings, '2025-10-24');
+
+      expect(result.find((t) => t.id === 'tx1').merchant).toBe('AMAZON');
+      expect(result.find((t) => t.id === 'tx2').merchant).toBe('STARBUCKS');
+    });
+
+    test('sets merchant to null for string refs and records without merchant', () => {
+      const existing = [];
+      const newTransactions = ['stringId', { id: 'objectId', date: '2025-10-22' }];
+      const settings = { days: 90, count: 1000 };
+
+      const result = mergeAndRetainTransactions(existing, newTransactions, settings, '2025-10-24');
+
+      expect(result.find((t) => t.id === 'stringId').merchant).toBe(null);
+      expect(result.find((t) => t.id === 'objectId').merchant).toBe(null);
     });
   });
 });

@@ -56,6 +56,13 @@ interface MbnaAccountData {
  * Aggregates transactions from the current cycle and past statements,
  * returns them as separate settled and pending arrays along with
  * metadata needed for balance reconstruction.
+ *
+ * MBNA assembles its lists newest-first (current cycle first, then statements
+ * ordered by descending closing date, each statement newest-first internally),
+ * so both arrays are reversed to satisfy the hook's oldest-first contract. A
+ * plain reversal is used rather than a date sort so MBNA's own intra-day
+ * sequencing — which carries ordering information the date field does not — is
+ * preserved.
  */
 async function fetchTransactions(
   api: MbnaApiClient,
@@ -83,8 +90,8 @@ async function fetchTransactions(
   }));
 
   return {
-    settled: allSettled,
-    pending: allPending,
+    settled: [...allSettled].reverse(),
+    pending: [...allPending].reverse(),
     metadata: { statements: statementData, currentCycle },
   };
 }

@@ -96,6 +96,33 @@ function computeSettledDedupKey(tx) {
 }
 
 /**
+ * Build dedup reference records for Rogers Bank transactions.
+ *
+ * Each ref carries its own date and merchant (mirroring the CSV's Merchant
+ * column) so the stored dedup list is chronologically meaningful and
+ * displayable, rather than a bag of IDs all stamped with the batch date.
+ *
+ * Rogers Bank returns its activity list newest-first, so the refs are reversed
+ * to satisfy the oldest-first `uploadedTransactions` storage invariant. A plain
+ * reversal is used rather than a date sort so Rogers' own intra-day sequencing —
+ * which carries ordering information the date field does not — is preserved.
+ *
+ * @param {Array} transactions - Rogers Bank transactions, newest-first
+ * @param {Function} getRefId - Extracts the dedup reference ID from a transaction
+ * @returns {Array<Object>} Reference records, oldest-first
+ */
+function buildRogersTransactionRefs(transactions, getRefId) {
+  return transactions
+    .map((tx) => ({
+      id: getRefId(tx),
+      date: tx.date || null,
+      merchant: tx.merchant?.name || tx.description || null,
+    }))
+    .filter((ref) => Boolean(ref.id))
+    .reverse();
+}
+
+/**
  * Filter out already uploaded settled transactions
  * Uses consolidated storage for uploaded transaction IDs
  * @param {Array} transactions - Array of settled transactions
@@ -1042,19 +1069,25 @@ export async function uploadRogersBankToMonarch() {
         if (uploadSuccess) {
           transactionUploadSuccess = true;
 
-          // Save settled transaction dedup keys to store
+          // Save settled transaction dedup keys to store. Each ref carries its
+          // own date and merchant (mirroring the CSV's Merchant column) so the
+          // dedup store is chronologically meaningful and displayable.
           // Use computeSettledDedupKey to apply :fee suffix for FEES classification
-          const settledRefs = settledFilterResult.transactions.map((tx) => computeSettledDedupKey(tx)).filter(Boolean);
+          const settledRefs = buildRogersTransactionRefs(
+            settledFilterResult.transactions,
+            (tx) => computeSettledDedupKey(tx),
+          );
           // Save pending transaction hash IDs to dedup store
-          const pendingRefs = newPendingTx.map((tx) => tx.generatedId).filter(Boolean);
+          const pendingRefs = buildRogersTransactionRefs(newPendingTx, (tx) => tx.generatedId);
           const allRefs = [...settledRefs, ...pendingRefs];
 
           if (allRefs.length > 0) {
+            // Fallback date for refs with no date of their own
             let txDate = getTodayLocal();
             const withDates = allNewTransactions.filter((tx) => tx.date);
             if (withDates.length > 0) {
-              withDates.sort((a, b) => b.date.localeCompare(a.date));
-              txDate = withDates[0].date;
+              const sortedDates = [...withDates].sort((a, b) => b.date.localeCompare(a.date));
+              txDate = sortedDates[0].date;
             }
             const txAccountData = accountService.getAccountData(INTEGRATIONS.ROGERSBANK, rogersAccountId);
             const existingTransactions = (txAccountData?.uploadedTransactions as unknown[]) || [];

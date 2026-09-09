@@ -371,7 +371,15 @@ export interface SyncHooks {
   buildAccountEntry?: BuildAccountEntryHook;
 }
 
-/** Fetch raw transactions from the institution API. */
+/**
+ * Fetch raw transactions from the institution API.
+ *
+ * Returned `settled` and `pending` arrays MUST be ordered **oldest-first**.
+ * Institution APIs commonly return newest-first, in which case the hook is
+ * responsible for reversing before returning. The orchestrator relies on this
+ * ordering when appending dedup references to the oldest-first
+ * `uploadedTransactions` store, and it also determines uploaded CSV row order.
+ */
 export type FetchTransactionsHook = (
   api: IntegrationApi,
   accountId: string,

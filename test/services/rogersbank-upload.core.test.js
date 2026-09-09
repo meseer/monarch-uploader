@@ -1246,10 +1246,18 @@ describe('Rogers Bank Upload Service - Core - Error Handling, Balance Upload, Tr
 
       await uploadRogersBankToMonarch();
 
-      // Verify that mergeAndRetainTransactions was called with the :fee-suffixed key
+      // Verify that mergeAndRetainTransactions was called with the :fee-suffixed key.
+      // Refs are records carrying the transaction's own date and merchant so the
+      // stored dedup list is chronologically meaningful and displayable.
       expect(transactionStorageMock.mergeAndRetainTransactions).toHaveBeenCalledWith(
         expect.any(Array),
-        expect.arrayContaining(['FEE_REF_456:fee']),
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 'FEE_REF_456:fee',
+            date: '2024-01-10',
+            merchant: 'CASH ADVANCE FEE',
+          }),
+        ]),
         expect.any(Object),
         expect.any(String),
       );

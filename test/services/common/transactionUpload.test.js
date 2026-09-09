@@ -165,6 +165,35 @@ describe('Transaction Upload Service', () => {
       );
     });
 
+    it('should pass record refs through unchanged, preserving date and merchant', async () => {
+      monarchApi.uploadTransactions.mockResolvedValue(true);
+      accountService.getAccountData.mockReturnValue({ uploadedTransactions: [] });
+
+      const recordRefs = [
+        { id: 'ref-1', date: '2025-01-10', merchant: 'AMAZON' },
+        { id: 'ref-2', date: '2025-01-11', merchant: 'STARBUCKS' },
+      ];
+
+      await uploadTransactionsAndSaveRefs({
+        integrationId: 'mbna',
+        sourceAccountId: 'acc-1',
+        monarchAccountId: 'monarch-1',
+        csvData: 'csv-content',
+        filename: 'test.csv',
+        transactionRefs: recordRefs,
+        transactions: [{ date: '2025-01-11' }],
+      });
+
+      // Refs are forwarded verbatim so each entry keeps its own date/merchant
+      // instead of being flattened onto the single batch date.
+      expect(mergeAndRetainTransactions).toHaveBeenCalledWith(
+        expect.any(Array),
+        recordRefs,
+        expect.any(Object),
+        expect.any(String),
+      );
+    });
+
     it('should skip ref storage when transactionRefs is empty', async () => {
       monarchApi.uploadTransactions.mockResolvedValue(true);
 

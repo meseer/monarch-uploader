@@ -54,6 +54,7 @@ interface MonarchAccount {
 interface StoredTransaction {
   id: string;
   date?: string;
+  merchant?: string | null;
 }
 
 export interface ConsolidatedAccount {
@@ -96,6 +97,7 @@ interface DefaultAccountSettings {
 interface ProcessedTransaction {
   id: string;
   date: string;
+  merchant?: string;
   [key: string]: unknown;
 }
 
@@ -575,12 +577,15 @@ export async function uploadWealthsimpleTransactions(
     );
 
     if (uploadSuccess) {
-      // Prepare new transactions with their dates for storage
+      // Prepare new transactions with their dates for storage. Merchant mirrors
+      // the CSV's Merchant column so the settings list shows what Monarch
+      // received.
       const transactionsToStore = newTransactions
         .filter((transaction) => transaction.id)
         .map((transaction) => ({
           id: transaction.id,
           date: transaction.date,
+          merchant: transaction.merchant || null,
         }));
 
       if (transactionsToStore.length > 0) {

@@ -87,6 +87,52 @@ describe('MBNA SyncHooks', () => {
       expect(result.metadata.statements).toHaveLength(1);
       expect(result.metadata.currentCycle).toBeDefined();
     });
+
+    it('should reverse MBNA newest-first lists to satisfy the oldest-first hook contract', async () => {
+      // MBNA assembles current-cycle transactions first, then statements by
+      // descending closing date, so its lists arrive newest-first.
+      const mockApi = {
+        getTransactions: jest.fn(() => Promise.resolve({
+          allSettled: [
+            { referenceNumber: 'REF_NEW', transactionDate: '2024-01-20' },
+            { referenceNumber: 'REF_MID', transactionDate: '2024-01-15' },
+            { referenceNumber: 'REF_OLD', transactionDate: '2024-01-10' },
+          ],
+          allPending: [
+            { referenceNumber: 'TEMP', transactionDate: '2024-01-22' },
+            { referenceNumber: 'TEMP', transactionDate: '2024-01-21' },
+          ],
+          statements: [],
+          currentCycle: { settled: [], pending: [] },
+        })),
+      };
+
+      const result = await mbnaSyncHooks.fetchTransactions(mockApi, 'acc-1', '2024-01-01', {
+        onProgress: jest.fn(),
+      });
+
+      expect(result.settled.map((t) => t.referenceNumber)).toEqual(['REF_OLD', 'REF_MID', 'REF_NEW']);
+      expect(result.pending.map((t) => t.transactionDate)).toEqual(['2024-01-21', '2024-01-22']);
+    });
+
+    it('should not mutate the arrays returned by the API', async () => {
+      const allSettled = [
+        { referenceNumber: 'REF_NEW', transactionDate: '2024-01-20' },
+        { referenceNumber: 'REF_OLD', transactionDate: '2024-01-10' },
+      ];
+      const mockApi = {
+        getTransactions: jest.fn(() => Promise.resolve({
+          allSettled,
+          allPending: [],
+          statements: [],
+          currentCycle: { settled: [], pending: [] },
+        })),
+      };
+
+      await mbnaSyncHooks.fetchTransactions(mockApi, 'acc-1', '2024-01-01', { onProgress: jest.fn() });
+
+      expect(allSettled.map((t) => t.referenceNumber)).toEqual(['REF_NEW', 'REF_OLD']);
+    });
   });
 
   describe('processTransactions', () => {
