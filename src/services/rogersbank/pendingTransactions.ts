@@ -480,14 +480,19 @@ export async function reconcileRogersPendingTransactions(monarchAccountId, allTr
 
           await monarchApi.setTransactionTags(monarchTxId, remainingTagIds);
 
-          // Collect dedup key for dedup store
-          // Use referenceNumber when available, fall back to hash ID for ref-less transactions
-          if (settledTx.referenceNumber) {
-            result.settledRefIds.push(settledTx.referenceNumber);
-          } else {
-            // pendingId IS the hash (rb-tx:xxx), use it as dedup key
-            result.settledRefIds.push(pendingId);
-          }
+          // Collect dedup ref for the dedup store.
+          // Use referenceNumber when available, fall back to hash ID for ref-less transactions.
+          //
+          // A record rather than a bare ID: the merge stamps bare strings with
+          // today's date, which would hoist a transaction that settled from an
+          // older date to the top of the newest-first stored list and display a
+          // wrong date with no merchant.
+          result.settledRefIds.push({
+            // pendingId IS the hash (rb-tx:xxx) — used when there is no referenceNumber
+            id: settledTx.referenceNumber || pendingId,
+            date: settledTx.date || null,
+            merchant: settledTx.merchant?.name || settledTx.description || null,
+          });
 
           result.settled += 1;
           continue;

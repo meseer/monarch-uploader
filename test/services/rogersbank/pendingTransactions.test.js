@@ -748,7 +748,7 @@ describe('reconcileRogersPendingTransactions', () => {
 
     expect(result.settled).toBe(1);
     // Should save the hash ID as the dedup key since there's no referenceNumber
-    expect(result.settledRefIds).toContain(expectedId);
+    expect(result.settledRefIds).toEqual([expect.objectContaining({ id: expectedId })]);
   });
 
   it('collects referenceNumber as settledRefId when present', async () => {
@@ -785,8 +785,8 @@ describe('reconcileRogersPendingTransactions', () => {
 
     expect(result.settled).toBe(1);
     // Should save the referenceNumber (not the hash) as the dedup key
-    expect(result.settledRefIds).toContain('123456');
-    expect(result.settledRefIds).not.toContain(expectedId);
+    expect(result.settledRefIds).toEqual([expect.objectContaining({ id: '123456' })]);
+    expect(result.settledRefIds.map((r) => r.id)).not.toContain(expectedId);
   });
 
   it('settles transactions that are now approved', async () => {
@@ -1162,6 +1162,50 @@ describe('reconcileRogersPendingTransactions - FX enrichment', () => {
 // ============================================================
 // Format reconciliation message
 // ============================================================
+
+describe('reconcileRogersPendingTransactions — settled ref shape', () => {
+  const monarchApi = require('../../../src/api/monarch').default;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('returns records carrying the settled date and merchant, not bare IDs', async () => {
+    // Regression: bare ID strings were stamped with today's date by the merge, so
+    // a transaction that settled from an older date jumped to the top of the
+    // newest-first stored list and displayed a wrong date with no merchant.
+    monarchApi.getTagByName.mockResolvedValue({ id: 'tag-pending', name: 'Pending' });
+    monarchApi.updateTransaction.mockResolvedValue(true);
+    monarchApi.setTransactionTags.mockResolvedValue(true);
+
+    const settledTx = {
+      activityStatus: 'APPROVED',
+      referenceNumber: 'REF_SETTLED',
+      date: '2025-10-20',
+      amount: { value: '50.00', currency: 'CAD' },
+      merchant: { name: 'AMAZON', categoryCode: '1234' },
+      cardNumber: '****1234',
+    };
+
+    // Make the pending notes hash resolve to this settled transaction
+    const hashId = await generatePendingTransactionId(settledTx);
+    monarchApi.getTransactionsList.mockResolvedValue({
+      results: [{
+        id: 'monarch-tx-1',
+        notes: hashId,
+        amount: -50,
+        tags: [{ id: 'tag-pending', name: 'Pending' }],
+      }],
+    });
+
+    const result = await reconcileRogersPendingTransactions('monarch-1', [settledTx], 90);
+
+    expect(result.settled).toBe(1);
+    expect(result.settledRefIds).toEqual([
+      { id: 'REF_SETTLED', date: '2025-10-20', merchant: 'AMAZON' },
+    ]);
+  });
+});
 
 describe('formatReconciliationMessage', () => {
   it('shows no pending transactions when tag not found', () => {

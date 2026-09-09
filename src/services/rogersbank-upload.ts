@@ -22,6 +22,7 @@ import { showProgressDialog } from '../ui/components/progressDialog';
 import {
   getTransactionIdsFromArray,
   mergeAndRetainTransactions,
+  mergeNewestFirstRuns,
   getRetentionSettingsFromAccount,
 } from '../utils/transactionStorage';
 import accountService from './common/accountService';
@@ -1079,7 +1080,10 @@ export async function uploadRogersBankToMonarch() {
           );
           // Save pending transaction hash IDs to dedup store
           const pendingRefs = buildRogersTransactionRefs(newPendingTx, (tx) => tx.generatedId);
-          const allRefs = [...settledRefs, ...pendingRefs];
+          // Interleave rather than concatenate: each run is newest-first on its
+          // own, but spreading them together would leave every settled entry
+          // above every pending one regardless of date.
+          const allRefs = mergeNewestFirstRuns(settledRefs, pendingRefs);
 
           if (allRefs.length > 0) {
             // Fallback date for refs with no date of their own

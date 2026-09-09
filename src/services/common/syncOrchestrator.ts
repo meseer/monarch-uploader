@@ -40,6 +40,7 @@ import {
 } from './pendingReconciliation';
 import {
   mergeAndRetainTransactions,
+  mergeNewestFirstRuns,
   getRetentionSettingsFromAccount,
   StoredTransaction,
 } from '../../utils/transactionStorage';
@@ -430,6 +431,10 @@ async function executeTransactionStep({
     // these are prepended.
     const settledRefs = buildTransactionRefs(newSettled as Array<Record<string, unknown>>, hooks.getSettledRefId);
     const pendingRefs = buildTransactionRefs(newPending as Array<Record<string, unknown>>, hooks.getPendingRefId);
+    // Interleave rather than concatenate: each run is newest-first on its own,
+    // but spreading them together would leave every settled entry above every
+    // pending one regardless of date.
+    const dedupRefs = mergeNewestFirstRuns(settledRefs, pendingRefs);
 
     const uploadSuccess = await uploadTransactionsAndSaveRefs({
       integrationId,
@@ -437,7 +442,7 @@ async function executeTransactionStep({
       monarchAccountId,
       csvData,
       filename,
-      transactionRefs: [...settledRefs, ...pendingRefs],
+      transactionRefs: dedupRefs,
       transactions: allNewTransactions as Array<{ date?: string; [key: string]: unknown }>,
     });
 
