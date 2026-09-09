@@ -37,8 +37,14 @@ import { showProgressDialog } from '../../ui/components/progressDialog';
  * Save uploaded transaction IDs to consolidated storage
  * Uses accountService to update the uploadedTransactions field in questrade_accounts_list
  * Both orders and activity transactions share the same uploadedTransactions field
+ *
+ * Questrade returns both orders and activity newest-first (its paging stops at the
+ * first transaction older than the requested start date, which only works for a
+ * newest-first feed), matching the newest-first uploadedTransactions invariant,
+ * so entries are passed through in order and prepended by the merge.
+ *
  * @param {string} accountId - Questrade account ID
- * @param {Array} newTransactions - Array of transaction objects with id and date
+ * @param {Array} newTransactions - Transaction records with id, date and merchant, newest-first
  */
 function saveUploadedTransactionsToConsolidated(accountId, newTransactions) {
   // Get current account data

@@ -457,11 +457,17 @@ function saveUploadedTransactionIds(accountId: string, transactions: Array<{ id:
 
   // Add new transaction IDs with their actual transaction dates (not sync date).
   // Merchant mirrors the CSV's Merchant column so the settings list shows what
-  // Monarch received. Canada Life transactions arrive oldest-first (see
-  // processCanadaLifeActivities), which matches the oldest-first
-  // uploadedTransactions storage invariant, so they are appended as-is.
-  const newEntries = transactions.map((tx) => ({ id: tx.id, date: tx.date, merchant: tx.merchant || null }));
-  const updatedTransactions = [...existingTransactions, ...newEntries];
+  // Monarch received.
+  //
+  // Canada Life is the one integration that returns activities oldest-first (see
+  // the sort in canadalife/transactions.ts), so entries are reversed and
+  // prepended to preserve the newest-first uploadedTransactions invariant. A
+  // plain reversal rather than a date sort, keeping Canada Life's own
+  // within-day sequencing.
+  const newEntries = transactions
+    .map((tx) => ({ id: tx.id, date: tx.date, merchant: tx.merchant || null }))
+    .reverse();
+  const updatedTransactions = [...newEntries, ...existingTransactions];
 
   accountService.updateAccountInList(INTEGRATIONS.CANADALIFE, accountId, {
     uploadedTransactions: updatedTransactions,

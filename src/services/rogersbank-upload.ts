@@ -102,14 +102,15 @@ function computeSettledDedupKey(tx) {
  * column) so the stored dedup list is chronologically meaningful and
  * displayable, rather than a bag of IDs all stamped with the batch date.
  *
- * Rogers Bank returns its activity list newest-first, so the refs are reversed
- * to satisfy the oldest-first `uploadedTransactions` storage invariant. A plain
- * reversal is used rather than a date sort so Rogers' own intra-day sequencing —
- * which carries ordering information the date field does not — is preserved.
+ * Rogers Bank returns its activity list newest-first, which already matches the
+ * newest-first `uploadedTransactions` storage invariant, so the order is passed
+ * through unchanged. No date sort is applied, so Rogers' own intra-day
+ * sequencing — which carries ordering information the date field does not — is
+ * preserved.
  *
  * @param {Array} transactions - Rogers Bank transactions, newest-first
  * @param {Function} getRefId - Extracts the dedup reference ID from a transaction
- * @returns {Array<Object>} Reference records, oldest-first
+ * @returns {Array<Object>} Reference records, newest-first
  */
 function buildRogersTransactionRefs(transactions, getRefId) {
   return transactions
@@ -118,8 +119,7 @@ function buildRogersTransactionRefs(transactions, getRefId) {
       date: tx.date || null,
       merchant: tx.merchant?.name || tx.description || null,
     }))
-    .filter((ref) => Boolean(ref.id))
-    .reverse();
+    .filter((ref) => Boolean(ref.id));
 }
 
 /**

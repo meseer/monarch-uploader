@@ -59,10 +59,10 @@ interface MbnaAccountData {
  *
  * MBNA assembles its lists newest-first (current cycle first, then statements
  * ordered by descending closing date, each statement newest-first internally),
- * so both arrays are reversed to satisfy the hook's oldest-first contract. A
- * plain reversal is used rather than a date sort so MBNA's own intra-day
- * sequencing — which carries ordering information the date field does not — is
- * preserved.
+ * so both arrays are reversed to satisfy the hook's oldest-first contract, which
+ * also determines uploaded CSV row order. A plain reversal is used rather than a
+ * date sort so MBNA's own intra-day sequencing — which carries ordering
+ * information the date field does not — is preserved.
  */
 async function fetchTransactions(
   api: MbnaApiClient,

@@ -11,19 +11,19 @@
  *
  * ## Ordering invariant
  *
- * `uploadedTransactions` is stored **oldest-first**: the head of the array is the
- * oldest transaction and the tail is the most recent. New transactions are
- * appended at the tail, so callers MUST pass new transactions oldest-first —
- * i.e. in the order the source institution lists them, reversed first if that
- * institution returns newest-first.
+ * `uploadedTransactions` is stored **newest-first**: the head of the array is the
+ * most recent transaction and the tail is the oldest. New transactions are
+ * prepended at the head, so callers MUST pass new transactions newest-first —
+ * i.e. in the order most institutions natively list them, reversed first for the
+ * few that return oldest-first (currently only Canada Life).
  *
- * This makes the array behave as a FIFO queue: retention pruning drops entries
- * from the head (oldest) and keeps the tail (newest).
+ * This makes the array behave as a FIFO queue: retention pruning keeps the head
+ * (newest) and drops entries from the tail (oldest).
  *
  * Ordering is maintained purely at insertion time — no function here re-sorts a
- * stored list. That way a bug in a caller's insertion order stays visible
- * instead of being silently repaired. For display, use
- * `getTransactionsNewestFirst`, which reverses the stored order.
+ * stored list, and the settings UI renders the stored array directly. That way a
+ * bug in a caller's insertion order stays visible instead of being silently
+ * repaired.
  */
 
 import { TRANSACTION_RETENTION_DEFAULTS } from '../core/config';
@@ -102,29 +102,11 @@ export function migrateLegacyTransactions(legacyData: unknown[]): StoredTransact
 }
 
 /**
- * Return a copy of a stored transaction list in reverse-chronological order
- * (newest first) for display purposes.
- *
- * This is a plain reversal of the stored oldest-first order, NOT a re-sort:
- * ordering is owned by insertion time, so an out-of-order stored list stays
- * visibly out of order here rather than being silently corrected.
- *
- * @param transactions - Stored transactions (oldest-first)
- * @returns New array in newest-first order
- */
-export function getTransactionsNewestFirst(transactions: StoredTransaction[] | null | undefined): StoredTransaction[] {
-  if (!Array.isArray(transactions)) {
-    return [];
-  }
-  return [...transactions].reverse();
-}
-
-/**
  * Apply retention limits to transaction list.
  *
  * Order-preserving: surviving entries keep their relative positions, so the
- * oldest-first storage invariant is maintained. The count limit keeps the tail
- * (newest) and drops from the head (oldest).
+ * newest-first storage invariant is maintained. The count limit keeps the head
+ * (newest) and drops from the tail (oldest).
  *
  * A limit of 0 (or any non-positive value) means unlimited.
  */
@@ -156,9 +138,9 @@ export function applyRetentionLimits(transactions: StoredTransaction[], settings
   }
 
   // ── Count-based retention ─────────────────────────────────
-  // Keep the newest entries, which live at the tail under oldest-first storage.
+  // Keep the newest entries, which live at the head under newest-first storage.
   if (!isUnlimited(settings.count) && retained.length > settings.count) {
-    retained = retained.slice(-settings.count);
+    retained = retained.slice(0, settings.count);
   }
 
   debugLog(`Transaction retention: ${transactions.length} -> ${retained.length} (days: ${settings.days}, count: ${settings.count})`);
@@ -170,11 +152,11 @@ export function applyRetentionLimits(transactions: StoredTransaction[], settings
  * Merge new transactions with existing ones and apply retention limits.
  * Pure logic function - can be used by any storage mechanism.
  *
- * New transactions are appended at the tail to preserve the oldest-first
- * storage invariant, so `newTransactions` MUST be ordered oldest-first.
+ * New transactions are prepended at the head to preserve the newest-first
+ * storage invariant, so `newTransactions` MUST be ordered newest-first.
  *
- * @param existingTransactions - Currently stored transactions (oldest-first)
- * @param newTransactions - New transactions to append, oldest-first
+ * @param existingTransactions - Currently stored transactions (newest-first)
+ * @param newTransactions - New transactions to prepend, newest-first
  * @param retentionSettings - Retention limits to apply
  * @param defaultDate - Date to stamp on entries that carry no date of their own
  */
@@ -209,8 +191,8 @@ export function mergeAndRetainTransactions(
       };
     });
 
-  // Append at the tail — newest entries live at the end (oldest-first storage)
-  const combined = [...migratedExisting, ...transactionsToAdd];
+  // Prepend at the head — newest entries live at the start (newest-first storage)
+  const combined = [...transactionsToAdd, ...migratedExisting];
 
   // Apply retention limits
   return applyRetentionLimits(combined, retentionSettings);

@@ -580,6 +580,10 @@ export async function uploadWealthsimpleTransactions(
       // Prepare new transactions with their dates for storage. Merchant mirrors
       // the CSV's Merchant column so the settings list shows what Monarch
       // received.
+      //
+      // Wealthsimple's activity feed is fetched with OCCURRED_AT_DESC, so these
+      // are newest-first, matching the newest-first uploadedTransactions
+      // invariant — they are passed through in order and prepended by the merge.
       const transactionsToStore = newTransactions
         .filter((transaction) => transaction.id)
         .map((transaction) => ({

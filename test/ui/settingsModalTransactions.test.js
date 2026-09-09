@@ -1,9 +1,9 @@
 /**
  * Tests for the Uploaded Transactions settings section
  *
- * The section renders the dedup reference list newest-first (a plain reversal of
- * the oldest-first stored order) with a merchant column and a filter that
- * matches both transaction ID and merchant.
+ * The section renders the dedup reference list in stored order — which is
+ * newest-first (see `transactionStorage`) — with a merchant column and a filter
+ * that matches both transaction ID and merchant.
  */
 
 import { renderTransactionsManagementSection } from '../../src/ui/components/settingsModalTransactions';
@@ -41,12 +41,12 @@ const toast = require('../../src/ui/toast').default;
 const INTEGRATION = 'mbna';
 const ACCOUNT = 'acc-1';
 
-/** Stored transactions are oldest-first: head = oldest, tail = newest. */
+/** Stored transactions are newest-first: head = newest, tail = oldest. */
 function storedTransactions() {
   return [
-    { id: 'REF_OLD', date: '2025-10-20', merchant: 'AMAZON' },
-    { id: 'REF_MID', date: '2025-10-21', merchant: 'STARBUCKS' },
     { id: 'REF_NEW', date: '2025-10-22', merchant: 'Amazon Prime' },
+    { id: 'REF_MID', date: '2025-10-21', merchant: 'STARBUCKS' },
+    { id: 'REF_OLD', date: '2025-10-20', merchant: 'AMAZON' },
   ];
 }
 
@@ -124,11 +124,31 @@ describe('renderTransactionsManagementSection', () => {
   });
 
   describe('rendering', () => {
-    it('displays rows newest-first from an oldest-first stored array', () => {
+    it('renders rows in stored order, which is newest-first', () => {
       render(storedTransactions());
 
       const ids = getRows().map((row) => row.querySelector('input[type="checkbox"]').dataset.txId);
       expect(ids).toEqual(['REF_NEW', 'REF_MID', 'REF_OLD']);
+    });
+
+    it('puts the newest transaction in the top row', () => {
+      // Regression test: the list previously rendered oldest-first because the
+      // stored array (newest-first) was being reversed for display.
+      render(storedTransactions());
+
+      const topRowDate = document.getElementById(`transaction-date-${INTEGRATION}-${ACCOUNT}-0`);
+      expect(topRowDate.textContent).toBe('2025-10-22');
+    });
+
+    it('does not sort or reverse the stored array (a misordered list stays visible)', () => {
+      // Ordering is owned by insertion time, so the UI must not silently repair it.
+      render([
+        { id: 'OUT_OF_ORDER_OLD', date: '2025-10-20', merchant: 'AMAZON' },
+        { id: 'OUT_OF_ORDER_NEW', date: '2025-10-22', merchant: 'STARBUCKS' },
+      ]);
+
+      const ids = getRows().map((row) => row.querySelector('input[type="checkbox"]').dataset.txId);
+      expect(ids).toEqual(['OUT_OF_ORDER_OLD', 'OUT_OF_ORDER_NEW']);
     });
 
     it('renders the merchant name for each transaction', () => {
@@ -282,10 +302,8 @@ describe('renderTransactionsManagementSection', () => {
   });
 
   describe('deleting selected transactions', () => {
-    it('removes the selected entry by ID, not by display index', async () => {
+    it('removes the selected entry by ID', async () => {
       render(storedTransactions());
-      // Row 0 is REF_NEW (the tail of storage) — an index-based delete would
-      // have removed REF_OLD instead.
       getRows()[0].querySelector('input[type="checkbox"]').checked = true;
 
       document.getElementById(`transactions-delete-selected-btn-${INTEGRATION}-${ACCOUNT}`).click();
@@ -294,8 +312,8 @@ describe('renderTransactionsManagementSection', () => {
 
       expect(accountService.updateAccountInList).toHaveBeenCalledWith(INTEGRATION, ACCOUNT, {
         uploadedTransactions: [
-          { id: 'REF_OLD', date: '2025-10-20', merchant: 'AMAZON' },
           { id: 'REF_MID', date: '2025-10-21', merchant: 'STARBUCKS' },
+          { id: 'REF_OLD', date: '2025-10-20', merchant: 'AMAZON' },
         ],
       });
     });
@@ -310,10 +328,10 @@ describe('renderTransactionsManagementSection', () => {
       await Promise.resolve();
 
       const { uploadedTransactions } = accountService.updateAccountInList.mock.calls[0][2];
-      expect(uploadedTransactions.map((t) => t.id)).toEqual(['REF_OLD', 'REF_NEW']);
+      expect(uploadedTransactions.map((t) => t.id)).toEqual(['REF_NEW', 'REF_OLD']);
     });
 
-    it('preserves the remaining oldest-first order', async () => {
+    it('preserves the remaining newest-first order', async () => {
       render(storedTransactions());
       getRows()[1].querySelector('input[type="checkbox"]').checked = true; // REF_MID
 
@@ -322,7 +340,7 @@ describe('renderTransactionsManagementSection', () => {
       await Promise.resolve();
 
       const { uploadedTransactions } = accountService.updateAccountInList.mock.calls[0][2];
-      expect(uploadedTransactions.map((t) => t.id)).toEqual(['REF_OLD', 'REF_NEW']);
+      expect(uploadedTransactions.map((t) => t.id)).toEqual(['REF_NEW', 'REF_OLD']);
     });
 
     it('warns and does not save when nothing is selected', async () => {
@@ -363,16 +381,18 @@ describe('renderTransactionsManagementSection', () => {
   });
 
   describe('adding transactions', () => {
-    it('appends new IDs at the tail with today\'s date', () => {
+    it('prepends new IDs at the head with today\'s date', () => {
       render(storedTransactions());
       document.getElementById(`transactions-add-btn-${INTEGRATION}-${ACCOUNT}`).click();
       document.getElementById(`transactions-textarea-${INTEGRATION}-${ACCOUNT}`).value = 'NEW_1';
 
       document.getElementById(`transactions-save-btn-${INTEGRATION}-${ACCOUNT}`).click();
 
+      // Regression test: a manually added entry previously landed before the
+      // oldest transaction instead of at the top of the list.
       const { uploadedTransactions } = accountService.updateAccountInList.mock.calls[0][2];
-      expect(uploadedTransactions.map((t) => t.id)).toEqual(['REF_OLD', 'REF_MID', 'REF_NEW', 'NEW_1']);
-      expect(uploadedTransactions[3]).toEqual({ id: 'NEW_1', date: '2025-10-24', merchant: null });
+      expect(uploadedTransactions.map((t) => t.id)).toEqual(['NEW_1', 'REF_NEW', 'REF_MID', 'REF_OLD']);
+      expect(uploadedTransactions[0]).toEqual({ id: 'NEW_1', date: '2025-10-24', merchant: null });
     });
 
     it('accepts comma- and newline-separated IDs', () => {
@@ -385,7 +405,7 @@ describe('renderTransactionsManagementSection', () => {
       document.getElementById(`transactions-save-btn-${INTEGRATION}-${ACCOUNT}`).click();
 
       const { uploadedTransactions } = accountService.updateAccountInList.mock.calls[0][2];
-      expect(uploadedTransactions.map((t) => t.id)).toEqual(['REF_OLD', 'REF_MID', 'REF_NEW', 'A', 'B', 'C']);
+      expect(uploadedTransactions.map((t) => t.id)).toEqual(['A', 'B', 'C', 'REF_NEW', 'REF_MID', 'REF_OLD']);
     });
 
     it('skips IDs that already exist', () => {

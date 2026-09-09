@@ -302,14 +302,14 @@ describe('syncAccount', () => {
     );
   });
 
-  it('should emit dedup refs in the order the fetch hook returned them (oldest-first)', async () => {
+  it('should emit dedup refs newest-first, reversing the oldest-first fetch order', async () => {
     const { uploadTransactionsAndSaveRefs } = require('../../../src/services/common/transactionUpload');
     const progressDialog = createMockProgressDialog();
     const hooks = createMockHooks();
     const api = createMockApi();
 
-    // The fetchTransactions hook contract is oldest-first; the orchestrator must
-    // preserve that so appending to the oldest-first dedup store stays correct.
+    // The fetchTransactions hook contract is oldest-first (it also drives CSV row
+    // order), so the orchestrator reverses the refs for the newest-first dedup store.
     hooks.fetchTransactions.mockResolvedValue({
       settled: [
         { date: '2024-01-10', description: 'Oldest', amount: 10, referenceNumber: 'REF_OLD' },
@@ -333,7 +333,7 @@ describe('syncAccount', () => {
     });
 
     const { transactionRefs } = uploadTransactionsAndSaveRefs.mock.calls[0][0];
-    expect(transactionRefs.map((r) => r.id)).toEqual(['REF_OLD', 'REF_MID', 'REF_NEW']);
+    expect(transactionRefs.map((r) => r.id)).toEqual(['REF_NEW', 'REF_MID', 'REF_OLD']);
   });
 
   it('should drop refs whose ID cannot be resolved', async () => {
