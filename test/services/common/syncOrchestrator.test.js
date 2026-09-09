@@ -336,6 +336,51 @@ describe('syncAccount', () => {
     expect(transactionRefs.map((r) => r.id)).toEqual(['REF_NEW', 'REF_MID', 'REF_OLD']);
   });
 
+  it('should interleave settled and pending refs by date, not concatenate them', async () => {
+    const { uploadTransactionsAndSaveRefs } = require('../../../src/services/common/transactionUpload');
+    const progressDialog = createMockProgressDialog();
+    const hooks = createMockHooks();
+    const api = createMockApi();
+
+    // Regression: the refs used to be spread as [...settled, ...pending], which
+    // left every settled entry above every pending one regardless of date — so a
+    // days-old settled transaction outranked a newer pending one.
+    hooks.fetchTransactions.mockResolvedValue({
+      settled: [
+        { date: '2024-01-10', description: 'Settled old', amount: 10, referenceNumber: 'S_OLD' },
+        { date: '2024-01-20', description: 'Settled new', amount: 20, referenceNumber: 'S_NEW' },
+      ],
+      pending: [
+        { date: '2024-01-15', description: 'Pending mid', amount: 30 },
+        { date: '2024-01-25', description: 'Pending new', amount: 40 },
+      ],
+      metadata: { statements: [], currentCycle: { settled: [] } },
+    });
+
+    await syncAccount({
+      integrationId: 'test',
+      manifest: defaultManifest,
+      hooks,
+      api,
+      account: { accountId: 'acc-1' },
+      accountDisplayName: 'Test Card',
+      monarchAccount: { id: 'monarch-1' },
+      fromDate: '2024-01-01',
+      progressDialog,
+    });
+
+    const { transactionRefs } = uploadTransactionsAndSaveRefs.mock.calls[0][0];
+
+    // One descending run overall, regardless of settled/pending origin
+    const dates = transactionRefs.map((r) => r.date);
+    expect(dates).toEqual([...dates].sort().reverse());
+
+    // And specifically: the oldest settled entry must not outrank a newer pending
+    const oldSettledIndex = transactionRefs.findIndex((r) => r.id === 'S_OLD');
+    const newPendingIndex = transactionRefs.findIndex((r) => r.date === '2024-01-25');
+    expect(newPendingIndex).toBeLessThan(oldSettledIndex);
+  });
+
   it('should drop refs whose ID cannot be resolved', async () => {
     const { uploadTransactionsAndSaveRefs } = require('../../../src/services/common/transactionUpload');
     const progressDialog = createMockProgressDialog();

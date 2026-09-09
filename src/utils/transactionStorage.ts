@@ -102,6 +102,75 @@ export function migrateLegacyTransactions(legacyData: unknown[]): StoredTransact
 }
 
 /**
+ * Merge two newest-first transaction runs into a single newest-first run.
+ *
+ * Concatenating two separately-sorted runs does NOT produce a sorted result —
+ * e.g. settled `[06-28, 04-10]` followed by pending `[06-30]` leaves 04-10 above
+ * 06-30. Callers that build separate settled and pending ref lists must merge
+ * them with this instead of spreading them together.
+ *
+ * A two-pointer merge rather than a re-sort: both inputs are already ordered, so
+ * this is linear, and it is stable — each run's own relative order is preserved
+ * for equal dates. That matters because stored dates carry no time component, so
+ * same-day ties are common and each institution's intra-day sequencing is the
+ * only ordering signal available for them.
+ *
+ * Undated (legacy) entries sort last, matching their position under the
+ * newest-first invariant.
+ *
+ * @param a - First run, newest-first
+ * @param b - Second run, newest-first
+ * @returns Single newest-first array
+ */
+export function mergeNewestFirstRuns(
+  a: StoredTransaction[],
+  b: StoredTransaction[],
+): StoredTransaction[] {
+  const left = Array.isArray(a) ? a : [];
+  const right = Array.isArray(b) ? b : [];
+
+  const merged: StoredTransaction[] = [];
+  let i = 0;
+  let j = 0;
+
+  while (i < left.length && j < right.length) {
+    // Undated entries belong at the tail, so they lose every comparison.
+    const leftDate = left[i].date;
+    const rightDate = right[j].date;
+
+    let takeLeft: boolean;
+    if (leftDate === null || leftDate === undefined) {
+      takeLeft = false;
+    } else if (rightDate === null || rightDate === undefined) {
+      takeLeft = true;
+    } else {
+      // >= keeps `a` first on ties, making the merge stable.
+      takeLeft = leftDate >= rightDate;
+    }
+
+    if (takeLeft) {
+      merged.push(left[i]);
+      i += 1;
+    } else {
+      merged.push(right[j]);
+      j += 1;
+    }
+  }
+
+  // Drain whichever run still has entries.
+  while (i < left.length) {
+    merged.push(left[i]);
+    i += 1;
+  }
+  while (j < right.length) {
+    merged.push(right[j]);
+    j += 1;
+  }
+
+  return merged;
+}
+
+/**
  * Apply retention limits to transaction list.
  *
  * Order-preserving: surviving entries keep their relative positions, so the

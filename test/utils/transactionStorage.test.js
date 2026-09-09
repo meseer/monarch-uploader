@@ -9,6 +9,7 @@ import {
   getRetentionSettingsFromAccount,
   getTransactionIdsFromArray,
   mergeAndRetainTransactions,
+  mergeNewestFirstRuns,
 } from '../../src/utils/transactionStorage';
 import { TRANSACTION_RETENTION_DEFAULTS } from '../../src/core/config';
 import * as utils from '../../src/core/utils';
@@ -120,6 +121,86 @@ describe('Transaction Storage Utilities', () => {
         { id: '123', date: null, merchant: null },
         { id: '456', date: null, merchant: null },
       ]);
+    });
+  });
+
+  describe('mergeNewestFirstRuns', () => {
+    test('interleaves two newest-first runs into one newest-first run', () => {
+      const settled = [{ id: 's1', date: '2025-10-22' }, { id: 's2', date: '2025-10-18' }];
+      const pending = [{ id: 'p1', date: '2025-10-24' }, { id: 'p2', date: '2025-10-20' }];
+
+      const result = mergeNewestFirstRuns(settled, pending);
+
+      expect(result.map((t) => t.id)).toEqual(['p1', 's1', 'p2', 's2']);
+    });
+
+    test('does NOT leave an older entry from run A above a newer entry from run B', () => {
+      // Regression: concatenating the runs put every settled entry above every
+      // pending one, so a days-old settled transaction outranked a newer pending.
+      const settled = [{ id: 'settled-old', date: '2025-10-20' }];
+      const pending = [{ id: 'pending-new', date: '2025-10-24' }];
+
+      const result = mergeNewestFirstRuns(settled, pending);
+
+      expect(result.map((t) => t.id)).toEqual(['pending-new', 'settled-old']);
+    });
+
+    test('keeps run A first on ties, so each run keeps its own intra-day order', () => {
+      const a = [{ id: 'a1', date: '2025-10-22' }, { id: 'a2', date: '2025-10-22' }];
+      const b = [{ id: 'b1', date: '2025-10-22' }];
+
+      const result = mergeNewestFirstRuns(a, b);
+
+      expect(result.map((t) => t.id)).toEqual(['a1', 'a2', 'b1']);
+    });
+
+    test('places undated entries last', () => {
+      const a = [{ id: 'undated', date: null }];
+      const b = [{ id: 'dated', date: '2020-01-01' }];
+
+      const result = mergeNewestFirstRuns(a, b);
+
+      expect(result.map((t) => t.id)).toEqual(['dated', 'undated']);
+    });
+
+    test('drains the remaining run when one is exhausted', () => {
+      const a = [{ id: 'a1', date: '2025-10-24' }];
+      const b = [{ id: 'b1', date: '2025-10-23' }, { id: 'b2', date: '2025-10-22' }];
+
+      const result = mergeNewestFirstRuns(a, b);
+
+      expect(result.map((t) => t.id)).toEqual(['a1', 'b1', 'b2']);
+    });
+
+    test('returns the other run when one side is empty', () => {
+      const run = [{ id: 'x', date: '2025-10-22' }];
+
+      expect(mergeNewestFirstRuns(run, []).map((t) => t.id)).toEqual(['x']);
+      expect(mergeNewestFirstRuns([], run).map((t) => t.id)).toEqual(['x']);
+    });
+
+    test('returns empty for two empty runs', () => {
+      expect(mergeNewestFirstRuns([], [])).toEqual([]);
+    });
+
+    test('preserves merchant on merged entries', () => {
+      const result = mergeNewestFirstRuns(
+        [{ id: 's1', date: '2025-10-22', merchant: 'AMAZON' }],
+        [{ id: 'p1', date: '2025-10-24', merchant: 'STARBUCKS' }],
+      );
+
+      expect(result[0].merchant).toBe('STARBUCKS');
+      expect(result[1].merchant).toBe('AMAZON');
+    });
+
+    test('does not mutate either input array', () => {
+      const a = [{ id: 'a1', date: '2025-10-20' }];
+      const b = [{ id: 'b1', date: '2025-10-24' }];
+
+      mergeNewestFirstRuns(a, b);
+
+      expect(a.map((t) => t.id)).toEqual(['a1']);
+      expect(b.map((t) => t.id)).toEqual(['b1']);
     });
   });
 

@@ -140,11 +140,12 @@ jest.mock('../../src/mappers/category', () => ({
   calculateAllCategorySimilarities: jest.fn(),
 }));
 
-jest.mock('../../src/utils/transactionStorage', () => ({
-  getTransactionIdsFromArray: jest.fn(() => new Set()),
-  mergeAndRetainTransactions: jest.fn((existing, newRefs) => [...(existing || []), ...newRefs]),
-  getRetentionSettingsFromAccount: jest.fn(() => ({ retentionDays: 91, retentionCount: 1000 })),
-}));
+// Shared factory keeps the mock in step with the real module — see the helper for
+// why the pure ordering functions delegate to the actual implementation.
+jest.mock('../../src/utils/transactionStorage', () => {
+  const { buildTransactionStorageMock } = require('../helpers/transactionStorageMock');
+  return buildTransactionStorageMock();
+});
 
 jest.mock('../../src/ui/components/categorySelector', () => ({
   showMonarchCategorySelector: jest.fn(),
