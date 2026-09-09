@@ -31,6 +31,10 @@ export const STORAGE = {
   // Experimental: override the columnMapping key used for the Owner CSV column.
   // Set to '' to omit the Owner column from the mapping entirely.
   MONARCH_CSV_OWNER_KEY: 'monarch_csv_owner_key',
+  // Kill-switch for native Monarch transaction-ID matching: overrides the
+  // columnMapping key used for the Id CSV column. Set to '' to stop sending the
+  // Id column entirely without needing a rebuild.
+  MONARCH_CSV_ID_KEY: 'monarch_csv_id_key',
   ACCOUNTS_LIST: 'questrade_accounts_list',
   MONARCH_CSRF_TOKEN: 'monarch_csrf_token',
   MONARCH_SESSION_EXPIRES_AT: 'monarch_session_expires_at',
@@ -161,8 +165,8 @@ export const MONARCH_CSV_FIELD_KEYS: Record<string, string> = {
   Notes: 'notes',
   Amount: 'amount',
   Tags: 'tags',
-  // Owner is resolved separately via MONARCH_CSV_OWNER_FIELD_KEY so the key can
-  // be overridden at runtime while we determine what the parser accepts.
+  // Owner and Id are resolved separately (via MONARCH_CSV_OWNER_FIELD_KEY and
+  // MONARCH_CSV_ID_FIELD_KEY) so their keys can be overridden at runtime.
 } as const;
 
 /**
@@ -181,6 +185,22 @@ export const MONARCH_CSV_FIELD_KEYS: Record<string, string> = {
  * closed avenue can be re-probed if Monarch ever adds the column.
  */
 export const MONARCH_CSV_OWNER_FIELD_KEY = '';
+
+/**
+ * `columnMapping` key for the Id column.
+ *
+ * `id` **is** in Monarch's list of valid columns (see the error quoted above),
+ * and its importer supports *"Use transaction IDs to match transactions"* — so
+ * sending it lets Monarch correlate a re-uploaded row with the transaction it
+ * already holds, natively, instead of us scraping a `{prefix}:{hash}` id out of
+ * the notes field.
+ *
+ * Resolved separately from `MONARCH_CSV_FIELD_KEYS` so it stays overridable via
+ * `STORAGE.MONARCH_CSV_ID_KEY`. Setting that key to `''` stops the Id column
+ * being mapped at all, which is the kill-switch if native id matching ever
+ * misbehaves against real data — no rebuild required.
+ */
+export const MONARCH_CSV_ID_FIELD_KEY = 'id';
 
 /**
  * Monarch tags used as internal processing markers.

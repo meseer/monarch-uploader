@@ -1,8 +1,8 @@
 # Architecture Decision Records
 
-> **Status:** Active  
-> **Updated:** 2026-02-20  
-> **Author:** @meseer  
+> **Status:** Active
+> **Updated:** 2026-09-09
+> **Author:** @meseer
 
 This directory contains Architecture Decision Records (ADRs) — short documents that capture significant architectural decisions made during development.
 
@@ -25,6 +25,8 @@ ADRs are **immutable once accepted**. If a decision changes, a new ADR is writte
 | [004](004-docs-folder-reorganization.md) | Reorganize Documentation into docs/ | Accepted | 2026-02-20 |
 | [005](005-typescript-migration.md) | Migrate Codebase to TypeScript | Accepted | 2026-03-06 |
 | [006](006-shared-type-system.md) | Introduce Shared Monarch Domain Type System | Accepted | 2026-03-11 |
+| [007](007-monarch-session-cookie-auth.md) | Migrate Monarch Auth from Token to Session Cookie | Accepted | 2026-05-14 |
+| [008](008-monarch-csv-transaction-id-matching-does-not-work.md) | Monarch's CSV Transaction-ID Matching Does Not Work; Keep Notes-Based Tracking | Accepted | 2026-09-09 |
 
 ## Template
 

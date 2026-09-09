@@ -25,12 +25,33 @@ jest.mock('../../src/mappers/category', () => ({
   applyCategoryMapping: jest.fn((category) => category || 'Uncategorized'),
 }));
 
+/**
+ * Parse a data row into fields keyed by column name.
+ *
+ * Column-name based rather than positional: columns get appended over time
+ * (`Owner`, then `Id`), and positional assertions like `endsWith(',Shared')`
+ * silently become assertions about whichever column is last.
+ *
+ * Values here never contain embedded commas in quoted fields for these
+ * fixtures, so a simple split is sufficient and keeps the test readable.
+ */
+const parseRowAt = (csv, rowIndex = 0) => {
+  const [header, ...rows] = csv.split('\n');
+  const cols = header.split(',');
+  const values = rows[rowIndex].split(',');
+  return Object.fromEntries(cols.map((c, i) => [c, values[i]]));
+};
+
 describe('MONARCH_CSV_COLUMNS', () => {
-  it('ends with Tags followed by Owner', () => {
-    expect(MONARCH_CSV_COLUMNS.slice(-2)).toEqual(['Tags', 'Owner']);
+  it('ends with Owner followed by Id', () => {
+    expect(MONARCH_CSV_COLUMNS.slice(-3)).toEqual(['Tags', 'Owner', 'Id']);
   });
 
-  it('preserves the established column order ahead of Owner', () => {
+  it('preserves the established column order', () => {
+    // `Id` is appended last so every pre-existing index is unchanged. That
+    // matters less than it used to — the columnMapping is now derived from the
+    // uploaded CSV's header row — but keeping the order stable still avoids
+    // gratuitous churn in the generated files.
     expect(MONARCH_CSV_COLUMNS).toEqual([
       'Date',
       'Merchant',
@@ -41,6 +62,7 @@ describe('MONARCH_CSV_COLUMNS', () => {
       'Amount',
       'Tags',
       'Owner',
+      'Id',
     ]);
   });
 });
@@ -97,15 +119,7 @@ describe('Rogers Bank CSV — Owner and cardholder tag', () => {
     ...overrides,
   });
 
-  /** Parse the single data row into fields keyed by column name */
-  const parseRow = (csv) => {
-    const [header, ...rows] = csv.split('\n');
-    const cols = header.split(',');
-    // Values here never contain embedded commas in quoted fields for these
-    // fixtures, so a simple split is sufficient and keeps the test readable.
-    const values = rows[rows.length - 1].split(',');
-    return Object.fromEntries(cols.map((c, i) => [c, values[i]]));
-  };
+  const parseRow = (csv) => parseRowAt(csv, 0);
 
   it('writes the resolved Monarch member name into the Owner column', () => {
     const csv = convertTransactionsToMonarchCSV(
@@ -161,10 +175,10 @@ describe('Rogers Bank CSV — Owner and cardholder tag', () => {
       rogersTx({ cardholderTag: 'Liubov Monsar', cardholderOwner: 'Shared' }),
     ], 'Rogers Mastercard');
 
-    const rows = csv.split('\n');
-    expect(rows[1]).toContain('Mykhailo Delegan');
-    expect(rows[2]).toContain('Liubov Monsar');
-    expect(rows[2].endsWith(',Shared')).toBe(true);
+    expect(parseRowAt(csv, 0).Tags).toBe('Mykhailo Delegan');
+    expect(parseRowAt(csv, 0).Owner).toBe('Mykhailo Delegan');
+    expect(parseRowAt(csv, 1).Tags).toBe('Liubov Monsar');
+    expect(parseRowAt(csv, 1).Owner).toBe('Shared');
   });
 });
 
@@ -185,7 +199,7 @@ describe('MBNA CSV — Owner and cardholder tag', () => {
       'MBNA Card',
     );
 
-    expect(csv.split('\n')[1].endsWith(',Mykhailo Delegan')).toBe(true);
+    expect(parseRowAt(csv).Owner).toBe('Mykhailo Delegan');
   });
 
   it('writes the cardholder tag', () => {
@@ -194,14 +208,17 @@ describe('MBNA CSV — Owner and cardholder tag', () => {
       'MBNA Card',
     );
 
-    // Tags then an empty Owner
-    expect(csv.split('\n')[1].endsWith(',Liubov Monsar,')).toBe(true);
+    const row = parseRowAt(csv);
+    expect(row.Tags).toBe('Liubov Monsar');
+    expect(row.Owner).toBe('');
   });
 
   it('leaves both columns empty when the feature is disabled', () => {
     const csv = convertMbnaTransactionsToMonarchCSV([mbnaTx()], 'MBNA Card');
 
-    expect(csv.split('\n')[1].endsWith(',,')).toBe(true);
+    const row = parseRowAt(csv);
+    expect(row.Tags).toBe('');
+    expect(row.Owner).toBe('');
   });
 
   it('emits both Pending and the cardholder tag for a pending transaction', () => {

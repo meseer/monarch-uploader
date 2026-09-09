@@ -10,6 +10,19 @@ jest.mock('../../../../../src/core/utils', () => ({
   debugLog: jest.fn(),
 }));
 
+/**
+ * Read one named column out of a data row.
+ *
+ * Named rather than positional: the Monarch column list grows over time
+ * (`Owner`, then `Id`), so any assertion anchored to the end of a row silently
+ * stops describing the column it was written for.
+ */
+const field = (csv, rowIndex, columnName) => {
+  const lines = csv.split('\n');
+  const header = lines[0].split(',');
+  return lines[rowIndex + 1].split(',')[header.indexOf(columnName)];
+};
+
 describe('MBNA CSV Formatter', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -51,6 +64,90 @@ describe('MBNA CSV Formatter', () => {
         resolvedMonarchCategory: null,
       },
     ];
+
+    describe('Id and Owner columns', () => {
+      // This formatter has no production caller (MBNA syncs through
+      // syncOrchestrator), but it must stay consistent with the canonical column
+      // set so wiring it up later does not silently drop columns.
+      // See docs/design/monarch-native-transaction-ids.md.
+      const HASH = 'mbna-tx:abcdef0123456789';
+
+      test('emits the full canonical column set', () => {
+        const result = convertMbnaTransactionsToMonarchCSV(sampleSettled, 'MBNA Mastercard');
+
+        expect(result.split('\n')[0]).toBe(
+          'Date,Merchant,Category,Account,Original Statement,Notes,Amount,Tags,Owner,Id',
+        );
+      });
+
+      test('writes the hash id for a settled transaction', () => {
+        const result = convertMbnaTransactionsToMonarchCSV(
+          [{ ...sampleSettled[0], txHashId: HASH }],
+          'MBNA Mastercard',
+        );
+
+        expect(field(result, 0, 'Id')).toBe(HASH);
+      });
+
+      test('writes the hash id for a pending transaction', () => {
+        const result = convertMbnaTransactionsToMonarchCSV(samplePending, 'MBNA Mastercard');
+
+        expect(field(result, 0, 'Id')).toBe('mbna-tx:abc123def456ab78');
+      });
+
+      test('uses the hash and NOT referenceNumber', () => {
+        // referenceNumber is "TEMP" until a transaction settles and then changes
+        // to a real value — identical across pending rows, and unstable across
+        // settlement. Both disqualify it as a match key.
+        const result = convertMbnaTransactionsToMonarchCSV(
+          [{ ...sampleSettled[0], txHashId: HASH }],
+          'MBNA Mastercard',
+        );
+
+        expect(field(result, 0, 'Id')).toBe(HASH);
+        expect(field(result, 0, 'Id')).not.toBe('55490535351206796539264');
+      });
+
+      test('emits the SAME id before and after settlement', () => {
+        // The property that makes the hash usable: one transaction, two states,
+        // one id.
+        const pendingCsv = convertMbnaTransactionsToMonarchCSV(
+          [{ ...samplePending[0], txHashId: HASH, pendingId: HASH }],
+          'MBNA Mastercard',
+        );
+        const settledCsv = convertMbnaTransactionsToMonarchCSV(
+          [{ ...samplePending[0], isPending: false, pendingId: null, txHashId: HASH, referenceNumber: '999' }],
+          'MBNA Mastercard',
+        );
+
+        expect(field(settledCsv, 0, 'Id')).toBe(field(pendingCsv, 0, 'Id'));
+      });
+
+      test('leaves Id empty when the transaction has no hash', () => {
+        // An empty Id must never look like a real match key
+        const result = convertMbnaTransactionsToMonarchCSV(
+          [{ ...sampleSettled[0], txHashId: null, pendingId: null }],
+          'MBNA Mastercard',
+        );
+
+        expect(field(result, 0, 'Id')).toBe('');
+      });
+
+      test('writes the cardholder owner into the Owner column', () => {
+        const result = convertMbnaTransactionsToMonarchCSV(
+          [{ ...sampleSettled[0], cardholderOwner: 'Mykhailo Delegan' }],
+          'MBNA Mastercard',
+        );
+
+        expect(field(result, 0, 'Owner')).toBe('Mykhailo Delegan');
+      });
+
+      test('leaves Owner empty when no cardholder is resolved', () => {
+        const result = convertMbnaTransactionsToMonarchCSV(sampleSettled, 'MBNA Mastercard');
+
+        expect(field(result, 0, 'Owner')).toBe('');
+      });
+    });
 
     test('should convert settled MBNA transactions to Monarch CSV format', () => {
       const result = convertMbnaTransactionsToMonarchCSV(sampleSettled, 'MBNA Mastercard');

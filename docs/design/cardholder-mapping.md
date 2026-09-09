@@ -1,7 +1,7 @@
 # Cardholder → Monarch Owner & Tag Mapping
 
 > **Status:** Active  
-> **Updated:** 2026-09-07  
+> **Updated:** 2026-09-08  
 > **Author:** @meseer  
 > **Note:** Implements [issue #165](https://github.com/meseer/monarch-uploader/issues/165). Owner mapping and cardholder tagging are both opt-in and off by default.
 
@@ -565,7 +565,8 @@ outside their Monarch household — are still served.
 
 ### Use Monarch's transaction-ID matching instead of scraping notes
 
-**This is the preferred long-term replacement for notes-hash correlation.**
+**This is the preferred long-term replacement for notes-hash correlation, and it
+now has its own design doc: [Native Monarch Transaction IDs](monarch-native-transaction-ids.md).**
 
 Monarch's CSV importer supports [*"Use transaction IDs to match transactions"*](https://help.monarch.com/hc/en-us/articles/4409682789908-Importing-Transactions-Manually#h_01K6Y94BW0034W98J2328NXFSP),
 and `id` **is** in the valid column list quoted above. That would let us send our
@@ -578,9 +579,15 @@ the notes field, which would:
 - likely remove the need to retain the id at all, and with it the whole
   marker-tag retention invariant.
 
-Deliberately deferred: it changes the correlation mechanism for pending
-reconciliation too, so it wants its own design pass and careful migration for
-transactions already carrying notes-embedded ids.
+**Status:** Phase 1 has shipped — every Rogers, MBNA and Wealthsimple row now
+carries the same id in a CSV `Id` column as well as in the notes. That is
+deliberately inert: the notes id, the marker tags and the owner-sync pass all
+still work exactly as described in this document, and nothing yet *matches* on the
+new column.
+
+The remaining phases (settling through CSV, then retiring the notes id and this
+document's marker-tag retention invariant) depend on unresolved questions about
+what Monarch's importer actually does with an `id` — see the linked doc.
 
 ### Smaller items
 

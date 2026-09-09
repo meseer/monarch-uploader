@@ -45,6 +45,7 @@ import {
 } from '../../utils/transactionStorage';
 import { convertToCSV, MONARCH_CSV_COLUMNS, buildMonarchTags } from '../../utils/csv';
 import { resolveNotesTransactionId } from '../../core/markerTags';
+import { resolveMonarchTransactionId } from '../../core/transactionIds';
 import { showProgressDialog } from '../../ui/components/progressDialog';
 import { showDatePickerWithOptionsPromise } from '../../ui/components/datePicker';
 import {
@@ -171,6 +172,12 @@ function convertTransactionsToMonarchCSV(transactions, accountName, buildTransac
       Amount: tx.amount || 0,
       Tags: buildMonarchTags({ isPending: tx.isPending, cardholderTag: tx.cardholderTag, ownerSyncPending }),
       Owner: tx.cardholderOwner || '',
+      // The same hash the notes carry, promoted to a column Monarch can match
+      // on. Written unconditionally: the notes id stays gated (see
+      // resolveNotesTransactionId) so notes remain byte-identical for users who
+      // have not opted into owner mapping, but the Id column is never shown to
+      // the user so it has no such constraint.
+      Id: resolveMonarchTransactionId({ txHashId: tx.txHashId, pendingId: tx.pendingId }),
     };
   });
 

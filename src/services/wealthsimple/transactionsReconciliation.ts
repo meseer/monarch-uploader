@@ -577,6 +577,48 @@ function emptyReconciliationResult(): ReconciliationResult {
 }
 
 /**
+ * Log the candidate id fields of a pending → settled pair.
+ *
+ * Diagnostic only; nothing branches on the output.
+ *
+ * Wealthsimple appends a segment to `externalCanonicalId` when card activity
+ * settles, which is why `resolveWsTransactionByPendingId` exists. That is
+ * tolerable while the id merely *records* which source transaction a Monarch row
+ * came from, but Monarch's CSV importer can also **match** on an `id` column, and
+ * matching needs an id that is byte-identical either side of settlement.
+ *
+ * Whether Wealthsimple exposes such a field is an open question — `canonicalId`,
+ * `groupId` and `reference` are all plausible and all already requested by the
+ * `Activity` fragment, so logging them costs no extra API surface. One real sync
+ * produces actual pairs and answers it from data rather than from a guess about
+ * the provider's id semantics.
+ *
+ * Remove this once the question is settled (see
+ * `docs/design/monarch-native-transaction-ids.md`).
+ *
+ * @param pendingId - Id read from the Monarch notes (the pending-era id)
+ * @param settledTx - The Wealthsimple record it resolved to
+ */
+function logIdStabilityDiagnostics(pendingId: string, settledTx: Record<string, unknown>): void {
+  const settledExternalId = settledTx.externalCanonicalId as string | undefined;
+
+  // Only interesting when the id actually changed — an exact match tells us
+  // nothing about stability.
+  if (settledExternalId === pendingId) return;
+
+  debugLog('[ws-reconciliation:id-stability] Pending id differs from settled id — candidate stable fields:', {
+    pendingExternalCanonicalId: pendingId,
+    settledExternalCanonicalId: settledExternalId,
+    settledCanonicalId: settledTx.canonicalId,
+    settledGroupId: settledTx.groupId,
+    settledReference: settledTx.reference,
+    settledOpposingAccountId: settledTx.opposingAccountId,
+    type: settledTx.type,
+    subType: settledTx.subType,
+  });
+}
+
+/**
  * Update a Monarch pending transaction to reflect its settled Wealthsimple counterpart.
  *
  * Applies (in this order): notes + date, merchant name, amount, then tag removal.
@@ -761,6 +803,7 @@ export async function reconcileWealthsimpleFetchedPending(
         }
 
         const { transactionId: wsTransactionId, transaction: wsTx } = match;
+        logIdStabilityDiagnostics(pendingId, wsTx);
         const statusInfo = getTransactionStatusForReconciliation(wsTx, accountType);
 
         if (statusInfo.isPending) {

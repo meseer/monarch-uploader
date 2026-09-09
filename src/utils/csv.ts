@@ -9,12 +9,15 @@ import {
   MARKER_TAGS,
   MONARCH_CSV_FIELD_KEYS,
   MONARCH_CSV_OWNER_FIELD_KEY,
+  MONARCH_CSV_ID_FIELD_KEY,
 } from '../core/config';
 import { applyMerchantMapping } from '../mappers/merchant';
 import { applyCategoryMapping } from '../mappers/category';
 // The notes-id rule lives with the retention rule it mirrors so the two halves
 // of the marker-tag invariant cannot drift apart.
 import { resolveNotesTransactionId } from '../core/markerTags';
+// The Id column carries the same string as the notes id; one module owns the rule.
+import { resolveMonarchTransactionId } from '../core/transactionIds';
 
 // ============================================================================
 // Types
@@ -100,6 +103,24 @@ interface MbnaTransaction {
 /** Options for Wealthsimple CSV conversion */
 interface WealthsimpleCSVOptions {
   storeTransactionDetailsInNotes?: boolean;
+  /**
+   * Maps a transaction's CURRENT id to the id it was first uploaded under.
+   *
+   * Wealthsimple appends a segment to `externalCanonicalId` when card activity
+   * settles, so the settled record's natural id differs from the pending one:
+   *
+   *   pending: card-activity-…-QIRIAS
+   *   settled: card-activity-…-QIRIAS-0tk4pfcsob83
+   *
+   * The row Monarch already holds was written with the *pending* id, so that is
+   * the only value the `Id` column can match on. Injected as a callback because
+   * the lookup needs the account's dedup store, and `utils` may not import from
+   * `services` (see docs/design — module dependency rules).
+   *
+   * Returns null/undefined when the transaction has not been uploaded before, in
+   * which case its own id is used.
+   */
+  resolveUploadedId?: (transactionId: string) => string | null | undefined;
 }
 
 /** Wealthsimple transaction shape */
@@ -234,55 +255,121 @@ export const MONARCH_CSV_COLUMNS = [
   'Amount',
   'Tags',
   'Owner',
+  'Id',
 ];
+
+/**
+ * Column order for integrations that have no stable per-transaction id.
+ *
+ * Questrade activity rows are keyed by data we do not control end to end, so
+ * there is nothing to put in `Id`. Emitting the column with an empty value
+ * would hand Monarch a blank match key on every row — behaviour we have not
+ * verified — so the column is omitted entirely instead. Because the
+ * `columnMapping` is derived from the uploaded CSV's own header row, omitting
+ * the column also omits it from the mapping, with no index drift.
+ */
+export const MONARCH_CSV_COLUMNS_WITHOUT_ID = MONARCH_CSV_COLUMNS.filter((column) => column !== 'Id');
+
+/**
+ * Read a `columnMapping` key that can be overridden at runtime.
+ *
+ * The override exists so a key can be changed or a column dropped entirely
+ * without a rebuild — which matters because Monarch validates keys strictly
+ * (an invalid key fails the whole upload) and its accepted names are only
+ * partially documented.
+ *
+ * Storage failures fall back to the compiled-in default rather than throwing,
+ * since a broken override must not be able to break every upload.
+ *
+ * @param defaultKey - Compiled-in key
+ * @param storageKey - GM storage key holding the override
+ * @param label - Column name, for logging
+ * @returns The key to use ('' means "omit this column")
+ */
+function resolveOverridableFieldKey(defaultKey: string, storageKey: string, label: string): string {
+  try {
+    const override = GM_getValue(storageKey, undefined) as string | undefined;
+    if (override !== undefined) {
+      return override;
+    }
+  } catch (error) {
+    debugLog(`Could not read ${label} column key override, using default:`, error);
+  }
+
+  return defaultKey;
+}
+
+/**
+ * Extract the column headers from a CSV string's first line.
+ *
+ * @param csvData - Full CSV content
+ * @returns Header column names, or null when the header cannot be read
+ */
+export function extractCSVHeaderColumns(csvData: string | null | undefined): string[] | null {
+  if (!csvData || typeof csvData !== 'string') return null;
+
+  const headerLine = csvData.split('\n')[0];
+  if (!headerLine || headerLine.trim() === '') return null;
+
+  const parsed = parseCSV(headerLine, false) as string[][];
+  const columns = parsed[0];
+
+  return columns && columns.length > 0 ? columns.map((c) => c.trim()) : null;
+}
 
 /**
  * Build the `columnMapping` payload for Monarch's statement parser.
  *
  * Monarch reads ONLY the columns named in this mapping — an unmapped column is
- * silently ignored rather than rejected. The mapping is derived from
- * `MONARCH_CSV_COLUMNS` rather than hand-written so the two cannot drift apart;
- * a hand-maintained literal is how the `Owner` column originally ended up
- * unmapped and therefore invisible to the importer.
+ * silently ignored rather than rejected — and the mapping is **index-based**, so
+ * it must describe the columns of the CSV actually being uploaded.
  *
- * The Owner key is read from GM storage so candidate keys can be tried without
- * a rebuild (Monarch's accepted key name is unconfirmed):
+ * That is why `columns` is a parameter. Not every CSV uses
+ * `MONARCH_CSV_COLUMNS`: `services/canadalife/csvFormatter` and
+ * `integrations/mbna/.../csvFormatter` emit their own shorter column lists, so a
+ * mapping derived from the canonical list would point at indices those files do
+ * not have. Passing the uploaded CSV's own header row makes that class of drift
+ * impossible instead of merely unlikely.
+ *
+ * Owner and Id are resolved separately because their keys are overridable at
+ * runtime:
  *
  *   GM_setValue('monarch_csv_owner_key', 'owner')   // try a different key
- *   GM_setValue('monarch_csv_owner_key', '')        // omit Owner entirely
+ *   GM_setValue('monarch_csv_id_key', '')           // stop sending Id entirely
  *
+ * @param columns - Columns of the CSV being uploaded (defaults to the canonical list)
  * @returns JSON string of {monarchFieldName: columnIndex}
  */
-export function buildMonarchColumnMapping(): string {
+export function buildMonarchColumnMapping(columns: string[] = MONARCH_CSV_COLUMNS): string {
+  const csvColumns = columns && columns.length > 0 ? columns : MONARCH_CSV_COLUMNS;
   const mapping: Record<string, number> = {};
 
-  MONARCH_CSV_COLUMNS.forEach((column, index) => {
+  csvColumns.forEach((column, index) => {
     const fieldKey = MONARCH_CSV_FIELD_KEYS[column];
     if (fieldKey) {
       mapping[fieldKey] = index;
     }
   });
 
-  // Owner is resolved separately so the key remains overridable at runtime.
-  const ownerIndex = MONARCH_CSV_COLUMNS.indexOf('Owner');
-  if (ownerIndex !== -1) {
-    let ownerKey = MONARCH_CSV_OWNER_FIELD_KEY;
-    try {
-      const override = GM_getValue(STORAGE.MONARCH_CSV_OWNER_KEY, undefined) as string | undefined;
-      if (override !== undefined) {
-        ownerKey = override;
-      }
-    } catch (error) {
-      debugLog('Could not read Owner column key override, using default:', error);
-    }
+  // Columns whose key is resolved at runtime rather than from the static map.
+  const overridableColumns = [
+    { column: 'Owner', defaultKey: MONARCH_CSV_OWNER_FIELD_KEY, storageKey: STORAGE.MONARCH_CSV_OWNER_KEY },
+    { column: 'Id', defaultKey: MONARCH_CSV_ID_FIELD_KEY, storageKey: STORAGE.MONARCH_CSV_ID_KEY },
+  ];
 
-    // An empty key intentionally omits Owner from the mapping.
-    if (ownerKey) {
-      mapping[ownerKey] = ownerIndex;
+  overridableColumns.forEach(({ column, defaultKey, storageKey }) => {
+    const index = csvColumns.indexOf(column);
+    if (index === -1) return;
+
+    const fieldKey = resolveOverridableFieldKey(defaultKey, storageKey, column);
+
+    // An empty key intentionally omits the column from the mapping.
+    if (fieldKey) {
+      mapping[fieldKey] = index;
     } else {
-      debugLog('Owner column key override is empty — omitting Owner from columnMapping');
+      debugLog(`${column} column key is empty — omitting ${column} from columnMapping`);
     }
-  }
+  });
 
   return JSON.stringify(mapping);
 }
@@ -442,6 +529,13 @@ export function convertTransactionsToMonarchCSV(
       Amount: -(transaction.amount?.value || 0), // Negate amount for Rogers transactions
       Tags: buildMonarchTags({ isPending, cardholderTag: transaction.cardholderTag, ownerSyncPending }),
       Owner: transaction.cardholderOwner || '',
+      // Written unconditionally — unlike the notes id, which stays gated so
+      // notes remain byte-identical for users who have not opted into owner
+      // mapping. Same string either way.
+      Id: resolveMonarchTransactionId({
+        txHashId: transaction.txHashId,
+        pendingId: transaction.pendingId,
+      }),
     };
   });
 
@@ -517,6 +611,10 @@ export function convertMbnaTransactionsToMonarchCSV(
       Amount: transaction.amount || 0,
       Tags: buildMonarchTags({ isPending, cardholderTag: transaction.cardholderTag, ownerSyncPending }),
       Owner: transaction.cardholderOwner || '',
+      Id: resolveMonarchTransactionId({
+        txHashId: transaction.txHashId,
+        pendingId: transaction.pendingId,
+      }),
     };
   });
 
@@ -612,7 +710,7 @@ export function convertWealthsimpleTransactionsToMonarchCSV(
     return '';
   }
 
-  const { storeTransactionDetailsInNotes: _storeDetails = false } = options;
+  const { storeTransactionDetailsInNotes: _storeDetails = false, resolveUploadedId } = options;
 
   // Transform transactions to Monarch format
   const monarchRows: CSVRow[] = transactions.map((transaction) => {
@@ -623,6 +721,15 @@ export function convertWealthsimpleTransactionsToMonarchCSV(
 
     // Format the transaction ID with ws-tx: prefix for reconciliation
     const formattedTxId = formatTransactionIdForNotes(transaction.id);
+
+    // The Id COLUMN uses the id this transaction was first uploaded under, so it
+    // still matches the Monarch row after Wealthsimple mutates the id at
+    // settlement. The NOTES keep the current id, unchanged — pending
+    // reconciliation resolves the variant itself and must not be disturbed.
+    const uploadedId = transaction.id && resolveUploadedId
+      ? resolveUploadedId(transaction.id)
+      : null;
+    const stableTxId = formatTransactionIdForNotes(uploadedId || transaction.id);
 
     // Get memo and technical details from transaction
     const memo = transaction.notes || '';
@@ -661,6 +768,14 @@ export function convertWealthsimpleTransactionsToMonarchCSV(
       Amount: transaction.amount || 0,
       Tags: resolveWealthsimpleTags(transaction, isPending),
       Owner: '',
+      // The same `ws-tx:{id}` string the notes carry for pending rows — promoted
+      // to a column and written for settled rows too.
+      //
+      // For a transaction that has been uploaded before, this is the id it was
+      // uploaded UNDER, not its current id: Wealthsimple mutates
+      // `externalCanonicalId` at settlement, and the Monarch row was created
+      // with the pending-era value. See `resolveUploadedId`.
+      Id: resolveMonarchTransactionId({ fallbackId: stableTxId }),
     };
   });
 
@@ -726,7 +841,7 @@ export function convertQuestradeOrdersToMonarchCSV(orders: QuestradeOrder[], acc
     sample: monarchRows[0], // Log first row as sample
   });
 
-  return convertToCSV(monarchRows, MONARCH_CSV_COLUMNS);
+  return convertToCSV(monarchRows, MONARCH_CSV_COLUMNS_WITHOUT_ID);
 }
 
 /**
@@ -800,7 +915,7 @@ export function convertQuestradeTransactionsToMonarchCSV(
     sample: monarchRows[0], // Log first row as sample
   });
 
-  return convertToCSV(monarchRows, MONARCH_CSV_COLUMNS);
+  return convertToCSV(monarchRows, MONARCH_CSV_COLUMNS_WITHOUT_ID);
 }
 
 // ============================================================================
@@ -872,6 +987,7 @@ export default {
   convertTransactionsToMonarchCSV,
   buildMonarchTags,
   buildMonarchColumnMapping,
+  extractCSVHeaderColumns,
   parseCSV,
   escapeCSVField,
 };

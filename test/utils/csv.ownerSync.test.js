@@ -8,6 +8,13 @@
  *
  * Equally important is the negative case: a user who has not enabled owner
  * mapping must see byte-identical output to before the feature existed.
+ *
+ * Note on scope: the "no id" assertions below check the **Notes** column
+ * specifically, not the whole CSV. The `Id` column carries the same hash by
+ * design (Monarch's importer can match on it — see
+ * docs/design/monarch-native-transaction-ids.md), so a whole-CSV substring check
+ * would now conflate two separate mechanisms. What must stay unchanged for
+ * users who have not opted in is the **notes**, which is what these assert.
  */
 
 import {
@@ -137,7 +144,15 @@ describe('Rogers Bank CSV — owner sync emission', () => {
       const csv = convertTransactionsToMonarchCSV([rogersTx()], 'Rogers Mastercard');
 
       expect(field(csv, 0, 'Notes')).toBe('');
-      expect(csv).not.toContain(HASH);
+    });
+
+    it('still writes the id into the Id column of a settled row', () => {
+      // The Id column is NOT gated on owner mapping: Monarch reads it as a
+      // column rather than showing it to the user, so there is no cosmetic cost
+      // and every row gets a match key.
+      const csv = convertTransactionsToMonarchCSV([rogersTx()], 'Rogers Mastercard');
+
+      expect(field(csv, 0, 'Id')).toBe(HASH);
     });
 
     it('still writes the pending id for a pending row', () => {
@@ -219,7 +234,10 @@ describe('Rogers Bank CSV — owner sync emission', () => {
       );
 
       expect(field(csv, 0, 'Tags')).toBe('');
-      expect(csv).not.toContain(HASH);
+      // No marker means no owner pass will look for this row, so the notes stay
+      // clean. The Id column is independent of that and still carries the hash.
+      expect(field(csv, 0, 'Notes')).toBe('');
+      expect(field(csv, 0, 'Id')).toBe(HASH);
     });
 
     it('still tags a Shared cardholder when tagging is enabled', () => {
