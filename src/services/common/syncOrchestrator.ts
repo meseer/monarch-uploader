@@ -191,6 +191,33 @@ function convertTransactionsToMonarchCSV(transactions, accountName, buildTransac
 }
 
 /**
+ * Build dedup reference records from processed transactions.
+ *
+ * Carries each transaction's own date and merchant into the dedup store so the
+ * stored list is chronologically meaningful and displayable, rather than a bag
+ * of IDs all stamped with the batch date.
+ *
+ * Preserves the input order, which the fetchTransactions hook guarantees to be
+ * oldest-first — matching the oldest-first `uploadedTransactions` invariant.
+ *
+ * @param {Array} transactions - Processed transactions
+ * @param {Function} getRefId - Hook extracting the dedup ref ID from a transaction
+ * @returns {Array<StoredTransaction>} Reference records, oldest-first
+ */
+function buildTransactionRefs(
+  transactions: Array<Record<string, unknown>>,
+  getRefId: (tx: Record<string, unknown>) => string | null,
+): StoredTransaction[] {
+  return transactions
+    .map((tx) => ({
+      id: getRefId(tx) as string,
+      date: (tx.date as string) || null,
+      merchant: (tx.merchant as string) || null,
+    }))
+    .filter((ref) => Boolean(ref.id));
+}
+
+/**
  * Execute the credit limit sync step.
  *
  * @param {Object} params - Parameters
@@ -395,8 +422,10 @@ async function executeTransactionStep({
     const today = getTodayLocal();
     const filename = `${integrationId}_transactions_${fromDate || 'all'}_to_${today}.csv`;
 
-    const settledRefs = newSettled.map((tx) => hooks.getSettledRefId(tx)).filter(Boolean) as string[];
-    const pendingRefs = newPending.map((tx) => hooks.getPendingRefId(tx)).filter(Boolean) as string[];
+    // Oldest-first (inherited from the fetch hook's ordering contract) so the
+    // dedup store keeps its oldest-first invariant on append.
+    const settledRefs = buildTransactionRefs(newSettled as Array<Record<string, unknown>>, hooks.getSettledRefId);
+    const pendingRefs = buildTransactionRefs(newPending as Array<Record<string, unknown>>, hooks.getPendingRefId);
 
     const uploadSuccess = await uploadTransactionsAndSaveRefs({
       integrationId,

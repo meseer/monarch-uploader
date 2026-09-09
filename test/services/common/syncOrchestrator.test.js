@@ -275,6 +275,98 @@ describe('syncAccount', () => {
     expect(progressDialog.showSummary).toHaveBeenCalledWith({ success: 1, failed: 0, total: 1 });
   });
 
+  it('should build dedup refs carrying each transaction date and merchant', async () => {
+    const { uploadTransactionsAndSaveRefs } = require('../../../src/services/common/transactionUpload');
+    const progressDialog = createMockProgressDialog();
+    const hooks = createMockHooks();
+    const api = createMockApi();
+
+    await syncAccount({
+      integrationId: 'test',
+      manifest: defaultManifest,
+      hooks,
+      api,
+      account: { accountId: 'acc-1' },
+      accountDisplayName: 'Test Card',
+      monarchAccount: { id: 'monarch-1' },
+      fromDate: '2024-01-01',
+      progressDialog,
+    });
+
+    // Refs are records, not bare ID strings, so the stored dedup list carries the
+    // real transaction date and merchant rather than a single batch-wide date.
+    expect(uploadTransactionsAndSaveRefs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transactionRefs: [{ id: 'REF1', date: '2024-01-15', merchant: 'Amazon' }],
+      }),
+    );
+  });
+
+  it('should emit dedup refs in the order the fetch hook returned them (oldest-first)', async () => {
+    const { uploadTransactionsAndSaveRefs } = require('../../../src/services/common/transactionUpload');
+    const progressDialog = createMockProgressDialog();
+    const hooks = createMockHooks();
+    const api = createMockApi();
+
+    // The fetchTransactions hook contract is oldest-first; the orchestrator must
+    // preserve that so appending to the oldest-first dedup store stays correct.
+    hooks.fetchTransactions.mockResolvedValue({
+      settled: [
+        { date: '2024-01-10', description: 'Oldest', amount: 10, referenceNumber: 'REF_OLD' },
+        { date: '2024-01-15', description: 'Middle', amount: 20, referenceNumber: 'REF_MID' },
+        { date: '2024-01-20', description: 'Newest', amount: 30, referenceNumber: 'REF_NEW' },
+      ],
+      pending: [],
+      metadata: { statements: [], currentCycle: { settled: [] } },
+    });
+
+    await syncAccount({
+      integrationId: 'test',
+      manifest: defaultManifest,
+      hooks,
+      api,
+      account: { accountId: 'acc-1' },
+      accountDisplayName: 'Test Card',
+      monarchAccount: { id: 'monarch-1' },
+      fromDate: '2024-01-01',
+      progressDialog,
+    });
+
+    const { transactionRefs } = uploadTransactionsAndSaveRefs.mock.calls[0][0];
+    expect(transactionRefs.map((r) => r.id)).toEqual(['REF_OLD', 'REF_MID', 'REF_NEW']);
+  });
+
+  it('should drop refs whose ID cannot be resolved', async () => {
+    const { uploadTransactionsAndSaveRefs } = require('../../../src/services/common/transactionUpload');
+    const progressDialog = createMockProgressDialog();
+    const hooks = createMockHooks();
+    const api = createMockApi();
+
+    hooks.fetchTransactions.mockResolvedValue({
+      settled: [
+        { date: '2024-01-10', description: 'No ref', amount: 10 },
+        { date: '2024-01-15', description: 'Has ref', amount: 20, referenceNumber: 'REF_OK' },
+      ],
+      pending: [],
+      metadata: { statements: [], currentCycle: { settled: [] } },
+    });
+
+    await syncAccount({
+      integrationId: 'test',
+      manifest: defaultManifest,
+      hooks,
+      api,
+      account: { accountId: 'acc-1' },
+      accountDisplayName: 'Test Card',
+      monarchAccount: { id: 'monarch-1' },
+      fromDate: '2024-01-01',
+      progressDialog,
+    });
+
+    const { transactionRefs } = uploadTransactionsAndSaveRefs.mock.calls[0][0];
+    expect(transactionRefs.map((r) => r.id)).toEqual(['REF_OK']);
+  });
+
   it('should skip credit limit step when capability is disabled', async () => {
     const { syncCreditLimit } = require('../../../src/services/common/creditLimitSync');
     const progressDialog = createMockProgressDialog();

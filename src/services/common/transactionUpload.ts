@@ -14,6 +14,7 @@ import accountService from './accountService';
 import {
   mergeAndRetainTransactions,
   getRetentionSettingsFromAccount,
+  StoredTransaction,
 } from '../../utils/transactionStorage';
 
 /**
@@ -28,8 +29,10 @@ import {
  * @param {string} params.monarchAccountId - Monarch account ID
  * @param {string} params.csvData - CSV content ready for upload
  * @param {string} params.filename - Filename for the upload
- * @param {Array<string>} params.transactionRefs - Reference IDs for dedup storage
- * @param {Array} params.transactions - Transactions (used to determine latest date)
+ * @param {Array<string|Object>} params.transactionRefs - References for dedup storage.
+ *   Either bare ID strings or `{ id, date, merchant }` records. MUST be ordered
+ *   oldest-first, matching the oldest-first `uploadedTransactions` storage invariant.
+ * @param {Array} params.transactions - Transactions (used to determine the fallback date)
  * @returns {Promise<boolean>} True if upload succeeded
  */
 interface UploadTransactionsParams {
@@ -38,7 +41,7 @@ interface UploadTransactionsParams {
   monarchAccountId: string;
   csvData: string;
   filename: string;
-  transactionRefs: string[];
+  transactionRefs: Array<string | StoredTransaction>;
   transactions: Array<{ date?: string; [key: string]: unknown }>;
 }
 
@@ -59,11 +62,13 @@ export async function uploadTransactionsAndSaveRefs({
 
   // Save transaction IDs to dedup store
   if (transactionRefs.length > 0) {
+    // Fallback date, used only for refs that arrive as bare strings (no date of
+    // their own). Record refs carry their real transaction date.
     let txDate = getTodayLocal();
     const withDates = transactions.filter((tx) => tx.date);
     if (withDates.length > 0) {
-      withDates.sort((a, b) => b.date.localeCompare(a.date));
-      txDate = withDates[0].date;
+      const sortedDates = [...withDates].sort((a, b) => b.date.localeCompare(a.date));
+      txDate = sortedDates[0].date;
     }
 
     const accountData = accountService.getAccountData(integrationId, sourceAccountId);
