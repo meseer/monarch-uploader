@@ -197,12 +197,15 @@ function convertTransactionsToMonarchCSV(transactions, accountName, buildTransac
  * stored list is chronologically meaningful and displayable, rather than a bag
  * of IDs all stamped with the batch date.
  *
- * Preserves the input order, which the fetchTransactions hook guarantees to be
- * oldest-first — matching the oldest-first `uploadedTransactions` invariant.
+ * The fetchTransactions hook guarantees oldest-first input (that order also
+ * drives uploaded CSV row order), so the refs are reversed to newest-first for
+ * the newest-first `uploadedTransactions` invariant. A plain reversal rather
+ * than a date sort, so each institution's own intra-day sequencing — which the
+ * date field does not capture — is preserved.
  *
- * @param {Array} transactions - Processed transactions
+ * @param {Array} transactions - Processed transactions, oldest-first
  * @param {Function} getRefId - Hook extracting the dedup ref ID from a transaction
- * @returns {Array<StoredTransaction>} Reference records, oldest-first
+ * @returns {Array<StoredTransaction>} Reference records, newest-first
  */
 function buildTransactionRefs(
   transactions: Array<Record<string, unknown>>,
@@ -214,7 +217,8 @@ function buildTransactionRefs(
       date: (tx.date as string) || null,
       merchant: (tx.merchant as string) || null,
     }))
-    .filter((ref) => Boolean(ref.id));
+    .filter((ref) => Boolean(ref.id))
+    .reverse();
 }
 
 /**
@@ -422,8 +426,8 @@ async function executeTransactionStep({
     const today = getTodayLocal();
     const filename = `${integrationId}_transactions_${fromDate || 'all'}_to_${today}.csv`;
 
-    // Oldest-first (inherited from the fetch hook's ordering contract) so the
-    // dedup store keeps its oldest-first invariant on append.
+    // Newest-first, so the dedup store keeps its newest-first invariant when
+    // these are prepended.
     const settledRefs = buildTransactionRefs(newSettled as Array<Record<string, unknown>>, hooks.getSettledRefId);
     const pendingRefs = buildTransactionRefs(newPending as Array<Record<string, unknown>>, hooks.getPendingRefId);
 

@@ -5,17 +5,18 @@
  * reference list with date, merchant and ID, a filter box, and bulk add/delete
  * actions.
  *
- * Rows are displayed newest-first via `getTransactionsNewestFirst`, which is a
- * plain reversal of the oldest-first stored order — not a re-sort. Ordering is
- * owned by insertion time in `transactionStorage`, so a misordered stored list
- * stays visible here instead of being silently corrected.
+ * Rows render the stored array **directly**, with no sorting or reversal.
+ * `uploadedTransactions` is stored newest-first (see `transactionStorage`), so
+ * that already yields reverse-chronological display — and it makes this list a
+ * literal view of storage, so a misordered array is plainly visible here rather
+ * than being silently corrected.
  */
 
 import { debugLog, getTodayLocal } from '../../core/utils';
 import toast from '../toast';
 import { getCapabilities } from '../../core/integrationCapabilities';
 import accountService from '../../services/common/accountService';
-import { getTransactionsNewestFirst, type StoredTransaction } from '../../utils/transactionStorage';
+import { type StoredTransaction } from '../../utils/transactionStorage';
 import { showConfirmDialog } from './settingsModalHelpers';
 import { createCollapsibleHeader, setupCollapsible, createSmallButton } from './settingsModalCollapsible';
 
@@ -279,8 +280,9 @@ function buildTransactionsContent(
   const filterBar = buildFilterBar(integrationId, accountId, uploadedTransactions.length);
   container.appendChild(filterBar.container);
 
-  // Newest first for display; storage stays oldest-first (see module docs).
-  const displayTransactions = getTransactionsNewestFirst(uploadedTransactions);
+  // Rendered as stored (newest-first) — no sorting or reversal, so the list is a
+  // literal view of storage.
+  const displayTransactions = uploadedTransactions;
 
   const transactionsList = document.createElement('div');
   transactionsList.id = `transactions-list-${integrationId}-${accountId}`;
@@ -385,11 +387,11 @@ function buildTransactionsContent(
       return;
     }
 
-    // Appended at the tail with today's date, matching the oldest-first
-    // storage invariant (newest entries live at the end).
+    // Prepended with today's date, matching the newest-first storage invariant
+    // (newest entries live at the start), so they appear at the top of the list.
     const today = getTodayLocal();
     const newTransactions = uniqueNewIds.map((id) => ({ id, date: today, merchant: null }));
-    const updatedTransactions = [...uploadedTransactions, ...newTransactions];
+    const updatedTransactions = [...newTransactions, ...uploadedTransactions];
 
     const success = accountService.updateAccountInList(integrationId, accountId, { uploadedTransactions: updatedTransactions });
     if (success) {
@@ -432,8 +434,8 @@ function buildTransactionsContent(
     const confirmed = await showConfirmDialog(`Are you sure you want to delete ${selectedCheckboxes.length} selected transaction reference(s)?`);
     if (!confirmed) return;
 
-    // Delete by ID, not by row index: displayed rows are reversed relative to
-    // storage and may be filtered, so indices do not map to storage positions.
+    // Delete by ID, not by row index: rows may be filtered, so display indices
+    // do not reliably map to storage positions.
     const idsToRemove = new Set(selectedCheckboxes.map((cb) => cb.dataset.txId));
     const updatedTransactions = uploadedTransactions.filter((tx) => {
       const txId = typeof tx === 'object' && tx !== null ? tx.id : String(tx);
