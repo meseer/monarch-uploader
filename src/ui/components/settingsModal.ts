@@ -14,7 +14,7 @@ import {
 } from '../../core/integrationCapabilities';
 import { getAllManifests } from '../../core/integrationRegistry';
 import accountService from '../../services/common/accountService';
-import scriptInfo from '../../scriptInfo.json';
+import { createVersionLink } from './versionBadge';
 import {
   checkInstitutionConnection,
   createLookbackPeriodSection,
@@ -303,29 +303,7 @@ export function createSettingsModal(): HTMLElement {
     border-top: 1px solid var(--mu-border, #e0e0e0);
   `;
 
-  const versionLink = document.createElement('a');
-  versionLink.id = 'settings-version-link';
-  versionLink.href = scriptInfo.gistUrl;
-  versionLink.target = '_blank';
-  versionLink.rel = 'noopener noreferrer';
-  versionLink.textContent = `v${scriptInfo.version}`;
-  versionLink.style.cssText = `
-    font-size: 12px;
-    color: var(--mu-text-secondary, #666);
-    text-decoration: none;
-    display: inline-block;
-    transition: color 0.2s;
-  `;
-  versionLink.addEventListener('mouseover', () => {
-    versionLink.style.color = 'var(--mu-link-color, #0073b1)';
-    versionLink.style.textDecoration = 'underline';
-  });
-  versionLink.addEventListener('mouseout', () => {
-    versionLink.style.color = 'var(--mu-text-secondary, #666)';
-    versionLink.style.textDecoration = 'none';
-  });
-
-  versionContainer.appendChild(versionLink);
+  versionContainer.appendChild(createVersionLink());
   tabNav.appendChild(versionContainer);
 
   mainContainer.appendChild(tabNav);

@@ -21,6 +21,7 @@ import { showSettingsModal } from '../components/settingsModal';
 import { createConnectionStatus, updateInstitutionStatus, updateMonarchStatus } from './components/connectionStatus';
 import { createUploadButton } from './components/uploadButton';
 import { createMonarchLoginLink } from '../components/monarchLoginLink';
+import { createVersionBadge } from '../components/versionBadge';
 import { prepareAndSyncAccount } from '../../services/common/syncOrchestrator';
 import authService from '../../services/auth';
 
@@ -369,6 +370,7 @@ function createUIContainer(registryEntry: RegistryEntry): HTMLElement | null {
   titleRow.style.cssText = 'display: flex; align-items: center; gap: 10px;';
 
   const title = document.createElement('div');
+  title.id = `${manifest.id}-uploader-title`;
   title.textContent = 'Balance Uploader';
   title.style.cssText = `
     font-weight: 600;
@@ -376,6 +378,8 @@ function createUIContainer(registryEntry: RegistryEntry): HTMLElement | null {
     font-size: 16px;
   `;
   titleRow.appendChild(title);
+
+  titleRow.appendChild(createVersionBadge(manifest.id));
 
   const settingsButton = document.createElement('button');
   settingsButton.id = `${manifest.id}-settings-button`;
