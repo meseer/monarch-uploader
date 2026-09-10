@@ -13,6 +13,7 @@ import { createConnectionStatus, updateCredentialsDisplay } from './components/c
 import { createRogersBankUploadButton } from './components/uploadButton';
 import { showSettingsModal } from '../components/settingsModal';
 import { createMonarchLoginLink } from '../components/monarchLoginLink';
+import { createVersionBadge } from '../components/versionBadge';
 
 declare function GM_getValue(key: string): unknown;
 
@@ -229,6 +230,7 @@ function createUIContainer(): HTMLElement | null {
   titleRow.style.cssText = 'display: flex; align-items: center; gap: 10px;';
 
   const title = document.createElement('div');
+  title.id = 'rogersbank-uploader-title';
   title.textContent = 'Balance Uploader';
   title.style.cssText = `
     font-weight: 600;
@@ -236,6 +238,8 @@ function createUIContainer(): HTMLElement | null {
     font-size: 16px;
   `;
   titleRow.appendChild(title);
+
+  titleRow.appendChild(createVersionBadge('rogersbank'));
 
   const settingsButton = document.createElement('button');
   settingsButton.innerHTML = '⚙️';

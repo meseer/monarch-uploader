@@ -13,6 +13,7 @@ import { createConnectionStatus } from './components/connectionStatus';
 import { createCanadaLifeUploadButton } from './components/uploadButton';
 import { showSettingsModal } from '../components/settingsModal';
 import { createMonarchLoginLink } from '../components/monarchLoginLink';
+import { createVersionBadge } from '../components/versionBadge';
 
 /**
  * Creates and appends the main UI container to CanadaLife navigation
@@ -61,6 +62,7 @@ function createUIContainer(): HTMLElement | null {
   titleRow.style.cssText = 'display: flex; align-items: center; gap: 10px;';
 
   const title = document.createElement('div');
+  title.id = 'canadalife-uploader-title';
   title.textContent = 'Balance Uploader';
   title.style.cssText = `
     font-weight: 600;
@@ -68,6 +70,8 @@ function createUIContainer(): HTMLElement | null {
     font-size: 16px;
   `;
   titleRow.appendChild(title);
+
+  titleRow.appendChild(createVersionBadge('canadalife'));
 
   const settingsButton = document.createElement('button');
   settingsButton.innerHTML = '⚙️';

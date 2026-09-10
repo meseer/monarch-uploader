@@ -13,6 +13,7 @@ import toast from '../toast';
 import uploadButton, { createTestingSection } from './components/uploadButton';
 import { showSettingsModal } from '../components/settingsModal';
 import { createMonarchLoginLink } from '../components/monarchLoginLink';
+import { createVersionBadge } from '../components/versionBadge';
 import { getAccountsForSync } from '../../services/questrade/balance';
 
 interface StatusIndicators {
@@ -130,9 +131,11 @@ function createButtonContainer(): HTMLDivElement {
   const titleRow = document.createElement('div');
   titleRow.style.cssText = 'display: flex; align-items: center; gap: 10px;';
   const title = document.createElement('h3');
+  title.id = 'questrade-uploader-title';
   title.textContent = 'Balance History Uploader';
   title.style.cssText = 'margin: 0; font-size: 18px; font-weight: bold;';
   titleRow.appendChild(title);
+  titleRow.appendChild(createVersionBadge('questrade'));
   const settingsButton = document.createElement('button');
   settingsButton.innerHTML = '⚙️';
   settingsButton.title = 'Settings';
@@ -192,9 +195,11 @@ function createHeaderWithGearButton(container: HTMLDivElement): void {
   const titleRow = document.createElement('div');
   titleRow.style.cssText = 'display: flex; align-items: center; gap: 10px;';
   const title = document.createElement('h3');
+  title.id = 'questrade-uploader-title';
   title.textContent = 'Balance History Uploader';
   title.style.cssText = 'margin: 0; font-size: 18px; font-weight: bold;';
   titleRow.appendChild(title);
+  titleRow.appendChild(createVersionBadge('questrade'));
   const settingsButton = document.createElement('button');
   settingsButton.innerHTML = '⚙️';
   settingsButton.title = 'Settings';

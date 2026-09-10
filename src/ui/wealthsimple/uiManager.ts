@@ -15,6 +15,7 @@ import { createConnectionStatus } from './components/connectionStatus';
 import { createWealthsimpleUploadButton } from './components/uploadButton';
 import { showSettingsModal } from '../components/settingsModal';
 import { createMonarchLoginLink } from '../components/monarchLoginLink';
+import { createVersionBadge } from '../components/versionBadge';
 
 interface InjectionPointConfig {
   selector: string;
@@ -131,6 +132,7 @@ async function createUIContainer(
   title.textContent = 'Balance Uploader';
   title.style.cssText = `font-weight: 600; color: var(--mu-text-primary, ${COLORS.WEALTHSIMPLE_BRAND}); font-size: 16px;`;
   titleRow.appendChild(title);
+  titleRow.appendChild(createVersionBadge('wealthsimple'));
   const settingsButton = document.createElement('button');
   settingsButton.id = 'wealthsimple-settings-button';
   settingsButton.innerHTML = '⚙️';
