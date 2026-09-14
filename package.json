@@ -37,8 +37,8 @@
     "node": ">=24"
   },
   "devDependencies": {
-    "@babel/core": "^8.0.1",
-    "@babel/preset-env": "^8.0.2",
+    "@babel/core": "^8.0.5",
+    "@babel/preset-env": "^8.0.5",
     "@babel/preset-typescript": "^8.0.1",
     "@eslint/js": "^10.0.1",
     "@types/tampermonkey": "^5.5.0",
