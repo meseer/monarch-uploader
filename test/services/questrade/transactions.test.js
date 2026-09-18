@@ -43,6 +43,17 @@ jest.mock('../../../src/services/common/accountService', () => ({
     updateAccountInList: jest.fn(),
   },
 }));
+// saveLastUploadDate is mocked so the sync-date (watermark) tests can assert on it
+jest.mock('../../../src/core/utils', () => {
+  const actual = jest.requireActual('../../../src/core/utils');
+  return {
+    ...actual,
+    saveLastUploadDate: jest.fn(),
+    getTodayLocal: jest.fn(() => '2025-02-01'),
+  };
+});
+
+const utils = require('../../../src/core/utils');
 
 describe('Questrade Transactions Service', () => {
   beforeEach(() => {
@@ -170,6 +181,108 @@ describe('Questrade Transactions Service', () => {
       await expect(
         transactionsService.fetchQuestradeOrders('account-uuid', '2025-01-01'),
       ).rejects.toThrow('Invalid API response: missing data');
+    });
+  });
+
+  // Regression tests: the stored sync date must never move past transactions that did
+  // not reach Monarch. Questrade's default lookback is 0 days, so the next sync starts
+  // exactly at the stored date - anything a failed step missed would be lost forever.
+  describe('sync date (watermark) advancement', () => {
+    const executedOrder = {
+      orderUuid: 'uuid1',
+      status: 'Executed',
+      action: 'Buy',
+      security: { displayName: 'AAPL' },
+      dollarValue: 1000,
+    };
+
+    beforeEach(() => {
+      questradeApi.getAccount = jest.fn().mockReturnValue({ key: 'account123', nickname: 'Test Account' });
+      questradeApi.fetchOrders = jest.fn().mockResolvedValue({ data: [executedOrder] });
+      questradeApi.fetchTransactionsSinceDate = jest.fn().mockResolvedValue([]);
+      convertQuestradeOrdersToMonarchCSV.mockReturnValue('mock,csv,data');
+      accountService.getMonarchAccountMapping.mockReturnValue({ id: 'monarch-account-id' });
+      monarchApi.uploadTransactions = jest.fn().mockResolvedValue(true);
+      const { applyCategoryMapping } = require('../../../src/mappers/category');
+      applyCategoryMapping.mockReturnValue('Investment');
+    });
+
+    test('processAndUploadOrders does NOT advance the sync date on its own', async () => {
+      // The activity step runs after orders and swallows its failures, so only the
+      // orchestrator may move the watermark - once both steps have succeeded.
+      const result = await transactionsService.processAndUploadOrders(
+        'account123',
+        'Test Account',
+        '2025-01-01',
+        'monarch-account-id',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.ordersProcessed).toBe(1);
+      expect(utils.saveLastUploadDate).not.toHaveBeenCalled();
+    });
+
+    test('processAndUploadOrders still records uploaded ids for deduplication', async () => {
+      await transactionsService.processAndUploadOrders(
+        'account123',
+        'Test Account',
+        '2025-01-01',
+        'monarch-account-id',
+      );
+
+      expect(accountService.updateAccountInList).toHaveBeenCalled();
+    });
+
+    test('processAndUploadTransactions advances the sync date when both steps succeed', async () => {
+      const result = await transactionsService.processAndUploadTransactions(
+        'account123',
+        'Test Account',
+        '2025-01-01',
+      );
+
+      expect(result.success).toBe(true);
+      expect(utils.saveLastUploadDate).toHaveBeenCalledWith('account123', '2025-02-01', 'questrade');
+    });
+
+    test('processAndUploadTransactions does NOT advance the sync date when the orders upload fails', async () => {
+      monarchApi.uploadTransactions = jest.fn().mockResolvedValue(false);
+
+      const result = await transactionsService.processAndUploadTransactions(
+        'account123',
+        'Test Account',
+        '2025-01-01',
+      );
+
+      expect(result.success).toBe(false);
+      expect(utils.saveLastUploadDate).not.toHaveBeenCalled();
+    });
+
+    test('processAndUploadTransactions does NOT advance the sync date when the orders fetch throws', async () => {
+      // "Once" so the rejection cannot leak into later tests: jest.clearAllMocks() resets
+      // recorded calls but keeps mock implementations.
+      questradeApi.fetchOrders.mockRejectedValueOnce(new Error('network down'));
+
+      const result = await transactionsService.processAndUploadTransactions(
+        'account123',
+        'Test Account',
+        '2025-01-01',
+      );
+
+      expect(result.success).toBe(false);
+      expect(utils.saveLastUploadDate).not.toHaveBeenCalled();
+    });
+
+    test('processAndUploadTransactions does NOT advance the sync date when the activity fetch throws', async () => {
+      questradeApi.fetchTransactionsSinceDate.mockRejectedValueOnce(new Error('timeout'));
+
+      const result = await transactionsService.processAndUploadTransactions(
+        'account123',
+        'Test Account',
+        '2025-01-01',
+      );
+
+      expect(result.success).toBe(false);
+      expect(utils.saveLastUploadDate).not.toHaveBeenCalled();
     });
   });
 

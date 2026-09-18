@@ -8,7 +8,9 @@ import { debugLog, getTodayLocal, formatDate, calculateFromDateWithLookback } fr
 import { INTEGRATIONS } from '../../core/integrationCapabilities';
 import stateManager from '../../core/state';
 import accountService from '../common/accountService';
-import balanceService, { fetchBalanceHistory, extractBalanceChange, getAccountsForSync, markAccountAsClosed } from './balance';
+import balanceService, {
+  fetchBalanceHistory, extractBalanceChange, getAccountsForSync, markAccountAsClosed, storeDateRange,
+} from './balance';
 import positionsService from './positions';
 import transactionsService from './transactions';
 import toast from '../../ui/toast';
@@ -36,9 +38,18 @@ function buildQuestradeSteps() {
  * @param {string} fromDate - Start date for balance history
  * @param {string} toDate - End date for balance history
  * @param {Object} progressDialog - Optional progress dialog
- * @returns {Promise<boolean>} Success status
+ * @returns {Promise<boolean>} True when every step that uploads transactions succeeded.
+ *   False means the balance landed but a transaction step failed, so the sync date was
+ *   held back and this window will be retried on the next sync.
  */
 async function syncAccountToMonarch(accountId, accountName, fromDate, toDate, progressDialog = null) {
+  // Tracks whether every step that can upload transactions completed cleanly. The stored
+  // sync date may only advance over a window whose transactions all reached Monarch:
+  // steps 3 and 4 below deliberately swallow their errors, and Questrade's default
+  // lookback is 0 days, so a watermark advanced past a failed step would permanently skip
+  // those transactions (they are not in the dedup store either, so nothing re-uploads them).
+  let transactionStepsSucceeded = true;
+
   try {
     debugLog(`Starting sync for account ${accountName} (${accountId})`);
 
@@ -85,6 +96,10 @@ async function syncAccountToMonarch(accountId, accountName, fromDate, toDate, pr
       accountName,
       fromDate,
       toDate,
+      // Do not let the balance step move the watermark: the transaction steps run after it
+      // and swallow their failures. The date is advanced at the end of this function once
+      // those steps have succeeded.
+      { advanceSyncDate: false },
     );
 
     if (!balanceSuccess) {
@@ -156,6 +171,8 @@ async function syncAccountToMonarch(accountId, accountName, fromDate, toDate, pr
     try {
       if (!monarchAccountForTx || !monarchAccountForTx.id) {
         debugLog(`No Monarch account mapping for ${accountId}, skipping orders sync`);
+        // No mapping means no transactions could be uploaded, so the window is unsynced.
+        transactionStepsSucceeded = false;
         if (progressDialog) {
           progressDialog.updateStepStatus(accountId, 'orders', 'skipped', 'No account mapping');
         }
@@ -192,13 +209,16 @@ async function syncAccountToMonarch(accountId, accountName, fromDate, toDate, pr
           }
           debugLog(`Orders sync completed: ${ordersCount} processed, ${ordersResult.skippedDuplicates || 0} skipped`);
         } else {
+          transactionStepsSucceeded = false;
           if (progressDialog) {
             progressDialog.updateStepStatus(accountId, 'orders', 'error', ordersResult.message || 'Sync failed');
           }
         }
       }
     } catch (ordersError) {
+      // Non-fatal for the rest of the sync, but it must not advance the watermark
       debugLog('Error syncing orders (non-fatal):', ordersError);
+      transactionStepsSucceeded = false;
       if (progressDialog) {
         progressDialog.updateStepStatus(accountId, 'orders', 'error', ordersError.message);
       }
@@ -212,6 +232,8 @@ async function syncAccountToMonarch(accountId, accountName, fromDate, toDate, pr
     try {
       if (!monarchAccountForTx || !monarchAccountForTx.id) {
         debugLog(`No Monarch account mapping for ${accountId}, skipping activity sync`);
+        // No mapping means no transactions could be uploaded, so the window is unsynced.
+        transactionStepsSucceeded = false;
         if (progressDialog) {
           progressDialog.updateStepStatus(accountId, 'activity', 'skipped', 'No account mapping');
         }
@@ -246,19 +268,32 @@ async function syncAccountToMonarch(accountId, accountName, fromDate, toDate, pr
           }
           debugLog(`Activity sync completed: ${activityCount} processed, ${activityResult.skippedDuplicates || 0} skipped`);
         } else {
+          transactionStepsSucceeded = false;
           if (progressDialog) {
             progressDialog.updateStepStatus(accountId, 'activity', 'error', activityResult.message || 'Sync failed');
           }
         }
       }
     } catch (activityError) {
+      // Non-fatal for the rest of the sync, but it must not advance the watermark
       debugLog('Error syncing activity (non-fatal):', activityError);
+      transactionStepsSucceeded = false;
       if (progressDialog) {
         progressDialog.updateStepStatus(accountId, 'activity', 'error', activityError.message);
       }
     }
 
-    return true;
+    // Step 5: Advance the sync watermark, now that balance and both transaction steps are
+    // done. This is the only place the date moves for a full sync, so a swallowed orders
+    // or activity failure leaves the window open to be retried instead of silently
+    // dropping its transactions.
+    if (transactionStepsSucceeded) {
+      storeDateRange(accountId, toDate);
+    } else {
+      debugLog(`Not advancing Questrade sync date for ${accountId}: a transaction step failed, so ${fromDate} to ${toDate} will be retried on the next sync`);
+    }
+
+    return transactionStepsSucceeded;
   } catch (error) {
     debugLog(`Error syncing account ${accountId}:`, error);
     throw error;
@@ -381,13 +416,24 @@ export async function syncAllAccountsToMonarch() {
           if (isCancelled) break;
 
           // Sync account (balance + positions + transactions)
-          await syncAccountToMonarch(account.key, accountName, fromDate, toDate, progressDialog);
+          const syncedCleanly = await syncAccountToMonarch(account.key, accountName, fromDate, toDate, progressDialog);
+
+          if (!syncedCleanly) {
+            // Balance landed but a transaction step failed. The sync date was held back so
+            // the window is retried next time; report it as failed rather than success and
+            // keep going with the remaining accounts.
+            stats.failed += 1;
+            progressDialog.updateProgress(account.key, 'error', 'Transactions incomplete - will retry next sync');
+            debugLog(`Account ${account.key} synced with transaction failures; sync date not advanced`);
+            continue;
+          }
 
           // Update success stats
           stats.success += 1;
 
           // If this was a pending_close account (in storage but not in API, not yet marked closed),
-          // mark it as closed after successful sync - this is the final sync for this account
+          // mark it as closed after successful sync - this is the final sync for this account.
+          // Only safe once the sync is clean: this is the account's last chance to sync.
           if (account.status === 'pending_close') {
             markAccountAsClosed(account.key);
             debugLog(`Marked pending_close account ${account.key} as closed after successful sync`);
