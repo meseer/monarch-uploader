@@ -5,6 +5,14 @@
 import { jest } from '@jest/globals';
 import '../setup';
 
+// Mirrors the real parseLocalDate: local midnight, not UTC midnight. A UTC parse
+// would shift every weekday back a day in this suite's TZ (America/Vancouver).
+// Declared as a function so the hoisted jest.mock factory below can reach it.
+function mockParseLocalDate(dateString) {
+  const [year, month, day] = dateString.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
 // Mock all dependencies before importing the module under test
 jest.mock('../../src/core/config', () => ({
   CARDHOLDER: {
@@ -48,7 +56,7 @@ jest.mock('../../src/core/utils', () => ({
     date.setDate(date.getDate() - days);
     return date.toISOString().split('T')[0];
   }),
-  parseLocalDate: jest.fn((dateString) => new Date(dateString)),
+  parseLocalDate: jest.fn(mockParseLocalDate),
   calculateFromDateWithLookback: jest.fn(),
   saveLastUploadDate: jest.fn(),
   getLastUpdateDate: jest.fn(),
@@ -129,6 +137,9 @@ import {
 describe('Canada Life Upload Service', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // clearAllMocks keeps implementations, so a per-test override would otherwise
+    // leak into every later test in this file.
+    jest.requireMock('../../src/core/utils').parseLocalDate.mockImplementation(mockParseLocalDate);
     document.body.innerHTML = '';
   });
 
@@ -775,7 +786,6 @@ describe('Canada Life Upload Service', () => {
       canadalife.loadCanadaLifeAccounts.mockResolvedValue([mockAccount]);
       utils.calculateFromDateWithLookback.mockReturnValue('2023-07-01'); // After enrollment
       utils.debugLog.mockImplementation(() => {});
-      utils.parseLocalDate.mockImplementation((dateStr) => new Date(dateStr));
       globalThis.GM_getValue.mockReturnValue(JSON.stringify(mockMonarchAccount));
       canadalife.loadAccountBalanceHistory.mockResolvedValue(mockHistoricalData);
       monarchApi.uploadBalance.mockResolvedValue(true);
@@ -849,6 +859,47 @@ describe('Canada Life Upload Service', () => {
 
       // Verify progress was called for this account
       expect(mockProgressDialog.updateProgress).toHaveBeenCalledWith('acc999', 'processing', 'Getting start date...');
+
+      // Mon 2024-01-08 through Mon 2024-01-15 is 6 business days (Jan 13-14 is a weekend).
+      // Parsing the range as UTC midnight shifts every weekday back one day and yields 5.
+      expect(mockProgressDialog.updateStepStatus).toHaveBeenCalledWith(
+        'acc999',
+        'fetchHistory',
+        'processing',
+        'Fetching 6 business days...',
+      );
+    });
+
+    test('should report zero business days for a weekend-only date range', async () => {
+      const mockAccount = {
+        agreementId: 'accSatSun',
+        LongNameEnglish: 'Weekend Range Account',
+        EnglishShortName: 'WeekendRange',
+      };
+
+      const mockMonarchAccount = { id: 'monarchSatSun', displayName: 'Weekend Range Account' };
+
+      ensureMonarchAuthentication.mockResolvedValue(true);
+      canadalife.loadCanadaLifeAccounts.mockResolvedValue([mockAccount]);
+      utils.calculateFromDateWithLookback.mockReturnValue('2026-02-07'); // Saturday
+      utils.getTodayLocal.mockReturnValue('2026-02-08'); // Sunday
+      utils.debugLog.mockImplementation(() => {});
+      globalThis.GM_getValue.mockReturnValue(JSON.stringify(mockMonarchAccount));
+      canadalife.loadAccountBalanceHistory.mockResolvedValue({
+        data: [['Date', 'Closing Balance', 'Account Name']],
+        businessDays: 0,
+      });
+
+      await uploadAllCanadaLifeAccountsToMonarch();
+
+      // The label must agree with the API layer, which finds no business days and
+      // takes the skip path. Under a UTC parse this reported "1 business days".
+      expect(mockProgressDialog.updateStepStatus).toHaveBeenCalledWith(
+        'accSatSun',
+        'fetchHistory',
+        'processing',
+        'Fetching 0 business days...',
+      );
     });
 
     test('should skip balance upload when no business days in date range (weekend sync)', async () => {
