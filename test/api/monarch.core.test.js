@@ -155,6 +155,84 @@ describe('Monarch API - Core', () => {
         .toThrow('Monarch API Error: 500');
     });
 
+    describe('error response bodies', () => {
+      /** Reject with the given status and raw body */
+      function respondWith(status, responseText) {
+        mockGMXmlHttpRequest.mockImplementation((options) => {
+          setTimeout(() => options.onload({ status, statusText: '', responseText }), 0);
+        });
+      }
+
+      test('preserves the GraphQL errors array from a 4xx body', async () => {
+        // Monarch explains a refused request in the response body, and the status
+        // alone cannot distinguish "this field is not accepted" from "the server
+        // is having a bad day". Discarding the body made every non-200
+        // undiagnosable.
+        respondWith(400, JSON.stringify({
+          errors: [{
+            message: 'Something went wrong while processing: None on request_id: None.',
+            locations: [{ line: 1, column: 49 }],
+          }],
+        }));
+
+        await expect(callMonarchGraphQL('TestOperation', 'query test', {}))
+          .rejects
+          .toThrow(/Monarch API Error: 400 — .*Something went wrong while processing/);
+      });
+
+      test('keeps `locations`, which is often the only clue to the cause', async () => {
+        // The message itself can be entirely generic; `locations` is what points
+        // at the offending part of the query.
+        respondWith(400, JSON.stringify({
+          errors: [{ message: 'generic', locations: [{ line: 1, column: 49 }] }],
+        }));
+
+        await expect(callMonarchGraphQL('TestOperation', 'query test', {}))
+          .rejects
+          .toThrow(/"locations":\[\{"line":1,"column":49\}\]/);
+      });
+
+      test('falls back to the raw body when it is not JSON', async () => {
+        respondWith(502, '<html><body>Bad Gateway</body></html>');
+
+        await expect(callMonarchGraphQL('TestOperation', 'query test', {}))
+          .rejects
+          .toThrow(/Monarch API Error: 502 — <html>/);
+      });
+
+      test('truncates a long body so an error page cannot flood the log', async () => {
+        respondWith(500, 'x'.repeat(5000));
+
+        const error = await callMonarchGraphQL('TestOperation', 'query test', {})
+          .then(() => null, (e) => e);
+
+        // 500-char body cap, plus the short "Monarch API Error: 500 — " prefix
+        expect(error).toBeInstanceOf(Error);
+        expect(error.message.length).toBeLessThan(600);
+        expect(error.message).toContain('Monarch API Error: 500');
+      });
+
+      test('omits the separator entirely when there is no body', async () => {
+        respondWith(503, undefined);
+
+        await expect(callMonarchGraphQL('TestOperation', 'query test', {}))
+          .rejects
+          .toThrow('Monarch API Error: 503');
+      });
+
+      test('still short-circuits 401 before reading the body', async () => {
+        // Auth handling must keep precedence: credentials are cleared and a
+        // dedicated message is thrown, regardless of what the body says.
+        respondWith(401, JSON.stringify({ errors: [{ message: 'nope' }] }));
+
+        await expect(callMonarchGraphQL('TestOperation', 'query test', {}))
+          .rejects
+          .toThrow('Monarch Auth Error: Session was invalid or expired. Please open Monarch Money to refresh.');
+
+        expect(authService.clearMonarchCredentials).toHaveBeenCalled();
+      });
+    });
+
     test('handles GraphQL errors in response', async () => {
       const mockResponse = {
         status: 200,
