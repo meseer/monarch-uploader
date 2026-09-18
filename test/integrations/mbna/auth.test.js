@@ -2,7 +2,7 @@
  * Tests for MBNA Auth Module
  *
  * MBNA uses HttpOnly cookies (JSESSIONID) that can't be read from JS.
- * The auth module simply provides a marker interface  actual auth
+ * The auth module simply provides a marker interface — actual auth
  * validation happens via the API probe call.
  */
 
