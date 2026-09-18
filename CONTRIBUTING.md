@@ -7,16 +7,20 @@ Thank you for your interest in contributing! This document provides guidelines f
 1. Fork the repository
 2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/monarch-uploader.git`
 3. Install dependencies: `npm install`
-4. Create a feature branch: `git checkout -b feature/your-feature-name`
+4. Create a feature branch: `git checkout -b <type>/<short-description>` — see the
+   branch naming table in [CLAUDE.md](CLAUDE.md#git-workflow) (`feat/`, `fix/`,
+   `refactor/`, `docs/`, `test/`, `chore/`, `build/`)
 
 ## Development Workflow
 
 1. Make your changes
 2. Run the full validation suite:
    ```bash
-   npm run lint && npm test && npm run build
+   npm run build:full
    ```
-3. Commit with a descriptive message following our [commit conventions](.clinerules/11-commit-messages.md)
+   This runs clean → lint → typecheck → test → production build. All steps must
+   pass with zero errors.
+3. Commit with a descriptive message following our [commit conventions](CLAUDE.md#commit-message-format)
 
 ## Pull Request Process
 
@@ -31,7 +35,7 @@ Thank you for your interest in contributing! This document provides guidelines f
 - Follow existing code patterns and conventions
 - Use ES6+ features and TypeScript
 - Add JSDoc comments for public functions
-- See `.clinerules/` for detailed coding standards
+- See [CLAUDE.md](CLAUDE.md) for the full coding standards
 
 ## Reporting Issues
 
