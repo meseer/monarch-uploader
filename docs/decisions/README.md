@@ -27,6 +27,7 @@ ADRs are **immutable once accepted**. If a decision changes, a new ADR is writte
 | [006](006-shared-type-system.md) | Introduce Shared Monarch Domain Type System | Accepted | 2026-03-11 |
 | [007](007-monarch-session-cookie-auth.md) | Migrate Monarch Auth from Token to Session Cookie | Accepted | 2026-05-14 |
 | [008](008-monarch-csv-transaction-id-matching-does-not-work.md) | Monarch's CSV Transaction-ID Matching Does Not Work; Keep Notes-Based Tracking | Accepted | 2026-09-09 |
+| [009](009-monarch-pending-field-is-read-only.md) | Monarch's `pending` Field Is Read-Only; Keep the `Pending` Tag | Accepted | 2026-09-18 |
 
 ## Template
 

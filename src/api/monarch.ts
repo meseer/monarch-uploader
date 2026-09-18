@@ -171,6 +171,44 @@ interface GraphQLRequestOptions {
 // ============================================================
 
 /**
+ * Cap on how much of an error response body is carried in the thrown error.
+ *
+ * Enough to hold a GraphQL errors array; short enough that an HTML error page
+ * cannot flood the log.
+ */
+const ERROR_BODY_MAX_LENGTH = 500;
+
+/**
+ * Pull a readable explanation out of an error response body.
+ *
+ * Monarch answers a refused request with a GraphQL `errors` array, and that array
+ * is frequently the *only* explanation of what it objected to. The `locations`
+ * entry in particular identifies the offending part of the query, which is often
+ * the only way to tell an unsupported field from a malformed value — the error
+ * `message` itself can be entirely generic ("Something went wrong while
+ * processing: None on request_id: None.").
+ *
+ * The serialized array is returned rather than just the message, so `locations`
+ * survives into the thrown error.
+ *
+ * @param responseText - Raw response body, which may not be JSON at all
+ * @returns Serialized errors, a trimmed body, or '' when there is nothing useful
+ */
+function extractGraphQLErrorText(responseText: string | undefined): string {
+  if (!responseText) return '';
+
+  try {
+    const parsed = JSON.parse(responseText);
+    if (parsed?.errors) return JSON.stringify(parsed.errors);
+  } catch {
+    // Not JSON (an HTML error page, say) — fall through to the raw text.
+  }
+
+  // Bounded: enough to diagnose, not enough to flood the log with an error page.
+  return responseText.slice(0, ERROR_BODY_MAX_LENGTH);
+}
+
+/**
  * Construct GraphQL request options
  * @param data - GraphQL request data
  * @returns Request options for GM_xmlhttpRequest
@@ -237,7 +275,12 @@ export function callMonarchGraphQL(operation: string, query: string, variables: 
           return;
         }
         if (res.status !== 200) {
-          reject(new Error(`Monarch API Error: ${res.status}`));
+          // Include the response body. Monarch returns GraphQL `errors` on 4xx,
+          // and discarding them (as this used to) left every non-200 failure
+          // undiagnosable — the status alone cannot distinguish "this field is
+          // not accepted" from "the server is having a bad day".
+          const detail = extractGraphQLErrorText(res.responseText);
+          reject(new Error(`Monarch API Error: ${res.status}${detail ? ` — ${detail}` : ''}`));
           return;
         }
 

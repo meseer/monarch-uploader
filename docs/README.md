@@ -17,6 +17,7 @@ Architecture reference documents. These explain *how* the system works and *why*
 | [Modular Integration Architecture](design/modular-integration-architecture.md) | **Active** | Core architecture: manifest, registry, source/sink, SyncHooks, generic UI |
 | [Cardholder → Owner & Tag Mapping](design/cardholder-mapping.md) | **Active** | Mapping institution cardholders to the Monarch Owner column and/or tags |
 | [Native Monarch Transaction IDs](design/monarch-native-transaction-ids.md) | Draft | Replacing notes-embedded `{prefix}:{hash}` ids with Monarch's CSV `id` column. Phase 1 (write ids) shipped; **later phases blocked upstream** — see ADR-008 |
+| [Monarch-Native Pending Status](design/monarch-native-pending-status.md) | Deprecated | Design for setting Monarch's own `pending` field. **Never built** — the field is read-only; see ADR-009. Kept for the reasoning and the probe technique |
 | [Cloud Sync Design](design/cloud-sync.md) | Draft | Cross-device settings sync via Firebase |
 | [Metrics & Instrumentation](design/metrics-and-instrumentation.md) | Draft | Telemetry and usage analytics design |
 | [Eliminate Upload Services Plan](design/eliminate-upload-services-plan.md) | Draft | Refactoring upload services into the modular architecture |
@@ -55,6 +56,7 @@ Immutable records of significant architectural decisions and the reasoning behin
 | [ADR-006](decisions/006-shared-type-system.md) | Introduce Shared Monarch Domain Type System | Accepted | 2026-03-11 |
 | [ADR-007](decisions/007-monarch-session-cookie-auth.md) | Migrate Monarch Auth from Token to Session Cookie | Accepted | 2026-05-14 |
 | [ADR-008](decisions/008-monarch-csv-transaction-id-matching-does-not-work.md) | Monarch's CSV Transaction-ID Matching Does Not Work; Keep Notes-Based Tracking | Accepted | 2026-09-09 |
+| [ADR-009](decisions/009-monarch-pending-field-is-read-only.md) | Monarch's `pending` Field Is Read-Only; Keep the `Pending` Tag | Accepted | 2026-09-18 |
 
 See [`decisions/README.md`](decisions/README.md) for ADR conventions and the template.
 
