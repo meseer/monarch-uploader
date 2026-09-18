@@ -805,8 +805,10 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
  * @returns {number} Number of business days
  */
 function calculateBusinessDays(startDate, endDate) {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
+  // Must parse as local midnight: new Date('YYYY-MM-DD') is UTC midnight, which
+  // getDay() then reads in local time, shifting the weekday by a day west of UTC.
+  const start = parseLocalDate(startDate);
+  const end = parseLocalDate(endDate);
   let count = 0;
   const current = new Date(start);
 
