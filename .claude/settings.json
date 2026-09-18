@@ -19,6 +19,20 @@
       "Bash(git add*)",
       "Bash(git commit*)",
       "Bash(git pull*)",
+      "Bash(git fetch*)",
+      "Bash(git switch*)",
+      "Bash(git remote -v)",
+      "Bash(git push -u origin*)",
+      "Bash(git push origin*)",
+      "Bash(gh pr create*)",
+      "Bash(gh pr view*)",
+      "Bash(gh pr list*)",
+      "Bash(gh pr diff*)",
+      "Bash(gh pr checks*)",
+      "Bash(gh pr update-branch*)",
+      "Bash(gh pr merge --squash*)",
+      "Bash(gh run list*)",
+      "Bash(gh run view*)",
       "Bash(ls*)",
       "Bash(cat*)",
       "Bash(find*)",
@@ -34,6 +48,12 @@
       "Read(*)",
       "Write(*)"
     ],
-    "deny": []
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push origin main*)",
+      "Bash(gh pr merge --merge*)",
+      "Bash(gh pr merge --rebase*)"
+    ]
   }
 }
