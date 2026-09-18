@@ -76,14 +76,14 @@ describe('getLocalDateFromActivityId', () => {
   const encode = (str) => Buffer.from(str).toString('base64');
 
   it('extracts local date from a valid activityId', () => {
-    // "DT|2026-02-19T15:49:53-05:00"  3:49 PM EST = 12:49 PM PST, still Feb 19
+    // "DT|2026-02-19T15:49:53-05:00" — 3:49 PM EST = 12:49 PM PST, still Feb 19
     const activityId = encode('DT|2026-02-19T15:49:53-05:00');
     const result = getLocalDateFromActivityId(activityId);
     expect(result).toBe('2026-02-19');
   });
 
   it('converts cross-midnight EST transaction to correct local date', () => {
-    // "DT|2026-02-20T01:30:00-05:00"  1:30 AM EST Feb 20 = 10:30 PM PST Feb 19
+    // "DT|2026-02-20T01:30:00-05:00" — 1:30 AM EST Feb 20 = 10:30 PM PST Feb 19
     const activityId = encode('DT|2026-02-20T01:30:00-05:00');
     const result = getLocalDateFromActivityId(activityId);
     // In PST (UTC-8), this is Feb 19 at 22:30
@@ -91,14 +91,14 @@ describe('getLocalDateFromActivityId', () => {
   });
 
   it('handles EDT offset correctly', () => {
-    // "DT|2026-07-15T23:30:00-04:00"  11:30 PM EDT Jul 15 = 8:30 PM PDT Jul 15
+    // "DT|2026-07-15T23:30:00-04:00" — 11:30 PM EDT Jul 15 = 8:30 PM PDT Jul 15
     const activityId = encode('DT|2026-07-15T23:30:00-04:00');
     const result = getLocalDateFromActivityId(activityId);
     expect(result).toBe('2026-07-15');
   });
 
   it('handles EDT cross-midnight to different local date', () => {
-    // "DT|2026-07-16T02:00:00-04:00"  2:00 AM EDT Jul 16 = 11:00 PM PDT Jul 15
+    // "DT|2026-07-16T02:00:00-04:00" — 2:00 AM EDT Jul 16 = 11:00 PM PDT Jul 15
     const activityId = encode('DT|2026-07-16T02:00:00-04:00');
     const result = getLocalDateFromActivityId(activityId);
     // In PDT (UTC-7), this is Jul 15 at 23:00

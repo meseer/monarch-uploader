@@ -445,7 +445,7 @@ describe('Rogers Bank API Client', () => {
 
       clearRogersBankCredentials();
 
-      // Should clear via configStore only  no legacy GM_deleteValue calls
+      // Should clear via configStore only — no legacy GM_deleteValue calls
       expect(clearAuth).toHaveBeenCalledWith('rogersbank');
     });
 

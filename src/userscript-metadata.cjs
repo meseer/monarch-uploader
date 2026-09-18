@@ -1,5 +1,5 @@
 // Generates userscript metadata block at build time.
-// Version is read from scriptInfo.json  do NOT hardcode a version here.
+// Version is read from scriptInfo.json — do NOT hardcode a version here.
 
 const scriptInfo = require('./scriptInfo.json');
 

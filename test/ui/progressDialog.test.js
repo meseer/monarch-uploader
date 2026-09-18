@@ -1045,12 +1045,12 @@ describe('Progress Dialog Component', () => {
       dialog.updateStepStatus('acc2', 'balance', 'processing', 'Working...');
       expect(getStepsContainer('acc2').style.display).toBe('block'); // expanded
 
-      // Advance past the collapse timer (150ms)  this is the race condition scenario
+      // Advance past the collapse timer (150ms) — this is the race condition scenario
       // The 150ms timer fires but should NOT clear isProgrammaticAction because
       // the 600ms expand timer is still active
       jest.advanceTimersByTime(200);
 
-      // Fire a scroll event on the account list  this simulates what the browser does
+      // Fire a scroll event on the account list — this simulates what the browser does
       // during smooth scrolling. With the old boolean flag, this would disable auto-scroll.
       const accountList = document.querySelector('[id*="account-list"]');
       accountList.dispatchEvent(new Event('scroll'));
@@ -1150,7 +1150,7 @@ describe('Progress Dialog Component', () => {
       // Wait for all programmatic action timers to complete
       jest.advanceTimersByTime(700);
 
-      // Now fire a scroll event  this represents genuine user scrolling
+      // Now fire a scroll event — this represents genuine user scrolling
       accountList.dispatchEvent(new Event('scroll'));
 
       // Complete acc1

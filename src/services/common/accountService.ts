@@ -42,7 +42,7 @@ const ACCOUNT_LIST_STORAGE_KEYS = {
 
 /**
  * Legacy storage prefix mapping for Rogers Bank (only remaining integration with legacy keys).
- * Wealthsimple, Questrade, and CanadaLife legacy migration is complete  no legacy fallback needed.
+ * Wealthsimple, Questrade, and CanadaLife legacy migration is complete — no legacy fallback needed.
  */
 const LEGACY_MAPPING_PREFIXES = {
   [INTEGRATIONS.ROGERSBANK]: STORAGE.ROGERSBANK_ACCOUNT_MAPPING_PREFIX,

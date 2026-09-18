@@ -1098,7 +1098,7 @@ describe('Wealthsimple Transaction Rules Engine - Cash E-Transfer', () => {
       };
 
       const enrichmentMap = new Map();
-      // Both sources present  status summary should win
+      // Both sources present — status summary should win
       enrichmentMap.set('status-summary:funding_intent-abc123', {
         annotation: 'Status summary annotation',
       });
@@ -1153,7 +1153,7 @@ describe('Wealthsimple Transaction Rules Engine - Cash E-Transfer', () => {
       };
 
       const enrichmentMap = new Map();
-      // No status summary entry  only FundingIntent data
+      // No status summary entry — only FundingIntent data
       enrichmentMap.set('funding_intent-abc123', {
         id: 'funding_intent-abc123',
         transferMetadata: {

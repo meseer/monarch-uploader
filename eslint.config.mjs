@@ -206,7 +206,7 @@ export default [
     },
   },
   
-  // TypeScript support  applies only to .ts files
+  // TypeScript support — applies only to .ts files
   ...tseslint.configs.recommended.map((config) => ({
     ...config,
     files: ['**/*.ts'],
@@ -239,7 +239,7 @@ export default [
       '@typescript-eslint/no-useless-constructor': 'error',
 
       // Relax strict TS rules during migration
-      '@typescript-eslint/no-explicit-any': 'warn', // Warn, don't error  tighten in Phase 8
+      '@typescript-eslint/no-explicit-any': 'warn', // Warn, don't error — tighten in Phase 8
       '@typescript-eslint/no-require-imports': 'off', // Allow require() in test setup
     },
   },

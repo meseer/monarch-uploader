@@ -373,12 +373,12 @@ describe('Account Service', () => {
     });
 
     test('should return false for Questrade (migration disabled)', () => {
-      // Migration is disabled for Questrade  legacy prefix keys were removed in v5.85.0
+      // Migration is disabled for Questrade — legacy prefix keys were removed in v5.85.0
       expect(hasLegacyData(INTEGRATIONS.QUESTRADE)).toBe(false);
     });
 
     test('should return false for CanadaLife (migration disabled)', () => {
-      // Migration is disabled for CanadaLife  legacy prefix keys were removed in v5.85.0
+      // Migration is disabled for CanadaLife — legacy prefix keys were removed in v5.85.0
       expect(hasLegacyData(INTEGRATIONS.CANADALIFE)).toBe(false);
     });
   });
@@ -412,13 +412,13 @@ describe('Account Service', () => {
     });
 
     test('should return empty array for Questrade (migration disabled)', () => {
-      // Migration is disabled for Questrade  legacy prefix keys were removed in v5.85.0
+      // Migration is disabled for Questrade — legacy prefix keys were removed in v5.85.0
       const migrated = migrateFromLegacyStorage(INTEGRATIONS.QUESTRADE);
       expect(migrated).toEqual([]);
     });
 
     test('should return empty array for CanadaLife (migration disabled)', () => {
-      // Migration is disabled for CanadaLife  legacy prefix keys were removed in v5.85.0
+      // Migration is disabled for CanadaLife — legacy prefix keys were removed in v5.85.0
       const migrated = migrateFromLegacyStorage(INTEGRATIONS.CANADALIFE);
       expect(migrated).toEqual([]);
     });
@@ -560,7 +560,7 @@ describe('Account Service', () => {
       }];
       GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
 
-      // Legacy prefix keys were removed in v5.85.0  no legacy fallback possible
+      // Legacy prefix keys were removed in v5.85.0 — no legacy fallback possible
       const mapping = getMonarchAccountMapping(INTEGRATIONS.QUESTRADE, 'qt-1');
 
       // Should return null since migration is disabled and consolidated has no monarchAccount
@@ -645,7 +645,7 @@ describe('Account Service', () => {
       // No consolidated storage
       GM_setValue(STORAGE.CANADALIFE_ACCOUNTS_LIST, JSON.stringify([]));
 
-      // Legacy prefix keys were removed in v5.85.0  no legacy fallback possible
+      // Legacy prefix keys were removed in v5.85.0 — no legacy fallback possible
       const mapping = getMonarchAccountMapping(INTEGRATIONS.CANADALIFE, 'cl-legacy');
 
       // Should return null since migration is disabled for CanadaLife
@@ -658,7 +658,7 @@ describe('Account Service', () => {
 
       const mapping = getMonarchAccountMapping(INTEGRATIONS.QUESTRADE, 'qt-bad');
 
-      // Should return null  no legacy fallback since migration is disabled
+      // Should return null — no legacy fallback since migration is disabled
       expect(mapping).toBeNull();
     });
 
@@ -796,7 +796,7 @@ describe('Account Service', () => {
     });
 
     test('should NOT auto-migrate for Questrade (migration disabled)', () => {
-      // Legacy prefix keys were removed in v5.85.0  no legacy data to migrate
+      // Legacy prefix keys were removed in v5.85.0 — no legacy data to migrate
       // Call getAccounts - should return empty with no migration attempt
       const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
 
@@ -804,7 +804,7 @@ describe('Account Service', () => {
     });
 
     test('should NOT auto-migrate for CanadaLife (migration disabled)', () => {
-      // Legacy prefix keys were removed in v5.85.0  no legacy data to migrate
+      // Legacy prefix keys were removed in v5.85.0 — no legacy data to migrate
       // Call getAccounts - should return empty with no migration attempt
       const accounts = getAccounts(INTEGRATIONS.CANADALIFE);
 
@@ -839,7 +839,7 @@ describe('Account Service', () => {
     });
 
     test('should NOT migrate legacy transactions for Questrade (migration disabled)', () => {
-      // Legacy prefix keys were removed in v5.85.0  no legacy data to migrate
+      // Legacy prefix keys were removed in v5.85.0 — no legacy data to migrate
       // Call getAccounts - should NOT trigger migration
       const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
 
@@ -885,7 +885,7 @@ describe('Account Service', () => {
       ];
       GM_setValue(STORAGE.ACCOUNTS_LIST, JSON.stringify(consolidatedData));
 
-      // Legacy uploaded orders prefix was removed in v5.85.0  nothing to merge
+      // Legacy uploaded orders prefix was removed in v5.85.0 — nothing to merge
       // Call getAccounts - should NOT merge legacy transactions
       const accounts = getAccounts(INTEGRATIONS.QUESTRADE);
 
