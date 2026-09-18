@@ -46,12 +46,23 @@ const CONFIG_STORAGE_KEYS = {
 // ============================================
 
 /**
- * Get the storage key for an integration's config
+ * Get the storage key for an integration's config.
+ * Checks hardcoded CONFIG_STORAGE_KEYS first, then falls back to the
+ * modular integration registry manifest so that integrations declaring
+ * `storageKeys.config` work without being added to the map above.
+ *
  * @param {string} integrationId - Integration identifier
  * @returns {string|null} Storage key or null if not found
  */
 export function getConfigStorageKey(integrationId: string): string | null {
-  return CONFIG_STORAGE_KEYS[integrationId] || null;
+  if (CONFIG_STORAGE_KEYS[integrationId]) {
+    return CONFIG_STORAGE_KEYS[integrationId];
+  }
+
+  // Fall back to modular integration registry manifest (lazy require to avoid circular dependency)
+  const { getManifest } = require('../../core/integrationRegistry');
+  const manifest = getManifest(integrationId);
+  return manifest?.storageKeys?.config || null;
 }
 
 /**

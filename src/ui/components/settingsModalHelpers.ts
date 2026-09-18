@@ -136,8 +136,12 @@ export function createLookbackPeriodSection(institutionType: string): HTMLElemen
     • Range: 0-30 days (0 means start exactly from the last upload date)
   `;
 
-  const saveLookbackValue = (value: number): void => {
-    setSetting(institutionType, 'lookbackDays', value);
+  const saveLookbackValue = (value: number): boolean => {
+    const saved = setSetting(institutionType, 'lookbackDays', value);
+    if (!saved) {
+      debugLog(`[settingsModalHelpers] Failed to persist lookbackDays for ${institutionType}`);
+    }
+    return saved;
   };
 
   const saveChanges = (): void => {
@@ -156,7 +160,12 @@ export function createLookbackPeriodSection(institutionType: string): HTMLElemen
       return;
     }
 
-    saveLookbackValue(value);
+    if (!saveLookbackValue(value)) {
+      input.value = String(currentValue);
+      toast.show(`Could not save the ${institutionName} lookback period`, 'error');
+      return;
+    }
+
     toast.show(`${institutionName} lookback period set to ${value} day${value !== 1 ? 's' : ''}`, 'info');
     debugLog(`${institutionName} lookback period updated to: ${value} days`);
   };
@@ -169,8 +178,12 @@ export function createLookbackPeriodSection(institutionType: string): HTMLElemen
       return;
     }
 
+    if (!saveLookbackValue(defaultLookback)) {
+      toast.show(`Could not reset the ${institutionName} lookback period`, 'error');
+      return;
+    }
+
     input.value = String(defaultLookback);
-    saveLookbackValue(defaultLookback);
     toast.show(`${institutionName} lookback period reset to default (${defaultLookback} day${defaultLookback !== 1 ? 's' : ''})`, 'info');
   });
 
@@ -844,7 +857,11 @@ export function renderCategoryMappingsSection(
           try {
             const currentMappings = getCategoryMappings(integrationId) as Record<string, string>;
             delete currentMappings[item.sourceKey];
-            saveCategoryMappings(integrationId, currentMappings);
+            if (!saveCategoryMappings(integrationId, currentMappings)) {
+              toast.show('Error deleting category mapping', 'error');
+              debugLog(`Failed to persist category mappings for ${integrationId}`);
+              return;
+            }
             toast.show('Category mapping deleted', 'info');
             onRefresh();
           } catch (error) {
@@ -927,7 +944,11 @@ export function renderCategoryMappingsSection(
         `Are you sure you want to delete ALL ${categoryData.length} category mapping(s)?\n\nThis action cannot be undone.`,
       );
       if (confirmed) {
-        saveCategoryMappings(integrationId, {});
+        if (!saveCategoryMappings(integrationId, {})) {
+          toast.show('Error deleting category mappings', 'error');
+          debugLog(`Failed to clear category mappings for ${integrationId}`);
+          return;
+        }
         toast.show(`Deleted ${categoryData.length} category mapping(s)`, 'info');
         debugLog(`Deleted all ${integrationId} category mappings (${categoryData.length} total)`);
         onRefresh();
