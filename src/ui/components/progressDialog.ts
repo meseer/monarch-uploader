@@ -829,12 +829,13 @@ export function showProgressDialog(
       dialog.hideCancel();
 
       errorContainer.style.display = 'block';
+      // Error text is set via textContent below: error.message can carry a raw
+      // HTTP response body (e.g. a WAF/CDN HTML error page) and must never be
+      // parsed as HTML.
       errorContainer.innerHTML = `
-        <div style="margin-bottom: 10px; font-weight: bold; color: var(--mu-error-text, #f44336);">
-          Error uploading account ${accountId}:
+        <div id="error-title" style="margin-bottom: 10px; font-weight: bold; color: var(--mu-error-text, #f44336);">
         </div>
-        <div style="margin-bottom: 15px; white-space: pre-wrap; word-wrap: break-word; color: var(--mu-text-primary, #333);">
-          ${error.message || error.toString()}
+        <div id="error-message" style="margin-bottom: 15px; white-space: pre-wrap; word-wrap: break-word; color: var(--mu-text-primary, #333);">
         </div>
         <div style="display: flex; gap: 10px; justify-content: flex-end;">
           <button id="error-close-button" style="
@@ -855,6 +856,15 @@ export function showProgressDialog(
           ">Continue</button>
         </div>
       `;
+
+      const errorTitle = errorContainer.querySelector('#error-title') as HTMLElement | null;
+      if (errorTitle) {
+        errorTitle.textContent = `Error uploading account ${accountId}:`;
+      }
+      const errorMessage = errorContainer.querySelector('#error-message') as HTMLElement | null;
+      if (errorMessage) {
+        errorMessage.textContent = error?.message || String(error);
+      }
 
       acknowledgmentPromise.promise = new Promise<void>((resolve) => {
         acknowledgmentPromise.resolve = resolve;

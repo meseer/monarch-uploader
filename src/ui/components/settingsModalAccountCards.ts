@@ -6,7 +6,7 @@
  * re-exported here for backward compatibility.
  */
 
-import { getLookbackForInstitution, validateLookbackVsRetention } from '../../core/utils';
+import { escapeHtml, getLookbackForInstitution, validateLookbackVsRetention } from '../../core/utils';
 import toast from '../toast';
 import {
   ACCOUNT_SETTINGS,
@@ -544,7 +544,7 @@ export function createGenericAccountCards(
     mappingDiv.id = `${integrationId}-mapping-${accountId}`;
     mappingDiv.style.cssText = 'font-size: 0.8em; margin-top: 5px;';
     if (monarchAccount) {
-      mappingDiv.innerHTML = `<span style="color: var(--mu-status-success-text, #28a745);">✓ Mapped to:</span> <span style="color: var(--mu-text-secondary, #666);">${monarchAccount.displayName || monarchAccount.name || 'Monarch Account'}</span>`;
+      mappingDiv.innerHTML = `<span style="color: var(--mu-status-success-text, #28a745);">✓ Mapped to:</span> <span style="color: var(--mu-text-secondary, #666);">${escapeHtml(monarchAccount.displayName || monarchAccount.name || 'Monarch Account')}</span>`;
     } else {
       mappingDiv.innerHTML = '<span style="color: var(--mu-status-error-text, #dc3545);">✗ Not mapped</span>';
     }

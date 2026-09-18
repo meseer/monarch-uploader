@@ -4,7 +4,7 @@
  * Follows the same design patterns as the account selector
  */
 
-import { debugLog } from '../../core/utils';
+import { debugLog, escapeHtml } from '../../core/utils';
 import monarchApi from '../../api/monarch';
 import toast from '../toast';
 import { addModalKeyboardHandlers, makeItemsKeyboardNavigable } from '../keyboardNavigation';
@@ -223,16 +223,33 @@ export async function showMonarchCategorySelector(
 /* ------------------------------------------------------------------ */
 
 /**
+ * Build one label/value row of the transaction details block.
+ *
+ * The value is institution- or counterparty-supplied (merchant names,
+ * e-Transfer originator names, P2P handles) and this markup is assigned to
+ * `innerHTML`, so the value is always HTML-escaped.
+ *
+ * `themed` selects the CSS-variable colors used by the merchant/date rows;
+ * the AFT/P2P rows keep their literal colors so appearance is unchanged.
+ */
+function buildDetailRow(label: string, value: unknown, themed = false): string {
+  const labelColor = themed ? 'var(--mu-text-secondary, #666)' : '#666';
+  const valueColor = themed ? 'var(--mu-text-primary, #333)' : '#333';
+
+  return `<div style="margin-bottom: 4px;">
+      <span style="color: ${labelColor};">${label}:</span>
+      <span style="font-weight: 500; color: ${valueColor};">${escapeHtml(value)}</span>
+    </div>`;
+}
+
+/**
  * Build transaction details HTML for display in modals
  */
 function buildTransactionDetailsHtml(transactionDetails: TransactionDetails): string {
   let html = '<div style="font-weight: bold; margin-bottom: 8px; color: var(--mu-text-primary, #333);">Transaction Details:</div>';
 
   if (transactionDetails.merchant) {
-    html += `<div style="margin-bottom: 4px;">
-      <span style="color: var(--mu-text-secondary, #666);">Merchant:</span> 
-      <span style="font-weight: 500; color: var(--mu-text-primary, #333);">${transactionDetails.merchant}</span>
-    </div>`;
+    html += buildDetailRow('Merchant', transactionDetails.merchant, true);
   }
 
   if (transactionDetails.amount !== undefined && transactionDetails.amount !== null) {
@@ -259,59 +276,38 @@ function buildTransactionDetailsHtml(transactionDetails: TransactionDetails): st
     }
 
     html += `<div style="margin-bottom: 4px;">
-      <span style="color: #666;">Amount:</span> 
-      <span style="font-weight: 500; color: ${amountColor};">${formattedAmount}</span>
+      <span style="color: #666;">Amount:</span>
+      <span style="font-weight: 500; color: ${amountColor};">${escapeHtml(formattedAmount)}</span>
     </div>`;
   }
 
   if (transactionDetails.date) {
-    html += `<div style="margin-bottom: 4px;">
-      <span style="color: var(--mu-text-secondary, #666);">Date:</span> 
-      <span style="font-weight: 500; color: var(--mu-text-primary, #333);">${transactionDetails.date}</span>
-    </div>`;
+    html += buildDetailRow('Date', transactionDetails.date, true);
   }
 
   if (transactionDetails.aftDetails) {
     const aft = transactionDetails.aftDetails;
     if (aft.aftOriginatorName) {
-      html += `<div style="margin-bottom: 4px;">
-        <span style="color: #666;">Originator:</span>
-        <span style="font-weight: 500; color: #333;">${aft.aftOriginatorName}</span>
-      </div>`;
+      html += buildDetailRow('Originator', aft.aftOriginatorName);
     }
     if (aft.aftTransactionType) {
-      html += `<div style="margin-bottom: 4px;">
-        <span style="color: #666;">AFT Type:</span>
-        <span style="font-weight: 500; color: #333;">${aft.aftTransactionType}</span>
-      </div>`;
+      html += buildDetailRow('AFT Type', aft.aftTransactionType);
     }
     if (aft.aftTransactionCategory) {
-      html += `<div style="margin-bottom: 4px;">
-        <span style="color: #666;">AFT Category:</span>
-        <span style="font-weight: 500; color: #333;">${aft.aftTransactionCategory}</span>
-      </div>`;
+      html += buildDetailRow('AFT Category', aft.aftTransactionCategory);
     }
   }
 
   if (transactionDetails.p2pDetails) {
     const p2p = transactionDetails.p2pDetails;
     if (p2p.type) {
-      html += `<div style="margin-bottom: 4px;">
-        <span style="color: #666;">Type:</span>
-        <span style="font-weight: 500; color: #333;">${p2p.type}</span>
-      </div>`;
+      html += buildDetailRow('Type', p2p.type);
     }
     if (p2p.subType) {
-      html += `<div style="margin-bottom: 4px;">
-        <span style="color: #666;">SubType:</span>
-        <span style="font-weight: 500; color: #333;">${p2p.subType}</span>
-      </div>`;
+      html += buildDetailRow('SubType', p2p.subType);
     }
     if (p2p.p2pHandle) {
-      html += `<div style="margin-bottom: 4px;">
-        <span style="color: #666;">Handle:</span>
-        <span style="font-weight: 500; color: #333;">${p2p.p2pHandle}</span>
-      </div>`;
+      html += buildDetailRow('Handle', p2p.p2pHandle);
     }
   }
 
@@ -386,7 +382,7 @@ function showCategoryGroupSelector(
   // Add bank category reference with similarity score if available
   const bankCategoryRef = document.createElement('div');
   bankCategoryRef.style.cssText = 'margin-bottom: 15px; font-size: 0.95em; color: var(--mu-text-secondary, #666);';
-  let bankCategoryHtml = `Selecting Monarch category for bank category: <b>${bankCategory}</b>`;
+  let bankCategoryHtml = `Selecting Monarch category for bank category: <b>${escapeHtml(bankCategory)}</b>`;
 
   if (similarityInfo && typeof similarityInfo.score === 'number') {
     const scorePercent = (similarityInfo.score * 100).toFixed(1);
@@ -397,7 +393,7 @@ function showCategoryGroupSelector(
       scoreColor = '#f39c12';
     }
     bankCategoryHtml += `<br><small style="color: ${scoreColor};">Best match: `
-      + `<b>${similarityInfo.bestMatch}</b> (${scorePercent}% similarity)</small>`;
+      + `<b>${escapeHtml(similarityInfo.bestMatch)}</b> (${scorePercent}% similarity)</small>`;
   }
 
   bankCategoryRef.innerHTML = bankCategoryHtml;
@@ -840,7 +836,7 @@ function showCategorySelector(
 
   const bankCategoryRef = document.createElement('div');
   bankCategoryRef.style.cssText = 'margin-bottom: 15px; font-size: 0.95em; color: var(--mu-text-secondary, #666);';
-  bankCategoryRef.innerHTML = `Selecting Monarch category for bank category: <b>${bankCategory}</b>`;
+  bankCategoryRef.innerHTML = `Selecting Monarch category for bank category: <b>${escapeHtml(bankCategory)}</b>`;
   modal.appendChild(bankCategoryRef);
 
   const topActionBar = createTopActionBar(
