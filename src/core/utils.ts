@@ -335,6 +335,36 @@ export function extractDomain(url: string): string {
   }
 }
 
+const HTML_ESCAPE_MAP: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  '\'': '&#39;',
+  '`': '&#96;',
+};
+
+/**
+ * Escapes HTML-significant characters so untrusted text can be safely
+ * interpolated into a markup string that is assigned to `innerHTML`.
+ *
+ * Institution and counterparty supplied values (merchant names, e-Transfer
+ * originator names, P2P handles, API error bodies) must never reach
+ * `innerHTML` unescaped — a value such as `<img src=x onerror=alert(1)>`
+ * would otherwise execute in the page holding the user's Monarch session.
+ *
+ * Prefer `textContent` when a node holds nothing but dynamic text; use this
+ * helper when the surrounding markup has to be built as a string.
+ *
+ * @param value - Any value; non-strings are stringified, null/undefined become ''
+ * @returns The escaped string, safe to embed in element content or a quoted attribute
+ */
+export function escapeHtml(value: unknown): string {
+  if (value === null || value === undefined) return '';
+
+  return String(value).replace(/[&<>"'`]/g, (char) => HTML_ESCAPE_MAP[char]);
+}
+
 /**
  * Semantic keyword groups for category matching
  * Each group contains related terms that should be considered similar
@@ -948,6 +978,7 @@ export default {
   getDaysAgoLocal,
   formatDaysAgoLocal,
   debugLog,
+  escapeHtml,
   extractDomain,
   stringSimilarity,
   getAccountIdFromUrl,

@@ -5,7 +5,9 @@
 
 declare function GM_getValue(key: string, defaultValue?: unknown): unknown;
 
-import { debugLog, getTodayLocal, formatDaysAgoLocal } from '../../../core/utils';
+import {
+  debugLog, escapeHtml, getTodayLocal, formatDaysAgoLocal,
+} from '../../../core/utils';
 import { COLORS, STORAGE } from '../../../core/config';
 import canadalife from '../../../api/canadalife';
 import toast from '../../toast';
@@ -248,11 +250,11 @@ function displayTransactionResult(result: TransactionResultDisplay): void {
   const { transactionCount, accountName, dateRange } = result;
   transactionResultElement.innerHTML = `
     <h4 style="margin: 0 0 8px 0; color: #333;">Transaction Upload Result</h4>
-    <div style="margin-bottom: 8px;"><strong>Account:</strong> ${accountName}</div>
-    <div style="margin-bottom: 8px;"><strong>Date Range:</strong> ${dateRange.startDate} to ${dateRange.endDate}</div>
+    <div style="margin-bottom: 8px;"><strong>Account:</strong> ${escapeHtml(accountName)}</div>
+    <div style="margin-bottom: 8px;"><strong>Date Range:</strong> ${escapeHtml(dateRange.startDate)} to ${escapeHtml(dateRange.endDate)}</div>
     <div style="padding: 8px; background-color: #d4edda; border-radius: 4px;">
       <div style="font-size: 13px; color: #666;">Transactions Uploaded</div>
-      <div style="font-size: 18px; font-weight: 600; color: #28a745;">${transactionCount}</div>
+      <div style="font-size: 18px; font-weight: 600; color: #28a745;">${escapeHtml(transactionCount)}</div>
     </div>
   `;
   transactionResultElement.style.display = 'block';
@@ -371,10 +373,10 @@ function displayHistoricalBalanceResult(historicalData: HistoricalBalanceData): 
   const optimizationRatio = Math.round((1 - apiCallsMade / totalDays) * 100);
   let tableHTML = `
     <div style="margin-bottom: 12px;">
-      <h4 style="margin: 0 0 8px 0; color: #333;">${account.name} - Historical Balance</h4>
+      <h4 style="margin: 0 0 8px 0; color: #333;">${escapeHtml(account.name)} - Historical Balance</h4>
       <div style="font-size: 13px; color: #666; margin-bottom: 8px;">
-        <strong>Date Range:</strong> ${dateRange.startDate} to ${dateRange.endDate}<br>
-        <strong>Business Days:</strong> ${totalDays} | <strong>API Calls:</strong> ${apiCallsMade} | <strong>Optimization:</strong> ${optimizationRatio}% fewer calls
+        <strong>Date Range:</strong> ${escapeHtml(dateRange.startDate)} to ${escapeHtml(dateRange.endDate)}<br>
+        <strong>Business Days:</strong> ${escapeHtml(totalDays)} | <strong>API Calls:</strong> ${escapeHtml(apiCallsMade)} | <strong>Optimization:</strong> ${optimizationRatio}% fewer calls
       </div>
     </div>
     <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
@@ -397,7 +399,9 @@ function displayHistoricalBalanceResult(historicalData: HistoricalBalanceData): 
       if (!isHeader && cellIndex === 1 && typeof cell === 'number') {
         cellContent = new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(cell);
       }
-      tableHTML += `<${cellTag} style="${cellStyle}">${cellContent}</${cellTag}>`;
+      // cellTag/cellStyle are literals owned by this function; only the cell
+      // content comes from the API and therefore needs escaping.
+      tableHTML += `<${cellTag} style="${cellStyle}">${escapeHtml(cellContent)}</${cellTag}>`;
     });
     tableHTML += '</tr>';
   });
@@ -419,8 +423,8 @@ function displayBalanceResult(balanceData: BalanceData): void {
   const formattedChange = new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD', signDisplay: 'always' }).format(balanceData.change);
   const changeColor = balanceData.change >= 0 ? '#28a745' : '#dc3545';
   balanceResultElement.innerHTML = `
-    <h4 style="margin: 0 0 8px 0; color: #333;">${balanceData.account.name}</h4>
-    <div style="margin-bottom: 8px;"><strong>Date:</strong> ${balanceData.date}</div>
+    <h4 style="margin: 0 0 8px 0; color: #333;">${escapeHtml(balanceData.account.name)}</h4>
+    <div style="margin-bottom: 8px;"><strong>Date:</strong> ${escapeHtml(balanceData.date)}</div>
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px;">
       <div>
         <div style="font-size: 13px; color: #666;">Opening Balance</div>

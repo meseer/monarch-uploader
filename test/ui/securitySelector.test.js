@@ -9,9 +9,13 @@ import { showMonarchSecuritySelector } from '../../src/ui/components/securitySel
 import monarchApi from '../../src/api/monarch';
 
 // Mock dependencies
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-}));
+jest.mock('../../src/core/utils', () => {
+  const { realEscapeHtml } = require('../helpers/escapeHtmlMock');
+  return {
+    debugLog: jest.fn(),
+    escapeHtml: realEscapeHtml(),
+  };
+});
 
 jest.mock('../../src/api/monarch', () => ({
   __esModule: true,

@@ -4,7 +4,7 @@
  * Similar pattern to category selector but adapted for securities
  */
 
-import { debugLog } from '../../core/utils';
+import { debugLog, escapeHtml } from '../../core/utils';
 import monarchApi from '../../api/monarch';
 import { addModalKeyboardHandlers, makeItemsKeyboardNavigable } from '../keyboardNavigation';
 
@@ -44,6 +44,42 @@ function toCamelCase(str: string): string {
     .split(' ')
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
+}
+
+/**
+ * Build the "no securities found" message for a search term.
+ *
+ * The term is echoed back to the user, so it is set via textContent instead of
+ * being interpolated into markup.
+ */
+function buildNoResultsMessage(term: string): HTMLDivElement {
+  const container = document.createElement('div');
+  container.id = 'security-selector-no-results';
+  container.style.cssText = 'color: #666; padding: 20px; text-align: center;';
+  container.appendChild(document.createTextNode(`No securities found for "${term}"`));
+  container.appendChild(document.createElement('br'));
+
+  const hint = document.createElement('small');
+  hint.id = 'security-selector-no-results-hint';
+  hint.style.cssText = 'color: #999;';
+  hint.textContent = 'Try searching by ticker symbol or company name';
+  container.appendChild(hint);
+
+  return container;
+}
+
+/**
+ * Build the search error message element.
+ *
+ * Error messages may include raw API response bodies, so the text is set via
+ * textContent rather than interpolated into markup.
+ */
+function buildSearchErrorMessage(error: Error): HTMLDivElement {
+  const container = document.createElement('div');
+  container.id = 'security-selector-search-error';
+  container.style.cssText = 'color: #d32f2f; padding: 20px; text-align: center;';
+  container.textContent = `Error searching securities: ${error?.message ?? String(error)}`;
+  return container;
 }
 
 /**
@@ -117,21 +153,21 @@ export async function showMonarchSecuritySelector(
   if (symbol) {
     detailsHtml += `<div style="margin-bottom: 4px;">
       <span style="color: var(--mu-text-secondary, #666);">Symbol:</span> 
-      <span style="font-weight: 500; color: var(--mu-text-primary, #333);">${symbol}</span>
+      <span style="font-weight: 500; color: var(--mu-text-primary, #333);">${escapeHtml(symbol)}</span>
     </div>`;
   }
 
   if (exchange) {
     detailsHtml += `<div style="margin-bottom: 4px;">
       <span style="color: var(--mu-text-secondary, #666);">Exchange:</span> 
-      <span style="font-weight: 500; color: var(--mu-text-primary, #333);">${exchange}</span>
+      <span style="font-weight: 500; color: var(--mu-text-primary, #333);">${escapeHtml(exchange)}</span>
     </div>`;
   }
 
   if (description) {
     detailsHtml += `<div style="margin-bottom: 4px;">
       <span style="color: var(--mu-text-secondary, #666);">Description:</span> 
-      <span style="font-weight: 500; color: var(--mu-text-primary, #333);">${toCamelCase(description)}</span>
+      <span style="font-weight: 500; color: var(--mu-text-primary, #333);">${escapeHtml(toCamelCase(description))}</span>
     </div>`;
   }
 
@@ -200,12 +236,9 @@ export async function showMonarchSecuritySelector(
       loadingIndicator.style.display = 'none';
 
       if (!securities || securities.length === 0) {
-        resultsContainer.innerHTML = `
-          <div style="color: #666; padding: 20px; text-align: center;">
-            No securities found for "${term}"<br>
-            <small style="color: #999;">Try searching by ticker symbol or company name</small>
-          </div>
-        `;
+        // Built as DOM nodes rather than markup: the search term is arbitrary
+        // user/institution text and must never be parsed as HTML.
+        resultsContainer.replaceChildren(buildNoResultsMessage(term));
         return;
       }
 
@@ -250,11 +283,8 @@ export async function showMonarchSecuritySelector(
     } catch (error) {
       loadingIndicator.style.display = 'none';
       debugLog('Error searching securities:', error);
-      resultsContainer.innerHTML = `
-        <div style="color: #d32f2f; padding: 20px; text-align: center;">
-          Error searching securities: ${(error as Error).message}
-        </div>
-      `;
+      // Error messages can carry raw API response bodies, so render as text.
+      resultsContainer.replaceChildren(buildSearchErrorMessage(error as Error));
     }
   };
 

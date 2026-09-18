@@ -43,6 +43,7 @@ jest.mock('../../src/core/config', () => ({
 
 jest.mock('../../src/core/utils', () => ({
   debugLog: jest.fn(),
+  escapeHtml: require('../helpers/escapeHtmlMock').realEscapeHtml(),
   getDefaultLookbackDays: jest.fn((institutionType) => {
     switch (institutionType) {
     case 'questrade': return 3;

@@ -124,6 +124,17 @@ export function createConnectionStatus(): HTMLElement {
 }
 
 /**
+ * Format a credential value for display, masking sensitive values
+ */
+function formatCredentialValue(item: CredentialItem): string {
+  if (!item.value) return 'Not captured';
+  if (item.mask && item.value.length > 10) {
+    return `${item.value.substring(0, 6)}...${item.value.substring(item.value.length - 4)}`;
+  }
+  return item.value;
+}
+
+/**
  * Update credentials display
  */
 export function updateCredentialsDisplay(container: HTMLElement, credentials: RogersBankCredentials): void {
@@ -138,19 +149,20 @@ export function updateCredentialsDisplay(container: HTMLElement, credentials: Ro
     { label: 'Last Updated', value: credentials.lastUpdated },
   ];
 
-  credentialsList.innerHTML = items
-    .map((item) => {
-      let displayValue = 'Not captured';
-      if (item.value) {
-        if (item.mask && item.value.length > 10) {
-          // Mask sensitive values
-          displayValue = `${item.value.substring(0, 6)}...${item.value.substring(item.value.length - 4)}`;
-        } else {
-          displayValue = item.value;
-        }
-      }
-      return `<div><strong>${item.label}:</strong> ${displayValue}</div>`;
-    })
-    .join('');
+  // Rows are built as DOM nodes: credential values are captured from the
+  // institution's page and must never be parsed as HTML.
+  const rows = items.map((item) => {
+    const row = document.createElement('div');
+
+    const label = document.createElement('strong');
+    label.textContent = `${item.label}:`;
+    row.appendChild(label);
+
+    row.appendChild(document.createTextNode(` ${formatCredentialValue(item)}`));
+
+    return row;
+  });
+
+  credentialsList.replaceChildren(...rows);
 }
 
