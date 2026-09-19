@@ -209,6 +209,35 @@ function extractGraphQLErrorText(responseText: string | undefined): string {
 }
 
 /**
+ * Parse a success-status response body, turning an unparseable body into a
+ * diagnosable error instead of a raw `SyntaxError`.
+ *
+ * A 200 whose body is not JSON is a real failure mode, not a theoretical one: a
+ * WAF or CDN HTML error page, a captive-portal or proxy interstitial, a
+ * rate-limit page, and a truncated body all arrive with a 200 status. The body
+ * is the only evidence of which of those happened, so a bounded excerpt of it
+ * travels with the error.
+ *
+ * @param operation - GraphQL operation name, to identify which call failed
+ * @param responseText - Raw response body
+ * @returns The parsed body
+ * @throws When the body is not JSON
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseGraphQLResponseBody(operation: string, responseText: string | undefined): any {
+  try {
+    return JSON.parse(responseText as string);
+  } catch (error) {
+    const detail = extractGraphQLErrorText(responseText);
+    throw new Error(
+      `Monarch API Error: ${operation} returned status 200 with a body that is not JSON `
+      + `(${(error as Error).message})${detail ? ` — ${detail}` : ''}`,
+      { cause: error },
+    );
+  }
+}
+
+/**
  * Construct GraphQL request options
  * @param data - GraphQL request data
  * @returns Request options for GM_xmlhttpRequest
@@ -265,30 +294,44 @@ export function callMonarchGraphQL(operation: string, query: string, variables: 
         origin: API.MONARCH_APP_URL,
       },
       data: JSON.stringify(data),
+      // Everything this handler does sits inside one try/catch. The handler runs
+      // asynchronously, outside the Promise executor's synchronous flow, so a
+      // throw here escapes the Promise instead of rejecting it: neither `resolve`
+      // nor `reject` ever runs, the promise never settles, and every awaiting
+      // caller hangs forever with no error. No request timeout is configured, so
+      // nothing ever breaks that hang. The catch is deliberately broad rather
+      // than wrapped around the parse alone, because *any* throw has that effect
+      // — an unexpected response shape or a throwing helper just as much as
+      // `JSON.parse`. Calling `reject` after `resolve` is a harmless no-op, so
+      // the net cannot corrupt an already-settled promise.
       onload: (res: Tampermonkey.Response<unknown>) => {
-        debugLog('Monarch API response:', res);
+        try {
+          debugLog('Monarch API response:', res);
 
-        if (res.status === 401 || res.status === 403) {
-          // Session is invalid or expired, clear auth state
-          authService.clearMonarchCredentials();
-          reject(new Error('Monarch Auth Error: Session was invalid or expired. Please open Monarch Money to refresh.'));
-          return;
-        }
-        if (res.status !== 200) {
-          // Include the response body. Monarch returns GraphQL `errors` on 4xx,
-          // and discarding them (as this used to) left every non-200 failure
-          // undiagnosable — the status alone cannot distinguish "this field is
-          // not accepted" from "the server is having a bad day".
-          const detail = extractGraphQLErrorText(res.responseText);
-          reject(new Error(`Monarch API Error: ${res.status}${detail ? ` — ${detail}` : ''}`));
-          return;
-        }
+          if (res.status === 401 || res.status === 403) {
+            // Session is invalid or expired, clear auth state
+            authService.clearMonarchCredentials();
+            reject(new Error('Monarch Auth Error: Session was invalid or expired. Please open Monarch Money to refresh.'));
+            return;
+          }
+          if (res.status !== 200) {
+            // Include the response body. Monarch returns GraphQL `errors` on 4xx,
+            // and discarding them (as this used to) left every non-200 failure
+            // undiagnosable — the status alone cannot distinguish "this field is
+            // not accepted" from "the server is having a bad day".
+            const detail = extractGraphQLErrorText(res.responseText);
+            reject(new Error(`Monarch API Error: ${res.status}${detail ? ` — ${detail}` : ''}`));
+            return;
+          }
 
-        const responseData = JSON.parse(res.responseText);
-        if (responseData.errors) {
-          reject(new Error(JSON.stringify(responseData.errors)));
-        } else {
-          resolve(responseData.data);
+          const responseData = parseGraphQLResponseBody(operation, res.responseText);
+          if (responseData?.errors) {
+            reject(new Error(JSON.stringify(responseData.errors)));
+          } else {
+            resolve(responseData?.data);
+          }
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error(String(error)));
         }
       },
       onerror: (err: Error) => reject(err),
