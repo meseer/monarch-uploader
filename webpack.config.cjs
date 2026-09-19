@@ -47,6 +47,13 @@ module.exports = (env, argv) => {
         new TerserPlugin({
           terserOptions: {
             format: {
+              // Escape every non-ASCII character as \uXXXX so the delivered
+              // userscript is pure 7-bit ASCII. Tampermonkey has no @charset
+              // key, and the script is fetched from a raw gist URL — any
+              // consumer in that chain that guesses Latin-1 instead of UTF-8
+              // would otherwise turn each multi-byte character (status icons,
+              // em dashes, emoji) into one replacement character per byte.
+              ascii_only: true,
               // Preserve UserScript metadata comments, strip everything else
               comments: (astNode, comment) => {
                 const text = comment.value;
