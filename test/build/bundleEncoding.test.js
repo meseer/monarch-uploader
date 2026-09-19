@@ -15,25 +15,16 @@
  * (injected with `raw: true`, which bypasses Terser entirely).
  */
 
+const { execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 // jsdom does not expose TextDecoder, so take Node's implementation directly.
 const { TextDecoder } = require('util');
 
-const webpack = require('webpack');
-
 const ROOT = path.resolve(__dirname, '..', '..');
 const CONFIG_PATH = path.join(ROOT, 'webpack.config.cjs');
 const BUNDLE_NAME = 'monarch-uploader.user.js';
-
-// webpack's AsyncQueue needs setImmediate, which the jsdom test environment
-// does not provide. The suite cannot use `@jest-environment node` because the
-// shared test/setup.js touches `document`.
-if (typeof global.setImmediate !== 'function') {
-  global.setImmediate = (fn, ...args) => setTimeout(fn, 0, ...args);
-  global.clearImmediate = (id) => clearTimeout(id);
-}
 
 /** Load the production webpack config fresh */
 function loadProductionConfig() {
@@ -61,32 +52,40 @@ function getTerserFormatOptions(config) {
   return undefined;
 }
 
-/** Build the production bundle into a scratch directory and return its bytes */
+/**
+ * Build the production bundle into a scratch directory and return its bytes.
+ *
+ * Deliberately spawned as a child process rather than calling webpack in-process.
+ * Under Jest, babel-loader's `require('@babel/core')` resolves through Jest's
+ * CommonJS module registry, and @babel/core v8 is ESM-only — so an in-process
+ * build fails with "Must use import to load ES Module" on any Node older than
+ * v24.9. A child process uses Node's own loader and matches what `npm run build`
+ * actually does.
+ */
 function buildProductionBundle() {
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mu-bundle-encoding-'));
-  const config = loadProductionConfig();
-  config.output = { ...config.output, path: outDir };
-
-  return new Promise((resolve, reject) => {
-    webpack(config, (err, stats) => {
-      if (err) return reject(err);
-      if (stats.hasErrors()) {
-        return reject(new Error(stats.toString({ all: false, errors: true })));
-      }
-      const bundlePath = path.join(outDir, BUNDLE_NAME);
-      const bytes = fs.readFileSync(bundlePath);
-      fs.rmSync(outDir, { recursive: true, force: true });
-      return resolve(bytes);
-    });
-  });
+  const webpackCli = require.resolve('webpack-cli/bin/cli.js');
+  try {
+    execFileSync(
+      process.execPath,
+      [webpackCli, '--mode', 'production', '--output-path', outDir],
+      { cwd: ROOT, stdio: 'pipe', encoding: 'utf8' },
+    );
+    return fs.readFileSync(path.join(outDir, BUNDLE_NAME));
+  } catch (err) {
+    const detail = [err.stdout, err.stderr, err.message].filter(Boolean).join('\n');
+    throw new Error(`production webpack build failed:\n${detail.slice(0, 4000)}`);
+  } finally {
+    fs.rmSync(outDir, { recursive: true, force: true });
+  }
 }
 
 describe('built userscript encoding', () => {
   let bytes;
   let text;
 
-  beforeAll(async () => {
-    bytes = await buildProductionBundle();
+  beforeAll(() => {
+    bytes = buildProductionBundle();
     text = bytes.toString('latin1'); // byte-preserving, so no decode can hide a high byte
   }, 300000);
 
