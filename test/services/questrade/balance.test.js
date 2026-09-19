@@ -198,6 +198,58 @@ describe('Balance Service', () => {
     });
   });
 
+  // Regression: the balance step must be able to upload without moving the sync date.
+  // The full sync runs transaction steps after the balance step and swallows their
+  // failures, so a watermark advanced here would skip transactions that never reached
+  // Monarch - and with a 0-day default lookback they would never be fetched again.
+  describe('uploadBalanceToMonarch — advanceSyncDate option', () => {
+    beforeEach(() => {
+      accountService.getMonarchAccountMapping.mockReturnValue({ id: 'monarch-account-123', displayName: 'My Account' });
+      monarchApi.uploadBalance.mockResolvedValue(true);
+    });
+
+    test('advances the sync date by default', async () => {
+      const result = await uploadBalanceToMonarch('12345', '"Date","Amount"\n"2025-01-01","1000"', '2025-01-01', '2025-01-31');
+
+      expect(result).toBe(true);
+      expect(utils.saveLastUploadDate).toHaveBeenCalledWith('12345', '2025-01-31', 'questrade');
+    });
+
+    test('does NOT advance the sync date when advanceSyncDate is false', async () => {
+      const result = await uploadBalanceToMonarch(
+        '12345',
+        '"Date","Amount"\n"2025-01-01","1000"',
+        '2025-01-01',
+        '2025-01-31',
+        { advanceSyncDate: false },
+      );
+
+      expect(result).toBe(true);
+      expect(utils.saveLastUploadDate).not.toHaveBeenCalled();
+    });
+
+    test('never advances the sync date when the upload fails', async () => {
+      monarchApi.uploadBalance.mockResolvedValue(false);
+
+      const result = await uploadBalanceToMonarch('12345', '"Date","Amount"\n"2025-01-01","1000"', '2025-01-01', '2025-01-31');
+
+      expect(result).toBe(false);
+      expect(utils.saveLastUploadDate).not.toHaveBeenCalled();
+    });
+
+    test('processAndUploadBalance forwards advanceSyncDate to the upload', async () => {
+      questradeApi.makeApiCall
+        .mockResolvedValueOnce({ totalEquity: { combined: [{ currencyCode: 'CAD', amount: 5000 }] } })
+        .mockResolvedValueOnce({ data: [{ date: '2025-01-01', totalEquity: 4900 }] });
+
+      const result = await processAndUploadBalance('12345', 'Test Account', '2025-01-01', '2025-01-31', { advanceSyncDate: false });
+
+      expect(result).toBe(true);
+      expect(monarchApi.uploadBalance).toHaveBeenCalled();
+      expect(utils.saveLastUploadDate).not.toHaveBeenCalled();
+    });
+  });
+
   describe('uploadBalanceToMonarch', () => {
     test('should upload CSV data to Monarch', async () => {
       // Mock successful upload and account mapping via accountService

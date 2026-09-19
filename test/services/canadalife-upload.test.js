@@ -77,6 +77,10 @@ jest.mock('../../src/api/canadalife', () => ({
   default: {
     loadCanadaLifeAccounts: jest.fn(),
     loadAccountBalanceHistory: jest.fn(),
+    // Must be mocked: the real fetchActivitiesForDateRange calls this, and an
+    // undefined function makes every chunk fail, which now reports the fetch as
+    // incomplete and correctly holds back the sync date.
+    loadAccountActivityReport: jest.fn(),
   },
 }));
 
@@ -140,6 +144,10 @@ describe('Canada Life Upload Service', () => {
     // clearAllMocks keeps implementations, so a per-test override would otherwise
     // leak into every later test in this file.
     jest.requireMock('../../src/core/utils').parseLocalDate.mockImplementation(mockParseLocalDate);
+    // Default to a successful, complete activity fetch so the sync-date gate does not
+    // hold the watermark back in tests that are not about an incomplete fetch.
+    jest.requireMock('../../src/api/canadalife').default
+      .loadAccountActivityReport.mockResolvedValue({ activities: [] });
     document.body.innerHTML = '';
   });
 

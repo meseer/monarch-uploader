@@ -795,7 +795,12 @@ async function processAndUploadOrders(accountId, accountName, fromDate, monarchA
 
       // Save to consolidated storage (shared with activity transactions)
       saveUploadedTransactionsToConsolidated(accountId, transactionsWithDates);
-      saveLastUploadDate(accountId, toDate, 'questrade');
+
+      // Deliberately does NOT advance the stored sync date. The activity step runs after
+      // orders and swallows its failures, so advancing here would move the watermark past
+      // activity transactions that were never uploaded - and Questrade's default lookback
+      // is 0 days, so the next sync would never see them again. The orchestrator advances
+      // the date once every transaction step has succeeded.
 
       // Build order signatures for cross-source deduplication with activity trades
       const signatures = buildOrderSignatures(executedOrders);
@@ -889,6 +894,15 @@ async function processAndUploadTransactions(accountId, accountName, fromDate, pr
     const totalDuplicates = (results.orders?.skippedDuplicates || 0) + (results.activity?.skippedDuplicates || 0) + (results.activity?.matchedByOrders || 0);
 
     const overallSuccess = (results.orders?.success ?? true) && (results.activity?.success ?? true);
+
+    // Advance the sync date only when both transaction steps succeeded. Either step
+    // failing means transactions in this window never reached Monarch, and with a 0-day
+    // default lookback a moved watermark would skip them permanently.
+    if (overallSuccess) {
+      saveLastUploadDate(accountId, getTodayLocal(), 'questrade');
+    } else {
+      debugLog(`Not advancing Questrade sync date for ${accountId}: a transaction step failed, so the window from ${fromDate} will be retried`);
+    }
 
     // Build summary message
     const messageParts = [];

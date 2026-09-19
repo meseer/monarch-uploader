@@ -493,6 +493,7 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
     success: false,
     transactionsUploaded: 0,
     transactionsSkipped: 0,
+    transactionUploadFailed: false,
   };
 
   try {
@@ -758,7 +759,10 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
         if (progressDialog) {
           progressDialog.updateStepStatus(accountId, 'uploadTransactions', 'error', 'Upload failed');
         }
-        // Don't throw - balance upload succeeded, just log the transaction failure
+        // Don't throw - the balance upload succeeded and is worth keeping. But the sync
+        // is NOT complete: record the failure so the sync date is not advanced below and
+        // so callers report this account as failed instead of reporting success.
+        result.transactionUploadFailed = true;
         debugLog(`Failed to upload transactions for ${accountName}, but balance upload succeeded`);
       } else {
         // Save uploaded transaction IDs for future deduplication
@@ -777,21 +781,52 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
       }
     }
 
-    // Store last upload date for auto uploads only AFTER balance change extraction
-    // Store the actual end date that was uploaded to ensure proper continuity
+    // Store last upload date for auto uploads only AFTER balance change extraction.
+    // Store the actual end date that was uploaded to ensure proper continuity.
+    //
+    // The watermark may only advance over a window whose transactions actually landed.
+    // Canada Life's default lookback is 1 day, so advancing past a failed transaction
+    // upload would permanently lose those transactions: the next sync would start after
+    // them, and they were never added to the dedup store either, so nothing would ever
+    // re-upload them. Leaving the watermark alone re-fetches the window next sync; the
+    // balance re-upload is idempotent and dedup prevents duplicate transactions.
+    // Two independent ways this window can be unsynced, and both must hold the watermark:
+    // the upload failed, or the source fetch came back partial. `activityFetch.complete`
+    // is false when a chunk request failed, which means the transactions in the missing
+    // chunk were never even seen - so they are neither in Monarch nor in the dedup store,
+    // and only a re-fetch of this window can ever recover them.
+    const syncIncomplete = result.transactionUploadFailed || !activityFetch.complete;
+
     if (isAutoUpload) {
-      saveLastUploadDate(accountId, endDate, 'canadalife');
+      if (syncIncomplete) {
+        const reason = result.transactionUploadFailed
+          ? 'transaction upload failed'
+          : `activity fetch incomplete (${activityFetch.failedChunks.length} chunk(s) failed)`;
+        debugLog(`Not advancing Canada Life sync date for ${accountName}: ${reason}, so ${startDate} to ${endDate} will be retried on the next sync`);
+      } else {
+        saveLastUploadDate(accountId, endDate, 'canadalife');
+      }
     }
 
     // Clean up legacy storage keys after successful sync using new unified storage
-    // This is idempotent - it only deletes keys that exist and is safe to call multiple times
-    const cleanupResult = accountService.cleanupLegacyStorage(INTEGRATIONS.CANADALIFE, accountId);
-    if (cleanupResult.keysDeleted > 0) {
-      debugLog(`Cleaned up ${cleanupResult.keysDeleted} legacy storage keys for ${accountName}:`, cleanupResult.keys);
+    // This is idempotent - it only deletes keys that exist and is safe to call multiple times.
+    // Skipped when the sync was incomplete so the legacy watermark keys survive until a
+    // sync actually completes.
+    if (!syncIncomplete) {
+      const cleanupResult = accountService.cleanupLegacyStorage(INTEGRATIONS.CANADALIFE, accountId);
+      if (cleanupResult.keysDeleted > 0) {
+        debugLog(`Cleaned up ${cleanupResult.keysDeleted} legacy storage keys for ${accountName}:`, cleanupResult.keys);
+      }
     }
 
-    result.success = true;
-    debugLog(`Successfully uploaded ${accountName} balance history and ${result.transactionsUploaded} transactions to Monarch`);
+    result.success = !syncIncomplete;
+    if (result.success) {
+      debugLog(`Successfully uploaded ${accountName} balance history and ${result.transactionsUploaded} transactions to Monarch`);
+    } else if (result.transactionUploadFailed) {
+      debugLog(`Uploaded ${accountName} balance history, but the transaction upload failed`);
+    } else {
+      debugLog(`Uploaded ${accountName} balance history, but the activity fetch was incomplete`);
+    }
     return result;
   } catch (error) {
     debugLog(`Error uploading ${accountName}:`, error);
@@ -941,7 +976,16 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
 
         // Upload the account (auto upload allows today and stores yesterday as last upload)
         const result = await uploadSingleAccount(sourceAccount, startDate, endDate, progressDialog, true, abortController.signal);
-        stats.success += 1;
+
+        // A failed transaction upload is not fatal (the balance landed) but it is not a
+        // success either - the sync date was held back so this window is retried, and the
+        // summary must say so rather than reporting the account as fully synced.
+        if (result.success) {
+          stats.success += 1;
+        } else {
+          stats.failed += 1;
+          progressDialog.updateProgress(accountId, 'error', 'Transactions incomplete - will retry next sync');
+        }
 
         // Aggregate transaction statistics
         stats.transactionsUploaded += result.transactionsUploaded || 0;
@@ -1051,10 +1095,10 @@ export async function uploadCanadaLifeAccountWithDateRange() {
       // Hide cancel button and show close button when upload completes
       progressDialog.hideCancel();
 
-      // Show success summary with transaction counts
+      // Show summary with transaction counts
       const stats = {
-        success: 1,
-        failed: 0,
+        success: result.success ? 1 : 0,
+        failed: result.success ? 0 : 1,
         total: 1,
         transactionsUploaded: result.transactionsUploaded || 0,
         transactionsSkipped: result.transactionsSkipped || 0,
@@ -1065,7 +1109,12 @@ export async function uploadCanadaLifeAccountWithDateRange() {
       const txSummary = result.transactionsUploaded > 0
         ? ` ${result.transactionsUploaded} transactions uploaded.`
         : '';
-      toast.show(`Successfully uploaded ${selectedAccount.EnglishShortName}!${txSummary}`, 'info');
+      if (result.success) {
+        toast.show(`Successfully uploaded ${selectedAccount.EnglishShortName}!${txSummary}`, 'info');
+      } else {
+        progressDialog.updateProgress(selectedAccount.agreementId, 'error', 'Transaction upload failed');
+        toast.show(`Uploaded ${selectedAccount.EnglishShortName} balance, but the transactions are incomplete. Try again to retry them.`, 'warning');
+      }
     } catch (error) {
       // Hide cancel button and show close button when upload fails
       progressDialog.hideCancel();

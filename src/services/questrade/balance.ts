@@ -348,9 +348,15 @@ export function storeDateRange(accountId, toDate) {
  * @param {string} csvData - CSV data to upload
  * @param {string} fromDate - Start date in YYYY-MM-DD format
  * @param {string} toDate - End date in YYYY-MM-DD format
+ * @param {Object} options - Upload options
+ * @param {boolean} options.advanceSyncDate - Whether a successful upload should advance the
+ *   stored sync date (default true). Callers that run transaction steps after the balance
+ *   step pass false and advance the date themselves once those steps succeed.
  * @returns {Promise<boolean>} Success status
  */
-export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDate) {
+export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDate, options: { advanceSyncDate?: boolean } = {}) {
+  const { advanceSyncDate = true } = options;
+
   try {
     debugLog(`Uploading balance for account ${accountId} from ${fromDate} to ${toDate}`);
 
@@ -386,7 +392,9 @@ export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDat
 
     // Store the date for next time if successful
     if (success) {
-      storeDateRange(accountId, toDate);
+      if (advanceSyncDate) {
+        storeDateRange(accountId, toDate);
+      }
       debugLog(`Successfully uploaded ${accountName} balance history to Monarch`);
     }
 
@@ -406,9 +414,12 @@ export async function uploadBalanceToMonarch(accountId, csvData, fromDate, toDat
  * @param {string} accountName - Account name
  * @param {string} fromDate - Start date in YYYY-MM-DD format
  * @param {string} toDate - End date in YYYY-MM-DD format
+ * @param {Object} options - Upload options, forwarded to uploadBalanceToMonarch
+ * @param {boolean} options.advanceSyncDate - Whether a successful upload should advance the
+ *   stored sync date (default true)
  * @returns {Promise<boolean>} Success status
  */
-export async function processAndUploadBalance(accountId, accountName, fromDate, toDate) {
+export async function processAndUploadBalance(accountId, accountName, fromDate, toDate, options: { advanceSyncDate?: boolean } = {}) {
   try {
     if (!accountId || !accountName) {
       throw new BalanceError('Account information missing', accountId);
@@ -433,7 +444,7 @@ export async function processAndUploadBalance(accountId, accountName, fromDate, 
 
     // Step 3: Upload to Monarch
     toast.show(`Uploading ${accountName} balance history to Monarch (may take up to 2 minutes for large files)...`, 'debug');
-    const success = await uploadBalanceToMonarch(accountId, csvData, fromDate, toDate);
+    const success = await uploadBalanceToMonarch(accountId, csvData, fromDate, toDate, options);
 
     // Step 4: Show result notification
     if (success) {
