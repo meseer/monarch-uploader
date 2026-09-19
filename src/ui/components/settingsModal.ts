@@ -3,7 +3,7 @@
  * Provides a unified interface for managing application settings and stored data
  */
 
-import { debugLog, getCurrentInstitution } from '../../core/utils';
+import { debugLog, escapeHtml, getCurrentInstitution } from '../../core/utils';
 import { API, STORAGE } from '../../core/config';
 import authService, { checkMonarchAuth } from '../../services/auth';
 import toast from '../toast';
@@ -714,7 +714,7 @@ function renderMonarchTab(container: HTMLElement): void {
 function renderModularIntegrationTab(container: HTMLElement, integrationId: string): void {
   const capabilities = getCapabilities(integrationId);
   if (!capabilities) {
-    container.innerHTML = `<p>Unknown integration: ${integrationId}</p>`;
+    container.innerHTML = `<p>Unknown integration: ${escapeHtml(integrationId)}</p>`;
     return;
   }
 

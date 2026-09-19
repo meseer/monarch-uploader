@@ -5,7 +5,7 @@
 
 import {
   debugLog, getTodayLocal, calculateFromDateWithLookback, saveLastUploadDate, formatDate, parseLocalDate,
-  getLastUpdateDate, formatDaysAgoLocal,
+  getLastUpdateDate, formatDaysAgoLocal, computeExtendedFromDate,
 } from '../core/utils';
 import toast from '../ui/toast';
 import { LOGO_CLOUDINARY_IDS, CARDHOLDER } from '../core/config';
@@ -29,16 +29,60 @@ import accountService from './common/accountService';
 import { INTEGRATIONS, ACCOUNT_SETTINGS, hasCapability } from '../core/integrationCapabilities';
 import {
   separateAndDeduplicateTransactions,
-  reconcileRogersPendingTransactions,
+  reconcileRogersFetchedPending,
   formatReconciliationMessage,
   formatPendingIdForNotes,
 } from './rogersbank/pendingTransactions';
+import { fetchMonarchPendingTransactions, type FetchPendingResult } from './common/pendingReconciliation';
 import { extractRogersCardholder } from './rogersbank/cardholderExtractor';
 import {
   syncCardholders, applyCardholderFields, collectOwnerAssignments, getOwnerMode,
 } from './common/cardholders';
 import { showCardholderSelector } from '../ui/components/cardholderSelector';
 import { syncTransactionOwners, buildOwnerResolver, formatOwnerSyncMessage } from './common/ownerSync';
+
+/**
+ * Days to look back in Monarch when collecting pending transactions to reconcile.
+ * Deliberately much longer than the Rogers fetch lookback — a pending hold can sit
+ * on the card for weeks, and the Rogers fetch window is widened to reach it.
+ */
+const ROGERSBANK_PENDING_LOOKBACK_DAYS = 90;
+
+/**
+ * Run Phase 2 reconciliation against pre-fetched Monarch pending data.
+ *
+ * Mirrors the early-exit shape of the old combined helper so the caller keeps
+ * getting `noPendingTag` / `noPendingTransactions` results, but the Monarch read
+ * has already happened (before the Rogers fetch) so its `oldestPendingDate` could
+ * widen the source window.
+ *
+ * @param phase1 - Phase 1 result, or null when the Monarch read failed
+ * @param allTransactions - Transactions returned by Rogers Bank
+ * @returns Reconciliation result
+ */
+async function resolveRogersReconciliation(phase1: FetchPendingResult | null, allTransactions: unknown[]) {
+  const emptyResult = {
+    success: true, settled: 0, cancelled: 0, failed: 0, error: null as string | null, settledRefIds: [] as unknown[],
+  };
+
+  if (!phase1) {
+    debugLog('[rogers-upload] Phase 1 pending fetch unavailable, skipping reconciliation');
+    return {
+      ...emptyResult, success: false, error: 'Could not read Monarch pending transactions', sourceUnavailable: true,
+    };
+  }
+
+  if (phase1.noPendingTag) {
+    debugLog('[rogers-upload] No "Pending" tag found in Monarch, skipping reconciliation');
+    return { ...emptyResult, noPendingTag: true };
+  }
+
+  if (phase1.noPendingTransactions || phase1.monarchPendingTransactions.length === 0) {
+    return { ...emptyResult, noPendingTransactions: true };
+  }
+
+  return reconcileRogersFetchedPending(phase1.pendingTag, phase1.monarchPendingTransactions, allTransactions);
+}
 
 /**
  * Extract Rogers account name from DOM
@@ -887,13 +931,45 @@ export async function uploadRogersBankToMonarch() {
       progressDialog.updateStepStatus(rogersAccountId, 'creditLimit', 'error', 'Sync failed');
     }
 
+    // PHASE 1: Fetch Monarch pending transactions BEFORE the Rogers fetch.
+    //
+    // The Rogers fetch starts at lastSync − lookback (7 days by default) while
+    // Monarch pending rows are collected 90 days back. A transaction pending for
+    // longer than the lookback (hotel/car holds, disputed charges) therefore fell
+    // outside the Rogers response and was deleted as "cancelled"; once it settled
+    // it was outside every future window too, so the charge vanished for good.
+    // Extending the source window to the oldest pending date is the same fix
+    // Canada Life and Wealthsimple already apply.
+    let rogersPhase1: FetchPendingResult | null = null;
+    let txFromDate = fromDate;
+
+    try {
+      progressDialog.updateStepStatus(rogersAccountId, 'pendingReconciliation', 'processing', 'Checking pending...');
+      rogersPhase1 = await fetchMonarchPendingTransactions(monarchAccount.id, ROGERSBANK_PENDING_LOOKBACK_DAYS);
+
+      if (rogersPhase1.oldestPendingDate) {
+        const reconRetentionDays = getRetentionSettingsFromAccount(
+          accountService.getAccountData(INTEGRATIONS.ROGERSBANK, rogersAccountId),
+        ).days;
+        const extendedFromDate = computeExtendedFromDate(fromDate, rogersPhase1.oldestPendingDate, reconRetentionDays);
+
+        if (extendedFromDate !== fromDate) {
+          debugLog(`[rogers-upload] Extending transaction fetch from ${fromDate} to ${extendedFromDate} (oldest pending: ${rogersPhase1.oldestPendingDate})`);
+          txFromDate = extendedFromDate;
+        }
+      }
+    } catch (phase1Error) {
+      debugLog('Error during Rogers Bank Phase 1 pending fetch:', phase1Error);
+      // Non-fatal: Phase 2 is skipped below, the rest of the sync continues
+    }
+
     // STEP 2 & 3 COMBINED: Fetch transactions ONCE and use for both balance and transaction upload
     // On first sync, use fullHistory=true to get up to 1000 transactions
     // On regular sync, use fullHistory=false (500 transactions is sufficient)
     const useFullHistory = firstSync;
 
     progressDialog.updateStepStatus(rogersAccountId, 'pendingReconciliation', 'processing', 'Fetching transactions...');
-    const txResult = await fetchRogersBankTransactions(fromDate, toDate, useFullHistory);
+    const txResult = await fetchRogersBankTransactions(txFromDate, toDate, useFullHistory);
 
     // Warn if we hit the API limit on first sync
     if (txResult.truncated && firstSync) {
@@ -943,11 +1019,11 @@ export async function uploadRogersBankToMonarch() {
     // preventing the settled version from being uploaded as a duplicate.
     progressDialog.updateStepStatus(rogersAccountId, 'pendingReconciliation', 'processing', 'Reconciling...');
     try {
-      const lookbackDays = 90; // Rogers Bank lookback for reconciliation
-      const reconciliationResult = await reconcileRogersPendingTransactions(
-        monarchAccount.id,
+      // Phase 2 consumes the Phase 1 results fetched before the transaction fetch,
+      // so the fetch window could be widened to cover the oldest pending row.
+      const reconciliationResult = await resolveRogersReconciliation(
+        rogersPhase1,
         allTransactions,
-        lookbackDays,
       );
 
       // Save settled ref IDs to dedup store so transaction upload skips them

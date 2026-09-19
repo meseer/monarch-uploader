@@ -28,6 +28,9 @@ import {
   hasConfig,
   deleteLegacyKeys,
 } from '../../../src/services/common/configStore';
+import { registerIntegration, clearRegistry } from '../../../src/core/integrationRegistry';
+import { getLookbackForInstitution } from '../../../src/core/utils';
+import mbnaManifest from '../../../src/integrations/mbna/manifest';
 
 describe('configStore', () => {
   let gmStore;
@@ -427,6 +430,94 @@ describe('configStore', () => {
       setAuth('questrade', { token: 'qt' });
       saveConfig('wealthsimple', {});
       expect(getAuth('questrade').token).toBe('qt');
+    });
+  });
+
+  // ============================================
+  // MODULAR INTEGRATIONS (REGISTRY FALLBACK)
+  // ============================================
+
+  describe('modular integrations resolved through the registry', () => {
+    /** Register a modular integration with the minimum the registry requires */
+    const register = (manifest) => registerIntegration({
+      manifest,
+      api: { fetch: jest.fn() },
+      auth: { checkStatus: jest.fn() },
+      injectionPoint: { selectors: [] },
+    });
+
+    afterEach(() => {
+      clearRegistry();
+    });
+
+    it('resolves the config storage key from the integration manifest', () => {
+      register(mbnaManifest);
+      expect(getConfigStorageKey('mbna')).toBe('mbna_config');
+    });
+
+    it('resolves the config storage key for any modular integration, not just mbna', () => {
+      register({
+        id: 'newbank',
+        displayName: 'New Bank',
+        storageKeys: { accountsList: 'newbank_accounts_list', config: 'newbank_config', cache: null },
+      });
+
+      expect(getConfigStorageKey('newbank')).toBe('newbank_config');
+    });
+
+    it('returns null when the integration is not registered', () => {
+      expect(getConfigStorageKey('mbna')).toBeNull();
+    });
+
+    it('returns null when a registered manifest declares no config key', () => {
+      register({
+        id: 'nocfg',
+        displayName: 'No Config',
+        storageKeys: { accountsList: 'nocfg_accounts_list', config: null, cache: null },
+      });
+
+      expect(getConfigStorageKey('nocfg')).toBeNull();
+    });
+
+    it('round-trips a full config through saveConfig/getConfig', () => {
+      register(mbnaManifest);
+
+      expect(saveConfig('mbna', { settings: { lookbackDays: 30 } })).toBe(true);
+      expect(getConfig('mbna')).toEqual({ settings: { lookbackDays: 30 } });
+      expect(gmStore.mbna_config).toBe(JSON.stringify({ settings: { lookbackDays: 30 } }));
+    });
+
+    it('persists auth data for a modular integration', () => {
+      register(mbnaManifest);
+
+      expect(setAuth('mbna', { sessionActive: true })).toBe(true);
+      expect(getAuth('mbna')).toEqual({ sessionActive: true });
+    });
+
+    // Regression: every mbna config write used to return false and be discarded
+    // because configStore only knew the four hardcoded legacy integrations.
+    it('persists an mbna lookbackDays setting to storage', () => {
+      register(mbnaManifest);
+
+      expect(setSetting('mbna', 'lookbackDays', 30)).toBe(true);
+      expect(getSetting('mbna', 'lookbackDays', undefined)).toBe(30);
+    });
+
+    it('makes a saved mbna lookback win over the manifest default', () => {
+      register(mbnaManifest);
+      expect(mbnaManifest.defaultLookbackDays).toBe(7);
+
+      setSetting('mbna', 'lookbackDays', 30);
+
+      expect(getLookbackForInstitution('mbna')).toBe(30);
+    });
+
+    it('persists an mbna category mapping across reads', () => {
+      register(mbnaManifest);
+
+      expect(setCategoryMapping('mbna', 'TIM HORTONS', 'Coffee Shops')).toBe(true);
+      expect(getCategoryMapping('mbna', 'TIM HORTONS')).toBe('Coffee Shops');
+      expect(getCategoryMappings('mbna')).toEqual({ 'TIM HORTONS': 'Coffee Shops' });
     });
   });
 });

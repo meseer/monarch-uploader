@@ -67,6 +67,12 @@ afterEach(() => {
 // Helper to get mocked monarch API
 const getMonarchApi = () => require('../../../src/api/monarch').default;
 
+// An activity that never matches any of the cl-tx IDs used below.
+// Reconciliation refuses to delete anything when the activity list is empty (a
+// failed/partial fetch looks identical to "everything disappeared"), so tests
+// that exercise the deletion path must supply a non-empty, trustworthy list.
+const UNRELATED_ACTIVITY = { Activity: 'Unrelated deposit', Amount: 1 };
+
 // Helper to build a mock Monarch pending transaction
 const makePendingMonarchTx = (id, notes, overrides = {}) => ({
   id,
@@ -88,7 +94,7 @@ describe('reconcileCanadaLifePendingTransactions', () => {
       const monarchApi = getMonarchApi();
       monarchApi.getTagByName.mockResolvedValue(null);
 
-      const result = await reconcileCanadaLifePendingTransactions('monarch-acct-1', [], 90);
+      const result = await reconcileCanadaLifePendingTransactions('monarch-acct-1', [UNRELATED_ACTIVITY], 90);
 
       expect(result.noPendingTag).toBe(true);
       expect(result.success).toBe(true);
@@ -102,7 +108,7 @@ describe('reconcileCanadaLifePendingTransactions', () => {
       monarchApi.getTagByName.mockResolvedValue({ id: 'tag-pending', name: 'Pending' });
       monarchApi.getTransactionsList.mockResolvedValue({ results: [] });
 
-      const result = await reconcileCanadaLifePendingTransactions('monarch-acct-1', [], 90);
+      const result = await reconcileCanadaLifePendingTransactions('monarch-acct-1', [UNRELATED_ACTIVITY], 90);
 
       expect(result.noPendingTransactions).toBe(true);
       expect(result.success).toBe(true);
@@ -164,8 +170,8 @@ describe('reconcileCanadaLifePendingTransactions', () => {
       });
       monarchApi.deleteTransaction.mockResolvedValue({});
 
-      // currentActivities is empty — the activity is gone
-      const result = await reconcileCanadaLifePendingTransactions('monarch-acct-1', [], 90);
+      // The activity is absent from a non-empty, complete activity list — genuinely gone
+      const result = await reconcileCanadaLifePendingTransactions('monarch-acct-1', [UNRELATED_ACTIVITY], 90);
 
       expect(result.cancelled).toBe(1);
       expect(result.failed).toBe(0);
@@ -185,7 +191,7 @@ describe('reconcileCanadaLifePendingTransactions', () => {
       });
       monarchApi.deleteTransaction.mockResolvedValue({});
 
-      const result = await reconcileCanadaLifePendingTransactions('monarch-acct-1', [], 90);
+      const result = await reconcileCanadaLifePendingTransactions('monarch-acct-1', [UNRELATED_ACTIVITY], 90);
 
       expect(result.cancelled).toBe(2);
       expect(monarchApi.deleteTransaction).toHaveBeenCalledTimes(2);
@@ -205,7 +211,7 @@ describe('reconcileCanadaLifePendingTransactions', () => {
         ],
       });
 
-      const result = await reconcileCanadaLifePendingTransactions('monarch-acct-1', [], 90);
+      const result = await reconcileCanadaLifePendingTransactions('monarch-acct-1', [UNRELATED_ACTIVITY], 90);
 
       expect(result.cancelled).toBe(0);
       expect(result.failed).toBe(0);
@@ -220,7 +226,7 @@ describe('reconcileCanadaLifePendingTransactions', () => {
         results: [makePendingMonarchTx('monarch-tx-empty', '')],
       });
 
-      const result = await reconcileCanadaLifePendingTransactions('monarch-acct-1', [], 90);
+      const result = await reconcileCanadaLifePendingTransactions('monarch-acct-1', [UNRELATED_ACTIVITY], 90);
 
       expect(result.cancelled).toBe(0);
       expect(monarchApi.deleteTransaction).not.toHaveBeenCalled();
@@ -234,7 +240,7 @@ describe('reconcileCanadaLifePendingTransactions', () => {
         results: [makePendingMonarchTx('monarch-tx-null', null)],
       });
 
-      const result = await reconcileCanadaLifePendingTransactions('monarch-acct-1', [], 90);
+      const result = await reconcileCanadaLifePendingTransactions('monarch-acct-1', [UNRELATED_ACTIVITY], 90);
 
       expect(result.cancelled).toBe(0);
       expect(monarchApi.deleteTransaction).not.toHaveBeenCalled();
@@ -251,7 +257,7 @@ describe('reconcileCanadaLifePendingTransactions', () => {
       });
       monarchApi.deleteTransaction.mockRejectedValue(new Error('Network error'));
 
-      const result = await reconcileCanadaLifePendingTransactions('monarch-acct-1', [], 90);
+      const result = await reconcileCanadaLifePendingTransactions('monarch-acct-1', [UNRELATED_ACTIVITY], 90);
 
       expect(result.failed).toBe(1);
       expect(result.cancelled).toBe(0);
@@ -272,7 +278,7 @@ describe('reconcileCanadaLifePendingTransactions', () => {
         .mockRejectedValueOnce(new Error('First fails'))
         .mockResolvedValueOnce({});
 
-      const result = await reconcileCanadaLifePendingTransactions('monarch-acct-1', [], 90);
+      const result = await reconcileCanadaLifePendingTransactions('monarch-acct-1', [UNRELATED_ACTIVITY], 90);
 
       expect(result.failed).toBe(1);
       expect(result.cancelled).toBe(1);
@@ -283,7 +289,7 @@ describe('reconcileCanadaLifePendingTransactions', () => {
       const monarchApi = getMonarchApi();
       monarchApi.getTagByName.mockRejectedValue(new Error('Monarch API unavailable'));
 
-      const result = await reconcileCanadaLifePendingTransactions('monarch-acct-1', [], 90);
+      const result = await reconcileCanadaLifePendingTransactions('monarch-acct-1', [UNRELATED_ACTIVITY], 90);
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('Monarch API unavailable');
@@ -291,7 +297,7 @@ describe('reconcileCanadaLifePendingTransactions', () => {
   });
 
   describe('currentActivities edge cases', () => {
-    test('handles null currentActivities gracefully', async () => {
+    test('deletes nothing when currentActivities is null', async () => {
       const monarchApi = getMonarchApi();
 
       monarchApi.getTagByName.mockResolvedValue({ id: 'tag-pending', name: 'Pending' });
@@ -300,13 +306,14 @@ describe('reconcileCanadaLifePendingTransactions', () => {
       });
       monarchApi.deleteTransaction.mockResolvedValue({});
 
-      // Pass null for currentActivities — should treat as empty and delete
       const result = await reconcileCanadaLifePendingTransactions('monarch-acct-1', null, 90);
 
-      expect(result.cancelled).toBe(1);
+      expect(result.cancelled).toBe(0);
+      expect(result.sourceUnavailable).toBe(true);
+      expect(monarchApi.deleteTransaction).not.toHaveBeenCalled();
     });
 
-    test('handles empty currentActivities — all pending transactions deleted', async () => {
+    test('deletes nothing when currentActivities is empty (regression: mass deletion)', async () => {
       const monarchApi = getMonarchApi();
 
       monarchApi.getTagByName.mockResolvedValue({ id: 'tag-pending', name: 'Pending' });
@@ -320,8 +327,31 @@ describe('reconcileCanadaLifePendingTransactions', () => {
 
       const result = await reconcileCanadaLifePendingTransactions('monarch-acct-1', [], 90);
 
-      expect(result.cancelled).toBe(2);
-      expect(result.success).toBe(true);
+      expect(result.cancelled).toBe(0);
+      expect(result.success).toBe(false);
+      expect(result.sourceUnavailable).toBe(true);
+      expect(monarchApi.deleteTransaction).not.toHaveBeenCalled();
+    });
+
+    test('passes sourceDataComplete: false through the wrapper and deletes nothing', async () => {
+      const monarchApi = getMonarchApi();
+
+      monarchApi.getTagByName.mockResolvedValue({ id: 'tag-pending', name: 'Pending' });
+      monarchApi.getTransactionsList.mockResolvedValue({
+        results: [makePendingMonarchTx('monarch-tx-1', 'cl-tx:abcdef1234567890')],
+      });
+      monarchApi.deleteTransaction.mockResolvedValue({});
+
+      const result = await reconcileCanadaLifePendingTransactions(
+        'monarch-acct-1',
+        [UNRELATED_ACTIVITY],
+        90,
+        { sourceDataComplete: false },
+      );
+
+      expect(result.cancelled).toBe(0);
+      expect(result.sourceUnavailable).toBe(true);
+      expect(monarchApi.deleteTransaction).not.toHaveBeenCalled();
     });
   });
 });
@@ -340,7 +370,7 @@ describe('reconcileCanadaLifeFetchedPending', () => {
     const result = await reconcileCanadaLifeFetchedPending(
       pendingTag,
       [makePendingMonarchTx('mtx-1', 'cl-tx:abcdef1234567890')],
-      [], // empty activities — all gone
+      [UNRELATED_ACTIVITY], // non-empty and complete — the pending hash is genuinely gone
     );
 
     expect(result.cancelled).toBe(1);
@@ -370,7 +400,7 @@ describe('reconcileCanadaLifeFetchedPending', () => {
     const result = await reconcileCanadaLifeFetchedPending(
       pendingTag,
       [makePendingMonarchTx('mtx-1', 'No hash here')],
-      [],
+      [UNRELATED_ACTIVITY],
     );
 
     expect(result.cancelled).toBe(0);
@@ -378,7 +408,7 @@ describe('reconcileCanadaLifeFetchedPending', () => {
     expect(monarchApi.deleteTransaction).not.toHaveBeenCalled();
   });
 
-  test('handles null currentActivities gracefully', async () => {
+  test('deletes nothing when currentActivities is null', async () => {
     const monarchApi = getMonarchApi();
     monarchApi.deleteTransaction.mockResolvedValue({});
 
@@ -388,7 +418,9 @@ describe('reconcileCanadaLifeFetchedPending', () => {
       null,
     );
 
-    expect(result.cancelled).toBe(1);
+    expect(result.cancelled).toBe(0);
+    expect(result.sourceUnavailable).toBe(true);
+    expect(monarchApi.deleteTransaction).not.toHaveBeenCalled();
   });
 
   test('counts failed when deleteTransaction throws', async () => {
@@ -398,12 +430,74 @@ describe('reconcileCanadaLifeFetchedPending', () => {
     const result = await reconcileCanadaLifeFetchedPending(
       pendingTag,
       [makePendingMonarchTx('mtx-1', 'cl-tx:abcdef1234567890')],
-      [],
+      [UNRELATED_ACTIVITY],
     );
 
     expect(result.failed).toBe(1);
     expect(result.cancelled).toBe(0);
     expect(result.success).toBe(true);
+  });
+});
+
+// ============================================================
+// Regression: a partial activity fetch must never delete pending rows
+// ============================================================
+
+describe('reconcileCanadaLifeFetchedPending — untrustworthy activity data', () => {
+  const pendingTag = { id: 'tag-pending', name: 'Pending' };
+
+  test('deletes nothing when sourceDataComplete is false (a chunk fetch failed)', async () => {
+    const monarchApi = getMonarchApi();
+    monarchApi.deleteTransaction.mockResolvedValue({});
+
+    const result = await reconcileCanadaLifeFetchedPending(
+      pendingTag,
+      [
+        makePendingMonarchTx('mtx-1', 'cl-tx:aaaa111122223333'),
+        makePendingMonarchTx('mtx-2', 'cl-tx:bbbb444455556666'),
+      ],
+      // A partial list: the surviving chunk returned data, the failed chunk did not
+      [UNRELATED_ACTIVITY],
+      { sourceDataComplete: false },
+    );
+
+    expect(monarchApi.deleteTransaction).not.toHaveBeenCalled();
+    expect(result.cancelled).toBe(0);
+    expect(result.failed).toBe(0);
+    expect(result.success).toBe(false);
+    expect(result.sourceUnavailable).toBe(true);
+    expect(result.error).toBe('Canada Life activity data incomplete — reconciliation skipped');
+  });
+
+  test('still reconciles normally when sourceDataComplete is true', async () => {
+    const monarchApi = getMonarchApi();
+    monarchApi.deleteTransaction.mockResolvedValue({});
+
+    const result = await reconcileCanadaLifeFetchedPending(
+      pendingTag,
+      [makePendingMonarchTx('mtx-1', 'cl-tx:aaaa111122223333')],
+      [UNRELATED_ACTIVITY],
+      { sourceDataComplete: true },
+    );
+
+    expect(monarchApi.deleteTransaction).toHaveBeenCalledWith('mtx-1');
+    expect(result.cancelled).toBe(1);
+    expect(result.sourceUnavailable).toBeUndefined();
+  });
+
+  test('an incomplete fetch with no Monarch pending rows is a no-op, not an error', async () => {
+    const monarchApi = getMonarchApi();
+
+    const result = await reconcileCanadaLifeFetchedPending(
+      pendingTag,
+      [],
+      [],
+      { sourceDataComplete: false },
+    );
+
+    expect(monarchApi.deleteTransaction).not.toHaveBeenCalled();
+    expect(result.success).toBe(true);
+    expect(result.cancelled).toBe(0);
   });
 });
 
@@ -452,5 +546,11 @@ describe('formatReconciliationMessage', () => {
 
   test('handles single failure with correct grammar', () => {
     expect(formatReconciliationMessage({ cancelled: 0, failed: 1 })).toBe('1 failed');
+  });
+
+  test('reports a skipped reconciliation when the activity data was incomplete', () => {
+    expect(formatReconciliationMessage({ sourceUnavailable: true, cancelled: 0, failed: 0 })).toBe(
+      'Skipped — activity data incomplete',
+    );
   });
 });

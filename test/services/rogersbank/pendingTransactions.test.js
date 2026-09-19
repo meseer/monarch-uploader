@@ -67,6 +67,18 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
+// A Rogers transaction whose hash never matches any rb-tx ID used below.
+// Reconciliation refuses to delete anything when the Rogers response is empty (a
+// failed fetch is indistinguishable from "everything was cancelled"), so tests
+// that exercise the deletion path must supply a non-empty response.
+const UNRELATED_ROGERS_TX = {
+  activityStatus: 'PENDING',
+  date: '2026-02-20',
+  amount: { value: '99.99', currency: 'CAD' },
+  merchant: { name: 'UNRELATED MERCHANT', categoryCode: '5999' },
+  cardNumber: '************8584',
+};
+
 // ============================================================
 // Local date extraction from activityId
 // ============================================================
@@ -886,8 +898,9 @@ describe('reconcileRogersPendingTransactions', () => {
 
     monarchApi.deleteTransaction.mockResolvedValue({});
 
-    // Empty Rogers transactions = cancelled
-    const result = await reconcileRogersPendingTransactions('monarch-123', [], 90);
+    // A non-empty Rogers response that does not contain this hash = genuinely
+    // cancelled. An EMPTY response is refused — a failed fetch looks the same.
+    const result = await reconcileRogersPendingTransactions('monarch-123', [UNRELATED_ROGERS_TX], 90);
 
     expect(result.cancelled).toBe(1);
     expect(monarchApi.deleteTransaction).toHaveBeenCalledWith('monarch-tx-1');
@@ -905,7 +918,7 @@ describe('reconcileRogersPendingTransactions', () => {
       }],
     });
 
-    const result = await reconcileRogersPendingTransactions('monarch-123', [], 90);
+    const result = await reconcileRogersPendingTransactions('monarch-123', [UNRELATED_ROGERS_TX], 90);
 
     expect(result.settled).toBe(0);
     expect(result.cancelled).toBe(0);
@@ -926,7 +939,7 @@ describe('reconcileRogersPendingTransactions', () => {
 
     monarchApi.deleteTransaction.mockRejectedValue(new Error('API error'));
 
-    const result = await reconcileRogersPendingTransactions('monarch-123', [], 90);
+    const result = await reconcileRogersPendingTransactions('monarch-123', [UNRELATED_ROGERS_TX], 90);
 
     expect(result.failed).toBe(1);
     expect(result.success).toBe(true); // Overall success despite individual failure

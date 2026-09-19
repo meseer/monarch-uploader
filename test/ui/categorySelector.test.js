@@ -9,6 +9,8 @@ import categorySelector from '../../src/ui/components/categorySelector';
 // Mock all dependencies
 jest.mock('../../src/core/utils', () => ({
   debugLog: jest.fn(),
+  // Real implementation: escaping is what the XSS regression tests assert on
+  escapeHtml: require('../helpers/escapeHtmlMock').realEscapeHtml(),
   stringSimilarity: jest.fn((str1, str2) => {
     // More realistic mock similarity function
     if (str1 === str2) return 1.0;

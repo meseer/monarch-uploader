@@ -32,21 +32,39 @@ export interface TransactionStepResult {
 }
 
 /**
+ * Outcome of the raw Wealthsimple transaction fetch.
+ *
+ * A failed fetch and a genuinely empty feed both produce an empty
+ * `transactions` array, so `fetchFailed` is what tells them apart. Pending
+ * reconciliation deletes Monarch rows it cannot find in this feed, so it MUST
+ * NOT run on a feed that only looks empty because the request failed.
+ */
+export interface RawTransactionsResult {
+  /** Raw transactions returned by Wealthsimple (empty when the fetch failed) */
+  transactions: unknown[];
+  /** True when the Wealthsimple request threw — the empty list is not trustworthy */
+  fetchFailed: boolean;
+  /** Fetch error message, or null on success */
+  error: string | null;
+}
+
+/**
  * Fetch raw Wealthsimple transactions for an account.
  *
- * Fetch failures are non-fatal: an empty array is returned so the sync can
- * continue with the balance/positions steps.
+ * Fetch failures are non-fatal for the sync as a whole (balance/positions still
+ * run), but they are reported via `fetchFailed` so reconciliation can refuse to
+ * treat the empty result as "everything was cancelled".
  *
  * @param accountId - Wealthsimple account ID
  * @param fromDate - Start date (YYYY-MM-DD)
  * @param progressDialog - Progress dialog instance
- * @returns Raw transactions (empty array on failure)
+ * @returns Fetch outcome with the transactions and a failure flag
  */
 export async function fetchRawTransactions(
   accountId: string,
   fromDate: string,
   progressDialog: StepProgressDialog,
-): Promise<unknown[]> {
+): Promise<RawTransactionsResult> {
   progressDialog.updateStepStatus(accountId, 'transactions', 'processing', 'Fetching from WS...');
 
   try {
@@ -54,10 +72,11 @@ export async function fetchRawTransactions(
     const fetchedCount = rawTransactions?.length || 0;
     debugLog(`Fetched ${fetchedCount} raw transactions for account ${accountId}`);
     progressDialog.updateStepStatus(accountId, 'transactions', 'processing', `Fetched ${fetchedCount}`);
-    return rawTransactions || [];
+    return { transactions: rawTransactions || [], fetchFailed: false, error: null };
   } catch (fetchError: unknown) {
     debugLog('Error fetching raw transactions:', fetchError);
-    return [];
+    const message = (fetchError as Error)?.message || 'Failed to fetch Wealthsimple transactions';
+    return { transactions: [], fetchFailed: true, error: message };
   }
 }
 
@@ -92,6 +111,11 @@ function formatTransactionCountMessage(synced: number, skipped: number): string 
  * A null/failed `phase1Result` is reported as an ERROR (not "no pending
  * transactions") so silent Phase 1 failures are visible in the sync report.
  *
+ * A failed Wealthsimple fetch (`sourceFetchFailed`) is likewise reported as an
+ * error and skips Phase 2 entirely: reconciliation deletes Monarch pending rows
+ * that are absent from the feed, and an unavailable feed would delete every one
+ * of them together with the user's categories, notes and splits.
+ *
  * @param params - Step parameters
  * @returns Reconciliation result
  */
@@ -101,6 +125,7 @@ export async function executePendingReconciliationStep({
   phase1Result,
   phase1Error,
   rawTransactions,
+  sourceFetchFailed = false,
   stripStoreNumbers,
   progressDialog,
 }: {
@@ -109,6 +134,8 @@ export async function executePendingReconciliationStep({
   phase1Result: FetchPendingResult | null;
   phase1Error: string | null;
   rawTransactions: unknown[];
+  /** True when the Wealthsimple transaction fetch failed (see `fetchRawTransactions`) */
+  sourceFetchFailed?: boolean;
   stripStoreNumbers: boolean;
   progressDialog: StepProgressDialog;
 }): Promise<ReconciliationResult> {
@@ -120,6 +147,16 @@ export async function executePendingReconciliationStep({
     debugLog(`[ws-sync] Pending reconciliation unavailable for ${accountId}: ${message}`);
     progressDialog.updateStepStatus(accountId, 'pendingReconciliation', 'error', message);
     return { success: false, settled: 0, cancelled: 0, failed: 0, error: message, settledRefIds: [] };
+  }
+
+  // Source feed unavailable — skip rather than read "absent" as "cancelled"
+  if (sourceFetchFailed) {
+    const message = 'Wealthsimple transactions unavailable — skipped';
+    debugLog(`[ws-sync] Skipping pending reconciliation for ${accountId}: source fetch failed`);
+    progressDialog.updateStepStatus(accountId, 'pendingReconciliation', 'error', message);
+    return {
+      success: false, settled: 0, cancelled: 0, failed: 0, error: message, settledRefIds: [], sourceUnavailable: true,
+    };
   }
 
   if (phase1Result.noPendingTag) {

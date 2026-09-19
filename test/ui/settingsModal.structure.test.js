@@ -43,6 +43,7 @@ jest.mock('../../src/core/config', () => ({
 
 jest.mock('../../src/core/utils', () => ({
   debugLog: jest.fn(),
+  escapeHtml: require('../helpers/escapeHtmlMock').realEscapeHtml(),
   getDefaultLookbackDays: jest.fn((institutionType) => {
     switch (institutionType) {
     case 'questrade': return 3;
@@ -112,11 +113,13 @@ jest.mock('../../src/scriptInfo.json', () => ({
   gistUrl: 'https://gist.github.com/meseer/f00fb552c96efeb3eb4e4e1fd520d4e7/raw/monarch-uploader.user.js',
 }), { virtual: true });
 
+// configStore write helpers return a boolean success status; the UI now surfaces
+// a failure instead of toasting success, so the mocks must return true by default.
 jest.mock('../../src/services/common/configStore', () => ({
   getAuth: jest.fn(() => ({})),
-  setSetting: jest.fn(),
+  setSetting: jest.fn(() => true),
   getSetting: jest.fn(() => undefined),
-  saveCategoryMappings: jest.fn(),
+  saveCategoryMappings: jest.fn(() => true),
 }));
 
 jest.mock('../../src/core/integrationCapabilities', () => ({
@@ -688,6 +691,33 @@ describe('Settings Modal Component', () => {
       expect(setSetting).toHaveBeenCalledWith('questrade', 'lookbackDays', 7);
       expect(toast.show).toHaveBeenCalledWith(
         expect.stringContaining('Questrade lookback period set to 7'),
+        'info',
+      );
+    });
+
+    // Regression: a dropped configStore write used to still toast success, which
+    // hid the fact that the lookback period was never persisted.
+    test('should report an error instead of success when the write fails', () => {
+      const { setSetting } = jest.requireMock('../../src/services/common/configStore');
+      setSetting.mockReturnValueOnce(false);
+
+      modal = createSettingsModal();
+
+      const questradeTab = Array.from(modal.querySelectorAll('.settings-tab-button'))
+        .find((btn) => btn.textContent.includes('Questrade'));
+      questradeTab.click();
+
+      const input = modal.querySelector('input[type="number"]');
+      input.value = '7';
+      input.dispatchEvent(new Event('blur'));
+
+      expect(setSetting).toHaveBeenCalledWith('questrade', 'lookbackDays', 7);
+      expect(toast.show).toHaveBeenCalledWith(
+        expect.stringContaining('Could not save the Questrade lookback period'),
+        'error',
+      );
+      expect(toast.show).not.toHaveBeenCalledWith(
+        expect.stringContaining('lookback period set to 7'),
         'info',
       );
     });

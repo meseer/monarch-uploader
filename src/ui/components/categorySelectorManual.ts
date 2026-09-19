@@ -3,7 +3,7 @@
  * Dialog for manually categorizing transactions with no matching rule
  */
 
-import { debugLog } from '../../core/utils';
+import { debugLog, escapeHtml } from '../../core/utils';
 import { addModalKeyboardHandlers } from '../keyboardNavigation';
 import { createModalOverlay } from './categorySelectorUtils';
 
@@ -197,7 +197,7 @@ export function showManualCategorizationDialog(
   if (transaction.type || transaction.subType) {
     quickInfoHtml += `<div style="margin-bottom: 4px;">
       <span style="color: #666;">Type:</span>
-      <span style="font-weight: 500; color: #333;">${transaction.type || 'N/A'} / ${transaction.subType || 'N/A'}</span>
+      <span style="font-weight: 500; color: #333;">${escapeHtml(transaction.type || 'N/A')} / ${escapeHtml(transaction.subType || 'N/A')}</span>
     </div>`;
   }
 
@@ -208,7 +208,7 @@ export function showManualCategorizationDialog(
     const amountColor = amountValue < 0 ? '#dc3545' : '#28a745';
     quickInfoHtml += `<div style="margin-bottom: 4px;">
       <span style="color: #666;">Amount:</span>
-      <span style="font-weight: 500; color: ${amountColor};">$${amountValue.toFixed(2)} ${transaction.currency || 'CAD'}</span>
+      <span style="font-weight: 500; color: ${amountColor};">$${amountValue.toFixed(2)} ${escapeHtml(transaction.currency || 'CAD')}</span>
     </div>`;
   }
 
@@ -218,7 +218,7 @@ export function showManualCategorizationDialog(
     const dateStr = date.toLocaleDateString();
     quickInfoHtml += `<div style="margin-bottom: 4px;">
       <span style="color: #666;">Date:</span>
-      <span style="font-weight: 500; color: #333;">${dateStr}</span>
+      <span style="font-weight: 500; color: #333;">${escapeHtml(dateStr)}</span>
     </div>`;
   }
 
@@ -226,7 +226,7 @@ export function showManualCategorizationDialog(
   if (transaction.unifiedStatus || transaction.status) {
     quickInfoHtml += `<div style="margin-bottom: 4px;">
       <span style="color: #666;">Status:</span>
-      <span style="font-weight: 500; color: #333;">${transaction.unifiedStatus || transaction.status}</span>
+      <span style="font-weight: 500; color: #333;">${escapeHtml(transaction.unifiedStatus || transaction.status)}</span>
     </div>`;
   }
 

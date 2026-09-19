@@ -55,18 +55,52 @@ describe('fetchRawTransactions', () => {
 
     const result = await fetchRawTransactions('acct-1', '2026-01-01', progressDialog);
 
-    expect(result).toBe(txs);
+    expect(result.transactions).toBe(txs);
+    expect(result.fetchFailed).toBe(false);
+    expect(result.error).toBeNull();
     expect(wealthsimpleApi.fetchTransactions).toHaveBeenCalledWith('acct-1', '2026-01-01');
     expect(progressDialog.updateStepStatus).toHaveBeenCalledWith('acct-1', 'transactions', 'processing', 'Fetched 2');
   });
 
-  it('returns an empty array when the fetch fails', async () => {
+  it('flags fetchFailed when the fetch throws, so an empty list is not mistaken for "no transactions"', async () => {
     wealthsimpleApi.fetchTransactions.mockRejectedValue(new Error('network down'));
     const progressDialog = makeProgressDialog();
 
     const result = await fetchRawTransactions('acct-1', '2026-01-01', progressDialog);
 
-    expect(result).toEqual([]);
+    expect(result.transactions).toEqual([]);
+    expect(result.fetchFailed).toBe(true);
+    expect(result.error).toBe('network down');
+  });
+
+  it('distinguishes a genuinely empty feed from a failed fetch', async () => {
+    wealthsimpleApi.fetchTransactions.mockResolvedValue([]);
+    const progressDialog = makeProgressDialog();
+
+    const result = await fetchRawTransactions('acct-1', '2026-01-01', progressDialog);
+
+    expect(result.transactions).toEqual([]);
+    expect(result.fetchFailed).toBe(false);
+  });
+
+  it('falls back to a generic error message when the failure has none', async () => {
+    wealthsimpleApi.fetchTransactions.mockRejectedValue(new Error(''));
+    const progressDialog = makeProgressDialog();
+
+    const result = await fetchRawTransactions('acct-1', '2026-01-01', progressDialog);
+
+    expect(result.fetchFailed).toBe(true);
+    expect(result.error).toBe('Failed to fetch Wealthsimple transactions');
+  });
+
+  it('treats a null API response as an empty, successful fetch', async () => {
+    wealthsimpleApi.fetchTransactions.mockResolvedValue(null);
+    const progressDialog = makeProgressDialog();
+
+    const result = await fetchRawTransactions('acct-1', '2026-01-01', progressDialog);
+
+    expect(result.transactions).toEqual([]);
+    expect(result.fetchFailed).toBe(false);
   });
 });
 
@@ -170,6 +204,51 @@ describe('executePendingReconciliationStep', () => {
 
     expect(result.settled).toBe(1);
     expect(saveReconciledSettledIds).toHaveBeenCalledWith('acct-1', [settledId]);
+  });
+
+  it('skips reconciliation entirely when the Wealthsimple fetch failed', async () => {
+    const progressDialog = makeProgressDialog();
+
+    const result = await executePendingReconciliationStep({
+      ...baseParams,
+      rawTransactions: [],
+      sourceFetchFailed: true,
+      phase1Result: { monarchPendingTransactions: [{ id: 'mtx-1' }], pendingTag },
+      phase1Error: null,
+      progressDialog,
+    });
+
+    // Never reach the phase-2 deletion path on an untrustworthy feed
+    expect(reconcileWealthsimpleFetchedPending).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.sourceUnavailable).toBe(true);
+    expect(result.cancelled).toBe(0);
+    expect(result.error).toBe('Wealthsimple transactions unavailable — skipped');
+    expect(saveReconciledSettledIds).not.toHaveBeenCalled();
+    expect(progressDialog.updateStepStatus).toHaveBeenCalledWith(
+      'acct-1',
+      'pendingReconciliation',
+      'error',
+      'Wealthsimple transactions unavailable — skipped',
+    );
+  });
+
+  it('runs reconciliation normally when the fetch succeeded', async () => {
+    reconcileWealthsimpleFetchedPending.mockResolvedValue({
+      success: true, settled: 0, cancelled: 1, failed: 0, error: null, settledRefIds: [],
+    });
+    const progressDialog = makeProgressDialog();
+
+    const result = await executePendingReconciliationStep({
+      ...baseParams,
+      sourceFetchFailed: false,
+      phase1Result: { monarchPendingTransactions: [{ id: 'mtx-1' }], pendingTag },
+      phase1Error: null,
+      progressDialog,
+    });
+
+    expect(reconcileWealthsimpleFetchedPending).toHaveBeenCalled();
+    expect(result.cancelled).toBe(1);
   });
 
   it('passes the stripStoreNumbers setting through to reconciliation', async () => {

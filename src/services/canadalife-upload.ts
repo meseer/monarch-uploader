@@ -659,7 +659,7 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
       progressDialog.updateStepStatus(accountId, 'pendingReconciliation', 'processing', 'Fetching activities...');
     }
 
-    const rawActivities = await fetchActivitiesForDateRange(canadalifeAccount, activityStartDate, endDate, {
+    const activityFetch = await fetchActivitiesForDateRange(canadalifeAccount, activityStartDate, endDate, {
       onProgress: (chunk, total, count) => {
         if (progressDialog) {
           progressDialog.updateStepStatus(
@@ -672,6 +672,15 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
       },
       signal,
     });
+
+    const rawActivities = activityFetch.activities;
+
+    if (!activityFetch.complete) {
+      debugLog(
+        `[cl-upload] Activity fetch incomplete for ${accountId} — ${activityFetch.failedChunks.length} chunk(s) failed; pending reconciliation will be skipped`,
+        activityFetch.failedChunks,
+      );
+    }
 
     // Check for cancellation
     if (signal?.aborted) {
@@ -688,6 +697,7 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
           phase1Result.pendingTag,
           phase1Result.monarchPendingTransactions,
           rawActivities,
+          { sourceDataComplete: activityFetch.complete },
         );
         const reconciliationMsg = formatReconciliationMessage(reconciliationResult);
         const reconciliationStatus = reconciliationResult.success !== false ? 'success' : 'error';
