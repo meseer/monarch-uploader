@@ -790,9 +790,19 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
     // them, and they were never added to the dedup store either, so nothing would ever
     // re-upload them. Leaving the watermark alone re-fetches the window next sync; the
     // balance re-upload is idempotent and dedup prevents duplicate transactions.
+    // Two independent ways this window can be unsynced, and both must hold the watermark:
+    // the upload failed, or the source fetch came back partial. `activityFetch.complete`
+    // is false when a chunk request failed, which means the transactions in the missing
+    // chunk were never even seen - so they are neither in Monarch nor in the dedup store,
+    // and only a re-fetch of this window can ever recover them.
+    const syncIncomplete = result.transactionUploadFailed || !activityFetch.complete;
+
     if (isAutoUpload) {
-      if (result.transactionUploadFailed) {
-        debugLog(`Not advancing Canada Life sync date for ${accountName}: transaction upload failed, so ${startDate} to ${endDate} will be retried on the next sync`);
+      if (syncIncomplete) {
+        const reason = result.transactionUploadFailed
+          ? 'transaction upload failed'
+          : `activity fetch incomplete (${activityFetch.failedChunks.length} chunk(s) failed)`;
+        debugLog(`Not advancing Canada Life sync date for ${accountName}: ${reason}, so ${startDate} to ${endDate} will be retried on the next sync`);
       } else {
         saveLastUploadDate(accountId, endDate, 'canadalife');
       }
@@ -800,20 +810,22 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
 
     // Clean up legacy storage keys after successful sync using new unified storage
     // This is idempotent - it only deletes keys that exist and is safe to call multiple times.
-    // Skipped when the transaction upload failed so the legacy watermark keys survive
-    // until a sync actually completes.
-    if (!result.transactionUploadFailed) {
+    // Skipped when the sync was incomplete so the legacy watermark keys survive until a
+    // sync actually completes.
+    if (!syncIncomplete) {
       const cleanupResult = accountService.cleanupLegacyStorage(INTEGRATIONS.CANADALIFE, accountId);
       if (cleanupResult.keysDeleted > 0) {
         debugLog(`Cleaned up ${cleanupResult.keysDeleted} legacy storage keys for ${accountName}:`, cleanupResult.keys);
       }
     }
 
-    result.success = !result.transactionUploadFailed;
+    result.success = !syncIncomplete;
     if (result.success) {
       debugLog(`Successfully uploaded ${accountName} balance history and ${result.transactionsUploaded} transactions to Monarch`);
-    } else {
+    } else if (result.transactionUploadFailed) {
       debugLog(`Uploaded ${accountName} balance history, but the transaction upload failed`);
+    } else {
+      debugLog(`Uploaded ${accountName} balance history, but the activity fetch was incomplete`);
     }
     return result;
   } catch (error) {
@@ -972,7 +984,7 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
           stats.success += 1;
         } else {
           stats.failed += 1;
-          progressDialog.updateProgress(accountId, 'error', 'Transaction upload failed - will retry next sync');
+          progressDialog.updateProgress(accountId, 'error', 'Transactions incomplete - will retry next sync');
         }
 
         // Aggregate transaction statistics
@@ -1101,7 +1113,7 @@ export async function uploadCanadaLifeAccountWithDateRange() {
         toast.show(`Successfully uploaded ${selectedAccount.EnglishShortName}!${txSummary}`, 'info');
       } else {
         progressDialog.updateProgress(selectedAccount.agreementId, 'error', 'Transaction upload failed');
-        toast.show(`Uploaded ${selectedAccount.EnglishShortName} balance, but the transaction upload failed. Try again to retry the transactions.`, 'warning');
+        toast.show(`Uploaded ${selectedAccount.EnglishShortName} balance, but the transactions are incomplete. Try again to retry them.`, 'warning');
       }
     } catch (error) {
       // Hide cancel button and show close button when upload fails

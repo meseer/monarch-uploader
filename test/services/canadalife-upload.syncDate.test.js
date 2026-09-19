@@ -140,8 +140,12 @@ const END_DATE = '2024-01-15';
 
 // Single place defining the fetchActivitiesForDateRange return value, so the shape only
 // has to be updated here if the activity fetch contract changes.
-function makeActivityFetchResult() {
-  return [{ id: 'act-1', date: '2024-01-15', amount: 100 }];
+function makeActivityFetchResult({ complete = true, failedChunks = [] } = {}) {
+  return {
+    activities: [{ id: 'act-1', date: '2024-01-15', amount: 100 }],
+    complete,
+    failedChunks,
+  };
 }
 
 function makeProgressDialog() {
@@ -239,7 +243,7 @@ describe('uploadAllCanadaLifeAccountsToMonarch — sync date advancement', () =>
     expect(dialog.updateProgress).toHaveBeenCalledWith(
       ACCOUNT_ID,
       'error',
-      'Transaction upload failed - will retry next sync',
+      'Transactions incomplete - will retry next sync',
     );
   });
 
@@ -290,5 +294,84 @@ describe('uploadAllCanadaLifeAccountsToMonarch — sync date advancement', () =>
     await uploadAllCanadaLifeAccountsToMonarch();
 
     expect(utils.saveLastUploadDate).not.toHaveBeenCalled();
+  });
+});
+
+describe('uploadAllCanadaLifeAccountsToMonarch — incomplete activity fetch', () => {
+  const INCOMPLETE = {
+    complete: false,
+    failedChunks: [{ start: '2024-01-01', end: '2024-01-14', error: 'HTTP 500' }],
+  };
+
+  test('does NOT advance the sync date when a chunk of the activity fetch failed', async () => {
+    clTransactions.fetchActivitiesForDateRange.mockResolvedValue(makeActivityFetchResult(INCOMPLETE));
+
+    await uploadAllCanadaLifeAccountsToMonarch();
+
+    // Transactions in the failed chunk were never fetched, so they are neither in Monarch
+    // nor in the dedup store - only a re-fetch of this window can recover them
+    expect(utils.saveLastUploadDate).not.toHaveBeenCalled();
+  });
+
+  test('does NOT advance the sync date even when the upload of the partial data succeeded', async () => {
+    clTransactions.fetchActivitiesForDateRange.mockResolvedValue(makeActivityFetchResult(INCOMPLETE));
+    monarchApi.uploadTransactions.mockResolvedValue(true);
+
+    await uploadAllCanadaLifeAccountsToMonarch();
+
+    expect(monarchApi.uploadTransactions).toHaveBeenCalled();
+    expect(utils.saveLastUploadDate).not.toHaveBeenCalled();
+  });
+
+  test('reports the account as failed when the activity fetch was incomplete', async () => {
+    clTransactions.fetchActivitiesForDateRange.mockResolvedValue(makeActivityFetchResult(INCOMPLETE));
+
+    await uploadAllCanadaLifeAccountsToMonarch();
+
+    expect(dialog.showSummary).toHaveBeenCalledWith(
+      expect.objectContaining({ success: 0, failed: 1 }),
+    );
+  });
+
+  test('does not clean up legacy storage when the activity fetch was incomplete', async () => {
+    clTransactions.fetchActivitiesForDateRange.mockResolvedValue(makeActivityFetchResult(INCOMPLETE));
+
+    await uploadAllCanadaLifeAccountsToMonarch();
+
+    expect(accountService.cleanupLegacyStorage).not.toHaveBeenCalled();
+  });
+
+  test('advances the sync date when the fetch reports itself complete', async () => {
+    clTransactions.fetchActivitiesForDateRange.mockResolvedValue(
+      makeActivityFetchResult({ complete: true, failedChunks: [] }),
+    );
+
+    await uploadAllCanadaLifeAccountsToMonarch();
+
+    expect(utils.saveLastUploadDate).toHaveBeenCalledWith(ACCOUNT_ID, END_DATE, 'canadalife');
+  });
+});
+
+describe('uploadAllCanadaLifeAccountsToMonarch — cancelled mid-fetch', () => {
+  test('does NOT advance the sync date when the activity fetch is aborted', async () => {
+    // Cancellation surfaces as a throw rather than complete: false, so it has to unwind
+    // without ever reaching the watermark write
+    clTransactions.fetchActivitiesForDateRange.mockRejectedValue(
+      new Error('Operation cancelled by user'),
+    );
+
+    await uploadAllCanadaLifeAccountsToMonarch();
+
+    expect(utils.saveLastUploadDate).not.toHaveBeenCalled();
+  });
+
+  test('does not clean up legacy storage when the activity fetch is aborted', async () => {
+    clTransactions.fetchActivitiesForDateRange.mockRejectedValue(
+      new Error('Operation cancelled by user'),
+    );
+
+    await uploadAllCanadaLifeAccountsToMonarch();
+
+    expect(accountService.cleanupLegacyStorage).not.toHaveBeenCalled();
   });
 });
