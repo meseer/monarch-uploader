@@ -520,8 +520,17 @@ describe('Wealthsimple Transaction Service - Cash', () => {
       });
       monarchApi.deleteTransaction.mockResolvedValue(true);
 
-      // Empty Wealthsimple transactions - the pending transaction was cancelled
-      const wealthsimpleTransactions = [];
+      // A non-empty feed that simply does not contain this id — a genuine
+      // cancellation. (An EMPTY feed is refused: it is indistinguishable from a
+      // failed fetch, and deleting on that basis is unrecoverable.)
+      const wealthsimpleTransactions = [
+        {
+          externalCanonicalId: 'credit-transaction-some-other-charge',
+          status: 'authorized',
+          amount: 12.0,
+          amountSign: 'negative',
+        },
+      ];
 
       const result = await reconcilePendingTransactions(
         mockMonarchAccountId,
@@ -622,7 +631,14 @@ describe('Wealthsimple Transaction Service - Cash', () => {
         ],
       });
 
-      const wealthsimpleTransactions = [];
+      const wealthsimpleTransactions = [
+        {
+          externalCanonicalId: 'credit-transaction-some-other-charge',
+          status: 'authorized',
+          amount: 12.0,
+          amountSign: 'negative',
+        },
+      ];
 
       const result = await reconcilePendingTransactions(
         mockMonarchAccountId,

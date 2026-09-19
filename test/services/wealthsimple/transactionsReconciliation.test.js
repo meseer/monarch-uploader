@@ -720,7 +720,8 @@ describe('reconcileWealthsimpleFetchedPending', () => {
       const result = await reconcileWealthsimpleFetchedPending(
         pendingTag,
         [makeMonarchTx('mtx-1', 'ws-tx:credit-transaction-abc123')],
-        [],
+        // A non-empty feed: the pending id is genuinely absent, not merely unfetched
+        [makeWsTx('credit-transaction-unrelated')],
         'CREDIT_CARD',
       );
 
@@ -750,7 +751,7 @@ describe('reconcileWealthsimpleFetchedPending', () => {
       const result = await reconcileWealthsimpleFetchedPending(
         pendingTag,
         [makeMonarchTx('mtx-1', 'ws-tx:credit-transaction-abc123')],
-        [],
+        [makeWsTx('credit-transaction-unrelated')],
         'CREDIT_CARD',
       );
 

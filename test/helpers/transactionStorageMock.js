@@ -32,7 +32,10 @@ function buildTransactionStorageMock(overrides = {}) {
     getTransactionIdsFromArray: jest.fn(() => new Set()),
     // Prepends, matching the newest-first storage invariant
     mergeAndRetainTransactions: jest.fn((existing, newRefs) => [...newRefs, ...(existing || [])]),
-    getRetentionSettingsFromAccount: jest.fn(() => ({ retentionDays: 91, retentionCount: 1000 })),
+    // Shape must match the real `RetentionSettings` ({ days, count }) — the mock
+    // previously returned { retentionDays, retentionCount }, so every caller read
+    // `undefined` and retention-window logic was silently untested.
+    getRetentionSettingsFromAccount: jest.fn(() => ({ days: 91, count: 1000 })),
     migrateLegacyTransactions: jest.fn((list) => list || []),
 
     // ── Real: pure ordering logic, must not drift ──

@@ -11,9 +11,16 @@ import { INVESTMENT_TRANSACTION_RULES } from './transactionsInvestment';
 import { CASH_TRANSACTION_RULES, formatSpendNotes, getForeignCurrencyCode } from './transactionRules';
 import { convertToLocalDate, processCreditCardTransaction } from './transactionsHelpers';
 import { resolveWsTransactionByPendingId } from './transactionIdMatching';
-import { cleanSystemNotesFromNotes, updateSettledDividendNotes, mergeSettledNotes } from './settledNotes';
+import {
+  cleanSystemNotesFromNotes, updateSettledDividendNotes, mergeSettledNotes, WS_TX_ID_BODY_PATTERN,
+} from './settledNotes';
 import { computeSettledTagIds } from '../common/pendingReconciliation';
-import type { WealthsimpleTransaction, ExtendedOrder, SpendDetails } from './transactionRulesHelpers';
+import {
+  getTransactionId,
+  type WealthsimpleTransaction,
+  type ExtendedOrder,
+  type SpendDetails,
+} from './transactionRulesHelpers';
 
 /**
  * Custom prefix for Wealthsimple transaction IDs stored in Monarch notes
@@ -30,9 +37,15 @@ export function formatTransactionIdForNotes(transactionId: string | null | undef
 }
 
 /**
- * Regex pattern to extract Wealthsimple transaction ID from notes
+ * Regex pattern to extract Wealthsimple transaction ID from notes.
+ *
+ * The id body deliberately allows colons and dots (see `WS_TX_ID_BODY_PATTERN`)
+ * so `canonicalId` values and `generated:{accountId}:{datetime}:...` fallback ids
+ * survive the notes round trip. A narrower `[\w-]+` body truncated them at the
+ * first colon, yielding the literal id `"generated"`, which never matched the
+ * Wealthsimple feed and got the Monarch row deleted as "cancelled".
  */
-const WEALTHSIMPLE_TX_ID_PATTERN = /ws-tx:([\w-]+)|credit-transaction-[\w-]+/;
+const WEALTHSIMPLE_TX_ID_PATTERN = new RegExp(`ws-tx:(${WS_TX_ID_BODY_PATTERN})|credit-transaction-[\\w-]+`);
 
 /**
  * Extract Wealthsimple transaction ID from Monarch transaction notes
@@ -563,12 +576,19 @@ export interface ReconciliationResult {
   settledRefIds: string[];
   noPendingTag?: boolean;
   noPendingTransactions?: boolean;
+  /**
+   * True when reconciliation was skipped because the Wealthsimple feed could not
+   * be trusted. No Monarch transaction was deleted.
+   */
+  sourceUnavailable?: boolean;
 }
 
 /** Options for reconcileWealthsimpleFetchedPending */
 export interface WealthsimpleReconcileOptions {
   /** Account setting controlling merchant name cleanup (default: true) */
   stripStoreNumbers?: boolean;
+  /** True when the Wealthsimple transaction fetch failed — forces the skip path */
+  sourceFetchFailed?: boolean;
 }
 
 /** Build an empty reconciliation result */
@@ -738,6 +758,42 @@ async function settleMonarchTransaction({
 }
 
 /**
+ * Build the id → transaction lookup map used to resolve Monarch pending rows.
+ *
+ * Keyed by the SAME identity function the upload path writes into the notes
+ * (`getTransactionId`), plus `externalCanonicalId` and `canonicalId` as aliases.
+ * Keying on `externalCanonicalId` alone made every row whose marker came from a
+ * fallback id unmatchable — CASH-account interest transactions (which
+ * Wealthsimple returns with a null `externalCanonicalId`) were uploaded, deleted
+ * as "cancelled" on the next sync, and never re-uploaded.
+ *
+ * @param wealthsimpleTransactions - Current Wealthsimple transactions
+ * @returns Map of every known id for a transaction → that transaction
+ */
+function buildWsTransactionLookup(
+  wealthsimpleTransactions: Record<string, unknown>[],
+): Map<string, Record<string, unknown>> {
+  const lookup = new Map<string, Record<string, unknown>>();
+
+  for (const tx of wealthsimpleTransactions) {
+    const keys = [
+      tx.externalCanonicalId,
+      tx.canonicalId,
+      getTransactionId(tx as unknown as WealthsimpleTransaction),
+    ];
+
+    for (const key of keys) {
+      // First writer wins: an alias must never displace an already-mapped id
+      if (typeof key === 'string' && key && !lookup.has(key)) {
+        lookup.set(key, tx);
+      }
+    }
+  }
+
+  return lookup;
+}
+
+/**
  * Phase 2: Reconcile pre-fetched Monarch pending transactions against Wealthsimple data.
  *
  * Uses externalCanonicalId-based matching (not hash-based like the common service).
@@ -745,11 +801,17 @@ async function settleMonarchTransaction({
  * settles, lookups fall back to a conservative pending → settled variant match
  * (see `transactionIdMatching`).
  *
+ * Refuses to run when the Wealthsimple feed cannot be trusted — a failed fetch
+ * or an empty feed while Monarch still holds pending rows. Both look identical to
+ * "every pending transaction was cancelled", and acting on that assumption
+ * hard-deletes real transactions along with the user's categories, notes, splits
+ * and tags. Skipping costs one sync; deleting is unrecoverable.
+ *
  * @param pendingTag - Monarch "Pending" tag object
  * @param monarchPendingTransactions - Pre-fetched Monarch transactions with Pending tag
  * @param wealthsimpleTransactions - Current WS transactions (with extended date range)
  * @param accountType - WS account type for status determination
- * @param options - Reconciliation options (merchant cleanup settings)
+ * @param options - Reconciliation options (merchant cleanup, source-fetch status)
  * @returns Reconciliation result including settledRefIds
  */
 export async function reconcileWealthsimpleFetchedPending(
@@ -769,16 +831,20 @@ export async function reconcileWealthsimpleFetchedPending(
       accountType,
     });
 
-    const wsTransactionMap = new Map<string, Record<string, unknown>>();
-    if (wealthsimpleTransactions && Array.isArray(wealthsimpleTransactions)) {
-      wealthsimpleTransactions.forEach((tx) => {
-        if (tx.externalCanonicalId) {
-          wsTransactionMap.set(tx.externalCanonicalId as string, tx);
-        }
-      });
+    const sourceTransactions = Array.isArray(wealthsimpleTransactions) ? wealthsimpleTransactions : [];
+    const feedUntrustworthy = options.sourceFetchFailed === true || sourceTransactions.length === 0;
+
+    if (feedUntrustworthy && monarchPendingTransactions.length > 0) {
+      const error = 'Wealthsimple transactions unavailable — reconciliation skipped';
+      debugLog(
+        `[ws-reconciliation:phase2] ${error} (fetchFailed=${options.sourceFetchFailed === true}, feedSize=${sourceTransactions.length}, monarchPending=${monarchPendingTransactions.length})`,
+      );
+      return { ...result, success: false, error, sourceUnavailable: true };
     }
 
-    debugLog(`[ws-reconciliation:phase2] Lookup map: ${wsTransactionMap.size} WS transaction(s)`);
+    const wsTransactionMap = buildWsTransactionLookup(sourceTransactions);
+
+    debugLog(`[ws-reconciliation:phase2] Lookup map: ${wsTransactionMap.size} key(s)`);
 
     for (const monarchTx of monarchPendingTransactions) {
       try {
@@ -895,6 +961,10 @@ export async function reconcilePendingTransactions(
 export function formatReconciliationMessage(result: ReconciliationResult): string {
   if (result.noPendingTag || result.noPendingTransactions) {
     return 'No pending transactions';
+  }
+
+  if (result.sourceUnavailable) {
+    return 'Skipped — Wealthsimple data unavailable';
   }
 
   const parts: string[] = [];

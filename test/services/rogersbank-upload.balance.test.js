@@ -200,6 +200,9 @@ jest.mock('../../src/services/rogersbank/pendingTransactions', () => ({
   reconcileRogersPendingTransactions: jest.fn(async () => ({
     success: true, settled: 0, cancelled: 0, failed: 0, noPendingTransactions: true,
   })),
+  reconcileRogersFetchedPending: jest.fn(async () => ({
+    success: true, settled: 0, cancelled: 0, failed: 0, settledRefIds: [], noPendingTransactions: true,
+  })),
   formatReconciliationMessage: jest.fn(() => 'No pending transactions'),
   formatPendingIdForNotes: jest.fn((id) => id || ''),
 }));

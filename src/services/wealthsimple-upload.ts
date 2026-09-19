@@ -606,10 +606,15 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(
 
     // Step 1: Fetch raw Wealthsimple transactions (using potentially extended actualFromDate)
     let rawWealthsimpleTransactions: unknown[] = [];
+    // A failed fetch also yields an empty list, so reconciliation must be told
+    // which of the two happened before it deletes anything.
+    let sourceFetchFailed = false;
     const supportsTransactions = WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType);
 
     if (supportsTransactions) {
-      rawWealthsimpleTransactions = await fetchRawTransactions(account.id, actualFromDate, progressDialog);
+      const rawFetch = await fetchRawTransactions(account.id, actualFromDate, progressDialog);
+      rawWealthsimpleTransactions = rawFetch.transactions;
+      sourceFetchFailed = rawFetch.fetchFailed;
     }
 
     // Step 2: Pending reconciliation (Phase 2) — MUST run BEFORE the transaction upload
@@ -623,6 +628,7 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(
           phase1Result,
           phase1Error,
           rawTransactions: rawWealthsimpleTransactions,
+          sourceFetchFailed,
           stripStoreNumbers: consolidatedAccount.stripStoreNumbers !== false,
           progressDialog,
         });

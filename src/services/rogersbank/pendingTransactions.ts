@@ -10,9 +10,9 @@
  * ID format: rb-tx:{first 16 chars of SHA-256 hex hash}
  */
 
-import { debugLog, formatDate } from '../../core/utils';
+import { debugLog } from '../../core/utils';
 import monarchApi from '../../api/monarch';
-import { computeSettledTagIds } from '../common/pendingReconciliation';
+import { computeSettledTagIds, fetchMonarchPendingTransactions } from '../common/pendingReconciliation';
 import { shouldRetainTxIdInNotes, selectTagsByIds } from '../../core/markerTags';
 
 /**
@@ -333,72 +333,54 @@ export async function separateAndDeduplicateTransactions(transactions) {
 }
 
 /**
- * Reconcile pending transactions for a Rogers Bank account
+ * Phase 2: Reconcile pre-fetched Monarch pending transactions against Rogers data.
  *
- * This function:
- * 1. Finds all Monarch transactions with "Pending" tag for the account
- * 2. For each pending Monarch transaction, extracts the rb-tx:{hash} from notes
- * 3. Checks the current Rogers Bank transactions:
- *    - Hash matches a settled transaction → settled: update amount, remove Pending tag, clean notes
- *    - Hash matches a still-pending transaction → no action
- *    - Hash not found → cancelled: delete from Monarch
+ * For each pending Monarch transaction, extracts the rb-tx:{hash} from notes and
+ * checks the current Rogers Bank transactions:
+ * - Hash matches a settled transaction → settled: update amount, remove Pending tag, clean notes
+ * - Hash matches a still-pending transaction → no action
+ * - Hash not found → cancelled: delete from Monarch
  *
- * @param {string} monarchAccountId - Monarch account ID
+ * "Hash not found" is only a safe conclusion when the Rogers response actually
+ * covers the pending transaction's date. The caller extends the source fetch
+ * window back to the oldest Monarch pending date for exactly that reason (see
+ * `rogersbank-upload`), and an empty response is refused outright below: a failed
+ * fetch also yields zero transactions, and deleting real charges on that basis is
+ * unrecoverable.
+ *
+ * @param {Object} pendingTag - Monarch "Pending" tag object
+ * @param {Array} monarchPendingTransactions - Pre-fetched Monarch transactions with the Pending tag
  * @param {Array} allTransactions - All current Rogers Bank transactions from API
- * @param {number} lookbackDays - Number of days to look back for pending transactions
  * @returns {Promise<Object>} Reconciliation result { success, settled, cancelled, failed, error, settledRefIds }
  */
-export async function reconcileRogersPendingTransactions(monarchAccountId, allTransactions, lookbackDays) {
+export async function reconcileRogersFetchedPending(pendingTag, monarchPendingTransactions, allTransactions) {
   const result = { success: true, settled: 0, cancelled: 0, failed: 0, error: null, settledRefIds: [] };
 
   try {
-    debugLog('Starting Rogers Bank pending transaction reconciliation', {
-      monarchAccountId,
-      transactionsLoaded: allTransactions?.length || 0,
-      lookbackDays,
+    const pendingMonarchTransactions = monarchPendingTransactions || [];
+    const sourceTransactions = Array.isArray(allTransactions) ? allTransactions : [];
+
+    debugLog('Starting Rogers Bank pending transaction reconciliation (phase 2)', {
+      monarchPendingCount: pendingMonarchTransactions.length,
+      transactionsLoaded: sourceTransactions.length,
     });
-
-    // Step 1: Get the "Pending" tag from Monarch
-    const pendingTag = await monarchApi.getTagByName('Pending');
-
-    if (!pendingTag) {
-      debugLog('No "Pending" tag found in Monarch, skipping reconciliation');
-      return { ...result, noPendingTag: true };
-    }
-
-    // Step 2: Calculate date range
-    const today = new Date();
-    const startDate = new Date(today);
-    startDate.setDate(startDate.getDate() - lookbackDays);
-
-    // End date: 1 year in the future (handles user-modified dates)
-    const endDate = new Date(today);
-    endDate.setFullYear(endDate.getFullYear() + 1);
-
-    const startDateStr = formatDate(startDate);
-    const endDateStr = formatDate(endDate);
-
-    debugLog(`Searching for pending transactions from ${startDateStr} to ${endDateStr}`);
-
-    // Step 3: Fetch all Monarch transactions with Pending tag for this account
-    const pendingTransactionsResult = await monarchApi.getTransactionsList({
-      accountIds: [monarchAccountId],
-      tags: [pendingTag.id],
-      startDate: startDateStr,
-      endDate: endDateStr,
-    });
-
-    const pendingMonarchTransactions = pendingTransactionsResult.results || [];
 
     if (pendingMonarchTransactions.length === 0) {
       debugLog('No pending transactions found in Monarch for this account');
       return { ...result, noPendingTransactions: true };
     }
 
-    debugLog(`Found ${pendingMonarchTransactions.length} pending transaction(s) in Monarch to reconcile`);
+    // Source data unavailable — never read "absent" as "cancelled"
+    if (sourceTransactions.length === 0) {
+      const error = 'Rogers Bank transactions unavailable — reconciliation skipped';
+      debugLog(`${error} (monarchPending=${pendingMonarchTransactions.length})`);
+      return {
+        ...result, success: false, error, sourceUnavailable: true,
+      };
+    }
 
     // Step 4: Build hash ID maps for all current Rogers transactions
-    const { settledIdMap, pendingIdMap } = await separateAndDeduplicateTransactions(allTransactions || []);
+    const { settledIdMap, pendingIdMap } = await separateAndDeduplicateTransactions(sourceTransactions);
 
     debugLog(`Reconciliation lookup: ${settledIdMap.size} settled hashes, ${pendingIdMap.size} pending hashes`);
 
@@ -427,11 +409,12 @@ export async function reconcileRogersPendingTransactions(monarchAccountId, allTr
           const settledAmount = -(parseFloat(settledTx.amount?.value) || 0);
 
           // Remove Pending tag, preserving any tags the user applied while pending
-          const remainingTagIds = computeSettledTagIds(monarchTx.tags, pendingTag.id);
+          const existingTags = monarchTx.tags as Array<{ id: string; name?: string }> | undefined;
+          const remainingTagIds = computeSettledTagIds(existingTags, pendingTag.id);
 
           // Retain the rb-tx hash while any OTHER marker tag still needs it to
           // find this transaction (e.g. an outstanding owner update).
-          const retainTxId = shouldRetainTxIdInNotes(selectTagsByIds(monarchTx.tags, remainingTagIds));
+          const retainTxId = shouldRetainTxIdInNotes(selectTagsByIds(existingTags, remainingTagIds));
 
           // Clean the notes - remove pending ID and pending FX info, keep user notes
           let cleanedNotes = retainTxId ? notes : cleanPendingIdFromNotes(notes);
@@ -528,6 +511,45 @@ export async function reconcileRogersPendingTransactions(monarchAccountId, allTr
 }
 
 /**
+ * Convenience wrapper: Reconcile pending transactions for a Rogers Bank account.
+ *
+ * Combines Phase 1 (shared `fetchMonarchPendingTransactions`) and Phase 2 in a
+ * single call. The upload service calls the two phases separately so it can
+ * extend the Rogers fetch window to cover the oldest Monarch pending date before
+ * Phase 2 runs.
+ *
+ * @param {string} monarchAccountId - Monarch account ID
+ * @param {Array} allTransactions - All current Rogers Bank transactions from API
+ * @param {number} lookbackDays - Number of days to look back for pending transactions
+ * @returns {Promise<Object>} Reconciliation result { success, settled, cancelled, failed, error, settledRefIds }
+ */
+export async function reconcileRogersPendingTransactions(monarchAccountId, allTransactions, lookbackDays) {
+  const result = { success: true, settled: 0, cancelled: 0, failed: 0, error: null, settledRefIds: [] };
+
+  try {
+    const phase1 = await fetchMonarchPendingTransactions(monarchAccountId, lookbackDays);
+
+    if (phase1.noPendingTag) {
+      debugLog('No "Pending" tag found in Monarch, skipping reconciliation');
+      return { ...result, noPendingTag: true };
+    }
+
+    if (phase1.noPendingTransactions || phase1.monarchPendingTransactions.length === 0) {
+      return { ...result, noPendingTransactions: true };
+    }
+
+    return await reconcileRogersFetchedPending(
+      phase1.pendingTag,
+      phase1.monarchPendingTransactions,
+      allTransactions,
+    );
+  } catch (error) {
+    debugLog('Error during Rogers Bank pending transaction reconciliation:', error);
+    return { ...result, success: false, error: error.message };
+  }
+}
+
+/**
  * Format reconciliation result message for progress dialog
  * @param {Object} result - Reconciliation result from reconcileRogersPendingTransactions
  * @returns {string} Formatted message
@@ -535,6 +557,10 @@ export async function reconcileRogersPendingTransactions(monarchAccountId, allTr
 export function formatReconciliationMessage(result) {
   if (result.noPendingTag || result.noPendingTransactions) {
     return 'No pending transactions';
+  }
+
+  if (result.sourceUnavailable) {
+    return 'Skipped — Rogers Bank data unavailable';
   }
 
   const parts = [];
