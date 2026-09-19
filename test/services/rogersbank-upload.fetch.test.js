@@ -40,6 +40,9 @@ jest.mock('../../src/core/utils', () => ({
   calculateFromDateWithLookback: jest.fn(),
   saveLastUploadDate: jest.fn(),
   getLastUpdateDate: jest.fn(),
+  // Default: no extension. Individual tests override it to assert the pending
+  // window widening.
+  computeExtendedFromDate: jest.fn((currentFromDate) => currentFromDate),
 }));
 
 jest.mock('../../src/core/config', () => ({
@@ -200,8 +203,22 @@ jest.mock('../../src/services/rogersbank/pendingTransactions', () => ({
   reconcileRogersPendingTransactions: jest.fn(async () => ({
     success: true, settled: 0, cancelled: 0, failed: 0, noPendingTransactions: true,
   })),
+  reconcileRogersFetchedPending: jest.fn(async () => ({
+    success: true, settled: 0, cancelled: 0, failed: 0, settledRefIds: [], noPendingTransactions: true,
+  })),
   formatReconciliationMessage: jest.fn(() => 'No pending transactions'),
   formatPendingIdForNotes: jest.fn((id) => id || ''),
+}));
+
+// Shared Phase 1 (Monarch pending read). Default: no Pending tag, so
+// reconciliation is a no-op and the fetch window is not extended.
+jest.mock('../../src/services/common/pendingReconciliation', () => ({
+  fetchMonarchPendingTransactions: jest.fn(async () => ({
+    pendingTag: null,
+    monarchPendingTransactions: [],
+    oldestPendingDate: null,
+    noPendingTag: true,
+  })),
 }));
 
 // Mock GM functions
@@ -589,6 +606,163 @@ describe('Rogers Bank Upload Service - Fetch API, Progress, Edge Cases, invertBa
 
       expect(result.success).toBe(false);
       expect(result.message).toContain('Unexpected end of JSON input');
+    });
+  });
+
+  // Regression: a pending transaction that ages past the Rogers fetch window used
+  // to be absent from the response and deleted as "cancelled", then never
+  // re-uploaded because it was outside every future window too. Phase 1 now runs
+  // first so the fetch window can be widened to reach the oldest pending row.
+  describe('uploadRogersBankToMonarch - pending reconciliation window', () => {
+    const setupSuccessfulSync = () => {
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+
+      globalThis.GM_getValue.mockImplementation((key) => {
+        if (key.includes('rogersbank_account_')) {
+          return JSON.stringify({ id: 'monarch123', displayName: 'Rogers Card' });
+        }
+        if (key.includes('rogersbank_last_upload_date_')) {
+          return '2024-01-10';
+        }
+        return null;
+      });
+
+      // Not a first sync: fromDate comes from the lookback calculation
+      jest.requireMock('../../src/core/utils').getLastUpdateDate.mockReturnValue('2024-01-10');
+      calculateFromDateWithLookback.mockReturnValue('2024-01-08');
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -500, creditLimit: 5000, openedDate: '2023-01-01' });
+      monarchApi.uploadBalance.mockResolvedValue(true);
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [] });
+      applyCategoryMapping.mockReturnValue('Uncategorized');
+      convertTransactionsToMonarchCSV.mockReturnValue('csv,data');
+      monarchApi.uploadTransactions.mockResolvedValue(true);
+
+      const capturedUrls = [];
+      global.fetch.mockImplementation((url) => {
+        capturedUrls.push(url);
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            activitySummary: {
+              totalCount: 1,
+              activities: [{
+                referenceNumber: 'REF1',
+                activityStatus: 'APPROVED',
+                transactionAmount: -50.0,
+                description: 'Test',
+                activityDate: '2024-01-10',
+              }],
+            },
+          }),
+        });
+      });
+      return capturedUrls;
+    };
+
+    test('extends the transaction fetch window back to the oldest Monarch pending date', async () => {
+      const { fetchMonarchPendingTransactions } = jest.requireMock('../../src/services/common/pendingReconciliation');
+      const { computeExtendedFromDate } = jest.requireMock('../../src/core/utils');
+
+      fetchMonarchPendingTransactions.mockResolvedValue({
+        pendingTag: { id: 'tag-pending', name: 'Pending' },
+        monarchPendingTransactions: [{ id: 'mtx-old', notes: 'rb-tx:0000111122223333' }],
+        oldestPendingDate: '2023-11-20',
+      });
+      computeExtendedFromDate.mockReturnValue('2023-11-20');
+
+      const capturedUrls = setupSuccessfulSync();
+
+      await uploadRogersBankToMonarch();
+
+      // Phase 1 ran before the Rogers fetch and its oldest pending date was used
+      expect(computeExtendedFromDate).toHaveBeenCalledWith('2024-01-08', '2023-11-20', expect.any(Number));
+      expect(capturedUrls).toHaveLength(1);
+      expect(capturedUrls[0]).toContain('fromDate=2023-11-20');
+      expect(capturedUrls[0]).not.toContain('fromDate=2024-01-08');
+    });
+
+    test('leaves the window alone when no extension is needed', async () => {
+      const { fetchMonarchPendingTransactions } = jest.requireMock('../../src/services/common/pendingReconciliation');
+      const { computeExtendedFromDate } = jest.requireMock('../../src/core/utils');
+
+      fetchMonarchPendingTransactions.mockResolvedValue({
+        pendingTag: { id: 'tag-pending', name: 'Pending' },
+        monarchPendingTransactions: [{ id: 'mtx-1', notes: 'rb-tx:0000111122223333' }],
+        oldestPendingDate: '2024-01-09',
+      });
+      // The oldest pending date is already inside the window
+      computeExtendedFromDate.mockReturnValue('2024-01-08');
+
+      const capturedUrls = setupSuccessfulSync();
+
+      await uploadRogersBankToMonarch();
+
+      expect(capturedUrls[0]).toContain('fromDate=2024-01-08');
+    });
+
+    test('hands the pre-fetched Phase 1 data to Phase 2 instead of re-reading Monarch', async () => {
+      const { fetchMonarchPendingTransactions } = jest.requireMock('../../src/services/common/pendingReconciliation');
+      const { reconcileRogersFetchedPending } = jest.requireMock('../../src/services/rogersbank/pendingTransactions');
+      const pendingTag = { id: 'tag-pending', name: 'Pending' };
+      const monarchPending = [{ id: 'mtx-old', notes: 'rb-tx:0000111122223333' }];
+
+      fetchMonarchPendingTransactions.mockResolvedValue({
+        pendingTag,
+        monarchPendingTransactions: monarchPending,
+        oldestPendingDate: '2023-11-20',
+      });
+
+      setupSuccessfulSync();
+
+      await uploadRogersBankToMonarch();
+
+      expect(fetchMonarchPendingTransactions).toHaveBeenCalledTimes(1);
+      expect(reconcileRogersFetchedPending).toHaveBeenCalledWith(
+        pendingTag,
+        monarchPending,
+        expect.any(Array),
+      );
+    });
+
+    test('skips reconciliation without throwing when the Monarch pending read fails', async () => {
+      const { fetchMonarchPendingTransactions } = jest.requireMock('../../src/services/common/pendingReconciliation');
+      const { reconcileRogersFetchedPending } = jest.requireMock('../../src/services/rogersbank/pendingTransactions');
+
+      fetchMonarchPendingTransactions.mockRejectedValue(new Error('Monarch unavailable'));
+
+      const capturedUrls = setupSuccessfulSync();
+
+      const result = await uploadRogersBankToMonarch();
+
+      // The sync still completes; only reconciliation is skipped
+      expect(result.success).toBe(true);
+      expect(capturedUrls[0]).toContain('fromDate=2024-01-08');
+      expect(reconcileRogersFetchedPending).not.toHaveBeenCalled();
+    });
+
+    test('skips Phase 2 when Monarch has no Pending tag', async () => {
+      const { fetchMonarchPendingTransactions } = jest.requireMock('../../src/services/common/pendingReconciliation');
+      const { reconcileRogersFetchedPending } = jest.requireMock('../../src/services/rogersbank/pendingTransactions');
+
+      fetchMonarchPendingTransactions.mockResolvedValue({
+        pendingTag: null,
+        monarchPendingTransactions: [],
+        oldestPendingDate: null,
+        noPendingTag: true,
+      });
+
+      setupSuccessfulSync();
+
+      await uploadRogersBankToMonarch();
+
+      expect(reconcileRogersFetchedPending).not.toHaveBeenCalled();
     });
   });
 

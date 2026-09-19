@@ -13,6 +13,20 @@
  */
 
 /**
+ * Character class matching the body of a `ws-tx:` marker id.
+ *
+ * Wealthsimple ids are not limited to `[\w-]`: `canonicalId` and the
+ * `generated:{accountId}:{datetime}:...` fallback both contain colons and dots.
+ * A `[\w-]+` body stopped at the first colon, so the marker round-tripped as the
+ * literal id `"generated"` and never matched the feed again.
+ *
+ * The marker is written on its own line with no spaces, so anything up to
+ * whitespace belongs to the id. `|` and `,` stay excluded because older notes
+ * used them as separators between markers.
+ */
+export const WS_TX_ID_BODY_PATTERN = '[^\\s|,]+';
+
+/**
  * Remove Wealthsimple system notes (transaction ID) from notes.
  * Preserves any user-added notes (memo, technical details).
  *
@@ -26,8 +40,8 @@ export function cleanSystemNotesFromNotes(notes: string | null | undefined): str
 
   let cleaned = notes;
 
-  cleaned = cleaned.replace(/\w+\s*\/\s*ws-tx:[\w-]+/g, '');
-  cleaned = cleaned.replace(/ws-tx:[\w-]+/g, '');
+  cleaned = cleaned.replace(new RegExp(`\\w+\\s*/\\s*ws-tx:${WS_TX_ID_BODY_PATTERN}`, 'g'), '');
+  cleaned = cleaned.replace(new RegExp(`ws-tx:${WS_TX_ID_BODY_PATTERN}`, 'g'), '');
   cleaned = cleaned.replace(/\w+\s*\/\s*credit-transaction-[\w-]+/g, '');
   cleaned = cleaned.replace(/credit-transaction-[\w-]+/g, '');
 

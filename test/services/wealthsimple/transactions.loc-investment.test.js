@@ -1355,8 +1355,18 @@ describe('Wealthsimple Transaction Service - LoC & Investment', () => {
       });
       monarchApi.deleteTransaction.mockResolvedValue(true);
 
-      // Transaction not in Wealthsimple data - was cancelled
-      const wealthsimpleTransactions = [];
+      // Transaction not in a non-empty Wealthsimple feed - genuinely cancelled.
+      // (An empty feed is refused, since a failed fetch looks identical.)
+      const wealthsimpleTransactions = [
+        {
+          externalCanonicalId: 'order-unrelated-still-open',
+          status: 'posted',
+          type: 'DIY_BUY',
+          subType: 'MARKET_ORDER',
+          amount: 10,
+          amountSign: 'negative',
+        },
+      ];
 
       const result = await reconcilePendingTransactions(
         mockMonarchAccountId,

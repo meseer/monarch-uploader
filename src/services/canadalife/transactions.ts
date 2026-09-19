@@ -238,14 +238,43 @@ export function generateDateChunks(startDate, endDate) {
  * @param {Object} options - Options for fetching
  * @param {Function} options.onProgress - Progress callback (chunkIndex, totalChunks, chunkActivities)
  * @param {AbortSignal} options.signal - Abort signal for cancellation
- * @returns {Promise<Array>} Array of all activities in the date range
+ * @returns {Promise<FetchActivitiesResult>} Activities plus a completeness signal
  */
 interface FetchActivitiesOptions {
   onProgress?: (chunkIndex: number, totalChunks: number, chunkActivities: number) => void;
   signal?: AbortSignal;
 }
 
-export async function fetchActivitiesForDateRange(account, startDate: string, endDate: string, options: FetchActivitiesOptions = {}) {
+/** A date range whose activity fetch failed */
+export interface FailedActivityChunk {
+  start: string;
+  end: string;
+  error: string;
+}
+
+/**
+ * Outcome of an activity fetch.
+ *
+ * `complete` is false when any chunk request failed, which makes `activities` a
+ * partial view of the account. Reconciliation deletes Monarch pending rows that
+ * are absent from this list, so it must never treat a partial list as
+ * authoritative — one transient 500 would otherwise delete live pending
+ * contributions.
+ */
+export interface FetchActivitiesResult {
+  activities: Array<Record<string, unknown>>;
+  /** False when at least one chunk failed — `activities` is incomplete */
+  complete: boolean;
+  /** The chunks that failed (empty when `complete` is true) */
+  failedChunks: FailedActivityChunk[];
+}
+
+export async function fetchActivitiesForDateRange(
+  account,
+  startDate: string,
+  endDate: string,
+  options: FetchActivitiesOptions = {},
+): Promise<FetchActivitiesResult> {
   const { onProgress, signal } = options;
 
   // Generate date chunks (max 1 year each)
@@ -259,6 +288,7 @@ export async function fetchActivitiesForDateRange(account, startDate: string, en
 
   const allActivities = [];
   const seenHashes = new Set();
+  const failedChunks: FailedActivityChunk[] = [];
 
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
@@ -294,13 +324,24 @@ export async function fetchActivitiesForDateRange(account, startDate: string, en
       }
     } catch (error) {
       debugLog(`Error fetching chunk ${i + 1}:`, error);
+      // Recorded, not just toasted: the caller has to know the list is partial
+      // before it uses "absent from this list" as grounds for deletion.
+      failedChunks.push({
+        start: chunk.start,
+        end: chunk.end,
+        error: (error as Error)?.message || 'Unknown error',
+      });
       toast.show(`Warning: Could not fetch activities for ${chunk.start} to ${chunk.end}`, 'warning');
     }
   }
 
-  debugLog(`Total activities fetched: ${allActivities.length} (after deduplication)`);
+  const complete = failedChunks.length === 0;
 
-  return allActivities;
+  debugLog(
+    `Total activities fetched: ${allActivities.length} (after deduplication), complete: ${complete}, failed chunks: ${failedChunks.length}`,
+  );
+
+  return { activities: allActivities, complete, failedChunks };
 }
 
 /**
@@ -384,7 +425,7 @@ export async function fetchAndProcessTransactions(account, startDate: string, en
   debugLog(`Processing transactions for ${accountName} from ${startDate} to ${endDate}`);
 
   // Fetch all activities for the date range
-  const activities = await fetchActivitiesForDateRange(account, startDate, endDate, {
+  const fetchResult = await fetchActivitiesForDateRange(account, startDate, endDate, {
     onProgress: (chunk, total, count) => {
       if (onProgress) {
         onProgress(`Fetching activities (${chunk}/${total}): ${count} found`);
@@ -393,7 +434,7 @@ export async function fetchAndProcessTransactions(account, startDate: string, en
     signal,
   });
 
-  return processActivities(activities, accountName, { uploadedTransactionIds, includePendingTransactions });
+  return processActivities(fetchResult.activities, accountName, { uploadedTransactionIds, includePendingTransactions });
 }
 
 export default {

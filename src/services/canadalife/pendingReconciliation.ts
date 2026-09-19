@@ -43,17 +43,36 @@ const CL_TX_ID_PREFIX = 'cl-tx';
  *    - If hash found in current activities → still pending, no action
  *    - If hash not found → activity gone (settled or cancelled) → delete from Monarch
  *
+ * Refuses to run when the activity data cannot be trusted — a partial fetch
+ * (`options.sourceDataComplete === false`, i.e. at least one chunk request
+ * failed) or an empty activity list while Monarch still holds pending rows. Both
+ * are indistinguishable from "every pending activity disappeared", and acting on
+ * that assumption deletes live pending contributions permanently.
+ *
  * @param pendingTag - Monarch "Pending" tag object
  * @param monarchPendingTransactions - Pre-fetched Monarch transactions with Pending tag
  * @param currentActivities - Raw activities currently returned by Canada Life API
- * @returns Result: { success, cancelled, failed, error }
+ * @param options - Reconciliation options (activity-fetch completeness)
+ * @returns Result: { success, cancelled, failed, error, sourceUnavailable? }
  */
+export interface CanadaLifeReconcileOptions {
+  /** False when the activity fetch was partial (a chunk request failed) */
+  sourceDataComplete?: boolean;
+}
+
 export async function reconcileCanadaLifeFetchedPending(
   pendingTag: { id: string; name: string },
   monarchPendingTransactions: Array<Record<string, unknown>>,
   currentActivities: unknown[],
+  options: CanadaLifeReconcileOptions = {},
 ) {
-  const result = {
+  const result: {
+    success: boolean;
+    cancelled: number;
+    failed: number;
+    error: string | null;
+    sourceUnavailable?: boolean;
+  } = {
     success: true, cancelled: 0, failed: 0, error: null,
   };
 
@@ -61,7 +80,21 @@ export async function reconcileCanadaLifeFetchedPending(
     debugLog('[cl-reconciliation:phase2] Starting reconciliation', {
       monarchPendingCount: monarchPendingTransactions.length,
       currentActivitiesCount: currentActivities?.length || 0,
+      sourceDataComplete: options.sourceDataComplete !== false,
     });
+
+    const activities = Array.isArray(currentActivities) ? currentActivities : [];
+    const dataUntrustworthy = options.sourceDataComplete === false || activities.length === 0;
+
+    if (dataUntrustworthy && monarchPendingTransactions.length > 0) {
+      const error = 'Canada Life activity data incomplete — reconciliation skipped';
+      debugLog(
+        `[cl-reconciliation:phase2] ${error} (complete=${options.sourceDataComplete !== false}, activities=${activities.length}, monarchPending=${monarchPendingTransactions.length})`,
+      );
+      return {
+        ...result, success: false, error, sourceUnavailable: true,
+      };
+    }
 
     // Build set of current activity hashes from Canada Life API
     const currentActivityIds = new Set();
@@ -127,12 +160,14 @@ export async function reconcileCanadaLifeFetchedPending(
  * @param {string} monarchAccountId - Monarch account ID
  * @param {Array} currentActivities - Raw activities currently returned by Canada Life API
  * @param {number} lookbackDays - Days to look back for pending transactions (default: 90)
+ * @param {Object} options - Reconciliation options (activity-fetch completeness)
  * @returns {Promise<Object>} Result: { success, cancelled, failed, error, noPendingTag?, noPendingTransactions? }
  */
 export async function reconcileCanadaLifePendingTransactions(
   monarchAccountId,
   currentActivities,
   lookbackDays = 90,
+  options: CanadaLifeReconcileOptions = {},
 ) {
   const emptyResult = {
     success: true, cancelled: 0, failed: 0, error: null,
@@ -154,6 +189,7 @@ export async function reconcileCanadaLifePendingTransactions(
       phase1.pendingTag!,
       phase1.monarchPendingTransactions,
       currentActivities,
+      options,
     );
   } catch (error) {
     debugLog('[cl-reconciliation] Error:', error);
@@ -169,6 +205,10 @@ export async function reconcileCanadaLifePendingTransactions(
 export function formatReconciliationMessage(result) {
   if (result.noPendingTag || result.noPendingTransactions) {
     return 'No pending transactions';
+  }
+
+  if (result.sourceUnavailable) {
+    return 'Skipped — activity data incomplete';
   }
 
   const parts = [];
