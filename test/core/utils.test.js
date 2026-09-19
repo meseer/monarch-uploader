@@ -501,7 +501,7 @@ describe('Utility Functions', () => {
       const accountService = require('../../src/services/common/accountService').default;
       accountService.getAccountData.mockReturnValueOnce({ lastSyncDate: '2024-01-15' });
 
-      // configStore returns undefined ’ getLookbackForInstitution falls through to default
+      // configStore returns undefined â†’ getLookbackForInstitution falls through to default
       const { getSetting: getSetting2 } = require('../../src/services/common/configStore');
       getSetting2.mockImplementation(() => undefined);
       global.GM_getValue.mockImplementation((key, defaultValue) => defaultValue);

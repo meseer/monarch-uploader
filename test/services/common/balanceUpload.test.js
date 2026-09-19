@@ -368,7 +368,7 @@ describe('Balance Upload Service', () => {
       });
 
       expect(result.success).toBe(true);
-      // Should be ~366 days (Jan 15 2025 ’ Jan 15 2026), NOT "5 days"
+      // Should be ~366 days (Jan 15 2025 â†’ Jan 15 2026), NOT "5 days"
       expect(result.message).toBe('366 days');
       expect(mockProgressDialog.updateStepStatus).toHaveBeenCalledWith(
         'acc-1', 'balance', 'success', '366 days',
