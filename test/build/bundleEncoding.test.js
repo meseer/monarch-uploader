@@ -5,8 +5,10 @@
  * `@charset` key and the script is fetched from a raw gist URL, so any consumer
  * in that delivery chain that guesses Latin-1 instead of UTF-8 turns every
  * multi-byte character into one U+FFFD per byte. That is what made the sync
- * progress dialog render the three-byte status icon '⟳' (e2 9f b3) as three
- * replacement characters.
+ * progress dialog render its three-byte in-progress status icon as three
+ * replacement characters. (That icon was U+27F3 at the time; it is now U+21BB,
+ * swapped because U+27F3 was missing from the system UI font and fell back to a
+ * symbol font that drew it far smaller than the other status icons.)
  *
  * `ascii_only: true` in the Terser format options escapes every non-ASCII
  * character as \uXXXX, which makes the bundle immune to the consumer's charset
@@ -125,13 +127,24 @@ describe('built userscript encoding', () => {
     it('escapes non-ASCII characters as \\uXXXX rather than dropping them', () => {
       // Guards against a "fix" that merely deletes the icons instead of escaping
       // them: the progress dialog processing icon must survive, escaped.
-      expect(text.toLowerCase()).toContain('\\u27f3');
+      expect(text.toLowerCase()).toContain('\\u21bb');
       expect(text).toMatch(/\\u[0-9a-fA-F]{4}/);
     });
 
-    it('still carries the status icons the progress dialog renders', () => {
-      // '✗' error icon and '○' pending icon, in escaped form.
+    it('still carries every status icon the progress dialog renders', () => {
+      // All four `getStepIcon` glyphs, in escaped form: '↻' processing,
+      // '✓' success, '✗' error, '○' pending/skipped.
+      //
+      // Scope note: this asserts presence bundle-wide, which is the right scope
+      // for an *encoding* guard but makes two of the four non-exclusive --
+      // '✓' and '✗' also appear in settingsModalAccountCards, so those two
+      // would survive the progress dialog losing them. U+21BB and U+25CB are
+      // currently unique to progressDialog and so are the load-bearing ones
+      // here. Glyph ownership per component is pinned in
+      // test/ui/progressDialog.statusIcons.test.js instead.
       const lowered = text.toLowerCase();
+      expect(lowered).toContain('\\u21bb');
+      expect(lowered).toContain('\\u2713');
       expect(lowered).toContain('\\u2717');
       expect(lowered).toContain('\\u25cb');
     });
