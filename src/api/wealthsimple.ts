@@ -381,32 +381,42 @@ export async function makeGraphQLQuery(operationName: string, query: string, var
         referer: 'https://my.wealthsimple.com/app/home',
       },
       data: JSON.stringify(requestBody),
+      // The outer try/catch is a settlement guarantee, not error handling. This
+      // handler runs asynchronously, outside the Promise executor's synchronous
+      // flow, so a throw that escapes it settles nothing: the promise hangs
+      // forever and so does every awaiting caller. The inner catch already covers
+      // the parse; this covers everything else — a throwing `clearTokenData`, an
+      // `errors` entry that is not shaped as expected.
       onload: (response) => {
-        if (response.status === 401) {
-          debugLog('Wealthsimple token expired (401)');
-          clearTokenData();
-          reject(new Error('Auth token expired. Please refresh the page.'));
-        } else if (response.status === 404) {
-          reject(new Error(`Resource not found: ${operationName}`));
-        } else if (response.status >= 500) {
-          reject(new Error('Server error. Please try again later.'));
-        } else if (response.status >= 200 && response.status < 300) {
-          try {
-            const data = response.responseText ? JSON.parse(response.responseText) : {};
+        try {
+          if (response.status === 401) {
+            debugLog('Wealthsimple token expired (401)');
+            clearTokenData();
+            reject(new Error('Auth token expired. Please refresh the page.'));
+          } else if (response.status === 404) {
+            reject(new Error(`Resource not found: ${operationName}`));
+          } else if (response.status >= 500) {
+            reject(new Error('Server error. Please try again later.'));
+          } else if (response.status >= 200 && response.status < 300) {
+            try {
+              const data = response.responseText ? JSON.parse(response.responseText) : {};
 
-            // Check for GraphQL errors
-            if (data.errors && data.errors.length > 0) {
-              const errorMessage = data.errors.map((e) => e.message).join(', ');
-              debugLog('GraphQL errors:', data.errors);
-              reject(new Error(`GraphQL Error: ${errorMessage}`));
-            } else {
-              resolve(data.data);
+              // Check for GraphQL errors
+              if (data.errors && data.errors.length > 0) {
+                const errorMessage = data.errors.map((e) => e.message).join(', ');
+                debugLog('GraphQL errors:', data.errors);
+                reject(new Error(`GraphQL Error: ${errorMessage}`));
+              } else {
+                resolve(data.data);
+              }
+            } catch (error) {
+              reject(new Error(`Failed to parse response: ${(error as Error).message}`));
             }
-          } catch (error) {
-            reject(new Error(`Failed to parse response: ${(error as Error).message}`));
+          } else {
+            reject(new Error(`API Error: Received status ${response.status}`));
           }
-        } else {
-          reject(new Error(`API Error: Received status ${response.status}`));
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error(String(error)));
         }
       },
       onerror: (error) => {
@@ -438,21 +448,27 @@ async function validateToken(): Promise<any> {
       headers: {
         authorization: `Bearer ${authStatus.token}`,
       },
+      // See the settlement-guarantee note on makeGraphQLQuery's onload: a throw
+      // that escapes this handler leaves the promise permanently unsettled.
       onload: (response) => {
-        if (response.status === 200) {
-          try {
-            const data = JSON.parse(response.responseText);
-            debugLog('Token validation successful:', data);
-            resolve(data);
-          } catch (error) {
-            reject(new Error(`Failed to parse token info: ${(error as Error).message}`));
+        try {
+          if (response.status === 200) {
+            try {
+              const data = JSON.parse(response.responseText);
+              debugLog('Token validation successful:', data);
+              resolve(data);
+            } catch (error) {
+              reject(new Error(`Failed to parse token info: ${(error as Error).message}`));
+            }
+          } else if (response.status === 401) {
+            debugLog('Token validation failed (401)');
+            clearTokenData();
+            reject(new Error('Token is invalid or expired'));
+          } else {
+            reject(new Error(`Token validation failed: ${response.status}`));
           }
-        } else if (response.status === 401) {
-          debugLog('Token validation failed (401)');
-          clearTokenData();
-          reject(new Error('Token is invalid or expired'));
-        } else {
-          reject(new Error(`Token validation failed: ${response.status}`));
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error(String(error)));
         }
       },
       onerror: (error) => {
