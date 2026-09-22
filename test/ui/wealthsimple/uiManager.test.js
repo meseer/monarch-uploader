@@ -277,10 +277,13 @@ describe('Wealthsimple UI Injection Points', () => {
       const combinedSelector = WEALTHSIMPLE_UI.INJECTION_POINTS.map((ip) =>
         ip.selector.startsWith('last:') ? ip.selector.slice(5) : ip.selector,
       ).join(', ');
-      expect(combinedSelector).toBe(
-        '[role="radiogroup"][aria-label="Holdings or watchlist"], '
-        + '[data-testid="holdings-dashboard-link"], .kOjAGq, .bZQXKE',
-      );
+      expect(combinedSelector).not.toContain('last:');
+      expect(combinedSelector.split(', ')).toHaveLength(WEALTHSIMPLE_UI.INJECTION_POINTS.length);
+      expect(combinedSelector).toContain('[role="radiogroup"][aria-label="Holdings or watchlist"]');
+      expect(combinedSelector).toContain('.kOjAGq');
+      // The combined string is only used for debug logging, but it must stay a
+      // queryable selector list so it can be pasted into devtools as-is.
+      expect(() => document.querySelectorAll(combinedSelector)).not.toThrow();
     });
   });
 });

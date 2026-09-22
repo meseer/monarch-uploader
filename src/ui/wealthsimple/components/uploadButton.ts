@@ -63,10 +63,10 @@ function createWealthsimpleButton(text: string, onClick: (() => void) | null, op
   const button = document.createElement('button');
   button.textContent = text;
   button.style.cssText = `
-    background-color: ${options.color || COLORS.WEALTHSIMPLE_BRAND};
-    color: white;
+    background-color: ${options.color || `var(--mu-ws-button-bg, ${COLORS.WEALTHSIMPLE_BRAND})`};
+    color: ${options.color ? 'white' : 'var(--mu-ws-button-text, white)'};
     border: none;
-    border-radius: 4px;
+    border-radius: 12px;
     padding: 10px 16px;
     margin: 5px 0;
     font-size: 14px;

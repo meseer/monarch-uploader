@@ -138,7 +138,11 @@ async function createUIContainer(
   debugLog('Creating UI container...');
   container = document.createElement('div');
   container.id = 'wealthsimple-balance-uploader-container';
-  container.style.cssText = `position: relative; padding: 16px; background-color: var(--mu-bg-primary, #ffffff); border: 1px solid var(--mu-border, #e5e5e5); border-radius: 8px; font-family: "Wealthsimple Sans", sans-serif; font-size: 14px; color: var(--mu-text-primary, ${COLORS.WEALTHSIMPLE_BRAND});`;
+  // Mirrors Wealthsimple's own nested-card treatment: their radius token, a
+  // gradient-clipped hairline border, and their card shadow. The two
+  // background-clip/origin values pair with the two gradients the dark theme
+  // puts in --mu-ws-card-bg-image (light mode uses a plain border instead).
+  container.style.cssText = `position: relative; margin-bottom: 12px; padding: 16px; background-color: var(--mu-ws-card-bg, rgb(249, 249, 249)); background-image: var(--mu-ws-card-bg-image, none); background-clip: padding-box, border-box; background-origin: padding-box, border-box; border: 1px solid var(--mu-ws-card-border-color, rgb(255, 255, 255)); border-radius: var(--mint-card-nested-radius, 16px); box-shadow: var(--mu-ws-card-shadow, rgba(0, 0, 0, 0.05) 0px 8px 24px); overflow: hidden; font-family: "Wealthsimple Sans", sans-serif; font-size: 14px; color: var(--mu-text-primary, ${COLORS.WEALTHSIMPLE_BRAND});`;
 
   const header = document.createElement('div');
   header.id = 'wealthsimple-uploader-header';

@@ -50,6 +50,32 @@ const HOLDINGS_CARD_HTML = `
   </div>
 `;
 
+/**
+ * Single account page quick-actions block, trimmed to the nesting that matters:
+ *
+ * #account-actions                    <- UI goes before this, as a sibling
+ *   .sc-1ho0ogy-1
+ *     button[aria-label=Add money]    <- anchor
+ *     button[aria-label=Transfer money]
+ *   .sc-8v5wit-0 (Interac, bill pay, ...)
+ *   a[aria-label=Find an ATM]
+ */
+const ACCOUNT_ACTIONS_HTML = `
+  <div id="main">
+    <div id="account-header"></div>
+    <div data-fs-privacy-rule="unmask" class="sc-11fh42v-0 sc-pllw75-0 fjlvcv gwSOE sc-1ho0ogy-0 evIKZU" id="account-actions">
+      <div class="sc-11fh42v-0 sc-1ho0ogy-1 cKldvq cIsaKW">
+        <button type="button" role="button" aria-label="Add money" class="sc-1ho0ogy-2 Zwtsy"><p>Add money</p></button>
+        <button type="button" role="button" aria-label="Transfer money" class="sc-1ho0ogy-2 Zwtsy"><p>Transfer money</p></button>
+      </div>
+      <div class="sc-11fh42v-0 sc-8v5wit-0 cKldvq bvdGWN">
+        <button type="button" role="button" aria-label="Pay a bill" class="sc-8v5wit-1 fMTemu"></button>
+      </div>
+      <a href="https://maps.example/atm" aria-label="Find an ATM" class="sc-klmq9n-1 fakagj"></a>
+    </div>
+  </div>
+`;
+
 describe('Wealthsimple injection point resolution', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
@@ -151,6 +177,56 @@ describe('Wealthsimple injection point resolution', () => {
       document.body.innerHTML = HOLDINGS_CARD_HTML;
 
       expect(getTargetContainer(document.getElementById('holdings-card'), 'teleport')).toBeNull();
+    });
+  });
+
+  describe('single account page', () => {
+    test('resolves the quick actions block from the Add money anchor', () => {
+      document.body.innerHTML = ACCOUNT_ACTIONS_HTML;
+
+      const result = findInjectionPoint();
+
+      expect(result).not.toBeNull();
+      expect(result.element).toBe(document.getElementById('account-actions'));
+      expect(result.insertMethod).toBe('insertBefore');
+      expect(result.selector).toBe('button[aria-label="Add money"]');
+    });
+
+    test('falls back to the Transfer money anchor when deposits are unavailable', () => {
+      document.body.innerHTML = ACCOUNT_ACTIONS_HTML;
+      document.querySelector('button[aria-label="Add money"]').remove();
+
+      const result = findInjectionPoint();
+
+      expect(result.element).toBe(document.getElementById('account-actions'));
+      expect(result.selector).toBe('button[aria-label="Transfer money"]');
+    });
+
+    test('inserting into the resolved target places the UI above the actions block', () => {
+      document.body.innerHTML = ACCOUNT_ACTIONS_HTML;
+      const { element, insertMethod } = findInjectionPoint();
+      const target = getTargetContainer(element, insertMethod);
+
+      const actions = document.getElementById('account-actions');
+      expect(target.container).toBe(actions.parentNode);
+      expect(target.referenceNode).toBe(actions);
+
+      const ui = document.createElement('div');
+      ui.id = 'wealthsimple-balance-uploader-container';
+      target.container.insertBefore(ui, target.referenceNode);
+
+      const main = document.getElementById('main');
+      expect(main.children[0]).toBe(document.getElementById('account-header'));
+      expect(main.children[1]).toBe(ui);
+      expect(main.children[2]).toBe(actions);
+    });
+
+    test('holdings anchors take priority when an account page also renders holdings', () => {
+      document.body.innerHTML = HOLDINGS_CARD_HTML + ACCOUNT_ACTIONS_HTML;
+
+      const result = findInjectionPoint();
+
+      expect(result.selector).toBe('[role="radiogroup"][aria-label="Holdings or watchlist"]');
     });
   });
 });
