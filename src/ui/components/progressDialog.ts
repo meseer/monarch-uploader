@@ -258,11 +258,27 @@ function formatCollapsedBalanceSummary(balanceChangeData: BalanceChangeData): { 
 
 /**
  * Get status icon for a step
+ *
+ * Every glyph here must exist in the page's UI font. A codepoint the UI font
+ * lacks is resolved by font fallback to whatever symbol font the platform has,
+ * and that font's glyph is not drawn to the same optical metrics as its
+ * siblings -- so one icon in the set renders visibly smaller than the rest even
+ * though all four share a span and a font-size.
+ *
+ * That is why 'processing' is U+21BB and not the more decorative U+27F3
+ * CLOCKWISE GAPPED CIRCLE ARROW. U+27F3 lives in Supplemental Arrows-B and is
+ * absent from the macOS system UI font (SF Pro), so it fell back to Apple
+ * Symbols and drew 0.43em tall against the 0.79em U+25CB it replaces in the
+ * account row -- a ~45% drop, which is what a user reported as "smaller". The
+ * Arrows-block U+21BB is present in SF Pro at 0.83em, matching the set.
+ *
+ * Do not swap any of these for an emoji with a U+FE0F variation selector: that
+ * invites colour-emoji rendering and a fresh set of platform inconsistencies.
  */
 function getStepIcon(status: string): string {
   switch (status) {
   case 'processing':
-    return '⟳';
+    return '↻';
   case 'success':
     return '✓';
   case 'error':
