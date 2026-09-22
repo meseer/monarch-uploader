@@ -30,10 +30,27 @@ describe('Wealthsimple UI Injection Points', () => {
       });
     });
 
-    test('first injection point should be last:.kOjAGq with prepend method', () => {
+    test('first injection point should anchor on the holdings toggle with prepend method', () => {
       const firstPoint = WEALTHSIMPLE_UI.INJECTION_POINTS[0];
-      expect(firstPoint.selector).toBe('last:.kOjAGq');
+      expect(firstPoint.selector).toBe('[role="radiogroup"][aria-label="Holdings or watchlist"]');
       expect(firstPoint.insertMethod).toBe('prepend');
+      expect(firstPoint.ancestorLevels).toBe(5);
+    });
+
+    test('ancestorLevels should be a positive integer when present', () => {
+      WEALTHSIMPLE_UI.INJECTION_POINTS.forEach((point) => {
+        if (point.ancestorLevels !== undefined) {
+          expect(Number.isInteger(point.ancestorLevels)).toBe(true);
+          expect(point.ancestorLevels).toBeGreaterThan(0);
+        }
+      });
+    });
+
+    test('attribute-anchored injection points should be valid CSS selectors', () => {
+      WEALTHSIMPLE_UI.INJECTION_POINTS.forEach((point) => {
+        const cssSelector = point.selector.startsWith('last:') ? point.selector.slice(5) : point.selector;
+        expect(() => document.querySelector(cssSelector)).not.toThrow();
+      });
     });
   });
 
@@ -54,8 +71,10 @@ describe('Wealthsimple UI Injection Points', () => {
       document.body.appendChild(last);
 
       // 'last:.kOjAGq' should resolve to the last element
-      const selector = WEALTHSIMPLE_UI.INJECTION_POINTS[0].selector; // 'last:.kOjAGq'
-      expect(selector.startsWith('last:')).toBe(true);
+      const selector = WEALTHSIMPLE_UI.INJECTION_POINTS
+        .map((ip) => ip.selector)
+        .find((s) => s.startsWith('last:'));
+      expect(selector).toBe('last:.kOjAGq');
       const cssSelector = selector.slice(5);
       const all = document.querySelectorAll(cssSelector);
       const found = all.length > 0 ? all[all.length - 1] : null;
@@ -258,7 +277,10 @@ describe('Wealthsimple UI Injection Points', () => {
       const combinedSelector = WEALTHSIMPLE_UI.INJECTION_POINTS.map((ip) =>
         ip.selector.startsWith('last:') ? ip.selector.slice(5) : ip.selector,
       ).join(', ');
-      expect(combinedSelector).toBe('.kOjAGq, .bZQXKE');
+      expect(combinedSelector).toBe(
+        '[role="radiogroup"][aria-label="Holdings or watchlist"], '
+        + '[data-testid="holdings-dashboard-link"], .kOjAGq, .bZQXKE',
+      );
     });
   });
 });

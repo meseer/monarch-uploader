@@ -20,6 +20,8 @@ import { createVersionBadge } from '../components/versionBadge';
 interface InjectionPointConfig {
   selector: string;
   insertMethod: string;
+  /** Parent hops from the matched anchor to the element the insert method applies to */
+  ancestorLevels?: number;
 }
 
 interface InjectionPointResult {
@@ -46,18 +48,38 @@ function resolveElement(selector: string): Element | null {
   return document.querySelector(selector);
 }
 
-function findInjectionPoint(): InjectionPointResult | null {
+/**
+ * Climbs `levels` parent elements from an anchor. Returns null if the walk runs
+ * past the document body, which means the page structure no longer matches what
+ * the injection point expects.
+ */
+function climbToAncestor(anchor: Element, levels: number): Element | null {
+  let current: Element | null = anchor;
+  for (let hop = 0; hop < levels; hop += 1) {
+    current = current.parentElement;
+    if (!current || current === document.body) {
+      debugLog(`Ancestor walk left the layout after ${hop + 1} of ${levels} hop(s)`);
+      return null;
+    }
+  }
+  return current;
+}
+
+export function findInjectionPoint(): InjectionPointResult | null {
   for (const injectionPoint of (WEALTHSIMPLE_UI as unknown as { INJECTION_POINTS: InjectionPointConfig[] }).INJECTION_POINTS) {
-    const element = resolveElement(injectionPoint.selector);
+    const anchor = resolveElement(injectionPoint.selector);
+    if (!anchor) { continue; }
+    const levels = injectionPoint.ancestorLevels ?? 0;
+    const element = levels > 0 ? climbToAncestor(anchor, levels) : anchor;
     if (element) {
-      debugLog(`Found injection point: ${injectionPoint.selector} (method: ${injectionPoint.insertMethod})`);
+      debugLog(`Found injection point: ${injectionPoint.selector} (method: ${injectionPoint.insertMethod}, ancestorLevels: ${levels})`);
       return { element, insertMethod: injectionPoint.insertMethod, selector: injectionPoint.selector };
     }
   }
   return null;
 }
 
-function getTargetContainer(element: Element, insertMethod: string): TargetContainerResult | null {
+export function getTargetContainer(element: Element, insertMethod: string): TargetContainerResult | null {
   if (insertMethod === 'prepend') {
     return { container: element, referenceNode: null };
   }
