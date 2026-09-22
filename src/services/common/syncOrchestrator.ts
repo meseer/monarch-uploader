@@ -293,7 +293,15 @@ async function fetchAndSeparateTransactions({
 
   const { settled: rawSettled, pending: rawPending, metadata } = fetchResult;
 
+  // Hooks that degrade on a partial failure report it here. Absent means the hook
+  // is all-or-nothing, so the feed is taken at face value.
+  const sourceDataComplete = fetchResult.sourceDataComplete !== false;
+
   debugLog(`[orchestrator] Fetched ${rawSettled.length} settled, ${rawPending.length} pending transactions`);
+
+  if (!sourceDataComplete) {
+    debugLog('[orchestrator] Source reported an incomplete fetch — pending reconciliation will skip deletions');
+  }
 
   // Separate & deduplicate pending vs settled
   let dedupSettled = rawSettled;
@@ -315,7 +323,7 @@ async function fetchAndSeparateTransactions({
     }
   }
 
-  return { rawSettled, rawPending, dedupSettled, dedupPending, metadata };
+  return { rawSettled, rawPending, dedupSettled, dedupPending, metadata, sourceDataComplete };
 }
 
 /**
@@ -475,13 +483,16 @@ async function executeTransactionStep({
  * @param {Object} params.phase1Result - Result from fetchMonarchPendingTransactions
  * @param {Array} params.rawPending - Raw pending transactions from source
  * @param {Array} params.rawSettled - Raw settled transactions from source
+ * @param {boolean} params.sourceDataComplete - False when the source fetch was
+ *   partial; reconciliation then skips deletions rather than reading the missing
+ *   transactions as cancellations
  * @param {string} params.txIdPrefix - Pending transaction ID prefix
  * @param {import('../../integrations/types').SyncHooks} params.hooks - Sync hooks
  * @param {Object} params.progressDialog - Progress dialog instance
  * @returns {Promise<Object>} Reconciliation result (includes settledRefIds)
  */
 async function executePhase2Reconciliation({
-  integrationId, accountId, phase1Result, rawPending, rawSettled,
+  integrationId, accountId, phase1Result, rawPending, rawSettled, sourceDataComplete,
   txIdPrefix, hooks, progressDialog,
 }) {
   try {
@@ -494,6 +505,7 @@ async function executePhase2Reconciliation({
       getPendingIdFields: hooks.getPendingIdFields,
       getSettledAmount: hooks.getSettledAmount,
       getSettledRefId: hooks.getSettledRefId,
+      sourceDataComplete,
     });
 
     // Save settled ref IDs to dedup store so transaction upload skips them
@@ -667,6 +679,7 @@ export async function syncAccount({
           integrationId, accountId, phase1Result,
           rawPending: fetchData.rawPending,
           rawSettled: fetchData.rawSettled,
+          sourceDataComplete: fetchData.sourceDataComplete,
           txIdPrefix, hooks, progressDialog,
         });
       }
