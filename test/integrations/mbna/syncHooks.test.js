@@ -3,6 +3,7 @@
  */
 
 import mbnaSyncHooks from '../../../src/integrations/mbna/sinks/monarch/syncHooks';
+import { generatePendingTransactionId } from '../../../src/services/common/pendingReconciliation';
 
 // ── Mocks ───────────────────────────────────────────────────
 
@@ -212,6 +213,56 @@ describe('MBNA SyncHooks', () => {
       const fields = mbnaSyncHooks.getPendingIdFields(tx);
 
       expect(fields).toEqual(['', '', '', '']);
+    });
+  });
+
+  // ── Frozen hash inputs ────────────────────────────────────
+  //
+  // These are tripwires, not behaviour tests. The hash they feed is written into
+  // live Monarch transaction notes as a marker tag and persisted in
+  // `uploadedTransactions`, so changing the field list, its order or its count
+  // orphans every marker already in users' real data — and an orphaned marker is
+  // not inert: pending reconciliation deletes a notes id it can no longer match,
+  // destroying the user's categories, notes and splits.
+  describe('getPendingIdFields — frozen hash inputs', () => {
+    const FROZEN_TX = {
+      transactionDate: '2024-03-04',
+      description: 'TIM HORTONS #1234*ABC TORONTO ON',
+      amount: 2.35,
+      endingIn: '4321',
+      referenceNumber: 'REF-AAA',
+    };
+
+    it('hashes the frozen fixture to its golden value', async () => {
+      const id = await generatePendingTransactionId('mbna-tx', mbnaSyncHooks.getPendingIdFields(FROZEN_TX));
+
+      // Golden value: sha256('2024-03-04|TIM HORTONS #1234|2.35|4321'), first 16 hex.
+      // If this fails, the hash inputs changed — do not update the literal.
+      expect(id).toBe('mbna-tx:12238cfeb480b2bd');
+    });
+
+    it('hashes exactly four fields, in this order', () => {
+      const fields = mbnaSyncHooks.getPendingIdFields(FROZEN_TX);
+
+      // The hash input is `fields.join('|')`, so both order and count are
+      // load-bearing — asserting the array as a whole pins both.
+      expect(fields).toHaveLength(4);
+      expect(fields).toEqual(['2024-03-04', 'TIM HORTONS #1234', '2.35', '4321']);
+    });
+
+    it('does not hash referenceNumber, because pending IS referenceNumber === TEMP', () => {
+      const fields = mbnaSyncHooks.getPendingIdFields(FROZEN_TX);
+
+      // MBNA marks a transaction pending by setting referenceNumber to 'TEMP'.
+      // The hash's whole job is to be equal for the pending and settled versions
+      // of the same charge, so including referenceNumber would break
+      // pending↔settled matching by construction. Collisions between two genuine
+      // charges are handled downstream instead (see pendingReconciliation).
+      expect(fields).not.toContain('REF-AAA');
+      expect(fields).not.toContain('TEMP');
+
+      const pendingVersion = { ...FROZEN_TX, referenceNumber: 'TEMP' };
+      expect(mbnaSyncHooks.getPendingIdFields(pendingVersion)).toEqual(fields);
     });
   });
 

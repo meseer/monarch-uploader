@@ -313,6 +313,13 @@ async function fetchAndSeparateTransactions({
     if (dedupResult.duplicatesRemoved > 0) {
       debugLog(`[orchestrator] Removed ${dedupResult.duplicatesRemoved} pending duplicates`);
     }
+
+    // Distinct from duplicatesRemoved (pending that matched a settled hash):
+    // these are transactions that merely hash alike. Settled keeps every member,
+    // pending collapses — see buildHashMaps in pendingReconciliation.
+    if (dedupResult.settledHashCollisions > 0 || dedupResult.pendingHashCollisions > 0) {
+      debugLog(`[orchestrator] Hash collisions: ${dedupResult.settledHashCollisions} settled (all kept), ${dedupResult.pendingHashCollisions} pending (collapsed)`);
+    }
   }
 
   return { rawSettled, rawPending, dedupSettled, dedupPending, metadata };
