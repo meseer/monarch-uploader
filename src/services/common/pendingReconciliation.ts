@@ -91,6 +91,10 @@ interface SeparateResult {
   pendingIdMap: Map<string, unknown>;
   settledIdMap: Map<string, unknown>;
   duplicatesRemoved: number;
+  /** Settled transactions sharing a hash with an earlier one — all are kept */
+  settledHashCollisions: number;
+  /** Pending transactions sharing a hash with an earlier one — collapsed to one */
+  pendingHashCollisions: number;
 }
 
 /**
@@ -101,13 +105,25 @@ interface SeparateResult {
  * still has to correlate the Monarch row back to its source cardholder. The
  * hash is the only identifier both sides can compute.
  *
- * @param idMap - hash → transaction, as built by `buildHashMaps`
+ * Driven by the *input array*, not by the hash map: the hash carries no unique
+ * discriminator (see the frozen-inputs note on `buildHashMaps`), so two genuine
+ * transactions can share one. Mapping over `Map.entries()` silently dropped the
+ * loser of every such collision and moved the winner to the earlier slot; one
+ * output row per input row, in input order, is what the pre-`txHashId`
+ * implementations returned and what callers assume.
+ *
+ * A colliding pair therefore shares one `txHashId`, which is safe: every hashed
+ * field is identical, so both members yield the same settled amount and — since
+ * the card identifier is a hash input — the same owner.
+ *
+ * @param transactions - Transactions in their original input order
+ * @param hashIds - Hashes positionally parallel to `transactions`
  * @returns New transaction objects with `txHashId` attached
  */
-function attachHashIds(idMap: Map<string, unknown>): Array<Record<string, unknown>> {
-  return Array.from(idMap.entries()).map(([hashId, tx]) => ({
+function attachHashIds(transactions: unknown[], hashIds: string[]): Array<Record<string, unknown>> {
+  return transactions.map((tx, index) => ({
     ...(tx as Record<string, unknown>),
-    txHashId: hashId,
+    txHashId: hashIds[index],
   }));
 }
 
@@ -233,30 +249,73 @@ export function computeSettledTagIds(
   return uniqueTagIds;
 }
 
+/** What `buildHashMaps` returns */
+interface HashMaps {
+  settledIdMap: Map<string, unknown>;
+  pendingIdMap: Map<string, unknown>;
+  duplicatesRemoved: number;
+  /** Hashes positionally parallel to the `settled` input array */
+  settledHashIds: string[];
+  settledHashCollisions: number;
+  pendingHashCollisions: number;
+}
+
 /**
  * Build hash ID maps for a set of raw transactions using the getPendingIdFields hook.
+ *
+ * ## The hash inputs are frozen — do NOT add a discriminator
+ *
+ * It is tempting to "complete" collision handling by hashing a unique field
+ * (MBNA's `referenceNumber`, say). Three reasons not to:
+ *
+ * 1. The hash is written into live Monarch notes as a marker tag and parsed back
+ *    by regex (`core/markerTags`), and persisted in `uploadedTransactions`.
+ *    Changing the inputs orphans every marker already in users' real data.
+ * 2. An orphaned marker is not inert — a notes id found in neither map takes the
+ *    delete branch below and destroys the user's categories, notes and splits.
+ * 3. For MBNA it is self-contradictory: pending *is* `referenceNumber === 'TEMP'`,
+ *    and the hash's whole job is to be **equal** for the pending and settled
+ *    versions of the same charge.
+ *
+ * Collisions are therefore expected and are handled where they surface, not
+ * designed away here.
  *
  * @param {string} txIdPrefix - Integration prefix
  * @param {Function} getPendingIdFields - Hook: (tx) => Array<string>
  * @param {Array} settled - Raw settled transactions
  * @param {Array} pending - Raw pending transactions
- * @returns {Promise<{settledIdMap: Map, pendingIdMap: Map, duplicatesRemoved: number}>}
+ * @returns {Promise<HashMaps>} Maps, parallel settled hashes and collision counts
  */
 async function buildHashMaps(
   txIdPrefix: string,
   getPendingIdFields: (tx: unknown) => string[],
   settled: unknown[],
   pending: unknown[],
-): Promise<{ settledIdMap: Map<string, unknown>; pendingIdMap: Map<string, unknown>; duplicatesRemoved: number }> {
+): Promise<HashMaps> {
   const settledIdMap = new Map();
+  const settledHashIds: string[] = [];
+  let settledHashCollisions = 0;
+
   for (const tx of settled) {
     const fields = getPendingIdFields(tx);
     const hashId = await generatePendingTransactionId(txIdPrefix, fields);
+
+    // The map is a hash → one-transaction lookup, so a collision overwrites.
+    // That is fine for lookups (all members are interchangeable for amount and
+    // owner), but callers must still get every transaction back — hence the
+    // parallel hash list, which is what the returned array is built from.
+    if (settledIdMap.has(hashId)) {
+      settledHashCollisions += 1;
+      debugLog(`[reconciliation] Settled hash collision (both kept): ${hashId}`);
+    }
+
     settledIdMap.set(hashId, tx);
+    settledHashIds.push(hashId);
   }
 
   const pendingIdMap = new Map();
   let duplicatesRemoved = 0;
+  let pendingHashCollisions = 0;
 
   for (const tx of pending) {
     const fields = getPendingIdFields(tx);
@@ -269,10 +328,28 @@ async function buildHashMaps(
       continue;
     }
 
+    // Pending collisions are counted but deliberately still collapse. A second
+    // Monarch pending row carrying an identical notes hash cannot be reconciled
+    // independently — the lookup is a single `Map.get` — and the under-reporting
+    // is temporary: it self-heals at settlement, now that the settled path keeps
+    // every member. Widening pending-row identity is a separate design question,
+    // out of scope here.
+    if (pendingIdMap.has(hashId)) {
+      pendingHashCollisions += 1;
+      debugLog(`[reconciliation] Pending hash collision (collapsed to one): ${hashId}`);
+    }
+
     pendingIdMap.set(hashId, tx);
   }
 
-  return { settledIdMap, pendingIdMap, duplicatesRemoved };
+  return {
+    settledIdMap,
+    pendingIdMap,
+    duplicatesRemoved,
+    settledHashIds,
+    settledHashCollisions,
+    pendingHashCollisions,
+  };
 }
 
 /**
@@ -590,18 +667,25 @@ export async function reconcilePendingTransactions({
  * Generates hash IDs for both sets and removes pending transactions whose
  * hash matches a settled transaction (settled takes precedence).
  *
+ * The returned `settled` array holds exactly one entry per input entry, in input
+ * order — hash collisions do not remove or reorder anything. Pending collisions
+ * still collapse; see `buildHashMaps` for why the two halves differ.
+ *
  * @param {Object} params - Parameters
  * @param {string} params.txIdPrefix - Integration prefix
  * @param {Function} params.getPendingIdFields - Hook: (tx) => Array<string>
  * @param {Array} params.pending - Raw pending transactions
  * @param {Array} params.settled - Raw settled transactions
- * @returns {Promise<{settled: Array, pending: Array, pendingIdMap: Map, settledIdMap: Map, duplicatesRemoved: number}>}
- *   pending array entries have `generatedId` and `isPending: true` attached
+ * @returns {Promise<SeparateResult>} pending entries have `generatedId` and
+ *   `isPending: true` attached; settled entries carry `txHashId` only
  */
 export async function separateAndDeduplicateTransactions({ txIdPrefix, getPendingIdFields, pending, settled }: SeparateParams): Promise<SeparateResult> {
   debugLog(`[reconciliation] Separation: ${settled.length} settled, ${pending.length} pending`);
 
-  const { settledIdMap, pendingIdMap, duplicatesRemoved } = await buildHashMaps(
+  const {
+    settledIdMap, pendingIdMap, duplicatesRemoved,
+    settledHashIds, settledHashCollisions, pendingHashCollisions,
+  } = await buildHashMaps(
     txIdPrefix,
     getPendingIdFields,
     settled,
@@ -610,6 +694,13 @@ export async function separateAndDeduplicateTransactions({ txIdPrefix, getPendin
 
   if (duplicatesRemoved > 0) {
     debugLog(`[reconciliation] Removed ${duplicatesRemoved} pending duplicate(s) that matched settled`);
+  }
+
+  if (settledHashCollisions > 0 || pendingHashCollisions > 0) {
+    debugLog('[reconciliation] Hash collisions', {
+      settledHashCollisions,
+      pendingHashCollisions,
+    });
   }
 
   // Convert pendingIdMap back to array with IDs attached
@@ -623,11 +714,20 @@ export async function separateAndDeduplicateTransactions({ txIdPrefix, getPendin
   return {
     // Settled transactions carry `txHashId` so post-upload passes can correlate
     // them; `generatedId` stays pending-only to keep dedup semantics unchanged.
-    settled: attachHashIds(settledIdMap),
+    //
+    // One row per input row, in input order — colliding members included. Known
+    // residual risk: the CSV can now hold two rows identical in date, merchant
+    // and amount, and although we send `importPriority: 'all_transactions'`,
+    // Monarch's own fuzzy duplicate detection may still collapse one. Worst case
+    // equals the old behaviour (one row lands); best case both do. Duplicate CSV
+    // `Id` values are not themselves a hazard — per ADR-008 that column is inert.
+    settled: attachHashIds(settled, settledHashIds),
     pending: dedupedPending,
     pendingIdMap,
     settledIdMap,
     duplicatesRemoved,
+    settledHashCollisions,
+    pendingHashCollisions,
   };
 }
 
