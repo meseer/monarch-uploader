@@ -360,7 +360,14 @@ export async function fetchAccountTransactionsPage(accountId: string, options: F
   if (nextLink) {
     endpoint = nextLink;
   } else {
-    endpoint = `/v3/brokerage-accounts-transactions/${accountId}/transactions?fields=AccountDetailType&fields=Action&fields=Symbol&fields=Quantity&fields=Price&limit=${limit}&orderBy=%2BTradeDate`;
+    // No `orderBy`: the endpoint does not honour one. Verified against the live
+    // API on 2026-09-22 — `orderBy=%2BTradeDate`, `orderBy=-TradeDate` and
+    // omitting the parameter all return byte-identical newest-first pages, and
+    // the `nextLink` cursor does not carry the parameter forward. `TradeDate` is
+    // not even a field this endpoint returns (`transactionDate` is the only date
+    // present), so the parameter was inert. It is dropped rather than left in
+    // place implying an ordering guarantee the server does not actually give.
+    endpoint = `/v3/brokerage-accounts-transactions/${accountId}/transactions?fields=AccountDetailType&fields=Action&fields=Symbol&fields=Quantity&fields=Price&limit=${limit}`;
   }
 
   debugLog(`Fetching transactions page for account: ${accountId}`);
@@ -383,7 +390,15 @@ export async function fetchTransactionDetails(transactionUrl: string): Promise<a
 
 /**
  * Fetch all transactions for an account since a given date
- * Uses pagination and stops when reaching transactions older than sinceDate
+ *
+ * Stopping before the end of the history is an optimisation that depends on the
+ * endpoint returning newest-first. That ordering is a server-side default this
+ * client cannot request (see `fetchAccountTransactionsPage`), so it is treated as
+ * an assumption to check rather than a fact: the short-circuit is only applied to
+ * a page whose dates are actually non-increasing. A page that arrives in any other
+ * order paginates to the end instead, which is slower but cannot silently drop
+ * transactions if Questrade ever changes the default.
+ *
  * @param accountId - Account ID (key/UUID)
  * @param sinceDate - Date string in YYYY-MM-DD format
  * @param pageSize - Number of transactions per page
@@ -421,21 +436,43 @@ export async function fetchAccountTransactionsSinceDate(
 
     const { data, metadata } = response;
 
-    // Filter transactions that are >= sinceDate
-    let foundOlderTransaction = false;
+    // Scan the whole page. An older row ends the *pagination*, not the scan of the
+    // page it appeared on: bailing out mid-page would discard every later row,
+    // including rows that qualify, the moment one row sorts unexpectedly.
+    const pageDates: string[] = [];
+    let sawOlderTransaction = false;
+
     for (const transaction of data) {
       const txDate = transaction.transactionDate;
-      if (txDate && txDate >= sinceDate) {
+
+      if (!txDate) {
+        // Undatable against the watermark, so it cannot be included — but it is
+        // logged rather than dropped in silence, since `transactionDate` is the
+        // only date this endpoint returns and its absence would be anomalous.
+        debugLog('Transaction has no transactionDate, excluding it:', transaction.transactionUuid ?? transaction);
+        continue;
+      }
+
+      pageDates.push(txDate);
+
+      if (txDate >= sinceDate) {
         allTransactions.push(transaction);
-      } else if (txDate && txDate < sinceDate) {
-        foundOlderTransaction = true;
-        break;
+      } else {
+        sawOlderTransaction = true;
       }
     }
 
-    if (foundOlderTransaction || !metadata?.nextLink) {
+    const pageIsNewestFirst = pageDates.every((date, index) => index === 0 || date <= pageDates[index - 1]);
+
+    if (!metadata?.nextLink) {
+      hasMore = false;
+    } else if (sawOlderTransaction && pageIsNewestFirst) {
+      // Newest-first confirmed for this page, so every later page is older still.
       hasMore = false;
     } else {
+      if (!pageIsNewestFirst) {
+        debugLog('Transaction page was not newest-first; paginating to the end rather than stopping early');
+      }
       nextLink = metadata.nextLink;
     }
   }
