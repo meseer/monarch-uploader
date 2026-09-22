@@ -139,7 +139,9 @@ describe('Questrade API', () => {
       globalThis.GM_xmlhttpRequest.mockImplementation((options) => {
         expect(options.url).toContain('/v3/brokerage-accounts-transactions/test-account-id/transactions');
         expect(options.url).toContain('limit=100');
-        expect(options.url).toContain('orderBy=%2BTradeDate');
+        // The endpoint ignores orderBy (verified against the live API), so the
+        // request must not imply an ordering guarantee it does not honour.
+        expect(options.url).not.toContain('orderBy');
         expect(options.url).toContain('fields=AccountDetailType');
         expect(options.url).toContain('fields=Action');
         setTimeout(() => {
@@ -411,6 +413,116 @@ describe('Questrade API', () => {
 
       // Should have made 3 API calls (stopped on page 3 when hitting old transactions)
       expect(globalThis.GM_xmlhttpRequest).toHaveBeenCalledTimes(3);
+    });
+
+    test('should keep qualifying rows that follow an out-of-order older row on the same page', async () => {
+      // tx2 sorts older than the watermark but tx3 does not. Breaking on tx2 would
+      // discard tx3, so the whole page has to be scanned.
+      const page1Response = {
+        data: [
+          { transactionUuid: 'tx1', transactionDate: '2026-01-20' },
+          { transactionUuid: 'tx2', transactionDate: '2026-01-05' },
+          { transactionUuid: 'tx3', transactionDate: '2026-01-19' },
+        ],
+        metadata: { totalCount: 4, totalPages: 2, count: 3, nextLink: '/page2' },
+      };
+
+      const page2Response = {
+        data: [{ transactionUuid: 'tx4', transactionDate: '2026-01-02' }],
+        metadata: { totalCount: 4, totalPages: 2, count: 1, nextLink: null },
+      };
+
+      let callCount = 0;
+      globalThis.GM_xmlhttpRequest.mockImplementation((options) => {
+        callCount += 1;
+        const response = callCount === 1 ? page1Response : page2Response;
+        setTimeout(() => {
+          options.onload({ status: 200, responseText: JSON.stringify(response) });
+        }, 0);
+      });
+
+      const result = await fetchAccountTransactionsSinceDate('test-account-id', '2026-01-14');
+
+      expect(result.map((t) => t.transactionUuid)).toEqual(['tx1', 'tx3']);
+    });
+
+    test('should paginate to the end when a page is not newest-first', async () => {
+      // Oldest-first pages: the early exit must not fire, or every qualifying
+      // transaction after the first older row would be lost.
+      const page1Response = {
+        data: [
+          { transactionUuid: 'tx1', transactionDate: '2026-01-01' },
+          { transactionUuid: 'tx2', transactionDate: '2026-01-10' },
+        ],
+        metadata: { totalCount: 4, totalPages: 2, count: 2, nextLink: '/page2' },
+      };
+
+      const page2Response = {
+        data: [
+          { transactionUuid: 'tx3', transactionDate: '2026-01-20' },
+          { transactionUuid: 'tx4', transactionDate: '2026-01-25' },
+        ],
+        metadata: { totalCount: 4, totalPages: 2, count: 2, nextLink: null },
+      };
+
+      let callCount = 0;
+      globalThis.GM_xmlhttpRequest.mockImplementation((options) => {
+        callCount += 1;
+        const response = callCount === 1 ? page1Response : page2Response;
+        setTimeout(() => {
+          options.onload({ status: 200, responseText: JSON.stringify(response) });
+        }, 0);
+      });
+
+      const result = await fetchAccountTransactionsSinceDate('test-account-id', '2026-01-15');
+
+      expect(result.map((t) => t.transactionUuid)).toEqual(['tx3', 'tx4']);
+      expect(globalThis.GM_xmlhttpRequest).toHaveBeenCalledTimes(2);
+    });
+
+    test('should exclude a transaction with no transactionDate without truncating the page', async () => {
+      const mockResponse = {
+        data: [
+          { transactionUuid: 'tx1', transactionDate: '2026-01-20' },
+          { transactionUuid: 'tx2' },
+          { transactionUuid: 'tx3', transactionDate: '2026-01-19' },
+        ],
+        metadata: { totalCount: 3, totalPages: 1, count: 3, nextLink: null },
+      };
+
+      globalThis.GM_xmlhttpRequest.mockImplementation((options) => {
+        setTimeout(() => {
+          options.onload({ status: 200, responseText: JSON.stringify(mockResponse) });
+        }, 0);
+      });
+
+      const result = await fetchAccountTransactionsSinceDate('test-account-id', '2026-01-14');
+
+      expect(result.map((t) => t.transactionUuid)).toEqual(['tx1', 'tx3']);
+    });
+
+    test('should not let a date-less row suppress the early exit', async () => {
+      // A row with no date contributes nothing to the ordering check, so a page
+      // that is otherwise newest-first still short-circuits pagination.
+      const mockResponse = {
+        data: [
+          { transactionUuid: 'tx1', transactionDate: '2026-01-20' },
+          { transactionUuid: 'tx2' },
+          { transactionUuid: 'tx3', transactionDate: '2026-01-05' },
+        ],
+        metadata: { totalCount: 50, totalPages: 10, count: 3, nextLink: '/page2' },
+      };
+
+      globalThis.GM_xmlhttpRequest.mockImplementation((options) => {
+        setTimeout(() => {
+          options.onload({ status: 200, responseText: JSON.stringify(mockResponse) });
+        }, 0);
+      });
+
+      const result = await fetchAccountTransactionsSinceDate('test-account-id', '2026-01-14');
+
+      expect(result.map((t) => t.transactionUuid)).toEqual(['tx1']);
+      expect(globalThis.GM_xmlhttpRequest).toHaveBeenCalledTimes(1);
     });
 
     test('should throw error when accountId is missing', async () => {
