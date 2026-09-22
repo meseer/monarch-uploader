@@ -133,6 +133,44 @@ describe('MBNA SyncHooks', () => {
 
       expect(allSettled.map((t) => t.referenceNumber)).toEqual(['REF_NEW', 'REF_OLD']);
     });
+
+    it('should report an incomplete MBNA fetch so reconciliation can skip deletions', async () => {
+      // `complete: false` means the statement list could not be read, so the feed
+      // is the current cycle only — absence is not evidence of cancellation.
+      const mockApi = {
+        getTransactions: jest.fn(() => Promise.resolve({
+          allSettled: [{ referenceNumber: 'REF1' }],
+          allPending: [],
+          statements: [],
+          currentCycle: { settled: [], pending: [] },
+          complete: false,
+        })),
+      };
+
+      const result = await mbnaSyncHooks.fetchTransactions(mockApi, 'acc-1', '2024-01-01', {
+        onProgress: jest.fn(),
+      });
+
+      expect(result.sourceDataComplete).toBe(false);
+    });
+
+    it('should report a complete MBNA fetch as trustworthy', async () => {
+      const mockApi = {
+        getTransactions: jest.fn(() => Promise.resolve({
+          allSettled: [{ referenceNumber: 'REF1' }],
+          allPending: [],
+          statements: [{ closingDate: '2024-01-01' }],
+          currentCycle: { settled: [], pending: [] },
+          complete: true,
+        })),
+      };
+
+      const result = await mbnaSyncHooks.fetchTransactions(mockApi, 'acc-1', '2024-01-01', {
+        onProgress: jest.fn(),
+      });
+
+      expect(result.sourceDataComplete).toBe(true);
+    });
   });
 
   describe('processTransactions', () => {

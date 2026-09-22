@@ -643,6 +643,34 @@ describe('MBNA API Client', () => {
       expect(result.allPending).toHaveLength(1);
     });
 
+    it('should flag the result incomplete when closing dates fail', async () => {
+      // The statement history is missing, so anything that settled into an earlier
+      // statement is absent from a result that otherwise looks healthy. Pending
+      // reconciliation must not read that absence as a batch of cancellations.
+      mockHttpClient = createRoutedMockHttpClient({
+        '/snapshot': SAMPLE_SNAPSHOT_WITH_TRANSACTIONS,
+        '/closingdatedropdown': { status: 'error' }, // Missing closingDate → throws
+      });
+      api = createApi(mockHttpClient, mockAuth);
+
+      const result = await api.getTransactions('00240691635', '2025-01-01');
+
+      expect(result.complete).toBe(false);
+    });
+
+    it('should flag the result complete when every statement was fetched', async () => {
+      mockHttpClient = createRoutedMockHttpClient({
+        '/snapshot': SAMPLE_SNAPSHOT_WITH_TRANSACTIONS,
+        '/closingdatedropdown': { closingDate: { mostRecentTransactions: 'x', '2026-01-14': 'Jan' } },
+        '/closingdate/2026-01-14': SAMPLE_STATEMENT_RESPONSE,
+      });
+      api = createApi(mockHttpClient, mockAuth);
+
+      const result = await api.getTransactions('00240691635', '2025-01-01');
+
+      expect(result.complete).toBe(true);
+    });
+
     it('should exclude TEMP referenceNumber from allSettled', async () => {
       mockHttpClient = createRoutedMockHttpClient({
         '/snapshot': SAMPLE_SNAPSHOT_WITH_TRANSACTIONS,

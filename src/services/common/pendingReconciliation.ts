@@ -27,6 +27,11 @@ export interface ReconciliationResult {
   settledRefIds: string[];
   noPendingTag?: boolean;
   noPendingTransactions?: boolean;
+  /**
+   * True when reconciliation was skipped because the source feed could not be
+   * trusted. No Monarch transaction was deleted.
+   */
+  sourceUnavailable?: boolean;
 }
 
 /** Result of Phase 1: fetching pending transactions from Monarch */
@@ -48,6 +53,8 @@ interface ReconcileParams {
   getPendingIdFields: (tx: unknown) => string[];
   getSettledAmount: (tx: unknown) => number;
   getSettledRefId?: (tx: unknown) => string | null;
+  /** False when the source fetch was partial — forwarded to Phase 2 */
+  sourceDataComplete?: boolean;
 }
 
 /** Parameters for Phase 2 reconciliation (using pre-fetched Monarch data) */
@@ -60,6 +67,13 @@ export interface ReconcileFetchedParams {
   getPendingIdFields: (tx: unknown) => string[];
   getSettledAmount: (tx: unknown) => number;
   getSettledRefId?: (tx: unknown) => string | null;
+  /**
+   * False when the source fetch was partial — e.g. the MBNA statement list could
+   * not be read, so the feed covers the current cycle only. Omitted means the
+   * hook does not report completeness and the feed is taken at face value; the
+   * empty-feed check below is the backstop for a total failure.
+   */
+  sourceDataComplete?: boolean;
 }
 
 /** Parameters for separateAndDeduplicateTransactions */
@@ -364,6 +378,17 @@ export async function fetchMonarchPendingTransactions(
  *    - Hash matches still-pending → no action
  *    - Hash not found → cancelled → delete from Monarch
  *
+ * Refuses to run when the source feed cannot be trusted — a partial fetch
+ * (`sourceDataComplete === false`) or an empty feed while Monarch still holds
+ * pending rows. Both are indistinguishable from "every pending transaction was
+ * cancelled", and acting on that assumption hard-deletes real transactions along
+ * with the user's categories, notes, splits and tags, while the id stays in the
+ * dedup store so the settled version is never re-uploaded. Skipping costs one
+ * sync; deleting is unrecoverable.
+ *
+ * A genuinely cancelled transaction missing from a trustworthy, non-empty feed is
+ * still deleted — that is the feature.
+ *
  * @param params - Phase 2 reconciliation parameters
  * @returns Reconciliation result including settledRefIds array
  */
@@ -376,22 +401,39 @@ export async function reconcileFetchedPendingTransactions({
   getPendingIdFields,
   getSettledAmount,
   getSettledRefId,
+  sourceDataComplete,
 }: ReconcileFetchedParams): Promise<ReconciliationResult> {
   const result: ReconciliationResult = { success: true, settled: 0, cancelled: 0, failed: 0, error: null, settledRefIds: [] };
 
   try {
+    const sourceSettled = Array.isArray(rawSettled) ? rawSettled : [];
+    const sourcePending = Array.isArray(rawPending) ? rawPending : [];
+
     debugLog(`[reconciliation:phase2] Starting reconciliation for ${txIdPrefix}`, {
       monarchPendingCount: monarchPendingTransactions.length,
-      rawPendingCount: rawPending?.length || 0,
-      rawSettledCount: rawSettled?.length || 0,
+      rawPendingCount: sourcePending.length,
+      rawSettledCount: sourceSettled.length,
+      sourceDataComplete: sourceDataComplete !== false,
     });
+
+    // Source data untrustworthy — never read "absent" as "cancelled"
+    const feedUntrustworthy = sourceDataComplete === false
+      || (sourceSettled.length === 0 && sourcePending.length === 0);
+
+    if (feedUntrustworthy && monarchPendingTransactions.length > 0) {
+      const error = 'Source transactions unavailable — reconciliation skipped';
+      debugLog(
+        `[reconciliation:phase2] ${error} (complete=${sourceDataComplete !== false}, settled=${sourceSettled.length}, pending=${sourcePending.length}, monarchPending=${monarchPendingTransactions.length})`,
+      );
+      return { ...result, success: false, error, sourceUnavailable: true };
+    }
 
     // Build hash ID maps for current source transactions
     const { settledIdMap, pendingIdMap } = await buildHashMaps(
       txIdPrefix,
       getPendingIdFields,
-      rawSettled || [],
-      rawPending || [],
+      sourceSettled,
+      sourcePending,
     );
 
     debugLog(`[reconciliation:phase2] Lookup: ${settledIdMap.size} settled hashes, ${pendingIdMap.size} pending hashes`);
@@ -508,6 +550,7 @@ export async function reconcilePendingTransactions({
   getPendingIdFields,
   getSettledAmount,
   getSettledRefId,
+  sourceDataComplete,
 }: ReconcileParams): Promise<ReconciliationResult> {
   const emptyResult: ReconciliationResult = { success: true, settled: 0, cancelled: 0, failed: 0, error: null, settledRefIds: [] };
 
@@ -532,6 +575,7 @@ export async function reconcilePendingTransactions({
       getPendingIdFields,
       getSettledAmount,
       getSettledRefId,
+      sourceDataComplete,
     });
   } catch (error) {
     debugLog('[reconciliation] Error:', error);
@@ -596,6 +640,10 @@ export async function separateAndDeduplicateTransactions({ txIdPrefix, getPendin
 export function formatReconciliationMessage(result: ReconciliationResult): string {
   if (result.noPendingTag || result.noPendingTransactions) {
     return 'No pending transactions';
+  }
+
+  if (result.sourceUnavailable) {
+    return 'Skipped — source data unavailable';
   }
 
   const parts = [];
