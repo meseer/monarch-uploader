@@ -29,6 +29,8 @@ interface FetchTransactionsResult {
   settled: MbnaRawTransaction[];
   pending: MbnaRawTransaction[];
   metadata: FetchMetadata;
+  /** False when the MBNA fetch degraded to the current cycle only */
+  sourceDataComplete: boolean;
 }
 
 /** Parameters for buildBalanceHistory hook */
@@ -82,6 +84,14 @@ async function fetchTransactions(
 
   debugLog(`[MBNA hooks] Fetched ${allSettled.length} settled, ${allPending.length} pending transactions`);
 
+  // A false `complete` means the statement list could not be read, so the feed is
+  // the current cycle only. Reported upward so pending reconciliation declines to
+  // treat the missing history as a batch of cancellations.
+  const sourceDataComplete = txResult.complete !== false;
+  if (!sourceDataComplete) {
+    debugLog('[MBNA hooks] Statement history unavailable — feed is incomplete, pending reconciliation will be skipped');
+  }
+
   // Map statement summaries to MbnaStatementData shape for balance reconstruction
   const statementData: MbnaStatementData[] = statements.map((s) => ({
     closingDate: s.closingDate,
@@ -93,6 +103,7 @@ async function fetchTransactions(
     settled: [...allSettled].reverse(),
     pending: [...allPending].reverse(),
     metadata: { statements: statementData, currentCycle },
+    sourceDataComplete,
   };
 }
 

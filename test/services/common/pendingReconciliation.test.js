@@ -383,7 +383,9 @@ describe('reconcilePendingTransactions', () => {
   });
 
   it('should delete cancelled transactions', async () => {
-    // Transaction not in settled or pending = cancelled
+    // Transaction absent from a trustworthy, non-empty feed = cancelled.
+    // The feed must carry something: an empty feed is indistinguishable from a
+    // failed fetch and is refused outright (see the deletionSafety suite).
     mockMonarchApi.getTagByName.mockResolvedValue({ id: 'tag-1', name: 'Pending' });
     mockMonarchApi.getTransactionsList.mockResolvedValue({
       results: [{ id: 'mtx-1', notes: 'test-tx:abcdef1234567890', ownedByUser: null }],
@@ -394,7 +396,7 @@ describe('reconcilePendingTransactions', () => {
       txIdPrefix: 'test-tx',
       monarchAccountId: 'monarch-1',
       rawPending: [],
-      rawSettled: [],
+      rawSettled: [{ date: '2024-02-01', desc: 'Unrelated', amt: 9.99 }],
       lookbackDays: 90,
       getPendingIdFields,
       getSettledAmount,
@@ -530,7 +532,8 @@ describe('reconcileFetchedPendingTransactions', () => {
         ownedByUser: null,
       }],
       rawPending: [],
-      rawSettled: [],
+      // Non-empty so the feed is trustworthy — an empty feed is refused
+      rawSettled: [{ date: '2024-02-01', desc: 'Unrelated', amt: 9.99 }],
       getPendingIdFields,
       getSettledAmount,
     });

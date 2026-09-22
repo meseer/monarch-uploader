@@ -77,6 +77,12 @@ export interface MbnaTransactionResult {
   statements: MbnaStatementSummary[];
   allSettled: MbnaRawTransaction[];
   allPending: MbnaRawTransaction[];
+  /**
+   * False when the statement list could not be read, so the result covers the
+   * current cycle only. Callers must not treat a transaction's absence from an
+   * incomplete result as evidence that it no longer exists at MBNA.
+   */
+  complete: boolean;
 }
 
 /** Summary of a fetched statement for the transaction result */
@@ -382,12 +388,15 @@ export function createApi(httpClient: HttpClient, _auth: unknown): MbnaApiClient
       try {
         closingDates = await this.getClosingDates(accountId);
       } catch (_error) {
-        // If closing dates unavailable, return only current cycle
+        // Closing dates unavailable — return only the current cycle, flagged as
+        // incomplete so pending reconciliation does not read the missing
+        // statement history as a batch of cancellations.
         return {
           currentCycle,
           statements: [],
           allSettled: [...currentCycle.settled],
           allPending: [...currentCycle.pending],
+          complete: false,
         };
       }
 
@@ -446,6 +455,7 @@ export function createApi(httpClient: HttpClient, _auth: unknown): MbnaApiClient
         statements,
         allSettled: filteredSettled,
         allPending: [...currentCycle.pending],
+        complete: true,
       };
     },
   };

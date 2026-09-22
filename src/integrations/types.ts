@@ -379,13 +379,24 @@ export interface SyncHooks {
  * responsible for reversing before returning. The orchestrator relies on this
  * ordering when appending dedup references to the oldest-first
  * `uploadedTransactions` store, and it also determines uploaded CSV row order.
+ *
+ * `sourceDataComplete` reports whether the returned arrays cover the whole
+ * requested range. A hook that degrades gracefully on a partial failure (dropping
+ * a statement or a paging chunk rather than throwing) MUST return `false`, because
+ * pending reconciliation reads "absent from the feed" as "cancelled at source" and
+ * deletes the Monarch row. Omit it when the fetch is all-or-nothing.
  */
 export type FetchTransactionsHook = (
   api: IntegrationApi,
   accountId: string,
   fromDate: string,
   callbacks: SyncCallbacks,
-) => Promise<{ settled: unknown[]; pending: unknown[]; metadata: Record<string, unknown> }>;
+) => Promise<{
+  settled: unknown[];
+  pending: unknown[];
+  metadata: Record<string, unknown>;
+  sourceDataComplete?: boolean;
+}>;
 
 /**
  * Process raw transactions into a normalized shape for the orchestrator.

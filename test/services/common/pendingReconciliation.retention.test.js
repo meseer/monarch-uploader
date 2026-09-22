@@ -37,6 +37,8 @@ const CURRENCY_TAG = { id: 'tag-eur', name: 'EUR' };
 const TX_PREFIX = 'test-tx';
 // Hash of the fixture's id fields, computed via the real crypto in setup
 const SOURCE_TX = { id: 'src-1', date: '2026-09-01', amount: 42.5 };
+/** A source transaction whose hash never matches SOURCE_TX — keeps a feed non-empty */
+const UNRELATED_TX = { id: 'src-2', date: '2026-09-02', amount: 7.25 };
 
 /** getPendingIdFields hook for the fixture */
 const getPendingIdFields = (tx) => [tx.date, String(tx.amount)];
@@ -198,8 +200,10 @@ describe('non-settlement outcomes are unaffected by retention', () => {
   });
 
   it('deletes a cancelled transaction even if it had an owner update queued', async () => {
+    // The feed carries an unrelated transaction so it counts as trustworthy —
+    // an empty feed is refused outright (see pendingReconciliation.deletionSafety).
     const result = await reconcile(monarchRow([PENDING_TAG, OWNER_TAG]), {
-      settled: [],
+      settled: [UNRELATED_TX],
       pending: [],
     });
 
