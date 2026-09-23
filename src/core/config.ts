@@ -300,10 +300,27 @@ export const UI = {
  *   then insert UI as its first child
  * - 'insertBefore': Insert UI as the previous sibling of the matched element
  *   (injects into the parent, before the target)
+ *
+ * Optional `ancestorLevels` treats the selector as an anchor and climbs that many
+ * parent elements before applying the insert method. Wealthsimple ships hashed
+ * styled-components class names that change on every deploy, so anchoring on a
+ * stable ARIA role or data-testid and climbing to the card container survives
+ * rebuilds that a class-name selector does not.
  */
 export const WEALTHSIMPLE_UI = {
-  // XPath: //*[@id="main"]/div/div/div[2]/div[2]
   INJECTION_POINTS: [
+    // Dashboard holdings card: anchor on the Holdings/Watchlist toggle, climb to
+    // the card container, and inject as its first child (above the toggle row).
+    { selector: '[role="radiogroup"][aria-label="Holdings or watchlist"]', insertMethod: 'prepend', ancestorLevels: 5 },
+    // Same card, for layouts that render the header links but no watchlist toggle.
+    { selector: '[data-testid="holdings-dashboard-link"]', insertMethod: 'prepend', ancestorLevels: 5 },
+    // Single account page: anchor on the Add money action, climb to the quick
+    // actions block, and sit directly above it as a sibling card.
+    { selector: 'button[aria-label="Add money"]', insertMethod: 'insertBefore', ancestorLevels: 2 },
+    // Same block, for accounts that offer transfers but no deposits.
+    { selector: 'button[aria-label="Transfer money"]', insertMethod: 'insertBefore', ancestorLevels: 2 },
+    // Legacy hashed-class anchors, kept as a fallback for older layouts.
+    // XPath: //*[@id="main"]/div/div/div[2]/div[2]
     { selector: 'last:.kOjAGq', insertMethod: 'prepend' },
     { selector: '.bZQXKE', insertMethod: 'prepend' },
   ],

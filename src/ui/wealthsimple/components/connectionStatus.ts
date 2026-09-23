@@ -73,9 +73,9 @@ export function createConnectionStatus(): HTMLElement {
     gap: 4px;
     margin: 8px 0;
     padding: 8px;
-    background-color: var(--mu-bg-primary, #ffffff);
-    border: 1px solid var(--mu-border, #e5e5e5);
-    border-radius: 4px;
+    background-color: var(--mu-ws-surface-bg, #ffffff);
+    border: 1px solid var(--mu-ws-surface-border, #eeeeee);
+    border-radius: 12px;
     font-size: 13px;
     font-family: "Wealthsimple Sans", sans-serif;
   `;

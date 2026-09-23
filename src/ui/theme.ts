@@ -64,6 +64,15 @@ const THEME_VARIABLES: ThemeConfig = {
     '--mu-error-border': '#f44336',
     '--mu-error-text': '#f44336',
     '--mu-closed-badge-bg': '#9e9e9e',
+    // Wealthsimple nested-card surface (mirrors their own card styling)
+    '--mu-ws-card-bg': 'rgb(249, 249, 249)',
+    '--mu-ws-card-bg-image': 'none',
+    '--mu-ws-card-border-color': 'rgb(255, 255, 255)',
+    '--mu-ws-card-shadow': 'rgba(0, 0, 0, 0.05) 0px 8px 24px',
+    '--mu-ws-surface-bg': 'rgb(255, 255, 255)',
+    '--mu-ws-surface-border': 'rgb(238, 238, 238)',
+    '--mu-ws-button-bg': 'rgb(50, 48, 47)',
+    '--mu-ws-button-text': 'rgb(255, 255, 255)',
   },
   dark: {
     // Backgrounds
@@ -111,6 +120,20 @@ const THEME_VARIABLES: ThemeConfig = {
     '--mu-error-border': '#ef5350',
     '--mu-error-text': '#ef5350',
     '--mu-closed-badge-bg': '#666666',
+    // Wealthsimple nested-card surface. The second gradient paints the subtle
+    // hairline border Wealthsimple draws via background-clip in dark mode.
+    '--mu-ws-card-bg': 'rgb(28, 28, 28)',
+    '--mu-ws-card-bg-image':
+      'linear-gradient(rgb(28, 28, 28), rgb(28, 28, 28)), '
+      + 'linear-gradient(336.4deg, rgba(62, 63, 64, 0.5) 14.76%, '
+      + 'rgba(62, 63, 64, 0.15) 51.14%, rgba(62, 63, 64, 0.5) 93.14%)',
+    '--mu-ws-card-border-color': 'transparent',
+    '--mu-ws-card-shadow': 'rgba(0, 0, 0, 0.05) 0px 8px 24px',
+    '--mu-ws-surface-bg': 'rgb(38, 38, 38)',
+    '--mu-ws-surface-border': 'rgba(62, 63, 64, 0.5)',
+    // Wealthsimple inverts primary buttons in dark mode
+    '--mu-ws-button-bg': 'rgb(255, 255, 255)',
+    '--mu-ws-button-text': 'rgb(13, 13, 13)',
   },
 };
 

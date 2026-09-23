@@ -230,6 +230,37 @@ describe('Theme Module', () => {
       expect(css).toContain('--mu-close-btn-bg: #555555');
     });
 
+    test('light theme defines Wealthsimple card tokens matching their light surface', () => {
+      initTheme();
+
+      const css = document.getElementById('monarch-uploader-theme').textContent;
+
+      expect(css).toContain('--mu-ws-card-bg: rgb(249, 249, 249)');
+      expect(css).toContain('--mu-ws-card-bg-image: none');
+      expect(css).toContain('--mu-ws-card-border-color: rgb(255, 255, 255)');
+      expect(css).toContain('--mu-ws-card-shadow: rgba(0, 0, 0, 0.05) 0px 8px 24px');
+      expect(css).toContain('--mu-ws-surface-bg: rgb(255, 255, 255)');
+      expect(css).toContain('--mu-ws-button-bg: rgb(50, 48, 47)');
+      expect(css).toContain('--mu-ws-button-text: rgb(255, 255, 255)');
+    });
+
+    test('dark theme defines Wealthsimple card tokens including the gradient border', () => {
+      document.documentElement.setAttribute('data-appearance', 'dark');
+      initTheme();
+
+      const css = document.getElementById('monarch-uploader-theme').textContent;
+
+      expect(css).toContain('--mu-ws-card-bg: rgb(28, 28, 28)');
+      expect(css).toContain('--mu-ws-card-border-color: transparent');
+      // Two layers: the opaque card fill, then the hairline gradient it clips to.
+      expect(css).toContain('linear-gradient(rgb(28, 28, 28), rgb(28, 28, 28))');
+      expect(css).toContain('linear-gradient(336.4deg, rgba(62, 63, 64, 0.5) 14.76%');
+      expect(css).toContain('--mu-ws-surface-bg: rgb(38, 38, 38)');
+      // Primary buttons invert in dark mode so they stay legible on the card.
+      expect(css).toContain('--mu-ws-button-bg: rgb(255, 255, 255)');
+      expect(css).toContain('--mu-ws-button-text: rgb(13, 13, 13)');
+    });
+
     test('light and dark themes define the same set of variables', () => {
       // Get light theme variables
       initTheme();

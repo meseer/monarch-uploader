@@ -20,6 +20,8 @@ import { createVersionBadge } from '../components/versionBadge';
 interface InjectionPointConfig {
   selector: string;
   insertMethod: string;
+  /** Parent hops from the matched anchor to the element the insert method applies to */
+  ancestorLevels?: number;
 }
 
 interface InjectionPointResult {
@@ -46,18 +48,38 @@ function resolveElement(selector: string): Element | null {
   return document.querySelector(selector);
 }
 
-function findInjectionPoint(): InjectionPointResult | null {
+/**
+ * Climbs `levels` parent elements from an anchor. Returns null if the walk runs
+ * past the document body, which means the page structure no longer matches what
+ * the injection point expects.
+ */
+function climbToAncestor(anchor: Element, levels: number): Element | null {
+  let current: Element | null = anchor;
+  for (let hop = 0; hop < levels; hop += 1) {
+    current = current.parentElement;
+    if (!current || current === document.body) {
+      debugLog(`Ancestor walk left the layout after ${hop + 1} of ${levels} hop(s)`);
+      return null;
+    }
+  }
+  return current;
+}
+
+export function findInjectionPoint(): InjectionPointResult | null {
   for (const injectionPoint of (WEALTHSIMPLE_UI as unknown as { INJECTION_POINTS: InjectionPointConfig[] }).INJECTION_POINTS) {
-    const element = resolveElement(injectionPoint.selector);
+    const anchor = resolveElement(injectionPoint.selector);
+    if (!anchor) { continue; }
+    const levels = injectionPoint.ancestorLevels ?? 0;
+    const element = levels > 0 ? climbToAncestor(anchor, levels) : anchor;
     if (element) {
-      debugLog(`Found injection point: ${injectionPoint.selector} (method: ${injectionPoint.insertMethod})`);
+      debugLog(`Found injection point: ${injectionPoint.selector} (method: ${injectionPoint.insertMethod}, ancestorLevels: ${levels})`);
       return { element, insertMethod: injectionPoint.insertMethod, selector: injectionPoint.selector };
     }
   }
   return null;
 }
 
-function getTargetContainer(element: Element, insertMethod: string): TargetContainerResult | null {
+export function getTargetContainer(element: Element, insertMethod: string): TargetContainerResult | null {
   if (insertMethod === 'prepend') {
     return { container: element, referenceNode: null };
   }
@@ -116,7 +138,14 @@ async function createUIContainer(
   debugLog('Creating UI container...');
   container = document.createElement('div');
   container.id = 'wealthsimple-balance-uploader-container';
-  container.style.cssText = `position: relative; padding: 16px; background-color: var(--mu-bg-primary, #ffffff); border: 1px solid var(--mu-border, #e5e5e5); border-radius: 8px; font-family: "Wealthsimple Sans", sans-serif; font-size: 14px; color: var(--mu-text-primary, ${COLORS.WEALTHSIMPLE_BRAND});`;
+  // Mirrors Wealthsimple's own nested-card treatment: their radius token, a
+  // gradient-clipped hairline border, and their card shadow. The two
+  // background-clip/origin values pair with the two gradients the dark theme
+  // puts in --mu-ws-card-bg-image (light mode uses a plain border instead).
+  // Wealthsimple's own cards add overflow: hidden; ours must not, because the
+  // holdings-card grid cell it sits in constrains the height and would clip
+  // the sync button off the bottom.
+  container.style.cssText = `position: relative; margin-bottom: 12px; padding: 16px; background-color: var(--mu-ws-card-bg, rgb(249, 249, 249)); background-image: var(--mu-ws-card-bg-image, none); background-clip: padding-box, border-box; background-origin: padding-box, border-box; border: 1px solid var(--mu-ws-card-border-color, rgb(255, 255, 255)); border-radius: var(--mint-card-nested-radius, 16px); box-shadow: var(--mu-ws-card-shadow, rgba(0, 0, 0, 0.05) 0px 8px 24px); font-family: "Wealthsimple Sans", sans-serif; font-size: 14px; color: var(--mu-text-primary, ${COLORS.WEALTHSIMPLE_BRAND});`;
 
   const header = document.createElement('div');
   header.id = 'wealthsimple-uploader-header';
@@ -157,6 +186,9 @@ async function createUIContainer(
   return container;
 }
 
+/** Path the upload button was built for, so SPA navigation can rebuild it */
+let uploadButtonPath: string | null = null;
+
 function initializeUIComponents(container: HTMLDivElement): void {
   try {
     const existingContent = Array.from(container.children).slice(1);
@@ -165,6 +197,7 @@ function initializeUIComponents(container: HTMLDivElement): void {
     container.appendChild(connectionStatus);
     const uploadButtonEl = createWealthsimpleUploadButton();
     container.appendChild(uploadButtonEl);
+    uploadButtonPath = window.location.pathname;
     setupStatusMonitoring(connectionStatus);
     updateConnectionStatus(connectionStatus);
     debugLog('Wealthsimple UI initialized successfully');
@@ -198,8 +231,15 @@ async function checkAndInitializeUI(): Promise<void> {
     isInitializing = true;
     const existingContainer = document.getElementById('wealthsimple-balance-uploader-container');
     if (existingContainer && document.contains(existingContainer)) {
-      debugLog('UI already present in DOM, skipping initialization');
       isUIInitialized = true;
+      // The container survives SPA navigation, so the button inside it still
+      // targets the previous page. Rebuild it whenever the path changed.
+      if (uploadButtonPath !== window.location.pathname) {
+        debugLog(`Path changed (${uploadButtonPath} -> ${window.location.pathname}), rebuilding upload button`);
+        updateUploadButton(existingContainer as HTMLDivElement);
+      } else {
+        debugLog('UI already present in DOM, skipping initialization');
+      }
       return;
     }
     const injectionPoint = findInjectionPoint();
@@ -327,7 +367,8 @@ function updateUploadButton(container: HTMLDivElement): void {
     if (existingButtonContainer) { existingButtonContainer.remove(); }
     const newUploadButton = createWealthsimpleUploadButton();
     container.appendChild(newUploadButton);
-    debugLog('Upload button updated based on auth status change');
+    uploadButtonPath = window.location.pathname;
+    debugLog(`Upload button rebuilt for ${uploadButtonPath}`);
   } catch (error) {
     debugLog('Error updating upload button:', error);
   }
