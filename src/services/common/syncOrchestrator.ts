@@ -42,7 +42,7 @@ import {
   mergeAndRetainTransactions,
   mergeNewestFirstRuns,
   getRetentionSettingsFromAccount,
-  StoredTransaction,
+  type StoredTransaction,
 } from '../../utils/transactionStorage';
 import { convertToCSV, MONARCH_CSV_COLUMNS, buildMonarchTags } from '../../utils/csv';
 import { resolveNotesTransactionId } from '../../core/markerTags';
@@ -67,6 +67,7 @@ import { syncTransactionOwners, buildOwnerResolver, formatOwnerSyncMessage } fro
  */
 function buildSyncSteps({
   hasCreditLimit = false, includeTransactions = true, includePending = true, includeOwnerSync = false,
+  includeBalance = true,
 }) {
   const steps = [];
 
@@ -88,7 +89,7 @@ function buildSyncSteps({
     steps.push({ key: 'ownerSync', name: 'Owner sync' });
   }
 
-  steps.push({ key: 'balance', name: 'Balance upload' });
+  if (includeBalance) steps.push({ key: 'balance', name: 'Balance upload' });
   return steps;
 }
 
@@ -605,8 +606,9 @@ export async function syncAccount({
   progressDialog.initSteps(accountId, buildSyncSteps({
     hasCreditLimit: capabilities.hasCreditLimit,
     includeTransactions: capabilities.hasTransactions,
-    includePending: includePendingTransactions,
+    includePending: Boolean(includePendingTransactions && txIdPrefix && hooks.getPendingIdFields),
     includeOwnerSync: ownerSyncEnabled,
+    includeBalance: capabilities.hasBalanceHistory !== false,
   }));
 
   const abortController = new AbortController();
@@ -741,54 +743,56 @@ export async function syncAccount({
     }
 
     // ── STEP 5: Balance Upload ─────────────────────────────
-    if (abortController.signal.aborted) throw new Error('Cancelled');
+    if (capabilities.hasBalanceHistory !== false) {
+      if (abortController.signal.aborted) throw new Error('Cancelled');
 
-    progressDialog.updateStepStatus(accountId, 'balance', 'processing', 'Preparing...');
+      progressDialog.updateStepStatus(accountId, 'balance', 'processing', 'Preparing...');
 
-    // Read invertBalance setting
-    const balanceAccountData = accountService.getAccountData(integrationId, accountId);
-    const invertBalance = balanceAccountData?.invertBalance === true;
+      // Read invertBalance setting
+      const balanceAccountData = accountService.getAccountData(integrationId, accountId);
+      const invertBalance = balanceAccountData?.invertBalance === true;
 
-    // Get current balance
-    let currentBalance = null;
-    try {
-      const balanceData = await api.getBalance(accountId);
-      currentBalance = balanceData.currentBalance;
-    } catch (error) {
-      debugLog('[orchestrator] Error fetching balance:', error);
-    }
+      // Get current balance
+      let currentBalance = null;
+      try {
+        const balanceData = await api.getBalance(accountId);
+        currentBalance = balanceData.currentBalance;
+      } catch (error) {
+        debugLog('[orchestrator] Error fetching balance:', error);
+      }
 
-    // Build balance history if reconstruction is possible.
-    // On first sync: only if user opted in (reconstructBalance flag from date picker).
-    // On subsequent syncs: always reconstruct when the hook and metadata are available,
-    // so Monarch gets multi-day balance coverage instead of just today's snapshot.
-    let balanceHistory = null;
-    const shouldReconstruct = !!(hooks.buildBalanceHistory && fetchData?.metadata
+      // Build balance history if reconstruction is possible.
+      // On first sync: only if user opted in (reconstructBalance flag from date picker).
+      // On subsequent syncs: always reconstruct when the hook and metadata are available,
+      // so Monarch gets multi-day balance coverage instead of just today's snapshot.
+      let balanceHistory = null;
+      const shouldReconstruct = !!(hooks.buildBalanceHistory && fetchData?.metadata
       && (firstSync ? reconstructBalance : true));
 
-    if (shouldReconstruct) {
-      progressDialog.updateStepStatus(accountId, 'balance', 'processing', 'Reconstructing...');
-      balanceHistory = hooks.buildBalanceHistory({
+      if (shouldReconstruct) {
+        progressDialog.updateStepStatus(accountId, 'balance', 'processing', 'Reconstructing...');
+        balanceHistory = hooks.buildBalanceHistory({
+          currentBalance,
+          metadata: fetchData.metadata,
+          fromDate,
+          invertBalance,
+        });
+      }
+
+      // Use common balance upload service
+      await executeBalanceUploadStep({
+        integrationId,
+        sourceAccountId: accountId,
+        monarchAccountId,
+        accountName: accountDisplayName,
         currentBalance,
-        metadata: fetchData.metadata,
-        fromDate,
         invertBalance,
+        reconstructBalance: shouldReconstruct,
+        balanceHistory,
+        fromDate,
+        progressDialog,
       });
     }
-
-    // Use common balance upload service
-    await executeBalanceUploadStep({
-      integrationId,
-      sourceAccountId: accountId,
-      monarchAccountId,
-      accountName: accountDisplayName,
-      currentBalance,
-      invertBalance,
-      reconstructBalance: shouldReconstruct,
-      balanceHistory,
-      fromDate,
-      progressDialog,
-    });
 
     // ── Update sync metadata ───────────────────────────────
     accountService.updateAccountInList(integrationId, accountId, {
@@ -811,7 +815,7 @@ export async function syncAccount({
 
     const summaryParts = [];
     if (txStepResult?.success) summaryParts.push('Transactions synced');
-    summaryParts.push('Balance uploaded');
+    if (capabilities.hasBalanceHistory !== false) summaryParts.push('Balance uploaded');
 
     return { success: true, message: summaryParts.join(', ') };
   } catch (error) {
@@ -926,4 +930,3 @@ export async function prepareAndSyncAccount({
     progressDialog,
   });
 }
-

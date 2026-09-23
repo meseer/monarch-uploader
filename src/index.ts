@@ -62,14 +62,18 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
   const httpClient = createGMHttpClient();
   const storage = createGMStorageAdapter();
   AVAILABLE_INTEGRATIONS.forEach((integration) => {
+    const integrationAuth = integration.createAuth(storage);
     registerIntegration({
       manifest: integration.manifest,
       api: integration.createApi(httpClient, storage),
-      auth: integration.createAuth(storage),
+      auth: integrationAuth,
       injectionPoint: integration.injectionPoint,
       monarchMapper: integration.monarchMapper || null,
       syncHooks: integration.syncHooks || null,
     });
+    if (integration.manifest.matchDomains.some((domain) => window.location.hostname.includes(domain))) {
+      integrationAuth.setupMonitoring?.();
+    }
   });
 
   // Initialize the application once the DOM is ready

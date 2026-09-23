@@ -249,6 +249,36 @@ beforeEach(() => {
 });
 
 describe('syncAccount', () => {
+  it('skips balance and pending steps for a posted-transactions-only integration', async () => {
+    const { executeBalanceUploadStep } = require('../../../src/services/common/balanceUpload');
+    const progressDialog = createMockProgressDialog();
+    const api = createMockApi();
+    delete api.getBalance;
+
+    const result = await syncAccount({
+      integrationId: 'pcfinancial',
+      manifest: {
+        ...defaultManifest,
+        txIdPrefix: null,
+        capabilities: { ...defaultManifest.capabilities, hasBalanceHistory: false, hasCreditLimit: false },
+      },
+      hooks: createMockHooks(),
+      api,
+      account: { accountId: 'acc-1' },
+      accountDisplayName: 'PC Money',
+      monarchAccount: { id: 'monarch-1' },
+      fromDate: '2024-01-01',
+      progressDialog,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.message).toBe('Transactions synced');
+    expect(progressDialog.initSteps).toHaveBeenCalledWith('acc-1', [
+      { key: 'transactions', name: 'Transaction sync' },
+    ]);
+    expect(executeBalanceUploadStep).not.toHaveBeenCalled();
+  });
+
   it('should execute full sync workflow successfully', async () => {
     const progressDialog = createMockProgressDialog();
     const hooks = createMockHooks();
