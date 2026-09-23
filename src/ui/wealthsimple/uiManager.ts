@@ -142,7 +142,10 @@ async function createUIContainer(
   // gradient-clipped hairline border, and their card shadow. The two
   // background-clip/origin values pair with the two gradients the dark theme
   // puts in --mu-ws-card-bg-image (light mode uses a plain border instead).
-  container.style.cssText = `position: relative; margin-bottom: 12px; padding: 16px; background-color: var(--mu-ws-card-bg, rgb(249, 249, 249)); background-image: var(--mu-ws-card-bg-image, none); background-clip: padding-box, border-box; background-origin: padding-box, border-box; border: 1px solid var(--mu-ws-card-border-color, rgb(255, 255, 255)); border-radius: var(--mint-card-nested-radius, 16px); box-shadow: var(--mu-ws-card-shadow, rgba(0, 0, 0, 0.05) 0px 8px 24px); overflow: hidden; font-family: "Wealthsimple Sans", sans-serif; font-size: 14px; color: var(--mu-text-primary, ${COLORS.WEALTHSIMPLE_BRAND});`;
+  // Wealthsimple's own cards add overflow: hidden; ours must not, because the
+  // holdings-card grid cell it sits in constrains the height and would clip
+  // the sync button off the bottom.
+  container.style.cssText = `position: relative; margin-bottom: 12px; padding: 16px; background-color: var(--mu-ws-card-bg, rgb(249, 249, 249)); background-image: var(--mu-ws-card-bg-image, none); background-clip: padding-box, border-box; background-origin: padding-box, border-box; border: 1px solid var(--mu-ws-card-border-color, rgb(255, 255, 255)); border-radius: var(--mint-card-nested-radius, 16px); box-shadow: var(--mu-ws-card-shadow, rgba(0, 0, 0, 0.05) 0px 8px 24px); font-family: "Wealthsimple Sans", sans-serif; font-size: 14px; color: var(--mu-text-primary, ${COLORS.WEALTHSIMPLE_BRAND});`;
 
   const header = document.createElement('div');
   header.id = 'wealthsimple-uploader-header';
@@ -183,6 +186,9 @@ async function createUIContainer(
   return container;
 }
 
+/** Path the upload button was built for, so SPA navigation can rebuild it */
+let uploadButtonPath: string | null = null;
+
 function initializeUIComponents(container: HTMLDivElement): void {
   try {
     const existingContent = Array.from(container.children).slice(1);
@@ -191,6 +197,7 @@ function initializeUIComponents(container: HTMLDivElement): void {
     container.appendChild(connectionStatus);
     const uploadButtonEl = createWealthsimpleUploadButton();
     container.appendChild(uploadButtonEl);
+    uploadButtonPath = window.location.pathname;
     setupStatusMonitoring(connectionStatus);
     updateConnectionStatus(connectionStatus);
     debugLog('Wealthsimple UI initialized successfully');
@@ -224,8 +231,15 @@ async function checkAndInitializeUI(): Promise<void> {
     isInitializing = true;
     const existingContainer = document.getElementById('wealthsimple-balance-uploader-container');
     if (existingContainer && document.contains(existingContainer)) {
-      debugLog('UI already present in DOM, skipping initialization');
       isUIInitialized = true;
+      // The container survives SPA navigation, so the button inside it still
+      // targets the previous page. Rebuild it whenever the path changed.
+      if (uploadButtonPath !== window.location.pathname) {
+        debugLog(`Path changed (${uploadButtonPath} -> ${window.location.pathname}), rebuilding upload button`);
+        updateUploadButton(existingContainer as HTMLDivElement);
+      } else {
+        debugLog('UI already present in DOM, skipping initialization');
+      }
       return;
     }
     const injectionPoint = findInjectionPoint();
@@ -353,7 +367,8 @@ function updateUploadButton(container: HTMLDivElement): void {
     if (existingButtonContainer) { existingButtonContainer.remove(); }
     const newUploadButton = createWealthsimpleUploadButton();
     container.appendChild(newUploadButton);
-    debugLog('Upload button updated based on auth status change');
+    uploadButtonPath = window.location.pathname;
+    debugLog(`Upload button rebuilt for ${uploadButtonPath}`);
   } catch (error) {
     debugLog('Error updating upload button:', error);
   }

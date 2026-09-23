@@ -248,8 +248,6 @@ export function createWealthsimpleUploadButton(): HTMLElement {
 
   // Get context-aware button label
   const buttonLabel = getButtonLabel();
-  const accountId = getCurrentAccountId();
-  const isAccountDetailPage = Boolean(accountId);
 
   // Create upload button
   const uploadButton = createWealthsimpleButton(buttonLabel, async () => {
@@ -259,10 +257,16 @@ export function createWealthsimpleUploadButton(): HTMLElement {
       return; // User cancelled authentication
     }
 
-    try {
-      debugLog(`Starting Wealthsimple sync... (Account detail page: ${isAccountDetailPage})`);
+    // Resolve the sync target at click time, not at creation time. Wealthsimple
+    // can navigate account -> account without this button being recreated, and a
+    // captured id would sync the balance into whichever account was open when
+    // the button was built.
+    const accountId = getCurrentAccountId();
 
-      if (isAccountDetailPage && accountId) {
+    try {
+      debugLog(`Starting Wealthsimple sync... (account detail page: ${Boolean(accountId)}, accountId: ${accountId ?? 'none'})`);
+
+      if (accountId) {
         // Sync single account with progress dialog
         await uploadSingleAccountWithProgress(accountId);
       } else {
@@ -272,9 +276,9 @@ export function createWealthsimpleUploadButton(): HTMLElement {
         try {
           await uploadAllWealthsimpleAccountsToMonarch();
         } finally {
-          // Re-enable button after bulk sync
+          // Re-enable button after bulk sync, relabelled for wherever we are now
           uploadButton.disabled = false;
-          uploadButton.textContent = buttonLabel;
+          uploadButton.textContent = getButtonLabel();
         }
       }
     } catch (error) {
