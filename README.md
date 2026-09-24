@@ -22,6 +22,7 @@ A userscript that automatically syncs balance history, transactions, holdings, a
 |---|:---:|:---:|:---:|:---:|:---:|:---:|---|
 | Canada Life | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | Group retirement and pension plans |
 | MBNA | ✅ | ✅ | ❌ | ✅ | ✅ | ? | Credit cards |
+| Neo Financial | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | Credit cards, Everyday, and savings accounts |
 | Questrade | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | Investment accounts (TFSA, RRSP, margin, etc.) |
 | Rogers Bank | ✅ | ✅ | ❌ | ✅ | ✅ | ? | Credit cards |
 | Wealthsimple | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Investment, Cash, and Credit Card accounts |
@@ -61,7 +62,7 @@ The script will auto-update whenever a new version is published.
 ### Usage
 
 1. Log in to [Monarch Money](https://app.monarch.com/) in your browser so the session is active.
-2. Navigate to any of the supported institution websites (Questrade, Wealthsimple, Canada Life, Rogers Bank, or MBNA).
+2. Navigate to any of the supported institution websites (Questrade, Wealthsimple, Canada Life, Rogers Bank, MBNA, or Neo Financial).
 3. The script will inject an **Upload to Monarch** button into the page.
 4. Click the button to sync your data. Use the ⚙️ settings gear to configure account mappings, sync preferences, and category mappings.
 

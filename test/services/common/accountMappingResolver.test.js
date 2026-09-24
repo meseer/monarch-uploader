@@ -320,6 +320,75 @@ describe('resolveAccountMapping', () => {
     );
   });
 
+  it('should use account-specific creation defaults', async () => {
+    accountService.getMonarchAccountMapping.mockReturnValue(null);
+    accountService.getAccountData.mockReturnValue(null);
+    showMonarchAccountSelectorWithCreate.mockImplementation((_accts, callback) => {
+      callback(null);
+    });
+
+    const account = { ...SAMPLE_ACCOUNT, accountType: 'depository', category: 'EVERYDAY' };
+    const manifest = {
+      ...SAMPLE_MANIFEST,
+      accountDefaultsForAccount: () => ({
+        accountCreateDefaults: {
+          defaultType: 'depository',
+          defaultSubtype: 'checking',
+          accountType: 'depository',
+        },
+        settings: { invertBalance: true },
+      }),
+    };
+
+    await resolveAccountMapping({
+      integrationId: 'test',
+      manifest,
+      account,
+      accountDisplayName: 'Everyday Account',
+      buildAccountEntry,
+    });
+
+    expect(showMonarchAccountSelectorWithCreate).toHaveBeenCalledWith(
+      [],
+      expect.any(Function),
+      null,
+      'depository',
+      expect.objectContaining({
+        defaultType: 'depository',
+        defaultSubtype: 'checking',
+        accountType: 'depository',
+      }),
+    );
+  });
+
+  it('should save account-specific setting defaults with a new mapping', async () => {
+    accountService.getMonarchAccountMapping.mockReturnValue(null);
+    accountService.getAccountData.mockReturnValue(null);
+    showMonarchAccountSelectorWithCreate.mockImplementation((_accts, callback) => {
+      callback({ id: 'monarch-deposit', displayName: 'Neo Everyday' });
+    });
+
+    const manifest = {
+      ...SAMPLE_MANIFEST,
+      accountDefaultsForAccount: () => ({
+        settings: { invertBalance: true },
+      }),
+    };
+
+    await resolveAccountMapping({
+      integrationId: 'test',
+      manifest,
+      account: SAMPLE_ACCOUNT,
+      accountDisplayName: 'Neo Everyday',
+      buildAccountEntry,
+    });
+
+    expect(accountService.upsertAccount).toHaveBeenCalledWith('test', expect.objectContaining({
+      invertBalance: true,
+      monarchAccount: { id: 'monarch-deposit', displayName: 'Neo Everyday' },
+    }));
+  });
+
   it('should use buildAccountEntry hook for storage shape', async () => {
     accountService.getMonarchAccountMapping.mockReturnValue(null);
     accountService.getAccountData.mockReturnValue(null);

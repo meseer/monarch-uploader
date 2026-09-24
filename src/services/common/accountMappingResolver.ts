@@ -17,6 +17,7 @@ import { hasCapability, ACCOUNT_SETTINGS } from '../../core/integrationCapabilit
 import accountService from './accountService';
 import toast from '../../ui/toast';
 import { showMonarchAccountSelectorWithCreate } from '../../ui/components/accountSelectorWithCreate';
+import type { IntegrationAccountDefaults } from '../../integrations/types';
 
 /**
  * Pull the cardholder sync choices out of the dialog's result.
@@ -54,6 +55,7 @@ interface ResolveAccountMappingParams {
   manifest: {
     accountKeyName: string;
     accountCreateDefaults?: Record<string, unknown>;
+    accountDefaultsForAccount?: (account: Record<string, unknown>) => IntegrationAccountDefaults;
     logoCloudinaryId?: string | null;
   };
   account: { accountId: string; [key: string]: unknown };
@@ -109,9 +111,12 @@ export async function resolveAccountMapping({
   // 3. Show account selector with manifest-driven defaults
   debugLog(`[${integrationId}] No mapping for`, accountDisplayName, '— showing account selector');
 
+  const accountDefaults = manifest.accountDefaultsForAccount?.(account);
+  const creationDefaults = accountDefaults?.accountCreateDefaults ?? manifest.accountCreateDefaults;
+  const settingsDefaults = accountDefaults?.settings ?? {};
   const createDefaults = {
     defaultName: accountDisplayName,
-    ...(manifest.accountCreateDefaults || {}),
+    ...(creationDefaults || {}),
     // A capability flag, not an integration id: the dialog stays generic
     // Monarch-account UI and only needs to know whether to offer the controls.
     supportsCardholders: hasCapability(integrationId, 'hasCardholders'),
@@ -122,7 +127,7 @@ export async function resolveAccountMapping({
       [],
       (selectedAccount) => resolve(selectedAccount),
       null,
-      (manifest.accountCreateDefaults?.accountType as string) || 'credit',
+      (creationDefaults?.accountType as string) || 'credit',
       createDefaults as Parameters<typeof showMonarchAccountSelectorWithCreate>[4],
     );
   });
@@ -146,6 +151,7 @@ export async function resolveAccountMapping({
       monarchAccount: null,
       syncEnabled: false,
       lastSyncDate: null,
+      ...settingsDefaults,
     };
     accountService.upsertAccount(integrationId, skippedData);
     toast.show(`${accountDisplayName}: skipped`, 'info', 2000);
@@ -163,6 +169,7 @@ export async function resolveAccountMapping({
     },
     syncEnabled: true,
     lastSyncDate: null,
+    ...settingsDefaults,
     ...cardholderSettings,
   };
   accountService.upsertAccount(integrationId, mappingData);
