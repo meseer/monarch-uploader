@@ -45,14 +45,14 @@ Unrelated changes belong in separate branches and separate PRs.
 
 ### 2. Make the change
 
-Follow the conventions in `CLAUDE.md`: layer boundaries, function length limits,
+Follow the conventions in `AGENTS.md`: layer boundaries, function length limits,
 file size limits, HTML element IDs, error-handling patterns. New or modified
 behavior needs test coverage in the matching `test/` file.
 
 ### 3. Bump the version
 
 Every user-visible change ships a version bump. Decide the increment from
-`CLAUDE.md` (patch for fixes/refactors/docs, minor for features, major for a new
+`AGENTS.md` (patch for fixes/refactors/docs, minor for features, major for a new
 institution or breaking change), then:
 
 ```bash

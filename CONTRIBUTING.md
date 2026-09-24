@@ -8,7 +8,7 @@ Thank you for your interest in contributing! This document provides guidelines f
 2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/monarch-uploader.git`
 3. Install dependencies: `npm install`
 4. Create a feature branch: `git checkout -b <type>/<short-description>` — see the
-   branch naming table in [CLAUDE.md](CLAUDE.md#git-workflow) (`feat/`, `fix/`,
+   branch naming table in [AGENTS.md](AGENTS.md#git-workflow) (`feat/`, `fix/`,
    `refactor/`, `docs/`, `test/`, `chore/`, `build/`)
 
 ## Development Workflow
@@ -20,7 +20,7 @@ Thank you for your interest in contributing! This document provides guidelines f
    ```
    This runs clean → lint → typecheck → test → production build. All steps must
    pass with zero errors.
-3. Commit with a descriptive message following our [commit conventions](CLAUDE.md#commit-message-format)
+3. Commit with a descriptive message following our [commit conventions](AGENTS.md#commit-message-format)
 
 ## Pull Request Process
 
@@ -35,7 +35,7 @@ Thank you for your interest in contributing! This document provides guidelines f
 - Follow existing code patterns and conventions
 - Use ES6+ features and TypeScript
 - Add JSDoc comments for public functions
-- See [CLAUDE.md](CLAUDE.md) for the full coding standards
+- See [AGENTS.md](AGENTS.md) for the full coding standards
 
 ## Reporting Issues
 
