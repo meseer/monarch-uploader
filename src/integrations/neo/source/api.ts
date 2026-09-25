@@ -50,7 +50,7 @@ interface NeoAccountsResponse {
         category: string;
         status: string;
         program: { productName: string };
-        card: { last4: string };
+        card: { last4: string } | null;
       }>;
     };
   };
@@ -320,14 +320,17 @@ export function createApi(httpClient: HttpClient, _auth: unknown): NeoApiClient 
       }));
     const savingsAccounts: NeoAccount[] = data.user.savingsAccountsList.results
       .filter((account) => account.status === 'OPEN')
-      .map((account) => ({
-        accountId: account.id,
-        accountType: 'depository',
-        accountSubtype: account.category === 'EVERYDAY' ? 'checking' : 'savings',
-        category: account.category,
-        productName: account.program.productName,
-        displayName: `${getProductName(account.program.productName)} (${account.card.last4})`,
-      }));
+      .map((account) => {
+        const displayName = getProductName(account.program.productName);
+        return {
+          accountId: account.id,
+          accountType: 'depository',
+          accountSubtype: account.category === 'EVERYDAY' ? 'checking' : 'savings',
+          category: account.category,
+          productName: account.program.productName,
+          displayName: account.card ? `${displayName} (${account.card.last4})` : displayName,
+        };
+      });
 
     accountTypes.clear();
     creditAccounts.forEach((account) => accountTypes.set(account.accountId, 'credit'));

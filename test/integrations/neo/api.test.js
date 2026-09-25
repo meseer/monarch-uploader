@@ -102,6 +102,34 @@ describe('Neo API client', () => {
     expect(operationFromRequest(httpClient.request.mock.calls[0][0]).operationName).toBe('NeoAccounts');
   });
 
+  it('discovers deposit accounts that do not have an associated card', async () => {
+    const data = {
+      user: {
+        creditAccounts: [],
+        savingsAccountsList: {
+          results: [{
+            id: 'savings-without-card',
+            category: 'HISA',
+            status: 'OPEN',
+            program: { productName: 'SAVINGS' },
+            card: null,
+          }],
+        },
+      },
+    };
+    const httpClient = { request: jest.fn().mockResolvedValue(graphqlResponse(data)) };
+    const api = createApi(httpClient, {});
+
+    await expect(api.getAccountsSummary()).resolves.toEqual([{
+      accountId: 'savings-without-card',
+      accountType: 'depository',
+      accountSubtype: 'savings',
+      category: 'HISA',
+      productName: 'SAVINGS',
+      displayName: 'Neo Savings',
+    }]);
+  });
+
   it('converts current balances and credit limits from cents', async () => {
     const httpClient = {
       request: jest.fn()

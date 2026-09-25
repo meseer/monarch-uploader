@@ -46,7 +46,15 @@ describe('Neo manifest', () => {
       expect.objectContaining({ id: 'account', uiType: 'all-accounts' }),
     ]));
     expect(injectionPoint.pageModes[0].selectors).toEqual([
-      { selector: 'main', insertMethod: 'prepend' },
+      { selector: '.MuiContainer-root.MuiContainer-maxWidthXl', insertMethod: 'prepend' },
     ]);
+  });
+
+  it('targets the content container used by the Neo account pages', () => {
+    document.body.innerHTML = '<div class="MuiContainer-root MuiContainer-maxWidthXl"></div>';
+
+    for (const pageMode of injectionPoint.pageModes) {
+      expect(document.querySelector(pageMode.selectors[0].selector)).not.toBeNull();
+    }
   });
 });
