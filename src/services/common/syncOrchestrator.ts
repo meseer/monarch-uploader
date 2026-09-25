@@ -42,7 +42,7 @@ import {
   mergeAndRetainTransactions,
   mergeNewestFirstRuns,
   getRetentionSettingsFromAccount,
-  StoredTransaction,
+  type StoredTransaction,
 } from '../../utils/transactionStorage';
 import { convertToCSV, MONARCH_CSV_COLUMNS, buildMonarchTags } from '../../utils/csv';
 import { resolveNotesTransactionId } from '../../core/markerTags';
@@ -926,4 +926,3 @@ export async function prepareAndSyncAccount({
     progressDialog,
   });
 }
-
