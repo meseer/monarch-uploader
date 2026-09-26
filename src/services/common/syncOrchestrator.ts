@@ -790,6 +790,10 @@ export async function syncAccount({
       progressDialog,
     });
 
+    if (fetchData && hooks.afterSyncSuccess) {
+      await hooks.afterSyncSuccess(accountId, fetchData.metadata);
+    }
+
     // ── Update sync metadata ───────────────────────────────
     accountService.updateAccountInList(integrationId, accountId, {
       lastSyncDate: getTodayLocal(),

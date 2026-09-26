@@ -224,7 +224,7 @@ describe('Neo API client', () => {
     const api = createApi(httpClient, {});
     await api.getAccounts();
 
-    const transactions = await api.getTransactions('closed-credit', '2026-01-31');
+    const transactions = await api.getTransactions('closed-credit', null, '2026-01-31');
 
     expect(transactions.map((tx) => tx.id)).toEqual(['newer', 'older', 'before-range', 'account-opening']);
     expect(httpClient.request).toHaveBeenCalledTimes(4);
@@ -270,7 +270,7 @@ describe('Neo API client', () => {
     const api = createApi(httpClient, {});
     await api.getAccounts();
 
-    await expect(api.getTransactions('everyday-1', '2026-01-31')).resolves.toEqual(transactions);
+    await expect(api.getTransactions('everyday-1', null, '2026-01-31')).resolves.toEqual(transactions);
     expect(operationFromRequest(httpClient.request.mock.calls[1][0]).operationName).toBe('NeoSavingsTransactions');
     expect(operationFromRequest(httpClient.request.mock.calls[2][0]).variables.input.primaryCursor).toEqual({
       field: 'authorizationProcessedAt',
@@ -278,6 +278,43 @@ describe('Neo API client', () => {
       type: 'DATE',
       cursor: 'older-savings-page',
     });
+  });
+
+  it('stops incremental paging below the requested start date', async () => {
+    const firstPage = {
+      user: { creditAccount: { creditAccountTransactions: {
+        primaryCursor: { cursor: 'next-page' },
+        hasNextPage: true,
+        results: [
+          { id: 'newest', authorizationProcessedAt: '2026-01-20T00:00:00Z' },
+          { id: 'in-range', authorizationProcessedAt: '2026-01-10T00:00:00Z' },
+        ],
+      } } },
+    };
+    const secondPage = {
+      user: { creditAccount: { creditAccountTransactions: {
+        primaryCursor: { cursor: 'older-page' },
+        hasNextPage: true,
+        results: [
+          { id: 'before-start', authorizationProcessedAt: '2026-01-04T00:00:00Z' },
+          { id: 'oldest', authorizationProcessedAt: '2025-12-31T00:00:00Z' },
+        ],
+      } } },
+    };
+    const httpClient = {
+      request: jest.fn()
+        .mockResolvedValueOnce(graphqlResponse(accountsResponse))
+        .mockResolvedValueOnce(graphqlResponse(firstPage))
+        .mockResolvedValueOnce(graphqlResponse(secondPage)),
+    };
+    const api = createApi(httpClient, {});
+    await api.getAccounts();
+
+    await expect(api.getTransactions('credit-1', '2026-01-05', '2026-01-31')).resolves.toEqual([
+      { id: 'newest', authorizationProcessedAt: '2026-01-20T00:00:00Z' },
+      { id: 'in-range', authorizationProcessedAt: '2026-01-10T00:00:00Z' },
+    ]);
+    expect(httpClient.request).toHaveBeenCalledTimes(3);
   });
 
   it('reports an expired Neo session on an unauthorized response', async () => {

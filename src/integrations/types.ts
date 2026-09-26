@@ -378,6 +378,8 @@ export interface SyncHooks {
   suggestStartDate?: SuggestStartDateHook;
   /** Build the institution-specific account storage shape */
   buildAccountEntry?: BuildAccountEntryHook;
+  /** Persist integration-specific metadata after a successful account sync */
+  afterSyncSuccess?: (accountId: string, metadata: Record<string, unknown>) => void | Promise<void>;
 }
 
 /**

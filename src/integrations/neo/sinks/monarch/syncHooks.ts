@@ -1,4 +1,5 @@
 import { getTodayLocal } from '../../../../core/utils';
+import accountService from '../../../../services/common/accountService';
 import type { SyncCallbacks, SyncHooks } from '../../../types';
 import type { NeoAccount, NeoApiClient, NeoTransaction } from '../../source/api';
 import { processNeoTransactions, type ProcessedNeoTransaction } from './transactions';
@@ -6,16 +7,24 @@ import { processNeoTransactions, type ProcessedNeoTransaction } from './transact
 async function fetchTransactions(
   api: NeoApiClient,
   accountId: string,
-  _fromDate: string,
+  fromDate: string,
   { onProgress }: SyncCallbacks,
-): Promise<{ settled: NeoTransaction[]; pending: []; metadata: Record<string, never> }> {
+): Promise<{ settled: NeoTransaction[]; pending: []; metadata: Record<string, unknown> }> {
   onProgress('Fetching Neo transactions...');
-  const transactions = await api.getTransactions(accountId, getTodayLocal());
+  const historyImported = accountService.getAccountData('neo', accountId)?.transactionHistoryImported === true;
+  const startDate = historyImported ? fromDate : null;
+  const transactions = await api.getTransactions(accountId, startDate, getTodayLocal());
   const settled = transactions
     .filter((transaction) => transaction.status === 'CONFIRMED')
     .reverse();
 
-  return { settled, pending: [], metadata: {} };
+  return { settled, pending: [], metadata: { fullHistoryFetched: !historyImported } };
+}
+
+function afterSyncSuccess(accountId: string, metadata: Record<string, unknown>): void {
+  if (metadata.fullHistoryFetched) {
+    accountService.updateAccountInList('neo', accountId, { transactionHistoryImported: true });
+  }
 }
 
 function processTransactions(
@@ -64,6 +73,7 @@ const syncHooks: SyncHooks = {
   resolveCategories,
   buildTransactionNotes,
   buildAccountEntry,
+  afterSyncSuccess,
 };
 
 export default syncHooks;

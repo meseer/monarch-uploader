@@ -197,6 +197,7 @@ function createMockHooks() {
     getPendingRefId: jest.fn((tx) => tx.pendingId),
     resolveCategories: jest.fn((txs) => Promise.resolve(txs.map((tx) => ({ ...tx, resolvedMonarchCategory: 'Shopping' })))),
     buildTransactionNotes: jest.fn(() => ''),
+    afterSyncSuccess: jest.fn(),
     getPendingIdFields: jest.fn((tx) => [tx.date, tx.description, String(tx.amount)]),
     getSettledAmount: jest.fn((tx) => -tx.amount),
     buildBalanceHistory: jest.fn(() => null),
@@ -272,6 +273,9 @@ describe('syncAccount', () => {
     expect(hooks.fetchTransactions).toHaveBeenCalled();
     expect(hooks.processTransactions).toHaveBeenCalled();
     expect(hooks.resolveCategories).toHaveBeenCalled();
+    expect(hooks.afterSyncSuccess).toHaveBeenCalledWith('acc-1', {
+      statements: [], currentCycle: { settled: [] },
+    });
     expect(progressDialog.showSummary).toHaveBeenCalledWith({ success: 1, failed: 0, total: 1 });
   });
 
@@ -483,6 +487,7 @@ describe('syncAccount', () => {
 
     expect(result.success).toBe(false);
     expect(result.message).toBe('API Error');
+    expect(hooks.afterSyncSuccess).not.toHaveBeenCalled();
     expect(progressDialog.showSummary).toHaveBeenCalledWith({ success: 0, failed: 1, total: 1 });
   });
 

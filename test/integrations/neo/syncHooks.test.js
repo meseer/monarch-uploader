@@ -4,9 +4,23 @@ jest.mock('../../../src/core/utils', () => ({
   getTodayLocal: jest.fn(() => '2026-01-31'),
 }));
 
+jest.mock('../../../src/services/common/accountService', () => ({
+  __esModule: true,
+  default: {
+    getAccountData: jest.fn(() => null),
+    updateAccountInList: jest.fn(),
+  },
+}));
+
 import syncHooks from '../../../src/integrations/neo/sinks/monarch/syncHooks';
+import accountService from '../../../src/services/common/accountService';
 
 describe('Neo sync hooks', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    accountService.getAccountData.mockReturnValue(null);
+  });
+
   it('returns confirmed transactions oldest-first and excludes declined activity', async () => {
     const api = {
       getTransactions: jest.fn().mockResolvedValue([
@@ -18,9 +32,34 @@ describe('Neo sync hooks', () => {
 
     const result = await syncHooks.fetchTransactions(api, 'account-1', '2026-01-01', { onProgress: jest.fn() });
 
-    expect(api.getTransactions).toHaveBeenCalledWith('account-1', '2026-01-31');
+    expect(api.getTransactions).toHaveBeenCalledWith('account-1', null, '2026-01-31');
     expect(result.settled.map((transaction) => transaction.id)).toEqual(['old', 'new']);
     expect(result.pending).toEqual([]);
+    expect(result.metadata).toEqual({ fullHistoryFetched: true });
+  });
+
+  it('uses the lookback date after full history has been imported', async () => {
+    accountService.getAccountData.mockReturnValue({ transactionHistoryImported: true });
+    const api = { getTransactions: jest.fn().mockResolvedValue([]) };
+
+    const result = await syncHooks.fetchTransactions(api, 'account-1', '2026-01-20', { onProgress: jest.fn() });
+
+    expect(api.getTransactions).toHaveBeenCalledWith('account-1', '2026-01-20', '2026-01-31');
+    expect(result.metadata).toEqual({ fullHistoryFetched: false });
+  });
+
+  it('marks full history imported only after the account sync succeeds', async () => {
+    await syncHooks.afterSyncSuccess('account-1', { fullHistoryFetched: true });
+
+    expect(accountService.updateAccountInList).toHaveBeenCalledWith('neo', 'account-1', {
+      transactionHistoryImported: true,
+    });
+  });
+
+  it('does not rewrite the history marker on an incremental sync', async () => {
+    syncHooks.afterSyncSuccess('account-1', { fullHistoryFetched: false });
+
+    expect(accountService.updateAccountInList).not.toHaveBeenCalled();
   });
 
   it('maps debit and credit cents to Monarch transaction signs', () => {

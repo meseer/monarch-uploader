@@ -197,7 +197,7 @@ export interface NeoApiClient {
   getAccountsSummary(): Promise<NeoAccount[]>;
   getBalance(accountId: string): Promise<{ currentBalance: number; currency: string }>;
   getCreditLimit(accountId: string): Promise<number | null>;
-  getTransactions(accountId: string, endDate: string): Promise<NeoTransaction[]>;
+  getTransactions(accountId: string, startDate: string | null, endDate: string): Promise<NeoTransaction[]>;
 }
 
 export function createApi(httpClient: HttpClient, _auth: unknown): NeoApiClient {
@@ -276,6 +276,7 @@ export function createApi(httpClient: HttpClient, _auth: unknown): NeoApiClient 
 
   async function fetchTransactions(
     accountId: string,
+    startDate: string | null,
     endDate: string,
     fetchPage: (id: string, cursor: string | null) => Promise<NeoTransactionPage>,
   ): Promise<NeoTransaction[]> {
@@ -285,7 +286,15 @@ export function createApi(httpClient: HttpClient, _auth: unknown): NeoApiClient 
 
     while (hasNextPage) {
       const page = await fetchPage(accountId, cursor);
-      transactions.push(...page.results.filter((transaction) => transactionDate(transaction) <= endDate));
+      transactions.push(...page.results.filter((transaction) => {
+        const date = transactionDate(transaction);
+        return date <= endDate && (!startDate || date >= startDate);
+      }));
+
+      const lastTransaction = page.results.at(-1);
+      if (startDate && lastTransaction && transactionDate(lastTransaction) < startDate) {
+        break;
+      }
 
       hasNextPage = page.hasNextPage;
       cursor = page.primaryCursor.cursor;
@@ -364,11 +373,11 @@ export function createApi(httpClient: HttpClient, _auth: unknown): NeoApiClient 
       return limit / 100;
     },
 
-    async getTransactions(accountId: string, endDate: string): Promise<NeoTransaction[]> {
+    async getTransactions(accountId: string, startDate: string | null, endDate: string): Promise<NeoTransaction[]> {
       const fetchPage = accountTypeFor(accountId) === 'credit'
         ? fetchCreditTransactionPage
         : fetchSavingsTransactionPage;
-      return fetchTransactions(accountId, endDate, fetchPage);
+      return fetchTransactions(accountId, startDate, endDate, fetchPage);
     },
   };
 }
