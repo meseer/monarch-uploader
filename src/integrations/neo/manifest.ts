@@ -18,7 +18,6 @@ const manifest: IntegrationManifest = {
       'storeTransactionDetailsInNotes',
       'transactionRetentionDays',
       'transactionRetentionCount',
-      'invertBalance',
     ],
     hasCategoryMappings: false,
     hasHoldingsMappings: false,
@@ -38,7 +37,6 @@ const manifest: IntegrationManifest = {
     { key: 'storeTransactionDetailsInNotes', default: false },
     { key: 'transactionRetentionDays', default: 91 },
     { key: 'transactionRetentionCount', default: 1000 },
-    { key: 'invertBalance', default: false },
   ],
   accountDefaultsForAccount(account) {
     if (account.accountType === 'credit') {

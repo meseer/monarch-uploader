@@ -22,6 +22,7 @@ jest.mock('../../../src/services/common/accountService', () => ({
   default: {
     getMonarchAccountMapping: jest.fn(),
     getAccountData: jest.fn(),
+    updateAccountInList: jest.fn(),
     upsertAccount: jest.fn(() => true),
   },
 }));
@@ -90,6 +91,45 @@ describe('resolveAccountMapping', () => {
 
     expect(result).toEqual({ monarchAccount: existingMapping });
     expect(showMonarchAccountSelectorWithCreate).not.toHaveBeenCalled();
+  });
+
+  it('should update the balance sign default on an existing account mapping', async () => {
+    accountService.getMonarchAccountMapping.mockReturnValue({ id: 'monarch-1', displayName: 'Neo Savings' });
+    accountService.getAccountData.mockReturnValue({ invertBalance: false });
+    accountService.updateAccountInList.mockReturnValue(true);
+    const account = { ...SAMPLE_ACCOUNT, accountType: 'depository', category: 'HISA' };
+    const manifest = {
+      ...SAMPLE_MANIFEST,
+      accountDefaultsForAccount: () => ({ settings: { invertBalance: true } }),
+    };
+
+    await resolveAccountMapping({
+      integrationId: 'neo',
+      manifest,
+      account,
+      accountDisplayName: 'Neo Savings',
+      buildAccountEntry,
+    });
+
+    expect(accountService.updateAccountInList).toHaveBeenCalledWith('neo', 'acc-123', { invertBalance: true });
+  });
+
+  it('should stop syncing when an existing account balance direction cannot be updated', async () => {
+    accountService.getMonarchAccountMapping.mockReturnValue({ id: 'monarch-1', displayName: 'Neo Savings' });
+    accountService.getAccountData.mockReturnValue({ invertBalance: false });
+    accountService.updateAccountInList.mockReturnValue(false);
+    const manifest = {
+      ...SAMPLE_MANIFEST,
+      accountDefaultsForAccount: () => ({ settings: { invertBalance: true } }),
+    };
+
+    await expect(resolveAccountMapping({
+      integrationId: 'neo',
+      manifest,
+      account: SAMPLE_ACCOUNT,
+      accountDisplayName: 'Neo Savings',
+      buildAccountEntry,
+    })).rejects.toThrow('Failed to update balance direction for neo account acc-123');
   });
 
   it('should return skipped when account was previously skipped', async () => {

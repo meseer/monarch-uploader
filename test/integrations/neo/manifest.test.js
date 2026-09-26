@@ -37,6 +37,11 @@ describe('Neo manifest', () => {
     });
   });
 
+  it('keeps balance direction tied to the account type', () => {
+    expect(manifest.configSchema.settings).not.toContain('invertBalance');
+    expect(manifest.settings.map(({ key }) => key)).not.toContain('invertBalance');
+  });
+
   it('injects into account pages and skips the login route', () => {
     expect(injectionPoint.isSPA).toBe(true);
     expect(injectionPoint.appPagePatterns.some((pattern) => pattern.test('https://member.neofinancial.com/en-CA/accounts'))).toBe(true);
