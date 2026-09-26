@@ -58,7 +58,7 @@ function operationFromRequest(request) {
 }
 
 describe('Neo API client', () => {
-  it('discovers open credit and deposit accounts', async () => {
+  it('discovers open and closed credit accounts with open deposits', async () => {
     const httpClient = {
       request: jest.fn().mockResolvedValue(graphqlResponse(accountsResponse)),
     };
@@ -74,6 +74,14 @@ describe('Neo API client', () => {
         category: 'CREDIT',
         productName: 'Neo Mastercard',
         displayName: 'Neo Mastercard (1234)',
+      },
+      {
+        accountId: 'closed-credit',
+        accountType: 'credit',
+        accountSubtype: 'credit_card',
+        category: 'CREDIT',
+        productName: 'Neo Mastercard',
+        displayName: 'Neo Mastercard (5678)',
       },
       {
         accountId: 'everyday-1',
@@ -164,7 +172,7 @@ describe('Neo API client', () => {
     expect(httpClient.request).toHaveBeenCalledTimes(1);
   });
 
-  it('paginates credit transactions and stops after the requested date range', async () => {
+  it('paginates credit transactions through account history and excludes future transactions', async () => {
     const firstPage = {
       user: {
         creditAccount: {
@@ -183,7 +191,7 @@ describe('Neo API client', () => {
       user: {
         creditAccount: {
           creditAccountTransactions: {
-            primaryCursor: { cursor: 'older-page' },
+            primaryCursor: { cursor: 'oldest-page' },
             hasNextPage: true,
             results: [
               { id: 'older', authorizationProcessedAt: '2026-01-02T00:00:00Z' },
@@ -193,21 +201,37 @@ describe('Neo API client', () => {
         },
       },
     };
+    const thirdPage = {
+      user: {
+        creditAccount: {
+          creditAccountTransactions: {
+            primaryCursor: { cursor: null },
+            hasNextPage: false,
+            results: [
+              { id: 'account-opening', authorizationProcessedAt: '2025-01-01T12:00:00Z' },
+            ],
+          },
+        },
+      },
+    };
     const httpClient = {
       request: jest.fn()
         .mockResolvedValueOnce(graphqlResponse(accountsResponse))
         .mockResolvedValueOnce(graphqlResponse(firstPage))
-        .mockResolvedValueOnce(graphqlResponse(secondPage)),
+        .mockResolvedValueOnce(graphqlResponse(secondPage))
+        .mockResolvedValueOnce(graphqlResponse(thirdPage)),
     };
     const api = createApi(httpClient, {});
     await api.getAccounts();
 
-    const transactions = await api.getTransactions('credit-1', '2026-01-01', '2026-01-31');
+    const transactions = await api.getTransactions('closed-credit', '2026-01-31');
 
-    expect(transactions.map((tx) => tx.id)).toEqual(['newer', 'older']);
-    expect(httpClient.request).toHaveBeenCalledTimes(3);
+    expect(transactions.map((tx) => tx.id)).toEqual(['newer', 'older', 'before-range', 'account-opening']);
+    expect(httpClient.request).toHaveBeenCalledTimes(4);
     const nextRequest = operationFromRequest(httpClient.request.mock.calls[2][0]);
+    const oldestRequest = operationFromRequest(httpClient.request.mock.calls[3][0]);
     expect(nextRequest.operationName).toBe('NeoCreditTransactions');
+    expect(oldestRequest.operationName).toBe('NeoCreditTransactions');
     expect(operationFromRequest(httpClient.request.mock.calls[1][0]).query).toContain('status');
     expect(operationFromRequest(httpClient.request.mock.calls[1][0]).query).not.toContain('creditStatus');
     expect(nextRequest.variables.input.primaryCursor).toEqual({
@@ -216,24 +240,44 @@ describe('Neo API client', () => {
       type: 'DATE',
       cursor: 'next-page',
     });
+    expect(oldestRequest.variables.input.primaryCursor).toEqual({
+      field: 'authorizationProcessedAt',
+      sort: 'DESC',
+      type: 'DATE',
+      cursor: 'oldest-page',
+    });
   });
 
-  it('uses the savings transaction query for deposit accounts', async () => {
-    const transactions = [{ id: 'deposit-tx', authorizationProcessedAt: '2026-01-10T00:00:00Z' }];
+  it('paginates savings transactions through account history', async () => {
+    const transactions = [
+      { id: 'recent-deposit-tx', authorizationProcessedAt: '2026-01-10T00:00:00Z' },
+      { id: 'old-deposit-tx', authorizationProcessedAt: '2025-01-10T00:00:00Z' },
+    ];
     const httpClient = {
       request: jest.fn()
         .mockResolvedValueOnce(graphqlResponse(accountsResponse))
         .mockResolvedValueOnce(graphqlResponse({
           user: { savingsAccount: { savingsAccountTransactions: {
-            primaryCursor: { cursor: null }, hasNextPage: false, results: transactions,
+            primaryCursor: { cursor: 'older-savings-page' }, hasNextPage: true, results: [transactions[0]],
+          } } },
+        }))
+        .mockResolvedValueOnce(graphqlResponse({
+          user: { savingsAccount: { savingsAccountTransactions: {
+            primaryCursor: { cursor: null }, hasNextPage: false, results: [transactions[1]],
           } } },
         })),
     };
     const api = createApi(httpClient, {});
     await api.getAccounts();
 
-    await expect(api.getTransactions('everyday-1', '2026-01-01', '2026-01-31')).resolves.toEqual(transactions);
+    await expect(api.getTransactions('everyday-1', '2026-01-31')).resolves.toEqual(transactions);
     expect(operationFromRequest(httpClient.request.mock.calls[1][0]).operationName).toBe('NeoSavingsTransactions');
+    expect(operationFromRequest(httpClient.request.mock.calls[2][0]).variables.input.primaryCursor).toEqual({
+      field: 'authorizationProcessedAt',
+      sort: 'DESC',
+      type: 'DATE',
+      cursor: 'older-savings-page',
+    });
   });
 
   it('reports an expired Neo session on an unauthorized response', async () => {

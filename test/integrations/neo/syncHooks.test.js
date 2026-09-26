@@ -18,7 +18,7 @@ describe('Neo sync hooks', () => {
 
     const result = await syncHooks.fetchTransactions(api, 'account-1', '2026-01-01', { onProgress: jest.fn() });
 
-    expect(api.getTransactions).toHaveBeenCalledWith('account-1', '2026-01-01', '2026-01-31');
+    expect(api.getTransactions).toHaveBeenCalledWith('account-1', '2026-01-31');
     expect(result.settled.map((transaction) => transaction.id)).toEqual(['old', 'new']);
     expect(result.pending).toEqual([]);
   });

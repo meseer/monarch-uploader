@@ -6,11 +6,11 @@ import { processNeoTransactions, type ProcessedNeoTransaction } from './transact
 async function fetchTransactions(
   api: NeoApiClient,
   accountId: string,
-  fromDate: string,
+  _fromDate: string,
   { onProgress }: SyncCallbacks,
 ): Promise<{ settled: NeoTransaction[]; pending: []; metadata: Record<string, never> }> {
   onProgress('Fetching Neo transactions...');
-  const transactions = await api.getTransactions(accountId, fromDate, getTodayLocal());
+  const transactions = await api.getTransactions(accountId, getTodayLocal());
   const settled = transactions
     .filter((transaction) => transaction.status === 'CONFIRMED')
     .reverse();
