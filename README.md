@@ -3,7 +3,7 @@
 <!-- Badge section -->
 [![CI](https://github.com/meseer/monarch-uploader/actions/workflows/ci.yml/badge.svg)](https://github.com/meseer/monarch-uploader/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/meseer/monarch-uploader/branch/main/graph/badge.svg)](https://codecov.io/gh/meseer/monarch-uploader)
-[![Version](https://img.shields.io/badge/version-7.14.17-blue)](https://github.com/meseer/monarch-uploader)
+[![Version](https://img.shields.io/badge/version-8.0.0-blue)](https://github.com/meseer/monarch-uploader)
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 
 A userscript that automatically syncs balance history, transactions, holdings, and more from Canadian financial institutions to [Monarch Money](https://www.monarchmoney.com/).
@@ -22,6 +22,7 @@ A userscript that automatically syncs balance history, transactions, holdings, a
 |---|:---:|:---:|:---:|:---:|:---:|:---:|---|
 | Canada Life | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | Group retirement and pension plans |
 | MBNA | ✅ | ✅ | ❌ | ✅ | ✅ | ? | Credit cards |
+| PC Financial | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ | Posted PC Money transactions; account pages must be opened to discover each account |
 | Questrade | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | Investment accounts (TFSA, RRSP, margin, etc.) |
 | Rogers Bank | ✅ | ✅ | ❌ | ✅ | ✅ | ? | Credit cards |
 | Wealthsimple | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Investment, Cash, and Credit Card accounts |
@@ -61,9 +62,11 @@ The script will auto-update whenever a new version is published.
 ### Usage
 
 1. Log in to [Monarch Money](https://app.monarch.com/) in your browser so the session is active.
-2. Navigate to any of the supported institution websites (Questrade, Wealthsimple, Canada Life, Rogers Bank, or MBNA).
+2. Navigate to any of the supported institution websites (Questrade, Wealthsimple, Canada Life, Rogers Bank, MBNA, or PC Financial).
 3. The script will inject an **Upload to Monarch** button into the page.
 4. Click the button to sync your data. Use the ⚙️ settings gear to configure account mappings, sync preferences, and category mappings.
+
+For PC Financial, sign in and open the Transactions page of each account you want to sync. The script discovers account IDs from successful account requests and uploads posted transactions using their posted dates and signed CAD amounts. It does not sync pending transactions or balances. When creating a Monarch account, select the account type that matches your PC Financial product; the default is checking for PC Money.
 
 ### First Use
 
