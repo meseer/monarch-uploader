@@ -10,6 +10,7 @@
 
 import type { IntegrationModule } from './types';
 import * as mbna from './mbna';
+import * as neo from './neo';
 
 /* eslint-disable no-underscore-dangle */
 declare const __ENABLED_INTEGRATIONS__: string[] | undefined;
@@ -22,6 +23,7 @@ declare const __ENABLED_INTEGRATIONS__: string[] | undefined;
  */
 const ALL: Record<string, IntegrationModule> = {
   mbna: mbna as unknown as IntegrationModule,
+  neo: neo as unknown as IntegrationModule,
   // Future: wealthsimple, questrade, canadalife, rogersbank
 };
 
@@ -37,4 +39,3 @@ const enabled: string[] | 'all' = typeof __ENABLED_INTEGRATIONS__ !== 'undefined
 export const AVAILABLE_INTEGRATIONS: IntegrationModule[] = enabled === 'all'
   ? Object.values(ALL)
   : (enabled as string[]).map((id) => ALL[id]).filter(Boolean);
-

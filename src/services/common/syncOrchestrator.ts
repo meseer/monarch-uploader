@@ -42,7 +42,7 @@ import {
   mergeAndRetainTransactions,
   mergeNewestFirstRuns,
   getRetentionSettingsFromAccount,
-  StoredTransaction,
+  type StoredTransaction,
 } from '../../utils/transactionStorage';
 import { convertToCSV, MONARCH_CSV_COLUMNS, buildMonarchTags } from '../../utils/csv';
 import { resolveNotesTransactionId } from '../../core/markerTags';
@@ -790,6 +790,10 @@ export async function syncAccount({
       progressDialog,
     });
 
+    if (fetchData && hooks.afterSyncSuccess) {
+      await hooks.afterSyncSuccess(accountId, fetchData.metadata);
+    }
+
     // ── Update sync metadata ───────────────────────────────
     accountService.updateAccountInList(integrationId, accountId, {
       lastSyncDate: getTodayLocal(),
@@ -926,4 +930,3 @@ export async function prepareAndSyncAccount({
     progressDialog,
   });
 }
-
