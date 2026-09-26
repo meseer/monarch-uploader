@@ -61,6 +61,12 @@ export function createApi(httpClient: HttpClient, storage: StorageAdapter) {
       orderDirection: 'DESCENDING',
     });
     if (freezeMarker) query.set('freezeMarker', freezeMarker);
+    const requestHeaders = {
+      ...session.headers,
+      'x-nonce': crypto.randomUUID(),
+      'uservice-message-id': crypto.randomUUID().replace(/-/g, ''),
+      'uservice-traceability-id': crypto.randomUUID().replace(/-/g, ''),
+    };
     const response = await httpClient.request({
       method: 'GET',
       url: `${BASE_URL}/${encodeURIComponent(accountId)}/posted-transactions?${query}`,
@@ -68,7 +74,7 @@ export function createApi(httpClient: HttpClient, storage: StorageAdapter) {
         accept: 'application/json',
         origin: 'https://secure.pcfinancial.ca',
         referer: 'https://secure.pcfinancial.ca/',
-        ...session.headers,
+        ...requestHeaders,
       },
     });
 
@@ -96,7 +102,7 @@ export function createApi(httpClient: HttpClient, storage: StorageAdapter) {
       if (!session?.accountIds.length) {
         throw new Error('Open a PC Financial account transaction page first');
       }
-      await getPage(session.accountIds[0], 0, 1);
+      await getPage(session.accountIds[0], 0, PAGE_SIZE);
       return session.accountIds.map((accountId) => ({
         accountId,
         displayName: `PC Financial (${accountId.slice(-6)})`,

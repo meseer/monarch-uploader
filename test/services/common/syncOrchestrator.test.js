@@ -158,6 +158,7 @@ function createMockProgressDialog() {
     updateStepStatus: jest.fn(),
     updateProgress: jest.fn(),
     updateBalanceChange: jest.fn(),
+    showError: jest.fn(() => Promise.resolve()),
     onCancel: jest.fn(),
     hideCancel: jest.fn(),
     showSummary: jest.fn(),
@@ -494,12 +495,14 @@ describe('syncAccount', () => {
   });
 
   it('should handle sync errors gracefully', async () => {
-    const progressDialog = createMockProgressDialog();
     const hooks = createMockHooks();
     hooks.fetchTransactions.mockRejectedValue(new Error('API Error'));
     const api = createMockApi();
+    const progressDialog = jest.requireActual('../../../src/ui/components/progressDialog')
+      .showProgressDialog([{ id: 'acc-1', name: 'Test Card' }]);
+    document.querySelector('[id^="balance-uploader-account-list-"]').scrollTo = jest.fn();
 
-    const result = await syncAccount({
+    const syncPromise = syncAccount({
       integrationId: 'test',
       manifest: defaultManifest,
       hooks,
@@ -511,9 +514,19 @@ describe('syncAccount', () => {
       progressDialog,
     });
 
-    expect(result.success).toBe(false);
-    expect(result.message).toBe('API Error');
-    expect(progressDialog.showSummary).toHaveBeenCalledWith({ success: 0, failed: 1, total: 1 });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(document.querySelector('#error-message')?.textContent).toBe('API Error');
+      document.querySelector('#error-ack-button')?.click();
+
+      const result = await syncPromise;
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('API Error');
+      expect(document.querySelector('[id^="balance-uploader-summary-"]')?.textContent)
+        .toBe('Summary: 0 success, 1 failed');
+    } finally {
+      progressDialog.close();
+    }
   });
 
   it('should update sync metadata after successful sync', async () => {

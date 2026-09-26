@@ -45,6 +45,49 @@ describe('PC Financial posted transaction API', () => {
     expect(httpClient.request.mock.calls[0][0].headers.authorization).toBe('Bearer test');
   });
 
+  it('uses the posted transaction page size when probing the captured account', async () => {
+    httpClient.request.mockResolvedValue({
+      status: 200,
+      responseText: JSON.stringify(page([], 0)),
+    });
+
+    await api.getAccountsSummary();
+
+    const requestUrl = new URL(httpClient.request.mock.calls[0][0].url);
+    expect(requestUrl.searchParams.get('limit')).toBe('20');
+  });
+
+  it('uses fresh nonce and message identifiers for each request', async () => {
+    storage.set(SESSION_KEY, {
+      accountIds: [accountId],
+      headers: {
+        authorization: 'Bearer test',
+        'x-nonce': 'captured-nonce',
+        'uservice-correlation-id': 'captured-correlation',
+        'uservice-message-id': 'captured-message',
+        'uservice-traceability-id': 'captured-trace',
+      },
+    });
+    const seenRequestIds = new Set();
+    httpClient.request.mockImplementation(async ({ headers }) => {
+      const requestIds = ['x-nonce', 'uservice-message-id', 'uservice-traceability-id']
+        .map((key) => headers[key]);
+      if (requestIds.some((id) => !id || seenRequestIds.has(id))) {
+        return { status: 400, responseText: '' };
+      }
+      requestIds.forEach((id) => seenRequestIds.add(id));
+      return { status: 200, responseText: JSON.stringify(page([transaction('1', '2026-09-20', -10)], 1)) };
+    });
+
+    await api.getAccountsSummary();
+    const result = await api.getPostedTransactions(accountId, '2026-09-01');
+
+    expect(result.map((tx) => tx.transactionId)).toEqual(['1']);
+    expect(httpClient.request).toHaveBeenCalledTimes(2);
+    expect(httpClient.request.mock.calls.map(([request]) => request.headers['uservice-correlation-id']))
+      .toEqual(['captured-correlation', 'captured-correlation']);
+  });
+
   it('filters by posted date after fetching every page', async () => {
     httpClient.request
       .mockResolvedValueOnce({ status: 200, responseText: JSON.stringify(page([

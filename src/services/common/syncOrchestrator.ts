@@ -824,7 +824,7 @@ export async function syncAccount({
     if (error.message === 'Cancelled') {
       progressDialog.updateProgress(accountId, 'error', 'Cancelled');
     } else {
-      progressDialog.updateProgress(accountId, 'error', `Failed: ${error.message}`);
+      await progressDialog.showError(accountId, error);
     }
 
     progressDialog.hideCancel();

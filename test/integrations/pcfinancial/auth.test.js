@@ -30,7 +30,10 @@ describe('PC Financial session capture', () => {
       setRequestHeader() {}
     }
     const previous = globalThis.unsafeWindow;
-    globalThis.unsafeWindow = { fetch: jest.fn().mockResolvedValue(response), XMLHttpRequest: FakeXHR };
+    globalThis.unsafeWindow = {
+      fetch: jest.fn().mockResolvedValue(response),
+      XMLHttpRequest: FakeXHR,
+    };
     try {
       const auth = createAuth(storage);
       auth.setupMonitoring();
@@ -41,6 +44,46 @@ describe('PC Financial session capture', () => {
       expect(result).toBe(response);
       expect(getSession(storage).accountIds).toEqual(['abc']);
       expect(auth.checkStatus()).toEqual({ authenticated: true });
+    } finally {
+      globalThis.unsafeWindow = previous;
+    }
+  });
+
+  it('recaptures XHR headers after the page replaces its request hooks', () => {
+    const storage = createMemoryStorageAdapter();
+    class FakeXHR {
+      constructor() {
+        this.status = 200;
+        this.handlers = {};
+        this.headers = {};
+      }
+      open(method, url) { this.url = url; }
+      setRequestHeader(name, value) { this.headers[name] = value; }
+      addEventListener(name, callback) { this.handlers[name] = callback; }
+      send() { this.handlers.loadend?.(); }
+    }
+    const originalOpen = FakeXHR.prototype.open;
+    const originalSetRequestHeader = FakeXHR.prototype.setRequestHeader;
+    const previous = globalThis.unsafeWindow;
+    globalThis.unsafeWindow = {
+      fetch: jest.fn(),
+      XMLHttpRequest: FakeXHR,
+    };
+
+    try {
+      createAuth(storage).setupMonitoring();
+      FakeXHR.prototype.open = function pageOpen(...args) { return originalOpen.apply(this, args); };
+      FakeXHR.prototype.setRequestHeader = function pageSetRequestHeader(...args) {
+        return originalSetRequestHeader.apply(this, args);
+      };
+      document.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true }));
+
+      const request = new FakeXHR();
+      request.open('GET', 'https://app.pcfinancial.ca/inet/banking/v2.0/accounts/abc/posted-transactions');
+      request.setRequestHeader('Authorization', 'Bearer sample');
+      request.send();
+
+      expect(getSession(storage)?.accountIds).toEqual(['abc']);
     } finally {
       globalThis.unsafeWindow = previous;
     }
