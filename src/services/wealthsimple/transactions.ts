@@ -19,6 +19,7 @@ import {
   applyTransactionRule,
   CASH_TRANSACTION_RULES,
   formatOriginalStatement,
+  getAccountNameById,
   getTransactionId,
 } from './transactionRules';
 import { type WealthsimpleTransaction } from './transactionRulesHelpers';
@@ -370,6 +371,17 @@ function applyLineOfCreditRule(
       originalStatement: formatOriginalStatement(type, subType, statementText),
       category: 'Loan Repayment',
       ruleId: 'loc-repay',
+    };
+  }
+
+  // Overdraft protection: the LOC funds a linked Cash account that went negative
+  if (type === 'OVERDRAFT_TRANSFER' && subType === 'SOURCE') {
+    const statementText = `Overdraft Protection: ${name} → ${getAccountNameById(transaction.opposingAccountId)}`;
+    return {
+      merchant: statementText,
+      originalStatement: formatOriginalStatement(type, subType, statementText),
+      category: 'Transfer',
+      ruleId: 'loc-overdraft-transfer',
     };
   }
 
