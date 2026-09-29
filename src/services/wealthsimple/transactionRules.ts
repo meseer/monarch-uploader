@@ -292,6 +292,23 @@ export const CASH_TRANSACTION_RULES: CashTransactionRule[] = [
     },
   },
   {
+    id: 'overdraft-transfer',
+    description: 'Overdraft protection top-up into a Cash account, funded by a linked account (e.g. PLOC)',
+    match: (tx) => tx.type === 'OVERDRAFT_TRANSFER' && tx.subType === 'DESTINATION',
+    process: (tx) => {
+      const accountName = getAccountNameById(tx.accountId);
+      const opposingName = getAccountNameById(tx.opposingAccountId);
+      const statementText = `Overdraft Protection: ${accountName} ← ${opposingName}`;
+      return {
+        category: 'Transfer',
+        merchant: statementText,
+        originalStatement: formatOriginalStatement(tx.type, tx.subType, statementText),
+        notes: '',
+        technicalDetails: '',
+      };
+    },
+  },
+  {
     id: 'withdrawal-bill-pay',
     description: 'Bill payment transactions',
     match: (tx) => tx.type === 'WITHDRAWAL' && tx.subType === 'BILL_PAY',
