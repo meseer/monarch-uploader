@@ -72,7 +72,8 @@ export function showManualCategorizationDialog(
   const modal = document.createElement('div');
   modal.id = 'manual-categorization-modal';
   modal.style.cssText = `
-    background: white;
+    background: var(--mu-bg-primary, white);
+    color: var(--mu-text-primary, #333);
     padding: 25px;
     border-radius: 8px;
     width: 90%;
@@ -84,7 +85,7 @@ export function showManualCategorizationDialog(
   // Add header
   const header = document.createElement('h2');
   header.id = 'manual-categorization-header';
-  header.style.cssText = 'margin-top:0; margin-bottom: 15px; font-size: 1.2em;';
+  header.style.cssText = 'margin-top:0; margin-bottom: 15px; font-size: 1.2em; color: var(--mu-text-primary, #333);';
   header.textContent = 'Manual Transaction Categorization';
   modal.appendChild(header);
 
@@ -92,13 +93,13 @@ export function showManualCategorizationDialog(
   const description = document.createElement('div');
   description.id = 'manual-categorization-description';
   description.style.cssText = `
-    background: #fff3cd;
-    border: 1px solid #ffc107;
+    background: var(--mu-warning-bg, #fff3cd);
+    border: 1px solid var(--mu-warning-border, #ffc107);
     border-radius: 6px;
     padding: 12px;
     margin-bottom: 15px;
     font-size: 0.9em;
-    color: #856404;
+    color: var(--mu-warning-text, #856404);
   `;
   description.innerHTML = `
     <strong>⚠️ No categorization rule found</strong><br>
@@ -120,11 +121,11 @@ export function showManualCategorizationDialog(
     align-items: center;
     cursor: pointer;
     padding: 10px;
-    background: #f8f9fa;
-    border: 1px solid #dee2e6;
+    background: var(--mu-bg-secondary, #f8f9fa);
+    border: 1px solid var(--mu-border, #dee2e6);
     border-radius: 6px;
     font-weight: bold;
-    color: #333;
+    color: var(--mu-text-primary, #333);
   `;
 
   const toggleIcon = document.createElement('span');
@@ -147,8 +148,8 @@ export function showManualCategorizationDialog(
     display: none;
     margin-top: 10px;
     padding: 12px;
-    background: #f4f4f4;
-    border: 1px solid #ddd;
+    background: var(--mu-bg-tertiary, #f4f4f4);
+    border: 1px solid var(--mu-border, #ddd);
     border-radius: 4px;
     max-height: 300px;
     overflow-y: auto;
@@ -162,6 +163,7 @@ export function showManualCategorizationDialog(
     font-size: 12px;
     white-space: pre-wrap;
     word-break: break-all;
+    color: var(--mu-text-primary, #333);
   `;
   jsonPre.textContent = JSON.stringify(transaction, null, 2);
   jsonContent.appendChild(jsonPre);
@@ -183,21 +185,21 @@ export function showManualCategorizationDialog(
   const quickInfo = document.createElement('div');
   quickInfo.id = 'manual-categorization-quick-info';
   quickInfo.style.cssText = `
-    background: #e8f4f8;
-    border: 1px solid #b8daff;
+    background: var(--mu-status-processing-bg, #e8f4f8);
+    border: 1px solid var(--mu-border, #b8daff);
     border-radius: 6px;
     padding: 12px;
     margin-bottom: 15px;
     font-size: 0.9em;
   `;
 
-  let quickInfoHtml = '<div style="font-weight: bold; margin-bottom: 8px; color: #333;">Quick Summary:</div>';
+  let quickInfoHtml = '<div style="font-weight: bold; margin-bottom: 8px; color: var(--mu-text-primary, #333);">Quick Summary:</div>';
 
   // Type and SubType
   if (transaction.type || transaction.subType) {
     quickInfoHtml += `<div style="margin-bottom: 4px;">
-      <span style="color: #666;">Type:</span>
-      <span style="font-weight: 500; color: #333;">${escapeHtml(transaction.type || 'N/A')} / ${escapeHtml(transaction.subType || 'N/A')}</span>
+      <span style="color: var(--mu-text-secondary, #666);">Type:</span>
+      <span style="font-weight: 500; color: var(--mu-text-primary, #333);">${escapeHtml(transaction.type || 'N/A')} / ${escapeHtml(transaction.subType || 'N/A')}</span>
     </div>`;
   }
 
@@ -205,9 +207,9 @@ export function showManualCategorizationDialog(
   if (transaction.amount !== undefined) {
     const isNegative = transaction.amountSign === 'negative';
     const amountValue = isNegative ? -Math.abs(transaction.amount) : Math.abs(transaction.amount);
-    const amountColor = amountValue < 0 ? '#dc3545' : '#28a745';
+    const amountColor = amountValue < 0 ? 'var(--mu-status-error-text, #dc3545)' : 'var(--mu-status-success-text, #28a745)';
     quickInfoHtml += `<div style="margin-bottom: 4px;">
-      <span style="color: #666;">Amount:</span>
+      <span style="color: var(--mu-text-secondary, #666);">Amount:</span>
       <span style="font-weight: 500; color: ${amountColor};">$${amountValue.toFixed(2)} ${escapeHtml(transaction.currency || 'CAD')}</span>
     </div>`;
   }
@@ -217,16 +219,16 @@ export function showManualCategorizationDialog(
     const date = new Date(transaction.occurredAt);
     const dateStr = date.toLocaleDateString();
     quickInfoHtml += `<div style="margin-bottom: 4px;">
-      <span style="color: #666;">Date:</span>
-      <span style="font-weight: 500; color: #333;">${escapeHtml(dateStr)}</span>
+      <span style="color: var(--mu-text-secondary, #666);">Date:</span>
+      <span style="font-weight: 500; color: var(--mu-text-primary, #333);">${escapeHtml(dateStr)}</span>
     </div>`;
   }
 
   // Status
   if (transaction.unifiedStatus || transaction.status) {
     quickInfoHtml += `<div style="margin-bottom: 4px;">
-      <span style="color: #666;">Status:</span>
-      <span style="font-weight: 500; color: #333;">${escapeHtml(transaction.unifiedStatus || transaction.status)}</span>
+      <span style="color: var(--mu-text-secondary, #666);">Status:</span>
+      <span style="font-weight: 500; color: var(--mu-text-primary, #333);">${escapeHtml(transaction.unifiedStatus || transaction.status)}</span>
     </div>`;
   }
 
@@ -240,7 +242,7 @@ export function showManualCategorizationDialog(
 
   const merchantLabel = document.createElement('label');
   merchantLabel.id = 'manual-categorization-merchant-label';
-  merchantLabel.style.cssText = 'display: block; font-weight: bold; margin-bottom: 5px; color: #333;';
+  merchantLabel.style.cssText = 'display: block; font-weight: bold; margin-bottom: 5px; color: var(--mu-text-primary, #333);';
   merchantLabel.textContent = 'Merchant Name *';
   merchantSection.appendChild(merchantLabel);
 
@@ -251,8 +253,10 @@ export function showManualCategorizationDialog(
   merchantInput.style.cssText = `
     width: 100%;
     padding: 10px 12px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--mu-input-border, #ddd);
     border-radius: 6px;
+    background: var(--mu-input-bg, white);
+    color: var(--mu-input-text, #333);
     font-size: 14px;
     box-sizing: border-box;
   `;
@@ -265,7 +269,7 @@ export function showManualCategorizationDialog(
 
   const categoryLabel = document.createElement('label');
   categoryLabel.id = 'manual-categorization-category-label';
-  categoryLabel.style.cssText = 'display: block; font-weight: bold; margin-bottom: 5px; color: #333;';
+  categoryLabel.style.cssText = 'display: block; font-weight: bold; margin-bottom: 5px; color: var(--mu-text-primary, #333);';
   categoryLabel.textContent = 'Category *';
   categorySection.appendChild(categoryLabel);
 
@@ -274,23 +278,23 @@ export function showManualCategorizationDialog(
   categoryDisplay.id = 'manual-categorization-category-display';
   categoryDisplay.style.cssText = `
     padding: 12px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--mu-border, #ddd);
     border-radius: 6px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: #f8f9fa;
+    background: var(--mu-bg-secondary, #f8f9fa);
   `;
 
   const categoryText = document.createElement('span');
   categoryText.id = 'manual-categorization-category-text';
-  categoryText.style.cssText = 'color: #888;';
+  categoryText.style.cssText = 'color: var(--mu-text-muted, #888);';
   categoryText.textContent = 'Click to select category...';
 
   const categoryArrow = document.createElement('span');
   categoryArrow.id = 'manual-categorization-category-arrow';
-  categoryArrow.style.cssText = 'color: #888;';
+  categoryArrow.style.cssText = 'color: var(--mu-text-muted, #888);';
   categoryArrow.textContent = '▶';
 
   categoryDisplay.appendChild(categoryText);
@@ -315,9 +319,9 @@ export function showManualCategorizationDialog(
   cancelBtn.textContent = 'Cancel Upload';
   cancelBtn.style.cssText = `
     padding: 10px 20px;
-    background-color: #f5f5f5;
-    color: #333;
-    border: 1px solid #ddd;
+    background-color: var(--mu-bg-secondary, #f5f5f5);
+    color: var(--mu-text-primary, #333);
+    border: 1px solid var(--mu-border, #ddd);
     border-radius: 4px;
     cursor: pointer;
     font-size: 14px;
@@ -335,8 +339,8 @@ export function showManualCategorizationDialog(
   saveBtn.disabled = true;
   saveBtn.style.cssText = `
     padding: 10px 20px;
-    background-color: #cccccc;
-    color: #666;
+    background-color: var(--mu-bg-tertiary, #cccccc);
+    color: var(--mu-text-muted, #666);
     border: none;
     border-radius: 4px;
     cursor: not-allowed;
@@ -352,8 +356,8 @@ export function showManualCategorizationDialog(
       saveBtn.style.color = 'white';
       saveBtn.style.cursor = 'pointer';
     } else {
-      saveBtn.style.backgroundColor = '#cccccc';
-      saveBtn.style.color = '#666';
+      saveBtn.style.backgroundColor = 'var(--mu-bg-tertiary, #cccccc)';
+      saveBtn.style.color = 'var(--mu-text-muted, #666)';
       saveBtn.style.cursor = 'not-allowed';
     }
   };
@@ -377,7 +381,7 @@ export function showManualCategorizationDialog(
       if (selected) {
         selectedCategory = selected;
         categoryText.textContent = selected.name;
-        categoryText.style.color = '#333';
+        categoryText.style.color = 'var(--mu-text-primary, #333)';
         categoryText.style.fontWeight = 'bold';
         updateSaveButton();
       }
