@@ -95,7 +95,7 @@ describe('spend-prepaid rule — PREPAID_CARD/PURCHASE', () => {
     expect(result).not.toBeNull();
     expect(result.ruleId).toBe('spend-prepaid');
     expect(result.merchant).not.toBe('');
-    expect(result.merchant).not.toContain('#10821');
+    expect(result.merchant).toBe("McDonald's");
     expect(result.originalStatement).toBe("PREPAID_CARD:PURCHASE:MCDONALD'S #10821 MYIJICD");
     expect(result.needsCategoryMapping).toBe(true);
     expect(result.categoryKey).toBe(result.merchant);
