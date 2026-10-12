@@ -568,6 +568,27 @@ export function getTransactionId(transaction: WealthsimpleTransaction): string {
 }
 
 /**
+ * Check if a transaction is a prepaid (debit) card purchase on a CASH account.
+ *
+ * Wealthsimple reports these in two shapes:
+ * - `SPEND` / `PREPAID` — the original prepaid card
+ * - `PREPAID_CARD` / `PURCHASE` — the newer prepaid card
+ *
+ * Both carry `spendMerchant` and use the `status` field (`authorized` /
+ * `settled`) like credit card transactions, rather than `unifiedStatus`.
+ *
+ * @param transaction - Raw transaction from Wealthsimple API
+ * @returns True for either prepaid card purchase shape
+ */
+export function isPrepaidCardSpend(
+  transaction: { type?: unknown; subType?: unknown },
+): boolean {
+  const { type, subType } = transaction;
+  return (type === 'SPEND' && subType === 'PREPAID')
+    || (type === 'PREPAID_CARD' && subType === 'PURCHASE');
+}
+
+/**
  * Format original statement with type:subType: prefix
  * Converts null values to empty strings
  * @param type - Transaction type
