@@ -14,6 +14,7 @@ import {
   formatManagedOrderNotes,
   formatOptionsOrderNotes,
   getTransactionId,
+  isPrepaidCardSpend,
   formatOriginalStatement,
   formatAftOriginalStatement,
   getAccountNameById,
@@ -177,8 +178,8 @@ export const CASH_TRANSACTION_RULES: CashTransactionRule[] = [
   },
   {
     id: 'spend-prepaid',
-    description: 'Prepaid card spending transactions (debit-style purchases in CASH account)',
-    match: (tx) => tx.type === 'SPEND' && tx.subType === 'PREPAID',
+    description: 'Prepaid card spending transactions (debit-style purchases in CASH account): SPEND/PREPAID and PREPAID_CARD/PURCHASE',
+    match: (tx) => isPrepaidCardSpend(tx),
     process: (tx, enrichmentMap) => {
       const originalMerchant = (tx.spendMerchant as string | null | undefined) || 'Unknown Merchant';
       const cleanedMerchant = applyMerchantMapping(originalMerchant, { stripStoreNumbers: true });

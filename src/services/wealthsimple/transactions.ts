@@ -22,7 +22,7 @@ import {
   getAccountNameById,
   getTransactionId,
 } from './transactionRules';
-import { type WealthsimpleTransaction } from './transactionRulesHelpers';
+import { isPrepaidCardSpend, type WealthsimpleTransaction } from './transactionRulesHelpers';
 
 // Import from sub-modules (used locally and re-exported)
 import {
@@ -138,13 +138,6 @@ async function fetchCreditCardPurchaseDetails(
 }
 
 /**
- * Check if a transaction is a SPEND/PREPAID type (uses status field like credit cards)
- */
-function isSpendPrepaidTransaction(transaction: WealthsimpleTransaction): boolean {
-  return transaction.type === 'SPEND' && transaction.subType === 'PREPAID';
-}
-
-/**
  * Check if a transaction is an ATM fee reimbursement
  * These transactions may have null status fields but should always be synced
  */
@@ -162,7 +155,7 @@ function isAtmReimbursementTransaction(transaction: WealthsimpleTransaction): bo
  * - IN_PROGRESS / PENDING: Sync with "Pending" tag
  * - Other: Exclude
  *
- * SPEND/PREPAID transactions (debit card purchases):
+ * Prepaid card purchases (SPEND/PREPAID and PREPAID_CARD/PURCHASE):
  * - Use status field (like credit cards)
  * - 'settled': Sync as normal
  * - 'authorized': Sync with "Pending" tag
@@ -182,7 +175,7 @@ function filterCashSyncableTransactions(
     }
 
     // SPEND/PREPAID uses 'status' field (like credit cards)
-    if (isSpendPrepaidTransaction(transaction)) {
+    if (isPrepaidCardSpend(transaction)) {
       const status = transaction.status;
       if (status === 'settled') return true;
       if (includePending && status === 'authorized') return true;
@@ -259,6 +252,8 @@ function collectSpendTransactionIds(
 ): string[] {
   const spendIds: string[] = [];
   for (const tx of transactions) {
+    // PREPAID_CARD purchases are deliberately excluded: FetchSpendTransactions
+    // returns no details for their card-activity IDs
     if (tx.type === 'SPEND' && tx[idField]) {
       const id = tx[idField] as string;
       if (id && !spendIds.includes(id)) {
@@ -316,7 +311,7 @@ function processCashTransaction(
 
   // Determine pending status — SPEND/PREPAID uses 'status', others use 'unifiedStatus'
   let isPending: boolean;
-  if (isSpendPrepaidTransaction(transaction)) {
+  if (isPrepaidCardSpend(transaction)) {
     isPending = transaction.status === 'authorized';
   } else {
     isPending = uStatus === 'IN_PROGRESS' || uStatus === 'PENDING';
