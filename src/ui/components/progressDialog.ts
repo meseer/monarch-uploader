@@ -275,6 +275,15 @@ function formatCollapsedBalanceSummary(balanceChangeData: BalanceChangeData): { 
  * Do not swap any of these for an emoji with a U+FE0F variation selector: that
  * invites colour-emoji rendering and a fresh set of platform inconsistencies.
  */
+/**
+ * System UI font stack that reliably contains standard Unicode symbols
+ * (Arrows, Dingbats, Geometric Shapes) at consistent heights across macOS,
+ * Windows, and Linux. Prevents dialogs and icon spans from inheriting host site
+ * web fonts (like "Wealthsimple Sans" or Questrade fonts) that omit these glyphs
+ * and cause fallback to mismatched or missing symbol fonts.
+ */
+const SYSTEM_FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+
 function getStepIcon(status: string): string {
   switch (status) {
   case 'processing':
@@ -333,6 +342,7 @@ export function showProgressDialog(
     background: var(--mu-bg-primary, white); color: var(--mu-text-primary, #333);
     padding: 25px; border-radius: 8px; width: 90%; max-width: 650px;
     max-height: 80vh; overflow-y: auto; display: flex; flex-direction: column;
+    font-family: ${SYSTEM_FONT_FAMILY};
   `;
 
   const header = document.createElement('h2');
@@ -388,13 +398,13 @@ export function showProgressDialog(
 
     const expandIcon = document.createElement('span');
     expandIcon.id = `balance-uploader-expand-icon-${accountKey}`;
-    expandIcon.style.cssText = 'margin-right: 8px; font-size: 0.8em; color: var(--mu-text-secondary, #666); transition: transform 0.2s; display: inline-block;';
+    expandIcon.style.cssText = `margin-right: 8px; font-size: 0.8em; color: var(--mu-text-secondary, #666); transition: transform 0.2s; display: inline-block; font-family: ${SYSTEM_FONT_FAMILY};`;
     expandIcon.textContent = '▶';
     accountRow.appendChild(expandIcon);
 
     const statusIcon = document.createElement('span') as HTMLSpanElement & { dataset: DOMStringMap };
     statusIcon.id = `balance-uploader-account-icon-${accountKey}`;
-    statusIcon.style.cssText = 'margin-right: 10px; font-size: 1.2em;';
+    statusIcon.style.cssText = `margin-right: 10px; font-size: 1.2em; font-family: ${SYSTEM_FONT_FAMILY};`;
     statusIcon.textContent = '○';
     statusIcon.dataset.status = 'pending';
     accountRow.appendChild(statusIcon);
@@ -517,12 +527,12 @@ export function showProgressDialog(
 
   const cancelButton = document.createElement('button');
   cancelButton.textContent = 'Cancel Upload';
-  cancelButton.style.cssText = 'padding: 8px 16px; border: none; border-radius: 4px; background: var(--mu-danger-bg, #dc3545); color: var(--mu-danger-text, white); cursor: pointer; margin-right: 10px;';
+  cancelButton.style.cssText = `padding: 8px 16px; border: none; border-radius: 4px; background: var(--mu-danger-bg, #dc3545); color: var(--mu-danger-text, white); cursor: pointer; margin-right: 10px; font-family: ${SYSTEM_FONT_FAMILY};`;
   buttonsContainer.appendChild(cancelButton);
 
   const closeButton = document.createElement('button');
   closeButton.textContent = 'Close';
-  closeButton.style.cssText = 'padding: 8px 16px; border: none; border-radius: 4px; background: var(--mu-close-btn-bg, #6c757d); color: white; cursor: pointer; display: none;';
+  closeButton.style.cssText = `padding: 8px 16px; border: none; border-radius: 4px; background: var(--mu-close-btn-bg, #6c757d); color: white; cursor: pointer; display: none; font-family: ${SYSTEM_FONT_FAMILY};`;
   buttonsContainer.appendChild(closeButton);
 
   overlay.appendChild(modal);
@@ -560,7 +570,7 @@ export function showProgressDialog(
 
     const stepIconSpan = document.createElement('span');
     stepIconSpan.id = `balance-uploader-step-icon-${accountId}-${step.key}`;
-    stepIconSpan.style.cssText = `margin-right: 8px; color: ${getStepColor(step.status)};`;
+    stepIconSpan.style.cssText = `margin-right: 8px; color: ${getStepColor(step.status)}; font-family: ${SYSTEM_FONT_FAMILY};`;
     stepIconSpan.textContent = getStepIcon(step.status);
     stepDiv.appendChild(stepIconSpan);
 
@@ -861,6 +871,7 @@ export function showProgressDialog(
             background: var(--mu-close-btn-bg, #6c757d);
             color: white;
             cursor: pointer;
+            font-family: ${SYSTEM_FONT_FAMILY};
           ">Close</button>
           <button id="error-ack-button" style="
             padding: 8px 16px;
@@ -869,6 +880,7 @@ export function showProgressDialog(
             background: var(--mu-error-border, #f44336);
             color: white;
             cursor: pointer;
+            font-family: ${SYSTEM_FONT_FAMILY};
           ">Continue</button>
         </div>
       `;
