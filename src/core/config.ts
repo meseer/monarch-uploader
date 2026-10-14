@@ -272,6 +272,13 @@ export const COLORS = {
   WEALTHSIMPLE_BRAND: 'rgb(50, 48, 47)', // Wealthsimple dark gray
 } as const;
 
+// Brand typography
+export const FONTS = {
+  CANADALIFE_BASE: 'var(--n-theme-font-family-base, "Source Sans Pro", sans-serif)',
+  CANADALIFE_DISPLAY: 'var(--n-theme-font-family-display, "NEST Foco Patch", Foco, "Source Sans Pro", sans-serif)',
+  WEALTHSIMPLE: '"Wealthsimple Sans", sans-serif',
+} as const;
+
 // Cloudinary public IDs for institution logos (pre-uploaded to Monarch)
 // These are used to set logos for manually created accounts
 export const LOGO_CLOUDINARY_IDS = {

@@ -8,7 +8,7 @@ declare function GM_getValue(key: string, defaultValue?: unknown): unknown;
 import {
   debugLog, escapeHtml, getTodayLocal, formatDaysAgoLocal,
 } from '../../../core/utils';
-import { COLORS, STORAGE } from '../../../core/config';
+import { COLORS, STORAGE, FONTS } from '../../../core/config';
 import canadalife from '../../../api/canadalife';
 import toast from '../../toast';
 import { uploadAllCanadaLifeAccountsToMonarch, uploadCanadaLifeAccountWithDateRange, uploadTransactionHistory } from '../../../services/canadalife-upload';
@@ -58,7 +58,7 @@ interface TransactionResultDisplay {
   dateRange: { startDate: string; endDate: string };
 }
 
-function createCanadaLifeButton(text: string, onClick: ((event: MouseEvent) => void) | null, options: CanadaLifeButtonOptions = {}): HTMLButtonElement {
+export function createCanadaLifeButton(text: string, onClick: ((event: MouseEvent) => void) | null, options: CanadaLifeButtonOptions = {}): HTMLButtonElement {
   const button = document.createElement('button');
   button.textContent = text;
   button.style.cssText = `
@@ -73,6 +73,7 @@ function createCanadaLifeButton(text: string, onClick: ((event: MouseEvent) => v
     cursor: pointer;
     transition: all 0.2s ease;
     box-shadow: 0 2px 4px rgba(162, 10, 41, 0.2);
+    font-family: ${FONTS.CANADALIFE_BASE};
     ${options.disabled ? 'opacity: 0.6; cursor: not-allowed;' : ''}
   `;
   if (options.id) { button.id = options.id; }
@@ -112,13 +113,15 @@ const MAX_RETRY_COUNT = 3;
 
 function createAccountSelector(): HTMLDivElement {
   const container = document.createElement('div');
-  container.style.cssText = 'margin: 8px 0;';
+  container.id = 'canadalife-account-selector-container';
+  container.style.cssText = `margin: 8px 0; font-family: ${FONTS.CANADALIFE_BASE};`;
   const label = document.createElement('label');
+  label.id = 'canadalife-account-selector-label';
   label.textContent = 'Select Account:';
-  label.style.cssText = 'display: block; font-size: 13px; font-weight: 500; margin-bottom: 4px; color: #333;';
+  label.style.cssText = `display: block; font-size: 13px; font-weight: 500; margin-bottom: 4px; color: #333; font-family: ${FONTS.CANADALIFE_BASE};`;
   const select = document.createElement('select');
   select.id = 'canadalife-account-selector';
-  select.style.cssText = 'width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; background-color: white;';
+  select.style.cssText = `width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; background-color: white; font-family: ${FONTS.CANADALIFE_BASE};`;
   const loadingOption = document.createElement('option');
   loadingOption.value = '';
   loadingOption.textContent = 'Loading accounts...';
@@ -134,14 +137,16 @@ function createAccountSelector(): HTMLDivElement {
 
 function createDateSelector(): HTMLDivElement {
   const container = document.createElement('div');
-  container.style.cssText = 'margin: 8px 0;';
+  container.id = 'canadalife-date-selector-container';
+  container.style.cssText = `margin: 8px 0; font-family: ${FONTS.CANADALIFE_BASE};`;
   const label = document.createElement('label');
+  label.id = 'canadalife-date-selector-label';
   label.textContent = 'Select Date:';
-  label.style.cssText = 'display: block; font-size: 13px; font-weight: 500; margin-bottom: 4px; color: #333;';
+  label.style.cssText = `display: block; font-size: 13px; font-weight: 500; margin-bottom: 4px; color: #333; font-family: ${FONTS.CANADALIFE_BASE};`;
   const input = document.createElement('input');
   input.type = 'date';
   input.id = 'canadalife-date-selector';
-  input.style.cssText = 'width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;';
+  input.style.cssText = `width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-family: ${FONTS.CANADALIFE_BASE};`;
   input.value = getTodayLocal();
   container.appendChild(label);
   container.appendChild(input);
@@ -151,24 +156,28 @@ function createDateSelector(): HTMLDivElement {
 
 function createDateRangeSelector(): HTMLDivElement {
   const container = document.createElement('div');
-  container.style.cssText = 'margin: 8px 0;';
+  container.id = 'canadalife-date-range-selector-container';
+  container.style.cssText = `margin: 8px 0; font-family: ${FONTS.CANADALIFE_BASE};`;
   const label = document.createElement('label');
+  label.id = 'canadalife-date-range-label';
   label.textContent = 'Historical Date Range:';
-  label.style.cssText = 'display: block; font-size: 13px; font-weight: 500; margin-bottom: 4px; color: #333;';
+  label.style.cssText = `display: block; font-size: 13px; font-weight: 500; margin-bottom: 4px; color: #333; font-family: ${FONTS.CANADALIFE_BASE};`;
   const dateContainer = document.createElement('div');
+  dateContainer.id = 'canadalife-date-range-inputs-container';
   dateContainer.style.cssText = 'display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center;';
   const startDateInput = document.createElement('input');
   startDateInput.type = 'date';
   startDateInput.id = 'canadalife-start-date-selector';
-  startDateInput.style.cssText = 'padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;';
+  startDateInput.style.cssText = `padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-family: ${FONTS.CANADALIFE_BASE};`;
   startDateInput.value = formatDaysAgoLocal(7);
   const toText = document.createElement('span');
+  toText.id = 'canadalife-date-range-to-text';
   toText.textContent = 'to';
-  toText.style.cssText = 'font-size: 13px; color: #666; text-align: center;';
+  toText.style.cssText = `font-size: 13px; color: #666; text-align: center; font-family: ${FONTS.CANADALIFE_BASE};`;
   const endDateInput = document.createElement('input');
   endDateInput.type = 'date';
   endDateInput.id = 'canadalife-end-date-selector';
-  endDateInput.style.cssText = 'padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;';
+  endDateInput.style.cssText = `padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-family: ${FONTS.CANADALIFE_BASE};`;
   endDateInput.value = getTodayLocal();
   dateContainer.appendChild(startDateInput);
   dateContainer.appendChild(toText);
@@ -183,27 +192,27 @@ function createDateRangeSelector(): HTMLDivElement {
 function createTransactionDateRangeSelector(): HTMLDivElement {
   const container = document.createElement('div');
   container.id = 'canadalife-tx-date-range-container';
-  container.style.cssText = 'margin: 8px 0;';
+  container.style.cssText = `margin: 8px 0; font-family: ${FONTS.CANADALIFE_BASE};`;
   const label = document.createElement('label');
   label.id = 'canadalife-tx-date-range-label';
   label.textContent = 'Transaction Date Range:';
-  label.style.cssText = 'display: block; font-size: 13px; font-weight: 500; margin-bottom: 4px; color: #333;';
+  label.style.cssText = `display: block; font-size: 13px; font-weight: 500; margin-bottom: 4px; color: #333; font-family: ${FONTS.CANADALIFE_BASE};`;
   const dateContainer = document.createElement('div');
   dateContainer.id = 'canadalife-tx-date-inputs-container';
   dateContainer.style.cssText = 'display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center;';
   const startDateInput = document.createElement('input');
   startDateInput.type = 'date';
   startDateInput.id = 'canadalife-tx-start-date-selector';
-  startDateInput.style.cssText = 'padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;';
+  startDateInput.style.cssText = `padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-family: ${FONTS.CANADALIFE_BASE};`;
   startDateInput.value = formatDaysAgoLocal(365);
   const toText = document.createElement('span');
   toText.id = 'canadalife-tx-date-to-text';
   toText.textContent = 'to';
-  toText.style.cssText = 'font-size: 13px; color: #666; text-align: center;';
+  toText.style.cssText = `font-size: 13px; color: #666; text-align: center; font-family: ${FONTS.CANADALIFE_BASE};`;
   const endDateInput = document.createElement('input');
   endDateInput.type = 'date';
   endDateInput.id = 'canadalife-tx-end-date-selector';
-  endDateInput.style.cssText = 'padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;';
+  endDateInput.style.cssText = `padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-family: ${FONTS.CANADALIFE_BASE};`;
   endDateInput.value = getTodayLocal();
   dateContainer.appendChild(startDateInput);
   dateContainer.appendChild(toText);
@@ -218,7 +227,7 @@ function createTransactionDateRangeSelector(): HTMLDivElement {
 function createTransactionResultDisplay(): HTMLDivElement {
   const container = document.createElement('div');
   container.id = 'canadalife-transaction-result';
-  container.style.cssText = 'margin: 8px 0; padding: 12px; background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; display: none;';
+  container.style.cssText = `margin: 8px 0; padding: 12px; background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; display: none; font-family: ${FONTS.CANADALIFE_BASE};`;
   transactionResultElement = container;
   return container;
 }
@@ -263,7 +272,7 @@ function displayTransactionResult(result: TransactionResultDisplay): void {
 function createHistoricalBalanceResultDisplay(): HTMLDivElement {
   const container = document.createElement('div');
   container.id = 'canadalife-historical-balance-result';
-  container.style.cssText = 'margin: 8px 0; padding: 12px; background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; display: none; max-height: 400px; overflow-y: auto;';
+  container.style.cssText = `margin: 8px 0; padding: 12px; background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; display: none; max-height: 400px; overflow-y: auto; font-family: ${FONTS.CANADALIFE_BASE};`;
   historicalBalanceResultElement = container;
   return container;
 }
@@ -271,7 +280,7 @@ function createHistoricalBalanceResultDisplay(): HTMLDivElement {
 function createBalanceResultDisplay(): HTMLDivElement {
   const container = document.createElement('div');
   container.id = 'canadalife-balance-result';
-  container.style.cssText = 'margin: 8px 0; padding: 12px; background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; display: none;';
+  container.style.cssText = `margin: 8px 0; padding: 12px; background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; display: none; font-family: ${FONTS.CANADALIFE_BASE};`;
   balanceResultElement = container;
   return container;
 }
@@ -446,13 +455,15 @@ function displayBalanceResult(balanceData: BalanceData): void {
 
 export function createCanadaLifeUploadButton(): HTMLDivElement {
   const container = document.createElement('div');
+  container.id = 'canadalife-upload-button-container';
   container.className = 'canadalife-upload-button-container';
   container.style.cssText = 'margin: 8px 0;';
   const authStatus = canadalife.checkAuth() as { authenticated: boolean };
   if (!authStatus.authenticated) {
     const message = document.createElement('div');
+    message.id = 'canadalife-auth-message';
     message.textContent = 'Please log in to CanadaLife to enable upload functionality';
-    message.style.cssText = 'padding: 8px 12px; background-color: #fff3cd; color: #856404; border: 1px solid #ffeaa7; border-radius: 4px; font-size: 13px; margin: 5px 0;';
+    message.style.cssText = `padding: 8px 12px; background-color: #fff3cd; color: #856404; border: 1px solid #ffeaa7; border-radius: 4px; font-size: 13px; margin: 5px 0; font-family: ${FONTS.CANADALIFE_BASE};`;
     container.appendChild(message);
     return container;
   }
@@ -472,7 +483,7 @@ export function createCanadaLifeUploadButton(): HTMLDivElement {
       uploadAllButton.disabled = false;
       uploadAllButton.textContent = 'Upload All to Monarch';
     }
-  }, { color: '#28a745' });
+  }, { id: 'canadalife-upload-all-button', color: '#28a745' });
 
   const uploadCustomRangeButton = createCanadaLifeButton('Upload Custom Range', async () => {
     const authenticated = await ensureMonarchAuthentication(null, 'upload Canada Life account with custom range');
@@ -489,9 +500,10 @@ export function createCanadaLifeUploadButton(): HTMLDivElement {
       uploadCustomRangeButton.disabled = false;
       uploadCustomRangeButton.textContent = 'Upload Custom Range';
     }
-  }, { color: '#17a2b8' });
+  }, { id: 'canadalife-upload-custom-range-button', color: '#17a2b8' });
 
   const mainUploadContainer = document.createElement('div');
+  mainUploadContainer.id = 'canadalife-main-upload-container';
   mainUploadContainer.style.cssText = 'display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;';
   mainUploadContainer.appendChild(uploadAllButton);
   mainUploadContainer.appendChild(uploadCustomRangeButton);
@@ -504,20 +516,25 @@ export function createCanadaLifeUploadButton(): HTMLDivElement {
 
   // Create collapsible testing section (only visible in Development Mode)
   const testingSection = document.createElement('div');
+  testingSection.id = 'canadalife-testing-section';
   testingSection.style.cssText = 'border: 1px solid var(--mu-border, #ddd); border-radius: 4px; margin: 8px 0; background-color: var(--mu-bg-secondary, #fafafa);';
 
   const testingHeader = document.createElement('div');
-  testingHeader.style.cssText = 'padding: 8px 12px; background-color: var(--mu-bg-tertiary, #f0f0f0); border-bottom: 1px solid var(--mu-border, #ddd); cursor: pointer; user-select: none; display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 500; color: var(--mu-text-secondary, #666);';
+  testingHeader.id = 'canadalife-testing-header';
+  testingHeader.style.cssText = `padding: 8px 12px; background-color: var(--mu-bg-tertiary, #f0f0f0); border-bottom: 1px solid var(--mu-border, #ddd); cursor: pointer; user-select: none; display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 500; color: var(--mu-text-secondary, #666); font-family: ${FONTS.CANADALIFE_BASE};`;
 
   const testingTitle = document.createElement('span');
+  testingTitle.id = 'canadalife-testing-title';
   testingTitle.textContent = '🧪 Testing (for development only)';
   const testingToggle = document.createElement('span');
+  testingToggle.id = 'canadalife-testing-toggle';
   testingToggle.textContent = '▼';
   testingToggle.style.cssText = 'transition: transform 0.2s ease; font-size: 12px; transform: rotate(-90deg);';
   testingHeader.appendChild(testingTitle);
   testingHeader.appendChild(testingToggle);
 
   const testingContent = document.createElement('div');
+  testingContent.id = 'canadalife-testing-content';
   testingContent.style.cssText = 'padding: 12px; display: none;';
 
   // Load balance button
@@ -539,7 +556,7 @@ export function createCanadaLifeUploadButton(): HTMLDivElement {
       loadBalanceButton.disabled = false;
       loadBalanceButton.textContent = 'Load Balance';
     }
-  });
+  }, { id: 'canadalife-load-balance-button' });
 
   // Upload transaction history button
   const uploadTransactionHistoryButton = createCanadaLifeButton('Upload Transaction History', async () => {
@@ -571,7 +588,7 @@ export function createCanadaLifeUploadButton(): HTMLDivElement {
       uploadTransactionHistoryButton.disabled = false;
       uploadTransactionHistoryButton.textContent = 'Upload Transaction History';
     }
-  }, { color: '#6c757d' });
+  }, { id: 'canadalife-upload-tx-history-button', color: '#6c757d' });
 
   // Load historical balance button
   const loadHistoricalBalanceButton = createCanadaLifeButton('Load Historical Balance', async () => {
@@ -597,7 +614,7 @@ export function createCanadaLifeUploadButton(): HTMLDivElement {
       loadHistoricalBalanceButton.disabled = false;
       loadHistoricalBalanceButton.textContent = 'Load Historical Balance';
     }
-  });
+  }, { id: 'canadalife-load-hist-balance-button' });
 
   // Create account selector for testing
   const accountSelector = createAccountSelector();
