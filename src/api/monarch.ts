@@ -5,6 +5,7 @@
 
 import { API } from '../core/config';
 import { debugLog } from '../core/utils';
+import { extractResponseErrorDetail, parseJsonBody, unwrapGraphQLData } from '../core/httpResponse';
 import { buildMonarchColumnMapping, extractCSVHeaderColumns } from '../utils/csv';
 import stateManager from '../core/state';
 import authService from '../services/auth';
@@ -171,73 +172,6 @@ interface GraphQLRequestOptions {
 // ============================================================
 
 /**
- * Cap on how much of an error response body is carried in the thrown error.
- *
- * Enough to hold a GraphQL errors array; short enough that an HTML error page
- * cannot flood the log.
- */
-const ERROR_BODY_MAX_LENGTH = 500;
-
-/**
- * Pull a readable explanation out of an error response body.
- *
- * Monarch answers a refused request with a GraphQL `errors` array, and that array
- * is frequently the *only* explanation of what it objected to. The `locations`
- * entry in particular identifies the offending part of the query, which is often
- * the only way to tell an unsupported field from a malformed value — the error
- * `message` itself can be entirely generic ("Something went wrong while
- * processing: None on request_id: None.").
- *
- * The serialized array is returned rather than just the message, so `locations`
- * survives into the thrown error.
- *
- * @param responseText - Raw response body, which may not be JSON at all
- * @returns Serialized errors, a trimmed body, or '' when there is nothing useful
- */
-function extractGraphQLErrorText(responseText: string | undefined): string {
-  if (!responseText) return '';
-
-  try {
-    const parsed = JSON.parse(responseText);
-    if (parsed?.errors) return JSON.stringify(parsed.errors);
-  } catch {
-    // Not JSON (an HTML error page, say) — fall through to the raw text.
-  }
-
-  // Bounded: enough to diagnose, not enough to flood the log with an error page.
-  return responseText.slice(0, ERROR_BODY_MAX_LENGTH);
-}
-
-/**
- * Parse a success-status response body, turning an unparseable body into a
- * diagnosable error instead of a raw `SyntaxError`.
- *
- * A 200 whose body is not JSON is a real failure mode, not a theoretical one: a
- * WAF or CDN HTML error page, a captive-portal or proxy interstitial, a
- * rate-limit page, and a truncated body all arrive with a 200 status. The body
- * is the only evidence of which of those happened, so a bounded excerpt of it
- * travels with the error.
- *
- * @param operation - GraphQL operation name, to identify which call failed
- * @param responseText - Raw response body
- * @returns The parsed body
- * @throws When the body is not JSON
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function parseGraphQLResponseBody(operation: string, responseText: string | undefined): any {
-  try {
-    return JSON.parse(responseText as string);
-  } catch (error) {
-    const detail = extractGraphQLErrorText(responseText);
-    throw new Error(
-      `Monarch API Error: ${operation} returned status 200 with a body that is not JSON `
-      + `(${(error as Error).message})${detail ? ` — ${detail}` : ''}`,
-      { cause: error },
-    );
-  }
-}
-
-/**
  * Construct GraphQL request options
  * @param data - GraphQL request data
  * @returns Request options for GM_xmlhttpRequest
@@ -319,17 +253,13 @@ export function callMonarchGraphQL(operation: string, query: string, variables: 
             // and discarding them (as this used to) left every non-200 failure
             // undiagnosable — the status alone cannot distinguish "this field is
             // not accepted" from "the server is having a bad day".
-            const detail = extractGraphQLErrorText(res.responseText);
+            const detail = extractResponseErrorDetail(res.responseText);
             reject(new Error(`Monarch API Error: ${res.status}${detail ? ` — ${detail}` : ''}`));
             return;
           }
 
-          const responseData = parseGraphQLResponseBody(operation, res.responseText);
-          if (responseData?.errors) {
-            reject(new Error(JSON.stringify(responseData.errors)));
-          } else {
-            resolve(responseData?.data);
-          }
+          const source = `Monarch API Error: ${operation}`;
+          resolve(unwrapGraphQLData(parseJsonBody(res.responseText, source), source));
         } catch (error) {
           reject(error instanceof Error ? error : new Error(String(error)));
         }

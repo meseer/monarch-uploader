@@ -10,6 +10,7 @@
  */
 
 import type { HttpClient } from '../../../core/httpClient';
+import { parseJsonBody } from '../../../core/httpResponse';
 import type { MbnaRawTransaction } from './balanceReconstruction';
 
 // ── Interfaces ──────────────────────────────────────────────
@@ -213,11 +214,7 @@ export function createApi(httpClient: HttpClient, _auth: unknown): MbnaApiClient
       throw new Error(`MBNA API error: HTTP ${response.status}`);
     }
 
-    try {
-      return JSON.parse(response.responseText);
-    } catch (error) {
-      throw new Error(`Failed to parse MBNA API response: ${(error as Error).message}`, { cause: error });
-    }
+    return parseJsonBody<Record<string, unknown>>(response.responseText, `MBNA API Error: ${path}`);
   }
 
   return {

@@ -160,6 +160,7 @@ describe('Monarch API - response parsing and settlement', () => {
 
       expect(outcome.state).toBe('rejected');
       expect(outcome.error.message).toContain('field not accepted');
+      expect(outcome.error.message).toContain('GetAccounts');
     });
 
     it('settles rather than hanging when the body is valid JSON but null', async () => {
