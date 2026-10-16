@@ -194,6 +194,15 @@ describe('generated userscript metadata block', () => {
       expect(Buffer.byteLength(metadata, 'utf8')).toBe(metadata.length);
     }
   });
+
+  it('matches the Neo portal and grants access to its GraphQL API', () => {
+    // eslint-disable-next-line global-require
+    const generateMetadata = require('../../src/userscript-metadata.cjs');
+    const metadata = generateMetadata();
+
+    expect(metadata).toContain('// @match        https://member.neofinancial.com/*');
+    expect(metadata).toContain('// @connect      api.production.neofinancial.com');
+  });
 });
 
 describe('source file encoding', () => {

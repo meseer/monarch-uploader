@@ -17,6 +17,7 @@ import { hasCapability, ACCOUNT_SETTINGS } from '../../core/integrationCapabilit
 import accountService from './accountService';
 import toast from '../../ui/toast';
 import { showMonarchAccountSelectorWithCreate } from '../../ui/components/accountSelectorWithCreate';
+import type { IntegrationAccountDefaults } from '../../integrations/types';
 
 /**
  * Pull the cardholder sync choices out of the dialog's result.
@@ -54,6 +55,7 @@ interface ResolveAccountMappingParams {
   manifest: {
     accountKeyName: string;
     accountCreateDefaults?: Record<string, unknown>;
+    accountDefaultsForAccount?: (account: Record<string, unknown>) => IntegrationAccountDefaults;
     logoCloudinaryId?: string | null;
   };
   account: { accountId: string; [key: string]: unknown };
@@ -72,7 +74,7 @@ interface ResolveAccountMappingResult {
  * Resolve the Monarch account mapping for a source account.
  *
  * Flow:
- * 1. Check for existing mapping → return immediately if found
+ * 1. Check existing mapping and apply account-type balance defaults
  * 2. Check if account was previously skipped → return skipped
  * 3. Show account selector dialog with manifest-driven defaults
  * 4. Handle cancel/skip/selection
@@ -95,6 +97,15 @@ export async function resolveAccountMapping({
   // 1. Check existing mapping
   const existing = accountService.getMonarchAccountMapping(integrationId, accountId);
   if (existing) {
+    const accountDefaults = manifest.accountDefaultsForAccount?.(account);
+    const defaultInvertBalance = accountDefaults?.settings?.invertBalance;
+    const accountData = accountService.getAccountData(integrationId, accountId);
+    if (typeof defaultInvertBalance === 'boolean' && accountData
+      && accountData.invertBalance !== defaultInvertBalance) {
+      const updated = accountService.updateAccountInList(integrationId, accountId, { invertBalance: defaultInvertBalance });
+      if (!updated) throw new Error(`Failed to update balance direction for ${integrationId} account ${accountId}`);
+    }
+
     debugLog(`[${integrationId}] Using existing mapping:`, accountDisplayName, '→', existing.displayName);
     return { monarchAccount: existing };
   }
@@ -109,9 +120,12 @@ export async function resolveAccountMapping({
   // 3. Show account selector with manifest-driven defaults
   debugLog(`[${integrationId}] No mapping for`, accountDisplayName, '— showing account selector');
 
+  const accountDefaults = manifest.accountDefaultsForAccount?.(account);
+  const creationDefaults = accountDefaults?.accountCreateDefaults ?? manifest.accountCreateDefaults;
+  const settingsDefaults = accountDefaults?.settings ?? {};
   const createDefaults = {
     defaultName: accountDisplayName,
-    ...(manifest.accountCreateDefaults || {}),
+    ...(creationDefaults || {}),
     // A capability flag, not an integration id: the dialog stays generic
     // Monarch-account UI and only needs to know whether to offer the controls.
     supportsCardholders: hasCapability(integrationId, 'hasCardholders'),
@@ -122,7 +136,7 @@ export async function resolveAccountMapping({
       [],
       (selectedAccount) => resolve(selectedAccount),
       null,
-      (manifest.accountCreateDefaults?.accountType as string) || 'credit',
+      (creationDefaults?.accountType as string) || 'credit',
       createDefaults as Parameters<typeof showMonarchAccountSelectorWithCreate>[4],
     );
   });
@@ -146,6 +160,7 @@ export async function resolveAccountMapping({
       monarchAccount: null,
       syncEnabled: false,
       lastSyncDate: null,
+      ...settingsDefaults,
     };
     accountService.upsertAccount(integrationId, skippedData);
     toast.show(`${accountDisplayName}: skipped`, 'info', 2000);
@@ -163,6 +178,7 @@ export async function resolveAccountMapping({
     },
     syncEnabled: true,
     lastSyncDate: null,
+    ...settingsDefaults,
     ...cardholderSettings,
   };
   accountService.upsertAccount(integrationId, mappingData);

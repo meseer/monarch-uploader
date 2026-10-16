@@ -14,7 +14,7 @@ import accountService from './accountService';
 import {
   mergeAndRetainTransactions,
   getRetentionSettingsFromAccount,
-  StoredTransaction,
+  type StoredTransaction,
 } from '../../utils/transactionStorage';
 
 /**

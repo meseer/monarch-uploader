@@ -66,6 +66,8 @@ export interface IntegrationManifest {
 
   /** Account creation defaults for new Monarch accounts */
   accountCreateDefaults?: IntegrationAccountCreateDefaults;
+  /** Resolve creation defaults and initial settings for mixed account types. */
+  accountDefaultsForAccount?: (account: Record<string, unknown>) => IntegrationAccountDefaults;
 
   /** CSS color for brand theming */
   brandColor: string;
@@ -143,6 +145,11 @@ export interface IntegrationAccountCreateDefaults {
   accountType: string;
 }
 
+export interface IntegrationAccountDefaults {
+  accountCreateDefaults?: IntegrationAccountCreateDefaults;
+  settings?: Record<string, unknown>;
+}
+
 /** Optional flags for UI features beyond the standard panel. */
 export interface IntegrationUIExtensions {
   /** Show token expiry countdown in status */
@@ -177,9 +184,11 @@ export interface IntegrationInjectionPoint {
 export interface InjectionSelector {
   /** CSS selector to find the target element */
   selector: string;
-  /** How to insert: 'prepend', 'append', 'insertBefore', 'prependToSecondChild' */
-  insertMethod: string;
+  /** How to insert relative to the target element */
+  insertMethod: InjectionInsertMethod;
 }
+
+export type InjectionInsertMethod = 'prepend' | 'append' | 'insertBefore' | 'insertAfter' | 'prependToSecondChild';
 
 export interface PageMode {
   /** Unique mode identifier (e.g., 'single-account', 'all-accounts') */

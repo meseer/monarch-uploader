@@ -24,6 +24,8 @@ import { createMonarchLoginLink } from '../components/monarchLoginLink';
 import { createVersionBadge } from '../components/versionBadge';
 import { prepareAndSyncAccount } from '../../services/common/syncOrchestrator';
 import authService from '../../services/auth';
+import { insertElement } from './injection';
+import type { InjectionInsertMethod } from '../../integrations/types';
 
 // ──────────────────────────────────────────────────────────────
 // Types
@@ -37,6 +39,12 @@ interface PageMode {
 
 interface SelectorEntry {
   selector: string;
+  insertMethod: InjectionInsertMethod;
+}
+
+interface InjectionTarget {
+  element: HTMLElement;
+  insertMethod: InjectionInsertMethod;
 }
 
 interface InjectionPoint {
@@ -294,21 +302,23 @@ function isElementVisible(el: HTMLElement): boolean {
  * Find the injection target element using per-page-mode selectors.
  * Falls back to global selectors if no page mode matches.
  */
-function findInjectionTarget(injectionPoint: InjectionPoint): HTMLElement | null {
+function findInjectionTarget(injectionPoint: InjectionPoint): InjectionTarget | null {
   const pageMode = getActivePageMode(injectionPoint);
   const selectors = pageMode?.selectors?.length ? pageMode.selectors : injectionPoint.selectors;
 
-  for (const { selector } of selectors) {
+  for (const { selector, insertMethod } of selectors) {
     const elements = document.querySelectorAll(selector);
     if (elements.length === 0) continue;
 
     // Prefer the first visible element
     for (const el of elements) {
-      if (isElementVisible(el as HTMLElement)) return el as HTMLElement;
+      if (isElementVisible(el as HTMLElement)) {
+        return { element: el as HTMLElement, insertMethod };
+      }
     }
 
     // Fallback: return first match even if visibility check fails
-    return elements[0] as HTMLElement;
+    return { element: elements[0] as HTMLElement, insertMethod };
   }
   return null;
 }
@@ -318,15 +328,15 @@ function findInjectionTarget(injectionPoint: InjectionPoint): HTMLElement | null
 // ──────────────────────────────────────────────────────────────
 
 /**
- * Creates and appends the main UI container after the injection target
+ * Creates and inserts the main UI container at the configured injection target
  */
 function createUIContainer(registryEntry: RegistryEntry): HTMLElement | null {
   const { manifest, injectionPoint } = registryEntry;
   const containerId = injectionPoint.containerId;
   const logPrefix = `[${manifest.displayName}]`;
 
-  const target = findInjectionTarget(injectionPoint);
-  if (!target) {
+  const injectionTarget = findInjectionTarget(injectionPoint);
+  if (!injectionTarget) {
     debugLog(`${logPrefix} Could not find injection target element`);
     return null;
   }
@@ -415,10 +425,10 @@ function createUIContainer(registryEntry: RegistryEntry): HTMLElement | null {
   container.appendChild(header);
 
   // Insert after the target element
-  target.parentNode!.insertBefore(container, target.nextSibling);
+  insertElement(container, injectionTarget.element, injectionTarget.insertMethod);
 
   const pageMode = getActivePageMode(injectionPoint);
-  debugLog(`${logPrefix} UI container created and inserted after target on page mode:`, pageMode?.id || 'unknown');
+  debugLog(`${logPrefix} UI container created at target on page mode:`, pageMode?.id || 'unknown');
   return container;
 }
 
@@ -583,7 +593,7 @@ function waitForTargetElementAsync(injectionPoint: InjectionPoint, logPrefix: st
   return new Promise((resolve, reject) => {
     const existing = findInjectionTarget(injectionPoint);
     if (existing) {
-      resolve(existing);
+      resolve(existing.element);
       return;
     }
 
@@ -596,7 +606,7 @@ function waitForTargetElementAsync(injectionPoint: InjectionPoint, logPrefix: st
 
       if (element) {
         clearInterval(checkInterval);
-        resolve(element);
+        resolve(element.element);
       } else if (attempts >= maxAttempts) {
         clearInterval(checkInterval);
         reject(new Error(`${logPrefix} Injection target not found after 30s`));
@@ -687,4 +697,3 @@ export async function initGenericUI(registryEntry: RegistryEntry): Promise<void>
     toast.show(`Failed to initialize ${manifest.displayName} Balance Uploader`, 'error');
   }
 }
-
