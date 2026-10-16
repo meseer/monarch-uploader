@@ -615,13 +615,11 @@ describe('Monarch API - Core', () => {
           }
         });
 
-      const result = await uploadTransactionsToMonarch(
-        'monarch123',
-        'csv-data',
-        'custom-filename.csv',
-        true, // shouldUpdateBalance
-        true, // skipCheckForDuplicates
-      );
+      const result = await uploadTransactionsToMonarch('monarch123', 'csv-data', {
+        filename: 'custom-filename.csv',
+        shouldUpdateBalance: true,
+        skipCheckForDuplicates: true,
+      });
 
       expect(result).toBe(true);
     });

@@ -23,6 +23,7 @@ import {
   uploadBalanceToMonarch,
 } from './balance';
 import { fetchAndProcessTransactions } from './transactions';
+import { formatMonarchProcessingMessage } from '../common/transactionUpload';
 import { isAlreadyUploaded, findMatchingUploadedId } from './transactionIdMatching';
 import { type WealthsimpleTransaction } from './transactionRulesHelpers';
 import { convertWealthsimpleTransactionsToMonarchCSV } from '../../utils/csv';
@@ -568,13 +569,10 @@ export async function uploadWealthsimpleTransactions(
 
     // Upload to Monarch
     const filename = `wealthsimple_transactions_${wealthsimpleAccountId}_${fromDate}_to_${toDate}.csv`;
-    const uploadSuccess = await monarchApi.uploadTransactions(
-      monarchAccountId,
-      csvData,
+    const uploadSuccess = await monarchApi.uploadTransactions(monarchAccountId, csvData, {
       filename,
-      false, // shouldUpdateBalance = false (balance is uploaded separately)
-      false, // skipCheckForDuplicates = false
-    );
+      onProcessingUpdate: (update) => onProgress?.(formatMonarchProcessingMessage(update)),
+    });
 
     if (uploadSuccess) {
       // Prepare new transactions with their dates for storage. Merchant mirrors
