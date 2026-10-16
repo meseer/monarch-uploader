@@ -12,6 +12,7 @@ import {
   getRogersBankCredentials,
   checkRogersBankAuth,
   checkCredentialStatus,
+  installRogersBankNetworkHooks,
   setupCredentialInterception,
   clearRogersBankCredentials,
   fetchRogersBankAccountDetails,
@@ -21,12 +22,15 @@ import {
 const {
   TRANSACTIONS_URL,
   REGENERATE_TOKEN_URL,
+  ACCOUNT_DETAIL_URL,
+  PROFILE_URL,
   PAGE_HEADERS,
   CAPTURED,
   installFakeXhr,
   sendPageXhr,
   useInMemoryGmStorage,
   expectNoCredentialsInStorage,
+  expectNoCredentialsInLogs,
 } = require('../helpers/rogersBankPage');
 
 jest.mock('../../src/core/utils', () => ({
@@ -48,6 +52,13 @@ jest.mock('../../src/ui/toast', () => ({
 }));
 
 const stateManager = jest.requireMock('../../src/core/state').default;
+const { debugLog } = jest.requireMock('../../src/core/utils');
+const toast = jest.requireMock('../../src/ui/toast').default;
+
+/** The per-request diagnostics logged by the network hooks */
+const observedRequestLogs = () => debugLog.mock.calls
+  .filter(([message]) => message === '[rogersbank] API request observed:')
+  .map(([, details]) => details);
 
 /** Credentials stored by older versions, to prove they are never read back */
 const STORED_BY_OLD_VERSION = {
@@ -141,7 +152,7 @@ describe('Rogers Bank API Client', () => {
 
     test('report unauthenticated while only some credentials are captured', () => {
       setupCredentialInterception();
-      sendPageXhr('https://selfserve.apis.rogersbank.com/corebank/v1/profile', {
+      sendPageXhr(PROFILE_URL, {
         Authorization: PAGE_HEADERS.Authorization,
       });
 
@@ -266,7 +277,7 @@ describe('Rogers Bank API Client', () => {
       setupCredentialInterception();
       sendPageXhr(TRANSACTIONS_URL);
 
-      sendPageXhr('https://selfserve.apis.rogersbank.com/corebank/v1/profile', {
+      sendPageXhr(PROFILE_URL, {
         Authorization: 'Bearer other-token',
       });
 
@@ -285,7 +296,7 @@ describe('Rogers Bank API Client', () => {
     test('captures a regenerated token from a fetch call', async () => {
       const response = {
         ok: true,
-        clone: () => ({ headers: { get: () => 'Bearer fetch-refreshed-token' } }),
+        headers: new Headers({ Accesstoken: 'Bearer fetch-refreshed-token' }),
       };
       pageFetch.mockResolvedValue(response);
       setupCredentialInterception();
@@ -311,6 +322,287 @@ describe('Rogers Bank API Client', () => {
 
       expect(pageFetch).toHaveBeenCalledWith('https://example.com/api/data', {});
       expect(getRogersBankCredentials().authToken).toBeNull();
+    });
+  });
+
+  describe('capture from any Rogers Bank API request', () => {
+    test('connects from the account details request the landing page makes', () => {
+      setupCredentialInterception();
+
+      sendPageXhr(ACCOUNT_DETAIL_URL);
+
+      expect(getRogersBankCredentials()).toEqual({ ...CAPTURED, lastUpdated: expect.any(String) });
+      expect(checkRogersBankAuth().authenticated).toBe(true);
+    });
+
+    test('connects from a fetch request to any account endpoint', async () => {
+      setupCredentialInterception();
+
+      await globalThis.fetch(ACCOUNT_DETAIL_URL.replace('/detail', '/rewards/summary?year=2026'), {
+        headers: new Headers(PAGE_HEADERS),
+      });
+
+      expect(getRogersBankCredentials()).toEqual(expect.objectContaining(CAPTURED));
+      expect(checkRogersBankAuth().authenticated).toBe(true);
+    });
+
+    test('takes header credentials from a request with no IDs in its path, and the IDs from a later path', () => {
+      setupCredentialInterception();
+
+      sendPageXhr(PROFILE_URL);
+
+      expect(getRogersBankCredentials()).toEqual(expect.objectContaining({
+        authToken: CAPTURED.authToken,
+        accountIdEncoded: CAPTURED.accountIdEncoded,
+        customerIdEncoded: CAPTURED.customerIdEncoded,
+        deviceId: CAPTURED.deviceId,
+        accountId: null,
+        customerId: null,
+      }));
+      expect(checkRogersBankAuth().authenticated).toBe(false);
+
+      sendPageXhr(ACCOUNT_DETAIL_URL, {});
+
+      expect(getRogersBankCredentials()).toEqual(expect.objectContaining(CAPTURED));
+      expect(checkRogersBankAuth().authenticated).toBe(true);
+    });
+
+    test('picks up a token the page has rotated from its next fully authenticated request', () => {
+      setupCredentialInterception();
+      sendPageXhr(ACCOUNT_DETAIL_URL);
+
+      sendPageXhr(TRANSACTIONS_URL, { ...PAGE_HEADERS, Authorization: 'Bearer rotated-token' });
+
+      expect(getRogersBankCredentials().authToken).toBe('Bearer rotated-token');
+    });
+
+    test('only fills gaps from a request that lacks some credential headers', () => {
+      setupCredentialInterception();
+      sendPageXhr(ACCOUNT_DETAIL_URL);
+
+      sendPageXhr('https://selfserve.apis.rogersbank.com/corebank/v1/account/99999/customer/11111/detail', {
+        Authorization: 'Bearer other-token',
+        DeviceId: 'other-device',
+      });
+
+      expect(getRogersBankCredentials()).toEqual(expect.objectContaining(CAPTURED));
+    });
+
+    test('follows the account of the latest fully authenticated request', () => {
+      setupCredentialInterception();
+      sendPageXhr(ACCOUNT_DETAIL_URL);
+
+      sendPageXhr('https://selfserve.apis.rogersbank.com/corebank/v1/account/99999/customer/67890/detail', {
+        ...PAGE_HEADERS,
+        AccountId: 'encoded-other-account',
+      });
+
+      expect(getRogersBankCredentials()).toEqual(expect.objectContaining({
+        accountId: '99999',
+        accountIdEncoded: 'encoded-other-account',
+        customerId: CAPTURED.customerId,
+      }));
+    });
+
+    test('ignores requests to other hosts that carry the same headers', () => {
+      setupCredentialInterception();
+
+      sendPageXhr('https://selfserve.rogersbank.com/corebank/v1/account/1/customer/2/detail');
+      sendPageXhr('https://example.com/selfserve.apis.rogersbank.com/corebank/v1/account/1/customer/2/detail');
+
+      expect(getRogersBankCredentials().authToken).toBeNull();
+      expect(observedRequestLogs()).toHaveLength(0);
+    });
+
+    test('does not carry headers over when the page reuses an XHR object', () => {
+      setupCredentialInterception();
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', 'https://example.com/other');
+      Object.entries(PAGE_HEADERS).forEach(([name, value]) => xhr.setRequestHeader(name, value));
+      xhr.send(null);
+
+      xhr.open('GET', PROFILE_URL);
+      xhr.send(null);
+
+      expect(getRogersBankCredentials().authToken).toBeNull();
+    });
+
+    test('captures from fetch called with a Request object', async () => {
+      setupCredentialInterception();
+
+      await globalThis.fetch({ url: ACCOUNT_DETAIL_URL, method: 'GET', headers: new Headers(PAGE_HEADERS) });
+
+      expect(checkRogersBankAuth().authenticated).toBe(true);
+    });
+
+    test('captures from fetch called with a URL and an array of headers', async () => {
+      setupCredentialInterception();
+
+      await globalThis.fetch(new URL(ACCOUNT_DETAIL_URL), { headers: Object.entries(PAGE_HEADERS) });
+
+      expect(getRogersBankCredentials()).toEqual(expect.objectContaining(CAPTURED));
+    });
+
+    test('notifies listeners only when a captured value changes', () => {
+      setupCredentialInterception();
+      stateManager.setRogersBankAuth.mockClear();
+
+      sendPageXhr(ACCOUNT_DETAIL_URL);
+      sendPageXhr(ACCOUNT_DETAIL_URL);
+      sendPageXhr(TRANSACTIONS_URL);
+
+      expect(stateManager.setRogersBankAuth).toHaveBeenCalledTimes(1);
+    });
+
+    test('keeps sending the page request when capture itself fails', () => {
+      const sendSpy = jest.spyOn(XMLHttpRequest.prototype, 'send');
+      setupCredentialInterception();
+      debugLog.mockImplementationOnce(() => {
+        throw new Error('logging failed');
+      });
+
+      expect(() => sendPageXhr(ACCOUNT_DETAIL_URL)).not.toThrow();
+      expect(sendSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('installRogersBankNetworkHooks', () => {
+    test('installs the hooks once, however often it is called', () => {
+      installRogersBankNetworkHooks();
+      const wrappedSend = XMLHttpRequest.prototype.send;
+      const wrappedFetch = globalThis.fetch;
+
+      installRogersBankNetworkHooks();
+      setupCredentialInterception();
+      sendPageXhr(ACCOUNT_DETAIL_URL);
+
+      expect(XMLHttpRequest.prototype.send).toBe(wrappedSend);
+      expect(globalThis.fetch).toBe(wrappedFetch);
+      expect(observedRequestLogs()).toHaveLength(1);
+    });
+
+    test('captures before setupCredentialInterception, which then publishes the capture', () => {
+      installRogersBankNetworkHooks();
+      sendPageXhr(ACCOUNT_DETAIL_URL);
+      stateManager.setRogersBankAuth.mockClear();
+
+      setupCredentialInterception();
+
+      expect(stateManager.setRogersBankAuth).toHaveBeenLastCalledWith(expect.objectContaining(CAPTURED));
+    });
+
+    test('shows no toast when capture happens before the page has a body', () => {
+      const { body } = document;
+      body.remove();
+      try {
+        installRogersBankNetworkHooks();
+        sendPageXhr(ACCOUNT_DETAIL_URL);
+      } finally {
+        document.documentElement.appendChild(body);
+      }
+
+      expect(checkRogersBankAuth().authenticated).toBe(true);
+      expect(toast.show).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('debug diagnostics', () => {
+    let performanceNow;
+
+    beforeEach(() => {
+      // Keep log output deterministic, so it can't contain an ID by chance
+      performanceNow = jest.spyOn(performance, 'now').mockReturnValue(42);
+    });
+
+    afterEach(() => {
+      performanceNow.mockRestore();
+      delete performance.getEntriesByType;
+    });
+
+    test('logs each Rogers Bank request with its endpoint, header names and capture result', () => {
+      setupCredentialInterception();
+
+      sendPageXhr(PROFILE_URL);
+      sendPageXhr(`${ACCOUNT_DETAIL_URL}?fromDate=2026-01-01`, {});
+
+      expect(observedRequestLogs()).toEqual([
+        {
+          via: 'xhr',
+          method: 'GET',
+          endpoint: '/corebank/v1/profile',
+          headerNames: ['authorization', 'accountid', 'customerid', 'deviceid'],
+          captured: ['authToken', 'accountIdEncoded', 'customerIdEncoded', 'deviceId'],
+          missing: ['accountId', 'customerId'],
+          connected: false,
+        },
+        {
+          via: 'xhr',
+          method: 'GET',
+          endpoint: '/corebank/v1/account/{id}/customer/{id}/detail',
+          headerNames: [],
+          captured: ['accountId', 'customerId'],
+          missing: [],
+          connected: true,
+        },
+      ]);
+      expect(debugLog).toHaveBeenCalledWith(
+        '[rogersbank] Credentials captured from /corebank/v1/account/{id}/customer/{id}/detail; connected (held in memory only)',
+      );
+    });
+
+    test('replaces ID-like path segments in logged endpoints', () => {
+      setupCredentialInterception();
+
+      sendPageXhr('https://selfserve.apis.rogersbank.com/corebank/v1/statements/202601', {});
+      sendPageXhr(`${REGENERATE_TOKEN_URL}abcdefghijklmnopqrstuvwxyz`, {}, 'POST');
+
+      expect(observedRequestLogs().map(({ endpoint }) => endpoint)).toEqual([
+        '/corebank/v1/statements/{value}',
+        '/authenticate/v1/authenticate/regeneratetoken/{value}',
+      ]);
+    });
+
+    test('never logs a credential value', async () => {
+      setupCredentialInterception();
+      sendPageXhr(ACCOUNT_DETAIL_URL);
+      await globalThis.fetch(TRANSACTIONS_URL, {
+        headers: new Headers({ ...PAGE_HEADERS, Authorization: 'Bearer rotated-token' }),
+      });
+      const regen = sendPageXhr(REGENERATE_TOKEN_URL, {}, 'POST');
+      regen.responseHeaders.Accesstoken = 'Bearer refreshed-token';
+      regen.listeners.load.call(regen);
+
+      globalThis.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ statusCode: '200', accountDetail: { currentBalance: { value: '1' } } }),
+      });
+      await fetchRogersBankAccountDetails();
+
+      expect(debugLog).toHaveBeenCalledWith(
+        'Fetching Rogers Bank account details from:',
+        '/corebank/v1/account/{id}/customer/{id}/detail',
+      );
+      expectNoCredentialsInLogs(debugLog, ['rotated-token', 'refreshed-token']);
+      expectNoCredentialsInLogs(toast.show, ['rotated-token', 'refreshed-token']);
+    });
+
+    test('reports Rogers Bank requests that completed before the hooks were installed', () => {
+      performance.getEntriesByType = jest.fn(() => [
+        { name: `${ACCOUNT_DETAIL_URL}?fromDate=2026-01-01` },
+        { name: 'https://selfserve.rogersbank.com/main.js' },
+        { name: PROFILE_URL },
+      ]);
+
+      installRogersBankNetworkHooks();
+
+      expect(performance.getEntriesByType).toHaveBeenCalledWith('resource');
+      expect(debugLog).toHaveBeenCalledWith(
+        '[rogersbank] Rogers Bank API requests completed before the network hooks were installed (not captured):',
+        { count: 2, endpoints: ['/corebank/v1/account/{id}/customer/{id}/detail', '/corebank/v1/profile'] },
+      );
+      expect(debugLog).toHaveBeenCalledWith('[rogersbank] Network hooks installed:', expect.objectContaining({
+        xhr: true, fetch: true, readyState: 'complete', msSincePageStart: 42,
+      }));
     });
   });
 
@@ -382,7 +674,7 @@ describe('Rogers Bank API Client', () => {
 
     test('throws when only some credentials were captured', async () => {
       setupCredentialInterception();
-      sendPageXhr('https://selfserve.apis.rogersbank.com/corebank/v1/profile', {
+      sendPageXhr(PROFILE_URL, {
         Authorization: PAGE_HEADERS.Authorization,
       });
 
