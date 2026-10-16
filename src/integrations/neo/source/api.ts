@@ -3,6 +3,7 @@
 import type { HttpClient } from '../../../core/httpClient';
 import { debugLog, formatDate } from '../../../core/utils';
 import { extractResponseErrorDetail, parseJsonBody, unwrapGraphQLData } from '../../../core/httpResponse';
+import { getDepositProductInfo, SUPPORTED_DEPOSIT_CATEGORIES } from '../accountTypes';
 
 const API_URL = 'https://api.production.neofinancial.com/graphql';
 const REQUEST_HEADERS = {
@@ -20,32 +21,6 @@ export interface NeoAccount extends Record<string, unknown> {
   category: string;
   productName: string;
   displayName: string;
-}
-
-interface NeoAccountTypeInfo {
-  displayName: string;
-  accountSubtype: 'checking' | 'savings';
-  invertBalance: true;
-}
-
-/**
- * Single list of supported deposit products.
- *
- * Keyed by the API's `program.productName`. The manifest's
- * `accountDefaultsForAccount` reads from the same table, so display names and
- * Monarch defaults cannot drift apart. Anything not on this list is skipped in
- * `getAccounts()` and never reaches account mapping.
- */
-export const SUPPORTED_DEPOSIT_PRODUCTS: Record<string, NeoAccountTypeInfo> = {
-  EVERYDAY: { displayName: 'Neo Everyday', accountSubtype: 'checking', invertBalance: true },
-  SAVINGS: { displayName: 'Neo Savings', accountSubtype: 'savings', invertBalance: true },
-  HISA: { displayName: 'Neo High-Interest Savings', accountSubtype: 'savings', invertBalance: true },
-};
-
-const SUPPORTED_DEPOSIT_CATEGORIES = ['EVERYDAY', 'HISA'];
-
-export function getDepositProductInfo(productName: string): NeoAccountTypeInfo | undefined {
-  return SUPPORTED_DEPOSIT_PRODUCTS[productName];
 }
 
 export interface NeoTransaction extends Record<string, unknown> {

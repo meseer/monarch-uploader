@@ -1,5 +1,5 @@
 import type { IntegrationManifest } from '../types';
-import { getDepositProductInfo } from './source/api';
+import { getDepositProductInfo } from './accountTypes';
 
 const manifest: IntegrationManifest = {
   id: 'neo',
