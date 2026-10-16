@@ -142,4 +142,23 @@ describe('Rogers Bank UI credential states', () => {
     expect(waitingMessage()).not.toBeNull();
     expect(uploadButton()).toBeNull();
   });
+
+  test('does not treat a URL change from before monitoring started as a navigation', async () => {
+    const { debugLog } = jest.requireMock('../../../src/core/utils');
+    window.history.replaceState({}, '', '/');
+    try {
+      // The module loads at document-start; the bank page then redirects while booting
+      const { api, ui } = loadPage();
+      window.history.replaceState({}, '', '/home');
+      api.setupCredentialInterception();
+      await ui.initRogersBankUI();
+      debugLog.mockClear();
+
+      jest.advanceTimersByTime(500);
+
+      expect(debugLog).not.toHaveBeenCalledWith('Rogers Bank URL changed to:', expect.anything());
+    } finally {
+      window.history.replaceState({}, '', '/');
+    }
+  });
 });

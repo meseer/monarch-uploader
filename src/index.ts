@@ -29,7 +29,7 @@ import { AVAILABLE_INTEGRATIONS } from './integrations';
 import { checkTokenStatus } from './api/questrade';
 import monarchApi from './api/monarch';
 import { setupTokenMonitoring, checkTokenStatus as checkCanadaLifeTokenStatus, loadCanadaLifeAccounts } from './api/canadalife';
-import { setupCredentialInterception } from './api/rogersbank';
+import { installRogersBankNetworkHooks, setupCredentialInterception } from './api/rogersbank';
 import { setupTokenMonitoring as setupWealthsimpleTokenMonitoring, checkAuth as checkWealthsimpleAuth } from './api/wealthsimple';
 
 // Import UI components
@@ -44,45 +44,79 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
 
 // Main IIFE - application entry point
 (function initMonarchUploader() {
-  debugLog('Initializing Questrade to Monarch balance uploader...');
+  // The header's run-at is document-start only so that Rogers Bank's network
+  // hooks exist before the bank page's first API requests; those carry the
+  // credentials and are made while the page boots. Nothing else runs this
+  // early: everything below starts at the point document-idle used to start
+  // the whole script, on every site.
+  if (window.location.hostname.includes('rogersbank.com')) {
+    installRogersBankNetworkHooks();
+  }
 
-  // Register Tampermonkey menu commands
-  GM_registerMenuCommand('Clear All Cached Data', clearAllGmStorage);
-  GM_registerMenuCommand('Clear Transaction Upload History', clearTransactionUploadHistory);
-  GM_registerMenuCommand('Clear Account Mapping', clearAccountMapping);
-  GM_registerMenuCommand('Clear Last Uploaded Date', clearLastUploadedDate);
-  GM_registerMenuCommand('Clear Category Mappings', clearSavedCategoryMappings);
+  runWhenDocumentIdle(startMonarchUploader);
 
-  // Run eager migration of all legacy storage keys to configStore
-  migrateAllLegacyStorage();
-
-  // Register modular integrations in the runtime registry
-  // This must happen before any UI renders so settings tabs and
-  // connection-status checks can discover registered modules.
-  const httpClient = createGMHttpClient();
-  const storage = createGMStorageAdapter();
-  AVAILABLE_INTEGRATIONS.forEach((integration) => {
-    registerIntegration({
-      manifest: integration.manifest,
-      api: integration.createApi(httpClient, storage),
-      auth: integration.createAuth(storage),
-      injectionPoint: integration.injectionPoint,
-      monarchMapper: integration.monarchMapper || null,
-      syncHooks: integration.syncHooks || null,
-    });
-  });
-
-  // Initialize the application once the DOM is ready
-
-  if (document.readyState === 'loading') {
+  /**
+   * Run a callback where run-at document-idle used to start the script:
+   * once DOMContentLoaded has been dispatched to the page's own listeners.
+   * Runs it straight away if the script was injected after that point.
+   */
+  function runWhenDocumentIdle(callback: () => void): void {
+    if (document.readyState !== 'loading') {
+      callback();
+      return;
+    }
     document.addEventListener('DOMContentLoaded', () => {
-      initApp();
+      setTimeout(callback, 0);
+    }, { once: true });
+  }
+
+  /**
+   * Start the uploader: unchanged from when this was the IIFE body under
+   * run-at document-idle.
+   */
+  function startMonarchUploader(): void {
+    debugLog('Initializing Questrade to Monarch balance uploader...');
+
+    // Register Tampermonkey menu commands
+    GM_registerMenuCommand('Clear All Cached Data', clearAllGmStorage);
+    GM_registerMenuCommand('Clear Transaction Upload History', clearTransactionUploadHistory);
+    GM_registerMenuCommand('Clear Account Mapping', clearAccountMapping);
+    GM_registerMenuCommand('Clear Last Uploaded Date', clearLastUploadedDate);
+    GM_registerMenuCommand('Clear Category Mappings', clearSavedCategoryMappings);
+
+    // Run eager migration of all legacy storage keys to configStore
+    migrateAllLegacyStorage();
+
+    // Register modular integrations in the runtime registry
+    // This must happen before any UI renders so settings tabs and
+    // connection-status checks can discover registered modules.
+    const httpClient = createGMHttpClient();
+    const storage = createGMStorageAdapter();
+    AVAILABLE_INTEGRATIONS.forEach((integration) => {
+      registerIntegration({
+        manifest: integration.manifest,
+        api: integration.createApi(httpClient, storage),
+        auth: integration.createAuth(storage),
+        injectionPoint: integration.injectionPoint,
+        monarchMapper: integration.monarchMapper || null,
+        syncHooks: integration.syncHooks || null,
+      });
     });
-  } else {
-    // Small delay to ensure Questrade has initialized
-    setTimeout(() => {
-      initApp();
-    }, 1000);
+
+    // Initialize the application once the DOM is ready
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        initApp();
+      });
+    } else {
+      // Small delay to ensure Questrade has initialized
+      setTimeout(() => {
+        initApp();
+      }, 1000);
+    }
+
+    debugLog('Script loaded successfully');
   }
 
   /**
@@ -393,7 +427,8 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
     try {
       debugLog('Initializing Rogers Bank application components...');
 
-      // Set up credential interception
+      // The network hooks were installed at document-start; this publishes
+      // whatever they have captured since (and installs them if they weren't)
       setupCredentialInterception();
 
       // Initialize Rogers Bank UI
@@ -504,6 +539,4 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
       debugLog('Error initializing Monarch credential monitoring:', error);
     }
   }
-
-  debugLog('Script loaded successfully');
 }());

@@ -38,6 +38,10 @@ class RogersBankNavigationManager {
 
     debugLog('Starting Rogers Bank navigation monitoring...');
 
+    // The module loads at document-start, so the URL seen by the constructor
+    // can predate the page's own boot-time redirects: compare against now.
+    this.currentUrl = window.location.href;
+
     window.addEventListener('popstate', () => {
       this.handleUrlChange();
     });
