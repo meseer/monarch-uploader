@@ -125,14 +125,16 @@ function expectNoCredentialsInStorage(store) {
 }
 
 /**
- * Assert that no credential value, and neither of the plain account/customer
- * IDs, appears in any call to a logging mock (debugLog, toast.show)
- * @param {jest.Mock} logMock - The mocked logging function
- * @param {string[]} extraSecrets - More values that must not be logged
+ * Assert that no credential value was passed to a mock in any call, e.g. to
+ * debugLog or toast.show (nothing logged) or GM_setValue (nothing written,
+ * even if it was deleted again later)
+ * @param {jest.Mock} mock - The mocked function
+ * @param {string[]} extraSecrets - More values that must not appear, such as
+ *   the plain account/customer IDs for logs
  */
-function expectNoCredentialsInLogs(logMock, extraSecrets = []) {
-  const dump = JSON.stringify(logMock.mock.calls);
-  [...SECRET_VALUES, ACCOUNT_ID, CUSTOMER_ID, ...extraSecrets].forEach((secret) => {
+function expectNoCredentialsInCalls(mock, extraSecrets = []) {
+  const dump = JSON.stringify(mock.mock.calls);
+  [...SECRET_VALUES, ...extraSecrets].forEach((secret) => {
     expect(dump).not.toContain(secret);
   });
 }
@@ -183,6 +185,6 @@ module.exports = {
   sendPageXhr,
   useInMemoryGmStorage,
   expectNoCredentialsInStorage,
-  expectNoCredentialsInLogs,
+  expectNoCredentialsInCalls,
   simulateDocumentStart,
 };

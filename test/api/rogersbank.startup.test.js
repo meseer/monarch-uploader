@@ -22,6 +22,7 @@ const {
   sendPageXhr,
   useInMemoryGmStorage,
   expectNoCredentialsInStorage,
+  expectNoCredentialsInCalls,
   simulateDocumentStart,
 } = require('../helpers/rogersBankPage');
 
@@ -111,6 +112,8 @@ describe('Rogers Bank startup at document-start', () => {
 
     expect(uploadButton()).not.toBeNull();
     expectNoCredentialsInStorage(gmStore);
+    // Startup purges stored credentials, so also check nothing was ever written
+    expectNoCredentialsInCalls(GM_setValue);
   });
 
   test('a boot request captured before the page has a body does not break it, even with debug toasts on', () => {

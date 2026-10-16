@@ -20,6 +20,8 @@ import {
 } from '../../src/api/rogersbank';
 
 const {
+  ACCOUNT_ID,
+  CUSTOMER_ID,
   TRANSACTIONS_URL,
   REGENERATE_TOKEN_URL,
   ACCOUNT_DETAIL_URL,
@@ -30,7 +32,7 @@ const {
   sendPageXhr,
   useInMemoryGmStorage,
   expectNoCredentialsInStorage,
-  expectNoCredentialsInLogs,
+  expectNoCredentialsInCalls,
 } = require('../helpers/rogersBankPage');
 
 jest.mock('../../src/core/utils', () => ({
@@ -582,8 +584,8 @@ describe('Rogers Bank API Client', () => {
         'Fetching Rogers Bank account details from:',
         '/corebank/v1/account/{id}/customer/{id}/detail',
       );
-      expectNoCredentialsInLogs(debugLog, ['rotated-token', 'refreshed-token']);
-      expectNoCredentialsInLogs(toast.show, ['rotated-token', 'refreshed-token']);
+      expectNoCredentialsInCalls(debugLog, [ACCOUNT_ID, CUSTOMER_ID, 'rotated-token', 'refreshed-token']);
+      expectNoCredentialsInCalls(toast.show, [ACCOUNT_ID, CUSTOMER_ID, 'rotated-token', 'refreshed-token']);
     });
 
     test('reports Rogers Bank requests that completed before the hooks were installed', () => {
