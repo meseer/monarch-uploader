@@ -534,8 +534,8 @@ used for auth, and encoded account/customer IDs sent as auth headers.
 - Credentials stored by older versions are deleted at startup by a purge in
   `src/services/common/legacyMigration.ts`. Add one if you find more.
 - `test/guards/noStoredCredentials.test.js` enforces this. Its only allowlist
-  entry is the Monarch CSRF token (ADR-007), pending the open question in
-  ADR-010. Do not add entries.
+  entry is the Monarch CSRF token, the one documented exception (ADR-007,
+  ADR-010). Do not add entries.
 
 ### Consolidated Account Storage
 

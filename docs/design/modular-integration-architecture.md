@@ -514,8 +514,8 @@ purges in `legacyMigration.ts`. `configStore` has no auth writer, and
 
 The Monarch CSRF token is still stored, as ADR-007 decided: it is captured on
 app.monarch.com and used on the bank sites, so it cannot be read on demand
-there. It is the guard's only allowlisted entry; whether to keep that exception
-is an open question in ADR-010.
+there. It is the guard's only allowlisted entry, kept as the one documented
+exception (ADR-010, Option A).
 
 ### Account Entry Structure
 

@@ -49,10 +49,11 @@ const CREDENTIAL_VALUE_PATTERN = /(access|auth|bearer|csrf|session|refresh|id|ap
  * The only stored credential this guard accepts.
  *
  * The Monarch CSRF token is captured on app.monarch.com and needed on the bank
- * sites, and GM storage is the only channel between the two (ADR-007). Whether
- * to keep this exception or replace it is the open question in ADR-010:
- * docs/decisions/010-credentials-are-never-stored.md#open-question-the-monarch-csrf-token
- * Do not add entries; remove this one once that question is settled.
+ * sites, and GM storage is the only channel between the two (ADR-007). It is
+ * kept as the one documented exception (ADR-010, Option A):
+ * docs/decisions/010-credentials-are-never-stored.md#exception-the-monarch-csrf-token
+ * Do not add entries. Remove this one only through a new ADR that supersedes
+ * ADR-007.
  */
 const ALLOWLIST = [
   {
