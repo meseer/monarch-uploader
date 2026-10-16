@@ -50,6 +50,8 @@ export const STORAGE = {
   // CanadaLife specific storage keys
   CANADALIFE_TOKEN_KEY: '$AuraClientService.token$siteforce:communityApp',
   // Rogers Bank specific storage keys
+  // Legacy credential keys: never written any more (credentials are held in
+  // memory only). Kept so legacyMigration can delete values left by old versions.
   ROGERSBANK_AUTH_TOKEN: 'rogersbank_auth_token',
   ROGERSBANK_ACCOUNT_ID: 'rogersbank_account_id',
   ROGERSBANK_CUSTOMER_ID: 'rogersbank_customer_id',

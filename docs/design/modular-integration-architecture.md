@@ -1,5 +1,9 @@
 # Modular Integration Architecture
 
+> **Status:** Active  
+> **Updated:** 2026-10-15  
+> **Author:** @meseer  
+
 ## Overview
 
 This document describes the modular integration architecture for monarch-uploader. The architecture was designed incrementally alongside existing legacy integrations (Questrade, CanadaLife, Rogers Bank, Wealthsimple) and has been proven with **MBNA as the reference implementation**.
@@ -485,10 +489,26 @@ Every integration uses this pattern (derived from manifest):
 
 ```
 {id}_accounts_list   # Consolidated account data + Monarch mappings + sync state
-{id}_config          # Auth tokens, global settings, category mappings, holdings mappings
+{id}_config          # Auth/session state, global settings, category mappings, holdings mappings
 ```
 
 Storage keys are declared **only** in `manifest.storageKeys`. They must not appear in `src/core/config.js` or any static service map.
+
+Bank credentials (tokens, device IDs, IDs sent as auth headers) do not go into
+`{id}_config` or any other userscript storage. Read them from the bank page
+when needed, rely on the bank's own cookies, or hold them in memory for the
+current page:
+
+| Integration | How credentials are obtained |
+|---|---|
+| Questrade | Read from the page's `sessionStorage` on demand |
+| Canada Life | Read from the page's `localStorage` on demand |
+| MBNA, Neo Financial | The bank's session cookies |
+| Rogers Bank | Captured from the page's own API requests and held in memory for that page only; captured again after a reload |
+| Wealthsimple | Not yet compliant: the token is still stored in `wealthsimple_config.auth` |
+
+The Monarch CSRF token is stored on purpose: it is captured on
+app.monarch.com and used on the bank sites, so it cannot be read on demand.
 
 ### Account Entry Structure
 
@@ -568,12 +588,15 @@ When migrating a legacy integration:
 
 ### Rogers Bank — Remaining Legacy Work
 
-Rogers Bank has 3 coexisting migration paths. Key remaining tasks:
+Rogers Bank credentials are no longer stored. The auth migration (eager in
+`legacyMigration.ts` and inline in `src/api/rogersbank.ts`) was replaced by
+`purgeStoredRogersBankCredentials()`, which runs at every script load and
+deletes the 7 legacy credential keys and the `auth` section of
+`rogersbank_config`. It writes nothing once they are gone. Key remaining tasks:
 
-1. Unify eager (`legacyMigration.js`) + inline lazy migration (currently duplicate logic)
-2. Once users have 2+ successful syncs with consolidated storage, remove per-account prefix keys
-3. Remove global legacy keys from `config.js` (14 keys total)
-4. Remove Rogers Bank-specific migration code from `accountService.js`
+1. Once users have 2+ successful syncs with consolidated storage, remove per-account prefix keys
+2. Remove global legacy keys from `config.ts` (14 keys total; the 7 credential keys can go once the purge has had time to run for existing users)
+3. Remove Rogers Bank-specific migration code from `accountService.ts`
 
 See Section 5.1 of this document (legacy) for full Rogers Bank key inventory and migration path details.
 

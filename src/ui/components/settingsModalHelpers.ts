@@ -5,6 +5,7 @@
 
 import { debugLog, getDefaultLookbackDays, validateLookbackVsRetention, getMinRetentionForInstitution, getLookbackForInstitution } from '../../core/utils';
 import { STORAGE } from '../../core/config';
+import stateManager from '../../core/state';
 import { INTEGRATIONS, getCategoryMappingsConfig, getDisplayName } from '../../core/integrationCapabilities';
 import { getIntegration } from '../../core/integrationRegistry';
 import { getAuth, setSetting, getCategoryMappings, saveCategoryMappings } from '../../services/common/configStore';
@@ -43,8 +44,10 @@ export function checkInstitutionConnection(institutionId: string): boolean {
       return false;
     }
   case 'rogersbank': {
-    const rbAuth = getAuth(INTEGRATIONS.ROGERSBANK);
-    return Boolean(rbAuth.authToken);
+    // Rogers Bank credentials live in memory only, so this is true only on a
+    // Rogers Bank page that has already captured a token.
+    const rbCredentials = stateManager.getState().auth.rogersbank.credentials;
+    return Boolean(rbCredentials?.authToken);
   }
   case 'wealthsimple': {
     const wsAuth = getAuth(INTEGRATIONS.WEALTHSIMPLE);

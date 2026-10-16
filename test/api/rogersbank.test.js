@@ -1,36 +1,39 @@
 /**
  * Tests for Rogers Bank API Client
+ *
+ * Rogers Bank credentials are captured from the bank page's own API requests
+ * and held in memory for the current page only. They must never be written to
+ * userscript (GM) storage. The real configStore is used (not mocked) so that a
+ * re-introduced `setAuth` call would reach the in-memory GM store and fail the
+ * storage assertions below.
  */
 
 import {
   getRogersBankCredentials,
   checkRogersBankAuth,
   checkCredentialStatus,
+  installRogersBankNetworkHooks,
   setupCredentialInterception,
   clearRogersBankCredentials,
+  fetchRogersBankAccountDetails,
   fetchRogersBankBalance,
 } from '../../src/api/rogersbank';
 
-// Mock dependencies
-jest.mock('../../src/core/config', () => ({
-  STORAGE: {
-    ROGERSBANK_AUTH_TOKEN: 'rogersbank_auth_token',
-    ROGERSBANK_ACCOUNT_ID: 'rogersbank_account_id',
-    ROGERSBANK_CUSTOMER_ID: 'rogersbank_customer_id',
-    ROGERSBANK_ACCOUNT_ID_ENCODED: 'rogersbank_account_id_encoded',
-    ROGERSBANK_CUSTOMER_ID_ENCODED: 'rogersbank_customer_id_encoded',
-    ROGERSBANK_DEVICE_ID: 'rogersbank_device_id',
-    ROGERSBANK_LAST_UPDATED: 'rogersbank_last_updated',
-    ROGERSBANK_CONFIG: 'rogersbank_config',
-    WEALTHSIMPLE_CONFIG: 'wealthsimple_config',
-    QUESTRADE_CONFIG: 'questrade_config',
-    CANADALIFE_CONFIG: 'canadalife_config',
-  },
-  TRANSACTION_RETENTION_DEFAULTS: {
-    DAYS: 91,
-    COUNT: 1000,
-  },
-}));
+const {
+  ACCOUNT_ID,
+  CUSTOMER_ID,
+  TRANSACTIONS_URL,
+  REGENERATE_TOKEN_URL,
+  ACCOUNT_DETAIL_URL,
+  PROFILE_URL,
+  PAGE_HEADERS,
+  CAPTURED,
+  installFakeXhr,
+  sendPageXhr,
+  useInMemoryGmStorage,
+  expectNoCredentialsInStorage,
+  expectNoCredentialsInCalls,
+} = require('../helpers/rogersBankPage');
 
 jest.mock('../../src/core/utils', () => ({
   debugLog: jest.fn(),
@@ -50,69 +53,52 @@ jest.mock('../../src/ui/toast', () => ({
   },
 }));
 
-jest.mock('../../src/services/common/configStore', () => ({
-  getAuth: jest.fn(() => ({})),
-  setAuth: jest.fn(),
-  clearAuth: jest.fn(),
-}));
+const stateManager = jest.requireMock('../../src/core/state').default;
+const { debugLog } = jest.requireMock('../../src/core/utils');
+const toast = jest.requireMock('../../src/ui/toast').default;
 
-jest.mock('../../src/core/integrationCapabilities', () => ({
-  INTEGRATIONS: {
-    WEALTHSIMPLE: 'wealthsimple',
-    QUESTRADE: 'questrade',
-    CANADALIFE: 'canadalife',
-    ROGERSBANK: 'rogersbank',
-  },
-}));
+/** The per-request diagnostics logged by the network hooks */
+const observedRequestLogs = () => debugLog.mock.calls
+  .filter(([message]) => message === '[rogersbank] API request observed:')
+  .map(([, details]) => details);
 
-// Mock GM functions
-globalThis.GM_getValue = jest.fn();
-globalThis.GM_setValue = jest.fn();
-globalThis.GM_deleteValue = jest.fn();
-
-// Mock fetch
-globalThis.fetch = jest.fn();
+/** Credentials stored by older versions, to prove they are never read back */
+const STORED_BY_OLD_VERSION = {
+  rogersbank_config: JSON.stringify({
+    auth: {
+      authToken: 'Bearer old-stored-token',
+      accountId: 'old-account',
+      customerId: 'old-customer',
+      accountIdEncoded: 'old-enc-account',
+      customerIdEncoded: 'old-enc-customer',
+      deviceId: 'old-device',
+    },
+  }),
+  rogersbank_auth_token: 'Bearer old-legacy-token',
+  rogersbank_account_id: 'old-legacy-account',
+  rogersbank_customer_id: 'old-legacy-customer',
+  rogersbank_device_id: 'old-legacy-device',
+};
 
 describe('Rogers Bank API Client', () => {
+  let gmStore;
+  let pageFetch;
+
   beforeEach(() => {
+    clearRogersBankCredentials();
     jest.clearAllMocks();
-    // Reset fetch mock
-    globalThis.fetch.mockReset();
+    gmStore = useInMemoryGmStorage();
+
+    installFakeXhr();
+    pageFetch = jest.fn().mockResolvedValue({ ok: true, status: 200 });
+    globalThis.fetch = pageFetch;
   });
 
-  describe('getRogersBankCredentials', () => {
-    test('should retrieve credentials from GM storage', () => {
-      const mockCredentials = {
-        authToken: 'test-token',
-        accountId: 'test-account',
-        customerId: 'test-customer',
-        accountIdEncoded: 'encoded-account',
-        customerIdEncoded: 'encoded-customer',
-        deviceId: 'test-device',
-        lastUpdated: '2024-01-15T10:00:00Z',
-      };
+  describe('in-memory credentials', () => {
+    test('start empty, without reading credentials stored by older versions', () => {
+      gmStore = useInMemoryGmStorage(STORED_BY_OLD_VERSION);
 
-      globalThis.GM_getValue
-        .mockReturnValueOnce(mockCredentials.authToken)
-        .mockReturnValueOnce(mockCredentials.accountId)
-        .mockReturnValueOnce(mockCredentials.customerId)
-        .mockReturnValueOnce(mockCredentials.accountIdEncoded)
-        .mockReturnValueOnce(mockCredentials.customerIdEncoded)
-        .mockReturnValueOnce(mockCredentials.deviceId)
-        .mockReturnValueOnce(mockCredentials.lastUpdated);
-
-      const result = getRogersBankCredentials();
-
-      expect(result).toEqual(mockCredentials);
-      expect(globalThis.GM_getValue).toHaveBeenCalledTimes(7);
-    });
-
-    test('should handle missing credentials gracefully', () => {
-      globalThis.GM_getValue.mockReturnValue(null);
-
-      const result = getRogersBankCredentials();
-
-      expect(result).toEqual({
+      expect(getRogersBankCredentials()).toEqual({
         authToken: null,
         accountId: null,
         customerId: null,
@@ -121,538 +107,656 @@ describe('Rogers Bank API Client', () => {
         deviceId: null,
         lastUpdated: null,
       });
+      expect(checkRogersBankAuth().authenticated).toBe(false);
+      expect(GM_getValue).not.toHaveBeenCalled();
+      expect(GM_setValue).not.toHaveBeenCalled();
     });
 
-    test('should handle GM storage errors', () => {
-      globalThis.GM_getValue.mockImplementation(() => {
-        throw new Error('Storage error');
+    test('are captured from the page and returned from memory', () => {
+      setupCredentialInterception();
+      sendPageXhr(TRANSACTIONS_URL);
+
+      expect(getRogersBankCredentials()).toEqual({
+        ...CAPTURED,
+        lastUpdated: expect.any(String),
+      });
+      expect(checkRogersBankAuth()).toEqual({
+        authenticated: true,
+        credentials: expect.objectContaining(CAPTURED),
+        source: 'intercepted',
+      });
+    });
+
+    test('are returned as a copy that callers cannot mutate', () => {
+      setupCredentialInterception();
+      sendPageXhr(TRANSACTIONS_URL);
+
+      const copy = getRogersBankCredentials();
+      copy.authToken = 'tampered';
+
+      expect(getRogersBankCredentials().authToken).toBe(CAPTURED.authToken);
+    });
+
+    test('are gone after a page reload, because nothing was persisted', () => {
+      setupCredentialInterception();
+      sendPageXhr(TRANSACTIONS_URL);
+      expect(checkRogersBankAuth().authenticated).toBe(true);
+
+      // A page reload re-evaluates the module against the same GM storage
+      let reloaded;
+      jest.isolateModules(() => {
+        reloaded = require('../../src/api/rogersbank');
       });
 
-      const result = getRogersBankCredentials();
+      expect(reloaded.checkRogersBankAuth().authenticated).toBe(false);
+      expect(reloaded.getRogersBankCredentials().authToken).toBeNull();
+    });
 
-      // Should return default credentials object on error
-      expect(result.authToken).toBeNull();
-      expect(result.accountId).toBeNull();
+    test('report unauthenticated while only some credentials are captured', () => {
+      setupCredentialInterception();
+      sendPageXhr(PROFILE_URL, {
+        Authorization: PAGE_HEADERS.Authorization,
+      });
+
+      expect(getRogersBankCredentials().authToken).toBe(CAPTURED.authToken);
+      expect(checkRogersBankAuth().authenticated).toBe(false);
     });
   });
 
-  describe('checkRogersBankAuth', () => {
-    test('should return authenticated status when all credentials present', () => {
-      globalThis.GM_getValue
-        .mockReturnValueOnce('test-token')
-        .mockReturnValueOnce('test-account')
-        .mockReturnValueOnce('test-customer')
-        .mockReturnValueOnce('encoded-account')
-        .mockReturnValueOnce('encoded-customer')
-        .mockReturnValueOnce('test-device')
-        .mockReturnValueOnce('2024-01-15T10:00:00Z');
+  describe('no credential persistence', () => {
+    test('capturing from an XHR request writes nothing to GM storage', () => {
+      setupCredentialInterception();
+      sendPageXhr(TRANSACTIONS_URL);
 
-      const result = checkRogersBankAuth();
-
-      expect(result.authenticated).toBe(true);
-      expect(result.source).toBe('intercepted');
-      expect(result.credentials.authToken).toBe('test-token');
+      expect(checkRogersBankAuth().authenticated).toBe(true);
+      expect(GM_setValue).not.toHaveBeenCalled();
+      expect(gmStore.size).toBe(0);
     });
 
-    test('should return unauthenticated status when credentials missing', () => {
-      globalThis.GM_getValue.mockReturnValue(null);
+    test('capturing from a fetch request writes nothing to GM storage', async () => {
+      setupCredentialInterception();
+      await globalThis.fetch(TRANSACTIONS_URL, { headers: PAGE_HEADERS });
 
-      const result = checkRogersBankAuth();
-
-      expect(result.authenticated).toBe(false);
-      expect(result.source).toBeNull();
+      expect(checkRogersBankAuth().authenticated).toBe(true);
+      expect(GM_setValue).not.toHaveBeenCalled();
+      expect(gmStore.size).toBe(0);
     });
 
-    test('should return unauthenticated when partial credentials', () => {
-      globalThis.GM_getValue
-        .mockReturnValueOnce('test-token')
-        .mockReturnValueOnce('test-account')
-        .mockReturnValueOnce(null) // Missing customer ID
-        .mockReturnValueOnce('encoded-account')
-        .mockReturnValueOnce('encoded-customer')
-        .mockReturnValueOnce('test-device')
-        .mockReturnValueOnce('2024-01-15T10:00:00Z');
+    test('a token refresh writes nothing to GM storage', () => {
+      setupCredentialInterception();
+      sendPageXhr(TRANSACTIONS_URL);
+      const regen = sendPageXhr(REGENERATE_TOKEN_URL, {}, 'POST');
+      regen.responseHeaders.Accesstoken = 'Bearer refreshed-token';
+      regen.listeners.load.call(regen);
 
-      const result = checkRogersBankAuth();
+      expect(getRogersBankCredentials().authToken).toBe('Bearer refreshed-token');
+      expect(GM_setValue).not.toHaveBeenCalled();
+    });
 
-      expect(result.authenticated).toBe(false);
+    test('no credential value reaches storage alongside existing Rogers data', () => {
+      gmStore = useInMemoryGmStorage({
+        rogersbank_config: JSON.stringify({ settings: { lookbackDays: 7 } }),
+        rogersbank_accounts_list: JSON.stringify([{ rogersbankAccount: { id: '12345' } }]),
+      });
+
+      setupCredentialInterception();
+      sendPageXhr(TRANSACTIONS_URL);
+      clearRogersBankCredentials();
+
+      expect(GM_setValue).not.toHaveBeenCalled();
+      expect(GM_deleteValue).not.toHaveBeenCalled();
+      expectNoCredentialsInStorage(gmStore);
     });
   });
 
   describe('checkCredentialStatus', () => {
-    test('should return auth status when authenticated', () => {
-      globalThis.GM_getValue
-        .mockReturnValueOnce('test-token')
-        .mockReturnValueOnce('test-account')
-        .mockReturnValueOnce('test-customer')
-        .mockReturnValueOnce('encoded-account')
-        .mockReturnValueOnce('encoded-customer')
-        .mockReturnValueOnce('test-device')
-        .mockReturnValueOnce('2024-01-15T10:00:00Z');
-
-      const result = checkCredentialStatus();
-
-      expect(result).toBeTruthy();
-      expect(result.authenticated).toBe(true);
+    test('returns null and publishes null state before capture', () => {
+      expect(checkCredentialStatus()).toBeNull();
+      expect(stateManager.setRogersBankAuth).toHaveBeenCalledWith(null);
     });
 
-    test('should return null when not authenticated', () => {
-      globalThis.GM_getValue.mockReturnValue(null);
+    test('returns the status and publishes credentials after capture', () => {
+      setupCredentialInterception();
+      sendPageXhr(TRANSACTIONS_URL);
+      stateManager.setRogersBankAuth.mockClear();
 
       const result = checkCredentialStatus();
 
-      expect(result).toBeNull();
+      expect(result.authenticated).toBe(true);
+      expect(stateManager.setRogersBankAuth).toHaveBeenCalledWith(expect.objectContaining(CAPTURED));
     });
   });
 
   describe('setupCredentialInterception', () => {
-    let originalXHR;
-    let originalFetch;
+    test('wraps XMLHttpRequest and fetch', () => {
+      const originalSend = XMLHttpRequest.prototype.send;
 
-    beforeEach(() => {
-      // Store original implementations
-      originalXHR = globalThis.XMLHttpRequest;
-      originalFetch = globalThis.fetch;
+      setupCredentialInterception();
 
-      // Mock XMLHttpRequest constructor
-      globalThis.XMLHttpRequest = jest.fn().mockImplementation(() => {
-        const instance = {
-          open: jest.fn(),
-          send: jest.fn(),
-          setRequestHeader: jest.fn(),
-          addEventListener: jest.fn(),
-          getResponseHeader: jest.fn().mockReturnValue(null),
-        };
-        return instance;
+      expect(XMLHttpRequest.prototype.send).not.toBe(originalSend);
+      expect(globalThis.fetch).not.toBe(pageFetch);
+    });
+
+    test('notifies the state manager when credentials are captured', () => {
+      setupCredentialInterception();
+      stateManager.setRogersBankAuth.mockClear();
+
+      sendPageXhr(TRANSACTIONS_URL);
+
+      expect(stateManager.setRogersBankAuth).toHaveBeenCalledWith(expect.objectContaining(CAPTURED));
+    });
+
+    test('still sends the page request and keeps the capture when a listener throws', () => {
+      const sendSpy = jest.spyOn(XMLHttpRequest.prototype, 'send');
+      setupCredentialInterception();
+      stateManager.setRogersBankAuth.mockImplementationOnce(() => {
+        throw new Error('listener failed');
       });
 
-      // Create prototype object
-      globalThis.XMLHttpRequest.prototype = {
-        open: jest.fn(),
-        send: jest.fn(),
-        setRequestHeader: jest.fn(),
-        addEventListener: jest.fn(),
-        getResponseHeader: jest.fn(),
+      expect(() => sendPageXhr(TRANSACTIONS_URL)).not.toThrow();
+      expect(sendSpy).toHaveBeenCalledTimes(1);
+      expect(checkRogersBankAuth().authenticated).toBe(true);
+    });
+
+    test('captures credentials from a fetch call with a Headers object', async () => {
+      setupCredentialInterception();
+
+      await globalThis.fetch(TRANSACTIONS_URL, { headers: new Headers(PAGE_HEADERS) });
+
+      expect(getRogersBankCredentials()).toEqual(expect.objectContaining(CAPTURED));
+    });
+
+    test('passes the page request through to the original XHR send', () => {
+      const sendSpy = jest.spyOn(XMLHttpRequest.prototype, 'send');
+      setupCredentialInterception();
+
+      sendPageXhr(TRANSACTIONS_URL);
+
+      expect(sendSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('does not replace a captured token from a later non-transaction call', () => {
+      setupCredentialInterception();
+      sendPageXhr(TRANSACTIONS_URL);
+
+      sendPageXhr(PROFILE_URL, {
+        Authorization: 'Bearer other-token',
+      });
+
+      expect(getRogersBankCredentials().authToken).toBe(CAPTURED.authToken);
+    });
+
+    test('keeps the token when a regeneration response has no new token', () => {
+      setupCredentialInterception();
+      sendPageXhr(TRANSACTIONS_URL);
+      const regen = sendPageXhr(REGENERATE_TOKEN_URL, {}, 'POST');
+      regen.listeners.load.call(regen);
+
+      expect(getRogersBankCredentials().authToken).toBe(CAPTURED.authToken);
+    });
+
+    test('captures a regenerated token from a fetch call', async () => {
+      const response = {
+        ok: true,
+        headers: new Headers({ Accesstoken: 'Bearer fetch-refreshed-token' }),
       };
+      pageFetch.mockResolvedValue(response);
+      setupCredentialInterception();
+
+      const result = await globalThis.fetch(REGENERATE_TOKEN_URL, {});
+
+      expect(result).toBe(response);
+      expect(getRogersBankCredentials().authToken).toBe('Bearer fetch-refreshed-token');
+      expect(GM_setValue).not.toHaveBeenCalled();
+    });
+
+    test('propagates fetch errors from token regeneration', async () => {
+      pageFetch.mockRejectedValue(new Error('Network error'));
+      setupCredentialInterception();
+
+      await expect(globalThis.fetch(REGENERATE_TOKEN_URL, {})).rejects.toThrow('Network error');
+    });
+
+    test('passes non-Rogers Bank fetch calls through untouched', async () => {
+      setupCredentialInterception();
+
+      await globalThis.fetch('https://example.com/api/data', {});
+
+      expect(pageFetch).toHaveBeenCalledWith('https://example.com/api/data', {});
+      expect(getRogersBankCredentials().authToken).toBeNull();
+    });
+  });
+
+  describe('capture from any Rogers Bank API request', () => {
+    test('connects from the account details request the landing page makes', () => {
+      setupCredentialInterception();
+
+      sendPageXhr(ACCOUNT_DETAIL_URL);
+
+      expect(getRogersBankCredentials()).toEqual({ ...CAPTURED, lastUpdated: expect.any(String) });
+      expect(checkRogersBankAuth().authenticated).toBe(true);
+    });
+
+    test('connects from a fetch request to any account endpoint', async () => {
+      setupCredentialInterception();
+
+      await globalThis.fetch(ACCOUNT_DETAIL_URL.replace('/detail', '/rewards/summary?year=2026'), {
+        headers: new Headers(PAGE_HEADERS),
+      });
+
+      expect(getRogersBankCredentials()).toEqual(expect.objectContaining(CAPTURED));
+      expect(checkRogersBankAuth().authenticated).toBe(true);
+    });
+
+    test('takes header credentials from a request with no IDs in its path, and the IDs from a later path', () => {
+      setupCredentialInterception();
+
+      sendPageXhr(PROFILE_URL);
+
+      expect(getRogersBankCredentials()).toEqual(expect.objectContaining({
+        authToken: CAPTURED.authToken,
+        accountIdEncoded: CAPTURED.accountIdEncoded,
+        customerIdEncoded: CAPTURED.customerIdEncoded,
+        deviceId: CAPTURED.deviceId,
+        accountId: null,
+        customerId: null,
+      }));
+      expect(checkRogersBankAuth().authenticated).toBe(false);
+
+      sendPageXhr(ACCOUNT_DETAIL_URL, {});
+
+      expect(getRogersBankCredentials()).toEqual(expect.objectContaining(CAPTURED));
+      expect(checkRogersBankAuth().authenticated).toBe(true);
+    });
+
+    test('picks up a token the page has rotated from its next fully authenticated request', () => {
+      setupCredentialInterception();
+      sendPageXhr(ACCOUNT_DETAIL_URL);
+
+      sendPageXhr(TRANSACTIONS_URL, { ...PAGE_HEADERS, Authorization: 'Bearer rotated-token' });
+
+      expect(getRogersBankCredentials().authToken).toBe('Bearer rotated-token');
+    });
+
+    test('only fills gaps from a request that lacks some credential headers', () => {
+      setupCredentialInterception();
+      sendPageXhr(ACCOUNT_DETAIL_URL);
+
+      sendPageXhr('https://selfserve.apis.rogersbank.com/corebank/v1/account/99999/customer/11111/detail', {
+        Authorization: 'Bearer other-token',
+        DeviceId: 'other-device',
+      });
+
+      expect(getRogersBankCredentials()).toEqual(expect.objectContaining(CAPTURED));
+    });
+
+    test('follows the account of the latest fully authenticated request', () => {
+      setupCredentialInterception();
+      sendPageXhr(ACCOUNT_DETAIL_URL);
+
+      sendPageXhr('https://selfserve.apis.rogersbank.com/corebank/v1/account/99999/customer/67890/detail', {
+        ...PAGE_HEADERS,
+        AccountId: 'encoded-other-account',
+      });
+
+      expect(getRogersBankCredentials()).toEqual(expect.objectContaining({
+        accountId: '99999',
+        accountIdEncoded: 'encoded-other-account',
+        customerId: CAPTURED.customerId,
+      }));
+    });
+
+    test('ignores requests to other hosts that carry the same headers', () => {
+      setupCredentialInterception();
+
+      sendPageXhr('https://selfserve.rogersbank.com/corebank/v1/account/1/customer/2/detail');
+      sendPageXhr('https://example.com/selfserve.apis.rogersbank.com/corebank/v1/account/1/customer/2/detail');
+
+      expect(getRogersBankCredentials().authToken).toBeNull();
+      expect(observedRequestLogs()).toHaveLength(0);
+    });
+
+    test('does not carry headers over when the page reuses an XHR object', () => {
+      setupCredentialInterception();
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', 'https://example.com/other');
+      Object.entries(PAGE_HEADERS).forEach(([name, value]) => xhr.setRequestHeader(name, value));
+      xhr.send(null);
+
+      xhr.open('GET', PROFILE_URL);
+      xhr.send(null);
+
+      expect(getRogersBankCredentials().authToken).toBeNull();
+    });
+
+    test('captures from fetch called with a Request object', async () => {
+      setupCredentialInterception();
+
+      await globalThis.fetch({ url: ACCOUNT_DETAIL_URL, method: 'GET', headers: new Headers(PAGE_HEADERS) });
+
+      expect(checkRogersBankAuth().authenticated).toBe(true);
+    });
+
+    test('captures from fetch called with a URL and an array of headers', async () => {
+      setupCredentialInterception();
+
+      await globalThis.fetch(new URL(ACCOUNT_DETAIL_URL), { headers: Object.entries(PAGE_HEADERS) });
+
+      expect(getRogersBankCredentials()).toEqual(expect.objectContaining(CAPTURED));
+    });
+
+    test('notifies listeners only when a captured value changes', () => {
+      setupCredentialInterception();
+      stateManager.setRogersBankAuth.mockClear();
+
+      sendPageXhr(ACCOUNT_DETAIL_URL);
+      sendPageXhr(ACCOUNT_DETAIL_URL);
+      sendPageXhr(TRANSACTIONS_URL);
+
+      expect(stateManager.setRogersBankAuth).toHaveBeenCalledTimes(1);
+    });
+
+    test('keeps sending the page request when capture itself fails', () => {
+      const sendSpy = jest.spyOn(XMLHttpRequest.prototype, 'send');
+      setupCredentialInterception();
+      debugLog.mockImplementationOnce(() => {
+        throw new Error('logging failed');
+      });
+
+      expect(() => sendPageXhr(ACCOUNT_DETAIL_URL)).not.toThrow();
+      expect(sendSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('installRogersBankNetworkHooks', () => {
+    test('installs the hooks once, however often it is called', () => {
+      installRogersBankNetworkHooks();
+      const wrappedSend = XMLHttpRequest.prototype.send;
+      const wrappedFetch = globalThis.fetch;
+
+      installRogersBankNetworkHooks();
+      setupCredentialInterception();
+      sendPageXhr(ACCOUNT_DETAIL_URL);
+
+      expect(XMLHttpRequest.prototype.send).toBe(wrappedSend);
+      expect(globalThis.fetch).toBe(wrappedFetch);
+      expect(observedRequestLogs()).toHaveLength(1);
+    });
+
+    test('captures before setupCredentialInterception, which then publishes the capture', () => {
+      installRogersBankNetworkHooks();
+      sendPageXhr(ACCOUNT_DETAIL_URL);
+      stateManager.setRogersBankAuth.mockClear();
+
+      setupCredentialInterception();
+
+      expect(stateManager.setRogersBankAuth).toHaveBeenLastCalledWith(expect.objectContaining(CAPTURED));
+    });
+
+    test('shows no toast when capture happens before the page has a body', () => {
+      const { body } = document;
+      body.remove();
+      try {
+        installRogersBankNetworkHooks();
+        sendPageXhr(ACCOUNT_DETAIL_URL);
+      } finally {
+        document.documentElement.appendChild(body);
+      }
+
+      expect(checkRogersBankAuth().authenticated).toBe(true);
+      expect(toast.show).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('debug diagnostics', () => {
+    let performanceNow;
+
+    beforeEach(() => {
+      // Keep log output deterministic, so it can't contain an ID by chance
+      performanceNow = jest.spyOn(performance, 'now').mockReturnValue(42);
     });
 
     afterEach(() => {
-      // Restore original implementations
-      globalThis.XMLHttpRequest = originalXHR;
-      globalThis.fetch = originalFetch;
+      performanceNow.mockRestore();
+      delete performance.getEntriesByType;
     });
 
-    test('should set up credential interception', () => {
-      expect(() => setupCredentialInterception()).not.toThrow();
-    });
-
-    test('should intercept XHR requests', () => {
+    test('logs each Rogers Bank request with its endpoint, header names and capture result', () => {
       setupCredentialInterception();
 
-      // Verify that XMLHttpRequest prototype methods were overridden
-      expect(typeof XMLHttpRequest.prototype.open).toBe('function');
-      expect(typeof XMLHttpRequest.prototype.send).toBe('function');
-      expect(typeof XMLHttpRequest.prototype.setRequestHeader).toBe('function');
+      sendPageXhr(PROFILE_URL);
+      sendPageXhr(`${ACCOUNT_DETAIL_URL}?fromDate=2026-01-01`, {});
+
+      expect(observedRequestLogs()).toEqual([
+        {
+          via: 'xhr',
+          method: 'GET',
+          endpoint: '/corebank/v1/profile',
+          headerNames: ['authorization', 'accountid', 'customerid', 'deviceid'],
+          captured: ['authToken', 'accountIdEncoded', 'customerIdEncoded', 'deviceId'],
+          missing: ['accountId', 'customerId'],
+          connected: false,
+        },
+        {
+          via: 'xhr',
+          method: 'GET',
+          endpoint: '/corebank/v1/account/{id}/customer/{id}/detail',
+          headerNames: [],
+          captured: ['accountId', 'customerId'],
+          missing: [],
+          connected: true,
+        },
+      ]);
+      expect(debugLog).toHaveBeenCalledWith(
+        '[rogersbank] Credentials captured from /corebank/v1/account/{id}/customer/{id}/detail; connected (held in memory only)',
+      );
     });
 
-    test('should intercept fetch requests', () => {
+    test('replaces ID-like path segments in logged endpoints', () => {
       setupCredentialInterception();
 
-      // Verify that fetch was overridden
-      expect(globalThis.fetch).toBeDefined();
-      expect(typeof globalThis.fetch).toBe('function');
+      sendPageXhr('https://selfserve.apis.rogersbank.com/corebank/v1/statements/202601', {});
+      sendPageXhr(`${REGENERATE_TOKEN_URL}abcdefghijklmnopqrstuvwxyz`, {}, 'POST');
+
+      expect(observedRequestLogs().map(({ endpoint }) => endpoint)).toEqual([
+        '/corebank/v1/statements/{value}',
+        '/authenticate/v1/authenticate/regeneratetoken/{value}',
+      ]);
     });
 
-    test('should capture credentials from transaction API XHR calls', () => {
+    test('never logs a credential value', async () => {
       setupCredentialInterception();
+      sendPageXhr(ACCOUNT_DETAIL_URL);
+      await globalThis.fetch(TRANSACTIONS_URL, {
+        headers: new Headers({ ...PAGE_HEADERS, Authorization: 'Bearer rotated-token' }),
+      });
+      const regen = sendPageXhr(REGENERATE_TOKEN_URL, {}, 'POST');
+      regen.responseHeaders.Accesstoken = 'Bearer refreshed-token';
+      regen.listeners.load.call(regen);
 
-      // Create a mock XHR instance
-      const mockXHR = new XMLHttpRequest();
-
-      // Simulate the credential interception flow
-      const originalOpen = XMLHttpRequest.prototype.open;
-      const originalSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
-      const originalSend = XMLHttpRequest.prototype.send;
-
-      // Mock the transaction API URL
-      const transactionUrl = 'https://selfserve.apis.rogersbank.com/corebank/v1/account/12345/customer/67890/transactions';
-
-      // Simulate setting headers
-      originalSetRequestHeader.call(mockXHR, 'Authorization', 'Bearer test-token');
-      originalSetRequestHeader.call(mockXHR, 'AccountId', 'encoded-account-123');
-      originalSetRequestHeader.call(mockXHR, 'CustomerId', 'encoded-customer-456');
-      originalSetRequestHeader.call(mockXHR, 'DeviceId', 'device-789');
-
-      // Simulate opening the request
-      originalOpen.call(mockXHR, 'GET', transactionUrl);
-
-      // Simulate sending - this should trigger credential capture
-      originalSend.call(mockXHR, null);
-
-      // Check if setAuth was called for saving credentials to configStore
-      const { setAuth } = jest.requireMock('../../src/services/common/configStore');
-      expect(setAuth).toHaveBeenCalledWith('rogersbank', expect.objectContaining({
-        authToken: expect.any(String),
-      }));
-    });
-
-    test('should handle token regeneration XHR responses', () => {
-      setupCredentialInterception();
-
-      // Create a mock XHR instance
-      const mockXHR = new XMLHttpRequest();
-
-      // Mock the token regeneration URL
-      const regenUrl = 'https://selfserve.apis.rogersbank.com/authenticate/v1/authenticate/regeneratetoken/';
-
-      // Set up the response handler mock
-      mockXHR.getResponseHeader.mockReturnValue('new-access-token-123');
-
-      // Simulate the request setup
-      XMLHttpRequest.prototype.open.call(mockXHR, 'POST', regenUrl);
-      XMLHttpRequest.prototype.send.call(mockXHR, null);
-
-      // Simulate the load event that would trigger token capture
-      const loadHandler = mockXHR.addEventListener.mock.calls.find((call) => call[0] === 'load');
-      if (loadHandler) {
-        loadHandler[1].call(mockXHR);
-      }
-
-      // Should have attempted to save the new token
-      expect(mockXHR.getResponseHeader).toHaveBeenCalledWith('Accesstoken');
-    });
-
-    test('should intercept Rogers Bank fetch API calls', async () => {
-      // Mock fetch response
-      const mockFetchResponse = {
+      globalThis.fetch = jest.fn().mockResolvedValue({
         ok: true,
-        status: 200,
-        json: jest.fn().mockResolvedValue({}),
-        clone: jest.fn().mockReturnThis(),
-        headers: {
-          get: jest.fn().mockReturnValue(null),
-        },
-      };
+        json: jest.fn().mockResolvedValue({ statusCode: '200', accountDetail: { currentBalance: { value: '1' } } }),
+      });
+      await fetchRogersBankAccountDetails();
 
-      const originalFetch = jest.fn().mockResolvedValue(mockFetchResponse);
-      globalThis.fetch = originalFetch;
-
-      setupCredentialInterception();
-
-      // Test transaction API fetch call
-      const transactionUrl = 'https://selfserve.apis.rogersbank.com/corebank/v1/account/12345/customer/67890/transactions';
-      const options = {
-        headers: {
-          Authorization: 'Bearer test-token',
-          AccountId: 'encoded-account',
-          CustomerId: 'encoded-customer',
-          DeviceId: 'device-id',
-        },
-      };
-
-      // This should trigger credential capture
-      await globalThis.fetch(transactionUrl, options);
-
-      // Credentials saved to configStore via setAuth
-      const { setAuth } = jest.requireMock('../../src/services/common/configStore');
-      expect(setAuth).toHaveBeenCalledWith('rogersbank', expect.objectContaining({
-        authToken: expect.any(String),
-      }));
+      expect(debugLog).toHaveBeenCalledWith(
+        'Fetching Rogers Bank account details from:',
+        '/corebank/v1/account/{id}/customer/{id}/detail',
+      );
+      expectNoCredentialsInCalls(debugLog, [ACCOUNT_ID, CUSTOMER_ID, 'rotated-token', 'refreshed-token']);
+      expectNoCredentialsInCalls(toast.show, [ACCOUNT_ID, CUSTOMER_ID, 'rotated-token', 'refreshed-token']);
     });
 
-    test('should handle token regeneration in fetch API calls', async () => {
-      const mockNewToken = 'new-token-from-fetch';
-      const mockFetchResponse = {
-        ok: true,
-        status: 200,
-        json: jest.fn().mockResolvedValue({}),
-        clone: jest.fn().mockReturnValue({
-          headers: {
-            get: jest.fn().mockReturnValue(mockNewToken),
-          },
-        }),
-        headers: {
-          get: jest.fn().mockReturnValue(mockNewToken),
-        },
-      };
+    test('reports Rogers Bank requests that completed before the hooks were installed', () => {
+      performance.getEntriesByType = jest.fn(() => [
+        { name: `${ACCOUNT_DETAIL_URL}?fromDate=2026-01-01` },
+        { name: 'https://selfserve.rogersbank.com/main.js' },
+        { name: PROFILE_URL },
+      ]);
 
-      const originalFetch = jest.fn().mockResolvedValue(mockFetchResponse);
-      globalThis.fetch = originalFetch;
+      installRogersBankNetworkHooks();
 
-      setupCredentialInterception();
-
-      // Test token regeneration fetch call
-      const regenUrl = 'https://selfserve.apis.rogersbank.com/authenticate/v1/authenticate/regeneratetoken/';
-      const response = await globalThis.fetch(regenUrl, {});
-
-      expect(response).toBe(mockFetchResponse);
-      expect(mockFetchResponse.clone).toHaveBeenCalled();
-    });
-
-    test('should handle fetch API errors gracefully', async () => {
-      const fetchError = new Error('Network error');
-      const originalFetch = jest.fn().mockRejectedValue(fetchError);
-      globalThis.fetch = originalFetch;
-
-      setupCredentialInterception();
-
-      // Test that errors are properly propagated
-      const regenUrl = 'https://selfserve.apis.rogersbank.com/authenticate/v1/authenticate/regeneratetoken/';
-      await expect(globalThis.fetch(regenUrl, {})).rejects.toThrow('Network error');
-    });
-
-    test('should handle non-Rogers Bank API calls normally', async () => {
-      const mockFetchResponse = { ok: true, status: 200 };
-      const originalFetch = jest.fn().mockResolvedValue(mockFetchResponse);
-      globalThis.fetch = originalFetch;
-
-      setupCredentialInterception();
-
-      // Test non-Rogers Bank URL
-      const normalUrl = 'https://example.com/api/data';
-      const response = await globalThis.fetch(normalUrl, {});
-
-      expect(response).toBe(mockFetchResponse);
-      expect(originalFetch).toHaveBeenCalledWith(normalUrl, {});
-    });
-
-    test('should handle Headers object in fetch options', async () => {
-      const mockFetchResponse = { ok: true, status: 200 };
-      const originalFetch = jest.fn().mockResolvedValue(mockFetchResponse);
-      globalThis.fetch = originalFetch;
-
-      setupCredentialInterception();
-
-      // Test with Headers object
-      const headers = new Headers();
-      headers.append('Authorization', 'Bearer test-token');
-      headers.append('AccountId', 'encoded-account');
-
-      const transactionUrl = 'https://selfserve.apis.rogersbank.com/corebank/v1/account/12345/customer/67890/transactions';
-      await globalThis.fetch(transactionUrl, { headers });
-
-      // Credentials saved to configStore via setAuth
-      const { setAuth } = jest.requireMock('../../src/services/common/configStore');
-      expect(setAuth).toHaveBeenCalledWith('rogersbank', expect.objectContaining({
-        authToken: expect.any(String),
+      expect(performance.getEntriesByType).toHaveBeenCalledWith('resource');
+      expect(debugLog).toHaveBeenCalledWith(
+        '[rogersbank] Rogers Bank API requests completed before the network hooks were installed (not captured):',
+        { count: 2, endpoints: ['/corebank/v1/account/{id}/customer/{id}/detail', '/corebank/v1/profile'] },
+      );
+      expect(debugLog).toHaveBeenCalledWith('[rogersbank] Network hooks installed:', expect.objectContaining({
+        xhr: true, fetch: true, readyState: 'complete', msSincePageStart: 42,
       }));
     });
   });
 
   describe('clearRogersBankCredentials', () => {
-    test('should clear all credentials from storage', () => {
-      const { clearAuth } = jest.requireMock('../../src/services/common/configStore');
+    test('clears the in-memory credentials and the state', () => {
+      setupCredentialInterception();
+      sendPageXhr(TRANSACTIONS_URL);
+      stateManager.setRogersBankAuth.mockClear();
 
       clearRogersBankCredentials();
 
-      // Should clear via configStore only — no legacy GM_deleteValue calls
-      expect(clearAuth).toHaveBeenCalledWith('rogersbank');
-    });
-
-    test('should update state manager', () => {
-      const stateManager = jest.requireMock('../../src/core/state').default;
-
-      clearRogersBankCredentials();
-
+      expect(checkRogersBankAuth().authenticated).toBe(false);
+      expect(getRogersBankCredentials().authToken).toBeNull();
       expect(stateManager.setRogersBankAuth).toHaveBeenCalledWith(null);
     });
   });
 
-  describe('fetchRogersBankBalance', () => {
-    const mockCredentials = {
-      authToken: 'Bearer test-token',
-      accountId: 'test-account',
-      customerId: 'test-customer',
-      accountIdEncoded: 'encoded-account',
-      customerIdEncoded: 'encoded-customer',
-      deviceId: 'test-device',
-    };
+  describe('fetchRogersBankAccountDetails', () => {
+    let apiFetch;
 
-    function setupValidCredentials() {
-      globalThis.GM_getValue
-        .mockReturnValueOnce(mockCredentials.authToken)
-        .mockReturnValueOnce(mockCredentials.accountId)
-        .mockReturnValueOnce(mockCredentials.customerId)
-        .mockReturnValueOnce(mockCredentials.accountIdEncoded)
-        .mockReturnValueOnce(mockCredentials.customerIdEncoded)
-        .mockReturnValueOnce(mockCredentials.deviceId)
-        .mockReturnValueOnce('2024-01-15T10:00:00Z');
+    /** Capture credentials from the page, then swap in a fetch mock for the API call */
+    function captureCredentials() {
+      setupCredentialInterception();
+      sendPageXhr(TRANSACTIONS_URL);
+      apiFetch = jest.fn();
+      globalThis.fetch = apiFetch;
     }
 
-    test('should fetch balance successfully', async () => {
-      setupValidCredentials();
+    function respondWith(data, init = { ok: true, status: 200 }) {
+      apiFetch.mockResolvedValue({ ...init, json: jest.fn().mockResolvedValue(data) });
+    }
 
-      const mockResponse = {
-        ok: true,
-        status: 200,
-        json: jest.fn().mockResolvedValue({
-          statusCode: '200',
-          accountDetail: {
-            currentBalance: {
-              value: 1234.56,
-            },
-          },
-        }),
-      };
+    test('calls the API with the captured credentials', async () => {
+      captureCredentials();
+      respondWith({
+        statusCode: '200',
+        accountDetail: {
+          currentBalance: { value: '1234.56' },
+          creditLimit: { value: '5000' },
+          openedDate: '2020-01-15',
+        },
+      });
 
-      globalThis.fetch.mockResolvedValue(mockResponse);
+      const details = await fetchRogersBankAccountDetails();
 
-      const balance = await fetchRogersBankBalance();
-
-      expect(balance).toBe(1234.56);
-      expect(globalThis.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('selfserve.apis.rogersbank.com'),
+      expect(details).toEqual({ balance: 1234.56, creditLimit: 5000, openedDate: '2020-01-15' });
+      expect(apiFetch).toHaveBeenCalledWith(
+        'https://selfserve.apis.rogersbank.com/corebank/v1/account/12345/customer/67890/detail',
         expect.objectContaining({
           method: 'GET',
           headers: expect.objectContaining({
-            accountid: mockCredentials.accountIdEncoded,
-            authorization: mockCredentials.authToken,
-            customerid: mockCredentials.customerIdEncoded,
-            deviceid: mockCredentials.deviceId,
+            accountid: CAPTURED.accountIdEncoded,
+            authorization: CAPTURED.authToken,
+            customerid: CAPTURED.customerIdEncoded,
+            deviceid: CAPTURED.deviceId,
           }),
         }),
       );
     });
 
-    test('should throw error when credentials missing', async () => {
-      globalThis.GM_getValue.mockReturnValue(null);
+    test('throws when no credentials were captured on this page', async () => {
+      useInMemoryGmStorage(STORED_BY_OLD_VERSION);
 
-      await expect(fetchRogersBankBalance()).rejects.toThrow(
+      await expect(fetchRogersBankAccountDetails()).rejects.toThrow(
         'Missing Rogers Bank credentials. Please navigate to your account page first.',
       );
+      expect(globalThis.fetch).not.toHaveBeenCalled();
     });
 
-    test('should handle API request failure', async () => {
-      setupValidCredentials();
+    test('throws when only some credentials were captured', async () => {
+      setupCredentialInterception();
+      sendPageXhr(PROFILE_URL, {
+        Authorization: PAGE_HEADERS.Authorization,
+      });
 
-      const mockResponse = {
-        ok: false,
-        status: 401,
-        statusText: 'Unauthorized',
-        json: jest.fn(),
-      };
-
-      globalThis.fetch.mockResolvedValue(mockResponse);
-
-      await expect(fetchRogersBankBalance()).rejects.toThrow(
-        'API request failed: 401 Unauthorized',
-      );
+      await expect(fetchRogersBankAccountDetails()).rejects.toThrow('Missing Rogers Bank credentials');
     });
 
-    test('should handle API error status', async () => {
-      setupValidCredentials();
+    test('sets the credit limit to null when it is not a number', async () => {
+      captureCredentials();
+      respondWith({
+        statusCode: '200',
+        accountDetail: { currentBalance: { value: 10 }, creditLimit: { value: 'n/a' } },
+      });
 
-      const mockResponse = {
+      const details = await fetchRogersBankAccountDetails();
+
+      expect(details.creditLimit).toBeNull();
+      expect(details.openedDate).toBeNull();
+    });
+  });
+
+  describe('fetchRogersBankBalance', () => {
+    let apiFetch;
+
+    beforeEach(() => {
+      setupCredentialInterception();
+      sendPageXhr(TRANSACTIONS_URL);
+      apiFetch = jest.fn();
+      globalThis.fetch = apiFetch;
+    });
+
+    test('returns the current balance', async () => {
+      apiFetch.mockResolvedValue({
         ok: true,
         status: 200,
-        json: jest.fn().mockResolvedValue({
-          statusCode: '500',
-          message: 'Internal server error',
-        }),
-      };
+        json: jest.fn().mockResolvedValue({ statusCode: '200', accountDetail: { currentBalance: { value: 1234.56 } } }),
+      });
 
-      globalThis.fetch.mockResolvedValue(mockResponse);
-
-      await expect(fetchRogersBankBalance()).rejects.toThrow(
-        'API returned error status: 500',
-      );
+      await expect(fetchRogersBankBalance()).resolves.toBe(1234.56);
     });
 
-    test('should handle missing balance in response', async () => {
-      setupValidCredentials();
+    test('throws on an HTTP failure', async () => {
+      apiFetch.mockResolvedValue({ ok: false, status: 401, statusText: 'Unauthorized', json: jest.fn() });
 
-      const mockResponse = {
+      await expect(fetchRogersBankBalance()).rejects.toThrow('API request failed: 401 Unauthorized');
+    });
+
+    test('throws on an API error status', async () => {
+      apiFetch.mockResolvedValue({
         ok: true,
         status: 200,
-        json: jest.fn().mockResolvedValue({
-          statusCode: '200',
-          accountDetail: {
-            // Missing currentBalance
-          },
-        }),
-      };
+        json: jest.fn().mockResolvedValue({ statusCode: '500', message: 'Internal server error' }),
+      });
 
-      globalThis.fetch.mockResolvedValue(mockResponse);
-
-      await expect(fetchRogersBankBalance()).rejects.toThrow(
-        'Current balance not found in API response',
-      );
+      await expect(fetchRogersBankBalance()).rejects.toThrow('API returned error status: 500');
     });
 
-    test('should handle invalid balance value', async () => {
-      setupValidCredentials();
-
-      const mockResponse = {
+    test('throws when the balance is missing', async () => {
+      apiFetch.mockResolvedValue({
         ok: true,
         status: 200,
-        json: jest.fn().mockResolvedValue({
-          statusCode: '200',
-          accountDetail: {
-            currentBalance: {
-              value: 'not-a-number',
-            },
-          },
-        }),
-      };
+        json: jest.fn().mockResolvedValue({ statusCode: '200', accountDetail: {} }),
+      });
 
-      globalThis.fetch.mockResolvedValue(mockResponse);
-
-      await expect(fetchRogersBankBalance()).rejects.toThrow(
-        'Invalid balance value received from API',
-      );
+      await expect(fetchRogersBankBalance()).rejects.toThrow('Current balance not found in API response');
     });
 
-    test('should handle network errors', async () => {
-      setupValidCredentials();
+    test('throws when the balance is not a number', async () => {
+      apiFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({ statusCode: '200', accountDetail: { currentBalance: { value: 'not-a-number' } } }),
+      });
 
-      globalThis.fetch.mockRejectedValue(new Error('Network error'));
+      await expect(fetchRogersBankBalance()).rejects.toThrow('Invalid balance value received from API');
+    });
+
+    test('propagates network errors', async () => {
+      apiFetch.mockRejectedValue(new Error('Network error'));
 
       await expect(fetchRogersBankBalance()).rejects.toThrow('Network error');
-    });
-
-    test('should handle partial credentials', async () => {
-      globalThis.GM_getValue
-        .mockReturnValueOnce('test-token')
-        .mockReturnValueOnce('test-account')
-        .mockReturnValueOnce(null) // Missing customer ID
-        .mockReturnValueOnce('encoded-account')
-        .mockReturnValueOnce('encoded-customer')
-        .mockReturnValueOnce('test-device')
-        .mockReturnValueOnce('2024-01-15T10:00:00Z');
-
-      await expect(fetchRogersBankBalance()).rejects.toThrow(
-        'Missing Rogers Bank credentials',
-      );
-    });
-  });
-
-  describe('Credential saving (internal function)', () => {
-    test('should save credentials to GM storage', () => {
-      // This is tested indirectly through the interception setup
-      expect(globalThis.GM_setValue).toBeDefined();
-    });
-
-    test('should handle credential validation', () => {
-      // This functionality is tested through the auth check functions
-      expect(true).toBe(true);
-    });
-  });
-
-  describe('Request interception (integration)', () => {
-    test('should intercept Rogers Bank API calls', () => {
-      // This would be tested through integration tests
-      // The interception logic is complex and would require mocking browser APIs
-      expect(true).toBe(true);
-    });
-
-    test('should handle token regeneration', () => {
-      // This would be tested through integration tests
-      expect(true).toBe(true);
-    });
-
-    test('should capture credentials from various API endpoints', () => {
-      // This would be tested through integration tests
-      expect(true).toBe(true);
     });
   });
 });
