@@ -146,15 +146,10 @@ export function createRogersBankUploadButton(): HTMLElement {
 
   // Create upload button with actual functionality
   const uploadButton = createRogersBankButton('Upload to Monarch', async () => {
-    // Check Monarch authentication before proceeding
-    const authenticated = await ensureMonarchAuthentication(null, 'upload Rogers Bank transactions');
-    if (!authenticated) {
-      return; // User cancelled authentication
-    }
-
-    debugLog('Rogers Bank upload button clicked');
-
-    // Disable button during upload
+    // Disable before anything async. A second click while the first is still
+    // waiting on the Monarch login would otherwise start a second upload of the
+    // same transactions once the login completes.
+    if (uploadButton.disabled) return;
     uploadButton.disabled = true;
     uploadButton.style.opacity = '0.6';
     uploadButton.style.cursor = 'not-allowed';
@@ -162,6 +157,14 @@ export function createRogersBankUploadButton(): HTMLElement {
     uploadButton.textContent = 'Processing...';
 
     try {
+      // Check Monarch authentication before proceeding
+      const authenticated = await ensureMonarchAuthentication(null, 'upload Rogers Bank transactions');
+      if (!authenticated) {
+        return; // Login cancelled or failed; the finally block re-enables the button
+      }
+
+      debugLog('Rogers Bank upload button clicked');
+
       // Call the upload service
       const result: UploadResult = await uploadRogersBankToMonarch();
 

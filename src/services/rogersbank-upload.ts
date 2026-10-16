@@ -41,6 +41,7 @@ import {
 import { showCardholderSelector } from '../ui/components/cardholderSelector';
 import { syncTransactionOwners, buildOwnerResolver, formatOwnerSyncMessage } from './common/ownerSync';
 import { formatMonarchProcessingMessage } from './common/transactionUpload';
+import { acquireSyncLock, type SyncLock } from './common/syncLock';
 
 /**
  * Days to look back in Monarch when collecting pending transactions to reconcile.
@@ -762,6 +763,7 @@ export async function uploadRogersBankToMonarch() {
   let progressDialog = null;
   const abortController = new AbortController();
   let rogersAccountId = null;
+  let syncLock: SyncLock | null = null;
 
   try {
     debugLog('Rogers Bank upload service started');
@@ -774,6 +776,10 @@ export async function uploadRogersBankToMonarch() {
     } else {
       rogersAccountId = `rogers_${rogersAccountName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}`;
     }
+
+    // Held for the whole sync: an overlapping sync of this account would read
+    // the same dedup store and upload the same transactions a second time.
+    syncLock = acquireSyncLock(INTEGRATIONS.ROGERSBANK, rogersAccountId);
 
     // Fetch account details (balance, credit limit, openedDate) in ONE API call
     let accountDetails;
@@ -1348,6 +1354,8 @@ export async function uploadRogersBankToMonarch() {
     }
     toast.show(`Error: ${error.message}`, 'error');
     return { success: false, message: error.message, error };
+  } finally {
+    syncLock?.release();
   }
 }
 

@@ -30,6 +30,7 @@ import accountService from './accountService';
 import { resolveAccountMapping } from './accountMappingResolver';
 import { syncCreditLimit } from './creditLimitSync';
 import { executeBalanceUploadStep } from './balanceUpload';
+import { acquireSyncLock, type SyncLock } from './syncLock';
 import {
   uploadTransactionsAndSaveRefs, formatTransactionUploadMessage, formatMonarchProcessingMessage,
 } from './transactionUpload';
@@ -616,8 +617,13 @@ export async function syncAccount({
 
   const abortController = new AbortController();
   progressDialog.onCancel(() => abortController.abort());
+  let syncLock: SyncLock | null = null;
 
   try {
+    // Held for the whole sync: an overlapping sync of this account would read
+    // the same dedup store and upload the same transactions a second time.
+    syncLock = acquireSyncLock(integrationId, accountId);
+
     // ── STEP 1: Credit Limit Sync ──────────────────────────
     if (capabilities.hasCreditLimit) {
       await executeCreditLimitStep({
@@ -832,6 +838,8 @@ export async function syncAccount({
     progressDialog.showSummary({ success: 0, failed: 1, total: 1 });
 
     return { success: false, message: error.message };
+  } finally {
+    syncLock?.release();
   }
 }
 

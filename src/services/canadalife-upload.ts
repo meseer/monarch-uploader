@@ -18,6 +18,7 @@ import { showMonarchAccountSelectorWithCreate } from '../ui/components/accountSe
 import { ensureMonarchAuthentication } from '../ui/components/monarchLoginLink';
 import accountService from './common/accountService';
 import { formatMonarchProcessingMessage } from './common/transactionUpload';
+import { acquireSyncLock, type SyncLock } from './common/syncLock';
 import { INTEGRATIONS, ACCOUNT_SETTINGS } from '../core/integrationCapabilities';
 import {
   fetchActivitiesForDateRange,
@@ -496,8 +497,13 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
     transactionsSkipped: 0,
     transactionUploadFailed: false,
   };
+  let syncLock: SyncLock | null = null;
 
   try {
+    // Held for the whole sync: an overlapping sync of this account would read
+    // the same dedup store and upload the same transactions a second time.
+    syncLock = acquireSyncLock(INTEGRATIONS.CANADALIFE, accountId);
+
     // Set current account context
     stateManager.setAccount(accountId, accountName);
 
@@ -845,6 +851,8 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
       throw error;
     }
     throw new CanadaLifeUploadError(`Failed to upload ${accountName}: ${error.message}`, accountId);
+  } finally {
+    syncLock?.release();
   }
 }
 
