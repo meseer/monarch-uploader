@@ -17,7 +17,6 @@ const monarchDomain = getMonarchApiDomain();
 export const API = {
   QUESTRADE_BASE_URL: 'https://api.questrade.com',
   WEALTHSIMPLE_GRAPHQL_URL: 'https://my.wealthsimple.com/graphql',
-  WEALTHSIMPLE_TOKEN_INFO_URL: 'https://api.production.wealthsimple.com/v1/oauth/v2/token/info',
   MONARCH_GRAPHQL_URL: `https://api.${monarchDomain}/graphql`,
   MONARCH_TRANSACTIONS_UPLOAD_URL: `https://api.${monarchDomain}/statements/upload-async/`,
   MONARCH_BALANCE_UPLOAD_URL: `https://api.${monarchDomain}/account-balance-history/upload/`,
@@ -42,7 +41,8 @@ export const STORAGE = {
   WEALTHSIMPLE_ACCOUNTS_LIST: 'wealthsimple_accounts_list',
   ROGERSBANK_ACCOUNTS_LIST: 'rogersbank_accounts_list',
   CANADALIFE_ACCOUNTS_LIST: 'canadalife_accounts_list',
-  // Consolidated per-integration config (auth, settings, category mappings, holdings mappings)
+  // Consolidated per-integration config (settings, category mappings, holdings mappings).
+  // Never credentials: an `auth` section left by older versions is deleted at startup (ADR-010).
   WEALTHSIMPLE_CONFIG: 'wealthsimple_config',
   QUESTRADE_CONFIG: 'questrade_config',
   CANADALIFE_CONFIG: 'canadalife_config',

@@ -3,13 +3,14 @@
  *
  * Eagerly migrates Rogers Bank legacy individual GM storage keys into the
  * consolidated `rogersbank_config` configStore structure, and deletes Rogers
- * Bank credentials stored by earlier versions. This runs at every script load
- * so legacy data is handled promptly, not just lazily on first read.
+ * Bank and Wealthsimple credentials stored by earlier versions (ADR-010). This
+ * runs at every script load so legacy data is handled promptly, not just lazily
+ * on first read.
  *
  * Each step is idempotent: once nothing legacy is left, it writes nothing.
  *
  * Note: Questrade, Canada Life, and Wealthsimple migration has been completed
- * and removed. Only Rogers Bank migration remains.
+ * and removed. Only Rogers Bank migration and the credential purges remain.
  *
  * @module services/common/legacyMigration
  */
@@ -38,6 +39,21 @@ const ROGERSBANK_LEGACY_CREDENTIAL_KEYS = [
   STORAGE.ROGERSBANK_CUSTOMER_ID_ENCODED,
   STORAGE.ROGERSBANK_DEVICE_ID,
   STORAGE.ROGERSBANK_LAST_UPDATED,
+];
+
+/**
+ * Individual Wealthsimple auth keys written by versions before 5.85.0. The
+ * startup step that deleted them shipped only from 5.84.6 until 5.85.0, so a
+ * user who upgraded past that window may still have them. They were dropped
+ * from `STORAGE` in 5.85.0, so the literal keys are listed here.
+ */
+const WEALTHSIMPLE_LEGACY_AUTH_KEYS = [
+  'wealthsimple_auth_token',
+  'wealthsimple_access_token',
+  'wealthsimple_identity_id',
+  'wealthsimple_token_expires_at',
+  'wealthsimple_invest_profile',
+  'wealthsimple_trade_profile',
 ];
 
 /**
@@ -103,6 +119,74 @@ export function purgeStoredRogersBankCredentials(): number {
 
   if (deleted > 0) {
     debugLog(`[legacyMigration] Deleted ${deleted} stored Rogers Bank credential item(s)`);
+  }
+
+  return deleted;
+}
+
+/**
+ * Delete each of the given legacy keys that is present
+ * @param keys - Legacy GM storage keys
+ * @param label - Integration name for log messages
+ * @returns Number of keys deleted
+ */
+function deleteLegacyKeysIfPresent(keys: readonly string[], label: string): number {
+  let deleted = 0;
+
+  for (const key of keys) {
+    try {
+      if (GM_getValue(key, undefined) !== undefined) {
+        safeDelete(key);
+        deleted++;
+      }
+    } catch (error) {
+      debugLog(`[legacyMigration] Error checking legacy ${label} key ${key}:`, error);
+    }
+  }
+
+  return deleted;
+}
+
+/**
+ * Delete the `auth` section of an integration's config. Writes nothing when
+ * there is no such section, so it never creates a config.
+ * @param integrationId - Integration identifier
+ * @param label - Integration name for log messages
+ * @returns True if a stored `auth` section was deleted
+ */
+function deleteStoredAuthSection(integrationId: string, label: string): boolean {
+  try {
+    const config = getConfig(integrationId);
+    return Object.prototype.hasOwnProperty.call(config, 'auth') && clearAuth(integrationId);
+  } catch (error) {
+    debugLog(`[legacyMigration] Error deleting stored ${label} auth:`, error);
+    return false;
+  }
+}
+
+/**
+ * Delete Wealthsimple auth stored by earlier versions.
+ *
+ * The Wealthsimple token is now read from the page's OAuth cookie whenever it
+ * is needed (see `checkAuth` in `src/api/wealthsimple.ts`). Earlier versions
+ * copied it, with the identity ID, expiry and profile IDs, into the `auth`
+ * section of `wealthsimple_config`, and before that into individual keys. This
+ * deletes both. Wealthsimple settings, category and holdings mappings and
+ * `wealthsimple_accounts_list` are left untouched.
+ *
+ * Idempotent: once no stored auth remains, it writes nothing. It never creates
+ * `wealthsimple_config` for users who don't have one.
+ * @returns {number} Number of stored auth items deleted (legacy keys plus the `auth` section)
+ */
+export function purgeStoredWealthsimpleAuth(): number {
+  let deleted = deleteLegacyKeysIfPresent(WEALTHSIMPLE_LEGACY_AUTH_KEYS, 'Wealthsimple');
+
+  if (deleteStoredAuthSection(INTEGRATIONS.WEALTHSIMPLE, 'Wealthsimple')) {
+    deleted++;
+  }
+
+  if (deleted > 0) {
+    debugLog(`[legacyMigration] Deleted ${deleted} stored Wealthsimple auth item(s)`);
   }
 
   return deleted;
@@ -198,6 +282,7 @@ export function migrateAllLegacyStorage(): number {
   let totalDeleted = 0;
 
   totalDeleted += purgeStoredRogersBankCredentials();
+  totalDeleted += purgeStoredWealthsimpleAuth();
   totalDeleted += migrateLookbackDays();
   totalDeleted += migrateCategoryMappings();
 

@@ -5,7 +5,7 @@
  */
 
 import wealthsimpleApi from '../../src/api/wealthsimple';
-import { STORAGE, API } from '../../src/core/config';
+const { setupWealthsimpleAuth } = require('../helpers/wealthsimpleAuthCookie');
 
 global.GM_getValue = jest.fn();
 global.GM_setValue = jest.fn();
@@ -24,20 +24,6 @@ jest.mock('../../src/core/state', () => ({
   },
 }));
 
-/**
- * Helper to set up GM_getValue mock with Wealthsimple auth in configStore format.
- */
-function setupConfigStoreAuth(authData) {
-  GM_getValue.mockImplementation((key, defaultValue) => {
-    if (key === STORAGE.WEALTHSIMPLE_CONFIG) {
-      if (!authData) return '{}';
-      return JSON.stringify({ auth: authData });
-    }
-    if (key === 'debug_log_level') return 'info';
-    return defaultValue !== undefined ? defaultValue : null;
-  });
-}
-
 describe('Wealthsimple API Client - Transactions', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -51,7 +37,7 @@ describe('Wealthsimple API Client - Transactions', () => {
       jest.spyOn(Date, 'now').mockReturnValue(new Date('2026-01-03T16:00:00.000Z').getTime());
 
       const futureDate = new Date(Date.now() + 3600000).toISOString();
-      setupConfigStoreAuth({
+      setupWealthsimpleAuth({
         accessToken: 'test-token',
         identityId: 'identity-123',
         expiresAt: futureDate,
@@ -510,7 +496,7 @@ describe('Wealthsimple API Client - Transactions', () => {
   describe('fetchCreditCardAccountSummary', () => {
     beforeEach(() => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
-      setupConfigStoreAuth({
+      setupWealthsimpleAuth({
         accessToken: 'test-token',
         identityId: 'identity-123',
         expiresAt: futureDate,
@@ -716,8 +702,8 @@ describe('Wealthsimple API Client - Transactions', () => {
         wealthsimpleApi.fetchCreditCardAccountSummary('ca-credit-card-ABC123'),
       ).rejects.toThrow('Auth token expired');
 
-      // clearTokenData now clears via configStore
-      expect(GM_setValue).toHaveBeenCalled();
+      // The token lives only in the page's cookie: nothing is stored or cleared
+      expect(GM_setValue).not.toHaveBeenCalled();
     });
 
     it('should handle GraphQL errors', async () => {
@@ -763,7 +749,7 @@ describe('Wealthsimple API Client - Transactions', () => {
   describe('fetchFundingIntents', () => {
     beforeEach(() => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
-      setupConfigStoreAuth({
+      setupWealthsimpleAuth({
         accessToken: 'test-token',
         identityId: 'identity-123',
         expiresAt: futureDate,

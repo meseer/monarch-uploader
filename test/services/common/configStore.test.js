@@ -7,8 +7,6 @@ import {
   getConfig,
   saveConfig,
   updateConfigSection,
-  getAuth,
-  setAuth,
   clearAuth,
   getSettings,
   getSetting,
@@ -137,38 +135,23 @@ describe('configStore', () => {
   });
 
   // ============================================
-  // AUTH OPERATIONS
+  // LEGACY AUTH CLEANUP
   // ============================================
 
-  describe('auth operations', () => {
-    it('getAuth returns empty object when no auth exists', () => {
-      expect(getAuth('wealthsimple')).toEqual({});
+  describe('legacy auth cleanup', () => {
+    it('has no function that writes or reads an auth section (ADR-010)', () => {
+      const configStoreModule = require('../../../src/services/common/configStore');
+
+      expect(configStoreModule.setAuth).toBeUndefined();
+      expect(configStoreModule.getAuth).toBeUndefined();
+      expect(configStoreModule.default.setAuth).toBeUndefined();
+      expect(configStoreModule.default.getAuth).toBeUndefined();
     });
 
-    it('setAuth saves and getAuth retrieves auth data', () => {
-      setAuth('wealthsimple', {
-        accessToken: 'token123',
-        identityId: 'id456',
-        expiresAt: '2025-01-01',
-      });
-      const auth = getAuth('wealthsimple');
-      expect(auth.accessToken).toBe('token123');
-      expect(auth.identityId).toBe('id456');
-      expect(auth.expiresAt).toBe('2025-01-01');
-    });
-
-    it('setAuth merges with existing auth data', () => {
-      setAuth('wealthsimple', { accessToken: 'old', identityId: 'id1' });
-      setAuth('wealthsimple', { accessToken: 'new' });
-      const auth = getAuth('wealthsimple');
-      expect(auth.accessToken).toBe('new');
-      expect(auth.identityId).toBe('id1');
-    });
-
-    it('clearAuth removes auth section', () => {
-      setAuth('wealthsimple', { accessToken: 'token' });
+    it('clearAuth removes an auth section left by an older version', () => {
+      saveConfig('wealthsimple', { auth: { accessToken: 'token' } });
       clearAuth('wealthsimple');
-      expect(getAuth('wealthsimple')).toEqual({});
+      expect(getConfig('wealthsimple')).toEqual({});
     });
 
     it('clearAuth preserves other sections', () => {
@@ -274,10 +257,10 @@ describe('configStore', () => {
     });
 
     it('category operations preserve other config sections', () => {
-      setAuth('wealthsimple', { token: 'abc' });
+      setSetting('wealthsimple', 'lookbackDays', 7);
       setCategoryMapping('wealthsimple', 'MERCHANT', 'Category');
       const config = getConfig('wealthsimple');
-      expect(config.auth.token).toBe('abc');
+      expect(config.settings.lookbackDays).toBe(7);
       expect(config.categoryMappings.MERCHANT).toBe('Category');
     });
   });
@@ -366,11 +349,11 @@ describe('configStore', () => {
     });
 
     it('holdings operations preserve other config sections', () => {
-      setAuth('wealthsimple', { token: 'abc' });
+      setSetting('wealthsimple', 'lookbackDays', 7);
       setCategoryMapping('wealthsimple', 'M', 'Cat');
       saveHoldingMapping('wealthsimple', 'sec-1', sampleMapping);
       const config = getConfig('wealthsimple');
-      expect(config.auth.token).toBe('abc');
+      expect(config.settings.lookbackDays).toBe(7);
       expect(config.categoryMappings.M).toBe('Cat');
       expect(config.holdingsMappings['sec-1']).toEqual(sampleMapping);
     });
@@ -414,22 +397,22 @@ describe('configStore', () => {
 
   describe('cross-integration isolation', () => {
     it('configs for different integrations are independent', () => {
-      setAuth('wealthsimple', { token: 'ws-token' });
-      setAuth('rogersbank', { token: 'rb-token' });
+      setCategoryMapping('wealthsimple', 'M', 'ws-category');
+      setCategoryMapping('rogersbank', 'M', 'rb-category');
       setSetting('wealthsimple', 'lookbackDays', 7);
       setSetting('rogersbank', 'lookbackDays', 14);
 
-      expect(getAuth('wealthsimple').token).toBe('ws-token');
-      expect(getAuth('rogersbank').token).toBe('rb-token');
+      expect(getCategoryMapping('wealthsimple', 'M')).toBe('ws-category');
+      expect(getCategoryMapping('rogersbank', 'M')).toBe('rb-category');
       expect(getSetting('wealthsimple', 'lookbackDays', 0)).toBe(7);
       expect(getSetting('rogersbank', 'lookbackDays', 0)).toBe(14);
     });
 
     it('clearing one integration config does not affect another', () => {
-      setAuth('wealthsimple', { token: 'ws' });
-      setAuth('questrade', { token: 'qt' });
+      setSetting('wealthsimple', 'lookbackDays', 7);
+      setSetting('questrade', 'lookbackDays', 3);
       saveConfig('wealthsimple', {});
-      expect(getAuth('questrade').token).toBe('qt');
+      expect(getSetting('questrade', 'lookbackDays', 0)).toBe(3);
     });
   });
 
@@ -487,11 +470,12 @@ describe('configStore', () => {
       expect(gmStore.mbna_config).toBe(JSON.stringify({ settings: { lookbackDays: 30 } }));
     });
 
-    it('persists auth data for a modular integration', () => {
+    it('deletes a legacy auth section for a modular integration', () => {
       register(mbnaManifest);
+      saveConfig('mbna', { auth: { sessionActive: true }, settings: { lookbackDays: 30 } });
 
-      expect(setAuth('mbna', { sessionActive: true })).toBe(true);
-      expect(getAuth('mbna')).toEqual({ sessionActive: true });
+      expect(clearAuth('mbna')).toBe(true);
+      expect(getConfig('mbna')).toEqual({ settings: { lookbackDays: 30 } });
     });
 
     // Regression: every mbna config write used to return false and be discarded

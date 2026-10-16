@@ -6,7 +6,7 @@
  */
 
 import wealthsimpleApi from '../../src/api/wealthsimple';
-import { STORAGE, API } from '../../src/core/config';
+const { setupWealthsimpleAuth } = require('../helpers/wealthsimpleAuthCookie');
 
 global.GM_getValue = jest.fn();
 global.GM_setValue = jest.fn();
@@ -25,20 +25,6 @@ jest.mock('../../src/core/state', () => ({
   },
 }));
 
-/**
- * Helper to set up GM_getValue mock with Wealthsimple auth in configStore format.
- */
-function setupConfigStoreAuth(authData) {
-  GM_getValue.mockImplementation((key, defaultValue) => {
-    if (key === STORAGE.WEALTHSIMPLE_CONFIG) {
-      if (!authData) return '{}';
-      return JSON.stringify({ auth: authData });
-    }
-    if (key === 'debug_log_level') return 'info';
-    return defaultValue !== undefined ? defaultValue : null;
-  });
-}
-
 describe('Wealthsimple API Client - Transfers & Positions', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -49,7 +35,7 @@ describe('Wealthsimple API Client - Transfers & Positions', () => {
   describe('fetchInternalTransfer', () => {
     beforeEach(() => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
-      setupConfigStoreAuth({
+      setupWealthsimpleAuth({
         accessToken: 'test-token',
         identityId: 'identity-123',
         expiresAt: futureDate,
@@ -199,7 +185,7 @@ describe('Wealthsimple API Client - Transfers & Positions', () => {
   describe('fetchFundsTransfer', () => {
     beforeEach(() => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
-      setupConfigStoreAuth({
+      setupWealthsimpleAuth({
         accessToken: 'test-token',
         identityId: 'identity-123',
         expiresAt: futureDate,
@@ -515,7 +501,7 @@ describe('Wealthsimple API Client - Transfers & Positions', () => {
   describe('fetchShortOptionPositionExpiryDetail', () => {
     beforeEach(() => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
-      setupConfigStoreAuth({
+      setupWealthsimpleAuth({
         accessToken: 'test-token',
         identityId: 'identity-123',
         expiresAt: futureDate,
@@ -803,7 +789,7 @@ describe('Wealthsimple API Client - Transfers & Positions', () => {
 
     beforeEach(() => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
-      setupConfigStoreAuth({
+      setupWealthsimpleAuth({
         accessToken: 'test-token',
         identityId: 'identity-123',
         expiresAt: futureDate,
@@ -967,7 +953,7 @@ describe('Wealthsimple API Client - Transfers & Positions', () => {
   describe('fetchActivityByOrdersServiceOrderId', () => {
     beforeEach(() => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
-      setupConfigStoreAuth({
+      setupWealthsimpleAuth({
         accessToken: 'test-token',
         identityId: 'identity-123',
         expiresAt: futureDate,
@@ -1149,7 +1135,7 @@ describe('Wealthsimple API Client - Transfers & Positions', () => {
   describe('fetchFundingIntentStatusSummary', () => {
     beforeEach(() => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
-      setupConfigStoreAuth({
+      setupWealthsimpleAuth({
         accessToken: 'test-token',
         identityId: 'identity-123',
         expiresAt: futureDate,
@@ -1312,7 +1298,7 @@ describe('Wealthsimple API Client - Transfers & Positions', () => {
   describe('fetchExtendedOrder', () => {
     beforeEach(() => {
       const futureDate = new Date(Date.now() + 3600000).toISOString();
-      setupConfigStoreAuth({
+      setupWealthsimpleAuth({
         accessToken: 'test-token',
         identityId: 'identity-123',
         expiresAt: futureDate,

@@ -345,7 +345,7 @@ function setupUrlChangeMonitoring(): void {
 export async function initWealthsimpleUI(): Promise<void> {
   try {
     debugLog('Initializing Wealthsimple UI...');
-    wealthsimpleApi.setupTokenMonitoring();
+    // Token monitoring is started once by the app entry point (src/index.ts)
     setupUrlChangeMonitoring();
     startPersistentMonitoring();
     checkAndInitializeUI().catch((err) => {

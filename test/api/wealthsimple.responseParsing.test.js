@@ -1,9 +1,9 @@
 /**
  * Tests for Wealthsimple API — response body parsing and promise settlement.
  *
- * `makeGraphQLQuery` and `validateToken` already wrapped `JSON.parse` in
- * try/catch, unlike the Monarch and Questrade clients — but neither guard was
- * covered by a test, so nothing stopped the guard being dropped and reintroducing
+ * `makeGraphQLQuery` already wrapped `JSON.parse` in try/catch, unlike the
+ * Monarch and Questrade clients — but the guard was not covered by a test, so
+ * nothing stopped the guard being dropped and reintroducing
  * the hang. A throw that escapes a `GM_xmlhttpRequest` `onload` handler settles
  * the promise neither way, and with no request timeout configured in `src/api/`
  * the awaiting caller hangs permanently.
@@ -13,13 +13,19 @@
  */
 
 import { makeGraphQLQuery } from '../../src/api/wealthsimple';
-import { STORAGE } from '../../src/core/config';
 import { settlementOf } from '../helpers/promiseSettlement';
+
+const { setWealthsimpleAuthCookie } = require('../helpers/wealthsimpleAuthCookie');
 
 global.GM_getValue = jest.fn();
 global.GM_setValue = jest.fn();
 global.GM_deleteValue = jest.fn();
 global.GM_xmlhttpRequest = jest.fn();
+
+Object.defineProperty(document, 'cookie', {
+  writable: true,
+  value: '',
+});
 
 jest.mock('../../src/core/state', () => ({
   __esModule: true,
@@ -35,18 +41,10 @@ describe('Wealthsimple API - response parsing and settlement', () => {
     jest.clearAllMocks();
     stateManager = jest.requireMock('../../src/core/state').default;
 
-    // configStore.getAuth() reads GM_getValue(STORAGE.WEALTHSIMPLE_CONFIG) and
-    // parses it, so authentication is established through that key.
+    // The token is read from the page's OAuth cookie on every request, so
+    // authentication is established by setting that cookie.
+    setWealthsimpleAuthCookie();
     GM_getValue.mockImplementation((key, defaultValue) => {
-      if (key === STORAGE.WEALTHSIMPLE_CONFIG) {
-        return JSON.stringify({
-          auth: {
-            accessToken: 'test-token',
-            identityId: 'identity-123',
-            expiresAt: new Date(Date.now() + 3600000).toISOString(),
-          },
-        });
-      }
       if (key === 'debug_log_level') return 'info';
       return defaultValue !== undefined ? defaultValue : null;
     });
@@ -124,10 +122,10 @@ describe('Wealthsimple API - response parsing and settlement', () => {
   });
 
   describe('unexpected throws inside the handler', () => {
-    it('rejects rather than hanging when clearing the token throws on a 401', async () => {
+    it('rejects rather than hanging when marking the token rejected throws on a 401', async () => {
       // The inner catch only covers the parse. Any other throw in the handler
       // wedges the promise just as effectively, which is what the outer guard is
-      // for — here via `clearTokenData` -> `stateManager.setWealthsimpleAuth`.
+      // for — here via `rejectToken` -> `stateManager.setWealthsimpleAuth`.
       stateManager.setWealthsimpleAuth.mockImplementation(() => {
         throw new Error('state write failed');
       });

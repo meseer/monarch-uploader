@@ -5,8 +5,6 @@
 
 import { debugLog, formatDate } from '../core/utils';
 import { STORAGE, API } from '../core/config';
-import { INTEGRATIONS } from '../core/integrationCapabilities';
-import { getAuth, setAuth, clearAuth as clearConfigAuth } from '../services/common/configStore';
 import stateManager from '../core/state';
 import { getAccountTypeDisplayName } from '../mappers/wealthsimple-account-types';
 import {
@@ -43,7 +41,6 @@ interface WealthsimpleTokenData {
   expiresAt: string;
   investProfile?: string | null;
   tradeProfile?: string | null;
-  email?: string | null;
 }
 
 export interface WealthsimpleAuthStatus {
@@ -111,23 +108,63 @@ interface WealthsimpleTransaction {
 
 //    Functions
 
-/**
- * Parse Wealthsimple OAuth cookie and extract token data
- * @returns Parsed token data or null
- */
-function parseOAuthCookie(): WealthsimpleTokenData | null {
-  try {
-    const cookies = document.cookie.split(';');
-    const oauthCookie = cookies.find((cookie) => cookie.trim().startsWith('_oauth2_access_v2='));
+// ── Auth: read on demand from the page's OAuth cookie ───────────────────────
+//
+// Wealthsimple's web app keeps its OAuth access token in the non-HttpOnly
+// `_oauth2_access_v2` cookie. The token is read from that cookie every time it
+// is needed and is never written anywhere: not to GM storage, not to
+// `wealthsimple_config`, not to the page's storage (ADR-010). The only state
+// below is held in memory for the current page.
 
-    if (!oauthCookie) {
+const OAUTH_COOKIE_NAME = '_oauth2_access_v2';
+
+/** How often token monitoring re-reads the cookie to publish changes */
+const TOKEN_POLL_INTERVAL_MS = 1000;
+
+const NOT_AUTHENTICATED: Readonly<WealthsimpleAuthStatus> = {
+  authenticated: false,
+  token: null,
+  identityId: null,
+  expiresAt: null,
+};
+
+/**
+ * Raw cookie value whose token Wealthsimple rejected with a 401. That token is
+ * treated as unusable until the page writes a different cookie value.
+ */
+let rejectedCookieValue: string | null = null;
+
+/** Auth status together with the raw cookie value it was read from */
+interface CookieAuth {
+  cookieValue: string | null;
+  status: WealthsimpleAuthStatus;
+}
+
+/**
+ * Read the raw (still URI-encoded) value of the Wealthsimple OAuth cookie
+ * @returns Raw cookie value, or null when the cookie is absent
+ */
+function readOAuthCookieValue(): string | null {
+  const prefix = `${OAUTH_COOKIE_NAME}=`;
+  const cookie = document.cookie
+    .split(';')
+    .map((entry) => entry.trim())
+    .find((entry) => entry.startsWith(prefix));
+  return cookie ? cookie.slice(prefix.length) : null;
+}
+
+/**
+ * Parse the OAuth cookie value into token data
+ * @param cookieValue - Raw cookie value
+ * @returns Token data, or null when the value is malformed or incomplete
+ */
+function parseOAuthCookieValue(cookieValue: string): WealthsimpleTokenData | null {
+  try {
+    const tokenData = JSON.parse(decodeURIComponent(cookieValue));
+    if (!tokenData?.access_token || !tokenData?.identity_canonical_id) {
+      debugLog('Wealthsimple OAuth cookie has no access token or identity');
       return null;
     }
-
-    // Extract cookie value and decode
-    const cookieValue = oauthCookie.split('=')[1];
-    const decodedValue = decodeURIComponent(cookieValue);
-    const tokenData = JSON.parse(decodedValue);
 
     return {
       accessToken: tokenData.access_token,
@@ -135,82 +172,13 @@ function parseOAuthCookie(): WealthsimpleTokenData | null {
       expiresAt: tokenData.expires_at,
       investProfile: tokenData.profiles?.invest?.default || null,
       tradeProfile: tokenData.profiles?.trade?.default || null,
-      email: tokenData.email || null,
     };
-  } catch (error) {
-    debugLog('Error parsing OAuth cookie:', error);
+  } catch {
+    // The parse error itself is not logged: its message can quote the cookie,
+    // which holds the access token.
+    debugLog('Could not parse the Wealthsimple OAuth cookie');
     return null;
   }
-}
-
-/**
- * Save Wealthsimple token data to storage
- * Writes to configStore only
- * @param tokenData - Token data to save
- */
-function saveTokenData(tokenData: WealthsimpleTokenData | null): void {
-  if (tokenData) {
-    const authData: Record<string, unknown> = {
-      accessToken: tokenData.accessToken,
-      identityId: tokenData.identityId,
-      expiresAt: tokenData.expiresAt,
-    };
-    if (tokenData.investProfile) {
-      authData.investProfile = tokenData.investProfile;
-    }
-    if (tokenData.tradeProfile) {
-      authData.tradeProfile = tokenData.tradeProfile;
-    }
-    setAuth(INTEGRATIONS.WEALTHSIMPLE, authData);
-
-    debugLog('Wealthsimple token data saved:', {
-      identityId: tokenData.identityId,
-      expiresAt: tokenData.expiresAt,
-      hasInvestProfile: Boolean(tokenData.investProfile),
-      hasTradeProfile: Boolean(tokenData.tradeProfile),
-    });
-
-    // Update state manager
-    stateManager.setWealthsimpleAuth({
-      authenticated: true,
-      identityId: tokenData.identityId,
-      expiresAt: tokenData.expiresAt,
-    });
-  } else {
-    clearTokenData();
-  }
-}
-
-/**
- * Clear all Wealthsimple token data from storage
- */
-function clearTokenData(): void {
-  clearConfigAuth(INTEGRATIONS.WEALTHSIMPLE);
-
-  debugLog('Wealthsimple token data cleared');
-
-  // Update state manager
-  stateManager.setWealthsimpleAuth(null);
-}
-
-/**
- * Get stored Wealthsimple token data
- * Reads from configStore only
- * @returns Token data or null
- */
-function getStoredTokenData(): WealthsimpleTokenData | null {
-  const configAuth = getAuth(INTEGRATIONS.WEALTHSIMPLE);
-  if (configAuth.accessToken && configAuth.identityId) {
-    return {
-      accessToken: configAuth.accessToken as string,
-      identityId: configAuth.identityId as string,
-      expiresAt: configAuth.expiresAt as string,
-      investProfile: (configAuth.investProfile as string) || null,
-      tradeProfile: (configAuth.tradeProfile as string) || null,
-    };
-  }
-
-  return null;
 }
 
 /**
@@ -232,112 +200,117 @@ function isTokenExpired(expiresAt: string | undefined): boolean {
 }
 
 /**
- * Check if user is authenticated with Wealthsimple
- * @returns Authentication status
+ * Read the auth status from the OAuth cookie. The raw cookie value is kept so
+ * a 401 can be pinned to the exact token that was sent.
  */
-export function checkAuth(): WealthsimpleAuthStatus {
-  const tokenData = getStoredTokenData();
+function readCookieAuth(): CookieAuth {
+  const cookieValue = readOAuthCookieValue();
+  const tokenData = cookieValue ? parseOAuthCookieValue(cookieValue) : null;
 
   if (!tokenData) {
-    return {
-      authenticated: false,
-      token: null,
-      identityId: null,
-      expiresAt: null,
-    };
+    return { cookieValue, status: { ...NOT_AUTHENTICATED } };
   }
 
-  // Check if token is expired
-  if (isTokenExpired(tokenData.expiresAt)) {
-    debugLog('Wealthsimple token expired, clearing data');
-    clearTokenData();
+  // A token Wealthsimple rejected is reported like an expired one: the page
+  // has to refresh its cookie before the token is usable again.
+  if (cookieValue === rejectedCookieValue || isTokenExpired(tokenData.expiresAt)) {
     return {
-      authenticated: false,
-      token: null,
-      identityId: null,
-      expiresAt: tokenData.expiresAt,
-      expired: true,
+      cookieValue,
+      status: { ...NOT_AUTHENTICATED, expiresAt: tokenData.expiresAt, expired: true },
     };
   }
 
   return {
-    authenticated: true,
-    token: tokenData.accessToken,
-    identityId: tokenData.identityId,
-    expiresAt: tokenData.expiresAt,
-    investProfile: tokenData.investProfile,
-    tradeProfile: tokenData.tradeProfile,
+    cookieValue,
+    status: {
+      authenticated: true,
+      token: tokenData.accessToken,
+      identityId: tokenData.identityId,
+      expiresAt: tokenData.expiresAt,
+      investProfile: tokenData.investProfile,
+      tradeProfile: tokenData.tradeProfile,
+    },
   };
 }
 
 /**
- * Token monitoring state
+ * Check if user is authenticated with Wealthsimple.
+ * Reads the page's OAuth cookie on every call; nothing is cached or stored.
+ * @returns Authentication status
  */
-let tokenCheckIntervalId: ReturnType<typeof setInterval> | null = null;
-let tokenFound = false;
+export function checkAuth(): WealthsimpleAuthStatus {
+  return readCookieAuth().status;
+}
 
 /**
- * Setup token monitoring to capture Wealthsimple authentication from cookie
- * Uses fast polling (1 second) initially until token is found,
- * then switches to slower maintenance polling (30 seconds)
+ * Token monitoring state (memory only)
  */
-export function setupTokenMonitoring(): void {
-  debugLog('Setting up Wealthsimple token monitoring...');
+let tokenCheckIntervalId: ReturnType<typeof setInterval> | null = null;
+let publishedAuthKey: string | null = null;
 
-  // Function to check and capture token from cookie
-  const captureTokenFromCookie = () => {
-    const tokenData = parseOAuthCookie();
-    if (tokenData) {
-      debugLog('Captured Wealthsimple token from cookie');
-      saveTokenData(tokenData);
-      return true;
-    }
-    return false;
-  };
-
-  // Function to handle token check and manage polling intervals
-  const checkToken = () => {
-    const found = captureTokenFromCookie();
-    if (found && !tokenFound) {
-      tokenFound = true;
-      debugLog('Token found, switching to slow polling interval (30s)');
-
-      // Clear fast polling interval
-      if (tokenCheckIntervalId) {
-        clearInterval(tokenCheckIntervalId);
-      }
-
-      // Switch to slower maintenance interval
-      tokenCheckIntervalId = setInterval(() => {
-        captureTokenFromCookie();
-      }, 30000); // 30 seconds for maintenance checks
-    }
-  };
-
-  // Check immediately
-  const initialFound = captureTokenFromCookie();
-
-  if (initialFound) {
-    // Token found immediately, use slow polling
-    tokenFound = true;
-    debugLog('Token found immediately, using slow polling interval (30s)');
-    tokenCheckIntervalId = setInterval(() => {
-      captureTokenFromCookie();
-    }, 30000);
-  } else {
-    // Token not found, use fast polling until found
-    debugLog('Token not found initially, using fast polling interval (1s)');
-    tokenCheckIntervalId = setInterval(checkToken, 1000);
+/**
+ * Push the current cookie auth status to stateManager if it changed since the
+ * last push. The state carries no token, only identity and expiry.
+ * @param force - Push even when nothing changed
+ */
+function publishAuthState(force = false): void {
+  const status = checkAuth();
+  const stateAuth = status.authenticated
+    ? { authenticated: true, identityId: status.identityId ?? null, expiresAt: status.expiresAt ?? null }
+    : null;
+  const key = JSON.stringify(stateAuth);
+  if (!force && key === publishedAuthKey) {
+    return;
   }
 
-  // Also check on page visibility change (when user returns to tab)
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-      checkToken();
-    }
-  });
+  publishedAuthKey = key;
+  stateManager.setWealthsimpleAuth(stateAuth);
+}
 
-  debugLog('Wealthsimple token monitoring initialized');
+/**
+ * Mark the token in the given cookie value as rejected by Wealthsimple
+ * @param cookieValue - Raw cookie value the rejected request was made with
+ */
+function rejectToken(cookieValue: string | null): void {
+  rejectedCookieValue = cookieValue;
+  publishAuthState(true);
+}
+
+/** Publish auth changes without letting a failure escape a timer or event */
+function publishAuthStateSafely(): void {
+  try {
+    publishAuthState();
+  } catch (error) {
+    debugLog('Error publishing Wealthsimple auth state:', error);
+  }
+}
+
+/** Re-check the cookie when the user returns to the tab */
+function handleVisibilityChange(): void {
+  if (document.visibilityState === 'visible') {
+    publishAuthStateSafely();
+  }
+}
+
+/**
+ * Start publishing Wealthsimple auth changes to stateManager.
+ *
+ * Polls the OAuth cookie and pushes to stateManager only when the status
+ * changes, so UI listeners update when the user logs in or out and when the
+ * page refreshes or loses its token. Nothing is written to storage. Safe to
+ * call more than once: later calls are ignored.
+ */
+export function setupTokenMonitoring(): void {
+  if (tokenCheckIntervalId !== null) {
+    debugLog('Wealthsimple token monitoring already running');
+    return;
+  }
+
+  publishAuthStateSafely();
+  tokenCheckIntervalId = setInterval(publishAuthStateSafely, TOKEN_POLL_INTERVAL_MS);
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+
+  debugLog('Wealthsimple token monitoring initialized (cookie read on demand, nothing stored)');
 }
 
 /**
@@ -349,7 +322,7 @@ export function setupTokenMonitoring(): void {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function makeGraphQLQuery(operationName: string, query: string, variables: Record<string, any> = {}): Promise<any> {
-  const authStatus = checkAuth();
+  const { cookieValue, status: authStatus } = readCookieAuth();
 
   if (!authStatus.authenticated) {
     throw new Error('Wealthsimple auth token not found. Please refresh the page.');
@@ -385,13 +358,13 @@ export async function makeGraphQLQuery(operationName: string, query: string, var
       // handler runs asynchronously, outside the Promise executor's synchronous
       // flow, so a throw that escapes it settles nothing: the promise hangs
       // forever and so does every awaiting caller. The inner catch already covers
-      // the parse; this covers everything else — a throwing `clearTokenData`, an
+      // the parse; this covers everything else — a throwing `rejectToken`, an
       // `errors` entry that is not shaped as expected.
       onload: (response) => {
         try {
           if (response.status === 401) {
-            debugLog('Wealthsimple token expired (401)');
-            clearTokenData();
+            debugLog('Wealthsimple rejected the access token (401); waiting for the page to refresh its cookie');
+            rejectToken(cookieValue);
             reject(new Error('Auth token expired. Please refresh the page.'));
           } else if (response.status === 404) {
             reject(new Error(`Resource not found: ${operationName}`));
@@ -422,58 +395,6 @@ export async function makeGraphQLQuery(operationName: string, query: string, var
       onerror: (error) => {
         debugLog('Wealthsimple API network error:', error);
         reject(new Error('Network error. Please check your connection.'));
-      },
-    });
-  });
-}
-
-/**
- * Validate token with Wealthsimple token info endpoint
- * @returns Token info
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function validateToken(): Promise<any> {
-  const authStatus = checkAuth();
-
-  if (!authStatus.authenticated) {
-    throw new Error('No token to validate');
-  }
-
-  debugLog('Validating Wealthsimple token...');
-
-  return new Promise((resolve, reject) => {
-    GM_xmlhttpRequest({
-      method: 'GET',
-      url: API.WEALTHSIMPLE_TOKEN_INFO_URL,
-      headers: {
-        authorization: `Bearer ${authStatus.token}`,
-      },
-      // See the settlement-guarantee note on makeGraphQLQuery's onload: a throw
-      // that escapes this handler leaves the promise permanently unsettled.
-      onload: (response) => {
-        try {
-          if (response.status === 200) {
-            try {
-              const data = JSON.parse(response.responseText);
-              debugLog('Token validation successful:', data);
-              resolve(data);
-            } catch (error) {
-              reject(new Error(`Failed to parse token info: ${(error as Error).message}`));
-            }
-          } else if (response.status === 401) {
-            debugLog('Token validation failed (401)');
-            clearTokenData();
-            reject(new Error('Token is invalid or expired'));
-          } else {
-            reject(new Error(`Token validation failed: ${response.status}`));
-          }
-        } catch (error) {
-          reject(error instanceof Error ? error : new Error(String(error)));
-        }
-      },
-      onerror: (error) => {
-        debugLog('Token validation network error:', error);
-        reject(new Error('Network error during token validation'));
       },
     });
   });
@@ -1172,7 +1093,6 @@ export default {
   checkAuth,
   setupTokenMonitoring,
   makeGraphQLQuery,
-  validateToken,
   fetchAccounts,
   fetchAndCacheAccounts: fetchAndCacheWealthsimpleAccounts,
   fetchAccountBalance,
