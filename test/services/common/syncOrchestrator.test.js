@@ -71,6 +71,7 @@ jest.mock('../../../src/services/common/balanceUpload', () => ({
 
 jest.mock('../../../src/services/common/transactionUpload', () => ({
   uploadTransactionsAndSaveRefs: jest.fn(() => Promise.resolve(true)),
+  formatMonarchProcessingMessage: jest.fn(({ checks }) => `Monarch check ${checks}`),
   formatTransactionUploadMessage: jest.fn((s, p, d) => {
     const parts = [];
     if (s > 0) parts.push(`${s} settled`);
@@ -273,6 +274,29 @@ describe('syncAccount', () => {
     expect(hooks.processTransactions).toHaveBeenCalled();
     expect(hooks.resolveCategories).toHaveBeenCalled();
     expect(progressDialog.showSummary).toHaveBeenCalledWith({ success: 1, failed: 0, total: 1 });
+  });
+
+  it('should show Monarch processing progress on the transactions step', async () => {
+    const { uploadTransactionsAndSaveRefs } = require('../../../src/services/common/transactionUpload');
+    uploadTransactionsAndSaveRefs.mockImplementationOnce(async ({ onProcessingUpdate }) => {
+      onProcessingUpdate({ status: 'started', checks: 3, elapsedMs: 6_000 });
+      return true;
+    });
+    const progressDialog = createMockProgressDialog();
+
+    await syncAccount({
+      integrationId: 'test',
+      manifest: defaultManifest,
+      hooks: createMockHooks(),
+      api: createMockApi(),
+      account: { accountId: 'acc-1' },
+      accountDisplayName: 'Test Card',
+      monarchAccount: { id: 'monarch-1' },
+      fromDate: '2024-01-01',
+      progressDialog,
+    });
+
+    expect(progressDialog.updateStepStatus).toHaveBeenCalledWith('acc-1', 'transactions', 'processing', 'Monarch check 3');
   });
 
   it('should build dedup refs carrying each transaction date and merchant', async () => {

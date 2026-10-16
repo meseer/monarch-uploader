@@ -30,7 +30,9 @@ import accountService from './accountService';
 import { resolveAccountMapping } from './accountMappingResolver';
 import { syncCreditLimit } from './creditLimitSync';
 import { executeBalanceUploadStep } from './balanceUpload';
-import { uploadTransactionsAndSaveRefs, formatTransactionUploadMessage } from './transactionUpload';
+import {
+  uploadTransactionsAndSaveRefs, formatTransactionUploadMessage, formatMonarchProcessingMessage,
+} from './transactionUpload';
 import { filterDuplicateSettledTransactions, filterDuplicatePendingTransactions } from './deduplication';
 import {
   fetchMonarchPendingTransactions,
@@ -459,6 +461,9 @@ async function executeTransactionStep({
       filename,
       transactionRefs: dedupRefs,
       transactions: allNewTransactions as Array<{ date?: string; [key: string]: unknown }>,
+      onProcessingUpdate: (update) => progressDialog.updateStepStatus(
+        accountId, 'transactions', 'processing', formatMonarchProcessingMessage(update),
+      ),
     });
 
     if (uploadSuccess) {
