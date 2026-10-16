@@ -902,6 +902,27 @@ describe('Rogers Bank Upload Service - Fetch API, Progress, Edge Cases, invertBa
       );
     });
 
+    test('should refuse to start while another sync of the account holds the lock', async () => {
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+      const heldLock = JSON.stringify({ token: 'other-tab', acquiredAt: Date.now() });
+      globalThis.GM_getValue.mockImplementation((key) => (key === 'rogersbank_sync_lock_test-account' ? heldLock : null));
+
+      const result = await uploadRogersBankToMonarch();
+
+      expect(result.success).toBe(false);
+      expect(result.message).toMatch(/already running/);
+      expect(fetchRogersBankAccountDetails).not.toHaveBeenCalled();
+      expect(monarchApi.uploadTransactions).not.toHaveBeenCalled();
+      expect(toast.show).toHaveBeenCalledWith(expect.stringMatching(/^Error: Another sync of this account/), 'error');
+    });
+
     test('should handle progress dialog cancellation', async () => {
       // This test verifies that the progress dialog has a cancel callback registered
       // The actual cancellation behavior depends on the abort controller

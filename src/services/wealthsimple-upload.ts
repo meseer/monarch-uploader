@@ -6,6 +6,7 @@
 import { debugLog, getLookbackForInstitution, getTodayLocal, computeExtendedFromDate } from '../core/utils';
 import type { CurrentBalance } from '../types/monarch';
 import { WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES, WEALTHSIMPLE_PENDING_RECONCILIATION_TYPES, TRANSACTION_RETENTION_DEFAULTS } from '../core/config';
+import { INTEGRATIONS } from '../core/integrationCapabilities';
 import toast from '../ui/toast';
 import wealthsimpleApi from '../api/wealthsimple';
 import {
@@ -35,6 +36,7 @@ import {
 import { isInvestmentAccount, processAccountPositions, processCashPositions } from './wealthsimple/positions';
 import { fetchAndProcessTransactions, formatReconciliationMessage } from './wealthsimple/transactions';
 import { fetchMonarchPendingTransactions, type FetchPendingResult } from './common/pendingReconciliation';
+import { acquireSyncLock, type SyncLock } from './common/syncLock';
 import { showDatePickerWithOptionsPromise } from '../ui/components/datePicker';
 import { showProgressDialog } from '../ui/components/progressDialog';
 
@@ -524,8 +526,13 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(
 ): Promise<SyncResult> {
   const account = consolidatedAccount.wealthsimpleAccount;
   const accountType = account?.type || '';
+  let syncLock: SyncLock | null = null;
 
   try {
+    // Held for the whole sync: an overlapping sync of this account would read
+    // the same dedup store and upload the same transactions a second time.
+    syncLock = acquireSyncLock(INTEGRATIONS.WEALTHSIMPLE, account.id);
+
     debugLog(`Uploading Wealthsimple account ${account.id} to Monarch with step tracking...`);
 
     const mappingResult = await resolveWealthsimpleAccountMapping(consolidatedAccount, currentBalance);
@@ -818,6 +825,8 @@ export async function uploadWealthsimpleAccountToMonarchWithSteps(
     const firstStep = WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(accountType) ? 'transactions' : 'balance';
     progressDialog.updateStepStatus(account.id, firstStep, 'error', (error as Error).message);
     return { success: false };
+  } finally {
+    syncLock?.release();
   }
 }
 

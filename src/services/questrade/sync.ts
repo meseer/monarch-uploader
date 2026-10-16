@@ -8,6 +8,7 @@ import { debugLog, getTodayLocal, formatDate, calculateFromDateWithLookback } fr
 import { INTEGRATIONS } from '../../core/integrationCapabilities';
 import stateManager from '../../core/state';
 import accountService from '../common/accountService';
+import { acquireSyncLock, type SyncLock } from '../common/syncLock';
 import balanceService, {
   fetchBalanceHistory, extractBalanceChange, getAccountsForSync, markAccountAsClosed, storeDateRange,
 } from './balance';
@@ -49,8 +50,13 @@ async function syncAccountToMonarch(accountId, accountName, fromDate, toDate, pr
   // lookback is 0 days, so a watermark advanced past a failed step would permanently skip
   // those transactions (they are not in the dedup store either, so nothing re-uploads them).
   let transactionStepsSucceeded = true;
+  let syncLock: SyncLock | null = null;
 
   try {
+    // Held for the whole sync: an overlapping sync of this account would read
+    // the same dedup store and upload the same transactions a second time.
+    syncLock = acquireSyncLock(INTEGRATIONS.QUESTRADE, accountId);
+
     debugLog(`Starting sync for account ${accountName} (${accountId})`);
 
     // Set current account in state
@@ -297,6 +303,8 @@ async function syncAccountToMonarch(accountId, accountName, fromDate, toDate, pr
   } catch (error) {
     debugLog(`Error syncing account ${accountId}:`, error);
     throw error;
+  } finally {
+    syncLock?.release();
   }
 }
 
