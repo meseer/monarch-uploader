@@ -438,13 +438,12 @@ async function handleUploadClick(button: HTMLButtonElement, registryEntry: Regis
   try {
     button.disabled = true;
 
-    // If we don't have cached accounts, re-probe
-    if (state.cachedAccounts.length === 0) {
-      button.textContent = 'Fetching accounts...';
-      const connected = await probeConnection(registryEntry);
-      if (!connected || state.cachedAccounts.length === 0) {
-        throw new Error(`Could not retrieve ${manifest.displayName} accounts. Please refresh the page.`);
-      }
+    // Refresh account discovery immediately before sync. An SPA may have exposed
+    // additional accounts since the initial connection probe.
+    button.textContent = 'Fetching accounts...';
+    const connected = await probeConnection(registryEntry);
+    if (!connected || state.cachedAccounts.length === 0) {
+      throw new Error(`Could not retrieve ${manifest.displayName} accounts. Please refresh the page.`);
     }
 
     debugLog(`${logPrefix} Processing`, state.cachedAccounts.length, 'account(s)');
@@ -673,6 +672,8 @@ export async function initGenericUI(registryEntry: RegistryEntry): Promise<void>
       state.navigationManager.startMonitoring();
     }
 
+    if (!state.navigationManager.shouldShowUI()) return;
+
     // Try to create container immediately
     const container = createUIContainer(registryEntry);
     if (container) {
@@ -687,4 +688,3 @@ export async function initGenericUI(registryEntry: RegistryEntry): Promise<void>
     toast.show(`Failed to initialize ${manifest.displayName} Balance Uploader`, 'error');
   }
 }
-

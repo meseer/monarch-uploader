@@ -14,7 +14,7 @@ import accountService from './accountService';
 import {
   mergeAndRetainTransactions,
   getRetentionSettingsFromAccount,
-  StoredTransaction,
+  type StoredTransaction,
 } from '../../utils/transactionStorage';
 
 /**
@@ -116,4 +116,3 @@ export function formatTransactionUploadMessage(settledCount: number, pendingCoun
   }
   return 'No new';
 }
-
