@@ -16,6 +16,7 @@ import { INTEGRATIONS } from '../../core/integrationCapabilities';
 import questradeApi from '../../api/questrade';
 import monarchApi from '../../api/monarch';
 import accountService from '../common/accountService';
+import { formatMonarchProcessingMessage } from '../common/transactionUpload';
 import toast from '../../ui/toast';
 import { convertQuestradeOrdersToMonarchCSV, convertQuestradeTransactionsToMonarchCSV } from '../../utils/csv';
 import { applyCategoryMapping, saveUserCategorySelection, calculateAllCategorySimilarities } from '../../mappers/category';
@@ -636,13 +637,10 @@ async function processAndUploadActivityTransactions(accountId, accountName, from
       onProgress(`Uploading ${newProcessedTransactions.length} activity transactions...`);
     }
 
-    const uploadSuccess = await monarchApi.uploadTransactions(
-      monarchAccountId,
-      csvData,
+    const uploadSuccess = await monarchApi.uploadTransactions(monarchAccountId, csvData, {
       filename,
-      false, // shouldUpdateBalance
-      false, // skipCheckForDuplicates
-    );
+      onProcessingUpdate: (update) => onProgress?.(formatMonarchProcessingMessage(update)),
+    });
 
     if (uploadSuccess) {
       // Save transaction IDs for deduplication. Merchant mirrors the CSV's
@@ -769,13 +767,10 @@ async function processAndUploadOrders(accountId, accountName, fromDate, monarchA
       onProgress(`Uploading ${ordersToUpload.length} orders...`);
     }
 
-    const uploadSuccess = await monarchApi.uploadTransactions(
-      monarchAccountId,
-      csvData,
+    const uploadSuccess = await monarchApi.uploadTransactions(monarchAccountId, csvData, {
       filename,
-      false, // shouldUpdateBalance
-      false, // skipCheckForDuplicates
-    );
+      onProcessingUpdate: (update) => onProgress?.(formatMonarchProcessingMessage(update)),
+    });
 
     if (uploadSuccess) {
       // Save order UUIDs with dates for successful uploads. Merchant mirrors the
@@ -1088,13 +1083,10 @@ async function uploadActivityForAccount(accountId, accountName, monarchAccountId
       onProgress(`Uploading ${newProcessedTransactions.length} activity transactions...`);
     }
 
-    const uploadSuccess = await monarchApi.uploadTransactions(
-      monarchAccountId,
-      csvData,
+    const uploadSuccess = await monarchApi.uploadTransactions(monarchAccountId, csvData, {
       filename,
-      false, // shouldUpdateBalance
-      false, // skipCheckForDuplicates
-    );
+      onProcessingUpdate: (update) => onProgress?.(formatMonarchProcessingMessage(update)),
+    });
 
     if (uploadSuccess) {
       // Save transaction IDs for deduplication. Merchant mirrors the CSV's

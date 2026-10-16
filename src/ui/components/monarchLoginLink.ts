@@ -48,8 +48,10 @@ export function createMonarchLoginLink(
 /**
  * Open Monarch login in a popup window and monitor for successful authentication
  * @param onSuccess - Callback function to execute after successful login
+ * @param onCancel - Callback when the login ends without credentials: the popup
+ *   was blocked or closed, the 10-minute wait expired, or opening it failed
  */
-function openMonarchLoginPopup(onSuccess: (() => void) | null = null): void {
+function openMonarchLoginPopup(onSuccess: (() => void) | null = null, onCancel: (() => void) | null = null): void {
   try {
     debugLog('Opening Monarch login popup...');
 
@@ -76,14 +78,16 @@ function openMonarchLoginPopup(onSuccess: (() => void) | null = null): void {
 
     if (!popup) {
       toast.show('Popup blocked. Please allow popups for this site and try again.', 'error', 5000);
+      onCancel?.();
       return;
     }
 
     toast.show('Opening Monarch Money login...', 'info', 2000);
-    monitorPopupForLogin(popup, onSuccess);
+    monitorPopupForLogin(popup, onSuccess, onCancel);
   } catch (error) {
     debugLog('Error opening Monarch login popup:', error);
     toast.show('Failed to open login popup', 'error');
+    onCancel?.();
   }
 }
 
@@ -91,8 +95,9 @@ function openMonarchLoginPopup(onSuccess: (() => void) | null = null): void {
  * Monitor popup window for successful authentication
  * @param popup - The popup window reference
  * @param onSuccess - Callback function to execute after successful login
+ * @param onCancel - Callback when the popup closes or times out without a login
  */
-function monitorPopupForLogin(popup: Window, onSuccess: (() => void) | null): void {
+function monitorPopupForLogin(popup: Window, onSuccess: (() => void) | null, onCancel: (() => void) | null): void {
   let checkInterval: ReturnType<typeof setInterval> | null = null;
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
   let isMonitoring = true;
@@ -121,6 +126,8 @@ function monitorPopupForLogin(popup: Window, onSuccess: (() => void) | null): vo
         const credentials = authService.getMonarchCredentials();
         if (credentials) {
           handleSuccessfulLogin(onSuccess);
+        } else {
+          onCancel?.();
         }
         return;
       }
@@ -159,6 +166,7 @@ function monitorPopupForLogin(popup: Window, onSuccess: (() => void) | null): vo
     }
 
     toast.show('Login timeout. Please try again if needed.', 'warning');
+    onCancel?.();
   }, 600000); // 10 minutes
 
   debugLog('Started monitoring popup for Monarch authentication');
@@ -213,6 +221,8 @@ export async function ensureMonarchAuthentication(
   debugLog(`Monarch authentication required for ${context}`);
   toast.show(`Please log in to Monarch Money to ${context}`, 'info', 3000);
 
+  // Resolves false when the login does not complete, so a caller that disabled
+  // its button before awaiting this can re-enable it instead of hanging forever.
   return new Promise((resolve) => {
     openMonarchLoginPopup(() => {
       debugLog('Monarch authentication successful, proceeding with callback');
@@ -220,6 +230,9 @@ export async function ensureMonarchAuthentication(
         onSuccess();
       }
       resolve(true);
+    }, () => {
+      debugLog(`Monarch login did not complete; not proceeding to ${context}`);
+      resolve(false);
     });
   });
 }

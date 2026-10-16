@@ -17,6 +17,8 @@ import { showDatePickerPromise } from '../ui/components/datePicker';
 import { showMonarchAccountSelectorWithCreate } from '../ui/components/accountSelectorWithCreate';
 import { ensureMonarchAuthentication } from '../ui/components/monarchLoginLink';
 import accountService from './common/accountService';
+import { formatMonarchProcessingMessage } from './common/transactionUpload';
+import { acquireSyncLock, type SyncLock } from './common/syncLock';
 import { INTEGRATIONS, ACCOUNT_SETTINGS } from '../core/integrationCapabilities';
 import {
   fetchActivitiesForDateRange,
@@ -495,8 +497,13 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
     transactionsSkipped: 0,
     transactionUploadFailed: false,
   };
+  let syncLock: SyncLock | null = null;
 
   try {
+    // Held for the whole sync: an overlapping sync of this account would read
+    // the same dedup store and upload the same transactions a second time.
+    syncLock = acquireSyncLock(INTEGRATIONS.CANADALIFE, accountId);
+
     // Set current account context
     stateManager.setAccount(accountId, accountName);
 
@@ -753,7 +760,11 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
       const transactionCsvData = convertCanadaLifeTransactionsToMonarchCSV(transactions, accountName);
 
       // Upload to Monarch
-      const txSuccess = await monarchApi.uploadTransactions((monarchAccount as Record<string, unknown>).id as string, transactionCsvData);
+      const txSuccess = await monarchApi.uploadTransactions((monarchAccount as Record<string, unknown>).id as string, transactionCsvData, {
+        onProcessingUpdate: (update) => progressDialog?.updateStepStatus(
+          accountId, 'uploadTransactions', 'processing', formatMonarchProcessingMessage(update),
+        ),
+      });
 
       if (!txSuccess) {
         if (progressDialog) {
@@ -840,6 +851,8 @@ async function uploadSingleAccount(canadalifeAccount, startDate, endDate, progre
       throw error;
     }
     throw new CanadaLifeUploadError(`Failed to upload ${accountName}: ${error.message}`, accountId);
+  } finally {
+    syncLock?.release();
   }
 }
 
@@ -1430,7 +1443,9 @@ export async function uploadTransactionHistory(canadalifeAccount, startDate: str
 
     // Upload to Monarch
     if (onProgress) onProgress(`Uploading ${transactions.length} transactions...`);
-    const success = await monarchApi.uploadTransactions((monarchAccount as Record<string, unknown>).id as string, csvData);
+    const success = await monarchApi.uploadTransactions((monarchAccount as Record<string, unknown>).id as string, csvData, {
+      onProcessingUpdate: (update) => onProgress?.(formatMonarchProcessingMessage(update)),
+    });
 
     if (!success) {
       throw new CanadaLifeUploadError('Failed to upload transactions to Monarch', accountId);

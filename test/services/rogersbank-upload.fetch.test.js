@@ -842,6 +842,87 @@ describe('Rogers Bank Upload Service - Fetch API, Progress, Edge Cases, invertBa
       expect(mockProgressDialog.showSummary).toHaveBeenCalledWith({ success: 1, failed: 0, total: 1 });
     });
 
+    test('should show Monarch processing progress on the transactions step', async () => {
+      const mockProgressDialog = {
+        updateProgress: jest.fn(),
+        hideCancel: jest.fn(),
+        showSummary: jest.fn(),
+        onCancel: jest.fn(),
+        initSteps: jest.fn(),
+        updateStepStatus: jest.fn(),
+        updateBalanceChange: jest.fn(),
+      };
+      showProgressDialog.mockReturnValueOnce(mockProgressDialog);
+
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+      // Not first sync — set explicitly so the test does not depend on earlier tests
+      jest.requireMock('../../src/core/utils').getLastUpdateDate.mockReturnValue('2024-01-01');
+      calculateFromDateWithLookback.mockReturnValue('2024-01-01');
+      fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1500, creditLimit: 5000, openedDate: '2023-01-01' });
+      monarchApi.uploadBalance.mockResolvedValue(true);
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          activitySummary: {
+            totalCount: 1,
+            activities: [{
+              referenceNumber: 'REF1',
+              activityStatus: 'APPROVED',
+              transactionAmount: -25.00,
+              description: 'Test Merchant 1',
+              activityDate: '2024-01-10',
+            }],
+          },
+        }),
+      });
+      monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [] });
+      applyCategoryMapping.mockReturnValue('Uncategorized');
+      convertTransactionsToMonarchCSV.mockReturnValue('csv,data');
+      // Monarch reports two still-processing checks before the upload resolves.
+      monarchApi.uploadTransactions.mockImplementation(async (_id, _csv, { onProcessingUpdate }) => {
+        onProcessingUpdate({ status: 'started', checks: 1, elapsedMs: 1_000 });
+        onProcessingUpdate({ status: 'started', checks: 2, elapsedMs: 4_000 });
+        return true;
+      });
+
+      await uploadRogersBankToMonarch();
+
+      expect(monarchApi.uploadTransactions).toHaveBeenCalledWith('monarch123', 'csv,data', expect.objectContaining({
+        filename: expect.stringMatching(/^rogers_transactions_/),
+      }));
+      expect(mockProgressDialog.updateStepStatus).toHaveBeenCalledWith(
+        'test-account', 'transactions', 'processing', 'Waiting for Monarch to process... 0:04 (check 2)',
+      );
+    });
+
+    test('should refuse to start while another sync of the account holds the lock', async () => {
+      getRogersBankCredentials.mockReturnValue({
+        authToken: 'test-token',
+        accountId: 'test-account',
+        customerId: 'test-customer',
+        accountIdEncoded: 'encoded-account',
+        customerIdEncoded: 'encoded-customer',
+        deviceId: 'test-device',
+      });
+      const heldLock = JSON.stringify({ token: 'other-tab', acquiredAt: Date.now() });
+      globalThis.GM_getValue.mockImplementation((key) => (key === 'rogersbank_sync_lock_test-account' ? heldLock : null));
+
+      const result = await uploadRogersBankToMonarch();
+
+      expect(result.success).toBe(false);
+      expect(result.message).toMatch(/already running/);
+      expect(fetchRogersBankAccountDetails).not.toHaveBeenCalled();
+      expect(monarchApi.uploadTransactions).not.toHaveBeenCalled();
+      expect(toast.show).toHaveBeenCalledWith(expect.stringMatching(/^Error: Another sync of this account/), 'error');
+    });
+
     test('should handle progress dialog cancellation', async () => {
       // This test verifies that the progress dialog has a cancel callback registered
       // The actual cancellation behavior depends on the abort controller

@@ -5,6 +5,7 @@
 import {
   uploadTransactionsAndSaveRefs,
   formatTransactionUploadMessage,
+  formatMonarchProcessingMessage,
 } from '../../../src/services/common/transactionUpload';
 
 // Mock dependencies
@@ -67,7 +68,27 @@ describe('Transaction Upload Service', () => {
 
       expect(result).toBe(true);
       expect(monarchApi.uploadTransactions).toHaveBeenCalledWith(
-        'monarch-1', 'csv-content', 'test.csv', false, false,
+        'monarch-1', 'csv-content', { filename: 'test.csv', onProcessingUpdate: undefined },
+      );
+    });
+
+    it('should pass the processing progress callback through to the upload', async () => {
+      monarchApi.uploadTransactions.mockResolvedValue(true);
+      const onProcessingUpdate = jest.fn();
+
+      await uploadTransactionsAndSaveRefs({
+        integrationId: 'mbna',
+        sourceAccountId: 'acc-1',
+        monarchAccountId: 'monarch-1',
+        csvData: 'csv-content',
+        filename: 'test.csv',
+        transactionRefs: ['ref-1'],
+        transactions: [{ date: '2025-01-15' }],
+        onProcessingUpdate,
+      });
+
+      expect(monarchApi.uploadTransactions).toHaveBeenCalledWith(
+        'monarch-1', 'csv-content', { filename: 'test.csv', onProcessingUpdate },
       );
     });
 
@@ -280,6 +301,30 @@ describe('Transaction Upload Service', () => {
 
     it('should format no transactions at all', () => {
       expect(formatTransactionUploadMessage(0, 0, 0)).toBe('No new');
+    });
+  });
+
+  describe('formatMonarchProcessingMessage', () => {
+    it('shows the elapsed time and check count while the wait is short', () => {
+      expect(formatMonarchProcessingMessage({ status: 'started', checks: 12, elapsedMs: 24_400 }))
+        .toBe('Waiting for Monarch to process... 0:24 (check 12)');
+    });
+
+    it('pads seconds and rolls over into minutes', () => {
+      expect(formatMonarchProcessingMessage({ status: 'started', checks: 1, elapsedMs: 5_000 }))
+        .toBe('Waiting for Monarch to process... 0:05 (check 1)');
+    });
+
+    it('says Monarch is slow and asks to keep the tab open after a minute', () => {
+      expect(formatMonarchProcessingMessage({ status: 'pending', checks: 38, elapsedMs: 125_000 }))
+        .toBe('Monarch is taking a while... 2:05 (check 38), keep this tab open');
+    });
+
+    it('switches to the slow message exactly at one minute', () => {
+      expect(formatMonarchProcessingMessage({ status: 'started', checks: 30, elapsedMs: 59_999 }))
+        .toMatch(/^Waiting for Monarch/);
+      expect(formatMonarchProcessingMessage({ status: 'started', checks: 30, elapsedMs: 60_000 }))
+        .toMatch(/^Monarch is taking a while... 1:00/);
     });
   });
 });

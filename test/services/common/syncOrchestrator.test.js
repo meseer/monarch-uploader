@@ -71,6 +71,7 @@ jest.mock('../../../src/services/common/balanceUpload', () => ({
 
 jest.mock('../../../src/services/common/transactionUpload', () => ({
   uploadTransactionsAndSaveRefs: jest.fn(() => Promise.resolve(true)),
+  formatMonarchProcessingMessage: jest.fn(({ checks }) => `Monarch check ${checks}`),
   formatTransactionUploadMessage: jest.fn((s, p, d) => {
     const parts = [];
     if (s > 0) parts.push(`${s} settled`);
@@ -273,6 +274,89 @@ describe('syncAccount', () => {
     expect(hooks.processTransactions).toHaveBeenCalled();
     expect(hooks.resolveCategories).toHaveBeenCalled();
     expect(progressDialog.showSummary).toHaveBeenCalledWith({ success: 1, failed: 0, total: 1 });
+  });
+
+  it('should refuse to sync an account another sync is already running for', async () => {
+    const lockKey = 'test_sync_lock_acc-1';
+    const heldLock = JSON.stringify({ token: 'other-tab', acquiredAt: Date.now() });
+    globalThis.GM_getValue.mockImplementation((key, defaultValue) => (key === lockKey ? heldLock : defaultValue));
+    const progressDialog = createMockProgressDialog();
+    const hooks = createMockHooks();
+
+    try {
+      const result = await syncAccount({
+        integrationId: 'test',
+        manifest: defaultManifest,
+        hooks,
+        api: createMockApi(),
+        account: { accountId: 'acc-1' },
+        accountDisplayName: 'Test Card',
+        monarchAccount: { id: 'monarch-1' },
+        fromDate: '2024-01-01',
+        progressDialog,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.message).toMatch(/already running/);
+      expect(hooks.fetchTransactions).not.toHaveBeenCalled();
+      expect(progressDialog.updateProgress).toHaveBeenCalledWith('acc-1', 'error', expect.stringMatching(/^Failed: Another sync/));
+      // The other sync's lock is left alone
+      expect(globalThis.GM_deleteValue).not.toHaveBeenCalledWith(lockKey);
+    } finally {
+      globalThis.GM_getValue.mockImplementation((key, defaultValue) => defaultValue);
+    }
+  });
+
+  it('should release the sync lock when the sync finishes', async () => {
+    const lockKey = 'test_sync_lock_acc-1';
+    const store = new Map();
+    globalThis.GM_getValue.mockImplementation((key, defaultValue) => (store.has(key) ? store.get(key) : defaultValue));
+    globalThis.GM_setValue.mockImplementation((key, value) => store.set(key, value));
+    globalThis.GM_deleteValue.mockImplementation((key) => store.delete(key));
+
+    try {
+      await syncAccount({
+        integrationId: 'test',
+        manifest: defaultManifest,
+        hooks: createMockHooks(),
+        api: createMockApi(),
+        account: { accountId: 'acc-1' },
+        accountDisplayName: 'Test Card',
+        monarchAccount: { id: 'monarch-1' },
+        fromDate: '2024-01-01',
+        progressDialog: createMockProgressDialog(),
+      });
+
+      expect(globalThis.GM_setValue).toHaveBeenCalledWith(lockKey, expect.any(String));
+      expect(store.has(lockKey)).toBe(false);
+    } finally {
+      globalThis.GM_getValue.mockImplementation((key, defaultValue) => defaultValue);
+      globalThis.GM_setValue.mockImplementation(() => {});
+      globalThis.GM_deleteValue.mockImplementation(() => Promise.resolve());
+    }
+  });
+
+  it('should show Monarch processing progress on the transactions step', async () => {
+    const { uploadTransactionsAndSaveRefs } = require('../../../src/services/common/transactionUpload');
+    uploadTransactionsAndSaveRefs.mockImplementationOnce(async ({ onProcessingUpdate }) => {
+      onProcessingUpdate({ status: 'started', checks: 3, elapsedMs: 6_000 });
+      return true;
+    });
+    const progressDialog = createMockProgressDialog();
+
+    await syncAccount({
+      integrationId: 'test',
+      manifest: defaultManifest,
+      hooks: createMockHooks(),
+      api: createMockApi(),
+      account: { accountId: 'acc-1' },
+      accountDisplayName: 'Test Card',
+      monarchAccount: { id: 'monarch-1' },
+      fromDate: '2024-01-01',
+      progressDialog,
+    });
+
+    expect(progressDialog.updateStepStatus).toHaveBeenCalledWith('acc-1', 'transactions', 'processing', 'Monarch check 3');
   });
 
   it('should build dedup refs carrying each transaction date and merchant', async () => {

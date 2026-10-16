@@ -9,7 +9,7 @@
  */
 
 import { getTodayLocal, saveLastUploadDate } from '../../core/utils';
-import monarchApi from '../../api/monarch';
+import monarchApi, { type UploadProcessingUpdate } from '../../api/monarch';
 import accountService from './accountService';
 import {
   mergeAndRetainTransactions,
@@ -33,6 +33,7 @@ import {
  *   Either bare ID strings or `{ id, date, merchant }` records. MUST be ordered
  *   oldest-first, matching the oldest-first `uploadedTransactions` storage invariant.
  * @param {Array} params.transactions - Transactions (used to determine the fallback date)
+ * @param {Function} [params.onProcessingUpdate] - Progress callback while Monarch processes the upload
  * @returns {Promise<boolean>} True if upload succeeded
  */
 interface UploadTransactionsParams {
@@ -43,6 +44,7 @@ interface UploadTransactionsParams {
   filename: string;
   transactionRefs: Array<string | StoredTransaction>;
   transactions: Array<{ date?: string; [key: string]: unknown }>;
+  onProcessingUpdate?: (update: UploadProcessingUpdate) => void;
 }
 
 export async function uploadTransactionsAndSaveRefs({
@@ -53,8 +55,9 @@ export async function uploadTransactionsAndSaveRefs({
   filename,
   transactionRefs,
   transactions,
+  onProcessingUpdate,
 }: UploadTransactionsParams): Promise<boolean> {
-  const uploadSuccess = await monarchApi.uploadTransactions(monarchAccountId, csvData, filename, false, false);
+  const uploadSuccess = await monarchApi.uploadTransactions(monarchAccountId, csvData, { filename, onProcessingUpdate });
 
   if (!uploadSuccess) {
     return false;
@@ -115,4 +118,41 @@ export function formatTransactionUploadMessage(settledCount: number, pendingCoun
     return `${duplicateCount} already uploaded`;
   }
   return 'No new';
+}
+
+/**
+ * After this long, the processing message says Monarch is slow and asks the
+ * user to keep the tab open, so a slow import is not mistaken for a stuck sync
+ * and retried — the retry is what uploads the transactions a second time.
+ */
+const SLOW_PROCESSING_NOTICE_MS = 60 * 1000;
+
+/**
+ * Format elapsed milliseconds as m:ss.
+ *
+ * @param {number} elapsedMs - Elapsed time in milliseconds
+ * @returns {string} Elapsed time, e.g. "1:05"
+ */
+function formatElapsed(elapsedMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+/**
+ * Build a progress message for the wait while Monarch processes an upload.
+ *
+ * The elapsed time and check count change on every status check, so the user
+ * can see the sync is actively waiting on Monarch rather than stuck.
+ *
+ * @param {UploadProcessingUpdate} update - Latest processing update
+ * @returns {string} Formatted message
+ */
+export function formatMonarchProcessingMessage({ elapsedMs, checks }: UploadProcessingUpdate): string {
+  const elapsed = formatElapsed(elapsedMs);
+  if (elapsedMs < SLOW_PROCESSING_NOTICE_MS) {
+    return `Waiting for Monarch to process... ${elapsed} (check ${checks})`;
+  }
+  return `Monarch is taking a while... ${elapsed} (check ${checks}), keep this tab open`;
 }

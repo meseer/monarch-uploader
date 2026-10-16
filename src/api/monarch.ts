@@ -494,21 +494,214 @@ export async function uploadBalanceToMonarch(
 }
 
 /**
+ * Progress of Monarch's server-side processing of an uploaded statement,
+ * reported after each status check so callers can show that the sync is
+ * actively waiting on Monarch rather than stuck.
+ */
+export interface UploadProcessingUpdate {
+  /** Status Monarch reported on the latest check (e.g. 'started', 'pending') */
+  status: string;
+  /** Number of status checks made so far */
+  checks: number;
+  /** Wall-clock time spent waiting for Monarch so far, in milliseconds */
+  elapsedMs: number;
+}
+
+/** Options for uploadTransactionsToMonarch */
+export interface UploadTransactionsOptions {
+  /** Filename for the uploaded CSV (defaults to a dated name) */
+  filename?: string | null;
+  /** Whether Monarch should update the account balance from the import */
+  shouldUpdateBalance?: boolean;
+  /** Whether Monarch should skip its own duplicate detection */
+  skipCheckForDuplicates?: boolean;
+  /** Called after each status check while Monarch processes the upload */
+  onProcessingUpdate?: (update: UploadProcessingUpdate) => void;
+}
+
+/**
+ * Total time to keep polling for Monarch to finish processing an uploaded
+ * statement.
+ *
+ * Monarch processes CSV imports asynchronously, and under load that can take
+ * minutes. Giving up early is what makes a slow import dangerous: the sync
+ * reports a failure and saves no dedup IDs, Monarch then finishes the import
+ * anyway, and the next sync uploads the same transactions again as duplicates.
+ * The budget counts only the waits between checks, so it is deterministic.
+ */
+const STATEMENT_PROCESSING_MAX_WAIT_MS = 10 * 60 * 1000;
+
+/** Most imports finish within seconds, so the first checks come quickly. */
+const STATEMENT_POLL_FAST_DELAY_MS = 2000;
+const STATEMENT_POLL_FAST_CHECKS = 30;
+
+/** After the first minute, check less often for the rest of the budget. */
+const STATEMENT_POLL_SLOW_DELAY_MS = 5000;
+
+/**
+ * Consecutive failed status checks (network or GraphQL errors) tolerated before
+ * giving up. A single blip must not abandon an upload Monarch is processing,
+ * but a persistent failure (an expired session, say) should not spin for the
+ * whole wait budget either.
+ */
+const STATEMENT_POLL_MAX_CONSECUTIVE_ERRORS = 5;
+
+interface UploadStatementSession {
+  status: string;
+  errorMessage?: string | null;
+  uploadedStatement?: { transactionCount?: number } | null;
+}
+
+/**
+ * Error for an upload Monarch accepted but whose outcome could not be confirmed.
+ *
+ * The transactions may still land in Monarch, so the message tells the user to
+ * check before syncing again — a blind retry is how duplicates get created.
+ */
+function unconfirmedUploadError(reason: string, cause?: unknown): Error {
+  return new Error(
+    `${reason} The upload may still complete in Monarch: check the account in Monarch `
+    + 'before syncing again, or these transactions may be uploaded twice.',
+    cause === undefined ? undefined : { cause },
+  );
+}
+
+/**
+ * Report a processing update without letting a failing callback abort the wait.
+ * A throw here would surface as a failed upload for an import Monarch is still
+ * processing — exactly the situation that produces duplicates on the next sync.
+ */
+function reportProcessingUpdate(
+  onProcessingUpdate: UploadTransactionsOptions['onProcessingUpdate'],
+  update: UploadProcessingUpdate,
+): void {
+  if (!onProcessingUpdate) return;
+  try {
+    onProcessingUpdate(update);
+  } catch (error) {
+    debugLog('Upload processing update callback failed (ignored):', error);
+  }
+}
+
+/**
+ * Fetch the current state of an upload statement session.
+ *
+ * @param sessionKey - Session key returned by the CSV upload
+ * @returns The session
+ */
+async function fetchUploadStatementSession(sessionKey: string): Promise<UploadStatementSession> {
+  const { uploadStatementSession } = await callMonarchGraphQL(
+    'Web_GetUploadStatementSession',
+    `query Web_GetUploadStatementSession($sessionKey: String!) {
+      uploadStatementSession(sessionKey: $sessionKey) {
+        ...UploadStatementSessionFields
+        __typename
+      }
+    }
+
+    fragment UploadStatementSessionFields on UploadStatementSession {
+      sessionKey
+      status
+      errorMessage
+      skipCheckForDuplicates
+      uploadedStatement {
+        id
+        transactionCount
+        __typename
+      }
+      __typename
+    }`,
+    { sessionKey },
+  );
+  return uploadStatementSession;
+}
+
+/**
+ * Poll until Monarch finishes processing an uploaded statement.
+ *
+ * Terminal statuses end the wait immediately: 'completed' resolves, and
+ * 'failed' / 'errored' throw without retrying. Any other status (including one
+ * Monarch adds later) is treated as still processing. Failed status checks are
+ * retried up to STATEMENT_POLL_MAX_CONSECUTIVE_ERRORS times in a row.
+ *
+ * @param sessionKey - Session key returned by the CSV upload
+ * @param onProcessingUpdate - Called after each successful status check
+ * @returns Number of transactions Monarch imported
+ * @throws When processing fails, or when the outcome cannot be confirmed
+ */
+async function waitForStatementProcessing(
+  sessionKey: string,
+  onProcessingUpdate: UploadTransactionsOptions['onProcessingUpdate'],
+): Promise<number> {
+  const startedAt = Date.now();
+  let waitedMs = 0;
+  let checks = 0;
+  let consecutiveErrors = 0;
+
+  while (waitedMs < STATEMENT_PROCESSING_MAX_WAIT_MS) {
+    if (checks > 0) {
+      const delay = checks < STATEMENT_POLL_FAST_CHECKS ? STATEMENT_POLL_FAST_DELAY_MS : STATEMENT_POLL_SLOW_DELAY_MS;
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, delay);
+      });
+      waitedMs += delay;
+    }
+    checks += 1;
+
+    let session: UploadStatementSession;
+    try {
+      session = await fetchUploadStatementSession(sessionKey);
+      consecutiveErrors = 0;
+    } catch (error) {
+      consecutiveErrors += 1;
+      debugLog(`Error checking upload status (check ${checks}, ${consecutiveErrors} in a row): ${(error as Error).message}`);
+      if (consecutiveErrors >= STATEMENT_POLL_MAX_CONSECUTIVE_ERRORS) {
+        throw unconfirmedUploadError(`Could not confirm the upload with Monarch (${(error as Error).message}).`, error);
+      }
+      continue;
+    }
+
+    debugLog(`Upload status check ${checks}: ${session.status}`);
+    if (session.status === 'completed') {
+      return session.uploadedStatement?.transactionCount || 0;
+    }
+    if (session.status === 'failed' || session.status === 'errored') {
+      throw new Error(`Monarch transaction upload processing failed: ${session.errorMessage || 'Unknown error'}`);
+    }
+    if (session.status !== 'started' && session.status !== 'pending') {
+      debugLog(`Unrecognized upload status "${session.status}", treating it as still processing`);
+    }
+
+    reportProcessingUpdate(onProcessingUpdate, {
+      status: session.status,
+      checks,
+      elapsedMs: Date.now() - startedAt,
+    });
+  }
+
+  const minutes = Math.round(STATEMENT_PROCESSING_MAX_WAIT_MS / 60000);
+  throw unconfirmedUploadError(`Monarch was still processing the upload after ${minutes} minutes.`);
+}
+
+/**
  * Upload transactions to Monarch Money
  * @param monarchAccountId - Monarch account ID to upload transactions to
  * @param csvData - CSV data containing transactions
- * @param filename - Optional filename for the upload
- * @param shouldUpdateBalance - Whether to update account balance (default: false)
- * @param skipCheckForDuplicates - Whether to skip duplicate checking (default: false)
+ * @param options - Filename, import flags and a processing-progress callback
  * @returns Success status
  */
 export async function uploadTransactionsToMonarch(
   monarchAccountId: string,
   csvData: string,
-  filename: string | null = null,
-  shouldUpdateBalance: boolean = false,
-  skipCheckForDuplicates: boolean = false,
+  options: UploadTransactionsOptions = {},
 ): Promise<boolean> {
+  const {
+    filename = null,
+    shouldUpdateBalance = false,
+    skipCheckForDuplicates = false,
+    onProcessingUpdate,
+  } = options;
+
   try {
     debugLog('Starting Monarch transactions upload process');
 
@@ -628,82 +821,10 @@ export async function uploadTransactionsToMonarch(
     // only surfaces here.
     debugLog('Parse statement session response:', parseResult?.parseUploadStatementSession);
 
-    // Poll for upload completion
     debugLog('Waiting for transaction processing to complete (Step 3/3)...');
-    const maxRetries = 30;
-    const retryDelay = 2000;
-    let attempts = 0;
-
-    while (attempts < maxRetries) {
-      attempts += 1;
-
-      try {
-        const { uploadStatementSession } = await callMonarchGraphQL(
-          'Web_GetUploadStatementSession',
-          `query Web_GetUploadStatementSession($sessionKey: String!) {
-            uploadStatementSession(sessionKey: $sessionKey) {
-              ...UploadStatementSessionFields
-              __typename
-            }
-          }
-          
-          fragment UploadStatementSessionFields on UploadStatementSession {
-            sessionKey
-            status
-            errorMessage
-            skipCheckForDuplicates
-            uploadedStatement {
-              id
-              transactionCount
-              __typename
-            }
-            __typename
-          }`,
-          { sessionKey: response.session_key },
-        );
-
-        debugLog(`Upload status check ${attempts}/${maxRetries}: ${uploadStatementSession.status}`);
-
-        if (uploadStatementSession.status === 'completed') {
-          const transactionCount = uploadStatementSession.uploadedStatement?.transactionCount || 0;
-          const successMsg = `Successfully uploaded ${transactionCount} transactions to Monarch account ${monarchAccountId}`;
-          debugLog(successMsg);
-          return true;
-        }
-        if (uploadStatementSession.status === 'failed' || uploadStatementSession.status === 'errored') {
-          const errorMsg = uploadStatementSession.errorMessage || 'Unknown error';
-          throw new Error(`Monarch transaction upload processing failed: ${errorMsg}`);
-        }
-        if (uploadStatementSession.status === 'started' || uploadStatementSession.status === 'pending') {
-          // Upload is still processing, wait and retry
-          if (attempts < maxRetries) {
-            debugLog(`Upload still processing, waiting ${retryDelay}ms before next check...`);
-            await new Promise<void>((resolve) => {
-              setTimeout(resolve, retryDelay);
-            });
-          }
-        } else {
-          // Unknown status
-          throw new Error(`Unknown upload status: ${uploadStatementSession.status}`);
-        }
-      } catch (error) {
-        // If this is a GraphQL/network error during status check, retry
-        if (attempts < maxRetries) {
-          debugLog(`Error checking upload status (attempt ${attempts}/${maxRetries}): ${(error as Error).message}, retrying...`);
-          await new Promise<void>((resolve) => {
-            setTimeout(resolve, retryDelay);
-          });
-        } else {
-          // Final attempt failed
-          throw error;
-        }
-      }
-    }
-
-    // If we get here, we've exceeded max retries
-    const timeoutMsg = `Upload processing timeout - exceeded maximum retry attempts (${maxRetries}). `
-      + 'The upload may still be processing in Monarch.';
-    throw new Error(timeoutMsg);
+    const transactionCount = await waitForStatementProcessing(response.session_key, onProcessingUpdate);
+    debugLog(`Successfully uploaded ${transactionCount} transactions to Monarch account ${monarchAccountId}`);
+    return true;
   } catch (error) {
     debugLog('Monarch transaction upload failed:', error);
     throw error;

@@ -258,6 +258,59 @@ describe('Monarch Login Link Component', () => {
         3000,
       );
     });
+
+    test('should resolve true once the login popup reports credentials', async () => {
+      global.GM_getValue.mockReturnValue(null);
+      const mockPopup = { closed: false, close: jest.fn() };
+      global.window.open.mockReturnValue(mockPopup);
+
+      const pending = ensureMonarchAuthentication(null, 'test upload');
+      global.GM_getValue.mockReturnValue('new-token');
+      jest.advanceTimersByTime(1000);
+
+      await expect(pending).resolves.toBe(true);
+    });
+
+    // The caller awaits this before acting, and may have disabled its button
+    // first. A login that never completes must resolve rather than hang.
+    test('should resolve false when the popup is blocked', async () => {
+      global.GM_getValue.mockReturnValue(null);
+      global.window.open.mockReturnValue(null);
+
+      await expect(ensureMonarchAuthentication(null, 'test upload')).resolves.toBe(false);
+    });
+
+    test('should resolve false when the popup is closed without logging in', async () => {
+      global.GM_getValue.mockReturnValue(null);
+      const mockPopup = { closed: false, close: jest.fn() };
+      global.window.open.mockReturnValue(mockPopup);
+
+      const pending = ensureMonarchAuthentication(null, 'test upload');
+      mockPopup.closed = true;
+      jest.advanceTimersByTime(1000);
+
+      await expect(pending).resolves.toBe(false);
+    });
+
+    test('should resolve false when the login times out', async () => {
+      global.GM_getValue.mockReturnValue(null);
+      const mockPopup = { closed: false, close: jest.fn() };
+      global.window.open.mockReturnValue(mockPopup);
+
+      const pending = ensureMonarchAuthentication(null, 'test upload');
+      jest.advanceTimersByTime(600000);
+
+      await expect(pending).resolves.toBe(false);
+    });
+
+    test('should resolve false when opening the popup throws', async () => {
+      global.GM_getValue.mockReturnValue(null);
+      global.window.open.mockImplementation(() => {
+        throw new Error('blocked by policy');
+      });
+
+      await expect(ensureMonarchAuthentication(null, 'test upload')).resolves.toBe(false);
+    });
   });
 
   describe('popup monitoring', () => {
