@@ -24,19 +24,32 @@ describe('Neo manifest', () => {
   });
 
   it('uses checking defaults and asset sign for Everyday accounts', () => {
-    expect(manifest.accountDefaultsForAccount({ accountType: 'depository', category: 'EVERYDAY' })).toEqual({
+    expect(manifest.accountDefaultsForAccount({ accountType: 'depository', category: 'EVERYDAY', productName: 'EVERYDAY' })).toEqual({
       accountCreateDefaults: { defaultType: 'depository', defaultSubtype: 'checking', accountType: 'depository' },
       settings: { invertBalance: true },
     });
   });
 
   it('uses savings defaults and asset sign for HISA accounts', () => {
-    expect(manifest.accountDefaultsForAccount({ accountType: 'depository', category: 'HISA' })).toEqual({
+    expect(manifest.accountDefaultsForAccount({ accountType: 'depository', category: 'HISA', productName: 'HISA' })).toEqual({
       accountCreateDefaults: { defaultType: 'depository', defaultSubtype: 'savings', accountType: 'depository' },
       settings: { invertBalance: true },
     });
   });
 
+  it('uses savings defaults without throwing for an unknown deposit account', () => {
+    expect(manifest.accountDefaultsForAccount({ accountType: 'depository', category: 'UNKNOWN', productName: 'UNKNOWN' })).toEqual({
+      accountCreateDefaults: { defaultType: 'depository', defaultSubtype: 'savings', accountType: 'depository' },
+      settings: { invertBalance: true },
+    });
+  });
+
+  it('uses checking defaults for an unknown Everyday product', () => {
+    expect(manifest.accountDefaultsForAccount({ accountType: 'depository', category: 'EVERYDAY', productName: 'UNKNOWN' })).toEqual({
+      accountCreateDefaults: { defaultType: 'depository', defaultSubtype: 'checking', accountType: 'depository' },
+      settings: { invertBalance: true },
+    });
+  });
   it('keeps balance direction tied to the account type', () => {
     expect(manifest.configSchema.settings).not.toContain('invertBalance');
     expect(manifest.settings.map(({ key }) => key)).not.toContain('invertBalance');

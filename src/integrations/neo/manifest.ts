@@ -1,4 +1,5 @@
 import type { IntegrationManifest } from '../types';
+import { getDepositProductInfo } from './source/api';
 
 const manifest: IntegrationManifest = {
   id: 'neo',
@@ -50,29 +51,20 @@ const manifest: IntegrationManifest = {
       };
     }
 
-    if (account.accountType === 'depository' && account.category === 'EVERYDAY') {
-      return {
-        accountCreateDefaults: {
-          defaultType: 'depository',
-          defaultSubtype: 'checking',
-          accountType: 'depository',
-        },
-        settings: { invertBalance: true },
-      };
-    }
-
-    if (account.accountType === 'depository' && account.category === 'HISA') {
-      return {
-        accountCreateDefaults: {
-          defaultType: 'depository',
-          defaultSubtype: 'savings',
-          accountType: 'depository',
-        },
-        settings: { invertBalance: true },
-      };
-    }
-
-    throw new Error(`Unsupported Neo account: ${String(account.accountType)} ${String(account.category)}`);
+    // Unknown deposit accounts never reach mapping (getAccounts skips them),
+    // so this falls back to safe savings defaults instead of throwing and
+    // aborting the sync for every account after it.
+    const productInfo = getDepositProductInfo(String(account.productName ?? ''));
+    const subtype = productInfo?.accountSubtype
+      ?? (account.category === 'EVERYDAY' ? 'checking' : 'savings');
+    return {
+      accountCreateDefaults: {
+        defaultType: 'depository',
+        defaultSubtype: subtype,
+        accountType: 'depository',
+      },
+      settings: { invertBalance: true },
+    };
   },
   brandColor: '#00AEEF',
   logoCloudinaryId: null,

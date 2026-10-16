@@ -325,4 +325,106 @@ describe('Neo API client', () => {
 
     await expect(api.getAccounts()).rejects.toThrow('Neo session expired');
   });
+
+  it('skips an unrecognised deposit account while keeping supported ones', async () => {
+    const data = {
+      user: {
+        creditAccounts: [],
+        savingsAccountsList: {
+          results: [
+            {
+              id: 'everyday-1',
+              category: 'EVERYDAY',
+              status: 'OPEN',
+              program: { productName: 'EVERYDAY' },
+              card: null,
+            },
+            {
+              id: 'unknown-1',
+              category: 'FUTURE',
+              status: 'OPEN',
+              program: { productName: 'FUTURE_PLUS' },
+              card: null,
+            },
+            {
+              id: 'unknown-product',
+              category: 'HISA',
+              status: 'OPEN',
+              program: { productName: 'SUPER_HISA_V2' },
+              card: null,
+            },
+          ],
+        },
+      },
+    };
+    const httpClient = { request: jest.fn().mockResolvedValue(graphqlResponse(data)) };
+    const api = createApi(httpClient, {});
+
+    await expect(api.getAccountsSummary()).resolves.toEqual([{
+      accountId: 'everyday-1',
+      accountType: 'depository',
+      accountSubtype: 'checking',
+      category: 'EVERYDAY',
+      productName: 'EVERYDAY',
+      displayName: 'Neo Everyday',
+    }]);
+  });
+
+  it('reports invalid JSON instead of a raw SyntaxError', async () => {
+    const httpClient = {
+      request: jest.fn().mockResolvedValue({
+        status: 200, responseText: '<html>Maintenance</html>', responseHeaders: '', response: null,
+      }),
+    };
+    const api = createApi(httpClient, {});
+
+    await expect(api.getAccounts()).rejects.toThrow('Neo API Error: NeoAccounts');
+  });
+
+  it('rejects an empty batch response', async () => {
+    const httpClient = {
+      request: jest.fn().mockResolvedValue({
+        status: 200, responseText: '[]', responseHeaders: '', response: null,
+      }),
+    };
+    const api = createApi(httpClient, {});
+
+    await expect(api.getAccounts()).rejects.toThrow('unexpected batch response');
+  });
+
+  it('rejects a non-array batch response', async () => {
+    const httpClient = {
+      request: jest.fn().mockResolvedValue({
+        status: 200, responseText: JSON.stringify({ data: null }), responseHeaders: '', response: null,
+      }),
+    };
+    const api = createApi(httpClient, {});
+
+    await expect(api.getAccounts()).rejects.toThrow('unexpected batch response');
+  });
+
+  it('surfaces GraphQL errors with the operation name', async () => {
+    const httpClient = {
+      request: jest.fn().mockResolvedValue({
+        status: 200,
+        responseText: JSON.stringify([{ errors: [{ message: 'Bad query', locations: [{ line: 1 }] }] }]),
+        responseHeaders: '',
+        response: null,
+      }),
+    };
+    const api = createApi(httpClient, {});
+
+    await expect(api.getAccounts()).rejects.toThrow('Neo API Error: NeoAccounts');
+  });
+
+  it('includes a body excerpt on non-2xx errors', async () => {
+    const httpClient = {
+      request: jest.fn().mockResolvedValue({
+        status: 500, responseText: '<html>Bad Gateway</html>', responseHeaders: '', response: null,
+      }),
+    };
+    const api = createApi(httpClient, {});
+
+    await expect(api.getAccounts()).rejects.toThrow('Neo API error: HTTP 500');
+  });
 });

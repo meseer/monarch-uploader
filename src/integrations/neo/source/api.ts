@@ -1,7 +1,8 @@
 /** Neo Financial GraphQL API client. */
 
 import type { HttpClient } from '../../../core/httpClient';
-import { formatDate } from '../../../core/utils';
+import { debugLog, formatDate } from '../../../core/utils';
+import { extractResponseErrorDetail, parseJsonBody, unwrapGraphQLData } from '../../../core/httpResponse';
 
 const API_URL = 'https://api.production.neofinancial.com/graphql';
 const REQUEST_HEADERS = {
@@ -21,6 +22,32 @@ export interface NeoAccount extends Record<string, unknown> {
   displayName: string;
 }
 
+interface NeoAccountTypeInfo {
+  displayName: string;
+  accountSubtype: 'checking' | 'savings';
+  invertBalance: true;
+}
+
+/**
+ * Single list of supported deposit products.
+ *
+ * Keyed by the API's `program.productName`. The manifest's
+ * `accountDefaultsForAccount` reads from the same table, so display names and
+ * Monarch defaults cannot drift apart. Anything not on this list is skipped in
+ * `getAccounts()` and never reaches account mapping.
+ */
+export const SUPPORTED_DEPOSIT_PRODUCTS: Record<string, NeoAccountTypeInfo> = {
+  EVERYDAY: { displayName: 'Neo Everyday', accountSubtype: 'checking', invertBalance: true },
+  SAVINGS: { displayName: 'Neo Savings', accountSubtype: 'savings', invertBalance: true },
+  HISA: { displayName: 'Neo High-Interest Savings', accountSubtype: 'savings', invertBalance: true },
+};
+
+const SUPPORTED_DEPOSIT_CATEGORIES = ['EVERYDAY', 'HISA'];
+
+export function getDepositProductInfo(productName: string): NeoAccountTypeInfo | undefined {
+  return SUPPORTED_DEPOSIT_PRODUCTS[productName];
+}
+
 export interface NeoTransaction extends Record<string, unknown> {
   id: string;
   description: string;
@@ -29,11 +56,6 @@ export interface NeoTransaction extends Record<string, unknown> {
   amountCents: number;
   authorizationProcessedAt?: string;
   completedAt?: string | null;
-}
-
-interface GraphQLResult<T> {
-  data: T;
-  errors?: unknown[];
 }
 
 interface NeoAccountsResponse {
@@ -179,19 +201,6 @@ function transactionDate(transaction: NeoTransaction): string {
   return formatDate(new Date(timestamp));
 }
 
-function getProductName(productName: string): string {
-  switch (productName) {
-  case 'EVERYDAY':
-    return 'Neo Everyday';
-  case 'SAVINGS':
-    return 'Neo Savings';
-  case 'HISA':
-    return 'Neo High-Interest Savings';
-  default:
-    throw new Error(`Unsupported Neo savings product: ${productName}`);
-  }
-}
-
 export interface NeoApiClient {
   getAccounts(): Promise<NeoAccount[]>;
   getAccountsSummary(): Promise<NeoAccount[]>;
@@ -215,14 +224,20 @@ export function createApi(httpClient: HttpClient, _auth: unknown): NeoApiClient 
       throw new Error('Neo session expired. Please refresh the page and log in again.');
     }
     if (response.status < 200 || response.status >= 300) {
-      throw new Error(`Neo API error: HTTP ${response.status}`);
+      const detail = extractResponseErrorDetail(response.responseText);
+      throw new Error(`Neo API error: HTTP ${response.status}${detail ? ` — ${detail}` : ''}`);
     }
 
-    const [result] = JSON.parse(response.responseText) as GraphQLResult<T>[];
-    if (result.errors?.length) {
-      throw new Error(`Neo GraphQL query failed: ${operationName}`);
+    const source = `Neo API Error: ${operationName}`;
+    const parsed = parseJsonBody<unknown>(response.responseText, source);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      throw new Error(`${source} returned an unexpected batch response`);
     }
-    return result.data;
+    const data = unwrapGraphQLData<T>(parsed[0], source);
+    if (data === undefined || data === null) {
+      throw new Error(`${source} returned no data`);
+    }
+    return data;
   }
 
   function accountTypeFor(accountId: string): NeoAccountType {
@@ -318,19 +333,31 @@ export function createApi(httpClient: HttpClient, _auth: unknown): NeoApiClient 
         productName: account.creditProduct.brandName,
         displayName: `${account.creditProduct.brandName} (${account.card.last4})`,
       }));
-    const savingsAccounts: NeoAccount[] = data.user.savingsAccountsList.results
-      .filter((account) => account.status === 'OPEN')
-      .map((account) => {
-        const displayName = getProductName(account.program.productName);
-        return {
-          accountId: account.id,
-          accountType: 'depository',
-          accountSubtype: account.category === 'EVERYDAY' ? 'checking' : 'savings',
-          category: account.category,
-          productName: account.program.productName,
-          displayName: account.card ? `${displayName} (${account.card.last4})` : displayName,
-        };
+    const savingsAccounts: NeoAccount[] = [];
+    for (const account of data.user.savingsAccountsList.results) {
+      if (account.status !== 'OPEN') {
+        continue;
+      }
+      const productInfo = getDepositProductInfo(account.program.productName);
+      if (!SUPPORTED_DEPOSIT_CATEGORIES.includes(account.category) || !productInfo) {
+        debugLog(
+          '[Neo] Skipping unsupported deposit account:',
+          `category=${account.category}`,
+          `product=${account.program.productName}`,
+          `status=${account.status}`,
+        );
+        continue;
+      }
+      const displayName = productInfo.displayName;
+      savingsAccounts.push({
+        accountId: account.id,
+        accountType: 'depository',
+        accountSubtype: productInfo.accountSubtype,
+        category: account.category,
+        productName: account.program.productName,
+        displayName: account.card ? `${displayName} (${account.card.last4})` : displayName,
       });
+    }
 
     accountTypes.clear();
     creditAccounts.forEach((account) => accountTypes.set(account.accountId, 'credit'));
