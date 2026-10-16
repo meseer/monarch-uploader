@@ -5,6 +5,7 @@
 
 import { API, STORAGE, TRANSACTION_RETENTION_DEFAULTS } from '../core/config';
 import { debugLog } from '../core/utils';
+import { parseJsonBody } from '../core/httpResponse';
 import stateManager from '../core/state';
 import authService from '../services/questrade/auth';
 
@@ -71,41 +72,6 @@ interface FetchTransactionsPageOptions {
 // ============================================================
 
 /**
- * Upper bound on how much of a response body is quoted into an error message.
- * Enough to identify an error page, not enough to paste a whole one into a toast.
- */
-const ERROR_BODY_MAX_LENGTH = 500;
-
-/**
- * Parse a success-status response body, turning an unparseable body into a
- * diagnosable error instead of a raw `SyntaxError`.
- *
- * A 2xx whose body is not JSON is a real failure mode, not a theoretical one: a
- * WAF or CDN HTML error page, a captive-portal or proxy interstitial, a
- * rate-limit page, and a truncated body all arrive with a success status. The
- * body is the only evidence of which of those happened, so a bounded excerpt of
- * it travels with the error.
- *
- * @param endpoint - Endpoint path, to identify which call failed
- * @param responseText - Raw response body
- * @returns The parsed body
- * @throws When the body is not JSON
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function parseQuestradeResponseBody(endpoint: string, responseText: string | undefined): any {
-  try {
-    return JSON.parse(responseText as string);
-  } catch (error) {
-    const excerpt = (responseText || '').slice(0, ERROR_BODY_MAX_LENGTH);
-    throw new Error(
-      `Questrade API Error: ${endpoint} returned a success status with a body that is not JSON `
-      + `(${(error as Error).message})${excerpt ? ` — ${excerpt}` : ''}`,
-      { cause: error },
-    );
-  }
-}
-
-/**
  * Make an API call to the Questrade API
  * Automatically waits for the auth token with retry/backoff if not immediately available.
  * @param endpoint - API endpoint to call
@@ -156,7 +122,7 @@ export async function makeQuestradeApiCall(endpoint: string, requiredPermissions
             stateManager.setQuestradeAuth(null);
             reject(new Error('Questrade Auth Error (401): Token was invalid or expired. Please refresh the page.'));
           } else if (res.status >= 200 && res.status < 300) {
-            resolve(parseQuestradeResponseBody(endpoint, res.responseText));
+            resolve(parseJsonBody(res.responseText, `Questrade API Error: ${endpoint}`));
           } else {
             reject(new Error(`Questrade API Error: Received status ${res.status} from ${endpoint}`));
           }

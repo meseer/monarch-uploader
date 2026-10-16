@@ -54,6 +54,7 @@ const THEME_VARIABLES: ThemeConfig = {
     // Warning
     '--mu-warning-bg': '#fff8e1',
     '--mu-warning-text': '#e65100',
+    '--mu-warning-border': '#ffe082',
     // Overlay
     '--mu-overlay-bg': 'rgba(0, 0, 0, 0.5)',
     // Interactive elements
@@ -110,6 +111,7 @@ const THEME_VARIABLES: ThemeConfig = {
     // Warning
     '--mu-warning-bg': '#3d3520',
     '--mu-warning-text': '#ffcc80',
+    '--mu-warning-border': '#6d5a2a',
     // Overlay
     '--mu-overlay-bg': 'rgba(0, 0, 0, 0.7)',
     // Interactive elements

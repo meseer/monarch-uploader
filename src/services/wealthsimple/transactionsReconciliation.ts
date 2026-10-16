@@ -17,6 +17,7 @@ import {
 import { computeSettledTagIds } from '../common/pendingReconciliation';
 import {
   getTransactionId,
+  isPrepaidCardSpend,
   type WealthsimpleTransaction,
   type ExtendedOrder,
   type SpendDetails,
@@ -68,13 +69,6 @@ function extractTransactionIdFromNotes(notes: string | null | undefined): string
 }
 
 /**
- * Check if a transaction is a SPEND/PREPAID type (uses status field like credit cards)
- */
-function isSpendPrepaidTransaction(transaction: Record<string, unknown>): boolean {
-  return transaction.type === 'SPEND' && transaction.subType === 'PREPAID';
-}
-
-/**
  * Investment account types for status field determination
  */
 const INVESTMENT_ACCOUNT_TYPES = new Set([
@@ -110,7 +104,7 @@ function getTransactionStatusForReconciliation(
   const isInvestmentAccountType = INVESTMENT_ACCOUNT_TYPES.has(accountType);
 
   if (isCashAccount) {
-    if (isSpendPrepaidTransaction(transaction)) {
+    if (isPrepaidCardSpend(transaction)) {
       const status = transaction.status as string | null | undefined;
       return {
         isPending: status === 'authorized',
@@ -174,7 +168,8 @@ const STATIC_SECURITY_IDS = new Set(['sec-s-cad', 'sec-s-usd']);
  * - CREDIT_CARD purchases → `FetchCreditCardActivity` (`FetchSpendTransactions`
  *   returns 403 for credit card accounts, and this is the only source of the
  *   precise `originalAmount`)
- * - CASH SPEND/PREPAID → `FetchSpendTransactions`
+ * - CASH SPEND/PREPAID → `FetchSpendTransactions` (it returns no details for
+ *   the newer PREPAID_CARD/PURCHASE card-activity IDs, so those are skipped)
  *
  * Both are stored under the `spend:{id}` key so the rules engine and the note
  * formatter can consume either source interchangeably.

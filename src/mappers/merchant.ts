@@ -241,6 +241,20 @@ export function applyMerchantMapping(merchantName: string, options: MerchantMapp
     });
   }
 
+  // Rule 3b2: Transform McDonald's variants to standardized name
+  // Drops store numbers, franchise codes, and location codes (e.g., "MCDONALD'S #10821 MYIJICD",
+  // "MCDONALDS F22821"). Returns early so title-casing doesn't produce "Mcdonald's".
+  if (/^mc\s?donald'?s\b/i.test(transformed)) {
+    const originalMcDonalds = transformed;
+    transformed = 'McDonald\'s';
+    debugLog('Transformed McDonald\'s variant to standardized name:', {
+      original: originalMcDonalds,
+      transformed,
+    });
+    debugLog('Merchant mapping applied:', { original: merchantName, transformed, options });
+    return transformed;
+  }
+
   // Rule 3c: Transform Eurest-Amazon office cafeteria transactions
   // e.g., "EUREST-AMAZONYVR21-634" -> "Eurest - Amazon YVR21"
   // Returns early to preserve building code casing (e.g., "YVR21") from subsequent

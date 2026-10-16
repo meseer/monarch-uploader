@@ -4,7 +4,7 @@
  */
 
 import { debugLog } from '../../core/utils';
-import { COLORS } from '../../core/config';
+import { COLORS, FONTS } from '../../core/config';
 import stateManager from '../../core/state';
 import canadalife, { type CanadaLifeAuthStatus } from '../../api/canadalife';
 import authService from '../../services/auth';
@@ -18,7 +18,7 @@ import { createVersionBadge } from '../components/versionBadge';
 /**
  * Creates and appends the main UI container to CanadaLife navigation
  */
-function createUIContainer(): HTMLElement | null {
+export function createUIContainer(): HTMLElement | null {
   // Find the .ims-navigation insertion point
   const targetContainer = document.querySelector('.ims-navigation');
   if (!targetContainer) {
@@ -42,12 +42,13 @@ function createUIContainer(): HTMLElement | null {
     background-color: #f8f9fa;
     border: 1px solid #e0e0e0;
     border-radius: 6px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: ${FONTS.CANADALIFE_BASE};
     font-size: 14px;
   `;
 
   // Create header
   const header = document.createElement('div');
+  header.id = 'canadalife-uploader-header';
   header.style.cssText = `
     display: flex;
     justify-content: space-between;
@@ -56,9 +57,11 @@ function createUIContainer(): HTMLElement | null {
   `;
 
   const titleSection = document.createElement('div');
+  titleSection.id = 'canadalife-uploader-title-section';
   titleSection.style.cssText = 'display: flex; flex-direction: column;';
 
   const titleRow = document.createElement('div');
+  titleRow.id = 'canadalife-uploader-title-row';
   titleRow.style.cssText = 'display: flex; align-items: center; gap: 10px;';
 
   const title = document.createElement('div');
@@ -68,12 +71,14 @@ function createUIContainer(): HTMLElement | null {
     font-weight: 600;
     color: ${COLORS.CANADALIFE_BRAND};
     font-size: 16px;
+    font-family: ${FONTS.CANADALIFE_DISPLAY};
   `;
   titleRow.appendChild(title);
 
   titleRow.appendChild(createVersionBadge('canadalife'));
 
   const settingsButton = document.createElement('button');
+  settingsButton.id = 'canadalife-settings-button';
   settingsButton.innerHTML = '⚙️';
   settingsButton.title = 'Settings';
   settingsButton.style.cssText = `
@@ -85,6 +90,7 @@ function createUIContainer(): HTMLElement | null {
     border-radius: 4px;
     color: #666;
     transition: background-color 0.2s;
+    font-family: ${FONTS.CANADALIFE_BASE};
   `;
   settingsButton.addEventListener('click', showSettingsModal);
   settingsButton.addEventListener('mouseover', () => {
@@ -98,8 +104,9 @@ function createUIContainer(): HTMLElement | null {
   titleSection.appendChild(titleRow);
 
   const subtitle = document.createElement('div');
+  subtitle.id = 'canadalife-uploader-subtitle';
   subtitle.textContent = 'CanadaLife → Monarch Money';
-  subtitle.style.cssText = 'font-size: 12px; color: #666; font-weight: 500;';
+  subtitle.style.cssText = `font-size: 12px; color: #666; font-weight: 500; font-family: ${FONTS.CANADALIFE_BASE};`;
   titleSection.appendChild(subtitle);
 
   header.appendChild(titleSection);
