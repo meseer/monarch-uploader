@@ -183,4 +183,16 @@ describe('Progress Dialog status icons', () => {
       expect(success).not.toBe(error);
     });
   });
+
+  describe('font-family isolation protects icons against host web fonts', () => {
+    it('sets the system UI font stack on the dialog and icon elements', () => {
+      dialog.initSteps('acc1', [{ key: 'balance', name: 'Balance' }]);
+      const modal = document.querySelector('[id^="balance-uploader-modal-"]');
+      expect(modal.style.fontFamily).toContain('-apple-system');
+      expect(accountIcon().style.fontFamily).toContain('-apple-system');
+      expect(stepIcon('balance').style.fontFamily).toContain('-apple-system');
+      const expandIcon = document.getElementById('balance-uploader-expand-icon-acc1');
+      expect(expandIcon.style.fontFamily).toContain('-apple-system');
+    });
+  });
 });

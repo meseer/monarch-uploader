@@ -146,7 +146,7 @@ describe('MBNA API Client', () => {
     it('should throw on malformed JSON response', async () => {
       mockHttpClient = createMockHttpClient({ responseText: 'not-json' });
       api = createApi(mockHttpClient, mockAuth);
-      await expect(api.getAccountInfo()).rejects.toThrow('Failed to parse MBNA API response');
+      await expect(api.getAccountInfo()).rejects.toThrow(/MBNA API Error: \/current-account returned a success status with a body that is not JSON .* — not-json/);
     });
   });
 

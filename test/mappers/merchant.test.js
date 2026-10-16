@@ -26,13 +26,13 @@ describe('Merchant Mapping Utilities', () => {
 
     test('should convert merchant name to title case', () => {
       expect(applyMerchantMapping('STARBUCKS COFFEE')).toBe('Starbucks Coffee');
-      expect(applyMerchantMapping('mcdonald\'s restaurant')).toBe('Mcdonald\'s Restaurant');
+      expect(applyMerchantMapping('wendy\'s restaurant')).toBe('Wendy\'s Restaurant');
       expect(applyMerchantMapping('WALMART SUPERCENTER')).toBe('Walmart Supercenter');
     });
 
     test('should remove TST- prefix', () => {
       expect(applyMerchantMapping('TST-STARBUCKS COFFEE')).toBe('Starbucks Coffee');
-      expect(applyMerchantMapping('tst-mcdonald\'s restaurant')).toBe('Mcdonald\'s Restaurant');
+      expect(applyMerchantMapping('tst-wendy\'s restaurant')).toBe('Wendy\'s Restaurant');
     });
 
     test('should remove TST* prefix (Toast asterisk variant)', () => {
@@ -130,6 +130,23 @@ describe('Merchant Mapping Utilities', () => {
       expect(applyMerchantMapping('EUREST-OTHERCOMPANY-123')).toBe('Eurest-othercompany-123');
     });
 
+    test('should transform McDonald\'s variants to standardized name', () => {
+      // Store number + location code
+      expect(applyMerchantMapping('MCDONALD\'S #10821 MYIJICD')).toBe('McDonald\'s');
+      // Franchise code, missing apostrophe, spaced "MC DONALDS", location name
+      expect(applyMerchantMapping('MCDONALDS F22821')).toBe('McDonald\'s');
+      expect(applyMerchantMapping('MC DONALD\'S KANATA')).toBe('McDonald\'s');
+      expect(applyMerchantMapping('Mcdonald\'s Kanata')).toBe('McDonald\'s');
+      expect(applyMerchantMapping('McDonald\'s')).toBe('McDonald\'s');
+      // Prefix removal runs first
+      expect(applyMerchantMapping('SQ *MCDONALD\'S #123')).toBe('McDonald\'s');
+      // Applies regardless of the store-number stripping setting
+      expect(applyMerchantMapping('MCDONALD\'S #10821 MYIJICD', { stripStoreNumbers: false })).toBe('McDonald\'s');
+      // Should not transform merchants that only contain or extend the name
+      expect(applyMerchantMapping('OLD MCDONALD\'S FARM')).toBe('Old Mcdonald\'s Farm');
+      expect(applyMerchantMapping('MCDONALDSON HARDWARE')).toBe('Mcdonaldson Hardware');
+    });
+
     test('should transform Coinbase variants to standardized name', () => {
       expect(applyMerchantMapping('COINBASE RTL-KQP9WV9C')).toBe('Coinbase');
       expect(applyMerchantMapping('Coinbase RTL-ABC12345')).toBe('Coinbase');
@@ -146,7 +163,7 @@ describe('Merchant Mapping Utilities', () => {
     });
 
     test('should preserve special characters', () => {
-      expect(applyMerchantMapping('MCDONALD\'S RESTAURANT')).toBe('Mcdonald\'s Restaurant');
+      expect(applyMerchantMapping('WENDY\'S RESTAURANT')).toBe('Wendy\'s Restaurant');
       expect(applyMerchantMapping('AT&T STORE')).toBe('At&t Store');
       expect(applyMerchantMapping('7-ELEVEN STORE')).toBe('7-eleven Store');
     });
@@ -365,7 +382,7 @@ describe('Merchant Mapping Utilities', () => {
 
     test('should handle merchant names with various formats', () => {
       const testCases = [
-        { input: 'MCDONALD\'S #1234', expected: 'Mcdonald\'s' }, // Store numbers stripped
+        { input: 'MCDONALD\'S #1234', expected: 'McDonald\'s' }, // Brand rule normalizes
         { input: 'AT&T MOBILITY', expected: 'At&t Mobility' },
         { input: 'H&R BLOCK', expected: 'H&r Block' },
         { input: '7-ELEVEN STORE #456', expected: '7-eleven Store' }, // Store numbers stripped

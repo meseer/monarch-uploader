@@ -394,6 +394,8 @@ export function createAuth(_storage) {
 Add `getAccountsSummary()` to `source/api.js`. This also serves as the Approach A auth probe:
 
 ```js
+import { parseJsonBody } from '../../../core/httpResponse';
+
 export function createApi(httpClient, _auth) {
   async function mybankGet(path) {
     const response = await httpClient.request({
@@ -415,11 +417,7 @@ export function createApi(httpClient, _auth) {
     if (response.status < 200 || response.status >= 300) {
       throw new Error(`API error: HTTP ${response.status}`);
     }
-    try {
-      return JSON.parse(response.responseText);
-    } catch (e) {
-      throw new Error(`Failed to parse API response: ${e.message}`);
-    }
+    return parseJsonBody(response.responseText, `MyBank API Error: ${path}`);
   }
 
   return {
@@ -437,6 +435,14 @@ export function createApi(httpClient, _auth) {
   };
 }
 ```
+
+Parse response bodies with the shared helpers in `src/core/httpResponse.ts`
+rather than calling `JSON.parse` directly. `parseJsonBody` turns a non-JSON
+success body (a WAF or CDN error page, a rate-limit page, a truncated body)
+into an error that names the call and quotes a bounded excerpt of the body.
+For a GraphQL API, pass the parsed body through `unwrapGraphQLData`, which
+throws with the full `errors` array, and use `extractResponseErrorDetail` to
+explain a non-2xx response.
 
 ### 3.2 Implement `buildAccountEntry` in syncHooks
 
