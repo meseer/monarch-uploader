@@ -420,6 +420,46 @@ describe('Settings Modal Component', () => {
       });
     });
 
+    describe('Wealthsimple (token read from the page cookie, never stored)', () => {
+      const getWealthsimpleTabDot = () => Array.from(modal.querySelectorAll('.settings-tab-button'))
+        .find((btn) => btn.textContent.includes('Wealthsimple'))
+        .querySelector('span[title]');
+
+      afterEach(() => {
+        stateManager.setWealthsimpleAuth(null);
+        jest.requireMock('../../src/services/common/configStore').getAuth.mockImplementation(() => ({}));
+      });
+
+      test('should show connected status when this page has a valid token', () => {
+        stateManager.setWealthsimpleAuth({
+          authenticated: true,
+          identityId: 'identity-123',
+          expiresAt: '2099-01-01T00:00:00Z',
+        });
+
+        modal = createSettingsModal();
+
+        expect(getWealthsimpleTabDot().title).toBe('Connected');
+      });
+
+      test('should show not connected when the page has no valid token', () => {
+        modal = createSettingsModal();
+
+        expect(getWealthsimpleTabDot().title).toBe('Not connected');
+      });
+
+      test('should ignore a Wealthsimple token left in storage by an older version', () => {
+        const { getAuth } = jest.requireMock('../../src/services/common/configStore');
+        getAuth.mockImplementation((integrationId) => (
+          integrationId === 'wealthsimple' ? { accessToken: 'stored-token' } : {}
+        ));
+
+        modal = createSettingsModal();
+
+        expect(getWealthsimpleTabDot().title).toBe('Not connected');
+      });
+    });
+
     test('should show connected status when Monarch is authenticated', () => {
       checkMonarchAuth.mockReturnValue({ authenticated: true });
 

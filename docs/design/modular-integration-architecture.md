@@ -1,7 +1,7 @@
 # Modular Integration Architecture
 
 > **Status:** Active  
-> **Updated:** 2026-10-15  
+> **Updated:** 2026-10-16  
 > **Author:** @meseer  
 
 ## Overview
@@ -489,26 +489,33 @@ Every integration uses this pattern (derived from manifest):
 
 ```
 {id}_accounts_list   # Consolidated account data + Monarch mappings + sync state
-{id}_config          # Auth/session state, global settings, category mappings, holdings mappings
+{id}_config          # Global settings, category mappings, holdings mappings (never credentials)
 ```
 
 Storage keys are declared **only** in `manifest.storageKeys`. They must not appear in `src/core/config.js` or any static service map.
 
 Bank credentials (tokens, device IDs, IDs sent as auth headers) do not go into
-`{id}_config` or any other userscript storage. Read them from the bank page
-when needed, rely on the bank's own cookies, or hold them in memory for the
-current page:
+`{id}_config` or any other userscript storage
+([ADR-010](../decisions/010-credentials-are-never-stored.md)). Read them from
+the bank page when needed, rely on the bank's own cookies, or hold them in
+memory for the current page:
 
 | Integration | How credentials are obtained |
 |---|---|
 | Questrade | Read from the page's `sessionStorage` on demand |
 | Canada Life | Read from the page's `localStorage` on demand |
 | MBNA, Neo Financial | The bank's session cookies |
-| Rogers Bank | Captured from the page's own API requests and held in memory for that page only; captured again after a reload |
-| Wealthsimple | Not yet compliant: the token is still stored in `wealthsimple_config.auth` |
+| Rogers Bank | Captured in memory from Rogers' own page requests, for that page only; captured again after a reload |
+| Wealthsimple | Read from the page's `_oauth2_access_v2` cookie on demand; a token rejected with a 401 is ignored in memory until the cookie changes |
 
-The Monarch CSRF token is stored on purpose: it is captured on
-app.monarch.com and used on the bank sites, so it cannot be read on demand.
+Credentials stored by older versions are deleted at every script load by the
+purges in `legacyMigration.ts`. `configStore` has no auth writer, and
+`test/guards/noStoredCredentials.test.js` fails on any new credential write.
+
+The Monarch CSRF token is still stored, as ADR-007 decided: it is captured on
+app.monarch.com and used on the bank sites, so it cannot be read on demand
+there. It is the guard's only allowlisted entry; whether to keep that exception
+is an open question in ADR-010.
 
 ### Account Entry Structure
 

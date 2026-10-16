@@ -6,9 +6,9 @@
 import { debugLog, getDefaultLookbackDays, validateLookbackVsRetention, getMinRetentionForInstitution, getLookbackForInstitution } from '../../core/utils';
 import { STORAGE } from '../../core/config';
 import stateManager from '../../core/state';
-import { INTEGRATIONS, getCategoryMappingsConfig, getDisplayName } from '../../core/integrationCapabilities';
+import { getCategoryMappingsConfig, getDisplayName } from '../../core/integrationCapabilities';
 import { getIntegration } from '../../core/integrationRegistry';
-import { getAuth, setSetting, getCategoryMappings, saveCategoryMappings } from '../../services/common/configStore';
+import { setSetting, getCategoryMappings, saveCategoryMappings } from '../../services/common/configStore';
 import { checkMonarchAuth } from '../../services/auth';
 import { checkQuestradeAuth } from '../../services/questrade/auth';
 import toast from '../toast';
@@ -49,10 +49,10 @@ export function checkInstitutionConnection(institutionId: string): boolean {
     const rbCredentials = stateManager.getState().auth.rogersbank.credentials;
     return Boolean(rbCredentials?.authToken);
   }
-  case 'wealthsimple': {
-    const wsAuth = getAuth(INTEGRATIONS.WEALTHSIMPLE);
-    return Boolean(wsAuth.accessToken);
-  }
+  case 'wealthsimple':
+    // The Wealthsimple token is read from the page's cookie and never stored,
+    // so this is true only on a Wealthsimple page with a valid token.
+    return stateManager.getState().auth.wealthsimple.authenticated;
   case 'monarch':
     return checkMonarchAuth().authenticated;
   default: {

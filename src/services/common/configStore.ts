@@ -7,11 +7,14 @@
  *
  * Structure of `{integration}_config`:
  * {
- *   auth: { ... },              // Auth tokens/credentials
  *   settings: { ... },          // Lookback days, retention, etc.
  *   categoryMappings: { ... },  // Source category → Monarch category
  *   holdingsMappings: { ... },  // Source security → Monarch holding
  * }
+ *
+ * Credentials are never stored here or anywhere else (ADR-010). Older versions
+ * wrote an `auth` section; there is deliberately no way to write one any more,
+ * and `clearAuth` exists only so legacyMigration can delete what is left.
  *
  * @module services/common/configStore
  */
@@ -111,7 +114,7 @@ export function saveConfig(integrationId: string, config: Record<string, unknown
 /**
  * Update a specific section of the config (merge, not replace)
  * @param {string} integrationId - Integration identifier
- * @param {string} section - Section name (e.g., 'auth', 'settings')
+ * @param {string} section - Section name (e.g., 'settings')
  * @param {Object} updates - Properties to merge into the section
  * @returns {boolean} Success status
  */
@@ -126,31 +129,13 @@ export function updateConfigSection(integrationId: string, section: string, upda
 }
 
 // ============================================
-// AUTH OPERATIONS
+// LEGACY AUTH CLEANUP
 // ============================================
 
 /**
- * Get auth data for an integration
- * @param {string} integrationId - Integration identifier
- * @returns {Object} Auth data (empty object if not found)
- */
-export function getAuth(integrationId: string): Record<string, unknown> {
-  const config = getConfig(integrationId);
-  return (config.auth as Record<string, unknown>) || {};
-}
-
-/**
- * Save auth data for an integration
- * @param {string} integrationId - Integration identifier
- * @param {Object} authData - Auth data to save
- * @returns {boolean} Success status
- */
-export function setAuth(integrationId: string, authData: Record<string, unknown>): boolean {
-  return updateConfigSection(integrationId, 'auth', authData);
-}
-
-/**
- * Clear auth data for an integration
+ * Delete the `auth` section an older version left in an integration's config.
+ * Credentials are never written to config any more (ADR-010); this is only
+ * for the startup purge in legacyMigration.
  * @param {string} integrationId - Integration identifier
  * @returns {boolean} Success status
  */
@@ -386,9 +371,7 @@ export default {
   saveConfig,
   updateConfigSection,
 
-  // Auth
-  getAuth,
-  setAuth,
+  // Legacy auth cleanup (there is no auth writer)
   clearAuth,
 
   // Settings

@@ -57,7 +57,7 @@ These are **not** security vulnerabilities for this project:
 Monarch Uploader is a browser userscript that runs locally. Key security properties:
 
 - **No external servers** — All data flows directly between the user's browser, their institution, and Monarch Money. There is no intermediary server.
-- **Local credential storage** — Credentials are stored via the userscript manager's `GM_getValue`/`GM_setValue` API, which is sandboxed per-script.
+- **No stored institution credentials** — Institution tokens are read from the institution's page when needed or held in memory for the current page, and are never written to storage ([ADR-010](docs/decisions/010-credentials-are-never-stored.md)). The one exception is Monarch's CSRF token, kept in the userscript manager's per-script storage (`GM_setValue`) so the bank sites can call Monarch ([ADR-007](docs/decisions/007-monarch-session-cookie-auth.md)). It does not authenticate on its own: Monarch also needs its HttpOnly session cookie, which is never copied.
 - **No telemetry** — The script does not collect, transmit, or log any usage data or financial information to third parties.
 
 ## Supported Versions

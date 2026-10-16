@@ -1,9 +1,15 @@
 # Adding a New Integration — Step-by-Step Runbook
 
+> **Status:** Active  
+> **Updated:** 2026-10-16  
+> **Author:** @meseer  
+
 > **Reference implementation:** All examples use the MBNA integration (`src/integrations/mbna/`).
 > All patterns here are derived from working code — not aspirational designs.
 >
-> **Architecture reference:** See [`design/modular-integration-architecture.md`](../modular-integration-architecture.md) for the "why" behind each pattern.
+> **Architecture reference:** See [`design/modular-integration-architecture.md`](../design/modular-integration-architecture.md) for the "why" behind each pattern.
+>
+> **Credentials are never stored** ([ADR-010](../decisions/010-credentials-are-never-stored.md)). Stage 2 shows the allowed ways to get them.
 
 ---
 
@@ -86,7 +92,7 @@ const manifest = {
 
   // ── Config schema ─────────────────────────────────────────
   configSchema: {
-    auth: ['sessionActive', 'lastChecked'],
+    auth: [],  // non-secret session status only, never credentials (ADR-010)
     settings: ['lookbackDays'],
     hasCategoryMappings: false,  // set true in Stage 9
     hasHoldingsMappings: false,
@@ -290,6 +296,20 @@ const ALL = {
 
 **Goal:** When the user is logged in, the connection status indicator shows "Connected."
 
+**Credentials are never stored** ([ADR-010](../decisions/010-credentials-are-never-stored.md)).
+A credential is anything that authenticates a request: auth/bearer tokens,
+session and CSRF tokens, request-signing headers, device IDs used for auth, and
+encoded IDs sent as auth headers. Use one of the three approaches below. Never
+write a credential to GM storage (including `{id}_config`), never write to the
+page's `localStorage`/`sessionStorage`/IndexedDB or set cookies, and never log
+one. `test/guards/noStoredCredentials.test.js` fails the build if you do.
+
+| Approach | Use when | Example |
+|---|---|---|
+| A. Probe-based | The session is in HttpOnly cookies the browser sends by itself | MBNA, Neo Financial |
+| B. Read from the page on demand | The token is in a readable cookie or in the page's own storage | Wealthsimple (cookie), Questrade (`sessionStorage`), Canada Life (`localStorage`) |
+| C. Capture in memory | The token only appears in headers of the page's own requests | Rogers Bank |
+
 ### Approach A: Probe-based (HttpOnly cookies)
 
 Most modern bank sites use `HttpOnly` session cookies that cannot be read from JavaScript. MBNA uses this approach. `checkStatus()` returns `{ authenticated: true }` unconditionally, and the UI manager uses a real API call as a live connectivity probe — 200 = connected, 401/403 = not connected.
@@ -313,16 +333,56 @@ export function createAuth(_storage) {
 
 `getAccountsSummary()` (implemented in Stage 3) doubles as the auth probe. A 401/403 response triggers the "not connected" state in the UI.
 
-### Approach B: Token interception (readable tokens)
+### Approach B: Read the token from the page on demand
 
-If the institution uses readable tokens in request headers (e.g., `Authorization`, `X-Auth-Token`):
+If the institution keeps its token somewhere the page can read (a non-HttpOnly
+cookie, `localStorage` or `sessionStorage`), read it at the moment it is
+needed. Do not copy it anywhere, and never write to the page's storage: it
+belongs to the institution.
 
 ```js
-import { getConfig, setConfig } from '../../../services/common/configStore';
+const TOKEN_COOKIE = 'mybank_access';
 
-const INTEGRATION_ID = 'mybank';
+/** Read the token from the page every time; nothing is cached or stored. */
+function readTokenFromPage() {
+  const prefix = `${TOKEN_COOKIE}=`;
+  const cookie = document.cookie
+    .split(';')
+    .map((entry) => entry.trim())
+    .find((entry) => entry.startsWith(prefix));
+  return cookie ? decodeURIComponent(cookie.slice(prefix.length)) : null;
+  // Or, for page storage: return sessionStorage.getItem('mybank.token');
+}
 
 export function createAuth(_storage) {
+  return {
+    checkStatus() {
+      return { authenticated: Boolean(readTokenFromPage()) };
+    },
+    getCredentials() {
+      const token = readTokenFromPage();
+      return token ? { token } : null;
+    },
+  };
+}
+```
+
+If the API rejects a token with a 401, remember that rejection in memory until
+the page's value changes, rather than retrying the same token. Wealthsimple
+does this in `src/api/wealthsimple.ts`.
+
+### Approach C: Capture from the page's own requests, held in memory
+
+If the token only appears in the headers of the page's own API requests (e.g.,
+`Authorization`, `X-Auth-Token`), capture it from those requests and keep it in
+a variable for the current page. A reload starts empty and captures it again
+from the page's next request.
+
+```js
+export function createAuth(_storage) {
+  // Held in memory for this page only. Never write it to storage.
+  let captured = null;
+
   function setupMonitoring() {
     const OriginalXHR = unsafeWindow.XMLHttpRequest;
 
@@ -337,15 +397,9 @@ export function createAuth(_storage) {
           this._url?.includes('online.mybank.ca/api') &&
           (name === 'Authorization' || name === 'X-Auth-Token')
         ) {
-          this.addEventListener('loadend', async () => {
+          this.addEventListener('loadend', () => {
             if (this.status >= 200 && this.status < 300) {
-              const config = getConfig(INTEGRATION_ID);
-              await setConfig(INTEGRATION_ID, {
-                ...config,
-                token: value,
-                sessionActive: true,
-                lastChecked: new Date().toISOString(),
-              });
+              captured = { token: value };
             }
           });
         }
@@ -359,29 +413,28 @@ export function createAuth(_storage) {
   return {
     setupMonitoring,
     checkStatus() {
-      const config = getConfig(INTEGRATION_ID);
-      return { authenticated: !!config?.sessionActive };
+      return { authenticated: captured !== null };
     },
     getCredentials() {
-      const config = getConfig(INTEGRATION_ID);
-      return config?.token ? { token: config.token } : null;
+      return captured;
     },
-    async clearCredentials() {
-      const config = getConfig(INTEGRATION_ID);
-      await setConfig(INTEGRATION_ID, { ...config, token: null, sessionActive: false });
+    clearCredentials() {
+      captured = null;
     },
   };
 }
 ```
 
-**`setupMonitoring()`** is called automatically by `initGenericUI` at startup. If you use the probe-based approach, omit it entirely.
+**`setupMonitoring()`** is part of the `IntegrationAuth` contract in `src/integrations/types.ts`, but no modular integration uses approach C yet and nothing in `src/` calls it today. If you use approach C, wire up that call and check in Milestone 2 that capture works. If you use approach A or B, omit it entirely.
 
 ### ✅ Milestone 2 validation
 
 1. Navigate to the institution's site while already logged in
 2. The connection status indicator shows green/connected
 3. **Approach A:** check the console for a successful API probe call
-4. **Approach B:** navigate to any page that triggers an API call; `GM_getValue('mybank_config')` should show `sessionActive: true`
+4. **Approach B:** the API probe succeeds with the token read from the page; sign out and the next probe fails
+5. **Approach C:** navigate to any page that triggers an API call, then check that the API probe succeeds with the captured token. After a reload, nothing is captured until the page makes its next API call
+6. **All approaches:** in the userscript manager's storage view, no value contains the token and `mybank_config` has no `auth` section. `npm test` passes `test/guards/noStoredCredentials.test.js`
 
 ---
 
@@ -1216,6 +1269,7 @@ Before calling the integration done, verify every item:
 - [ ] Amount signs correct: purchases negative, payments positive
 - [ ] Deduplication works: re-uploading same range produces no duplicates
 - [ ] `getSettledRefId` returns a stable, unique ID for every transaction
+- [ ] No credential is stored: auth is read from the page on demand or held in memory ([ADR-010](../decisions/010-credentials-are-never-stored.md))
 - [ ] Manifest has NO entries in `config.js`, `integrationCapabilities.js`, or static service maps
 - [ ] Tests do NOT reference `INTEGRATION_CAPABILITIES` or `STORAGE` constants
 

@@ -5,7 +5,7 @@
  */
 
 import wealthsimpleApi from '../../src/api/wealthsimple';
-import { STORAGE } from '../../src/core/config';
+const { setupWealthsimpleAuth } = require('../helpers/wealthsimpleAuthCookie');
 
 global.GM_getValue = jest.fn();
 global.GM_setValue = jest.fn();
@@ -23,20 +23,6 @@ jest.mock('../../src/core/state', () => ({
     setWealthsimpleAuth: jest.fn(),
   },
 }));
-
-/**
- * Helper to set up GM_getValue mock with Wealthsimple auth in configStore format.
- */
-function setupConfigStoreAuth(authData) {
-  GM_getValue.mockImplementation((key, defaultValue) => {
-    if (key === STORAGE.WEALTHSIMPLE_CONFIG) {
-      if (!authData) return '{}';
-      return JSON.stringify({ auth: authData });
-    }
-    if (key === 'debug_log_level') return 'info';
-    return defaultValue !== undefined ? defaultValue : null;
-  });
-}
 
 /** Activity ID matching the real card-activity ID format */
 const ACTIVITY_ID = 'card-activity-00000000527000993851-VI-00-0306231535741989-QIRIAS-0tk4pfcsob83';
@@ -82,7 +68,7 @@ describe('Wealthsimple API Client - Credit Card', () => {
     document.cookie = '';
 
     const futureDate = new Date(Date.now() + 3600000).toISOString();
-    setupConfigStoreAuth({
+    setupWealthsimpleAuth({
       accessToken: 'test-token',
       identityId: 'identity-123',
       expiresAt: futureDate,

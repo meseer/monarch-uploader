@@ -313,7 +313,7 @@ handling — one that carries extra context, like `CanadaLifeUploadError` with i
 ### API Errors
 
 - Handle specific HTTP status codes (401 → clear auth, 404 → resource not found, 500+ → server error)
-- On 401, clear stored auth tokens and prompt re-login
+- On 401, discard the rejected credential and prompt re-login (credentials are never stored; see [Credentials](#credentials))
 - Use `GM_xmlhttpRequest` `onerror` for network failures
 
 ### Anti-patterns to Avoid
@@ -518,6 +518,25 @@ Rules: max 72 chars, lowercase after prefix, no trailing period, imperative mood
 
 Patterns for maintaining consistency across all financial institution integrations (Questrade, CanadaLife, Rogers Bank, Wealthsimple, MBNA, and future integrations).
 
+### Credentials
+
+**MANDATORY: credentials are never stored** ([ADR-010](docs/decisions/010-credentials-are-never-stored.md)).
+A credential is anything that authenticates a request: auth/bearer tokens,
+session and CSRF tokens, request-signing headers, device IDs or fingerprints
+used for auth, and encoded account/customer IDs sent as auth headers.
+
+- **Get them** by reading the institution's own cookies or page storage when
+  needed (read only), by holding values captured from the page's own requests
+  in memory for the current page, or by letting the browser send its cookies.
+- **Never** write one to GM storage (`GM_setValue`, the storage adapter, an
+  `auth` section in `{integration}_config`), never write to
+  `localStorage`/`sessionStorage`/IndexedDB or set cookies, and never log one.
+- Credentials stored by older versions are deleted at startup by a purge in
+  `src/services/common/legacyMigration.ts`. Add one if you find more.
+- `test/guards/noStoredCredentials.test.js` enforces this. Its only allowlist
+  entry is the Monarch CSRF token (ADR-007), pending the open question in
+  ADR-010. Do not add entries.
+
 ### Consolidated Account Storage
 
 **All integrations MUST use consolidated account storage:**
@@ -624,6 +643,7 @@ See `docs/runbooks/adding-a-new-integration.md` for the step-by-step guide and `
 - [ ] Use `accountService.upsertAccount()` for saving
 - [ ] Use `getLastUpdateDate()` / `saveLastUploadDate()` from `src/core/utils`
 - [ ] Implement deduplication using `uploadedTransactions` array
+- [ ] Read credentials on demand or hold them in memory; never store them ([ADR-010](docs/decisions/010-credentials-are-never-stored.md))
 - [ ] Add tests for capabilities, account service, upload/sync, and settings UI
 
 ### Important Notes
