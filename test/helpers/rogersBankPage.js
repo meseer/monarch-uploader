@@ -8,7 +8,10 @@
  *   (jsdom's real XHR would try to hit the network),
  * - send the request Rogers Bank's own page makes, with its credential headers,
  * - back the GM_* storage functions with a Map, so a suite can assert that no
- *   credential value ever reaches userscript storage.
+ *   credential value ever reaches userscript storage,
+ * - assert that no credential value is logged,
+ * - make the document look as it does at `@run-at document-start`, so the
+ *   startup suites can check what runs before and after DOMContentLoaded.
  */
 
 const ACCOUNT_ID = '12345';
@@ -16,6 +19,15 @@ const CUSTOMER_ID = '67890';
 
 const TRANSACTIONS_URL = `https://selfserve.apis.rogersbank.com/corebank/v1/account/${ACCOUNT_ID}/customer/${CUSTOMER_ID}/transactions`;
 const REGENERATE_TOKEN_URL = 'https://selfserve.apis.rogersbank.com/authenticate/v1/authenticate/regeneratetoken/';
+
+/**
+ * The account details request. The landing page (/home) shows the balance and
+ * credit limit this returns; the script sends the same request itself.
+ */
+const ACCOUNT_DETAIL_URL = `https://selfserve.apis.rogersbank.com/corebank/v1/account/${ACCOUNT_ID}/customer/${CUSTOMER_ID}/detail`;
+
+/** A request with no account/customer IDs in its path */
+const PROFILE_URL = 'https://selfserve.apis.rogersbank.com/corebank/v1/profile';
 
 /** Headers Rogers Bank's own page sends with its API requests */
 const PAGE_HEADERS = {
@@ -112,15 +124,67 @@ function expectNoCredentialsInStorage(store) {
   });
 }
 
+/**
+ * Assert that no credential value was passed to a mock in any call, e.g. to
+ * debugLog or toast.show (nothing logged) or GM_setValue (nothing written,
+ * even if it was deleted again later)
+ * @param {jest.Mock} mock - The mocked function
+ * @param {string[]} extraSecrets - More values that must not appear, such as
+ *   the plain account/customer IDs for logs
+ */
+function expectNoCredentialsInCalls(mock, extraSecrets = []) {
+  const dump = JSON.stringify(mock.mock.calls);
+  [...SECRET_VALUES, ...extraSecrets].forEach((secret) => {
+    expect(dump).not.toContain(secret);
+  });
+}
+
+/**
+ * Make the document look as it does when a `@run-at document-start` script is
+ * injected: still loading, with no body yet.
+ * @returns Controls to finish parsing (fires DOMContentLoaded) and to restore
+ */
+function simulateDocumentStart() {
+  let readyState = 'loading';
+  Object.defineProperty(document, 'readyState', { configurable: true, get: () => readyState });
+  document.body?.remove();
+
+  const finishParsing = (bodyHtml = '') => {
+    const body = document.createElement('body');
+    body.innerHTML = bodyHtml;
+    document.documentElement.appendChild(body);
+    readyState = 'interactive';
+    document.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true }));
+  };
+
+  return {
+    /** Parse the body and dispatch DOMContentLoaded */
+    finishParsing,
+    /**
+     * Put jsdom's own readyState and a body back. Fires DOMContentLoaded first
+     * if the test did not, so no listener is left for a later test to trigger:
+     * call it while fake timers are still on, then clear the timers.
+     */
+    restore() {
+      if (readyState === 'loading') finishParsing();
+      delete document.readyState;
+    },
+  };
+}
+
 module.exports = {
   ACCOUNT_ID,
   CUSTOMER_ID,
   TRANSACTIONS_URL,
   REGENERATE_TOKEN_URL,
+  ACCOUNT_DETAIL_URL,
+  PROFILE_URL,
   PAGE_HEADERS,
   CAPTURED,
   installFakeXhr,
   sendPageXhr,
   useInMemoryGmStorage,
   expectNoCredentialsInStorage,
+  expectNoCredentialsInCalls,
+  simulateDocumentStart,
 };

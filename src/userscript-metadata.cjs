@@ -14,6 +14,9 @@ function generateMetadata(_buildType = 'local') {
   const downloadLine = `// @downloadURL  ${downloadUrl}\n`;
   const updateLine = `// @updateURL    ${updateUrl}\n`;
 
+  // @run-at document-start lets src/index.ts install the Rogers Bank network
+  // hooks before the bank page's first API requests. index.ts defers the rest
+  // of startup to where document-idle used to run it, on every site.
   return `// ==UserScript==
 // @name         Monarch Uploader
 // @namespace    https://github.com/meseer/monarch-uploader
@@ -40,7 +43,7 @@ ${downloadLine}${updateLine}// @grant        GM_addElement
 // @connect      api.questrade.com
 // @connect      service.mbna.ca
 // @connect      api.production.neofinancial.com
-// @run-at       document-idle
+// @run-at       document-start
 // ==/UserScript==`;
 }
 
