@@ -2,12 +2,11 @@
  * Legacy Storage Migration
  *
  * Eagerly migrates Rogers Bank legacy individual GM storage keys into the
- * consolidated `rogersbank_config` configStore structure. This runs once at
- * script load to ensure legacy data is migrated promptly, not just lazily
- * on first read.
+ * consolidated `rogersbank_config` configStore structure, and deletes Rogers
+ * Bank credentials stored by earlier versions. This runs at every script load
+ * so legacy data is handled promptly, not just lazily on first read.
  *
- * Each migration is idempotent: it only copies data if the configStore section
- * is empty, and always deletes the legacy key afterward.
+ * Each step is idempotent: once nothing legacy is left, it writes nothing.
  *
  * Note: Questrade, Canada Life, and Wealthsimple migration has been completed
  * and removed. Only Rogers Bank migration remains.
@@ -19,8 +18,8 @@ import { debugLog } from '../../core/utils';
 import { STORAGE } from '../../core/config';
 import { INTEGRATIONS } from '../../core/integrationCapabilities';
 import {
-  getAuth,
-  setAuth,
+  getConfig,
+  clearAuth,
   getSetting,
   setSetting,
   getCategoryMappings,
@@ -28,9 +27,10 @@ import {
 } from './configStore';
 
 /**
- * Legacy Rogers Bank auth storage keys
+ * Legacy Rogers Bank credential keys. Rogers Bank credentials are no longer
+ * persisted, so these are deleted, never migrated.
  */
-const ROGERSBANK_LEGACY_AUTH_KEYS = [
+const ROGERSBANK_LEGACY_CREDENTIAL_KEYS = [
   STORAGE.ROGERSBANK_AUTH_TOKEN,
   STORAGE.ROGERSBANK_ACCOUNT_ID,
   STORAGE.ROGERSBANK_CUSTOMER_ID,
@@ -67,42 +67,42 @@ function safeDelete(key: string): void {
 }
 
 /**
- * Migrate Rogers Bank auth from legacy individual keys to configStore
- * @returns {number} Number of legacy keys deleted
+ * Delete Rogers Bank credentials stored by earlier versions.
+ *
+ * Rogers Bank credentials are now held in memory for the current page only
+ * (see `src/api/rogersbank.ts`). Earlier versions persisted them, first under
+ * the individual legacy keys and later in the `auth` section of
+ * `rogersbank_config`. This deletes both. Rogers Bank settings, category
+ * mappings and `rogersbank_accounts_list` are left untouched.
+ *
+ * Idempotent: once no stored credentials remain, it writes nothing.
+ * @returns {number} Number of stored credential items deleted (legacy keys plus the `auth` section)
  */
-export function migrateRogersBankAuth(): number {
+export function purgeStoredRogersBankCredentials(): number {
   let deleted = 0;
 
+  for (const key of ROGERSBANK_LEGACY_CREDENTIAL_KEYS) {
+    try {
+      if (GM_getValue(key, undefined) !== undefined) {
+        safeDelete(key);
+        deleted++;
+      }
+    } catch (error) {
+      debugLog(`[legacyMigration] Error checking legacy Rogers Bank key ${key}:`, error);
+    }
+  }
+
   try {
-    const legacyToken = GM_getValue(STORAGE.ROGERSBANK_AUTH_TOKEN, null);
-    if (!legacyToken) {
-      return 0; // No legacy data
-    }
-
-    // Only migrate if configStore auth is empty
-    const configAuth = getAuth(INTEGRATIONS.ROGERSBANK);
-    if (!configAuth.authToken && !configAuth.accountId) {
-      const legacyData = {
-        authToken: legacyToken,
-        accountId: GM_getValue(STORAGE.ROGERSBANK_ACCOUNT_ID, null),
-        customerId: GM_getValue(STORAGE.ROGERSBANK_CUSTOMER_ID, null),
-        accountIdEncoded: GM_getValue(STORAGE.ROGERSBANK_ACCOUNT_ID_ENCODED, null),
-        customerIdEncoded: GM_getValue(STORAGE.ROGERSBANK_CUSTOMER_ID_ENCODED, null),
-        deviceId: GM_getValue(STORAGE.ROGERSBANK_DEVICE_ID, null),
-        lastUpdated: GM_getValue(STORAGE.ROGERSBANK_LAST_UPDATED, null),
-      };
-      setAuth(INTEGRATIONS.ROGERSBANK, legacyData);
-      debugLog('[legacyMigration] Migrated Rogers Bank auth to configStore');
-    }
-
-    // Always delete legacy keys
-    for (const key of ROGERSBANK_LEGACY_AUTH_KEYS) {
-      safeDelete(key);
+    const config = getConfig(INTEGRATIONS.ROGERSBANK);
+    if (Object.prototype.hasOwnProperty.call(config, 'auth') && clearAuth(INTEGRATIONS.ROGERSBANK)) {
       deleted++;
     }
-    debugLog(`[legacyMigration] Deleted ${deleted} Rogers Bank legacy auth keys`);
   } catch (error) {
-    debugLog('[legacyMigration] Error migrating Rogers Bank auth:', error);
+    debugLog('[legacyMigration] Error deleting stored Rogers Bank auth:', error);
+  }
+
+  if (deleted > 0) {
+    debugLog(`[legacyMigration] Deleted ${deleted} stored Rogers Bank credential item(s)`);
   }
 
   return deleted;
@@ -197,7 +197,7 @@ export function migrateAllLegacyStorage(): number {
 
   let totalDeleted = 0;
 
-  totalDeleted += migrateRogersBankAuth();
+  totalDeleted += purgeStoredRogersBankCredentials();
   totalDeleted += migrateLookbackDays();
   totalDeleted += migrateCategoryMappings();
 

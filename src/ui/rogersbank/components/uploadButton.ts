@@ -117,8 +117,11 @@ export function createRogersBankUploadButton(): HTMLElement {
   const authStatus = rogersbank.checkRogersBankAuth();
 
   if (!authStatus.authenticated) {
-    // Show message if not authenticated
+    // Credentials are held in memory only, so this state is shown after every
+    // page load until Rogers Bank's own API requests have been captured. The UI
+    // manager rebuilds this button when capture happens.
     const message = document.createElement('div');
+    message.id = 'rogersbank-credentials-waiting-message';
     message.textContent = 'Waiting for Rogers Bank credentials to be captured...';
     message.style.cssText = `
       padding: 8px 12px;
@@ -131,7 +134,9 @@ export function createRogersBankUploadButton(): HTMLElement {
     `;
 
     const helpText = document.createElement('div');
-    helpText.textContent = 'Navigate to your Rogers Bank account page to capture credentials automatically.';
+    helpText.id = 'rogersbank-credentials-waiting-help';
+    helpText.textContent = 'Navigate to your Rogers Bank account page to capture credentials automatically. '
+      + 'They are kept for this page only and are captured again after a reload.';
     helpText.style.cssText = `
       padding: 4px 12px;
       font-size: 12px;
@@ -205,7 +210,7 @@ export function createRogersBankUploadButton(): HTMLElement {
       uploadButton.style.cursor = 'pointer';
       uploadButton.textContent = originalText;
     }
-  }, { color: '#28a745' }); // Green color for upload action
+  }, { color: '#28a745', id: 'rogersbank-upload-button' }); // Green color for upload action
 
   container.appendChild(uploadButton);
 

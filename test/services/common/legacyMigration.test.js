@@ -3,11 +3,13 @@
  *
  * Questrade, Canada Life, and Wealthsimple migration has been completed
  * and removed. Only Rogers Bank migration remains.
+ *
+ * The purge of stored Rogers Bank credentials is covered against the real
+ * configStore in legacyMigration.rogersCredentials.test.js.
  */
 
 import {
   migrateAllLegacyStorage,
-  migrateRogersBankAuth,
   migrateLookbackDays,
   migrateCategoryMappings,
 } from '../../../src/services/common/legacyMigration';
@@ -50,13 +52,10 @@ jest.mock('../../../src/core/integrationCapabilities', () => ({
 const mockConfigData = {};
 
 jest.mock('../../../src/services/common/configStore', () => ({
-  getAuth: jest.fn((id) => {
-    const config = mockConfigData[`${id}_config`];
-    return config?.auth || {};
-  }),
-  setAuth: jest.fn((id, data) => {
-    if (!mockConfigData[`${id}_config`]) mockConfigData[`${id}_config`] = {};
-    mockConfigData[`${id}_config`].auth = { ...(mockConfigData[`${id}_config`].auth || {}), ...data };
+  getConfig: jest.fn((id) => mockConfigData[`${id}_config`] || {}),
+  clearAuth: jest.fn((id) => {
+    if (mockConfigData[`${id}_config`]) delete mockConfigData[`${id}_config`].auth;
+    return true;
   }),
   getSetting: jest.fn((id, key, defaultVal) => {
     const config = mockConfigData[`${id}_config`];
@@ -92,78 +91,6 @@ describe('Legacy Storage Migration', () => {
     Object.keys(mockConfigData).forEach((key) => delete mockConfigData[key]);
     // Default: no legacy data
     globalThis.GM_getValue.mockReturnValue(undefined);
-  });
-
-  describe('migrateRogersBankAuth', () => {
-    test('should skip when no legacy auth token exists', () => {
-      GM_getValue.mockReturnValue(null);
-
-      const deleted = migrateRogersBankAuth();
-
-      expect(deleted).toBe(0);
-      expect(configStore.setAuth).not.toHaveBeenCalled();
-      expect(GM_deleteValue).not.toHaveBeenCalled();
-    });
-
-    test('should migrate legacy auth to configStore when configStore is empty', () => {
-      GM_getValue.mockImplementation((key) => {
-        const data = {
-          rogersbank_auth_token: 'test-token',
-          rogersbank_account_id: 'acc-123',
-          rogersbank_customer_id: 'cust-456',
-          rogersbank_account_id_encoded: 'enc-acc',
-          rogersbank_customer_id_encoded: 'enc-cust',
-          rogersbank_device_id: 'dev-789',
-          rogersbank_last_updated: '2024-01-01',
-        };
-        return data[key] ?? null;
-      });
-
-      const deleted = migrateRogersBankAuth();
-
-      expect(deleted).toBe(7);
-      expect(configStore.setAuth).toHaveBeenCalledWith('rogersbank', {
-        authToken: 'test-token',
-        accountId: 'acc-123',
-        customerId: 'cust-456',
-        accountIdEncoded: 'enc-acc',
-        customerIdEncoded: 'enc-cust',
-        deviceId: 'dev-789',
-        lastUpdated: '2024-01-01',
-      });
-      expect(GM_deleteValue).toHaveBeenCalledTimes(7);
-      expect(GM_deleteValue).toHaveBeenCalledWith('rogersbank_auth_token');
-      expect(GM_deleteValue).toHaveBeenCalledWith('rogersbank_account_id');
-      expect(GM_deleteValue).toHaveBeenCalledWith('rogersbank_device_id');
-    });
-
-    test('should delete legacy keys even when configStore already has auth', () => {
-      // configStore already has auth
-      mockConfigData.rogersbank_config = {
-        auth: { authToken: 'existing-token', accountId: 'existing-acc' },
-      };
-
-      GM_getValue.mockImplementation((key) => {
-        if (key === 'rogersbank_auth_token') return 'old-token';
-        return null;
-      });
-
-      const deleted = migrateRogersBankAuth();
-
-      expect(deleted).toBe(7);
-      // Should NOT overwrite configStore
-      expect(configStore.setAuth).not.toHaveBeenCalled();
-      // Should still delete legacy keys
-      expect(GM_deleteValue).toHaveBeenCalledTimes(7);
-    });
-
-    test('should handle errors gracefully', () => {
-      GM_getValue.mockImplementation(() => {
-        throw new Error('Storage error');
-      });
-
-      expect(() => migrateRogersBankAuth()).not.toThrow();
-    });
   });
 
   describe('migrateLookbackDays', () => {
@@ -316,8 +243,23 @@ describe('Legacy Storage Migration', () => {
 
       const total = migrateAllLegacyStorage();
 
-      // 7 (RB auth) + 1 (lookback) + 1 (category) = 9
+      // 7 (RB legacy credential keys) + 1 (lookback) + 1 (category) = 9
       expect(total).toBe(9);
+      // Credentials are deleted, never copied into the config
+      expect(mockConfigData.rogersbank_config?.auth).toBeUndefined();
+    });
+
+    test('should delete Rogers Bank auth stored in the config without touching settings', () => {
+      mockConfigData.rogersbank_config = {
+        auth: { authToken: 'stored-token' },
+        settings: { lookbackDays: 7 },
+      };
+
+      const total = migrateAllLegacyStorage();
+
+      expect(total).toBe(1);
+      expect(configStore.clearAuth).toHaveBeenCalledWith('rogersbank');
+      expect(mockConfigData.rogersbank_config).toEqual({ settings: { lookbackDays: 7 } });
     });
 
     test('should be idempotent — second run returns 0', () => {
@@ -338,7 +280,7 @@ describe('Legacy Storage Migration', () => {
     });
 
     test('should continue even if one migration step throws', () => {
-      // Make Rogers Bank auth throw, but lookback should still work
+      // Make the Rogers Bank credential purge throw, but lookback should still work
       GM_getValue.mockImplementation((key, defaultVal) => {
         if (key === 'rogersbank_auth_token') throw new Error('Storage error');
         if (key === 'rogersbank_lookback_days') return 14;
@@ -347,7 +289,7 @@ describe('Legacy Storage Migration', () => {
 
       const total = migrateAllLegacyStorage();
 
-      // Rogers Bank auth error is caught, but lookback migration succeeds
+      // Rogers Bank purge error is caught, but lookback migration succeeds
       expect(total).toBeGreaterThanOrEqual(1);
     });
   });

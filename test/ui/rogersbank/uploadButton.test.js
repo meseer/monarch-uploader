@@ -9,6 +9,7 @@
 import { createRogersBankUploadButton } from '../../../src/ui/rogersbank/components/uploadButton';
 import { uploadRogersBankToMonarch } from '../../../src/services/rogersbank-upload';
 import { ensureMonarchAuthentication } from '../../../src/ui/components/monarchLoginLink';
+import rogersbank from '../../../src/api/rogersbank';
 
 jest.mock('../../../src/core/utils', () => ({
   debugLog: jest.fn(),
@@ -89,5 +90,36 @@ describe('Rogers Bank upload button', () => {
 
     expect(uploadRogersBankToMonarch).toHaveBeenCalledTimes(1);
     expect(button.disabled).toBe(false);
+  });
+});
+
+describe('Rogers Bank upload button before credentials are captured', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    rogersbank.checkRogersBankAuth.mockReturnValueOnce({ authenticated: false, credentials: {} });
+  });
+
+  it('shows the waiting state instead of an upload button', () => {
+    const container = createRogersBankUploadButton();
+
+    expect(container.querySelector('button')).toBeNull();
+    expect(container.querySelector('#rogersbank-credentials-waiting-message').textContent)
+      .toBe('Waiting for Rogers Bank credentials to be captured...');
+  });
+
+  it('explains that credentials are captured again after a reload', () => {
+    const container = createRogersBankUploadButton();
+
+    expect(container.querySelector('#rogersbank-credentials-waiting-help').textContent)
+      .toContain('captured again after a reload');
+  });
+});
+
+describe('Rogers Bank upload button after credentials are captured', () => {
+  it('renders the upload button with its id', () => {
+    const container = createRogersBankUploadButton();
+
+    expect(container.querySelector('#rogersbank-upload-button').textContent).toBe('Upload to Monarch');
+    expect(container.querySelector('#rogersbank-credentials-waiting-message')).toBeNull();
   });
 });

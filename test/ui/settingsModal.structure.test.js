@@ -4,6 +4,7 @@
  */
 
 import { createSettingsModal, showSettingsModal } from '../../src/ui/components/settingsModal';
+import stateManager from '../../src/core/state';
 
 // Mock dependencies
 jest.mock('../../src/core/config', () => ({
@@ -389,17 +390,34 @@ describe('Settings Modal Component', () => {
       expect(connectedDots.length).toBeGreaterThan(0);
     });
 
-    test('should show connected status when Rogers Bank token exists', () => {
-      const { getAuth } = jest.requireMock('../../src/services/common/configStore');
-      getAuth.mockImplementation((integrationId) => {
-        if (integrationId === 'rogersbank') return { authToken: 'valid-token' };
-        return {};
+    describe('Rogers Bank (credentials held in memory only)', () => {
+      const getRogersTabDot = () => Array.from(modal.querySelectorAll('.settings-tab-button'))
+        .find((btn) => btn.textContent.includes('Rogers Bank'))
+        .querySelector('span[title]');
+
+      afterEach(() => {
+        stateManager.setRogersBankAuth(null);
+        jest.requireMock('../../src/services/common/configStore').getAuth.mockImplementation(() => ({}));
       });
 
-      modal = createSettingsModal();
+      test('should show connected status when a token was captured on this page', () => {
+        stateManager.setRogersBankAuth({ authToken: 'valid-token' });
 
-      const connectedDots = modal.querySelectorAll('span[style*="background-color: rgb(40, 167, 69)"]');
-      expect(connectedDots.length).toBeGreaterThan(0);
+        modal = createSettingsModal();
+
+        expect(getRogersTabDot().title).toBe('Connected');
+      });
+
+      test('should ignore a Rogers Bank token left in storage by an older version', () => {
+        const { getAuth } = jest.requireMock('../../src/services/common/configStore');
+        getAuth.mockImplementation((integrationId) => (
+          integrationId === 'rogersbank' ? { authToken: 'stored-token' } : {}
+        ));
+
+        modal = createSettingsModal();
+
+        expect(getRogersTabDot().title).toBe('Not connected');
+      });
     });
 
     test('should show connected status when Monarch is authenticated', () => {

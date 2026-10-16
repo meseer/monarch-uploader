@@ -1,14 +1,17 @@
 /**
  * Rogers Bank API client
- * Handles authentication and credential management for Rogers Bank website
+ * Captures Rogers Bank credentials from the bank page's own API requests and
+ * calls the Rogers Bank API with them.
+ *
+ * Credentials (auth token, device ID, account/customer IDs and their encoded
+ * header forms) are held in memory for the current page only. They are never
+ * written to userscript (GM) storage: after a page reload they are captured
+ * again from Rogers Bank's next API request.
  */
 
-import { STORAGE } from '../core/config';
 import { debugLog } from '../core/utils';
 import stateManager from '../core/state';
 import toast from '../ui/toast';
-import { INTEGRATIONS } from '../core/integrationCapabilities';
-import { getAuth, setAuth, clearAuth as clearConfigAuth } from '../services/common/configStore';
 
 // ============================================================
 // Interfaces
@@ -42,7 +45,7 @@ interface RogersBankAccountDetails {
 // ============================================================
 
 /**
- * Storage structure for Rogers Bank credentials
+ * Credentials captured on this page. In memory only — lost on page reload.
  */
 const credentials: RogersBankCredentials = {
   authToken: null,
@@ -59,114 +62,33 @@ const credentials: RogersBankCredentials = {
 // ============================================================
 
 /**
- * Get Rogers Bank credentials from GM storage
- * @returns Credentials object
+ * Get the Rogers Bank credentials captured on this page.
+ * Reads the in-memory copy only; nothing is read from GM storage.
+ * @returns A copy of the captured credentials (fields are null until captured)
  */
 export function getRogersBankCredentials(): RogersBankCredentials {
-  try {
-    // Read from configStore only — migration completed
-    const configAuth = getAuth(INTEGRATIONS.ROGERSBANK) as Record<string, unknown>;
-
-    // Migrate-on-read: if configStore is empty, check legacy keys and migrate
-    if (!configAuth.authToken && !configAuth.accountId) {
-      const legacyToken = GM_getValue(STORAGE.ROGERSBANK_AUTH_TOKEN, null);
-      if (legacyToken) {
-        const legacyData: RogersBankCredentials = {
-          authToken: legacyToken,
-          accountId: GM_getValue(STORAGE.ROGERSBANK_ACCOUNT_ID, null),
-          customerId: GM_getValue(STORAGE.ROGERSBANK_CUSTOMER_ID, null),
-          accountIdEncoded: GM_getValue(STORAGE.ROGERSBANK_ACCOUNT_ID_ENCODED, null),
-          customerIdEncoded: GM_getValue(STORAGE.ROGERSBANK_CUSTOMER_ID_ENCODED, null),
-          deviceId: GM_getValue(STORAGE.ROGERSBANK_DEVICE_ID, null),
-          lastUpdated: GM_getValue(STORAGE.ROGERSBANK_LAST_UPDATED, null),
-        };
-        debugLog('getRogersBankCredentials: Migrating legacy credentials to configStore');
-        setAuth(INTEGRATIONS.ROGERSBANK, legacyData);
-        Object.assign(credentials, legacyData);
-
-        // Clean up legacy keys after successful migration
-        GM_deleteValue(STORAGE.ROGERSBANK_AUTH_TOKEN);
-        GM_deleteValue(STORAGE.ROGERSBANK_ACCOUNT_ID);
-        GM_deleteValue(STORAGE.ROGERSBANK_CUSTOMER_ID);
-        GM_deleteValue(STORAGE.ROGERSBANK_ACCOUNT_ID_ENCODED);
-        GM_deleteValue(STORAGE.ROGERSBANK_CUSTOMER_ID_ENCODED);
-        GM_deleteValue(STORAGE.ROGERSBANK_DEVICE_ID);
-        GM_deleteValue(STORAGE.ROGERSBANK_LAST_UPDATED);
-        debugLog('getRogersBankCredentials: Cleaned up legacy credential keys');
-
-        debugLog('Rogers Bank credentials retrieved (migrated from legacy):', {
-          hasToken: Boolean(legacyData.authToken),
-          hasAccountId: Boolean(legacyData.accountId),
-          hasCustomerId: Boolean(legacyData.customerId),
-          hasDeviceId: Boolean(legacyData.deviceId),
-          lastUpdated: legacyData.lastUpdated,
-        });
-
-        return legacyData;
-      }
-    }
-
-    const stored: RogersBankCredentials = {
-      authToken: (configAuth.authToken as string) ?? null,
-      accountId: (configAuth.accountId as string) ?? null,
-      customerId: (configAuth.customerId as string) ?? null,
-      accountIdEncoded: (configAuth.accountIdEncoded as string) ?? null,
-      customerIdEncoded: (configAuth.customerIdEncoded as string) ?? null,
-      deviceId: (configAuth.deviceId as string) ?? null,
-      lastUpdated: (configAuth.lastUpdated as string) ?? null,
-    };
-
-    // Update local credentials cache
-    Object.assign(credentials, stored);
-
-    debugLog('Rogers Bank credentials retrieved:', {
-      hasToken: Boolean(stored.authToken),
-      hasAccountId: Boolean(stored.accountId),
-      hasCustomerId: Boolean(stored.customerId),
-      hasDeviceId: Boolean(stored.deviceId),
-      lastUpdated: stored.lastUpdated,
-    });
-
-    return stored;
-  } catch (error) {
-    debugLog('Error reading Rogers Bank credentials:', error);
-    return credentials;
-  }
+  return { ...credentials };
 }
 
 /**
- * Save Rogers Bank credentials to GM storage
- * @param newCredentials - Credentials to save
+ * Merge newly captured credentials into the in-memory copy and notify
+ * listeners so the UI can leave its "waiting for credentials" state.
+ * Never persists anything.
+ * @param newCredentials - Captured credential fields
  */
-function saveRogersBankCredentials(newCredentials: Partial<RogersBankCredentials>): void {
+function updateCapturedCredentials(newCredentials: Partial<RogersBankCredentials>): void {
+  Object.assign(credentials, newCredentials, { lastUpdated: new Date().toISOString() });
+
+  debugLog('Rogers Bank credentials captured (held in memory only):', {
+    fields: Object.keys(newCredentials).filter((key) => Boolean(newCredentials[key])),
+  });
+
+  // Runs inside the bank page's own XHR/fetch call: a failing listener must
+  // not break that request.
   try {
-    const timestamp = new Date().toISOString();
-
-    // Update local cache
-    Object.assign(credentials, newCredentials, { lastUpdated: timestamp });
-
-    // Build auth data for configStore
-    const authUpdate: Record<string, unknown> = {};
-    if (newCredentials.authToken !== undefined) authUpdate.authToken = newCredentials.authToken;
-    if (newCredentials.accountId !== undefined) authUpdate.accountId = newCredentials.accountId;
-    if (newCredentials.customerId !== undefined) authUpdate.customerId = newCredentials.customerId;
-    if (newCredentials.accountIdEncoded !== undefined) authUpdate.accountIdEncoded = newCredentials.accountIdEncoded;
-    if (newCredentials.customerIdEncoded !== undefined) authUpdate.customerIdEncoded = newCredentials.customerIdEncoded;
-    if (newCredentials.deviceId !== undefined) authUpdate.deviceId = newCredentials.deviceId;
-    authUpdate.lastUpdated = timestamp;
-
-    // Write to configStore only — migration completed, no dual-write
-    setAuth(INTEGRATIONS.ROGERSBANK, authUpdate);
-
-    // Update state manager
-    stateManager.setRogersBankAuth(credentials);
-
-    debugLog('Rogers Bank credentials saved:', {
-      ...newCredentials,
-      timestamp,
-    });
+    stateManager.setRogersBankAuth({ ...credentials });
   } catch (error) {
-    debugLog('Error saving Rogers Bank credentials:', error);
+    debugLog('Error notifying listeners of captured Rogers Bank credentials:', error);
   }
 }
 
@@ -270,7 +192,7 @@ export function setupCredentialInterception(): void {
 
       // Check if this is a Rogers Bank API call
       if (url.includes('selfserve.apis.rogersbank.com')) {
-        debugLog('Rogers Bank API call intercepted:', { url, headers });
+        debugLog('Rogers Bank API call intercepted:', { url, headerNames: Object.keys(headers) });
 
         // Parse transaction API URL for account and customer IDs
         const transactionMatch = url.match(/\/account\/([^/]+)\/customer\/([^/]+)\/transactions/);
@@ -287,7 +209,7 @@ export function setupCredentialInterception(): void {
           const deviceId = headers.deviceid || null;
           const authToken = headers.authorization || null;
 
-          saveRogersBankCredentials({
+          updateCapturedCredentials({
             accountId,
             customerId,
             accountIdEncoded,
@@ -307,11 +229,7 @@ export function setupCredentialInterception(): void {
               if (newToken) {
                 debugLog('Captured new Rogers Bank token from regeneratetoken API');
 
-                const currentCreds = getRogersBankCredentials();
-                saveRogersBankCredentials({
-                  ...currentCreds,
-                  authToken: newToken,
-                });
+                updateCapturedCredentials({ authToken: newToken });
 
                 toast.show('Rogers Bank token refreshed', 'debug', 2000);
               }
@@ -324,7 +242,7 @@ export function setupCredentialInterception(): void {
         // Capture authorization header from any Rogers Bank API call if we don't have it yet
         if (headers.authorization && !credentials.authToken) {
           debugLog('Captured Rogers Bank authorization token from request header');
-          saveRogersBankCredentials({ authToken: headers.authorization });
+          updateCapturedCredentials({ authToken: headers.authorization });
         }
       }
     }
@@ -337,7 +255,7 @@ export function setupCredentialInterception(): void {
   window.fetch = async function fetchWrapper(url: RequestInfo | URL, options: RequestInit = {}) {
     // Check if this is a Rogers Bank API call
     if (typeof url === 'string' && url.includes('selfserve.apis.rogersbank.com')) {
-      debugLog('Rogers Bank fetch API call intercepted:', { url, headers: options.headers });
+      debugLog('Rogers Bank fetch API call intercepted:', { url });
 
       const transactionMatch = url.match(/\/account\/([^/]+)\/customer\/([^/]+)\/transactions/);
       if (transactionMatch) {
@@ -361,7 +279,7 @@ export function setupCredentialInterception(): void {
           });
         }
 
-        saveRogersBankCredentials({
+        updateCapturedCredentials({
           accountId,
           customerId,
           accountIdEncoded: headersObj.accountid || null,
@@ -384,11 +302,7 @@ export function setupCredentialInterception(): void {
           if (newToken) {
             debugLog('Captured new Rogers Bank token from regeneratetoken fetch API');
 
-            const currentCreds = getRogersBankCredentials();
-            saveRogersBankCredentials({
-              ...currentCreds,
-              authToken: newToken,
-            });
+            updateCapturedCredentials({ authToken: newToken });
 
             toast.show('Rogers Bank token refreshed (fetch)', 'debug', 2000);
           }
@@ -411,15 +325,12 @@ export function setupCredentialInterception(): void {
 }
 
 /**
- * Clear all Rogers Bank credentials
+ * Clear the Rogers Bank credentials captured on this page.
+ * Only the in-memory copy exists, so there is nothing to delete from storage.
  */
 export function clearRogersBankCredentials(): void {
   debugLog('Clearing Rogers Bank credentials...');
 
-  // Clear from configStore only — migration completed
-  clearConfigAuth(INTEGRATIONS.ROGERSBANK);
-
-  // Clear local cache
   (Object.keys(credentials) as Array<keyof RogersBankCredentials>).forEach((key) => {
     credentials[key] = null;
   });
