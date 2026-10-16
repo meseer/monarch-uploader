@@ -1,6 +1,6 @@
 # ADR-010: Credentials Are Never Stored
 
-> **Status:** Draft  
+> **Status:** Accepted  
 > **Date:** 2026-10-16  
 > **Author:** @meseer  
 > **Supersedes:** —  
@@ -129,10 +129,10 @@ who upgrade late.
 - `test/guards/noStoredCredentials.test.js` parses every file under `src/`
   and fails on any write of a credential-like key or value to GM storage or
   the storage adapter, any `setAuth` or `auth`-section write, and any write to
-  page storage or cookies. Its only allowlist entry is the Monarch CSRF token
-  below.
+  page storage or cookies. Its only allowlist entry is the Monarch CSRF token,
+  the exception described below.
 
-## Open question: the Monarch CSRF token
+## Exception: the Monarch CSRF token
 
 This rule conflicts with [ADR-007](007-monarch-session-cookie-auth.md)
 (Accepted). ADR-007 stores Monarch's `csrftoken` in GM storage
@@ -141,17 +141,24 @@ and needs it on the bank sites, where it is sent as the `x-csrftoken` header.
 GM storage is the only channel the script has between the two origins.
 `monarch_session_expires_at` is stored too, but it is not a credential.
 
-This ADR does not change Monarch auth and does not amend ADR-007. Until the
-question below is decided, the guard allowlists exactly the
-`STORAGE.MONARCH_CSRF_TOKEN` writes in `src/services/auth.ts`, and nothing
-else.
+**Decision (2026-10-16): Option A, a scoped exception, without an expiry of our own.**
+ADR-007 stays as it is. The token is still deleted on a 401/403 from Monarch,
+and is replaced whenever it is captured again on app.monarch.com. It is not
+also deleted when `session_expires_at` passes: how long a Monarch session
+lasts is set by the user in their Monarch settings, and a second, script-side
+expiry would be a second place to control the same thing. An expired session
+is rejected by Monarch, which clears the token through the 401/403 path.
+
+This is the only exception to the rule. The guard allowlists exactly the
+`STORAGE.MONARCH_CSRF_TOKEN` writes in `src/services/auth.ts`, and fails if
+that entry is no longer needed. No other entry may be added.
 
 What limits the exposure today: the CSRF token does not authenticate on its
 own. Monarch also requires the HttpOnly `session_id` cookie, which stays in the
 browser's cookie jar and is never copied. A stored CSRF token is still a
 long-lived secret in GM storage, and so in exports and sync.
 
-Options:
+Options considered:
 
 | Option | How it works | Trade-offs |
 |---|---|---|
@@ -160,11 +167,10 @@ Options:
 | **C. Fetch a fresh token from Monarch** | On a bank page, have `GM_xmlhttpRequest` call a Monarch endpoint (the browser attaches the Monarch cookies) and take the token from the response; hold it in memory. | Nothing stored, no new grant, works in both managers. It is not known that any Monarch endpoint returns the token: browsers hide `Set-Cookie` from XHR and fetch, whether `GM_xmlhttpRequest` exposes it varies by manager, and the web app is a single-page app, so its HTML may not embed one. Needs a probe first (see the method in [ADR-009](009-monarch-pending-field-is-read-only.md)), costs an extra request per page, and could break silently if Monarch changes. |
 | **D. Hand the token over from a Monarch window** | When a bank page needs Monarch, open app.monarch.com in a popup; the script there reads the cookie and `postMessage`s it to the opener; the bank page keeps it in memory. | Nothing stored. A popup per page load or per sync, popup blockers, and a worse user experience. The message is dispatched on the bank page's window, so the bank's own scripts can read it; that is a new exposure. |
 
-**Decision needed from @meseer:** keep the exception (A, possibly tightened),
-or invest in removing it (C first, since it is the only option that could work
-in both managers; B as a Tampermonkey-only improvement). Whatever is chosen
-goes in a new ADR that supersedes ADR-007 if Monarch auth changes. That ADR
-also updates the guard's allowlist: tighten the entry, or delete it.
+Option C remains the only route that could remove the exception in every
+userscript manager. Pursuing it needs a probe showing a Monarch endpoint
+returns the token, and a new ADR that supersedes ADR-007 and removes the
+allowlist entry.
 
 ## Consequences
 
@@ -186,8 +192,8 @@ also updates the guard's allowlist: tighten the entry, or delete it.
 
 ### Neutral
 
-- ADR-007 stays Accepted and unchanged. The Monarch question above needs its
-  own decision.
+- ADR-007 stays Accepted and unchanged: its stored CSRF token is the one
+  documented exception (see above).
 - Once the purges have had time to run for existing users, the legacy key
   constants and purge functions can be removed in a later change.
 

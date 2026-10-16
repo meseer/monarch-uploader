@@ -57,7 +57,7 @@ Immutable records of significant architectural decisions and the reasoning behin
 | [ADR-007](decisions/007-monarch-session-cookie-auth.md) | Migrate Monarch Auth from Token to Session Cookie | Accepted | 2026-05-14 |
 | [ADR-008](decisions/008-monarch-csv-transaction-id-matching-does-not-work.md) | Monarch's CSV Transaction-ID Matching Does Not Work; Keep Notes-Based Tracking | Accepted | 2026-09-09 |
 | [ADR-009](decisions/009-monarch-pending-field-is-read-only.md) | Monarch's `pending` Field Is Read-Only; Keep the `Pending` Tag | Accepted | 2026-09-18 |
-| [ADR-010](decisions/010-credentials-are-never-stored.md) | Credentials Are Never Stored (open question: the Monarch CSRF token) | Draft | 2026-10-16 |
+| [ADR-010](decisions/010-credentials-are-never-stored.md) | Credentials Are Never Stored | Accepted | 2026-10-16 |
 
 See [`decisions/README.md`](decisions/README.md) for ADR conventions and the template.
 
