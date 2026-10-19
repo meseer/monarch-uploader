@@ -51,7 +51,7 @@
     "knip": "^6.41.0",
     "terser-webpack-plugin": "^5.6.1",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.71.1",
+    "typescript-eslint": "^8.71.2",
     "webpack": "^5.112.0",
     "webpack-cli": "^7.2.3"
   },
