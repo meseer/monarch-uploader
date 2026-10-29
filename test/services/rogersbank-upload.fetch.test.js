@@ -5,6 +5,20 @@
 import {
   uploadRogersBankToMonarch,
 } from '../../src/services/rogersbank-upload';
+import * as rogersbankModule from '../../src/api/rogersbank';
+import * as monarchModule from '../../src/api/monarch';
+import * as accountServiceModule from '../../src/services/common/accountService';
+import * as toastModule from '../../src/ui/toast';
+import * as datePickerModule from '../../src/ui/components/datePicker';
+import * as accountSelectorWithCreateModule from '../../src/ui/components/accountSelectorWithCreate';
+import * as progressDialogModule from '../../src/ui/components/progressDialog';
+import * as csvModule from '../../src/utils/csv';
+import * as categoryModule from '../../src/mappers/category';
+import * as categorySelectorModule from '../../src/ui/components/categorySelector';
+import * as utilsModule from '../../src/core/utils';
+import * as transactionStorageModule from '../../src/utils/transactionStorage';
+import * as pendingReconciliationModule from '../../src/services/common/pendingReconciliation';
+import * as pendingTransactionsModule from '../../src/services/rogersbank/pendingTransactions';
 
 // Mock global fetch
 global.fetch = jest.fn();
@@ -246,11 +260,11 @@ describe('Rogers Bank Upload Service - Fetch API, Progress, Edge Cases, invertBa
     jest.clearAllMocks();
 
     // Get all the mocked modules
-    const rogersbankMock = jest.requireMock('../../src/api/rogersbank');
+    const rogersbankMock = rogersbankModule;
     getRogersBankCredentials = rogersbankMock.getRogersBankCredentials;
     fetchRogersBankAccountDetails = rogersbankMock.fetchRogersBankAccountDetails;
 
-    monarchApi = jest.requireMock('../../src/api/monarch').default;
+    monarchApi = monarchModule.default;
 
     // Default: validateAndRefreshAccountMapping returns valid existing account (not newlyCreated)
     monarchApi.validateAndRefreshAccountMapping.mockResolvedValue({
@@ -259,7 +273,7 @@ describe('Rogers Bank Upload Service - Fetch API, Progress, Edge Cases, invertBa
     });
 
     // Default: accountService returns valid account mapping
-    accountServiceMock = jest.requireMock('../../src/services/common/accountService').default;
+    accountServiceMock = accountServiceModule.default;
     accountServiceMock.getMonarchAccountMapping.mockReturnValue({ id: 'monarch123', displayName: 'Rogers Card' });
     accountServiceMock.getAccountData.mockReturnValue({ lastSyncedCreditLimit: null, balanceCheckpoint: null, uploadedTransactions: [] });
     accountServiceMock.upsertAccount.mockReturnValue(true);
@@ -267,18 +281,18 @@ describe('Rogers Bank Upload Service - Fetch API, Progress, Edge Cases, invertBa
     accountServiceMock.incrementSyncCount.mockReturnValue(1);
     accountServiceMock.isReadyForLegacyCleanup.mockReturnValue(false);
     accountServiceMock.cleanupLegacyStorage.mockReturnValue({ cleaned: false, keysDeleted: 0, keys: [] });
-    toast = jest.requireMock('../../src/ui/toast').default;
-    showDatePickerWithOptionsPromise = jest.requireMock('../../src/ui/components/datePicker').showDatePickerWithOptionsPromise;
-    showMonarchAccountSelectorWithCreate = jest.requireMock('../../src/ui/components/accountSelectorWithCreate').showMonarchAccountSelectorWithCreate;
-    showProgressDialog = jest.requireMock('../../src/ui/components/progressDialog').showProgressDialog;
-    convertTransactionsToMonarchCSV = jest.requireMock('../../src/utils/csv').convertTransactionsToMonarchCSV;
-    applyCategoryMapping = jest.requireMock('../../src/mappers/category').applyCategoryMapping;
-    showMonarchCategorySelector = jest.requireMock('../../src/ui/components/categorySelector').showMonarchCategorySelector;
-    calculateFromDateWithLookback = jest.requireMock('../../src/core/utils').calculateFromDateWithLookback;
-    saveLastUploadDate = jest.requireMock('../../src/core/utils').saveLastUploadDate;
+    toast = toastModule.default;
+    showDatePickerWithOptionsPromise = datePickerModule.showDatePickerWithOptionsPromise;
+    showMonarchAccountSelectorWithCreate = accountSelectorWithCreateModule.showMonarchAccountSelectorWithCreate;
+    showProgressDialog = progressDialogModule.showProgressDialog;
+    convertTransactionsToMonarchCSV = csvModule.convertTransactionsToMonarchCSV;
+    applyCategoryMapping = categoryModule.applyCategoryMapping;
+    showMonarchCategorySelector = categorySelectorModule.showMonarchCategorySelector;
+    calculateFromDateWithLookback = utilsModule.calculateFromDateWithLookback;
+    saveLastUploadDate = utilsModule.saveLastUploadDate;
 
     // Reset getTransactionIdsFromArray to return empty Set by default
-    const transactionStorageMock = jest.requireMock('../../src/utils/transactionStorage');
+    const transactionStorageMock = transactionStorageModule;
     transactionStorageMock.getTransactionIdsFromArray.mockReturnValue(new Set());
 
     // Setup DOM mocks
@@ -635,7 +649,7 @@ describe('Rogers Bank Upload Service - Fetch API, Progress, Edge Cases, invertBa
       });
 
       // Not a first sync: fromDate comes from the lookback calculation
-      jest.requireMock('../../src/core/utils').getLastUpdateDate.mockReturnValue('2024-01-10');
+      utilsModule.getLastUpdateDate.mockReturnValue('2024-01-10');
       calculateFromDateWithLookback.mockReturnValue('2024-01-08');
       fetchRogersBankAccountDetails.mockResolvedValue({ balance: -500, creditLimit: 5000, openedDate: '2023-01-01' });
       monarchApi.uploadBalance.mockResolvedValue(true);
@@ -667,8 +681,8 @@ describe('Rogers Bank Upload Service - Fetch API, Progress, Edge Cases, invertBa
     };
 
     test('extends the transaction fetch window back to the oldest Monarch pending date', async () => {
-      const { fetchMonarchPendingTransactions } = jest.requireMock('../../src/services/common/pendingReconciliation');
-      const { computeExtendedFromDate } = jest.requireMock('../../src/core/utils');
+      const { fetchMonarchPendingTransactions } = pendingReconciliationModule;
+      const { computeExtendedFromDate } = utilsModule;
 
       fetchMonarchPendingTransactions.mockResolvedValue({
         pendingTag: { id: 'tag-pending', name: 'Pending' },
@@ -689,8 +703,8 @@ describe('Rogers Bank Upload Service - Fetch API, Progress, Edge Cases, invertBa
     });
 
     test('leaves the window alone when no extension is needed', async () => {
-      const { fetchMonarchPendingTransactions } = jest.requireMock('../../src/services/common/pendingReconciliation');
-      const { computeExtendedFromDate } = jest.requireMock('../../src/core/utils');
+      const { fetchMonarchPendingTransactions } = pendingReconciliationModule;
+      const { computeExtendedFromDate } = utilsModule;
 
       fetchMonarchPendingTransactions.mockResolvedValue({
         pendingTag: { id: 'tag-pending', name: 'Pending' },
@@ -708,8 +722,8 @@ describe('Rogers Bank Upload Service - Fetch API, Progress, Edge Cases, invertBa
     });
 
     test('hands the pre-fetched Phase 1 data to Phase 2 instead of re-reading Monarch', async () => {
-      const { fetchMonarchPendingTransactions } = jest.requireMock('../../src/services/common/pendingReconciliation');
-      const { reconcileRogersFetchedPending } = jest.requireMock('../../src/services/rogersbank/pendingTransactions');
+      const { fetchMonarchPendingTransactions } = pendingReconciliationModule;
+      const { reconcileRogersFetchedPending } = pendingTransactionsModule;
       const pendingTag = { id: 'tag-pending', name: 'Pending' };
       const monarchPending = [{ id: 'mtx-old', notes: 'rb-tx:0000111122223333' }];
 
@@ -732,8 +746,8 @@ describe('Rogers Bank Upload Service - Fetch API, Progress, Edge Cases, invertBa
     });
 
     test('skips reconciliation without throwing when the Monarch pending read fails', async () => {
-      const { fetchMonarchPendingTransactions } = jest.requireMock('../../src/services/common/pendingReconciliation');
-      const { reconcileRogersFetchedPending } = jest.requireMock('../../src/services/rogersbank/pendingTransactions');
+      const { fetchMonarchPendingTransactions } = pendingReconciliationModule;
+      const { reconcileRogersFetchedPending } = pendingTransactionsModule;
 
       fetchMonarchPendingTransactions.mockRejectedValue(new Error('Monarch unavailable'));
 
@@ -748,8 +762,8 @@ describe('Rogers Bank Upload Service - Fetch API, Progress, Edge Cases, invertBa
     });
 
     test('skips Phase 2 when Monarch has no Pending tag', async () => {
-      const { fetchMonarchPendingTransactions } = jest.requireMock('../../src/services/common/pendingReconciliation');
-      const { reconcileRogersFetchedPending } = jest.requireMock('../../src/services/rogersbank/pendingTransactions');
+      const { fetchMonarchPendingTransactions } = pendingReconciliationModule;
+      const { reconcileRogersFetchedPending } = pendingTransactionsModule;
 
       fetchMonarchPendingTransactions.mockResolvedValue({
         pendingTag: null,
@@ -863,7 +877,7 @@ describe('Rogers Bank Upload Service - Fetch API, Progress, Edge Cases, invertBa
         deviceId: 'test-device',
       });
       // Not first sync — set explicitly so the test does not depend on earlier tests
-      jest.requireMock('../../src/core/utils').getLastUpdateDate.mockReturnValue('2024-01-01');
+      utilsModule.getLastUpdateDate.mockReturnValue('2024-01-01');
       calculateFromDateWithLookback.mockReturnValue('2024-01-01');
       fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1500, creditLimit: 5000, openedDate: '2023-01-01' });
       monarchApi.uploadBalance.mockResolvedValue(true);

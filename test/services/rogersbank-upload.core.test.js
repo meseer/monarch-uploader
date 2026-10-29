@@ -5,6 +5,18 @@
 import {
   uploadRogersBankToMonarch,
 } from '../../src/services/rogersbank-upload';
+import * as rogersbankModule from '../../src/api/rogersbank';
+import * as monarchModule from '../../src/api/monarch';
+import * as accountServiceModule from '../../src/services/common/accountService';
+import * as toastModule from '../../src/ui/toast';
+import * as datePickerModule from '../../src/ui/components/datePicker';
+import * as accountSelectorWithCreateModule from '../../src/ui/components/accountSelectorWithCreate';
+import * as progressDialogModule from '../../src/ui/components/progressDialog';
+import * as csvModule from '../../src/utils/csv';
+import * as categoryModule from '../../src/mappers/category';
+import * as categorySelectorModule from '../../src/ui/components/categorySelector';
+import * as utilsModule from '../../src/core/utils';
+import * as transactionStorageModule from '../../src/utils/transactionStorage';
 
 // Mock global fetch
 global.fetch = jest.fn();
@@ -238,11 +250,11 @@ describe('Rogers Bank Upload Service - Core - Error Handling, Balance Upload, Tr
     jest.clearAllMocks();
 
     // Get all the mocked modules
-    const rogersbankMock = jest.requireMock('../../src/api/rogersbank');
+    const rogersbankMock = rogersbankModule;
     getRogersBankCredentials = rogersbankMock.getRogersBankCredentials;
     fetchRogersBankAccountDetails = rogersbankMock.fetchRogersBankAccountDetails;
 
-    monarchApi = jest.requireMock('../../src/api/monarch').default;
+    monarchApi = monarchModule.default;
 
     // Default: validateAndRefreshAccountMapping returns valid existing account (not newlyCreated)
     monarchApi.validateAndRefreshAccountMapping.mockResolvedValue({
@@ -251,7 +263,7 @@ describe('Rogers Bank Upload Service - Core - Error Handling, Balance Upload, Tr
     });
 
     // Default: accountService returns valid account mapping
-    accountServiceMock = jest.requireMock('../../src/services/common/accountService').default;
+    accountServiceMock = accountServiceModule.default;
     accountServiceMock.getMonarchAccountMapping.mockReturnValue({ id: 'monarch123', displayName: 'Rogers Card' });
     accountServiceMock.getAccountData.mockReturnValue({ lastSyncedCreditLimit: null, balanceCheckpoint: null, uploadedTransactions: [] });
     accountServiceMock.upsertAccount.mockReturnValue(true);
@@ -259,18 +271,18 @@ describe('Rogers Bank Upload Service - Core - Error Handling, Balance Upload, Tr
     accountServiceMock.incrementSyncCount.mockReturnValue(1);
     accountServiceMock.isReadyForLegacyCleanup.mockReturnValue(false);
     accountServiceMock.cleanupLegacyStorage.mockReturnValue({ cleaned: false, keysDeleted: 0, keys: [] });
-    toast = jest.requireMock('../../src/ui/toast').default;
-    showDatePickerWithOptionsPromise = jest.requireMock('../../src/ui/components/datePicker').showDatePickerWithOptionsPromise;
-    showMonarchAccountSelectorWithCreate = jest.requireMock('../../src/ui/components/accountSelectorWithCreate').showMonarchAccountSelectorWithCreate;
-    showProgressDialog = jest.requireMock('../../src/ui/components/progressDialog').showProgressDialog;
-    convertTransactionsToMonarchCSV = jest.requireMock('../../src/utils/csv').convertTransactionsToMonarchCSV;
-    applyCategoryMapping = jest.requireMock('../../src/mappers/category').applyCategoryMapping;
-    showMonarchCategorySelector = jest.requireMock('../../src/ui/components/categorySelector').showMonarchCategorySelector;
-    calculateFromDateWithLookback = jest.requireMock('../../src/core/utils').calculateFromDateWithLookback;
-    saveLastUploadDate = jest.requireMock('../../src/core/utils').saveLastUploadDate;
+    toast = toastModule.default;
+    showDatePickerWithOptionsPromise = datePickerModule.showDatePickerWithOptionsPromise;
+    showMonarchAccountSelectorWithCreate = accountSelectorWithCreateModule.showMonarchAccountSelectorWithCreate;
+    showProgressDialog = progressDialogModule.showProgressDialog;
+    convertTransactionsToMonarchCSV = csvModule.convertTransactionsToMonarchCSV;
+    applyCategoryMapping = categoryModule.applyCategoryMapping;
+    showMonarchCategorySelector = categorySelectorModule.showMonarchCategorySelector;
+    calculateFromDateWithLookback = utilsModule.calculateFromDateWithLookback;
+    saveLastUploadDate = utilsModule.saveLastUploadDate;
 
     // Reset getTransactionIdsFromArray to return empty Set by default
-    const transactionStorageMock = jest.requireMock('../../src/utils/transactionStorage');
+    const transactionStorageMock = transactionStorageModule;
     transactionStorageMock.getTransactionIdsFromArray.mockReturnValue(new Set());
 
     // Setup DOM mocks
@@ -363,7 +375,7 @@ describe('Rogers Bank Upload Service - Core - Error Handling, Balance Upload, Tr
       globalThis.GM_getValue.mockReturnValue(null); // No saved mapping
 
       // Mock no account mapping to trigger account listing
-      const accountServiceMock = jest.requireMock('../../src/services/common/accountService').default;
+      const accountServiceMock = accountServiceModule.default;
       accountServiceMock.getMonarchAccountMapping.mockReturnValue(null);
 
       // Mock error in account mapping
@@ -391,7 +403,7 @@ describe('Rogers Bank Upload Service - Core - Error Handling, Balance Upload, Tr
       globalThis.GM_getValue.mockReturnValue(null); // No saved mapping
 
       // Mock no account mapping to trigger account selector
-      const accountServiceMock = jest.requireMock('../../src/services/common/accountService').default;
+      const accountServiceMock = accountServiceModule.default;
       accountServiceMock.getMonarchAccountMapping.mockReturnValue(null);
 
       monarchApi.listAccounts.mockResolvedValue([
@@ -619,7 +631,7 @@ describe('Rogers Bank Upload Service - Core - Error Handling, Balance Upload, Tr
       });
 
       // Mock that REF1 is already uploaded (via consolidated storage)
-      const transactionStorageMock = jest.requireMock('../../src/utils/transactionStorage');
+      const transactionStorageMock = transactionStorageModule;
       transactionStorageMock.getTransactionIdsFromArray.mockReturnValue(new Set(['REF1']));
 
       fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
@@ -688,7 +700,7 @@ describe('Rogers Bank Upload Service - Core - Error Handling, Balance Upload, Tr
       });
 
       // Mock that both REF1 and REF2 are already uploaded (via consolidated storage)
-      const transactionStorageMock = jest.requireMock('../../src/utils/transactionStorage');
+      const transactionStorageMock = transactionStorageModule;
       transactionStorageMock.getTransactionIdsFromArray.mockReturnValue(new Set(['REF1', 'REF2']));
 
       fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
@@ -843,7 +855,7 @@ describe('Rogers Bank Upload Service - Core - Error Handling, Balance Upload, Tr
       });
 
       // Mock calculateAllCategorySimilarities to return proper data
-      const calculateAllCategorySimilarities = jest.requireMock('../../src/mappers/category').calculateAllCategorySimilarities;
+      const calculateAllCategorySimilarities = categoryModule.calculateAllCategorySimilarities;
       calculateAllCategorySimilarities.mockReturnValue({
         topMatches: [{ category: 'Shopping', score: 0.5 }],
         allScores: [{ category: 'Shopping', score: 0.5 }],
@@ -934,7 +946,7 @@ describe('Rogers Bank Upload Service - Core - Error Handling, Balance Upload, Tr
         callback({ id: 'cat1', name: 'Shopping', assignmentType: 'once' });
       });
 
-      const saveUserCategorySelection = jest.requireMock('../../src/mappers/category').saveUserCategorySelection;
+      const saveUserCategorySelection = categoryModule.saveUserCategorySelection;
       convertTransactionsToMonarchCSV.mockReturnValue('csv,data');
       monarchApi.uploadTransactions.mockResolvedValue(true);
 
@@ -1005,7 +1017,7 @@ describe('Rogers Bank Upload Service - Core - Error Handling, Balance Upload, Tr
         callback({ id: 'cat1', name: 'Shopping', assignmentType: 'rule' });
       });
 
-      const saveUserCategorySelection = jest.requireMock('../../src/mappers/category').saveUserCategorySelection;
+      const saveUserCategorySelection = categoryModule.saveUserCategorySelection;
       convertTransactionsToMonarchCSV.mockReturnValue('csv,data');
       monarchApi.uploadTransactions.mockResolvedValue(true);
 
@@ -1089,7 +1101,7 @@ describe('Rogers Bank Upload Service - Core - Error Handling, Balance Upload, Tr
       monarchApi.uploadBalance.mockResolvedValue(true);
 
       // The purchase's referenceNumber is already in dedup store
-      const transactionStorageMock = jest.requireMock('../../src/utils/transactionStorage');
+      const transactionStorageMock = transactionStorageModule;
       transactionStorageMock.getTransactionIdsFromArray.mockReturnValue(new Set(['SHARED_REF_123']));
 
       // API returns both a purchase and a fee with the SAME referenceNumber
@@ -1164,7 +1176,7 @@ describe('Rogers Bank Upload Service - Core - Error Handling, Balance Upload, Tr
       monarchApi.uploadBalance.mockResolvedValue(true);
 
       // Both the purchase AND the fee's qualified key are in dedup store
-      const transactionStorageMock = jest.requireMock('../../src/utils/transactionStorage');
+      const transactionStorageMock = transactionStorageModule;
       transactionStorageMock.getTransactionIdsFromArray.mockReturnValue(
         new Set(['SHARED_REF_123', 'SHARED_REF_123:fee']),
       );
@@ -1246,7 +1258,7 @@ describe('Rogers Bank Upload Service - Core - Error Handling, Balance Upload, Tr
       convertTransactionsToMonarchCSV.mockReturnValue('csv,data');
       monarchApi.uploadTransactions.mockResolvedValue(true);
 
-      const transactionStorageMock = jest.requireMock('../../src/utils/transactionStorage');
+      const transactionStorageMock = transactionStorageModule;
 
       await uploadRogersBankToMonarch();
 

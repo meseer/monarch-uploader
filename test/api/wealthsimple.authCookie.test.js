@@ -12,13 +12,13 @@
  * the page, so each test loads a fresh copy of the module.
  */
 
-const {
+import {
   OAUTH_COOKIE_NAME,
   buildOAuthCookieValue,
   setWealthsimpleAuthCookie,
   clearWealthsimpleAuthCookie,
   useInMemoryGmStorage,
-} = require('../helpers/wealthsimpleAuthCookie');
+} from '../helpers/wealthsimpleAuthCookie';
 
 jest.mock('../../src/core/state', () => ({
   __esModule: true,
@@ -42,15 +42,11 @@ const ONE_HOUR_MS = 3600000;
 /**
  * Load a fresh copy of the Wealthsimple API module and its mocked collaborators
  */
-function loadFreshModule() {
-  let api;
-  let stateManager;
-  let debugLog;
-  jest.isolateModules(() => {
-    api = require('../../src/api/wealthsimple');
-    stateManager = require('../../src/core/state').default;
-    ({ debugLog } = require('../../src/core/utils'));
-  });
+async function loadFreshModule() {
+  jest.resetModules();
+  const api = await import('../../src/api/wealthsimple');
+  const stateManager = (await import('../../src/core/state')).default;
+  const { debugLog } = await import('../../src/core/utils');
   return { api, stateManager, debugLog };
 }
 
@@ -82,8 +78,8 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
   });
 
   describe('checkAuth reads the cookie on demand', () => {
-    it('is not authenticated when the page has no OAuth cookie', () => {
-      const { api } = loadFreshModule();
+    it('is not authenticated when the page has no OAuth cookie', async () => {
+      const { api } = await loadFreshModule();
 
       expect(api.checkAuth()).toEqual({
         authenticated: false,
@@ -93,7 +89,7 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
       });
     });
 
-    it('returns the token, identity, expiry and profiles from the cookie', () => {
+    it('returns the token, identity, expiry and profiles from the cookie', async () => {
       const expiresAt = new Date(Date.now() + ONE_HOUR_MS).toISOString();
       setWealthsimpleAuthCookie({
         accessToken: 'cookie-token',
@@ -102,7 +98,7 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
         investProfile: 'invest-456',
         tradeProfile: 'trade-789',
       });
-      const { api } = loadFreshModule();
+      const { api } = await loadFreshModule();
 
       expect(api.checkAuth()).toEqual({
         authenticated: true,
@@ -114,9 +110,9 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
       });
     });
 
-    it('defaults missing profiles to null', () => {
+    it('defaults missing profiles to null', async () => {
       setWealthsimpleAuthCookie();
-      const { api } = loadFreshModule();
+      const { api } = await loadFreshModule();
 
       const status = api.checkAuth();
 
@@ -124,8 +120,8 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
       expect(status.tradeProfile).toBeNull();
     });
 
-    it('re-reads the cookie on every call, with no cached copy', () => {
-      const { api } = loadFreshModule();
+    it('re-reads the cookie on every call, with no cached copy', async () => {
+      const { api } = await loadFreshModule();
       setWealthsimpleAuthCookie({ accessToken: 'first-token' });
       expect(api.checkAuth().token).toBe('first-token');
 
@@ -138,19 +134,19 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
       expect(api.checkAuth().authenticated).toBe(false);
     });
 
-    it('finds the cookie among other cookies and ignores look-alike names', () => {
+    it('finds the cookie among other cookies and ignores look-alike names', async () => {
       const value = buildOAuthCookieValue({ accessToken: 'real-token' });
       document.cookie = `x${OAUTH_COOKIE_NAME}=${buildOAuthCookieValue({ accessToken: 'decoy' })}; `
         + `theme=dark; ${OAUTH_COOKIE_NAME}=${value}; other=1`;
-      const { api } = loadFreshModule();
+      const { api } = await loadFreshModule();
 
       expect(api.checkAuth().token).toBe('real-token');
     });
 
-    it('reports an expired token as expired, without the token', () => {
+    it('reports an expired token as expired, without the token', async () => {
       const expiresAt = new Date(Date.now() - 1000).toISOString();
       setWealthsimpleAuthCookie({ expiresAt });
-      const { api } = loadFreshModule();
+      const { api } = await loadFreshModule();
 
       expect(api.checkAuth()).toEqual({
         authenticated: false,
@@ -161,22 +157,22 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
       });
     });
 
-    it('is not authenticated when the cookie has no access token', () => {
+    it('is not authenticated when the cookie has no access token', async () => {
       setWealthsimpleAuthCookie({ accessToken: '' });
-      const { api } = loadFreshModule();
+      const { api } = await loadFreshModule();
 
       expect(api.checkAuth().authenticated).toBe(false);
     });
 
-    it('treats a malformed cookie as signed out and does not log its contents', () => {
+    it('treats a malformed cookie as signed out and does not log its contents', async () => {
       document.cookie = `${OAUTH_COOKIE_NAME}=secret-fragment-not-json`;
-      const { api, debugLog } = loadFreshModule();
+      const { api, debugLog } = await loadFreshModule();
 
       expect(api.checkAuth().authenticated).toBe(false);
       expect(JSON.stringify(debugLog.mock.calls)).not.toContain('secret-fragment');
     });
 
-    it('ignores a token an older version left in wealthsimple_config', () => {
+    it('ignores a token an older version left in wealthsimple_config', async () => {
       store.set('wealthsimple_config', JSON.stringify({
         auth: {
           accessToken: 'stored-token',
@@ -184,14 +180,14 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
           expiresAt: new Date(Date.now() + ONE_HOUR_MS).toISOString(),
         },
       }));
-      const { api } = loadFreshModule();
+      const { api } = await loadFreshModule();
 
       expect(api.checkAuth().authenticated).toBe(false);
     });
 
     it('sends the token from the current cookie with each request', async () => {
       respondWith(200);
-      const { api } = loadFreshModule();
+      const { api } = await loadFreshModule();
 
       setWealthsimpleAuthCookie({ accessToken: 'first-token' });
       await api.makeGraphQLQuery('TestQuery', 'query { test }', {});
@@ -210,7 +206,7 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
       // jsdom's localStorage uses Storage.prototype; test/setup.js replaces
       // sessionStorage with a mock whose setItem is already a jest.fn
       const localSetItem = jest.spyOn(Storage.prototype, 'setItem');
-      const { api } = loadFreshModule();
+      const { api } = await loadFreshModule();
 
       api.setupTokenMonitoring();
       jest.advanceTimersByTime(5000);
@@ -233,10 +229,10 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
   });
 
   describe('setupTokenMonitoring', () => {
-    it('publishes the current status at once, without the token', () => {
+    it('publishes the current status at once, without the token', async () => {
       const expiresAt = new Date(Date.now() + ONE_HOUR_MS).toISOString();
       setWealthsimpleAuthCookie({ accessToken: 'secret-access-token', identityId: 'identity-abc', expiresAt });
-      const { api, stateManager } = loadFreshModule();
+      const { api, stateManager } = await loadFreshModule();
 
       api.setupTokenMonitoring();
 
@@ -249,9 +245,9 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
       expect(JSON.stringify(stateManager.setWealthsimpleAuth.mock.calls)).not.toContain('secret-access-token');
     });
 
-    it('does not publish again while nothing changes', () => {
+    it('does not publish again while nothing changes', async () => {
       setWealthsimpleAuthCookie();
-      const { api, stateManager } = loadFreshModule();
+      const { api, stateManager } = await loadFreshModule();
 
       api.setupTokenMonitoring();
       jest.advanceTimersByTime(30000);
@@ -259,8 +255,8 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
       expect(stateManager.setWealthsimpleAuth).toHaveBeenCalledTimes(1);
     });
 
-    it('publishes when the user signs in, the token is refreshed, and the user signs out', () => {
-      const { api, stateManager } = loadFreshModule();
+    it('publishes when the user signs in, the token is refreshed, and the user signs out', async () => {
+      const { api, stateManager } = await loadFreshModule();
       api.setupTokenMonitoring();
       expect(stateManager.setWealthsimpleAuth).toHaveBeenLastCalledWith(null);
 
@@ -284,9 +280,9 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
       expect(stateManager.setWealthsimpleAuth).toHaveBeenCalledTimes(4);
     });
 
-    it('publishes when the token expires while the page is open', () => {
+    it('publishes when the token expires while the page is open', async () => {
       setWealthsimpleAuthCookie({ expiresAt: new Date(Date.now() + 5000).toISOString() });
-      const { api, stateManager } = loadFreshModule();
+      const { api, stateManager } = await loadFreshModule();
       api.setupTokenMonitoring();
       expect(stateManager.setWealthsimpleAuth).toHaveBeenLastCalledWith(
         expect.objectContaining({ authenticated: true }),
@@ -297,8 +293,8 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
       expect(stateManager.setWealthsimpleAuth).toHaveBeenLastCalledWith(null);
     });
 
-    it('re-checks the cookie when the tab becomes visible again', () => {
-      const { api, stateManager } = loadFreshModule();
+    it('re-checks the cookie when the tab becomes visible again', async () => {
+      const { api, stateManager } = await loadFreshModule();
       api.setupTokenMonitoring();
       setWealthsimpleAuthCookie();
 
@@ -309,10 +305,10 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
       );
     });
 
-    it('starts only once when called again', () => {
+    it('starts only once when called again', async () => {
       const setIntervalSpy = jest.spyOn(global, 'setInterval');
       setWealthsimpleAuthCookie();
-      const { api, stateManager } = loadFreshModule();
+      const { api, stateManager } = await loadFreshModule();
 
       api.setupTokenMonitoring();
       api.setupTokenMonitoring();
@@ -322,8 +318,8 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
       setIntervalSpy.mockRestore();
     });
 
-    it('keeps polling when a state listener throws', () => {
-      const { api, stateManager } = loadFreshModule();
+    it('keeps polling when a state listener throws', async () => {
+      const { api, stateManager } = await loadFreshModule();
       stateManager.setWealthsimpleAuth.mockImplementationOnce(() => {
         throw new Error('listener failed');
       });
@@ -342,7 +338,7 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
     it('stops using the rejected token and publishes the signed-out state', async () => {
       setWealthsimpleAuthCookie({ accessToken: 'rejected-token' });
       respondWith(401);
-      const { api, stateManager } = loadFreshModule();
+      const { api, stateManager } = await loadFreshModule();
 
       await expect(api.makeGraphQLQuery('TestQuery', 'query { test }', {}))
         .rejects.toThrow('Auth token expired. Please refresh the page.');
@@ -359,7 +355,7 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
     it('uses the token again once the page writes a new cookie value', async () => {
       setWealthsimpleAuthCookie({ accessToken: 'rejected-token' });
       respondWith(401);
-      const { api } = loadFreshModule();
+      const { api } = await loadFreshModule();
       await expect(api.makeGraphQLQuery('TestQuery', 'query { test }', {})).rejects.toThrow();
 
       setWealthsimpleAuthCookie({ accessToken: 'refreshed-token' });
@@ -373,7 +369,7 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
     it('lets monitoring publish the refreshed token after a rejection', async () => {
       setWealthsimpleAuthCookie({ accessToken: 'rejected-token' });
       respondWith(401);
-      const { api, stateManager } = loadFreshModule();
+      const { api, stateManager } = await loadFreshModule();
       api.setupTokenMonitoring();
       await expect(api.makeGraphQLQuery('TestQuery', 'query { test }', {})).rejects.toThrow();
       jest.advanceTimersByTime(3000);
@@ -393,7 +389,7 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
       GM_xmlhttpRequest.mockImplementation(({ onload }) => {
         deliverResponse = onload;
       });
-      const { api } = loadFreshModule();
+      const { api } = await loadFreshModule();
 
       const request = api.makeGraphQLQuery('TestQuery', 'query { test }', {});
       // Handled below; this only stops an early failure leaving it unhandled

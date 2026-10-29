@@ -7,6 +7,9 @@ import {
   isMonarchConnected,
   ensureMonarchAuthentication,
 } from '../../src/ui/components/monarchLoginLink';
+import * as toastModule from '../../src/ui/toast';
+import * as stateModule from '../../src/core/state';
+import * as monarchLoginLinkModule from '../../src/ui/components/monarchLoginLink';
 
 // Mock dependencies
 jest.mock('../../src/core/utils', () => ({
@@ -119,7 +122,7 @@ describe('Monarch Login Link Component', () => {
 
     test('should handle popup blocked scenario', () => {
       global.window.open.mockReturnValue(null);
-      const toast = jest.requireMock('../../src/ui/toast').default;
+      const toast = toastModule.default;
 
       const link = createMonarchLoginLink();
       const clickEvent = new Event('click');
@@ -139,7 +142,7 @@ describe('Monarch Login Link Component', () => {
       global.window.open.mockImplementation(() => {
         throw new Error('Popup error');
       });
-      const toast = jest.requireMock('../../src/ui/toast').default;
+      const toast = toastModule.default;
 
       const link = createMonarchLoginLink();
       const clickEvent = new Event('click');
@@ -228,7 +231,7 @@ describe('Monarch Login Link Component', () => {
 
     test('should show toast and open popup if not connected', async () => {
       global.GM_getValue.mockReturnValue(null);
-      const toast = jest.requireMock('../../src/ui/toast').default;
+      const toast = toastModule.default;
       const mockPopup = { closed: false, close: jest.fn() };
       global.window.open.mockReturnValue(mockPopup);
 
@@ -246,7 +249,7 @@ describe('Monarch Login Link Component', () => {
 
     test('should use default context message', async () => {
       global.GM_getValue.mockReturnValue(null);
-      const toast = jest.requireMock('../../src/ui/toast').default;
+      const toast = toastModule.default;
       const mockPopup = { closed: false, close: jest.fn() };
       global.window.open.mockReturnValue(mockPopup);
 
@@ -318,8 +321,8 @@ describe('Monarch Login Link Component', () => {
       const mockPopup = { closed: false, close: jest.fn() };
       global.window.open.mockReturnValue(mockPopup);
       const onSuccess = jest.fn();
-      const toast = jest.requireMock('../../src/ui/toast').default;
-      const stateManager = jest.requireMock('../../src/core/state');
+      const toast = toastModule.default;
+      const stateManager = stateModule;
 
       // Initially no token
       global.GM_getValue.mockReturnValue(null);
@@ -375,7 +378,7 @@ describe('Monarch Login Link Component', () => {
       const mockPopup = { closed: false, close: jest.fn() };
       global.window.open.mockReturnValue(mockPopup);
       const onSuccess = jest.fn();
-      const toast = jest.requireMock('../../src/ui/toast').default;
+      const toast = toastModule.default;
 
       global.GM_getValue.mockReturnValue(null);
 
@@ -404,7 +407,7 @@ describe('Monarch Login Link Component', () => {
     test('should handle timeout after 10 minutes', () => {
       const mockPopup = { closed: false, close: jest.fn() };
       global.window.open.mockReturnValue(mockPopup);
-      const toast = jest.requireMock('../../src/ui/toast').default;
+      const toast = toastModule.default;
 
       global.GM_getValue.mockReturnValue(null);
 
@@ -428,7 +431,7 @@ describe('Monarch Login Link Component', () => {
     test('should handle popup close error during timeout', () => {
       const mockPopup = { closed: false, close: jest.fn(() => { throw new Error('Close error'); }) };
       global.window.open.mockReturnValue(mockPopup);
-      const toast = jest.requireMock('../../src/ui/toast').default;
+      const toast = toastModule.default;
 
       global.GM_getValue.mockReturnValue(null);
 
@@ -454,7 +457,7 @@ describe('Monarch Login Link Component', () => {
       const mockPopup = { closed: false, close: jest.fn(() => { throw new Error('Close error'); }) };
       global.window.open.mockReturnValue(mockPopup);
       const onSuccess = jest.fn();
-      const toast = jest.requireMock('../../src/ui/toast').default;
+      const toast = toastModule.default;
 
       global.GM_getValue.mockReturnValue(null);
 
@@ -509,7 +512,7 @@ describe('Monarch Login Link Component', () => {
       const mockPopup = { closed: false, close: jest.fn() };
       global.window.open.mockReturnValue(mockPopup);
       const onSuccess = jest.fn(() => { throw new Error('Callback error'); });
-      const toast = jest.requireMock('../../src/ui/toast').default;
+      const toast = toastModule.default;
 
       global.GM_getValue.mockReturnValue(null);
 
@@ -539,7 +542,7 @@ describe('Monarch Login Link Component', () => {
     test('should handle missing onSuccess callback', () => {
       const mockPopup = { closed: false, close: jest.fn() };
       global.window.open.mockReturnValue(mockPopup);
-      const toast = jest.requireMock('../../src/ui/toast').default;
+      const toast = toastModule.default;
 
       global.GM_getValue.mockReturnValue(null);
 
@@ -603,7 +606,7 @@ describe('Monarch Login Link Component', () => {
     test('should show loading toast when opening popup', () => {
       const mockPopup = { closed: false, close: jest.fn() };
       global.window.open.mockReturnValue(mockPopup);
-      const toast = jest.requireMock('../../src/ui/toast').default;
+      const toast = toastModule.default;
 
       const link = createMonarchLoginLink();
       const clickEvent = new Event('click');
@@ -622,7 +625,7 @@ describe('Monarch Login Link Component', () => {
 
   describe('default export', () => {
     test('should export default object with required methods', () => {
-      const defaultExport = require('../../src/ui/components/monarchLoginLink').default;
+      const defaultExport = monarchLoginLinkModule.default;
 
       expect(defaultExport).toHaveProperty('createMonarchLoginLink');
       expect(defaultExport).toHaveProperty('isMonarchConnected');

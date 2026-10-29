@@ -9,7 +9,7 @@
 import wealthsimpleApi from '../../src/api/wealthsimple';
 import { API } from '../../src/core/config';
 
-const { setupWealthsimpleAuth } = require('../helpers/wealthsimpleAuthCookie');
+import { setupWealthsimpleAuth } from '../helpers/wealthsimpleAuthCookie';
 
 global.GM_getValue = jest.fn();
 global.GM_setValue = jest.fn();

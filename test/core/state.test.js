@@ -3,6 +3,8 @@
  */
 
 import stateManager, { StateManager } from '../../src/core/state';
+import * as utilsModule from '../../src/core/utils';
+import * as stateModule from '../../src/core/state';
 
 // Mock the utils module
 jest.mock('../../src/core/utils', () => ({
@@ -149,7 +151,7 @@ describe('StateManager', () => {
 
     it('should warn about unknown UI elements', () => {
       const mockElement = document.createElement('div');
-      const mockDebugLog = require('../../src/core/utils').debugLog;
+      const mockDebugLog = utilsModule.debugLog;
 
       testStateManager.setUiElement('unknownElement', mockElement);
 
@@ -504,7 +506,7 @@ describe('StateManager', () => {
   describe('singleton instance', () => {
     it('should export the same singleton instance', () => {
       // Import again to get the same singleton
-      const stateManager2 = require('../../src/core/state').default;
+      const stateManager2 = stateModule.default;
 
       expect(stateManager).toBe(stateManager2);
     });
@@ -513,7 +515,7 @@ describe('StateManager', () => {
       stateManager.setAccount('singleton-test', 'Singleton Test');
 
       // Import again to get the same singleton
-      const stateManager2 = require('../../src/core/state').default;
+      const stateManager2 = stateModule.default;
       const state = stateManager2.getState();
 
       expect(state.currentAccount.id).toBe('singleton-test');

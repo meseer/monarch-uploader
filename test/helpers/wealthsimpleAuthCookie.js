@@ -106,7 +106,7 @@ function useInMemoryGmStorage(initial = {}) {
   return store;
 }
 
-module.exports = {
+export {
   OAUTH_COOKIE_NAME,
   TEST_ACCESS_TOKEN,
   buildOAuthCookieValue,

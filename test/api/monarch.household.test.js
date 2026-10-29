@@ -15,7 +15,7 @@ jest.mock('../../src/api/monarch', () => ({
   callMonarchGraphQL: jest.fn(),
 }));
 
-const { callMonarchGraphQL } = require('../../src/api/monarch');
+import { callMonarchGraphQL } from '../../src/api/monarch';
 
 /** Real-shaped response from Common_GetHouseholdMembers */
 const singleMemberResponse = {

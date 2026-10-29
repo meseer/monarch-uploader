@@ -137,16 +137,25 @@ import {
   convertCanadaLifeDataToCSV,
   CanadaLifeUploadError,
 } from '../../src/services/canadalife-upload';
+import * as utilsModule from '../../src/core/utils';
+import * as canadalifeModule from '../../src/api/canadalife';
+import * as monarchLoginLinkModule from '../../src/ui/components/monarchLoginLink';
+import * as monarchModule from '../../src/api/monarch';
+import * as accountServiceModule from '../../src/services/common/accountService';
+import * as toastModule from '../../src/ui/toast';
+import * as progressDialogModule from '../../src/ui/components/progressDialog';
+import * as datePickerModule from '../../src/ui/components/datePicker';
+import * as stateModule from '../../src/core/state';
 
 describe('Canada Life Upload Service', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     // clearAllMocks keeps implementations, so a per-test override would otherwise
     // leak into every later test in this file.
-    jest.requireMock('../../src/core/utils').parseLocalDate.mockImplementation(mockParseLocalDate);
+    utilsModule.parseLocalDate.mockImplementation(mockParseLocalDate);
     // Default to a successful, complete activity fetch so the sync-date gate does not
     // hold the watermark back in tests that are not about an incomplete fetch.
-    jest.requireMock('../../src/api/canadalife').default
+    canadalifeModule.default
       .loadAccountActivityReport.mockResolvedValue({ activities: [] });
     document.body.innerHTML = '';
   });
@@ -191,7 +200,7 @@ describe('Canada Life Upload Service', () => {
     });
 
     test('should call debugLog during conversion', () => {
-      const utils = jest.requireMock('../../src/core/utils');
+      const utils = utilsModule;
       const historicalData = {
         data: [
           ['Date', 'Balance', 'Account Name'],
@@ -207,7 +216,7 @@ describe('Canada Life Upload Service', () => {
     });
 
     test('should call debugLog on error', () => {
-      const utils = jest.requireMock('../../src/core/utils');
+      const utils = utilsModule;
 
       // Import after mocking to ensure the mocks are applied
       const { convertCanadaLifeDataToCSV: convert } = jest.requireActual('../../src/services/canadalife-upload');
@@ -298,10 +307,10 @@ describe('Canada Life Upload Service', () => {
 
     beforeEach(() => {
       // Get the mocked modules that were set up at the top level
-      ensureMonarchAuthentication = require('../../src/ui/components/monarchLoginLink').ensureMonarchAuthentication;
-      canadalife = require('../../src/api/canadalife').default;
-      monarchApi = require('../../src/api/monarch').default;
-      accountService = require('../../src/services/common/accountService').default;
+      ensureMonarchAuthentication = monarchLoginLinkModule.ensureMonarchAuthentication;
+      canadalife = canadalifeModule.default;
+      monarchApi = monarchModule.default;
+      accountService = accountServiceModule.default;
 
       // Default: accountService.getMonarchAccountMapping returns stored monarch account
       // This simulates having an existing account mapping in consolidated storage
@@ -312,11 +321,11 @@ describe('Canada Life Upload Service', () => {
         valid: true,
         account: { id: 'monarch123', displayName: 'Investment Account' },
       });
-      toast = require('../../src/ui/toast').default;
-      showProgressDialog = require('../../src/ui/components/progressDialog').showProgressDialog;
-      utils = require('../../src/core/utils');
-      showDatePickerPromise = require('../../src/ui/components/datePicker').showDatePickerPromise;
-      stateManager = require('../../src/core/state').default;
+      toast = toastModule.default;
+      showProgressDialog = progressDialogModule.showProgressDialog;
+      utils = utilsModule;
+      showDatePickerPromise = datePickerModule.showDatePickerPromise;
+      stateManager = stateModule.default;
 
       mockProgressDialog = {
         updateProgress: jest.fn(),
@@ -1068,9 +1077,9 @@ describe('Canada Life Upload Service', () => {
     let toast;
 
     beforeEach(() => {
-      ensureMonarchAuthentication = jest.requireMock('../../src/ui/components/monarchLoginLink').ensureMonarchAuthentication;
-      canadalife = jest.requireMock('../../src/api/canadalife').default;
-      toast = jest.requireMock('../../src/ui/toast').default;
+      ensureMonarchAuthentication = monarchLoginLinkModule.ensureMonarchAuthentication;
+      canadalife = canadalifeModule.default;
+      toast = toastModule.default;
     });
 
     test('should return early if authentication fails', async () => {
@@ -1092,7 +1101,7 @@ describe('Canada Life Upload Service', () => {
     });
 
     test('should handle error during process', async () => {
-      const mockToast = jest.requireMock('../../src/ui/toast').default;
+      const mockToast = toastModule.default;
       ensureMonarchAuthentication.mockResolvedValue(true);
       canadalife.loadCanadaLifeAccounts.mockRejectedValue(new Error('API error'));
 
@@ -1102,7 +1111,7 @@ describe('Canada Life Upload Service', () => {
     });
 
     test('should show loading toast', async () => {
-      const mockToast = jest.requireMock('../../src/ui/toast').default;
+      const mockToast = toastModule.default;
       ensureMonarchAuthentication.mockResolvedValue(true);
       canadalife.loadCanadaLifeAccounts.mockResolvedValue([]);
 

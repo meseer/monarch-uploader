@@ -11,6 +11,7 @@ import {
   convertQuestradeOrdersToMonarchCSV,
   parseCSV,
 } from '../../src/utils/csv';
+import * as categoryModule from '../../src/mappers/category';
 
 // Mock dependencies
 jest.mock('../../src/core/utils', () => ({
@@ -300,7 +301,7 @@ describe('CSV Conversion Utilities', () => {
     });
 
     test('should handle category mapping fallback', () => {
-      const { applyCategoryMapping } = jest.requireMock('../../src/mappers/category');
+      const { applyCategoryMapping } = categoryModule;
       applyCategoryMapping.mockReturnValue({ id: 'cat123', name: 'Test Category' });
 
       const transactions = [

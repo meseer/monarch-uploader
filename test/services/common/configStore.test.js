@@ -29,6 +29,7 @@ import {
 import { registerIntegration, clearRegistry } from '../../../src/core/integrationRegistry';
 import { getLookbackForInstitution } from '../../../src/core/utils';
 import mbnaManifest from '../../../src/integrations/mbna/manifest';
+import * as configStoreModule2 from '../../../src/services/common/configStore';
 
 describe('configStore', () => {
   let gmStore;
@@ -140,7 +141,7 @@ describe('configStore', () => {
 
   describe('legacy auth cleanup', () => {
     it('has no function that writes or reads an auth section (ADR-010)', () => {
-      const configStoreModule = require('../../../src/services/common/configStore');
+      const configStoreModule = configStoreModule2;
 
       expect(configStoreModule.setAuth).toBeUndefined();
       expect(configStoreModule.getAuth).toBeUndefined();

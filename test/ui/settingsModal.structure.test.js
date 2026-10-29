@@ -5,6 +5,13 @@
 
 import { createSettingsModal, showSettingsModal } from '../../src/ui/components/settingsModal';
 import stateManager from '../../src/core/state';
+import * as toastModule from '../../src/ui/toast';
+import * as authModule from '../../src/services/auth';
+import * as authModule2 from '../../src/services/questrade/auth';
+import * as monarchLoginLinkModule from '../../src/ui/components/monarchLoginLink';
+import * as configStoreModule from '../../src/services/common/configStore';
+import * as utilsModule from '../../src/core/utils';
+import * as accountServiceModule from '../../src/services/common/accountService';
 
 // Mock dependencies
 jest.mock('../../src/core/config', () => ({
@@ -217,10 +224,10 @@ describe('Settings Modal Component', () => {
     jest.clearAllMocks();
     document.body.innerHTML = '';
 
-    toast = jest.requireMock('../../src/ui/toast').default;
-    checkMonarchAuth = jest.requireMock('../../src/services/auth').checkMonarchAuth;
-    checkQuestradeAuth = jest.requireMock('../../src/services/questrade/auth').checkQuestradeAuth;
-    createMonarchLoginLink = jest.requireMock('../../src/ui/components/monarchLoginLink').createMonarchLoginLink;
+    toast = toastModule.default;
+    checkMonarchAuth = authModule.checkMonarchAuth;
+    checkQuestradeAuth = authModule2.checkQuestradeAuth;
+    createMonarchLoginLink = monarchLoginLinkModule.createMonarchLoginLink;
 
     // Setup default mock values
     localStorageMock.getItem.mockReturnValue(null);
@@ -397,7 +404,7 @@ describe('Settings Modal Component', () => {
 
       afterEach(() => {
         stateManager.setRogersBankAuth(null);
-        jest.requireMock('../../src/services/common/configStore').getAuth.mockImplementation(() => ({}));
+        configStoreModule.getAuth.mockImplementation(() => ({}));
       });
 
       test('should show connected status when a token was captured on this page', () => {
@@ -409,7 +416,7 @@ describe('Settings Modal Component', () => {
       });
 
       test('should ignore a Rogers Bank token left in storage by an older version', () => {
-        const { getAuth } = jest.requireMock('../../src/services/common/configStore');
+        const { getAuth } = configStoreModule;
         getAuth.mockImplementation((integrationId) => (
           integrationId === 'rogersbank' ? { authToken: 'stored-token' } : {}
         ));
@@ -427,7 +434,7 @@ describe('Settings Modal Component', () => {
 
       afterEach(() => {
         stateManager.setWealthsimpleAuth(null);
-        jest.requireMock('../../src/services/common/configStore').getAuth.mockImplementation(() => ({}));
+        configStoreModule.getAuth.mockImplementation(() => ({}));
       });
 
       test('should show connected status when this page has a valid token', () => {
@@ -449,7 +456,7 @@ describe('Settings Modal Component', () => {
       });
 
       test('should ignore a Wealthsimple token left in storage by an older version', () => {
-        const { getAuth } = jest.requireMock('../../src/services/common/configStore');
+        const { getAuth } = configStoreModule;
         getAuth.mockImplementation((integrationId) => (
           integrationId === 'wealthsimple' ? { accessToken: 'stored-token' } : {}
         ));
@@ -713,7 +720,7 @@ describe('Settings Modal Component', () => {
     });
 
     test('should load current lookback value for institution', () => {
-      const { getLookbackForInstitution } = jest.requireMock('../../src/core/utils');
+      const { getLookbackForInstitution } = utilsModule;
       getLookbackForInstitution.mockReturnValue(5);
 
       globalThis.GM_getValue.mockImplementation((key, defaultValue) => {
@@ -732,7 +739,7 @@ describe('Settings Modal Component', () => {
     });
 
     test('should save lookback days on blur via configStore', () => {
-      const { setSetting } = jest.requireMock('../../src/services/common/configStore');
+      const { setSetting } = configStoreModule;
 
       modal = createSettingsModal();
 
@@ -756,7 +763,7 @@ describe('Settings Modal Component', () => {
     // Regression: a dropped configStore write used to still toast success, which
     // hid the fact that the lookback period was never persisted.
     test('should report an error instead of success when the write fails', () => {
-      const { setSetting } = jest.requireMock('../../src/services/common/configStore');
+      const { setSetting } = configStoreModule;
       setSetting.mockReturnValueOnce(false);
 
       modal = createSettingsModal();
@@ -781,7 +788,7 @@ describe('Settings Modal Component', () => {
     });
 
     test('should save lookback days on enter key via configStore', () => {
-      const { setSetting } = jest.requireMock('../../src/services/common/configStore');
+      const { setSetting } = configStoreModule;
 
       modal = createSettingsModal();
 
@@ -818,7 +825,7 @@ describe('Settings Modal Component', () => {
     });
 
     test('should reset to default when reset button clicked via configStore', () => {
-      const { setSetting } = jest.requireMock('../../src/services/common/configStore');
+      const { setSetting } = configStoreModule;
 
       modal = createSettingsModal();
 
@@ -878,7 +885,7 @@ describe('Settings Modal Component', () => {
 
     test('should display account mappings when available', () => {
       // Mock accountService to return accounts
-      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      const accountService = accountServiceModule.default;
       accountService.getAccounts.mockReturnValue([{
         questradeAccount: {
           id: '12345',
@@ -906,7 +913,7 @@ describe('Settings Modal Component', () => {
 
     test('should handle account mapping card expansion', () => {
       // Mock accountService to return accounts
-      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      const accountService = accountServiceModule.default;
       accountService.getAccounts.mockReturnValue([{
         questradeAccount: {
           id: '12345',
@@ -938,7 +945,7 @@ describe('Settings Modal Component', () => {
 
     test('should handle account mapping deletion with confirmation', () => {
       // Mock accountService to return accounts
-      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      const accountService = accountServiceModule.default;
       accountService.getAccounts.mockReturnValue([{
         questradeAccount: {
           id: '12345',
@@ -967,7 +974,7 @@ describe('Settings Modal Component', () => {
   describe('Last Update Date Management', () => {
     test('should display last synced date when available', () => {
       // Mock accountService to return accounts with lastSyncDate
-      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      const accountService = accountServiceModule.default;
       accountService.getAccounts.mockReturnValue([{
         questradeAccount: {
           id: '12345',
@@ -994,7 +1001,7 @@ describe('Settings Modal Component', () => {
 
     test('should not show last sync info when no date exists', () => {
       // Mock accountService to return accounts without lastSyncDate
-      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      const accountService = accountServiceModule.default;
       accountService.getAccounts.mockReturnValue([{
         questradeAccount: {
           id: '12345',
@@ -1021,7 +1028,7 @@ describe('Settings Modal Component', () => {
 
     test('should show delete button for accounts', () => {
       // Mock accountService to return accounts
-      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      const accountService = accountServiceModule.default;
       accountService.getAccounts.mockReturnValue([{
         questradeAccount: {
           id: '12345',
@@ -1048,7 +1055,7 @@ describe('Settings Modal Component', () => {
 
     test('should handle accounts without sync date', () => {
       // Mock accountService to return accounts
-      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      const accountService = accountServiceModule.default;
       accountService.getAccounts.mockReturnValue([{
         questradeAccount: {
           id: '12345',

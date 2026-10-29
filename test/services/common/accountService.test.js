@@ -21,6 +21,7 @@ import {
 } from '../../../src/services/common/accountService';
 import { INTEGRATIONS, ACCOUNT_SETTINGS } from '../../../src/core/integrationCapabilities';
 import { STORAGE, TRANSACTION_RETENTION_DEFAULTS } from '../../../src/core/config';
+import * as accountServiceModule from '../../../src/services/common/accountService';
 
 describe('Account Service', () => {
   // Create local storage simulation for GM functions
@@ -510,7 +511,7 @@ describe('Account Service', () => {
   });
 
   describe('getMonarchAccountMapping', () => {
-    const { getMonarchAccountMapping } = require('../../../src/services/common/accountService');
+    const { getMonarchAccountMapping } = accountServiceModule;
 
     test('should return mapping from consolidated storage when available', () => {
       // Set up consolidated storage with mapping

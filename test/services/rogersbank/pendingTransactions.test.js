@@ -37,7 +37,8 @@ jest.mock('../../../src/api/monarch', () => ({
 }));
 
 // Use Node.js crypto for real SHA-256 in the Web Crypto API mock
-const nodeCrypto = require('crypto');
+import * as nodeCrypto from 'crypto';
+import * as monarchModule from '../../../src/api/monarch';
 
 const mockDigest = jest.fn();
 Object.defineProperty(global, 'crypto', {
@@ -700,7 +701,7 @@ describe('separateAndDeduplicateTransactions', () => {
 // ============================================================
 
 describe('reconcileRogersPendingTransactions', () => {
-  const monarchApi = require('../../../src/api/monarch').default;
+  const monarchApi = monarchModule.default;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -1020,7 +1021,7 @@ describe('buildFxNotes', () => {
 // ============================================================
 
 describe('reconcileRogersPendingTransactions - FX enrichment', () => {
-  const monarchApi = require('../../../src/api/monarch').default;
+  const monarchApi = monarchModule.default;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -1177,7 +1178,7 @@ describe('reconcileRogersPendingTransactions - FX enrichment', () => {
 // ============================================================
 
 describe('reconcileRogersPendingTransactions — settled ref shape', () => {
-  const monarchApi = require('../../../src/api/monarch').default;
+  const monarchApi = monarchModule.default;
 
   beforeEach(() => {
     jest.clearAllMocks();

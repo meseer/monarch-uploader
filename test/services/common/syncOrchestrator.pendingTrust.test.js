@@ -107,16 +107,13 @@ jest.mock('../../../src/services/common/cardholders', () => ({
 
 // ── Setup ───────────────────────────────────────────────────
 
-const monarchApi = require('../../../src/api/monarch').default;
-const {
-  fetchMonarchPendingTransactions,
-  reconcileFetchedPendingTransactions,
-  generatePendingTransactionId,
-} = require('../../../src/services/common/pendingReconciliation');
+import monarchApi from '../../../src/api/monarch';
+import { fetchMonarchPendingTransactions, reconcileFetchedPendingTransactions, generatePendingTransactionId } from '../../../src/services/common/pendingReconciliation';
+import * as cryptoModule from 'crypto';
 
 beforeAll(() => {
   if (typeof globalThis.crypto === 'undefined' || !globalThis.crypto.subtle) {
-    const { webcrypto } = require('crypto');
+    const { webcrypto } = cryptoModule;
     globalThis.crypto = webcrypto;
   }
 });

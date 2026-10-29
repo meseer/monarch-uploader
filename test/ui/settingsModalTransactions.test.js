@@ -33,10 +33,10 @@ jest.mock('../../src/ui/components/settingsModalHelpers', () => ({
   showConfirmDialog: jest.fn(() => Promise.resolve(true)),
 }));
 
-const { getCapabilities } = require('../../src/core/integrationCapabilities');
-const accountService = require('../../src/services/common/accountService').default;
-const { showConfirmDialog } = require('../../src/ui/components/settingsModalHelpers');
-const toast = require('../../src/ui/toast').default;
+import { getCapabilities } from '../../src/core/integrationCapabilities';
+import accountService from '../../src/services/common/accountService';
+import { showConfirmDialog } from '../../src/ui/components/settingsModalHelpers';
+import toast from '../../src/ui/toast';
 
 const INTEGRATION = 'mbna';
 const ACCOUNT = 'acc-1';

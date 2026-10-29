@@ -67,10 +67,10 @@ jest.mock('../../../src/services/common/cardholderMatching', () => ({
   findBestMemberMatch: jest.fn(() => null),
 }));
 
-const accountService = require('../../../src/services/common/accountService').default;
-const { getHouseholdMembers } = require('../../../src/api/monarchHousehold');
-const { hasCapability, getSettingDefault } = require('../../../src/core/integrationCapabilities');
-const { findBestMemberMatch } = require('../../../src/services/common/cardholderMatching');
+import accountService from '../../../src/services/common/accountService';
+import { getHouseholdMembers } from '../../../src/api/monarchHousehold';
+import { hasCapability, getSettingDefault } from '../../../src/core/integrationCapabilities';
+import { findBestMemberMatch } from '../../../src/services/common/cardholderMatching';
 
 // ── Fixtures ────────────────────────────────────────────────
 

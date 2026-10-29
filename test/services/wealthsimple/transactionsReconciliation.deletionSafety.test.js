@@ -70,7 +70,7 @@ jest.mock('../../../src/mappers/category', () => ({
 
 global.GM_getValue = jest.fn(() => '[]');
 
-const mockMonarchApi = require('../../../src/api/monarch').default;
+import mockMonarchApi from '../../../src/api/monarch';
 
 beforeEach(() => {
   jest.clearAllMocks();

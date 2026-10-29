@@ -12,6 +12,7 @@ import toast from '../../src/ui/toast';
 import * as accountService from '../../src/services/wealthsimple/account';
 import wealthsimpleApi from '../../src/api/wealthsimple';
 import { showProgressDialog } from '../../src/ui/components/progressDialog';
+import * as positionsModule from '../../src/services/wealthsimple/positions';
 
 // Mock dependencies
 jest.mock('../../src/ui/toast');
@@ -496,7 +497,7 @@ describe('Wealthsimple Upload Service', () => {
   });
 
   describe('buildSyncStepsForAccount', () => {
-    const { isInvestmentAccount } = require('../../src/services/wealthsimple/positions');
+    const { isInvestmentAccount } = positionsModule;
 
     it('includes all steps for SELF_DIRECTED_NON_REGISTERED_MARGIN', () => {
       isInvestmentAccount.mockReturnValue(true);

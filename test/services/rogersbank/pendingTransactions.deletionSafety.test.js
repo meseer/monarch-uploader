@@ -46,7 +46,7 @@ jest.mock('../../../src/api/monarch', () => ({
 }));
 
 // Real SHA-256 via Node crypto so the hash IDs match production
-const nodeCrypto = require('crypto');
+import * as nodeCrypto from 'crypto';
 
 const mockDigest = jest.fn();
 Object.defineProperty(global, 'crypto', {
@@ -59,7 +59,7 @@ global.TextEncoder = class {
   }
 };
 
-const monarchApi = require('../../../src/api/monarch').default;
+import monarchApi from '../../../src/api/monarch';
 
 beforeEach(() => {
   mockDigest.mockImplementation((_algo, data) => {

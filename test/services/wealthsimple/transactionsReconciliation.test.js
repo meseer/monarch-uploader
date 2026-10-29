@@ -73,9 +73,9 @@ jest.mock('../../../src/services/common/pendingReconciliation', () => ({
 // GM_getValue is mocked in test/setup.js, but override for getAccountNameById
 global.GM_getValue = jest.fn(() => '[]');
 
-const mockMonarchApi = require('../../../src/api/monarch').default;
-const mockWealthsimpleApi = require('../../../src/api/wealthsimple').default;
-const { fetchMonarchPendingTransactions } = require('../../../src/services/common/pendingReconciliation');
+import mockMonarchApi from '../../../src/api/monarch';
+import mockWealthsimpleApi from '../../../src/api/wealthsimple';
+import { fetchMonarchPendingTransactions } from '../../../src/services/common/pendingReconciliation';
 
 beforeEach(() => {
   jest.clearAllMocks();

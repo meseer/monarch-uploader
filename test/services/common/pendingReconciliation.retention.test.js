@@ -28,7 +28,7 @@ jest.mock('../../../src/api/monarch', () => ({
   },
 }));
 
-const monarchApi = require('../../../src/api/monarch').default;
+import monarchApi from '../../../src/api/monarch';
 
 const PENDING_TAG = { id: 'tag-pending', name: 'Pending' };
 const OWNER_TAG = { id: 'tag-owner', name: 'pendingOwnerUpdate' };

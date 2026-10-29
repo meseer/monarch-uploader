@@ -82,7 +82,7 @@ globalThis.GM_setValue = jest.fn();
 globalThis.GM_deleteValue = jest.fn();
 
 // Import mocks for assertions
-const configStore = require('../../../src/services/common/configStore');
+import * as configStore from '../../../src/services/common/configStore';
 
 describe('Legacy Storage Migration', () => {
   beforeEach(() => {

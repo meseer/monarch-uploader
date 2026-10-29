@@ -38,9 +38,9 @@ jest.mock('../../../src/ui/components/accountSelectorWithCreate', () => ({
   showMonarchAccountSelectorWithCreate: jest.fn(),
 }));
 
-const monarchApi = require('../../../src/api/monarch').default;
-const accountService = require('../../../src/services/common/accountService').default;
-const { showMonarchAccountSelectorWithCreate } = require('../../../src/ui/components/accountSelectorWithCreate');
+import monarchApi from '../../../src/api/monarch';
+import accountService from '../../../src/services/common/accountService';
+import { showMonarchAccountSelectorWithCreate } from '../../../src/ui/components/accountSelectorWithCreate';
 
 // ── Test data ───────────────────────────────────────────────
 

@@ -16,6 +16,7 @@ import {
   clearSavedWealthsimpleCategoryMappings,
   getAllSavedWealthsimpleCategoryMappings,
 } from '../../src/mappers/category';
+import * as utilsModule from '../../src/core/utils';
 
 // Mock dependencies
 jest.mock('../../src/core/utils', () => ({
@@ -59,7 +60,7 @@ describe('Category Mapper', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    stringSimilarity = jest.requireMock('../../src/core/utils').stringSimilarity;
+    stringSimilarity = utilsModule.stringSimilarity;
 
     // Mock available categories
     mockAvailableCategories = [

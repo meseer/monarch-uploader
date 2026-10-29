@@ -53,7 +53,9 @@ jest.mock('../../../src/core/utils', () => {
   };
 });
 
-const utils = require('../../../src/core/utils');
+import * as utils from '../../../src/core/utils';
+import * as categoryModule from '../../../src/mappers/category';
+import * as categorySelectorModule from '../../../src/ui/components/categorySelector';
 
 describe('Questrade Transactions Service', () => {
   beforeEach(() => {
@@ -203,7 +205,7 @@ describe('Questrade Transactions Service', () => {
       convertQuestradeOrdersToMonarchCSV.mockReturnValue('mock,csv,data');
       accountService.getMonarchAccountMapping.mockReturnValue({ id: 'monarch-account-id' });
       monarchApi.uploadTransactions = jest.fn().mockResolvedValue(true);
-      const { applyCategoryMapping } = require('../../../src/mappers/category');
+      const { applyCategoryMapping } = categoryModule;
       applyCategoryMapping.mockReturnValue('Investment');
     });
 
@@ -316,7 +318,7 @@ describe('Questrade Transactions Service', () => {
       questradeApi.fetchOrders = jest.fn().mockResolvedValue({ data: mockOrders });
 
       // Mock category mapping to return a simple string category
-      const { applyCategoryMapping } = require('../../../src/mappers/category');
+      const { applyCategoryMapping } = categoryModule;
       applyCategoryMapping.mockReturnValue('Investment');
 
       const result = await transactionsService.processAndUploadTransactions(
@@ -423,7 +425,7 @@ describe('Questrade Transactions Service', () => {
         uploadedTransactions: [],
       });
 
-      const { applyCategoryMapping } = require('../../../src/mappers/category');
+      const { applyCategoryMapping } = categoryModule;
       // applyCategoryMapping should NOT be called when skipCategorization is true
       applyCategoryMapping.mockReturnValue('Investment');
 
@@ -435,7 +437,7 @@ describe('Questrade Transactions Service', () => {
 
       expect(result.success).toBe(true);
       // Category selector should not have been shown
-      const { showMonarchCategorySelector } = require('../../../src/ui/components/categorySelector');
+      const { showMonarchCategorySelector } = categorySelectorModule;
       expect(showMonarchCategorySelector).not.toHaveBeenCalled();
       // Orders should have Uncategorized resolved category
       expect(convertQuestradeOrdersToMonarchCSV).toHaveBeenCalledWith(
@@ -466,13 +468,13 @@ describe('Questrade Transactions Service', () => {
         uploadedTransactions: [],
       });
 
-      const { applyCategoryMapping } = require('../../../src/mappers/category');
+      const { applyCategoryMapping } = categoryModule;
       applyCategoryMapping.mockReturnValue({
         needsManualSelection: true,
         bankCategory: 'Buy',
       });
 
-      const { showMonarchCategorySelector } = require('../../../src/ui/components/categorySelector');
+      const { showMonarchCategorySelector } = categorySelectorModule;
       // User clicks "Skip All" on category selector
       showMonarchCategorySelector.mockImplementation((bankCategory, callback) => {
         callback({ skipAll: true });
@@ -518,14 +520,14 @@ describe('Questrade Transactions Service', () => {
         uploadedTransactions: [],
       });
 
-      const { applyCategoryMapping, saveUserCategorySelection } = require('../../../src/mappers/category');
+      const { applyCategoryMapping, saveUserCategorySelection } = categoryModule;
       // "Assign Once" never persists, so mapping keeps reporting needsManualSelection
       applyCategoryMapping.mockReturnValue({
         needsManualSelection: true,
         bankCategory: 'Buy',
       });
 
-      const { showMonarchCategorySelector } = require('../../../src/ui/components/categorySelector');
+      const { showMonarchCategorySelector } = categorySelectorModule;
       // User clicks "Assign Once"
       showMonarchCategorySelector.mockImplementation((bankCategory, callback) => {
         callback({ id: 'cat1', name: 'Investment', assignmentType: 'once' });
@@ -569,13 +571,13 @@ describe('Questrade Transactions Service', () => {
         uploadedTransactions: [],
       });
 
-      const { applyCategoryMapping, saveUserCategorySelection } = require('../../../src/mappers/category');
+      const { applyCategoryMapping, saveUserCategorySelection } = categoryModule;
       // First check needs manual selection; after "rule" persists, mapping resolves
       applyCategoryMapping
         .mockReturnValueOnce({ needsManualSelection: true, bankCategory: 'Buy' })
         .mockReturnValue('Investment');
 
-      const { showMonarchCategorySelector } = require('../../../src/ui/components/categorySelector');
+      const { showMonarchCategorySelector } = categorySelectorModule;
       showMonarchCategorySelector.mockImplementation((bankCategory, callback) => {
         callback({ id: 'cat1', name: 'Investment', assignmentType: 'rule' });
       });

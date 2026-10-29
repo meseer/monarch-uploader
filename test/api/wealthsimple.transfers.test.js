@@ -6,7 +6,7 @@
  */
 
 import wealthsimpleApi from '../../src/api/wealthsimple';
-const { setupWealthsimpleAuth } = require('../helpers/wealthsimpleAuthCookie');
+import { setupWealthsimpleAuth } from '../helpers/wealthsimpleAuthCookie';
 
 global.GM_getValue = jest.fn();
 global.GM_setValue = jest.fn();

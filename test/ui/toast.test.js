@@ -3,6 +3,7 @@
  */
 
 import toastModule, { ensureToastContainer, showToast, show } from '../../src/ui/toast';
+import * as utilsModule from '../../src/core/utils';
 
 // Mock dependencies
 jest.mock('../../src/core/config', () => ({
@@ -86,7 +87,7 @@ describe('Toast Notification System', () => {
 
   describe('showToast', () => {
     test('should create and display info toast with default parameters', () => {
-      const { debugLog } = require('../../src/core/utils');
+      const { debugLog } = utilsModule;
 
       const toast = showToast('Test message');
 
@@ -294,7 +295,7 @@ describe('Toast Notification System', () => {
         return defaultValue;
       });
 
-      const { debugLog } = require('../../src/core/utils');
+      const { debugLog } = utilsModule;
 
       const toast = showToast('Test message', 'info');
 
@@ -309,7 +310,7 @@ describe('Toast Notification System', () => {
         return defaultValue;
       });
 
-      const { debugLog } = require('../../src/core/utils');
+      const { debugLog } = utilsModule;
 
       const suppressedToast = showToast('Debug message', 'debug');
 

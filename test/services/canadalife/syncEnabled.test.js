@@ -104,11 +104,11 @@ globalThis.GM_setValue = jest.fn();
 // eslint-disable-next-line import/first
 import { uploadAllCanadaLifeAccountsToMonarch } from '../../../src/services/canadalife-upload';
 
-const { showProgressDialog } = require('../../../src/ui/components/progressDialog');
-const { ensureMonarchAuthentication } = require('../../../src/ui/components/monarchLoginLink');
-const canadalife = require('../../../src/api/canadalife').default;
-const monarchApi = require('../../../src/api/monarch').default;
-const accountService = require('../../../src/services/common/accountService').default;
+import { showProgressDialog } from '../../../src/ui/components/progressDialog';
+import { ensureMonarchAuthentication } from '../../../src/ui/components/monarchLoginLink';
+import canadalife from '../../../src/api/canadalife';
+import monarchApi from '../../../src/api/monarch';
+import accountService from '../../../src/services/common/accountService';
 
 // Helpers
 function makeProgressDialog() {

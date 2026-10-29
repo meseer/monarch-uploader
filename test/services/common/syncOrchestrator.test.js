@@ -144,12 +144,16 @@ jest.mock('../../../src/ui/components/cardholderSelector', () => ({
 }));
 
 // Get references to the mocked modules
-const mockAccountService = require('../../../src/services/common/accountService').default;
-const { resolveAccountMapping } = require('../../../src/services/common/accountMappingResolver');
-const { getLastUpdateDate } = require('../../../src/core/utils');
-const { showProgressDialog } = require('../../../src/ui/components/progressDialog');
-const { showDatePickerWithOptionsPromise } = require('../../../src/ui/components/datePicker');
-const stateManager = require('../../../src/core/state').default;
+import mockAccountService from '../../../src/services/common/accountService';
+import { resolveAccountMapping } from '../../../src/services/common/accountMappingResolver';
+import { getLastUpdateDate } from '../../../src/core/utils';
+import { showProgressDialog } from '../../../src/ui/components/progressDialog';
+import { showDatePickerWithOptionsPromise } from '../../../src/ui/components/datePicker';
+import stateManager from '../../../src/core/state';
+import * as transactionUploadModule from '../../../src/services/common/transactionUpload';
+import * as creditLimitSyncModule from '../../../src/services/common/creditLimitSync';
+import * as balanceUploadModule from '../../../src/services/common/balanceUpload';
+import * as deduplicationModule from '../../../src/services/common/deduplication';
 
 // ── Helpers ─────────────────────────────────────────────────
 
@@ -337,7 +341,7 @@ describe('syncAccount', () => {
   });
 
   it('should show Monarch processing progress on the transactions step', async () => {
-    const { uploadTransactionsAndSaveRefs } = require('../../../src/services/common/transactionUpload');
+    const { uploadTransactionsAndSaveRefs } = transactionUploadModule;
     uploadTransactionsAndSaveRefs.mockImplementationOnce(async ({ onProcessingUpdate }) => {
       onProcessingUpdate({ status: 'started', checks: 3, elapsedMs: 6_000 });
       return true;
@@ -360,7 +364,7 @@ describe('syncAccount', () => {
   });
 
   it('should build dedup refs carrying each transaction date and merchant', async () => {
-    const { uploadTransactionsAndSaveRefs } = require('../../../src/services/common/transactionUpload');
+    const { uploadTransactionsAndSaveRefs } = transactionUploadModule;
     const progressDialog = createMockProgressDialog();
     const hooks = createMockHooks();
     const api = createMockApi();
@@ -387,7 +391,7 @@ describe('syncAccount', () => {
   });
 
   it('should emit dedup refs newest-first, reversing the oldest-first fetch order', async () => {
-    const { uploadTransactionsAndSaveRefs } = require('../../../src/services/common/transactionUpload');
+    const { uploadTransactionsAndSaveRefs } = transactionUploadModule;
     const progressDialog = createMockProgressDialog();
     const hooks = createMockHooks();
     const api = createMockApi();
@@ -421,7 +425,7 @@ describe('syncAccount', () => {
   });
 
   it('should interleave settled and pending refs by date, not concatenate them', async () => {
-    const { uploadTransactionsAndSaveRefs } = require('../../../src/services/common/transactionUpload');
+    const { uploadTransactionsAndSaveRefs } = transactionUploadModule;
     const progressDialog = createMockProgressDialog();
     const hooks = createMockHooks();
     const api = createMockApi();
@@ -466,7 +470,7 @@ describe('syncAccount', () => {
   });
 
   it('should drop refs whose ID cannot be resolved', async () => {
-    const { uploadTransactionsAndSaveRefs } = require('../../../src/services/common/transactionUpload');
+    const { uploadTransactionsAndSaveRefs } = transactionUploadModule;
     const progressDialog = createMockProgressDialog();
     const hooks = createMockHooks();
     const api = createMockApi();
@@ -497,7 +501,7 @@ describe('syncAccount', () => {
   });
 
   it('should skip credit limit step when capability is disabled', async () => {
-    const { syncCreditLimit } = require('../../../src/services/common/creditLimitSync');
+    const { syncCreditLimit } = creditLimitSyncModule;
     const progressDialog = createMockProgressDialog();
     const hooks = createMockHooks();
     const api = createMockApi();
@@ -647,7 +651,7 @@ describe('syncAccount', () => {
     ]);
     const api = createMockApi();
 
-    const { executeBalanceUploadStep } = require('../../../src/services/common/balanceUpload');
+    const { executeBalanceUploadStep } = balanceUploadModule;
 
     await syncAccount({
       integrationId: 'test',
@@ -683,7 +687,7 @@ describe('syncAccount', () => {
     hooks.buildBalanceHistory = undefined; // No reconstruction hook
     const api = createMockApi();
 
-    const { executeBalanceUploadStep } = require('../../../src/services/common/balanceUpload');
+    const { executeBalanceUploadStep } = balanceUploadModule;
 
     await syncAccount({
       integrationId: 'test',
@@ -706,7 +710,7 @@ describe('syncAccount', () => {
   });
 
   it('should handle all transactions being duplicates', async () => {
-    const { filterDuplicateSettledTransactions } = require('../../../src/services/common/deduplication');
+    const { filterDuplicateSettledTransactions } = deduplicationModule;
     filterDuplicateSettledTransactions.mockReturnValueOnce({ newTransactions: [], duplicateCount: 3 });
 
     const progressDialog = createMockProgressDialog();

@@ -7,6 +7,7 @@
  */
 
 import { showCardholderSelector } from '../../src/ui/components/cardholderSelector';
+import * as keyboardNavigationModule from '../../src/ui/keyboardNavigation';
 
 jest.mock('../../src/core/utils', () => ({
   debugLog: jest.fn(),
@@ -251,7 +252,7 @@ describe('showCardholderSelector', () => {
     });
 
     it('resolves with null when the modal keyboard handler cancels (Escape)', async () => {
-      const { addModalKeyboardHandlers } = require('../../src/ui/keyboardNavigation');
+      const { addModalKeyboardHandlers } = keyboardNavigationModule;
       const promise = showCardholderSelector(baseParams());
 
       // Invoke the cancel callback registered with the shared keyboard handler

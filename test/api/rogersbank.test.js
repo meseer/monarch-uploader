@@ -19,21 +19,7 @@ import {
   fetchRogersBankBalance,
 } from '../../src/api/rogersbank';
 
-const {
-  ACCOUNT_ID,
-  CUSTOMER_ID,
-  TRANSACTIONS_URL,
-  REGENERATE_TOKEN_URL,
-  ACCOUNT_DETAIL_URL,
-  PROFILE_URL,
-  PAGE_HEADERS,
-  CAPTURED,
-  installFakeXhr,
-  sendPageXhr,
-  useInMemoryGmStorage,
-  expectNoCredentialsInStorage,
-  expectNoCredentialsInCalls,
-} = require('../helpers/rogersBankPage');
+import { ACCOUNT_ID, CUSTOMER_ID, TRANSACTIONS_URL, REGENERATE_TOKEN_URL, ACCOUNT_DETAIL_URL, PROFILE_URL, PAGE_HEADERS, CAPTURED, installFakeXhr, sendPageXhr, useInMemoryGmStorage, expectNoCredentialsInStorage, expectNoCredentialsInCalls } from '../helpers/rogersBankPage';
 
 jest.mock('../../src/core/utils', () => ({
   debugLog: jest.fn(),
@@ -53,9 +39,9 @@ jest.mock('../../src/ui/toast', () => ({
   },
 }));
 
-const stateManager = jest.requireMock('../../src/core/state').default;
-const { debugLog } = jest.requireMock('../../src/core/utils');
-const toast = jest.requireMock('../../src/ui/toast').default;
+import stateManager from '../../src/core/state';
+import { debugLog } from '../../src/core/utils';
+import toast from '../../src/ui/toast';
 
 /** The per-request diagnostics logged by the network hooks */
 const observedRequestLogs = () => debugLog.mock.calls
@@ -137,16 +123,14 @@ describe('Rogers Bank API Client', () => {
       expect(getRogersBankCredentials().authToken).toBe(CAPTURED.authToken);
     });
 
-    test('are gone after a page reload, because nothing was persisted', () => {
+    test('are gone after a page reload, because nothing was persisted', async () => {
       setupCredentialInterception();
       sendPageXhr(TRANSACTIONS_URL);
       expect(checkRogersBankAuth().authenticated).toBe(true);
 
       // A page reload re-evaluates the module against the same GM storage
-      let reloaded;
-      jest.isolateModules(() => {
-        reloaded = require('../../src/api/rogersbank');
-      });
+      jest.resetModules();
+      const reloaded = await import('../../src/api/rogersbank');
 
       expect(reloaded.checkRogersBankAuth().authenticated).toBe(false);
       expect(reloaded.getRogersBankCredentials().authToken).toBeNull();

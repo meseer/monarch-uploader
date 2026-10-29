@@ -15,7 +15,8 @@
 import { makeGraphQLQuery } from '../../src/api/wealthsimple';
 import { settlementOf } from '../helpers/promiseSettlement';
 
-const { setWealthsimpleAuthCookie } = require('../helpers/wealthsimpleAuthCookie');
+import { setWealthsimpleAuthCookie } from '../helpers/wealthsimpleAuthCookie';
+import * as stateModule from '../../src/core/state';
 
 global.GM_getValue = jest.fn();
 global.GM_setValue = jest.fn();
@@ -39,7 +40,7 @@ describe('Wealthsimple API - response parsing and settlement', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    stateManager = jest.requireMock('../../src/core/state').default;
+    stateManager = stateModule.default;
 
     // The token is read from the page's OAuth cookie on every request, so
     // authentication is established by setting that cookie.

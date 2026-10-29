@@ -20,6 +20,7 @@ import accountService from '../../../src/services/common/accountService';
 import stateManager from '../../../src/core/state';
 import toast from '../../../src/ui/toast';
 import * as utils from '../../../src/core/utils';
+import * as accountSelectorWithCreateModule from '../../../src/ui/components/accountSelectorWithCreate';
 
 // Mock dependencies
 jest.mock('../../../src/api/questrade', () => ({
@@ -277,7 +278,7 @@ describe('Balance Service', () => {
     });
 
     test('should trigger account mapping when mapping exists but has no id', async () => {
-      const { showMonarchAccountSelectorWithCreate } = require('../../../src/ui/components/accountSelectorWithCreate');
+      const { showMonarchAccountSelectorWithCreate } = accountSelectorWithCreateModule;
 
       // First call from uploadBalanceToMonarch returns mapping without id
       // Second call from ensureAccountMapping also returns mapping without id (same stored data)
@@ -322,7 +323,7 @@ describe('Balance Service', () => {
     });
 
     test('should throw BalanceError when mapping has no id and user cancels re-mapping', async () => {
-      const { showMonarchAccountSelectorWithCreate } = require('../../../src/ui/components/accountSelectorWithCreate');
+      const { showMonarchAccountSelectorWithCreate } = accountSelectorWithCreateModule;
 
       // Return mapping without id
       accountService.getMonarchAccountMapping.mockReturnValue({ displayName: 'Bad Mapping' });

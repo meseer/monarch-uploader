@@ -100,8 +100,13 @@ jest.mock('../../../src/services/questrade/balance', () => {
 globalThis.GM_getValue = jest.fn();
 globalThis.GM_setValue = jest.fn();
 
-const { showProgressDialog } = require('../../../src/ui/components/progressDialog');
-const { ensureMonarchAuthentication } = require('../../../src/ui/components/monarchLoginLink');
+import { showProgressDialog } from '../../../src/ui/components/progressDialog';
+import { ensureMonarchAuthentication } from '../../../src/ui/components/monarchLoginLink';
+import * as monarchModule from '../../../src/api/monarch';
+import * as syncModule2 from '../../../src/services/questrade/sync';
+import * as balanceModule from '../../../src/services/questrade/balance';
+import * as positionsModule from '../../../src/services/questrade/positions';
+import * as transactionsModule from '../../../src/services/questrade/transactions';
 
 // Helper: build a minimal progress dialog mock
 function makeProgressDialog() {
@@ -217,7 +222,7 @@ describe('uploadAllAccountsToMonarch — syncEnabled skip', () => {
   // via the module mock for the same file. Instead we assert on questradeApi.makeApiCall
   // (the external I/O boundary that fetchBalanceHistory reaches out to) and on
   // monarchApi.uploadBalance.
-  const monarchApi = require('../../../src/api/monarch');
+  const monarchApi = monarchModule;
 
   beforeEach(() => {
     accountService.getAccounts.mockReturnValue([]);
@@ -319,12 +324,12 @@ describe('uploadAllAccountsToMonarch — syncEnabled skip', () => {
 // syncAllAccountsToMonarch — syncEnabled skip enforcement
 // ─────────────────────────────────────────────────────────────────────────────
 describe('syncAllAccountsToMonarch — syncEnabled skip', () => {
-  const syncModule = require('../../../src/services/questrade/sync');
+  const syncModule = syncModule2;
   // We need the real syncAllAccountsToMonarch but a mock for syncAccountToMonarch
   // Since we can't partially mock the same module we're testing, we mock the dependencies
   // that syncAccountToMonarch calls instead (balance, positions, transactions).
 
-  const { fetchBalanceHistory, uploadBalanceToMonarch } = require('../../../src/services/questrade/balance');
+  const { fetchBalanceHistory, uploadBalanceToMonarch } = balanceModule;
 
   beforeEach(() => {
     accountService.getAccounts.mockReturnValue([]);
@@ -336,10 +341,10 @@ describe('syncAllAccountsToMonarch — syncEnabled skip', () => {
     });
     uploadBalanceToMonarch.mockResolvedValue(true);
 
-    const positionsService = require('../../../src/services/questrade/positions');
+    const positionsService = positionsModule;
     positionsService.default.processAccountPositions.mockResolvedValue({ success: true, positionsProcessed: 0, positionsSkipped: 0 });
 
-    const txService = require('../../../src/services/questrade/transactions');
+    const txService = transactionsModule;
     txService.default.processAndUploadOrders.mockResolvedValue({ success: true, ordersProcessed: 0, skippedDuplicates: 0 });
     txService.default.processAndUploadActivityTransactions.mockResolvedValue({ success: true, transactionsProcessed: 0, skippedDuplicates: 0 });
   });

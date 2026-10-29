@@ -172,7 +172,7 @@ function simulateDocumentStart() {
   };
 }
 
-module.exports = {
+export {
   ACCOUNT_ID,
   CUSTOMER_ID,
   TRANSACTIONS_URL,

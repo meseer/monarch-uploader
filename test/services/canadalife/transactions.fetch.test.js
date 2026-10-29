@@ -8,6 +8,8 @@
  */
 
 import { fetchActivitiesForDateRange, fetchAndProcessTransactions } from '../../../src/services/canadalife/transactions';
+import * as canadalifeModule from '../../../src/api/canadalife';
+import * as toastModule from '../../../src/ui/toast';
 
 jest.mock('../../../src/api/canadalife', () => ({
   __esModule: true,
@@ -23,8 +25,8 @@ jest.mock('../../../src/ui/toast', () => ({
   },
 }));
 
-const getCanadaLifeApi = () => require('../../../src/api/canadalife').default;
-const getToast = () => require('../../../src/ui/toast').default;
+const getCanadaLifeApi = () => canadalifeModule.default;
+const getToast = () => toastModule.default;
 
 const account = {
   EnglishShortName: 'RRSP',

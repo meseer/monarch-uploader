@@ -1,12 +1,12 @@
-// Mock for TextEncoder (used by Web Crypto API)
-const { TextEncoder } = require('util');
+import nodeCrypto from 'crypto';
+import { TextEncoder } from 'util';
 
+// Mock for TextEncoder (used by Web Crypto API)
 global.TextEncoder = TextEncoder;
 
 // Mock for Web Crypto API (crypto.subtle)
 // JSDOM has a crypto object but without subtle, so we need to add it
 // Use Node.js built-in crypto for real SHA-256 hashing to avoid collisions
-const nodeCrypto = require('crypto');
 const mockDigest = jest.fn(async (algorithm, data) => {
   const algoName = algorithm.replace('-', '').toLowerCase(); // 'SHA-256' -> 'sha256'
   const hash = nodeCrypto.createHash(algoName).update(Buffer.from(data)).digest();

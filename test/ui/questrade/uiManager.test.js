@@ -4,6 +4,9 @@
  */
 
 import { initSingleAccountUI, initAllAccountsUI } from '../../../src/ui/questrade/uiManager';
+import * as uploadButtonModule from '../../../src/ui/questrade/components/uploadButton';
+import * as toastModule from '../../../src/ui/toast';
+import * as utilsModule from '../../../src/core/utils';
 
 // ── Dependency mocks ──────────────────────────────────────────────────────────
 
@@ -88,7 +91,7 @@ describe('Questrade UI Manager — injection point', () => {
     setPathname('/accounts/12345');
 
     // Return real DOM elements from upload button mocks (can't use document in jest.mock factory)
-    const uploadButtonMock = jest.requireMock('../../../src/ui/questrade/components/uploadButton').default;
+    const uploadButtonMock = uploadButtonModule.default;
     uploadButtonMock.createSingleAccountUploadButton.mockReturnValue(document.createElement('button'));
     uploadButtonMock.createBulkUploadButton.mockReturnValue(document.createElement('button'));
   });
@@ -141,7 +144,7 @@ describe('Questrade UI Manager — injection point', () => {
     });
 
     test('shows toast and returns early when .sidebar__content is never found', async () => {
-      const toast = jest.requireMock('../../../src/ui/toast').default;
+      const toast = toastModule.default;
 
       const OriginalMutationObserver = global.MutationObserver;
       global.MutationObserver = class {
@@ -196,7 +199,7 @@ describe('Questrade UI Manager — injection point', () => {
 
   describe('initAllAccountsUI', () => {
     beforeEach(() => {
-      const { isQuestradeAllAccountsPage } = jest.requireMock('../../../src/core/utils');
+      const { isQuestradeAllAccountsPage } = utilsModule;
       isQuestradeAllAccountsPage.mockReturnValue(true);
     });
 
@@ -228,7 +231,7 @@ describe('Questrade UI Manager — injection point', () => {
     });
 
     test('does nothing when isQuestradeAllAccountsPage returns false', async () => {
-      const { isQuestradeAllAccountsPage } = jest.requireMock('../../../src/core/utils');
+      const { isQuestradeAllAccountsPage } = utilsModule;
       isQuestradeAllAccountsPage.mockReturnValue(false);
 
       const sidebar = document.createElement('div');
@@ -241,7 +244,7 @@ describe('Questrade UI Manager — injection point', () => {
     });
 
     test('shows toast and returns early when .sidebar__content is never found', async () => {
-      const toast = jest.requireMock('../../../src/ui/toast').default;
+      const toast = toastModule.default;
 
       const OriginalMutationObserver = global.MutationObserver;
       global.MutationObserver = class {

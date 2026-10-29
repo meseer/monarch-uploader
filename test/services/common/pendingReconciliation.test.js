@@ -35,12 +35,13 @@ jest.mock('../../../src/api/monarch', () => ({
 // ── Setup ───────────────────────────────────────────────────
 
 // Get reference to the mocked monarch API
-const mockMonarchApi = require('../../../src/api/monarch').default;
+import mockMonarchApi from '../../../src/api/monarch';
+import * as cryptoModule from 'crypto';
 
 // Polyfill crypto.subtle.digest for Node.js test environment
 beforeAll(() => {
   if (typeof globalThis.crypto === 'undefined' || !globalThis.crypto.subtle) {
-    const { webcrypto } = require('crypto');
+    const { webcrypto } = cryptoModule;
     globalThis.crypto = webcrypto;
   }
 });

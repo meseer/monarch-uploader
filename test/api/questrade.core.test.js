@@ -15,6 +15,9 @@ import {
   checkTokenStatus,
   getToken,
 } from '../../src/api/questrade';
+import * as authModule from '../../src/services/questrade/auth';
+import * as stateModule from '../../src/core/state';
+import * as questradeModule from '../../src/api/questrade';
 
 // Mock dependencies
 jest.mock('../../src/core/utils', () => ({
@@ -49,8 +52,8 @@ describe('Questrade API', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    authService = jest.requireMock('../../src/services/questrade/auth').default;
-    stateManager = jest.requireMock('../../src/core/state').default;
+    authService = authModule.default;
+    stateManager = stateModule.default;
 
     // Default mock values
     globalThis.GM_getValue.mockReturnValue('[]');
@@ -1101,7 +1104,7 @@ describe('Questrade API', () => {
 
   describe('Default Export Structure', () => {
     test('should export API methods with correct names in default object', () => {
-      const questradeApi = require('../../src/api/questrade').default;
+      const questradeApi = questradeModule.default;
 
       // Verify all expected methods exist on default export
       expect(questradeApi).toHaveProperty('makeApiCall');
@@ -1123,15 +1126,15 @@ describe('Questrade API', () => {
     });
 
     test('should not have fetchAccountOrders on default export', () => {
-      const questradeApi = require('../../src/api/questrade').default;
+      const questradeApi = questradeModule.default;
 
       // This property should NOT exist on the default export
       expect(questradeApi).not.toHaveProperty('fetchAccountOrders');
     });
 
     test('default export fetchOrders should be the same function as named export fetchAccountOrders', () => {
-      const questradeApi = require('../../src/api/questrade').default;
-      const { fetchAccountOrders: namedExportFetchAccountOrders } = require('../../src/api/questrade');
+      const questradeApi = questradeModule.default;
+      const { fetchAccountOrders: namedExportFetchAccountOrders } = questradeModule;
 
       // The default export's fetchOrders should reference the same function as the named export
       expect(questradeApi.fetchOrders).toBe(namedExportFetchAccountOrders);

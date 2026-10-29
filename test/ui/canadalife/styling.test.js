@@ -9,6 +9,7 @@ import {
   createCanadaLifeButton,
   createCanadaLifeUploadButton,
 } from '../../../src/ui/canadalife/components/uploadButton';
+import * as canadalifeModule from '../../../src/api/canadalife';
 
 // ── Dependency mocks ──────────────────────────────────────────────────────────
 
@@ -133,7 +134,7 @@ describe('Canada Life UI typography and styling', () => {
     });
 
     it('renders auth message with Canada Life font when unauthenticated', () => {
-      const canadalife = require('../../../src/api/canadalife').default;
+      const canadalife = canadalifeModule.default;
       canadalife.checkAuth.mockReturnValueOnce({ authenticated: false });
 
       const uploadContainer = createCanadaLifeUploadButton();

@@ -13,7 +13,7 @@ import {
   migrateAllLegacyStorage,
 } from '../../../src/services/common/legacyMigration';
 
-const { useInMemoryGmStorage } = require('../../helpers/rogersBankPage');
+import { useInMemoryGmStorage } from '../../helpers/rogersBankPage';
 
 jest.mock('../../../src/core/utils', () => ({
   debugLog: jest.fn(),

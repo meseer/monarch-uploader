@@ -31,6 +31,8 @@ import {
   clearLastUploadedDate,
   formatAmount,
 } from '../../src/core/utils';
+import * as accountServiceModule from '../../src/services/common/accountService';
+import * as configStoreModule from '../../src/services/common/configStore';
 
 // Mock the toast module since the utils depend on it
 jest.mock('../../src/ui/toast', () => ({
@@ -441,7 +443,7 @@ describe('Utility Functions', () => {
     });
 
     it('should return consolidated date for questrade when available', () => {
-      const accountService = require('../../src/services/common/accountService').default;
+      const accountService = accountServiceModule.default;
       accountService.getAccountData.mockReturnValueOnce({ lastSyncDate: '2024-01-15' });
 
       const result = getLastUpdateDate('account123', 'questrade');
@@ -466,7 +468,7 @@ describe('Utility Functions', () => {
     });
 
     it('should return date from consolidated storage for rogersbank', () => {
-      const accountService = require('../../src/services/common/accountService').default;
+      const accountService = accountServiceModule.default;
       accountService.getAccountData.mockReturnValueOnce({ lastSyncDate: '2024-01-20' });
       const result = getLastUpdateDate('acc2', 'rogersbank');
       expect(result).toBe('2024-01-20');
@@ -482,11 +484,11 @@ describe('Utility Functions', () => {
 
     it('should calculate correct from date with lookback', () => {
       // Mock consolidated storage to return the last sync date for questrade
-      const accountService = require('../../src/services/common/accountService').default;
+      const accountService = accountServiceModule.default;
       accountService.getAccountData.mockReturnValueOnce({ lastSyncDate: '2024-01-15' });
 
       // Mock lookback via configStore (getLookbackForInstitution reads from configStore)
-      const { getSetting } = require('../../src/services/common/configStore');
+      const { getSetting } = configStoreModule;
       getSetting.mockImplementation((id, setting, defaultVal) => {
         if (id === 'questrade' && setting === 'lookbackDays') return 3;
         return defaultVal;
@@ -498,11 +500,11 @@ describe('Utility Functions', () => {
 
     it('should use default lookback when not configured', () => {
       // Mock consolidated storage to return the last sync date for questrade
-      const accountService = require('../../src/services/common/accountService').default;
+      const accountService = accountServiceModule.default;
       accountService.getAccountData.mockReturnValueOnce({ lastSyncDate: '2024-01-15' });
 
       // configStore returns undefined → getLookbackForInstitution falls through to default
-      const { getSetting: getSetting2 } = require('../../src/services/common/configStore');
+      const { getSetting: getSetting2 } = configStoreModule;
       getSetting2.mockImplementation(() => undefined);
       global.GM_getValue.mockImplementation((key, defaultValue) => defaultValue);
 

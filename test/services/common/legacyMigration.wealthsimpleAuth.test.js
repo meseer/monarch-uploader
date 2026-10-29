@@ -14,7 +14,7 @@ import {
   migrateAllLegacyStorage,
 } from '../../../src/services/common/legacyMigration';
 
-const { useInMemoryGmStorage } = require('../../helpers/wealthsimpleAuthCookie');
+import { useInMemoryGmStorage } from '../../helpers/wealthsimpleAuthCookie';
 
 jest.mock('../../../src/core/utils', () => ({
   debugLog: jest.fn(),

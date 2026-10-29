@@ -90,8 +90,9 @@ jest.mock('../../../src/services/common/ownerSync', () => ({
   formatOwnerSyncMessage: jest.fn(() => '1 owner set'),
 }));
 
-const { getOwnerMode } = require('../../../src/services/common/cardholders');
-const { syncTransactionOwners, buildOwnerResolver } = require('../../../src/services/common/ownerSync');
+import { getOwnerMode } from '../../../src/services/common/cardholders';
+import { syncTransactionOwners, buildOwnerResolver } from '../../../src/services/common/ownerSync';
+import * as balanceUploadModule from '../../../src/services/common/balanceUpload';
 
 const createProgressDialog = () => ({
   initSteps: jest.fn(),
@@ -238,7 +239,7 @@ describe('step list when owner mapping is on', () => {
   });
 
   it('still uploads the balance after an owner sync failure', async () => {
-    const { executeBalanceUploadStep } = require('../../../src/services/common/balanceUpload');
+    const { executeBalanceUploadStep } = balanceUploadModule;
     syncTransactionOwners.mockResolvedValueOnce({
       success: false, updated: 0, alreadyOwned: 0, unmatched: 0, failed: 0, deferred: 0, error: 'boom',
     });

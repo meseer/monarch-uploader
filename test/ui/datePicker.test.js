@@ -3,6 +3,9 @@
  */
 
 import { showDatePicker, showDatePickerPromise, showDatePickerWithOptionsPromise } from '../../src/ui/components/datePicker';
+import * as toastModule from '../../src/ui/toast';
+import * as keyboardNavigationModule from '../../src/ui/keyboardNavigation';
+import * as utilsModule from '../../src/core/utils';
 
 // Mock dependencies
 jest.mock('../../src/core/utils', () => ({
@@ -378,7 +381,7 @@ describe('Date Picker Component', () => {
     });
 
     test('should accept valid date format', () => {
-      const toast = jest.requireMock('../../src/ui/toast').default;
+      const toast = toastModule.default;
       const defaultDate = '2024-01-15';
       const validDate = '2024-12-25';
       const promptText = 'Select a date';
@@ -403,7 +406,7 @@ describe('Date Picker Component', () => {
 
   describe('Keyboard navigation integration', () => {
     test('should set up keyboard handlers', () => {
-      const { addModalKeyboardHandlers, trapFocus } = jest.requireMock('../../src/ui/keyboardNavigation');
+      const { addModalKeyboardHandlers, trapFocus } = keyboardNavigationModule;
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
       const callback = jest.fn();
@@ -422,7 +425,7 @@ describe('Date Picker Component', () => {
     });
 
     test('should set up focus trapping', () => {
-      const { trapFocus } = jest.requireMock('../../src/ui/keyboardNavigation');
+      const { trapFocus } = keyboardNavigationModule;
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
       const callback = jest.fn();
@@ -481,7 +484,7 @@ describe('Date Picker Component', () => {
     });
 
     test('should cleanup keyboard handlers when modal is closed', () => {
-      const { addModalKeyboardHandlers, trapFocus } = jest.requireMock('../../src/ui/keyboardNavigation');
+      const { addModalKeyboardHandlers, trapFocus } = keyboardNavigationModule;
 
       // Mock cleanup functions
       const mockModalCleanup = jest.fn();
@@ -622,7 +625,7 @@ describe('Date Picker Component', () => {
 
   describe('Debug logging', () => {
     test('should log debug messages', () => {
-      const { debugLog } = jest.requireMock('../../src/core/utils');
+      const { debugLog } = utilsModule;
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
       const callback = jest.fn();

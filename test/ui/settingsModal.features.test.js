@@ -4,6 +4,12 @@
  */
 
 import { createSettingsModal, showSettingsModal } from '../../src/ui/components/settingsModal';
+import * as toastModule from '../../src/ui/toast';
+import * as authModule from '../../src/services/auth';
+import * as authModule2 from '../../src/services/questrade/auth';
+import * as monarchLoginLinkModule from '../../src/ui/components/monarchLoginLink';
+import * as accountServiceModule from '../../src/services/common/accountService';
+import * as configStoreModule from '../../src/services/common/configStore';
 
 // Mock dependencies
 jest.mock('../../src/core/config', () => ({
@@ -215,10 +221,10 @@ describe('Settings Modal Component', () => {
     jest.clearAllMocks();
     document.body.innerHTML = '';
 
-    toast = jest.requireMock('../../src/ui/toast').default;
-    checkMonarchAuth = jest.requireMock('../../src/services/auth').checkMonarchAuth;
-    checkQuestradeAuth = jest.requireMock('../../src/services/questrade/auth').checkQuestradeAuth;
-    createMonarchLoginLink = jest.requireMock('../../src/ui/components/monarchLoginLink').createMonarchLoginLink;
+    toast = toastModule.default;
+    checkMonarchAuth = authModule.checkMonarchAuth;
+    checkQuestradeAuth = authModule2.checkQuestradeAuth;
+    createMonarchLoginLink = monarchLoginLinkModule.createMonarchLoginLink;
 
     // Setup default mock values
     localStorageMock.getItem.mockReturnValue(null);
@@ -300,7 +306,7 @@ describe('Settings Modal Component', () => {
   describe('Rogers Bank Transaction Management', () => {
     test('should display transaction references when available', () => {
       // Mock accountService to return a Rogers Bank account with uploaded transactions
-      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      const accountService = accountServiceModule.default;
       accountService.getAccounts.mockImplementation((integrationId) => {
         if (integrationId === 'rogersbank') {
           return [{
@@ -453,7 +459,7 @@ describe('Settings Modal Component', () => {
       }).not.toThrow();
     });
 
-    test('should handle GM function errors gracefully', () => {
+    test('should handle GM function errors gracefully', async () => {
       globalThis.GM_getValue.mockImplementation(() => {
         throw new Error('GM function error');
       });
@@ -476,8 +482,8 @@ describe('Settings Modal Component', () => {
         };
       });
 
+      const { createSettingsModal: createMockedModal } = await import('../../src/ui/components/settingsModal');
       expect(() => {
-        const { createSettingsModal: createMockedModal } = jest.requireMock('../../src/ui/components/settingsModal');
         modal = createMockedModal();
       }).not.toThrow();
     });
@@ -564,7 +570,7 @@ describe('Settings Modal Component', () => {
 
     test('should show empty message when no Wealthsimple accounts exist', () => {
       // Reset accountService mock to return empty array
-      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      const accountService = accountServiceModule.default;
       accountService.getAccounts.mockReturnValue([]);
 
       modal = createSettingsModal();
@@ -591,7 +597,7 @@ describe('Settings Modal Component', () => {
 
   describe('Rogers Bank Delete All Category Mappings', () => {
     test('should display "Delete All" button when category mappings exist (inside collapsed section)', () => {
-      const { getCategoryMappings } = jest.requireMock('../../src/services/common/configStore');
+      const { getCategoryMappings } = configStoreModule;
       getCategoryMappings.mockReturnValue({
         Groceries: 'Food & Dining',
         Gas: 'Auto & Transport',
@@ -614,7 +620,7 @@ describe('Settings Modal Component', () => {
     });
 
     test('should not display "Delete All" button when no category mappings exist', () => {
-      const { getCategoryMappings } = jest.requireMock('../../src/services/common/configStore');
+      const { getCategoryMappings } = configStoreModule;
       getCategoryMappings.mockReturnValue({});
 
       modal = createSettingsModal();
@@ -629,7 +635,7 @@ describe('Settings Modal Component', () => {
     });
 
     test('should handle "Delete All" button hover effects', () => {
-      const { getCategoryMappings } = jest.requireMock('../../src/services/common/configStore');
+      const { getCategoryMappings } = configStoreModule;
       getCategoryMappings.mockReturnValue({ Groceries: 'Food & Dining' });
 
       modal = createSettingsModal();
@@ -729,7 +735,7 @@ describe('Settings Modal Component', () => {
   describe('Additional Helper Functions', () => {
     test('should format dates correctly', () => {
       // Mock accountService to return accounts with lastSyncDate
-      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      const accountService = accountServiceModule.default;
       accountService.getAccounts.mockReturnValue([{
         questradeAccount: {
           id: '12345',
@@ -757,7 +763,7 @@ describe('Settings Modal Component', () => {
 
     test('should handle mapping status display', () => {
       // Mock accountService to return accounts with monarch mapping
-      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      const accountService = accountServiceModule.default;
       accountService.getAccounts.mockReturnValue([{
         questradeAccount: {
           id: '12345',
@@ -782,7 +788,7 @@ describe('Settings Modal Component', () => {
 
     test('should handle missing account properties gracefully', () => {
       // Mock accountService to return accounts without optional properties
-      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      const accountService = accountServiceModule.default;
       accountService.getAccounts.mockReturnValue([{
         questradeAccount: {
           id: '12345',

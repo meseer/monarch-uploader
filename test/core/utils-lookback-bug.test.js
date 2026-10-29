@@ -9,6 +9,8 @@ import {
   formatDaysBeforeDate,
   getDefaultLookbackDays,
 } from '../../src/core/utils';
+import * as accountServiceModule from '../../src/services/common/accountService';
+import * as configStoreModule from '../../src/services/common/configStore';
 
 // Mock GM functions
 global.GM_getValue = jest.fn();
@@ -39,7 +41,7 @@ describe('Canada Life Lookback Bug', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    accountService = require('../../src/services/common/accountService').default;
+    accountService = accountServiceModule.default;
   });
 
   test('Canada Life uses consolidated storage only - no legacy keys written', () => {
@@ -146,7 +148,7 @@ describe('Canada Life Lookback Bug', () => {
     });
 
     // Mock configStore to return 0 lookback days (configStore is the authoritative source)
-    const configStore = require('../../src/services/common/configStore');
+    const configStore = configStoreModule;
     configStore.getSetting.mockReturnValue(0);
 
     const fromDateOption2 = calculateFromDateWithLookback('canadalife', accountId);

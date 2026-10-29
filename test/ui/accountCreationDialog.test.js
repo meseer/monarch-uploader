@@ -52,9 +52,9 @@ jest.mock('../../src/api/monarchHousehold', () => ({
   getHouseholdMembers: jest.fn(),
 }));
 
-const monarchApi = require('../../src/api/monarch').default;
-const toast = require('../../src/ui/toast').default;
-const { getHouseholdMembers } = require('../../src/api/monarchHousehold');
+import monarchApi from '../../src/api/monarch';
+import toast from '../../src/ui/toast';
+import { getHouseholdMembers } from '../../src/api/monarchHousehold';
 
 const ACCOUNT_ID = 'monarch-acct-new';
 

@@ -3,6 +3,7 @@
  */
 
 import { convertCanadaLifeTransactionsToMonarchCSV } from '../../../src/services/canadalife/csvFormatter';
+import * as csvModule from '../../../src/utils/csv';
 
 // Mock dependencies
 jest.mock('../../../src/core/utils', () => ({
@@ -41,7 +42,7 @@ describe('convertCanadaLifeTransactionsToMonarchCSV', () => {
 
   describe('settled transactions', () => {
     test('passes through a settled transaction with correct columns', () => {
-      const { convertToCSV } = require('../../../src/utils/csv');
+      const { convertToCSV } = csvModule;
 
       const transactions = [
         {
@@ -80,7 +81,7 @@ describe('convertCanadaLifeTransactionsToMonarchCSV', () => {
     });
 
     test('Tags is empty string for settled transaction', () => {
-      const { convertToCSV } = require('../../../src/utils/csv');
+      const { convertToCSV } = csvModule;
 
       const transactions = [
         {
@@ -101,7 +102,7 @@ describe('convertCanadaLifeTransactionsToMonarchCSV', () => {
     });
 
     test('Notes does NOT include pendingId for settled transaction', () => {
-      const { convertToCSV } = require('../../../src/utils/csv');
+      const { convertToCSV } = csvModule;
 
       const transactions = [
         {
@@ -123,7 +124,7 @@ describe('convertCanadaLifeTransactionsToMonarchCSV', () => {
     });
 
     test('preserves positive amount for Buy transaction', () => {
-      const { convertToCSV } = require('../../../src/utils/csv');
+      const { convertToCSV } = csvModule;
 
       const transactions = [
         {
@@ -144,7 +145,7 @@ describe('convertCanadaLifeTransactionsToMonarchCSV', () => {
     });
 
     test('preserves negative amount for Sell transaction', () => {
-      const { convertToCSV } = require('../../../src/utils/csv');
+      const { convertToCSV } = csvModule;
 
       const transactions = [
         {
@@ -165,7 +166,7 @@ describe('convertCanadaLifeTransactionsToMonarchCSV', () => {
     });
 
     test('falls back to Uncategorized when category is missing', () => {
-      const { convertToCSV } = require('../../../src/utils/csv');
+      const { convertToCSV } = csvModule;
 
       const transactions = [
         {
@@ -186,7 +187,7 @@ describe('convertCanadaLifeTransactionsToMonarchCSV', () => {
 
   describe('pending transactions', () => {
     test('Tags is "Pending" for pending transaction', () => {
-      const { convertToCSV } = require('../../../src/utils/csv');
+      const { convertToCSV } = csvModule;
 
       const transactions = [
         {
@@ -207,7 +208,7 @@ describe('convertCanadaLifeTransactionsToMonarchCSV', () => {
     });
 
     test('Notes includes pendingId on a new line for pending transaction', () => {
-      const { convertToCSV } = require('../../../src/utils/csv');
+      const { convertToCSV } = csvModule;
 
       const pendingId = 'cl-tx:fedcba9876543210';
       const activityNotes = 'New contribution  - awaiting investment: Pending - awaiting investment';
@@ -231,7 +232,7 @@ describe('convertCanadaLifeTransactionsToMonarchCSV', () => {
     });
 
     test('Notes is just pendingId when activity notes are empty', () => {
-      const { convertToCSV } = require('../../../src/utils/csv');
+      const { convertToCSV } = csvModule;
 
       const pendingId = 'cl-tx:1122334455667788';
 
@@ -254,7 +255,7 @@ describe('convertCanadaLifeTransactionsToMonarchCSV', () => {
     });
 
     test('pending transaction without pendingId does not append undefined to notes', () => {
-      const { convertToCSV } = require('../../../src/utils/csv');
+      const { convertToCSV } = csvModule;
 
       const transactions = [
         {
@@ -278,7 +279,7 @@ describe('convertCanadaLifeTransactionsToMonarchCSV', () => {
 
   describe('mixed transactions', () => {
     test('handles mix of settled and pending transactions correctly', () => {
-      const { convertToCSV } = require('../../../src/utils/csv');
+      const { convertToCSV } = csvModule;
 
       const transactions = [
         {
@@ -317,7 +318,7 @@ describe('convertCanadaLifeTransactionsToMonarchCSV', () => {
     });
 
     test('passes all transactions to convertToCSV', () => {
-      const { convertToCSV } = require('../../../src/utils/csv');
+      const { convertToCSV } = csvModule;
 
       const transactions = Array.from({ length: 5 }, (_, i) => ({
         date: `2024-01-${String(i + 1).padStart(2, '0')}`,
@@ -338,7 +339,7 @@ describe('convertCanadaLifeTransactionsToMonarchCSV', () => {
 
   describe('account name', () => {
     test('uses provided accountName in Account column for all rows', () => {
-      const { convertToCSV } = require('../../../src/utils/csv');
+      const { convertToCSV } = csvModule;
       const customAccount = 'My Custom RRSP Account';
 
       const transactions = [

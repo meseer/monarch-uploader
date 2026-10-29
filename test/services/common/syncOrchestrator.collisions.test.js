@@ -126,8 +126,8 @@ jest.mock('../../../src/ui/components/cardholderSelector', () => ({
   showCardholderSelector: jest.fn(() => Promise.resolve(null)),
 }));
 
-const { uploadTransactionsAndSaveRefs } = require('../../../src/services/common/transactionUpload');
-const { convertToCSV } = require('../../../src/utils/csv');
+import { uploadTransactionsAndSaveRefs } from '../../../src/services/common/transactionUpload';
+import { convertToCSV } from '../../../src/utils/csv';
 
 // ── Fixtures ────────────────────────────────────────────────
 

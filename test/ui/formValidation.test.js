@@ -14,6 +14,7 @@ import {
   validateDateRange,
   addBlurValidation,
 } from '../../src/ui/components/formValidation';
+import * as formValidationModule from '../../src/ui/components/formValidation';
 
 describe('formValidation', () => {
   let container;
@@ -575,7 +576,7 @@ describe('formValidation', () => {
 
   describe('default export', () => {
     test('exports all functions', () => {
-      const formValidation = require('../../src/ui/components/formValidation').default;
+      const formValidation = formValidationModule.default;
 
       expect(formValidation.showFieldError).toBeDefined();
       expect(formValidation.clearFieldError).toBeDefined();

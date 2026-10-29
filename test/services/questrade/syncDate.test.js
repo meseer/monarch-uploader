@@ -104,14 +104,14 @@ jest.mock('../../../src/services/questrade/balance', () => {
 globalThis.GM_getValue = jest.fn();
 globalThis.GM_setValue = jest.fn();
 
-const utils = require('../../../src/core/utils');
-const balanceModule = require('../../../src/services/questrade/balance');
-const positionsService = require('../../../src/services/questrade/positions').default;
-const transactionsService = require('../../../src/services/questrade/transactions').default;
-const syncModule = require('../../../src/services/questrade/sync');
-const { showProgressDialog } = require('../../../src/ui/components/progressDialog');
-const { ensureMonarchAuthentication } = require('../../../src/ui/components/monarchLoginLink');
-const { ensureAllAccountMappings } = require('../../../src/services/questrade/accountMapping');
+import * as utils from '../../../src/core/utils';
+import * as balanceModule from '../../../src/services/questrade/balance';
+import positionsService from '../../../src/services/questrade/positions';
+import transactionsService from '../../../src/services/questrade/transactions';
+import * as syncModule from '../../../src/services/questrade/sync';
+import { showProgressDialog } from '../../../src/ui/components/progressDialog';
+import { ensureMonarchAuthentication } from '../../../src/ui/components/monarchLoginLink';
+import { ensureAllAccountMappings } from '../../../src/services/questrade/accountMapping';
 
 const { syncAccountToMonarch, syncAllAccountsToMonarch } = syncModule.default;
 

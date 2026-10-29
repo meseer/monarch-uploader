@@ -24,7 +24,7 @@ jest.mock('../../../../../src/api/monarch', () => ({
   },
 }));
 
-const monarchApi = require('../../../../../src/api/monarch').default;
+import monarchApi from '../../../../../src/api/monarch';
 
 describe('MBNA Pending Transactions', () => {
   describe('isPendingTransaction', () => {

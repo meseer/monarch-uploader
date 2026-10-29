@@ -126,14 +126,14 @@ globalThis.GM_setValue = jest.fn();
 // eslint-disable-next-line import/first
 import { uploadAllCanadaLifeAccountsToMonarch } from '../../src/services/canadalife-upload';
 
-const utils = require('../../src/core/utils');
-const canadalifeApi = require('../../src/api/canadalife').default;
-const monarchApi = require('../../src/api/monarch').default;
-const accountService = require('../../src/services/common/accountService').default;
-const clTransactions = require('../../src/services/canadalife/transactions');
-const { showProgressDialog } = require('../../src/ui/components/progressDialog');
-const { ensureMonarchAuthentication } = require('../../src/ui/components/monarchLoginLink');
-const { fetchMonarchPendingTransactions } = require('../../src/services/common/pendingReconciliation');
+import * as utils from '../../src/core/utils';
+import canadalifeApi from '../../src/api/canadalife';
+import monarchApi from '../../src/api/monarch';
+import accountService from '../../src/services/common/accountService';
+import * as clTransactions from '../../src/services/canadalife/transactions';
+import { showProgressDialog } from '../../src/ui/components/progressDialog';
+import { ensureMonarchAuthentication } from '../../src/ui/components/monarchLoginLink';
+import { fetchMonarchPendingTransactions } from '../../src/services/common/pendingReconciliation';
 
 const ACCOUNT_ID = 'agreement-1';
 const END_DATE = '2024-01-15';

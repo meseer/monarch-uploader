@@ -35,7 +35,9 @@ jest.mock('../../../src/services/canadalife/transactions', () => ({
 }));
 
 // Use Node.js crypto for real SHA-256 in the Web Crypto API mock
-const nodeCrypto = require('crypto');
+import * as nodeCrypto from 'crypto';
+import * as monarchModule from '../../../src/api/monarch';
+import * as transactionsModule from '../../../src/services/canadalife/transactions';
 
 const mockDigest = jest.fn();
 Object.defineProperty(global, 'crypto', {
@@ -65,7 +67,7 @@ afterEach(() => {
 });
 
 // Helper to get mocked monarch API
-const getMonarchApi = () => require('../../../src/api/monarch').default;
+const getMonarchApi = () => monarchModule.default;
 
 // An activity that never matches any of the cl-tx IDs used below.
 // Reconciliation refuses to delete anything when the activity list is empty (a
@@ -135,7 +137,7 @@ describe('reconcileCanadaLifePendingTransactions', () => {
   describe('reconciliation — activity still present', () => {
     test('does NOT delete a transaction whose hash is still in current activities', async () => {
       const monarchApi = getMonarchApi();
-      const { generateActivityHash } = require('../../../src/services/canadalife/transactions');
+      const { generateActivityHash } = transactionsModule;
 
       // The mock generateActivityHash produces 'cl-tx:new contribution0' for this activity
       const currentActivity = { Activity: 'New contribution' };
@@ -379,7 +381,7 @@ describe('reconcileCanadaLifeFetchedPending', () => {
 
   test('does NOT delete when activity hash still present', async () => {
     const monarchApi = getMonarchApi();
-    const { generateActivityHash } = require('../../../src/services/canadalife/transactions');
+    const { generateActivityHash } = transactionsModule;
 
     const activity = { Activity: 'New contribution' };
     const hash = await generateActivityHash(activity);

@@ -1,5 +1,5 @@
 /**
- * @jest-environment-options {"url": "https://myportal.questrade.com/investing/summary"}
+ * @vitest-environment-options {"url": "https://myportal.questrade.com/investing/summary"}
  */
 
 /**
@@ -17,11 +17,11 @@
  * nor userscript storage, and does not wrap the page's XHR or fetch.
  */
 
-const { simulateDocumentStart } = require('../helpers/rogersBankPage');
+import { simulateDocumentStart } from '../helpers/rogersBankPage';
 
 /** Evaluate the userscript bundle entry point, as the userscript manager does */
-function injectUserscript() {
-  require('../../src/index');
+async function injectUserscript() {
+  await import('../../src/index');
 }
 
 /** `initApp` applies the theme first, so its style element marks that initApp ran */
@@ -50,14 +50,14 @@ describe('startup on other sites', () => {
       page = simulateDocumentStart();
     });
 
-    test('does nothing before DOMContentLoaded', () => {
+    test('does nothing before DOMContentLoaded', async () => {
       const pageSend = XMLHttpRequest.prototype.send;
       const pageOpen = XMLHttpRequest.prototype.open;
       const pageFetch = jest.fn();
       globalThis.fetch = pageFetch;
       const headBefore = document.head.innerHTML;
 
-      injectUserscript();
+      await injectUserscript();
       jest.advanceTimersByTime(60000);
 
       expect(XMLHttpRequest.prototype.send).toBe(pageSend);
@@ -71,8 +71,8 @@ describe('startup on other sites', () => {
       expect(initAppRan()).toBe(false);
     });
 
-    test('starts the script where document-idle did, once DOMContentLoaded has been dispatched', () => {
-      injectUserscript();
+    test('starts the script where document-idle did, once DOMContentLoaded has been dispatched', async () => {
+      await injectUserscript();
       page.finishParsing('<div id="app"></div>');
       expect(GM_registerMenuCommand).not.toHaveBeenCalled();
 
@@ -82,8 +82,8 @@ describe('startup on other sites', () => {
       expect(initAppRan()).toBe(false);
     });
 
-    test('runs initApp 1 s after DOMContentLoaded, not earlier', () => {
-      injectUserscript();
+    test('runs initApp 1 s after DOMContentLoaded, not earlier', async () => {
+      await injectUserscript();
       page.finishParsing('<div id="app"></div>');
 
       jest.advanceTimersByTime(999);
@@ -93,9 +93,9 @@ describe('startup on other sites', () => {
       expect(initAppRan()).toBe(true);
     });
 
-    test('lets the page handle DOMContentLoaded before the script starts', () => {
+    test('lets the page handle DOMContentLoaded before the script starts', async () => {
       const order = [];
-      injectUserscript();
+      await injectUserscript();
       document.addEventListener('DOMContentLoaded', () => order.push('page listener'));
       GM_registerMenuCommand.mockImplementationOnce(() => order.push('script start'));
 
@@ -107,10 +107,10 @@ describe('startup on other sites', () => {
   });
 
   describe('when injected after DOMContentLoaded (the old document-idle point)', () => {
-    test('starts straight away and runs initApp 1 s later, as before', () => {
+    test('starts straight away and runs initApp 1 s later, as before', async () => {
       expect(document.readyState).not.toBe('loading');
 
-      injectUserscript();
+      await injectUserscript();
       expect(GM_registerMenuCommand).toHaveBeenCalledTimes(5);
 
       jest.advanceTimersByTime(999);
@@ -120,10 +120,10 @@ describe('startup on other sites', () => {
       expect(initAppRan()).toBe(true);
     });
 
-    test('does not install the Rogers Bank network hooks', () => {
+    test('does not install the Rogers Bank network hooks', async () => {
       const pageSend = XMLHttpRequest.prototype.send;
 
-      injectUserscript();
+      await injectUserscript();
       jest.advanceTimersByTime(1000);
 
       expect(XMLHttpRequest.prototype.send).toBe(pageSend);

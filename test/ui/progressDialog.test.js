@@ -3,6 +3,7 @@
  */
 
 import { showProgressDialog } from '../../src/ui/components/progressDialog';
+import * as progressDialogModule from '../../src/ui/components/progressDialog';
 
 // Mock debugLog function
 jest.mock('../../src/core/utils', () => ({
@@ -822,7 +823,7 @@ describe('Progress Dialog Component', () => {
 
   describe('default export', () => {
     test('should export showProgressDialog as default', () => {
-      const defaultExport = require('../../src/ui/components/progressDialog').default;
+      const defaultExport = progressDialogModule.default;
       expect(defaultExport).toBeDefined();
       expect(typeof defaultExport.showProgressDialog).toBe('function');
     });

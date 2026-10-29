@@ -5,6 +5,10 @@
 
 import { jest } from '@jest/globals';
 import categorySelector from '../../src/ui/components/categorySelector';
+import * as monarchModule from '../../src/api/monarch';
+import * as toastModule from '../../src/ui/toast';
+import * as utilsModule from '../../src/core/utils';
+import * as categoryModule from '../../src/mappers/category';
 
 // Mock all dependencies
 jest.mock('../../src/core/utils', () => ({
@@ -375,9 +379,9 @@ describe('Category Selector Component', () => {
     let mockDebugLog;
 
     beforeEach(() => {
-      mockMonarchApi = require('../../src/api/monarch').default;
-      mockToast = require('../../src/ui/toast').default;
-      mockDebugLog = require('../../src/core/utils').debugLog;
+      mockMonarchApi = monarchModule.default;
+      mockToast = toastModule.default;
+      mockDebugLog = utilsModule.debugLog;
     });
 
     test('showMonarchCategorySelector should handle successful API response', async () => {
@@ -538,7 +542,7 @@ describe('Category Selector Component', () => {
     let mockMonarchApi;
 
     beforeEach(() => {
-      mockMonarchApi = require('../../src/api/monarch').default;
+      mockMonarchApi = monarchModule.default;
       mockMonarchApi.getCategoriesAndGroups.mockResolvedValue(mockCategoryData);
     });
 
@@ -764,7 +768,7 @@ describe('Category Selector Component', () => {
         ],
       };
 
-      const mockMonarchApi = require('../../src/api/monarch').default;
+      const mockMonarchApi = monarchModule.default;
       mockMonarchApi.getCategoriesAndGroups.mockResolvedValue(testData);
 
       await categorySelector.showMonarchCategorySelector('TEST', callback);
@@ -795,7 +799,7 @@ describe('Category Selector Component', () => {
         ],
       };
 
-      const mockMonarchApi = require('../../src/api/monarch').default;
+      const mockMonarchApi = monarchModule.default;
       mockMonarchApi.getCategoriesAndGroups.mockResolvedValue(testData);
 
       await categorySelector.showMonarchCategorySelector('TEST', callback);
@@ -812,7 +816,7 @@ describe('Category Selector Component', () => {
     let mockMonarchApi;
 
     beforeEach(() => {
-      mockMonarchApi = require('../../src/api/monarch').default;
+      mockMonarchApi = monarchModule.default;
       mockMonarchApi.getCategoriesAndGroups.mockResolvedValue(mockCategoryData);
     });
 
@@ -1128,7 +1132,7 @@ describe('Integration Tests', () => {
   });
 
   test('should handle complex async workflow', async () => {
-    const mockMonarchApi = require('../../src/api/monarch').default;
+    const mockMonarchApi = monarchModule.default;
     mockMonarchApi.getCategoriesAndGroups.mockResolvedValue(mockCategoryData);
 
     const callback = jest.fn();
@@ -1168,8 +1172,8 @@ describe('Integration Tests', () => {
 
 describe('Similarity Scoring Tests', () => {
   // Import the category mapping functions for testing
-  const categoryMapping = require('../../src/mappers/category');
-  const { stringSimilarity } = require('../../src/core/utils');
+  const categoryMapping = categoryModule;
+  const { stringSimilarity } = utilsModule;
 
   // Real Monarch categories for testing
   const testMonarchCategories = ['Groceries', 'Restaurants', 'School Supplies'];

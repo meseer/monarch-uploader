@@ -7,6 +7,8 @@
  */
 
 import { calculateSingleAccountStartDate } from '../../../src/ui/questrade/components/uploadButton';
+import * as utilsModule from '../../../src/core/utils';
+import * as balanceModule from '../../../src/services/questrade/balance';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -79,8 +81,8 @@ globalThis.GM_setValue = jest.fn();
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('calculateSingleAccountStartDate', () => {
-  const { calculateFromDateWithLookback } = require('../../../src/core/utils');
-  const { getAccountCreationDate } = require('../../../src/services/questrade/balance');
+  const { calculateFromDateWithLookback } = utilsModule;
+  const { getAccountCreationDate } = balanceModule;
 
   beforeEach(() => {
     jest.clearAllMocks();

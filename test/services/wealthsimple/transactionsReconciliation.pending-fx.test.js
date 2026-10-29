@@ -71,8 +71,8 @@ jest.mock('../../../src/services/common/pendingReconciliation', () => ({
 
 global.GM_getValue = jest.fn(() => '[]');
 
-const mockMonarchApi = require('../../../src/api/monarch').default;
-const mockWealthsimpleApi = require('../../../src/api/wealthsimple').default;
+import mockMonarchApi from '../../../src/api/monarch';
+import mockWealthsimpleApi from '../../../src/api/wealthsimple';
 
 // ── Fixtures ────────────────────────────────────────────────
 

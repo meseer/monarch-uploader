@@ -4,6 +4,8 @@
 
 import mbnaSyncHooks from '../../../src/integrations/mbna/sinks/monarch/syncHooks';
 import { generatePendingTransactionId } from '../../../src/services/common/pendingReconciliation';
+import * as balanceReconstructionModule from '../../../src/integrations/mbna/source/balanceReconstruction';
+import * as balanceFormatterModule from '../../../src/integrations/mbna/sinks/monarch/balanceFormatter';
 
 // ── Mocks ───────────────────────────────────────────────────
 
@@ -317,8 +319,8 @@ describe('MBNA SyncHooks', () => {
 
   describe('buildBalanceHistory', () => {
     it('should call balance reconstruction and format for Monarch', () => {
-      const { buildBalanceHistory } = require('../../../src/integrations/mbna/source/balanceReconstruction');
-      const { formatBalanceHistoryForMonarch } = require('../../../src/integrations/mbna/sinks/monarch/balanceFormatter');
+      const { buildBalanceHistory } = balanceReconstructionModule;
+      const { formatBalanceHistoryForMonarch } = balanceFormatterModule;
 
       const result = mbnaSyncHooks.buildBalanceHistory({
         currentBalance: 500,
@@ -333,7 +335,7 @@ describe('MBNA SyncHooks', () => {
     });
 
     it('should skip formatting when invertBalance is true', () => {
-      const { formatBalanceHistoryForMonarch } = require('../../../src/integrations/mbna/sinks/monarch/balanceFormatter');
+      const { formatBalanceHistoryForMonarch } = balanceFormatterModule;
 
       const result = mbnaSyncHooks.buildBalanceHistory({
         currentBalance: 500,
@@ -347,7 +349,7 @@ describe('MBNA SyncHooks', () => {
     });
 
     it('should return null when no history', () => {
-      const { buildBalanceHistory } = require('../../../src/integrations/mbna/source/balanceReconstruction');
+      const { buildBalanceHistory } = balanceReconstructionModule;
       buildBalanceHistory.mockReturnValueOnce([]);
 
       const result = mbnaSyncHooks.buildBalanceHistory({

@@ -51,11 +51,9 @@ jest.mock('../../../src/ui/components/accountSelectorWithCreate', () => ({
   showMonarchAccountSelectorWithCreate: jest.fn(),
 }));
 
-const accountService = require('../../../src/services/common/accountService').default;
-const { hasCapability } = require('../../../src/core/integrationCapabilities');
-const {
-  showMonarchAccountSelectorWithCreate,
-} = require('../../../src/ui/components/accountSelectorWithCreate');
+import accountService from '../../../src/services/common/accountService';
+import { hasCapability } from '../../../src/core/integrationCapabilities';
+import { showMonarchAccountSelectorWithCreate } from '../../../src/ui/components/accountSelectorWithCreate';
 
 const MANIFEST = {
   accountKeyName: 'rogersbankAccount',

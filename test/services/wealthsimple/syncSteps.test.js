@@ -33,9 +33,9 @@ jest.mock('../../../src/services/wealthsimple/transactionsReconciliation', () =>
   reconcileWealthsimpleFetchedPending: jest.fn(),
 }));
 
-const wealthsimpleApi = require('../../../src/api/wealthsimple').default;
-const { uploadWealthsimpleTransactions, saveReconciledSettledIds } = require('../../../src/services/wealthsimple/account');
-const { reconcileWealthsimpleFetchedPending } = require('../../../src/services/wealthsimple/transactionsReconciliation');
+import wealthsimpleApi from '../../../src/api/wealthsimple';
+import { uploadWealthsimpleTransactions, saveReconciledSettledIds } from '../../../src/services/wealthsimple/account';
+import { reconcileWealthsimpleFetchedPending } from '../../../src/services/wealthsimple/transactionsReconciliation';
 
 const makeProgressDialog = () => ({
   updateStepStatus: jest.fn(),

@@ -12,6 +12,7 @@
 
 import { makeQuestradeApiCall } from '../../src/api/questrade';
 import { settlementOf } from '../helpers/promiseSettlement';
+import * as authModule from '../../src/services/questrade/auth';
 
 jest.mock('../../src/core/utils', () => ({
   debugLog: jest.fn(),
@@ -43,7 +44,7 @@ describe('Questrade API - response parsing and settlement', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    authService = jest.requireMock('../../src/services/questrade/auth').default;
+    authService = authModule.default;
     globalThis.GM_getValue.mockReturnValue('[]');
     authService.checkQuestradeAuth.mockReturnValue({
       authenticated: true,

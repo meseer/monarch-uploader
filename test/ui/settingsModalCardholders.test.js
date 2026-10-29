@@ -62,10 +62,10 @@ jest.mock('../../src/ui/components/settingsModalHelpers', () => ({
   }),
 }));
 
-const { hasCapability } = require('../../src/core/integrationCapabilities');
-const accountService = require('../../src/services/common/accountService').default;
-const { getHouseholdMembers } = require('../../src/api/monarchHousehold');
-const toast = require('../../src/ui/toast').default;
+import { hasCapability } from '../../src/core/integrationCapabilities';
+import accountService from '../../src/services/common/accountService';
+import { getHouseholdMembers } from '../../src/api/monarchHousehold';
+import toast from '../../src/ui/toast';
 
 const INTEGRATION = 'rogersbank';
 const ACCOUNT_ID = 'acc-1';
