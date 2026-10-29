@@ -1,5 +1,5 @@
 /**
- * @jest-environment jsdom
+ * @vitest-environment jsdom
  *
  * The uploader card survives Wealthsimple's SPA navigation, so the sync button
  * must resolve its target account when clicked rather than when it was built.

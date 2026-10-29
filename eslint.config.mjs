@@ -31,7 +31,7 @@ export default [
       sourceType: 'module',
       globals: {
         ...globals.browser,
-        ...globals.jest,
+        ...globals.vitest,
         ...globals.node,
         // Test environment globals
         global: 'writable',
@@ -251,8 +251,8 @@ export default [
       'node_modules/**',
       '*.config.cjs',
       '*.config.mjs',
-      'webpack.config.cjs',
-      'jest.config.cjs',
+      '*.config.mts',
+      'vite.config.mjs',
       'eslint.config.mjs',
       '.eslintrc.js',
       'src/userscript-metadata.cjs',

@@ -26,18 +26,15 @@ updates:
       # Keep major and minor updates separate for careful review
       development-dependencies:
         patterns:
-          - "@babel/*"
           - "eslint*"
-          - "jest*"
-          - "webpack*"
+          - "vite*"
+          - "@vitest/*"
         dependency-type: "development"
     # Auto-merge patch updates for production dependencies
     # (You can enable this manually in GitHub settings)
     ignore:
       # Ignore updates for packages that might break userscript compatibility
-      - dependency-name: "webpack"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "babel*"
+      - dependency-name: "vite"
         update-types: ["version-update:semver-major"]
 
   # Enable version updates for GitHub Actions

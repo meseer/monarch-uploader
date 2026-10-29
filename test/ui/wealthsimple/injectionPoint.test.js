@@ -1,5 +1,5 @@
 /**
- * @jest-environment jsdom
+ * @vitest-environment jsdom
  *
  * Exercises the real injection-point resolution against a fixture that mirrors
  * the Wealthsimple dashboard holdings card (hashed class names included, since

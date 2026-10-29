@@ -2,12 +2,11 @@
   "$schema": "https://unpkg.com/knip@latest/schema.json",
   "project": ["src/**/*.{ts,js}"],
   "ignore": ["src/integrations/mbna/**", "src/sinks/types.ts"],
-  "ignoreDependencies": ["@jest/globals", "jsdom", "babel-jest"],
-  "jest": {
-    "config": ["jest.config.cjs"],
-    "entry": ["test/**/*.test.{js,ts}"]
+  "vite": {
+    "config": ["vite.config.mjs"]
   },
-  "webpack": {
-    "config": ["webpack.config.cjs"]
+  "vitest": {
+    "config": ["vite.config.mjs"],
+    "entry": ["test/**/*.test.{js,ts}", "test/setup.js"]
   }
 }
