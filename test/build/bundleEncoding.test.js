@@ -12,71 +12,60 @@
  *
  * `ascii_only: true` in the Terser format options escapes every non-ASCII
  * character as \uXXXX, which makes the bundle immune to the consumer's charset
- * guess. This suite runs the REAL production webpack build and asserts the
- * emitted artifact byte-wise, so it also covers the BannerPlugin metadata block
- * (injected with `raw: true`, which bypasses Terser entirely).
+ * guess. This suite runs the REAL production Vite build and asserts the
+ * emitted artifact byte-wise, so it also covers the userscript metadata banner
+ * (prepended post-minify, which bypasses Terser entirely).
  */
 
-const { execFileSync } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import { createRequire } from 'node:module';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 // jsdom does not expose TextDecoder, so take Node's implementation directly.
-const { TextDecoder } = require('util');
+import { TextDecoder } from 'node:util';
+import viteConfigFn from '../../vite.config.mjs';
+import scriptInfo from '../../src/scriptInfo.json';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
 const ROOT = path.resolve(__dirname, '..', '..');
-const CONFIG_PATH = path.join(ROOT, 'webpack.config.cjs');
 const BUNDLE_NAME = 'monarch-uploader.user.js';
 
-/** Load the production webpack config fresh */
+/** Load the production Vite config */
 function loadProductionConfig() {
-  delete require.cache[CONFIG_PATH];
-  // eslint-disable-next-line import/no-dynamic-require, global-require
-  return require(CONFIG_PATH)({}, { mode: 'production' });
+  return typeof viteConfigFn === 'function'
+    ? viteConfigFn({ mode: 'production', command: 'build' })
+    : viteConfigFn;
 }
 
 /**
- * Read the Terser `format` options out of the configured minimizer.
- *
- * terser-webpack-plugin normalizes the `terserOptions` it is constructed with
- * onto `options.minimizer.options`, so accept either shape rather than pinning
- * this guard to the plugin's current internals.
+ * Read the Terser `format` options out of the configured Vite build.
  */
 function getTerserFormatOptions(config) {
-  const plugins = config.optimization.minimizer || [];
-  for (const plugin of plugins) {
-    const opts = plugin && plugin.options;
-    if (!opts) continue;
-    const format = (opts.terserOptions && opts.terserOptions.format)
-      || (opts.minimizer && opts.minimizer.options && opts.minimizer.options.format);
-    if (format) return format;
-  }
-  return undefined;
+  return config?.build?.terserOptions?.format;
 }
 
 /**
  * Build the production bundle into a scratch directory and return its bytes.
  *
- * Deliberately spawned as a child process rather than calling webpack in-process.
- * Under Jest, babel-loader's `require('@babel/core')` resolves through Jest's
- * CommonJS module registry, and @babel/core v8 is ESM-only — so an in-process
- * build fails with "Must use import to load ES Module" on any Node older than
- * v24.9. A child process uses Node's own loader and matches what `npm run build`
+ * Spawned as a child process using Node's loader to match what `npm run build`
  * actually does.
  */
 function buildProductionBundle() {
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mu-bundle-encoding-'));
-  const webpackCli = require.resolve('webpack-cli/bin/cli.js');
+  const viteCli = path.join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js');
   try {
     execFileSync(
       process.execPath,
-      [webpackCli, '--mode', 'production', '--output-path', outDir],
+      [viteCli, 'build', '--mode', 'production', '--outDir', outDir],
       { cwd: ROOT, stdio: 'pipe', encoding: 'utf8' },
     );
     return fs.readFileSync(path.join(outDir, BUNDLE_NAME));
   } catch (err) {
     const detail = [err.stdout, err.stderr, err.message].filter(Boolean).join('\n');
-    throw new Error(`production webpack build failed:\n${detail.slice(0, 4000)}`);
+    throw new Error(`production Vite build failed:\n${detail.slice(0, 4000)}`);
   } finally {
     fs.rmSync(outDir, { recursive: true, force: true });
   }
@@ -164,8 +153,7 @@ describe('built userscript encoding', () => {
     });
 
     it('declares the version from scriptInfo.json', () => {
-      // eslint-disable-next-line global-require
-      const { version } = require('../../src/scriptInfo.json');
+      const { version } = scriptInfo;
       expect(text).toContain(`@version      ${version}`);
     });
 
@@ -182,10 +170,9 @@ describe('built userscript encoding', () => {
 });
 
 describe('generated userscript metadata block', () => {
-  // The banner is injected with `raw: true`, so Terser never sees it and
+  // The banner is injected post-minify, so Terser never sees it and
   // `ascii_only` cannot rescue it. It must be ASCII at the source.
   it('is pure ASCII for every build type', () => {
-    // eslint-disable-next-line global-require
     const generateMetadata = require('../../src/userscript-metadata.cjs');
     for (const buildType of ['local', 'dev', 'stable']) {
       const metadata = generateMetadata(buildType);
@@ -196,7 +183,6 @@ describe('generated userscript metadata block', () => {
   });
 
   it('matches the Neo portal and grants access to its GraphQL API', () => {
-    // eslint-disable-next-line global-require
     const generateMetadata = require('../../src/userscript-metadata.cjs');
     const metadata = generateMetadata();
 
@@ -238,7 +224,7 @@ describe('source file encoding', () => {
   });
 });
 
-describe('webpack Terser configuration', () => {
+describe('Vite Terser configuration', () => {
   it('sets ascii_only so non-ASCII is escaped at minification', () => {
     const format = getTerserFormatOptions(loadProductionConfig());
     expect(format).toBeDefined();
