@@ -60,7 +60,7 @@ function operationFromRequest(request) {
 describe('Neo API client', () => {
   it('discovers open and closed credit accounts with open deposits', async () => {
     const httpClient = {
-      request: jest.fn().mockResolvedValue(graphqlResponse(accountsResponse)),
+      request: vi.fn().mockResolvedValue(graphqlResponse(accountsResponse)),
     };
     const api = createApi(httpClient, {});
 
@@ -125,7 +125,7 @@ describe('Neo API client', () => {
         },
       },
     };
-    const httpClient = { request: jest.fn().mockResolvedValue(graphqlResponse(data)) };
+    const httpClient = { request: vi.fn().mockResolvedValue(graphqlResponse(data)) };
     const api = createApi(httpClient, {});
 
     await expect(api.getAccountsSummary()).resolves.toEqual([{
@@ -140,7 +140,7 @@ describe('Neo API client', () => {
 
   it('converts current balances and credit limits from cents', async () => {
     const httpClient = {
-      request: jest.fn()
+      request: vi.fn()
         .mockResolvedValueOnce(graphqlResponse(accountsResponse))
         .mockResolvedValueOnce(graphqlResponse({
           user: { creditAccount: { balances: { totalCreditBalanceCents: 12345 } } },
@@ -163,7 +163,7 @@ describe('Neo API client', () => {
 
   it('does not request a credit limit for a deposit account', async () => {
     const httpClient = {
-      request: jest.fn().mockResolvedValue(graphqlResponse(accountsResponse)),
+      request: vi.fn().mockResolvedValue(graphqlResponse(accountsResponse)),
     };
     const api = createApi(httpClient, {});
     await api.getAccounts();
@@ -215,7 +215,7 @@ describe('Neo API client', () => {
       },
     };
     const httpClient = {
-      request: jest.fn()
+      request: vi.fn()
         .mockResolvedValueOnce(graphqlResponse(accountsResponse))
         .mockResolvedValueOnce(graphqlResponse(firstPage))
         .mockResolvedValueOnce(graphqlResponse(secondPage))
@@ -254,7 +254,7 @@ describe('Neo API client', () => {
       { id: 'old-deposit-tx', authorizationProcessedAt: '2025-01-10T00:00:00Z' },
     ];
     const httpClient = {
-      request: jest.fn()
+      request: vi.fn()
         .mockResolvedValueOnce(graphqlResponse(accountsResponse))
         .mockResolvedValueOnce(graphqlResponse({
           user: { savingsAccount: { savingsAccountTransactions: {
@@ -302,7 +302,7 @@ describe('Neo API client', () => {
       } } },
     };
     const httpClient = {
-      request: jest.fn()
+      request: vi.fn()
         .mockResolvedValueOnce(graphqlResponse(accountsResponse))
         .mockResolvedValueOnce(graphqlResponse(firstPage))
         .mockResolvedValueOnce(graphqlResponse(secondPage)),
@@ -319,7 +319,7 @@ describe('Neo API client', () => {
 
   it('reports an expired Neo session on an unauthorized response', async () => {
     const httpClient = {
-      request: jest.fn().mockResolvedValue({ status: 401, responseText: '', responseHeaders: '', response: null }),
+      request: vi.fn().mockResolvedValue({ status: 401, responseText: '', responseHeaders: '', response: null }),
     };
     const api = createApi(httpClient, {});
 
@@ -357,7 +357,7 @@ describe('Neo API client', () => {
         },
       },
     };
-    const httpClient = { request: jest.fn().mockResolvedValue(graphqlResponse(data)) };
+    const httpClient = { request: vi.fn().mockResolvedValue(graphqlResponse(data)) };
     const api = createApi(httpClient, {});
 
     await expect(api.getAccountsSummary()).resolves.toEqual([{
@@ -372,7 +372,7 @@ describe('Neo API client', () => {
 
   it('reports invalid JSON instead of a raw SyntaxError', async () => {
     const httpClient = {
-      request: jest.fn().mockResolvedValue({
+      request: vi.fn().mockResolvedValue({
         status: 200, responseText: '<html>Maintenance</html>', responseHeaders: '', response: null,
       }),
     };
@@ -383,7 +383,7 @@ describe('Neo API client', () => {
 
   it('rejects an empty batch response', async () => {
     const httpClient = {
-      request: jest.fn().mockResolvedValue({
+      request: vi.fn().mockResolvedValue({
         status: 200, responseText: '[]', responseHeaders: '', response: null,
       }),
     };
@@ -394,7 +394,7 @@ describe('Neo API client', () => {
 
   it('rejects a non-array batch response', async () => {
     const httpClient = {
-      request: jest.fn().mockResolvedValue({
+      request: vi.fn().mockResolvedValue({
         status: 200, responseText: JSON.stringify({ data: null }), responseHeaders: '', response: null,
       }),
     };
@@ -405,7 +405,7 @@ describe('Neo API client', () => {
 
   it('surfaces GraphQL errors with the operation name', async () => {
     const httpClient = {
-      request: jest.fn().mockResolvedValue({
+      request: vi.fn().mockResolvedValue({
         status: 200,
         responseText: JSON.stringify([{ errors: [{ message: 'Bad query', locations: [{ line: 1 }] }] }]),
         responseHeaders: '',
@@ -419,7 +419,7 @@ describe('Neo API client', () => {
 
   it('includes a body excerpt on non-2xx errors', async () => {
     const httpClient = {
-      request: jest.fn().mockResolvedValue({
+      request: vi.fn().mockResolvedValue({
         status: 500, responseText: '<html>Bad Gateway</html>', responseHeaders: '', response: null,
       }),
     };

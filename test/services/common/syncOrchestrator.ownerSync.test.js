@@ -12,18 +12,18 @@
 
 import { syncAccount } from '../../../src/services/common/syncOrchestrator';
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  getTodayLocal: jest.fn(() => '2024-01-15'),
-  getLastUpdateDate: jest.fn(() => '2024-01-10'),
-  calculateFromDateWithLookback: jest.fn(() => '2024-01-01'),
-  formatDaysAgoLocal: jest.fn(() => '2024-01-01'),
-  computeExtendedFromDate: jest.fn((from) => from),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  getTodayLocal: vi.fn(() => '2024-01-15'),
+  getLastUpdateDate: vi.fn(() => '2024-01-10'),
+  calculateFromDateWithLookback: vi.fn(() => '2024-01-01'),
+  formatDaysAgoLocal: vi.fn(() => '2024-01-01'),
+  computeExtendedFromDate: vi.fn((from) => from),
 }));
 
-jest.mock('../../../src/core/state', () => ({ __esModule: true, default: { setAccount: jest.fn() } }));
+vi.mock('../../../src/core/state', () => ({ __esModule: true, default: { setAccount: vi.fn() } }));
 
-jest.mock('../../../src/core/integrationCapabilities', () => ({
+vi.mock('../../../src/core/integrationCapabilities', () => ({
   ACCOUNT_SETTINGS: {
     INCLUDE_PENDING_TRANSACTIONS: 'includePendingTransactions',
     CARDHOLDER_OWNER_MODE: 'cardholderOwnerMode',
@@ -31,63 +31,63 @@ jest.mock('../../../src/core/integrationCapabilities', () => ({
   },
 }));
 
-jest.mock('../../../src/services/common/accountService', () => ({
+vi.mock('../../../src/services/common/accountService', () => ({
   __esModule: true,
   default: {
-    getAccountData: jest.fn(() => ({ includePendingTransactions: false })),
-    updateAccountInList: jest.fn(),
-    incrementSyncCount: jest.fn(() => 1),
-    isReadyForLegacyCleanup: jest.fn(() => false),
-    cleanupLegacyStorage: jest.fn(),
+    getAccountData: vi.fn(() => ({ includePendingTransactions: false })),
+    updateAccountInList: vi.fn(),
+    incrementSyncCount: vi.fn(() => 1),
+    isReadyForLegacyCleanup: vi.fn(() => false),
+    cleanupLegacyStorage: vi.fn(),
   },
 }));
 
-jest.mock('../../../src/services/common/accountMappingResolver', () => ({
-  resolveAccountMapping: jest.fn(),
+vi.mock('../../../src/services/common/accountMappingResolver', () => ({
+  resolveAccountMapping: vi.fn(),
 }));
-jest.mock('../../../src/services/common/creditLimitSync', () => ({ syncCreditLimit: jest.fn() }));
-jest.mock('../../../src/services/common/balanceUpload', () => ({
-  executeBalanceUploadStep: jest.fn(() => Promise.resolve({ success: true, message: '$0', monarchBalance: 0 })),
+vi.mock('../../../src/services/common/creditLimitSync', () => ({ syncCreditLimit: vi.fn() }));
+vi.mock('../../../src/services/common/balanceUpload', () => ({
+  executeBalanceUploadStep: vi.fn(() => Promise.resolve({ success: true, message: '$0', monarchBalance: 0 })),
 }));
-jest.mock('../../../src/services/common/transactionUpload', () => ({
-  uploadTransactionsAndSaveRefs: jest.fn(() => Promise.resolve(true)),
-  formatTransactionUploadMessage: jest.fn(() => '1 settled uploaded'),
+vi.mock('../../../src/services/common/transactionUpload', () => ({
+  uploadTransactionsAndSaveRefs: vi.fn(() => Promise.resolve(true)),
+  formatTransactionUploadMessage: vi.fn(() => '1 settled uploaded'),
 }));
-jest.mock('../../../src/services/common/deduplication', () => ({
-  filterDuplicateSettledTransactions: jest.fn((i, a, txs) => ({ newTransactions: txs, duplicateCount: 0 })),
-  filterDuplicatePendingTransactions: jest.fn((i, a, txs) => ({ newTransactions: txs, duplicateCount: 0 })),
+vi.mock('../../../src/services/common/deduplication', () => ({
+  filterDuplicateSettledTransactions: vi.fn((i, a, txs) => ({ newTransactions: txs, duplicateCount: 0 })),
+  filterDuplicatePendingTransactions: vi.fn((i, a, txs) => ({ newTransactions: txs, duplicateCount: 0 })),
 }));
-jest.mock('../../../src/services/common/pendingReconciliation', () => ({
-  fetchMonarchPendingTransactions: jest.fn(),
-  reconcileFetchedPendingTransactions: jest.fn(),
-  separateAndDeduplicateTransactions: jest.fn(({ settled, pending }) => Promise.resolve({
+vi.mock('../../../src/services/common/pendingReconciliation', () => ({
+  fetchMonarchPendingTransactions: vi.fn(),
+  reconcileFetchedPendingTransactions: vi.fn(),
+  separateAndDeduplicateTransactions: vi.fn(({ settled, pending }) => Promise.resolve({
     settled, pending, duplicatesRemoved: 0, settledIdMap: new Map(), pendingIdMap: new Map(),
   })),
-  formatReconciliationMessage: jest.fn(() => 'No pending transactions'),
+  formatReconciliationMessage: vi.fn(() => 'No pending transactions'),
 }));
-jest.mock('../../../src/utils/csv', () => ({
-  convertToCSV: jest.fn(() => 'Date,Merchant\n2024-01-15,Amazon'),
+vi.mock('../../../src/utils/csv', () => ({
+  convertToCSV: vi.fn(() => 'Date,Merchant\n2024-01-15,Amazon'),
   MONARCH_CSV_COLUMNS: ['Date', 'Merchant', 'Category', 'Account', 'Original Statement', 'Notes', 'Amount', 'Tags', 'Owner'],
-  buildMonarchTags: jest.fn(() => ''),
-  resolveNotesTransactionId: jest.fn(() => ''),
+  buildMonarchTags: vi.fn(() => ''),
+  resolveNotesTransactionId: vi.fn(() => ''),
 }));
-jest.mock('../../../src/ui/components/progressDialog', () => ({ showProgressDialog: jest.fn() }));
-jest.mock('../../../src/ui/components/datePicker', () => ({ showDatePickerWithOptionsPromise: jest.fn() }));
-jest.mock('../../../src/ui/components/cardholderSelector', () => ({ showCardholderSelector: jest.fn() }));
+vi.mock('../../../src/ui/components/progressDialog', () => ({ showProgressDialog: vi.fn() }));
+vi.mock('../../../src/ui/components/datePicker', () => ({ showDatePickerWithOptionsPromise: vi.fn() }));
+vi.mock('../../../src/ui/components/cardholderSelector', () => ({ showCardholderSelector: vi.fn() }));
 
-jest.mock('../../../src/services/common/cardholders', () => ({
-  syncCardholders: jest.fn(() => Promise.resolve({ cardholders: {}, shouldTag: false, shouldMapOwner: true })),
-  applyCardholderFields: jest.fn((txs) => txs),
-  collectOwnerAssignments: jest.fn(() => new Map([['test-tx:aaaa', 'user-1']])),
-  getOwnerMode: jest.fn(() => 'off'),
+vi.mock('../../../src/services/common/cardholders', () => ({
+  syncCardholders: vi.fn(() => Promise.resolve({ cardholders: {}, shouldTag: false, shouldMapOwner: true })),
+  applyCardholderFields: vi.fn((txs) => txs),
+  collectOwnerAssignments: vi.fn(() => new Map([['test-tx:aaaa', 'user-1']])),
+  getOwnerMode: vi.fn(() => 'off'),
 }));
 
-jest.mock('../../../src/services/common/ownerSync', () => ({
-  syncTransactionOwners: jest.fn(() => Promise.resolve({
+vi.mock('../../../src/services/common/ownerSync', () => ({
+  syncTransactionOwners: vi.fn(() => Promise.resolve({
     success: true, updated: 1, alreadyOwned: 0, unmatched: 0, failed: 0, deferred: 0, error: null,
   })),
-  buildOwnerResolver: jest.fn(() => () => 'user-1'),
-  formatOwnerSyncMessage: jest.fn(() => '1 owner set'),
+  buildOwnerResolver: vi.fn(() => () => 'user-1'),
+  formatOwnerSyncMessage: vi.fn(() => '1 owner set'),
 }));
 
 import { getOwnerMode } from '../../../src/services/common/cardholders';
@@ -95,32 +95,32 @@ import { syncTransactionOwners, buildOwnerResolver } from '../../../src/services
 import * as balanceUploadModule from '../../../src/services/common/balanceUpload';
 
 const createProgressDialog = () => ({
-  initSteps: jest.fn(),
-  updateStepStatus: jest.fn(),
-  updateProgress: jest.fn(),
-  updateBalanceChange: jest.fn(),
-  onCancel: jest.fn(),
-  hideCancel: jest.fn(),
-  showSummary: jest.fn(),
+  initSteps: vi.fn(),
+  updateStepStatus: vi.fn(),
+  updateProgress: vi.fn(),
+  updateBalanceChange: vi.fn(),
+  onCancel: vi.fn(),
+  hideCancel: vi.fn(),
+  showSummary: vi.fn(),
 });
 
 const hooks = () => ({
-  fetchTransactions: jest.fn(() => Promise.resolve({
+  fetchTransactions: vi.fn(() => Promise.resolve({
     settled: [{ date: '2024-01-15', description: 'Amazon', amount: 10, referenceNumber: 'R1' }],
     pending: [],
     metadata: null,
   })),
-  processTransactions: jest.fn((settled) => ({
+  processTransactions: vi.fn((settled) => ({
     settled: settled.map((tx) => ({ ...tx, isPending: false })),
     pending: [],
   })),
-  getSettledRefId: jest.fn((tx) => tx.referenceNumber),
-  getPendingRefId: jest.fn(() => null),
-  resolveCategories: jest.fn((txs) => Promise.resolve(txs)),
-  buildTransactionNotes: jest.fn(() => ''),
-  getPendingIdFields: jest.fn((tx) => [tx.date]),
-  getSettledAmount: jest.fn((tx) => -tx.amount),
-  extractCardholder: jest.fn(() => ({ name: 'MYKHAILO DELEGAN', cardLast4: '8584' })),
+  getSettledRefId: vi.fn((tx) => tx.referenceNumber),
+  getPendingRefId: vi.fn(() => null),
+  resolveCategories: vi.fn((txs) => Promise.resolve(txs)),
+  buildTransactionNotes: vi.fn(() => ''),
+  getPendingIdFields: vi.fn((tx) => [tx.date]),
+  getSettledAmount: vi.fn((tx) => -tx.amount),
+  extractCardholder: vi.fn(() => ({ name: 'MYKHAILO DELEGAN', cardLast4: '8584' })),
 });
 
 const manifest = (capabilities = {}) => ({
@@ -136,7 +136,7 @@ const run = async (progressDialog, overrides = {}) => syncAccount({
   integrationId: 'test',
   manifest: manifest(),
   hooks: hooks(),
-  api: { getBalance: jest.fn(() => Promise.resolve({ currentBalance: 0 })) },
+  api: { getBalance: vi.fn(() => Promise.resolve({ currentBalance: 0 })) },
   account: { accountId: 'acc-1' },
   accountDisplayName: 'Test Card',
   monarchAccount: { id: 'monarch-1' },
@@ -149,7 +149,7 @@ const run = async (progressDialog, overrides = {}) => syncAccount({
 const stepKeys = (progressDialog) => progressDialog.initSteps.mock.calls[0][1].map((s) => s.key);
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   getOwnerMode.mockReturnValue('off');
 });
 
@@ -257,7 +257,7 @@ describe('step list when owner mapping is on', () => {
       integrationId: 'test',
       manifest: { ...manifest(), txIdPrefix: null },
       hooks: hooks(),
-      api: { getBalance: jest.fn(() => Promise.resolve({ currentBalance: 0 })) },
+      api: { getBalance: vi.fn(() => Promise.resolve({ currentBalance: 0 })) },
       account: { accountId: 'acc-1' },
       accountDisplayName: 'Test Card',
       monarchAccount: { id: 'monarch-1' },
@@ -276,7 +276,7 @@ describe('step list when owner mapping is on', () => {
       integrationId: 'test',
       manifest: manifest({ hasCardholders: false }),
       hooks: hooks(),
-      api: { getBalance: jest.fn(() => Promise.resolve({ currentBalance: 0 })) },
+      api: { getBalance: vi.fn(() => Promise.resolve({ currentBalance: 0 })) },
       account: { accountId: 'acc-1' },
       accountDisplayName: 'Test Card',
       monarchAccount: { id: 'monarch-1' },

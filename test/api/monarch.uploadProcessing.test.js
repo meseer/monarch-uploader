@@ -9,29 +9,31 @@
  * transient-error tolerance, and the progress reporting the UI relies on.
  */
 
-import { jest } from '@jest/globals';
 import '../setup';
 import { uploadTransactionsToMonarch } from '../../src/api/monarch';
 import authService from '../../src/services/auth';
 
-jest.mock('../../src/services/auth', () => ({
-  checkMonarchAuth: jest.fn(),
-  getMonarchCredentials: jest.fn(),
-  setupMonarchTokenCapture: jest.fn(),
-  clearMonarchCredentials: jest.fn(),
+vi.mock('../../src/services/auth', () => {
+  const mock = {
+    checkMonarchAuth: vi.fn(),
+    getMonarchCredentials: vi.fn(),
+    setupMonarchTokenCapture: vi.fn(),
+    clearMonarchCredentials: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
+
+vi.mock('../../src/core/state', () => ({
+  setMonarchAuth: vi.fn(),
+  getState: vi.fn(),
 }));
 
-jest.mock('../../src/core/state', () => ({
-  setMonarchAuth: jest.fn(),
-  getState: jest.fn(),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-}));
-
-jest.mock('../../src/ui/components/accountSelectorWithCreate', () => ({
-  showMonarchAccountSelectorWithCreate: jest.fn(),
+vi.mock('../../src/ui/components/accountSelectorWithCreate', () => ({
+  showMonarchAccountSelectorWithCreate: vi.fn(),
 }));
 
 const CSV = 'Date,Merchant,Amount\n2026-10-01,Coffee,-4.50';
@@ -51,7 +53,7 @@ describe('Monarch API - upload processing wait', () => {
    * @param {Array<Object|symbol>} statusResponses - Session objects or error markers
    */
   function mockMonarch(statusResponses) {
-    globalThis.GM_xmlhttpRequest = jest.fn((options) => {
+    globalThis.GM_xmlhttpRequest = vi.fn((options) => {
       // The CSV upload sends FormData; every other call is GraphQL JSON.
       if (typeof options.data !== 'string') {
         options.onload({ status: 200, responseText: JSON.stringify({ session_key: 'session-1' }) });
@@ -80,18 +82,20 @@ describe('Monarch API - upload processing wait', () => {
   }
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     delays = [];
     statusChecks = 0;
-    globalThis.FormData = jest.fn().mockImplementation(() => ({ append: jest.fn() }));
-    globalThis.Blob = jest.fn();
+    globalThis.FormData = vi.fn().mockImplementation(function () {
+      return { append: vi.fn() };
+    });
+    globalThis.Blob = vi.fn();
     authService.checkMonarchAuth.mockReturnValue({
       authenticated: true,
       credentials: { csrfToken: 'csrf-token', sessionExpiresAt: '2099-12-31T23:59:59Z' },
     });
     authService.getMonarchCredentials.mockReturnValue({ csrfToken: 'csrf-token', sessionExpiresAt: '2099-12-31T23:59:59Z' });
     // Run every wait immediately, but record how long the code asked to wait.
-    jest.spyOn(global, 'setTimeout').mockImplementation((callback, ms) => {
+    vi.spyOn(global, 'setTimeout').mockImplementation((callback, ms) => {
       delays.push(ms);
       callback();
       return 1;
@@ -109,7 +113,7 @@ describe('Monarch API - upload processing wait', () => {
         { status: 'pending' },
         { status: 'completed', uploadedStatement: { transactionCount: 3 } },
       ]);
-      const onProcessingUpdate = jest.fn();
+      const onProcessingUpdate = vi.fn();
 
       await expect(uploadTransactionsToMonarch('monarch-1', CSV, { onProcessingUpdate })).resolves.toBe(true);
 
@@ -122,7 +126,7 @@ describe('Monarch API - upload processing wait', () => {
 
     it('does not report anything when the first check already shows completion', async () => {
       mockMonarch([{ status: 'completed', uploadedStatement: { transactionCount: 1 } }]);
-      const onProcessingUpdate = jest.fn();
+      const onProcessingUpdate = vi.fn();
 
       await expect(uploadTransactionsToMonarch('monarch-1', CSV, { onProcessingUpdate })).resolves.toBe(true);
 
@@ -134,7 +138,7 @@ describe('Monarch API - upload processing wait', () => {
       // A UI error must not turn an import Monarch is processing into a
       // reported failure: that is exactly what leads to duplicates.
       mockMonarch([{ status: 'started' }, { status: 'completed', uploadedStatement: { transactionCount: 1 } }]);
-      const onProcessingUpdate = jest.fn(() => {
+      const onProcessingUpdate = vi.fn(() => {
         throw new Error('progress dialog was closed');
       });
 
@@ -163,7 +167,7 @@ describe('Monarch API - upload processing wait', () => {
         { status: 'processing' },
         { status: 'completed', uploadedStatement: { transactionCount: 2 } },
       ]);
-      const onProcessingUpdate = jest.fn();
+      const onProcessingUpdate = vi.fn();
 
       await expect(uploadTransactionsToMonarch('monarch-1', CSV, { onProcessingUpdate })).resolves.toBe(true);
       expect(onProcessingUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: 'processing', checks: 1 }));

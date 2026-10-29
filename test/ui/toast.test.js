@@ -6,18 +6,18 @@ import toastModule, { ensureToastContainer, showToast, show } from '../../src/ui
 import * as utilsModule from '../../src/core/utils';
 
 // Mock dependencies
-jest.mock('../../src/core/config', () => ({
+vi.mock('../../src/core/config', () => ({
   UI: {
     TOAST_DURATION: 5000,
   },
 }));
 
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
 // Mock Greasemonkey functions
-global.GM_getValue = jest.fn();
+global.GM_getValue = vi.fn();
 
 describe('Toast Notification System', () => {
   beforeEach(() => {
@@ -26,7 +26,7 @@ describe('Toast Notification System', () => {
     document.head.innerHTML = '';
 
     // Reset mocks
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     // Setup default GM_getValue mock
     global.GM_getValue.mockImplementation((key, defaultValue) => {
@@ -35,13 +35,13 @@ describe('Toast Notification System', () => {
     });
 
     // Mock setTimeout and clearTimeout for testing
-    jest.useFakeTimers();
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
     // Clean up timers
-    jest.runOnlyPendingTimers();
-    jest.useRealTimers();
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
 
     // Clean up any toast containers
     const containers = document.querySelectorAll('#balance-uploader-toast-container');
@@ -172,13 +172,13 @@ describe('Toast Notification System', () => {
       expect(document.body.contains(toast)).toBe(true);
 
       // Fast forward 1000ms
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
 
       // Toast should start removing (animation begins)
       expect(toast.style.animation).toContain('slideOut');
 
       // Fast forward animation duration
-      jest.advanceTimersByTime(300);
+      vi.advanceTimersByTime(300);
 
       // Toast should be removed from DOM
       expect(document.body.contains(toast)).toBe(false);
@@ -189,7 +189,7 @@ describe('Toast Notification System', () => {
       const toast2 = showToast('Test message 2', 'info', -1);
 
       // Fast forward a long time
-      jest.advanceTimersByTime(10000);
+      vi.advanceTimersByTime(10000);
 
       // Toasts should still exist
       expect(document.body.contains(toast1)).toBe(true);
@@ -209,7 +209,7 @@ describe('Toast Notification System', () => {
       expect(toast.style.animation).toContain('slideOut');
 
       // Fast forward animation
-      jest.advanceTimersByTime(300);
+      vi.advanceTimersByTime(300);
 
       // Toast should be removed
       expect(document.body.contains(toast)).toBe(false);
@@ -428,7 +428,7 @@ describe('Toast Notification System', () => {
       });
 
       // Fast forward to trigger auto-dismiss
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
 
       // All should start animation
       toasts.forEach((toast) => {
@@ -436,7 +436,7 @@ describe('Toast Notification System', () => {
       });
 
       // Fast forward animation
-      jest.advanceTimersByTime(300);
+      vi.advanceTimersByTime(300);
 
       // All should be removed
       toasts.forEach((toast) => {
@@ -448,7 +448,7 @@ describe('Toast Notification System', () => {
       const toast = showToast('Test message', 'info', 1000);
 
       // Fast forward half way
-      jest.advanceTimersByTime(500);
+      vi.advanceTimersByTime(500);
 
       // Click to dismiss early
       toast.click();
@@ -456,7 +456,7 @@ describe('Toast Notification System', () => {
       expect(toast.style.animation).toContain('slideOut');
 
       // Fast forward remaining time + animation
-      jest.advanceTimersByTime(800);
+      vi.advanceTimersByTime(800);
 
       expect(document.body.contains(toast)).toBe(false);
     });

@@ -5,28 +5,31 @@
 import { getAccountTypeOptions, createManualAccount, createManualInvestmentsAccount } from '../../src/api/monarch';
 
 // Mock dependencies
-const mockGM_xmlhttpRequest = jest.fn();
+const mockGM_xmlhttpRequest = vi.fn();
 global.GM_xmlhttpRequest = mockGM_xmlhttpRequest;
 
-jest.mock('../../src/services/auth', () => ({
-  checkMonarchAuth: jest.fn(() => ({
-    authenticated: true,
-    credentials: { csrfToken: 'mock-csrf-token', sessionExpiresAt: '2099-12-31T23:59:59Z' },
-  })),
-  clearMonarchCredentials: jest.fn(),
+vi.mock('../../src/services/auth', () => {
+  const mock = {
+    checkMonarchAuth: vi.fn(() => ({
+      authenticated: true,
+      credentials: { csrfToken: 'mock-csrf-token', sessionExpiresAt: '2099-12-31T23:59:59Z' },
+    })),
+    clearMonarchCredentials: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
+
+vi.mock('../../src/core/state', () => ({
+  setMonarchAuth: vi.fn(),
 }));
 
-jest.mock('../../src/core/state', () => ({
-  setMonarchAuth: jest.fn(),
-}));
-
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
 describe('Monarch Manual Account APIs', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockGM_xmlhttpRequest.mockClear();
   });
 

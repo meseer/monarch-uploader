@@ -7,12 +7,12 @@
 
 import { getHouseholdMembers } from '../../src/api/monarchHousehold';
 
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../src/api/monarch', () => ({
-  callMonarchGraphQL: jest.fn(),
+vi.mock('../../src/api/monarch', () => ({
+  callMonarchGraphQL: vi.fn(),
 }));
 
 import { callMonarchGraphQL } from '../../src/api/monarch';
@@ -38,7 +38,7 @@ const singleMemberResponse = {
 };
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 });
 
 describe('getHouseholdMembers', () => {

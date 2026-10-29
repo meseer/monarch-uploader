@@ -15,16 +15,16 @@ import { debugLog } from '../../../src/core/utils';
 import { installCanadaLifeTestGlobals, readAuraRequest } from './harness';
 import { SERVER_FWUID, mockFetchResponse, wrapAuraSuccess } from './fixtures';
 
-jest.mock('../../../src/core/state', () => {
-  const { buildStateMock: build } = jest.requireActual('./harness');
+vi.mock('../../../src/core/state', async () => {
+  const { buildStateMock: build } = await vi.importActual('./harness');
   return build();
 });
-jest.mock('../../../src/core/utils', () => {
-  const { buildUtilsMock: build } = jest.requireActual('./harness');
+vi.mock('../../../src/core/utils', async () => {
+  const { buildUtilsMock: build } = await vi.importActual('./harness');
   return build();
 });
-jest.mock('../../../src/ui/toast', () => {
-  const { buildToastMock: build } = jest.requireActual('./harness');
+vi.mock('../../../src/ui/toast', async () => {
+  const { buildToastMock: build } = await vi.importActual('./harness');
   return build();
 });
 
@@ -32,7 +32,7 @@ installCanadaLifeTestGlobals();
 
 describe('Canada Life API - getAuraContext from $A runtime', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     clearHarvestedAuraContext();
     delete global.window.$A;
     delete globalThis.unsafeWindow;
@@ -45,8 +45,8 @@ describe('Canada Life API - getAuraContext from $A runtime', () => {
 
   test('uses encodeForServer when it returns a string', () => {
     global.window.$A = {
-      getContext: jest.fn().mockReturnValue({
-        encodeForServer: jest.fn().mockReturnValue('{"mode":"PROD","fwuid":"dynamic-fwuid-123"}'),
+      getContext: vi.fn().mockReturnValue({
+        encodeForServer: vi.fn().mockReturnValue('{"mode":"PROD","fwuid":"dynamic-fwuid-123"}'),
       }),
     };
 
@@ -56,8 +56,8 @@ describe('Canada Life API - getAuraContext from $A runtime', () => {
 
   test('uses encodeForServer when it returns an object', () => {
     global.window.$A = {
-      getContext: jest.fn().mockReturnValue({
-        encodeForServer: jest.fn().mockReturnValue({ mode: 'PROD', fwuid: 'obj-fwuid' }),
+      getContext: vi.fn().mockReturnValue({
+        encodeForServer: vi.fn().mockReturnValue({ mode: 'PROD', fwuid: 'obj-fwuid' }),
       }),
     };
 
@@ -69,7 +69,7 @@ describe('Canada Life API - getAuraContext from $A runtime', () => {
 
   test('builds the context manually from context.fwuid', () => {
     global.window.$A = {
-      getContext: jest.fn().mockReturnValue({
+      getContext: vi.fn().mockReturnValue({
         fwuid: 'manual-fwuid-456',
         mode: 'PROD',
         loaded: { 'APPLICATION@markup://siteforce:communityApp': 'test-hash' },
@@ -89,8 +89,8 @@ describe('Canada Life API - getAuraContext from $A runtime', () => {
 
   test('falls back to getEncodedFwuid() when fwuid is absent', () => {
     global.window.$A = {
-      getContext: jest.fn().mockReturnValue({
-        getEncodedFwuid: jest.fn().mockReturnValue('encoded-fwuid-789'),
+      getContext: vi.fn().mockReturnValue({
+        getEncodedFwuid: vi.fn().mockReturnValue('encoded-fwuid-789'),
         mode: 'PROD',
         loaded: {},
       }),
@@ -104,8 +104,8 @@ describe('Canada Life API - getAuraContext from $A runtime', () => {
   test('resolves $A through unsafeWindow when window.$A is missing', () => {
     globalThis.unsafeWindow = {
       $A: {
-        getContext: jest.fn().mockReturnValue({
-          encodeForServer: jest.fn().mockReturnValue('{"mode":"PROD","fwuid":"unsafe-fwuid"}'),
+        getContext: vi.fn().mockReturnValue({
+          encodeForServer: vi.fn().mockReturnValue('{"mode":"PROD","fwuid":"unsafe-fwuid"}'),
         }),
       },
     };
@@ -116,14 +116,14 @@ describe('Canada Life API - getAuraContext from $A runtime', () => {
 
   test('prefers window.$A over unsafeWindow when both exist', () => {
     global.window.$A = {
-      getContext: jest.fn().mockReturnValue({
-        encodeForServer: jest.fn().mockReturnValue('{"fwuid":"window-fwuid"}'),
+      getContext: vi.fn().mockReturnValue({
+        encodeForServer: vi.fn().mockReturnValue('{"fwuid":"window-fwuid"}'),
       }),
     };
     globalThis.unsafeWindow = {
       $A: {
-        getContext: jest.fn().mockReturnValue({
-          encodeForServer: jest.fn().mockReturnValue('{"fwuid":"unsafe-fwuid"}'),
+        getContext: vi.fn().mockReturnValue({
+          encodeForServer: vi.fn().mockReturnValue('{"fwuid":"unsafe-fwuid"}'),
         }),
       },
     };
@@ -142,7 +142,7 @@ describe('Canada Life API - getAuraContext from $A runtime', () => {
 
   test('falls back gracefully when $A.getContext throws', () => {
     global.window.$A = {
-      getContext: jest.fn().mockImplementation(() => {
+      getContext: vi.fn().mockImplementation(() => {
         throw new Error('Aura framework not initialized');
       }),
     };
@@ -156,8 +156,8 @@ describe('Canada Life API - getAuraContext from $A runtime', () => {
 
   test('falls back when encodeForServer returns null and no fwuid exists', () => {
     global.window.$A = {
-      getContext: jest.fn().mockReturnValue({
-        encodeForServer: jest.fn().mockReturnValue(null),
+      getContext: vi.fn().mockReturnValue({
+        encodeForServer: vi.fn().mockReturnValue(null),
       }),
     };
 
@@ -168,7 +168,7 @@ describe('Canada Life API - getAuraContext from $A runtime', () => {
 
 describe('Canada Life API - harvesting fwuid from responses', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     clearHarvestedAuraContext();
     delete global.window.$A;
     delete globalThis.unsafeWindow;

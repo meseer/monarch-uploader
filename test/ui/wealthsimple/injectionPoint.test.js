@@ -8,9 +8,9 @@
 
 import { findInjectionPoint, getTargetContainer } from '../../../src/ui/wealthsimple/uiManager';
 
-global.GM_getValue = jest.fn();
-global.GM_setValue = jest.fn();
-global.GM_xmlhttpRequest = jest.fn();
+global.GM_getValue = vi.fn();
+global.GM_setValue = vi.fn();
+global.GM_xmlhttpRequest = vi.fn();
 
 /**
  * Holdings card markup, trimmed to the nesting that matters:

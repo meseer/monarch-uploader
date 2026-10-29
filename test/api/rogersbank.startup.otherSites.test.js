@@ -31,16 +31,16 @@ describe('startup on other sites', () => {
   let page;
 
   beforeEach(() => {
-    jest.resetModules();
-    jest.useFakeTimers();
+    vi.resetModules();
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
     // Restore while fake timers are on, so the startup it may trigger is cleared
     page?.restore();
     page = null;
-    jest.clearAllTimers();
-    jest.useRealTimers();
+    vi.clearAllTimers();
+    vi.useRealTimers();
     document.getElementById('monarch-uploader-theme')?.remove();
     document.documentElement.removeAttribute('data-mu-theme');
   });
@@ -53,12 +53,12 @@ describe('startup on other sites', () => {
     test('does nothing before DOMContentLoaded', async () => {
       const pageSend = XMLHttpRequest.prototype.send;
       const pageOpen = XMLHttpRequest.prototype.open;
-      const pageFetch = jest.fn();
+      const pageFetch = vi.fn();
       globalThis.fetch = pageFetch;
       const headBefore = document.head.innerHTML;
 
       await injectUserscript();
-      jest.advanceTimersByTime(60000);
+      vi.advanceTimersByTime(60000);
 
       expect(XMLHttpRequest.prototype.send).toBe(pageSend);
       expect(XMLHttpRequest.prototype.open).toBe(pageOpen);
@@ -76,7 +76,7 @@ describe('startup on other sites', () => {
       page.finishParsing('<div id="app"></div>');
       expect(GM_registerMenuCommand).not.toHaveBeenCalled();
 
-      jest.advanceTimersByTime(0);
+      vi.advanceTimersByTime(0);
 
       expect(GM_registerMenuCommand).toHaveBeenCalledTimes(5);
       expect(initAppRan()).toBe(false);
@@ -86,10 +86,10 @@ describe('startup on other sites', () => {
       await injectUserscript();
       page.finishParsing('<div id="app"></div>');
 
-      jest.advanceTimersByTime(999);
+      vi.advanceTimersByTime(999);
       expect(initAppRan()).toBe(false);
 
-      jest.advanceTimersByTime(1);
+      vi.advanceTimersByTime(1);
       expect(initAppRan()).toBe(true);
     });
 
@@ -100,7 +100,7 @@ describe('startup on other sites', () => {
       GM_registerMenuCommand.mockImplementationOnce(() => order.push('script start'));
 
       page.finishParsing();
-      jest.advanceTimersByTime(0);
+      vi.advanceTimersByTime(0);
 
       expect(order).toEqual(['page listener', 'script start']);
     });
@@ -113,10 +113,10 @@ describe('startup on other sites', () => {
       await injectUserscript();
       expect(GM_registerMenuCommand).toHaveBeenCalledTimes(5);
 
-      jest.advanceTimersByTime(999);
+      vi.advanceTimersByTime(999);
       expect(initAppRan()).toBe(false);
 
-      jest.advanceTimersByTime(1);
+      vi.advanceTimersByTime(1);
       expect(initAppRan()).toBe(true);
     });
 
@@ -124,7 +124,7 @@ describe('startup on other sites', () => {
       const pageSend = XMLHttpRequest.prototype.send;
 
       await injectUserscript();
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
 
       expect(XMLHttpRequest.prototype.send).toBe(pageSend);
     });

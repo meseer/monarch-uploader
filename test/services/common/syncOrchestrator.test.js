@@ -6,40 +6,40 @@ import { syncAccount, prepareAndSyncAccount } from '../../../src/services/common
 
 // ── Mocks ───────────────────────────────────────────────────
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  getTodayLocal: jest.fn(() => '2024-01-15'),
-  getLastUpdateDate: jest.fn(() => null),
-  calculateFromDateWithLookback: jest.fn(() => '2024-01-01'),
-  formatDaysAgoLocal: jest.fn((days) => {
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  getTodayLocal: vi.fn(() => '2024-01-15'),
+  getLastUpdateDate: vi.fn(() => null),
+  calculateFromDateWithLookback: vi.fn(() => '2024-01-01'),
+  formatDaysAgoLocal: vi.fn((days) => {
     const d = new Date(2024, 0, 15); // matches getTodayLocal mock
     d.setDate(d.getDate() - days);
     return d.toISOString().split('T')[0];
   }),
 }));
 
-jest.mock('../../../src/core/state', () => ({
+vi.mock('../../../src/core/state', () => ({
   __esModule: true,
   default: {
-    setAccount: jest.fn(),
+    setAccount: vi.fn(),
   },
 }));
 
-jest.mock('../../../src/services/common/accountMappingResolver', () => ({
-  resolveAccountMapping: jest.fn(() => Promise.resolve({
+vi.mock('../../../src/services/common/accountMappingResolver', () => ({
+  resolveAccountMapping: vi.fn(() => Promise.resolve({
     monarchAccount: { id: 'monarch-1', displayName: 'Test Monarch Account' },
   })),
 }));
 
-jest.mock('../../../src/ui/components/progressDialog', () => ({
-  showProgressDialog: jest.fn(),
+vi.mock('../../../src/ui/components/progressDialog', () => ({
+  showProgressDialog: vi.fn(),
 }));
 
-jest.mock('../../../src/ui/components/datePicker', () => ({
-  showDatePickerWithOptionsPromise: jest.fn(),
+vi.mock('../../../src/ui/components/datePicker', () => ({
+  showDatePickerWithOptionsPromise: vi.fn(),
 }));
 
-jest.mock('../../../src/core/integrationCapabilities', () => ({
+vi.mock('../../../src/core/integrationCapabilities', () => ({
   ACCOUNT_SETTINGS: {
     INCLUDE_PENDING_TRANSACTIONS: 'includePendingTransactions',
     CARDHOLDER_OWNER_MODE: 'cardholderOwnerMode',
@@ -47,32 +47,32 @@ jest.mock('../../../src/core/integrationCapabilities', () => ({
   },
 }));
 
-jest.mock('../../../src/services/common/accountService', () => ({
+vi.mock('../../../src/services/common/accountService', () => ({
   __esModule: true,
   default: {
-    getAccountData: jest.fn(() => ({
+    getAccountData: vi.fn(() => ({
       includePendingTransactions: true,
       storeTransactionDetailsInNotes: false,
     })),
-    updateAccountInList: jest.fn(),
-    incrementSyncCount: jest.fn(() => 1),
-    isReadyForLegacyCleanup: jest.fn(() => false),
-    cleanupLegacyStorage: jest.fn(),
+    updateAccountInList: vi.fn(),
+    incrementSyncCount: vi.fn(() => 1),
+    isReadyForLegacyCleanup: vi.fn(() => false),
+    cleanupLegacyStorage: vi.fn(),
   },
 }));
 
-jest.mock('../../../src/services/common/creditLimitSync', () => ({
-  syncCreditLimit: jest.fn(() => Promise.resolve({ success: true, message: '$5,000' })),
+vi.mock('../../../src/services/common/creditLimitSync', () => ({
+  syncCreditLimit: vi.fn(() => Promise.resolve({ success: true, message: '$5,000' })),
 }));
 
-jest.mock('../../../src/services/common/balanceUpload', () => ({
-  executeBalanceUploadStep: jest.fn(() => Promise.resolve({ success: true, message: '$100.00', monarchBalance: -100 })),
+vi.mock('../../../src/services/common/balanceUpload', () => ({
+  executeBalanceUploadStep: vi.fn(() => Promise.resolve({ success: true, message: '$100.00', monarchBalance: -100 })),
 }));
 
-jest.mock('../../../src/services/common/transactionUpload', () => ({
-  uploadTransactionsAndSaveRefs: jest.fn(() => Promise.resolve(true)),
-  formatMonarchProcessingMessage: jest.fn(({ checks }) => `Monarch check ${checks}`),
-  formatTransactionUploadMessage: jest.fn((s, p, d) => {
+vi.mock('../../../src/services/common/transactionUpload', () => ({
+  uploadTransactionsAndSaveRefs: vi.fn(() => Promise.resolve(true)),
+  formatMonarchProcessingMessage: vi.fn(({ checks }) => `Monarch check ${checks}`),
+  formatTransactionUploadMessage: vi.fn((s, p, d) => {
     const parts = [];
     if (s > 0) parts.push(`${s} settled`);
     if (p > 0) parts.push(`${p} pending`);
@@ -83,38 +83,38 @@ jest.mock('../../../src/services/common/transactionUpload', () => ({
   }),
 }));
 
-jest.mock('../../../src/services/common/deduplication', () => ({
-  filterDuplicateSettledTransactions: jest.fn((id, acct, txs) => ({
+vi.mock('../../../src/services/common/deduplication', () => ({
+  filterDuplicateSettledTransactions: vi.fn((id, acct, txs) => ({
     newTransactions: txs,
     duplicateCount: 0,
   })),
-  filterDuplicatePendingTransactions: jest.fn((id, acct, txs) => ({
+  filterDuplicatePendingTransactions: vi.fn((id, acct, txs) => ({
     newTransactions: txs,
     duplicateCount: 0,
   })),
 }));
 
-jest.mock('../../../src/services/common/pendingReconciliation', () => ({
-  reconcilePendingTransactions: jest.fn(() => Promise.resolve({ success: true, settled: 0, cancelled: 0, failed: 0, noPendingTransactions: true })),
-  separateAndDeduplicateTransactions: jest.fn(({ settled, pending }) => Promise.resolve({
+vi.mock('../../../src/services/common/pendingReconciliation', () => ({
+  reconcilePendingTransactions: vi.fn(() => Promise.resolve({ success: true, settled: 0, cancelled: 0, failed: 0, noPendingTransactions: true })),
+  separateAndDeduplicateTransactions: vi.fn(({ settled, pending }) => Promise.resolve({
     settled,
     pending: pending.map((tx, i) => ({ ...tx, generatedId: `test-tx:${i}`, isPending: true })),
     duplicatesRemoved: 0,
     settledIdMap: new Map(),
     pendingIdMap: new Map(),
   })),
-  formatReconciliationMessage: jest.fn(() => 'No pending transactions'),
+  formatReconciliationMessage: vi.fn(() => 'No pending transactions'),
 }));
 
-jest.mock('../../../src/utils/csv', () => ({
-  convertToCSV: jest.fn(() => 'Date,Merchant\n2024-01-15,Amazon'),
+vi.mock('../../../src/utils/csv', () => ({
+  convertToCSV: vi.fn(() => 'Date,Merchant\n2024-01-15,Amazon'),
   MONARCH_CSV_COLUMNS: ['Date', 'Merchant', 'Category', 'Account', 'Original Statement', 'Notes', 'Amount', 'Tags', 'Owner'],
-  buildMonarchTags: jest.fn(({ isPending, cardholderTag, ownerSyncPending } = {}) => [
+  buildMonarchTags: vi.fn(({ isPending, cardholderTag, ownerSyncPending } = {}) => [
     isPending ? 'Pending' : null,
     ownerSyncPending ? 'pendingOwnerUpdate' : null,
     cardholderTag || null,
   ].filter(Boolean).join(',')),
-  resolveNotesTransactionId: jest.fn(({ isPending, pendingId, txHashId, ownerSyncPending } = {}) => {
+  resolveNotesTransactionId: vi.fn(({ isPending, pendingId, txHashId, ownerSyncPending } = {}) => {
     if (isPending) return pendingId || txHashId || '';
     if (ownerSyncPending) return txHashId || pendingId || '';
     return '';
@@ -123,24 +123,24 @@ jest.mock('../../../src/utils/csv', () => ({
 
 // Cardholder support is opt-in per account and disabled by default, so the
 // orchestrator tests exercise the path where no cardholder work happens.
-jest.mock('../../../src/services/common/cardholders', () => ({
-  syncCardholders: jest.fn(() => Promise.resolve({ cardholders: {}, shouldTag: false, shouldMapOwner: false })),
-  applyCardholderFields: jest.fn((txs) => txs),
-  collectOwnerAssignments: jest.fn(() => new Map()),
+vi.mock('../../../src/services/common/cardholders', () => ({
+  syncCardholders: vi.fn(() => Promise.resolve({ cardholders: {}, shouldTag: false, shouldMapOwner: false })),
+  applyCardholderFields: vi.fn((txs) => txs),
+  collectOwnerAssignments: vi.fn(() => new Map()),
   // 'off' keeps the post-upload owner sync step out of the default workflow
-  getOwnerMode: jest.fn(() => 'off'),
+  getOwnerMode: vi.fn(() => 'off'),
 }));
 
-jest.mock('../../../src/services/common/ownerSync', () => ({
-  syncTransactionOwners: jest.fn(() => Promise.resolve({
+vi.mock('../../../src/services/common/ownerSync', () => ({
+  syncTransactionOwners: vi.fn(() => Promise.resolve({
     success: true, updated: 0, alreadyOwned: 0, unmatched: 0, failed: 0, deferred: 0, error: null, noPendingOwners: true,
   })),
-  buildOwnerResolver: jest.fn(() => () => null),
-  formatOwnerSyncMessage: jest.fn(() => 'None pending'),
+  buildOwnerResolver: vi.fn(() => () => null),
+  formatOwnerSyncMessage: vi.fn(() => 'None pending'),
 }));
 
-jest.mock('../../../src/ui/components/cardholderSelector', () => ({
-  showCardholderSelector: jest.fn(() => Promise.resolve(null)),
+vi.mock('../../../src/ui/components/cardholderSelector', () => ({
+  showCardholderSelector: vi.fn(() => Promise.resolve(null)),
 }));
 
 // Get references to the mocked modules
@@ -159,24 +159,24 @@ import * as deduplicationModule from '../../../src/services/common/deduplication
 
 function createMockProgressDialog() {
   return {
-    initSteps: jest.fn(),
-    updateStepStatus: jest.fn(),
-    updateProgress: jest.fn(),
-    updateBalanceChange: jest.fn(),
-    onCancel: jest.fn(),
-    hideCancel: jest.fn(),
-    showSummary: jest.fn(),
+    initSteps: vi.fn(),
+    updateStepStatus: vi.fn(),
+    updateProgress: vi.fn(),
+    updateBalanceChange: vi.fn(),
+    onCancel: vi.fn(),
+    hideCancel: vi.fn(),
+    showSummary: vi.fn(),
   };
 }
 
 function createMockHooks() {
   return {
-    fetchTransactions: jest.fn(() => Promise.resolve({
+    fetchTransactions: vi.fn(() => Promise.resolve({
       settled: [{ date: '2024-01-15', description: 'Amazon', amount: 42.50, referenceNumber: 'REF1' }],
       pending: [],
       metadata: { statements: [], currentCycle: { settled: [] } },
     })),
-    processTransactions: jest.fn((settled, pending) => ({
+    processTransactions: vi.fn((settled, pending) => ({
       settled: settled.map((tx) => ({
         date: tx.date,
         merchant: 'Amazon',
@@ -198,21 +198,21 @@ function createMockHooks() {
         autoCategory: null,
       })),
     })),
-    getSettledRefId: jest.fn((tx) => tx.referenceNumber),
-    getPendingRefId: jest.fn((tx) => tx.pendingId),
-    resolveCategories: jest.fn((txs) => Promise.resolve(txs.map((tx) => ({ ...tx, resolvedMonarchCategory: 'Shopping' })))),
-    buildTransactionNotes: jest.fn(() => ''),
-    getPendingIdFields: jest.fn((tx) => [tx.date, tx.description, String(tx.amount)]),
-    getSettledAmount: jest.fn((tx) => -tx.amount),
-    buildBalanceHistory: jest.fn(() => null),
+    getSettledRefId: vi.fn((tx) => tx.referenceNumber),
+    getPendingRefId: vi.fn((tx) => tx.pendingId),
+    resolveCategories: vi.fn((txs) => Promise.resolve(txs.map((tx) => ({ ...tx, resolvedMonarchCategory: 'Shopping' })))),
+    buildTransactionNotes: vi.fn(() => ''),
+    getPendingIdFields: vi.fn((tx) => [tx.date, tx.description, String(tx.amount)]),
+    getSettledAmount: vi.fn((tx) => -tx.amount),
+    buildBalanceHistory: vi.fn(() => null),
   };
 }
 
 function createMockApi() {
   return {
-    getCreditLimit: jest.fn(() => Promise.resolve(5000)),
-    getBalance: jest.fn(() => Promise.resolve({ currentBalance: 100 })),
-    getTransactions: jest.fn(),
+    getCreditLimit: vi.fn(() => Promise.resolve(5000)),
+    getBalance: vi.fn(() => Promise.resolve({ currentBalance: 100 })),
+    getTransactions: vi.fn(),
   };
 }
 
@@ -235,18 +235,18 @@ const defaultManifest = {
 
 function createMockProgressDialogForPrepare() {
   return {
-    initSteps: jest.fn(),
-    updateStepStatus: jest.fn(),
-    updateProgress: jest.fn(),
-    updateBalanceChange: jest.fn(),
-    onCancel: jest.fn(),
-    hideCancel: jest.fn(),
-    showSummary: jest.fn(),
+    initSteps: vi.fn(),
+    updateStepStatus: vi.fn(),
+    updateProgress: vi.fn(),
+    updateBalanceChange: vi.fn(),
+    onCancel: vi.fn(),
+    hideCancel: vi.fn(),
+    showSummary: vi.fn(),
   };
 }
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   mockAccountService.getAccountData.mockReturnValue({
     includePendingTransactions: true,
     storeTransactionDetailsInNotes: false,
@@ -759,7 +759,7 @@ describe('prepareAndSyncAccount', () => {
 
   it('should set state manager before resolving mapping', async () => {
     const hooks = createMockHooks();
-    hooks.buildAccountEntry = jest.fn((a) => ({ id: a.accountId }));
+    hooks.buildAccountEntry = vi.fn((a) => ({ id: a.accountId }));
     const api = createMockApi();
 
     await prepareAndSyncAccount({
@@ -777,7 +777,7 @@ describe('prepareAndSyncAccount', () => {
   it('should return skipped when mapping is skipped', async () => {
     resolveAccountMapping.mockResolvedValueOnce({ skipped: true });
     const hooks = createMockHooks();
-    hooks.buildAccountEntry = jest.fn();
+    hooks.buildAccountEntry = vi.fn();
     const api = createMockApi();
 
     const result = await prepareAndSyncAccount({
@@ -796,7 +796,7 @@ describe('prepareAndSyncAccount', () => {
   it('should return cancelled when mapping is cancelled', async () => {
     resolveAccountMapping.mockResolvedValueOnce({ cancelled: true });
     const hooks = createMockHooks();
-    hooks.buildAccountEntry = jest.fn();
+    hooks.buildAccountEntry = vi.fn();
     const api = createMockApi();
 
     const result = await prepareAndSyncAccount({
@@ -814,7 +814,7 @@ describe('prepareAndSyncAccount', () => {
 
   it('should show date picker on first sync', async () => {
     const hooks = createMockHooks();
-    hooks.buildAccountEntry = jest.fn((a) => ({ id: a.accountId }));
+    hooks.buildAccountEntry = vi.fn((a) => ({ id: a.accountId }));
     const api = createMockApi();
 
     await prepareAndSyncAccount({
@@ -836,7 +836,7 @@ describe('prepareAndSyncAccount', () => {
   it('should return cancelled when date picker is cancelled', async () => {
     showDatePickerWithOptionsPromise.mockResolvedValueOnce(null);
     const hooks = createMockHooks();
-    hooks.buildAccountEntry = jest.fn((a) => ({ id: a.accountId }));
+    hooks.buildAccountEntry = vi.fn((a) => ({ id: a.accountId }));
     const api = createMockApi();
 
     const result = await prepareAndSyncAccount({
@@ -853,8 +853,8 @@ describe('prepareAndSyncAccount', () => {
 
   it('should call suggestStartDate hook on first sync when available', async () => {
     const hooks = createMockHooks();
-    hooks.buildAccountEntry = jest.fn((a) => ({ id: a.accountId }));
-    hooks.suggestStartDate = jest.fn(() => Promise.resolve({ date: '2023-10-01', description: 'test suggestion' }));
+    hooks.buildAccountEntry = vi.fn((a) => ({ id: a.accountId }));
+    hooks.suggestStartDate = vi.fn(() => Promise.resolve({ date: '2023-10-01', description: 'test suggestion' }));
     const api = createMockApi();
 
     await prepareAndSyncAccount({
@@ -876,8 +876,8 @@ describe('prepareAndSyncAccount', () => {
 
   it('should use 90-day fallback when suggestStartDate returns null', async () => {
     const hooks = createMockHooks();
-    hooks.buildAccountEntry = jest.fn((a) => ({ id: a.accountId }));
-    hooks.suggestStartDate = jest.fn(() => Promise.resolve(null));
+    hooks.buildAccountEntry = vi.fn((a) => ({ id: a.accountId }));
+    hooks.suggestStartDate = vi.fn(() => Promise.resolve(null));
     const api = createMockApi();
 
     await prepareAndSyncAccount({
@@ -898,7 +898,7 @@ describe('prepareAndSyncAccount', () => {
   it('should skip date picker on subsequent sync and use lookback', async () => {
     getLastUpdateDate.mockReturnValue('2024-01-10'); // not first sync
     const hooks = createMockHooks();
-    hooks.buildAccountEntry = jest.fn((a) => ({ id: a.accountId }));
+    hooks.buildAccountEntry = vi.fn((a) => ({ id: a.accountId }));
     const api = createMockApi();
 
     await prepareAndSyncAccount({
@@ -915,7 +915,7 @@ describe('prepareAndSyncAccount', () => {
 
   it('should create progress dialog with manifest-driven title', async () => {
     const hooks = createMockHooks();
-    hooks.buildAccountEntry = jest.fn((a) => ({ id: a.accountId }));
+    hooks.buildAccountEntry = vi.fn((a) => ({ id: a.accountId }));
     const api = createMockApi();
 
     await prepareAndSyncAccount({
@@ -935,7 +935,7 @@ describe('prepareAndSyncAccount', () => {
 
   it('should pass buildAccountEntry hook to resolveAccountMapping', async () => {
     const hooks = createMockHooks();
-    const mockBuildEntry = jest.fn((a) => ({ id: a.accountId }));
+    const mockBuildEntry = vi.fn((a) => ({ id: a.accountId }));
     hooks.buildAccountEntry = mockBuildEntry;
     const api = createMockApi();
 

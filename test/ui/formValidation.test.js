@@ -547,7 +547,7 @@ describe('formValidation', () => {
 
   describe('addBlurValidation', () => {
     test('calls validation function on blur', () => {
-      const validationFn = jest.fn();
+      const validationFn = vi.fn();
       addBlurValidation(inputElement, validationFn);
 
       inputElement.dispatchEvent(new Event('blur'));

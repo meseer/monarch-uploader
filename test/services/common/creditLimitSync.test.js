@@ -5,22 +5,22 @@
 import { syncCreditLimit } from '../../../src/services/common/creditLimitSync';
 
 // Mock dependencies
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../../src/api/monarch', () => ({
+vi.mock('../../../src/api/monarch', () => ({
   __esModule: true,
   default: {
-    setCreditLimit: jest.fn(),
+    setCreditLimit: vi.fn(),
   },
 }));
 
-jest.mock('../../../src/services/common/accountService', () => ({
+vi.mock('../../../src/services/common/accountService', () => ({
   __esModule: true,
   default: {
-    getAccountData: jest.fn(),
-    updateAccountInList: jest.fn(() => true),
+    getAccountData: vi.fn(),
+    updateAccountInList: vi.fn(() => true),
   },
 }));
 
@@ -29,7 +29,7 @@ import accountService from '../../../src/services/common/accountService';
 
 describe('Credit Limit Sync Service', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     accountService.getAccountData.mockReturnValue(null);
   });
 

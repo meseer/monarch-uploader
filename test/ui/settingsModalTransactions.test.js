@@ -8,29 +8,29 @@
 
 import { renderTransactionsManagementSection } from '../../src/ui/components/settingsModalTransactions';
 
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  getTodayLocal: jest.fn(() => '2025-10-24'),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  getTodayLocal: vi.fn(() => '2025-10-24'),
 }));
 
-jest.mock('../../src/core/integrationCapabilities', () => ({
-  getCapabilities: jest.fn(() => ({ hasDeduplication: true, settings: [] })),
+vi.mock('../../src/core/integrationCapabilities', () => ({
+  getCapabilities: vi.fn(() => ({ hasDeduplication: true, settings: [] })),
 }));
 
-jest.mock('../../src/services/common/accountService', () => ({
+vi.mock('../../src/services/common/accountService', () => ({
   __esModule: true,
   default: {
-    updateAccountInList: jest.fn(() => true),
+    updateAccountInList: vi.fn(() => true),
   },
 }));
 
-jest.mock('../../src/ui/toast', () => ({
+vi.mock('../../src/ui/toast', () => ({
   __esModule: true,
-  default: { show: jest.fn() },
+  default: { show: vi.fn() },
 }));
 
-jest.mock('../../src/ui/components/settingsModalHelpers', () => ({
-  showConfirmDialog: jest.fn(() => Promise.resolve(true)),
+vi.mock('../../src/ui/components/settingsModalHelpers', () => ({
+  showConfirmDialog: vi.fn(() => Promise.resolve(true)),
 }));
 
 import { getCapabilities } from '../../src/core/integrationCapabilities';
@@ -82,7 +82,7 @@ function visibleRows() {
 }
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   getCapabilities.mockReturnValue({ hasDeduplication: true, settings: [] });
   accountService.updateAccountInList.mockReturnValue(true);
   showConfirmDialog.mockResolvedValue(true);

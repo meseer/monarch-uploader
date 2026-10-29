@@ -11,28 +11,28 @@ import { API } from '../../src/core/config';
 
 import { setupWealthsimpleAuth } from '../helpers/wealthsimpleAuthCookie';
 
-global.GM_getValue = jest.fn();
-global.GM_setValue = jest.fn();
-global.GM_deleteValue = jest.fn();
-global.GM_xmlhttpRequest = jest.fn();
+global.GM_getValue = vi.fn();
+global.GM_setValue = vi.fn();
+global.GM_deleteValue = vi.fn();
+global.GM_xmlhttpRequest = vi.fn();
 
 Object.defineProperty(document, 'cookie', {
   writable: true,
   value: '',
 });
 
-jest.mock('../../src/core/state', () => ({
+vi.mock('../../src/core/state', () => ({
   __esModule: true,
   default: {
-    setWealthsimpleAuth: jest.fn(),
+    setWealthsimpleAuth: vi.fn(),
   },
 }));
 
 describe('Wealthsimple API Client - Queries & Accounts', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     document.cookie = '';
-    jest.clearAllTimers();
+    vi.clearAllTimers();
   });
 
   describe('makeGraphQLQuery', () => {

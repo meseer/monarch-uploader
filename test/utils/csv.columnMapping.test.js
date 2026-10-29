@@ -28,19 +28,19 @@ import {
   MONARCH_CSV_COLUMNS_WITHOUT_ID,
 } from '../../src/utils/csv';
 
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../src/mappers/merchant', () => ({
-  applyMerchantMapping: jest.fn((m) => m),
+vi.mock('../../src/mappers/merchant', () => ({
+  applyMerchantMapping: vi.fn((m) => m),
 }));
 
-jest.mock('../../src/mappers/category', () => ({
-  applyCategoryMapping: jest.fn((c) => c),
+vi.mock('../../src/mappers/category', () => ({
+  applyCategoryMapping: vi.fn((c) => c),
 }));
 
-jest.mock('../../src/core/config', () => ({
+vi.mock('../../src/core/config', () => ({
   STORAGE: {
     MONARCH_CSV_OWNER_KEY: 'monarch_csv_owner_key',
     MONARCH_CSV_ID_KEY: 'monarch_csv_id_key',
@@ -67,9 +67,9 @@ const parseMapping = (columns) => JSON.parse(
 );
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   // Default: no override stored
-  global.GM_getValue = jest.fn((_key, fallback) => fallback);
+  global.GM_getValue = vi.fn((_key, fallback) => fallback);
 });
 
 describe('buildMonarchColumnMapping', () => {
@@ -217,7 +217,7 @@ describe('buildMonarchColumnMapping', () => {
   describe('Id key override (kill-switch)', () => {
     it('omits Id entirely when the override is an empty string', () => {
       // The kill-switch: stops native id matching without a rebuild.
-      global.GM_getValue = jest.fn((key) => (key === 'monarch_csv_id_key' ? '' : undefined));
+      global.GM_getValue = vi.fn((key) => (key === 'monarch_csv_id_key' ? '' : undefined));
 
       const mapping = parseMapping();
 
@@ -226,7 +226,7 @@ describe('buildMonarchColumnMapping', () => {
     });
 
     it('still maps every other field when Id is disabled', () => {
-      global.GM_getValue = jest.fn((key) => (key === 'monarch_csv_id_key' ? '' : undefined));
+      global.GM_getValue = vi.fn((key) => (key === 'monarch_csv_id_key' ? '' : undefined));
 
       const mapping = parseMapping();
 
@@ -242,7 +242,7 @@ describe('buildMonarchColumnMapping', () => {
     });
 
     it('uses a stored override key when present', () => {
-      global.GM_getValue = jest.fn((key) => (key === 'monarch_csv_id_key' ? 'transaction_id' : undefined));
+      global.GM_getValue = vi.fn((key) => (key === 'monarch_csv_id_key' ? 'transaction_id' : undefined));
 
       const mapping = parseMapping();
 
@@ -257,7 +257,7 @@ describe('buildMonarchColumnMapping', () => {
     });
 
     it('falls back to the default when storage throws', () => {
-      global.GM_getValue = jest.fn(() => {
+      global.GM_getValue = vi.fn(() => {
         throw new Error('storage unavailable');
       });
 
@@ -272,7 +272,7 @@ describe('buildMonarchColumnMapping', () => {
       // The escape hatch for re-probing if Monarch ever adds an owner column.
       // Keyed deliberately: Owner and Id are both overridable, so a mock that
       // answers every key with the same value would have them collide.
-      global.GM_getValue = jest.fn((key) => (key === 'monarch_csv_owner_key' ? 'owner' : undefined));
+      global.GM_getValue = vi.fn((key) => (key === 'monarch_csv_owner_key' ? 'owner' : undefined));
 
       const mapping = parseMapping();
 
@@ -280,7 +280,7 @@ describe('buildMonarchColumnMapping', () => {
     });
 
     it('reads the override from the documented storage key', () => {
-      global.GM_getValue = jest.fn((_key, fallback) => fallback);
+      global.GM_getValue = vi.fn((_key, fallback) => fallback);
 
       buildMonarchColumnMapping();
 
@@ -288,7 +288,7 @@ describe('buildMonarchColumnMapping', () => {
     });
 
     it('omits Owner entirely when the override is an empty string', () => {
-      global.GM_getValue = jest.fn(() => '');
+      global.GM_getValue = vi.fn(() => '');
 
       const mapping = parseMapping();
 
@@ -297,7 +297,7 @@ describe('buildMonarchColumnMapping', () => {
 
     it('still maps the other fields when Owner is omitted', () => {
       // '' for every key disables Id as well, leaving only the static fields
-      global.GM_getValue = jest.fn(() => '');
+      global.GM_getValue = vi.fn(() => '');
 
       const mapping = parseMapping();
 
@@ -313,7 +313,7 @@ describe('buildMonarchColumnMapping', () => {
     });
 
     it('falls back to the safe default (no Owner) when storage throws', () => {
-      global.GM_getValue = jest.fn(() => {
+      global.GM_getValue = vi.fn(() => {
         throw new Error('storage unavailable');
       });
 
@@ -327,7 +327,7 @@ describe('buildMonarchColumnMapping', () => {
       // Not a scenario we create, but worth pinning: the mapping is keyed by
       // Monarch field name, so two columns sharing a key collapse to one entry
       // rather than producing something malformed.
-      global.GM_getValue = jest.fn(() => 'id');
+      global.GM_getValue = vi.fn(() => 'id');
 
       const mapping = parseMapping();
 

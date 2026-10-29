@@ -35,7 +35,7 @@ describe('configStore', () => {
   let gmStore;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     // Set up in-memory GM storage for realistic testing
     gmStore = {};
     GM_getValue.mockImplementation((key, defaultValue) => {
@@ -425,8 +425,8 @@ describe('configStore', () => {
     /** Register a modular integration with the minimum the registry requires */
     const register = (manifest) => registerIntegration({
       manifest,
-      api: { fetch: jest.fn() },
-      auth: { checkStatus: jest.fn() },
+      api: { fetch: vi.fn() },
+      auth: { checkStatus: vi.fn() },
       injectionPoint: { selectors: [] },
     });
 

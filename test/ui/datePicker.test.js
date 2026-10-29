@@ -8,19 +8,19 @@ import * as keyboardNavigationModule from '../../src/ui/keyboardNavigation';
 import * as utilsModule from '../../src/core/utils';
 
 // Mock dependencies
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../src/ui/keyboardNavigation', () => ({
-  addModalKeyboardHandlers: jest.fn(() => jest.fn()), // Return cleanup function
-  trapFocus: jest.fn(() => jest.fn()), // Return cleanup function
+vi.mock('../../src/ui/keyboardNavigation', () => ({
+  addModalKeyboardHandlers: vi.fn(() => vi.fn()), // Return cleanup function
+  trapFocus: vi.fn(() => vi.fn()), // Return cleanup function
 }));
 
-jest.mock('../../src/ui/toast', () => ({
+vi.mock('../../src/ui/toast', () => ({
   __esModule: true,
   default: {
-    show: jest.fn(),
+    show: vi.fn(),
   },
 }));
 
@@ -33,7 +33,7 @@ describe('Date Picker Component', () => {
     document.body.appendChild(container);
 
     // Clear all mocks
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
@@ -154,7 +154,7 @@ describe('Date Picker Component', () => {
     test('should create modal with correct structure', () => {
       const defaultDate = '2024-01-15';
       const promptText = 'Please select a start date';
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       showDatePicker(defaultDate, promptText, callback);
 
@@ -197,7 +197,7 @@ describe('Date Picker Component', () => {
     test('should call callback with selected date when select button is clicked', () => {
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       showDatePicker(defaultDate, promptText, callback);
 
@@ -214,7 +214,7 @@ describe('Date Picker Component', () => {
     test('should call callback with null when cancel button is clicked', () => {
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       showDatePicker(defaultDate, promptText, callback);
 
@@ -231,7 +231,7 @@ describe('Date Picker Component', () => {
     test('should call callback with null when clicking outside modal', () => {
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       showDatePicker(defaultDate, promptText, callback);
 
@@ -248,7 +248,7 @@ describe('Date Picker Component', () => {
     test('should not close when clicking on modal content', () => {
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       showDatePicker(defaultDate, promptText, callback);
 
@@ -267,7 +267,7 @@ describe('Date Picker Component', () => {
       const defaultDate = '2024-01-15';
       const newDate = '2024-03-10';
       const promptText = 'Select a date';
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       showDatePicker(defaultDate, promptText, callback);
 
@@ -287,7 +287,7 @@ describe('Date Picker Component', () => {
     test('should remove modal from DOM when cancelled', () => {
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       showDatePicker(defaultDate, promptText, callback);
 
@@ -308,7 +308,7 @@ describe('Date Picker Component', () => {
     test('should remove modal from DOM when selected', () => {
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       showDatePicker(defaultDate, promptText, callback);
 
@@ -331,7 +331,7 @@ describe('Date Picker Component', () => {
     test('should show inline error for invalid date format', () => {
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       showDatePicker(defaultDate, promptText, callback);
 
@@ -359,7 +359,7 @@ describe('Date Picker Component', () => {
     test('should show inline error for empty date', () => {
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       showDatePicker(defaultDate, promptText, callback);
 
@@ -385,7 +385,7 @@ describe('Date Picker Component', () => {
       const defaultDate = '2024-01-15';
       const validDate = '2024-12-25';
       const promptText = 'Select a date';
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       showDatePicker(defaultDate, promptText, callback);
 
@@ -409,7 +409,7 @@ describe('Date Picker Component', () => {
       const { addModalKeyboardHandlers, trapFocus } = keyboardNavigationModule;
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       showDatePicker(defaultDate, promptText, callback);
 
@@ -428,7 +428,7 @@ describe('Date Picker Component', () => {
       const { trapFocus } = keyboardNavigationModule;
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       showDatePicker(defaultDate, promptText, callback);
 
@@ -443,7 +443,7 @@ describe('Date Picker Component', () => {
     test('should handle Enter key on date input', () => {
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       showDatePicker(defaultDate, promptText, callback);
 
@@ -452,7 +452,7 @@ describe('Date Picker Component', () => {
 
       // Simulate Enter key press on date input
       const enterEvent = new KeyboardEvent('keydown', { key: 'Enter' });
-      enterEvent.preventDefault = jest.fn();
+      enterEvent.preventDefault = vi.fn();
       dateInput.dispatchEvent(enterEvent);
 
       expect(enterEvent.preventDefault).toHaveBeenCalled();
@@ -462,12 +462,12 @@ describe('Date Picker Component', () => {
     test('should focus date input initially', () => {
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       // Mock focus method
-      const focusSpy = jest.fn();
+      const focusSpy = vi.fn();
       const originalCreateElement = document.createElement;
-      document.createElement = jest.fn((tagName) => {
+      document.createElement = vi.fn((tagName) => {
         const element = originalCreateElement.call(document, tagName);
         if (tagName === 'input') {
           element.focus = focusSpy;
@@ -487,14 +487,14 @@ describe('Date Picker Component', () => {
       const { addModalKeyboardHandlers, trapFocus } = keyboardNavigationModule;
 
       // Mock cleanup functions
-      const mockModalCleanup = jest.fn();
-      const mockTrapCleanup = jest.fn();
+      const mockModalCleanup = vi.fn();
+      const mockTrapCleanup = vi.fn();
       addModalKeyboardHandlers.mockReturnValue(mockModalCleanup);
       trapFocus.mockReturnValue(mockTrapCleanup);
 
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       showDatePicker(defaultDate, promptText, callback);
 
@@ -516,7 +516,7 @@ describe('Date Picker Component', () => {
     test('should style cancel button correctly', () => {
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       showDatePicker(defaultDate, promptText, callback);
 
@@ -533,7 +533,7 @@ describe('Date Picker Component', () => {
     test('should style select button correctly', () => {
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       showDatePicker(defaultDate, promptText, callback);
 
@@ -545,14 +545,14 @@ describe('Date Picker Component', () => {
       // Accept both hex and RGB color formats (JSDOM returns RGB)
       expect(selectBtn.style.background).toMatch(/#007bff|rgb\(0,\s*123,\s*255\)/);
       expect(selectBtn.style.color).toBe('white');
-      expect(selectBtn.style.border).toMatch(/none|^$/); // Accept either "none" or empty string
+      expect(selectBtn.style.border).toMatch(/none|medium|^$/); // Accept "none", "medium" (jsdom v30), or empty string
       expect(selectBtn.style.cursor).toBe('pointer');
     });
 
     test('should style date input correctly', () => {
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       showDatePicker(defaultDate, promptText, callback);
 
@@ -570,7 +570,7 @@ describe('Date Picker Component', () => {
     test('should position overlay correctly', () => {
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       showDatePicker(defaultDate, promptText, callback);
 
@@ -589,7 +589,7 @@ describe('Date Picker Component', () => {
     test('should style modal content correctly', () => {
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       showDatePicker(defaultDate, promptText, callback);
 
@@ -606,7 +606,7 @@ describe('Date Picker Component', () => {
     test('should organize buttons in flex container', () => {
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       showDatePicker(defaultDate, promptText, callback);
 
@@ -628,7 +628,7 @@ describe('Date Picker Component', () => {
       const { debugLog } = utilsModule;
       const defaultDate = '2024-01-15';
       const promptText = 'Select a date';
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       showDatePicker(defaultDate, promptText, callback);
 
@@ -639,8 +639,8 @@ describe('Date Picker Component', () => {
 
   describe('Edge cases and error handling', () => {
     test('should handle multiple modals gracefully', () => {
-      const callback1 = jest.fn();
-      const callback2 = jest.fn();
+      const callback1 = vi.fn();
+      const callback2 = vi.fn();
 
       // Create first modal
       showDatePicker('2024-01-15', 'First picker', callback1);
@@ -677,7 +677,7 @@ describe('Date Picker Component', () => {
 
     test('should handle empty or invalid default date', () => {
       const promptText = 'Select a date';
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       // Empty default date
       showDatePicker('', promptText, callback);
@@ -700,7 +700,7 @@ describe('Date Picker Component', () => {
     test('should handle very long prompt text', () => {
       const defaultDate = '2024-01-15';
       const longPromptText = 'A'.repeat(1000); // Very long text
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       showDatePicker(defaultDate, longPromptText, callback);
 

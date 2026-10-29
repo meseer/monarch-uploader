@@ -13,24 +13,24 @@ import {
   executeTransactionSyncStep,
 } from '../../../src/services/wealthsimple/syncSteps';
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../../src/api/wealthsimple', () => ({
+vi.mock('../../../src/api/wealthsimple', () => ({
   __esModule: true,
   default: {
-    fetchTransactions: jest.fn(),
+    fetchTransactions: vi.fn(),
   },
 }));
 
-jest.mock('../../../src/services/wealthsimple/account', () => ({
-  uploadWealthsimpleTransactions: jest.fn(),
-  saveReconciledSettledIds: jest.fn(),
+vi.mock('../../../src/services/wealthsimple/account', () => ({
+  uploadWealthsimpleTransactions: vi.fn(),
+  saveReconciledSettledIds: vi.fn(),
 }));
 
-jest.mock('../../../src/services/wealthsimple/transactionsReconciliation', () => ({
-  reconcileWealthsimpleFetchedPending: jest.fn(),
+vi.mock('../../../src/services/wealthsimple/transactionsReconciliation', () => ({
+  reconcileWealthsimpleFetchedPending: vi.fn(),
 }));
 
 import wealthsimpleApi from '../../../src/api/wealthsimple';
@@ -38,13 +38,13 @@ import { uploadWealthsimpleTransactions, saveReconciledSettledIds } from '../../
 import { reconcileWealthsimpleFetchedPending } from '../../../src/services/wealthsimple/transactionsReconciliation';
 
 const makeProgressDialog = () => ({
-  updateStepStatus: jest.fn(),
+  updateStepStatus: vi.fn(),
 });
 
 const pendingTag = { id: 'tag-pending', name: 'Pending' };
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 });
 
 describe('fetchRawTransactions', () => {

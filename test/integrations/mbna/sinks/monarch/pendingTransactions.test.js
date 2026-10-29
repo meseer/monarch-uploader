@@ -13,14 +13,14 @@ import {
   extractPendingIdFromNotes,
 } from '../../../../../src/integrations/mbna/sinks/monarch/pendingTransactions';
 
-jest.mock('../../../../../src/api/monarch', () => ({
+vi.mock('../../../../../src/api/monarch', () => ({
   __esModule: true,
   default: {
-    getTagByName: jest.fn(),
-    getTransactionsList: jest.fn(),
-    updateTransaction: jest.fn(),
-    setTransactionTags: jest.fn(),
-    deleteTransaction: jest.fn(),
+    getTagByName: vi.fn(),
+    getTransactionsList: vi.fn(),
+    updateTransaction: vi.fn(),
+    setTransactionTags: vi.fn(),
+    deleteTransaction: vi.fn(),
   },
 }));
 
@@ -207,7 +207,7 @@ describe('MBNA Pending Transactions', () => {
     };
 
     beforeEach(() => {
-      jest.clearAllMocks();
+      vi.clearAllMocks();
       monarchApi.getTagByName.mockResolvedValue({ id: 'tag-pending', name: 'Pending' });
       monarchApi.updateTransaction.mockResolvedValue({});
       monarchApi.setTransactionTags.mockResolvedValue({});

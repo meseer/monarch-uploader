@@ -3,7 +3,6 @@
  * Comprehensive tests covering all major functionality
  */
 
-import { jest } from '@jest/globals';
 import categorySelector from '../../src/ui/components/categorySelector';
 import * as monarchModule from '../../src/api/monarch';
 import * as toastModule from '../../src/ui/toast';
@@ -11,11 +10,11 @@ import * as utilsModule from '../../src/core/utils';
 import * as categoryModule from '../../src/mappers/category';
 
 // Mock all dependencies
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../src/core/utils', async () => ({
+  debugLog: vi.fn(),
   // Real implementation: escaping is what the XSS regression tests assert on
-  escapeHtml: require('../helpers/escapeHtmlMock').realEscapeHtml(),
-  stringSimilarity: jest.fn((str1, str2) => {
+  escapeHtml: (await import('../helpers/escapeHtmlMock')).realEscapeHtml(),
+  stringSimilarity: vi.fn((str1, str2) => {
     // More realistic mock similarity function
     if (str1 === str2) return 1.0;
 
@@ -40,27 +39,27 @@ jest.mock('../../src/core/utils', () => ({
   }),
 }));
 
-jest.mock('../../src/api/monarch', () => ({
+vi.mock('../../src/api/monarch', () => ({
   __esModule: true,
   default: {
-    getCategoriesAndGroups: jest.fn(),
+    getCategoriesAndGroups: vi.fn(),
   },
 }));
 
-jest.mock('../../src/ui/toast', () => ({
+vi.mock('../../src/ui/toast', () => ({
   __esModule: true,
   default: {
-    show: jest.fn(),
+    show: vi.fn(),
   },
 }));
 
-jest.mock('../../src/ui/keyboardNavigation', () => ({
-  addModalKeyboardHandlers: jest.fn(() => jest.fn()), // Return cleanup function
-  makeItemsKeyboardNavigable: jest.fn(() => jest.fn()), // Return cleanup function
+vi.mock('../../src/ui/keyboardNavigation', () => ({
+  addModalKeyboardHandlers: vi.fn(() => vi.fn()), // Return cleanup function
+  makeItemsKeyboardNavigable: vi.fn(() => vi.fn()), // Return cleanup function
 }));
 
 // Mock GM_addElement
-global.GM_addElement = jest.fn((parent, tag, attributes) => {
+global.GM_addElement = vi.fn((parent, tag, attributes) => {
   const element = document.createElement(tag);
   if (attributes) {
     Object.entries(attributes).forEach(([key, value]) => {
@@ -135,8 +134,8 @@ describe('Category Selector Component', () => {
     document.body.innerHTML = '';
 
     // Mock the monarch API
-    jest.doMock('../../src/api/monarch', () => ({
-      getCategoriesAndGroups: jest.fn().mockResolvedValue(mockCategoryData),
+    vi.doMock('../../src/api/monarch', () => ({
+      getCategoriesAndGroups: vi.fn().mockResolvedValue(mockCategoryData),
     }));
   });
 
@@ -148,7 +147,7 @@ describe('Category Selector Component', () => {
       const selector = categorySelector.create({
         bankCategory,
         categories,
-        onChange: jest.fn(),
+        onChange: vi.fn(),
       });
 
       expect(selector).toBeInstanceOf(HTMLElement);
@@ -164,7 +163,7 @@ describe('Category Selector Component', () => {
 
     test('should handle onChange callback', () => {
       const categories = mockCategoryData.categories;
-      const onChange = jest.fn();
+      const onChange = vi.fn();
 
       const selector = categorySelector.create({
         bankCategory: 'TEST',
@@ -188,7 +187,7 @@ describe('Category Selector Component', () => {
       const selector = categorySelector.create({
         bankCategory: 'TEST',
         categories: [],
-        onChange: jest.fn(),
+        onChange: vi.fn(),
       });
 
       const select = selector.querySelector('select');
@@ -203,7 +202,7 @@ describe('Category Selector Component', () => {
         bankCategory: 'TEST',
         categories,
         selectedId: 'cat-2',
-        onChange: jest.fn(),
+        onChange: vi.fn(),
       });
 
       const select = selector.querySelector('select');
@@ -275,7 +274,7 @@ describe('Category Selector Component', () => {
 
     test('should return full category object', () => {
       const categories = mockCategoryData.categories;
-      const onChange = jest.fn();
+      const onChange = vi.fn();
 
       const selector = categorySelector.create({
         bankCategory: 'TEST',
@@ -310,7 +309,7 @@ describe('Category Selector Component', () => {
         bankCategory: 'TEST',
         categories: mockCategoryData.categories,
         labelText: 'Custom Label Text',
-        onChange: jest.fn(),
+        onChange: vi.fn(),
       });
 
       const label = selector.querySelector('label');
@@ -322,7 +321,7 @@ describe('Category Selector Component', () => {
         bankCategory: 'TEST',
         categories: mockCategoryData.categories,
         placeholderText: 'Custom placeholder...',
-        onChange: jest.fn(),
+        onChange: vi.fn(),
       });
 
       const select = selector.querySelector('select');
@@ -335,7 +334,7 @@ describe('Category Selector Component', () => {
         bankCategory: 'TEST',
         categories: mockCategoryData.categories,
         required: false,
-        onChange: jest.fn(),
+        onChange: vi.fn(),
       });
 
       const select = selector.querySelector('select');
@@ -386,7 +385,7 @@ describe('Category Selector Component', () => {
 
     test('showMonarchCategorySelector should handle successful API response', async () => {
       mockMonarchApi.getCategoriesAndGroups.mockResolvedValue(mockCategoryData);
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', callback);
 
@@ -402,7 +401,7 @@ describe('Category Selector Component', () => {
     test('showMonarchCategorySelector should handle API failure', async () => {
       const apiError = new Error('API failed');
       mockMonarchApi.getCategoriesAndGroups.mockRejectedValue(apiError);
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', callback);
 
@@ -416,7 +415,7 @@ describe('Category Selector Component', () => {
         categoryGroups: [],
         categories: [],
       });
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', callback);
 
@@ -425,7 +424,7 @@ describe('Category Selector Component', () => {
     });
 
     test('showMonarchCategorySelector should handle pre-calculated similarity data', async () => {
-      const callback = jest.fn();
+      const callback = vi.fn();
       const similarityInfo = {
         categoryGroups: mockCategoryData.categoryGroups.map((group) => ({
           ...group,
@@ -447,7 +446,7 @@ describe('Category Selector Component', () => {
 
     test('showMonarchCategorySelector should handle transaction details', async () => {
       mockMonarchApi.getCategoriesAndGroups.mockResolvedValue(mockCategoryData);
-      const callback = jest.fn();
+      const callback = vi.fn();
       const transactionDetails = {
         merchant: 'Test Merchant',
         amount: { value: -50.00, currency: 'CAD' },
@@ -492,7 +491,7 @@ describe('Category Selector Component', () => {
       };
 
       mockMonarchApi.getCategoriesAndGroups.mockResolvedValue(fullMockData);
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       await categorySelector.showMonarchCategorySelector('RESTAURANTS', callback);
 
@@ -529,7 +528,7 @@ describe('Category Selector Component', () => {
       };
 
       mockMonarchApi.getCategoriesAndGroups.mockResolvedValue(emptyMockData);
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       await categorySelector.showMonarchCategorySelector('TEST', callback);
 
@@ -547,7 +546,7 @@ describe('Category Selector Component', () => {
     });
 
     test('should create modal overlay with proper styling and click-outside handling', async () => {
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', callback);
 
@@ -563,7 +562,7 @@ describe('Category Selector Component', () => {
     });
 
     test('should create search input with proper functionality', async () => {
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', callback);
 
@@ -582,7 +581,7 @@ describe('Category Selector Component', () => {
     });
 
     test('should create category group items with proper styling and icons', async () => {
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', callback);
 
@@ -601,7 +600,7 @@ describe('Category Selector Component', () => {
     });
 
     test('should handle transaction details display', async () => {
-      const callback = jest.fn();
+      const callback = vi.fn();
       const transactionDetails = {
         merchant: 'Test Merchant Co.',
         amount: { value: -25.50, currency: 'USD' },
@@ -621,7 +620,7 @@ describe('Category Selector Component', () => {
     });
 
     test('should handle amount formatting in different formats', async () => {
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       // Test with simple number
       const transactionDetails1 = {
@@ -650,7 +649,7 @@ describe('Category Selector Component', () => {
     });
 
     test('should display similarity information when provided', async () => {
-      const callback = jest.fn();
+      const callback = vi.fn();
       const similarityInfo = {
         score: 0.85,
         bestMatch: 'Restaurants',
@@ -671,7 +670,7 @@ describe('Category Selector Component', () => {
     });
 
     test('should handle cancel button functionality in top action bar', async () => {
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', callback);
 
@@ -686,7 +685,7 @@ describe('Category Selector Component', () => {
     });
 
     test('should display split Skip button with dropdown for Skip All', async () => {
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', callback);
 
@@ -711,7 +710,7 @@ describe('Category Selector Component', () => {
     });
 
     test('should resolve with skipped sentinel when Skip button is clicked', async () => {
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', callback);
 
@@ -727,7 +726,7 @@ describe('Category Selector Component', () => {
     });
 
     test('should resolve with skipAll sentinel when Skip All dropdown option is clicked', async () => {
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', callback);
 
@@ -748,7 +747,7 @@ describe('Category Selector Component', () => {
 
   describe('Group Color and Icon Functions', () => {
     test('should return appropriate colors for different group types', async () => {
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       // Create test data with different group types
       const testData = {
@@ -786,7 +785,7 @@ describe('Category Selector Component', () => {
     });
 
     test('should return appropriate icons for different group types', async () => {
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       const testData = {
         categoryGroups: [
@@ -821,7 +820,7 @@ describe('Category Selector Component', () => {
     });
 
     test('should filter categories based on search query', async () => {
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', callback);
 
@@ -832,16 +831,14 @@ describe('Category Selector Component', () => {
       searchInput.dispatchEvent(new Event('input'));
 
       // Should update display to show filtered results
-      const modal = document.querySelector('div[style*="background: white"]');
+      const modal = document.querySelector('div[style*="--mu-bg-primary"]');
 
       // In search mode, should show categories directly (not groups)
-      setTimeout(() => {
-        expect(modal.innerHTML.toLowerCase()).toContain('restaurant');
-      }, 0);
+      expect(modal.innerHTML.toLowerCase()).toContain('restaurant');
     });
 
     test('should show no results message when search yields nothing', async () => {
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', callback);
 
@@ -852,14 +849,12 @@ describe('Category Selector Component', () => {
       searchInput.dispatchEvent(new Event('input'));
 
       // Should show no results message
-      setTimeout(() => {
-        const modal = document.querySelector('div[style*="background: white"]');
-        expect(modal.innerHTML).toContain('No categories found matching your search');
-      }, 0);
+      const modal = document.querySelector('div[style*="--mu-bg-primary"]');
+      expect(modal.innerHTML).toContain('No categories found matching your search');
     });
 
     test('should clear search and return to groups when search is cleared', async () => {
-      const callback = jest.fn();
+      const callback = vi.fn();
 
       await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', callback);
 
@@ -874,14 +869,12 @@ describe('Category Selector Component', () => {
       searchInput.dispatchEvent(new Event('input'));
 
       // Should return to showing groups
-      setTimeout(() => {
-        const modal = document.querySelector('div[style*="background: white"]');
-        expect(modal.innerHTML).toContain('Select Category Group');
+      const modal = document.querySelector('div[style*="--mu-bg-primary"]');
+      expect(modal.innerHTML).toContain('Select Category Group');
 
-        // Should show group items again
-        const groupItems = modal.querySelectorAll('div[style*="cursor: pointer"][style*="margin-bottom: 15px"]');
-        expect(groupItems.length).toBeGreaterThan(0);
-      }, 0);
+      // Should show group items again
+      const groupItems = modal.querySelectorAll('div[style*="cursor: pointer"][style*="margin-bottom: 15px"]');
+      expect(groupItems.length).toBeGreaterThan(0);
     });
   });
 
@@ -908,7 +901,7 @@ describe('Category Selector Component', () => {
         const selector = categorySelector.create({
           bankCategory: 'TEST',
           categories: testCategories,
-          onChange: jest.fn(),
+          onChange: vi.fn(),
         });
 
         expect(selector).toBeTruthy();
@@ -935,7 +928,7 @@ describe('Category Selector Component', () => {
         const selector = categorySelector.create({
           bankCategory: 'TEST',
           categories: testCategories,
-          onChange: jest.fn(),
+          onChange: vi.fn(),
         });
 
         expect(selector).toBeTruthy();
@@ -956,7 +949,7 @@ describe('Category Selector Component', () => {
         categorySelector.create({
           bankCategory: 'TEST',
           categories: malformedCategories,
-          onChange: jest.fn(),
+          onChange: vi.fn(),
         });
       }).not.toThrow();
     });
@@ -975,7 +968,7 @@ describe('Category Selector Component', () => {
       const selector = categorySelector.create({
         bankCategory: '',
         categories: mockCategoryData.categories,
-        onChange: jest.fn(),
+        onChange: vi.fn(),
       });
 
       const label = selector.querySelector('label');
@@ -991,7 +984,7 @@ describe('Category Selector Component', () => {
       const selector = categorySelector.create({
         bankCategory: 'TEST',
         categories: categoriesWithoutGroups,
-        onChange: jest.fn(),
+        onChange: vi.fn(),
       });
 
       expect(selector).toBeTruthy();
@@ -1005,7 +998,7 @@ describe('Category Selector Component', () => {
       const selector = categorySelector.create({
         bankCategory: 'TEST',
         categories: mockCategoryData.categories,
-        onChange: jest.fn(),
+        onChange: vi.fn(),
       });
 
       // Check container structure
@@ -1024,7 +1017,7 @@ describe('Category Selector Component', () => {
     });
 
     test('should handle select element state changes', () => {
-      const onChange = jest.fn();
+      const onChange = vi.fn();
       const selector = categorySelector.create({
         bankCategory: 'TEST',
         categories: mockCategoryData.categories,
@@ -1049,7 +1042,7 @@ describe('Category Selector Component', () => {
     });
 
     test('should handle invalid category selection', () => {
-      const onChange = jest.fn();
+      const onChange = vi.fn();
       const selector = categorySelector.create({
         bankCategory: 'TEST',
         categories: mockCategoryData.categories,
@@ -1097,7 +1090,7 @@ describe('Integration Tests', () => {
       },
     ];
 
-    const onChange = jest.fn();
+    const onChange = vi.fn();
     const selector = categorySelector.create({
       bankCategory: 'RESTAURANT_PURCHASES',
       categories: realWorldCategories,
@@ -1135,7 +1128,7 @@ describe('Integration Tests', () => {
     const mockMonarchApi = monarchModule.default;
     mockMonarchApi.getCategoriesAndGroups.mockResolvedValue(mockCategoryData);
 
-    const callback = jest.fn();
+    const callback = vi.fn();
 
     // Test with complex similarity info and transaction details
     const similarityInfo = {

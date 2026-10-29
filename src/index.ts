@@ -20,7 +20,7 @@ import { clearSavedCategoryMappings } from './mappers/category';
 import { migrateAllLegacyStorage } from './services/common/legacyMigration';
 import stateManager from './core/state';
 import navigationManager from './core/navigation';
-import { registerIntegration } from './core/integrationRegistry';
+import { registerIntegration, getIntegration, getIntegrationForHostname } from './core/integrationRegistry';
 import { createGMHttpClient } from './core/httpClient';
 import { createGMStorageAdapter } from './core/storageAdapter';
 import { AVAILABLE_INTEGRATIONS } from './integrations';
@@ -173,9 +173,6 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
     }
 
     // Modular integrations (registry-driven) detected via manifest matchDomains
-    const { getIntegrationForHostname } = require('./core/integrationRegistry') as {
-      getIntegrationForHostname: (hostname: string) => { manifest: { displayName: string; id: string }; [key: string]: unknown } | null;
-    };
     const modularMatch = getIntegrationForHostname(window.location.hostname);
     if (modularMatch) {
       debugLog(`Running on modular integration site: ${modularMatch.manifest.displayName}`);
@@ -450,17 +447,16 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
     try {
       debugLog(`Initializing modular integration: ${integrationId}...`);
 
-      const { getIntegration } = require('./core/integrationRegistry') as {
-        getIntegration: (id: string) => Record<string, unknown> | null;
-      };
       const reg = getIntegration(integrationId);
       if (!reg) {
         debugLog(`Integration ${integrationId} not found in registry`);
         return;
       }
 
-      // Use the generic UI manager - all institution-specific data comes from the registry entry
-      initGenericUI(reg as Parameters<typeof initGenericUI>[0])
+      // Use the generic UI manager - all institution-specific data comes from the registry entry.
+      // The registry's IntegrationApi type is narrower than the generic UI's ApiClient type;
+      // this cast preserves the pre-existing (untyped require) behaviour until they are unified.
+      initGenericUI(reg as unknown as Parameters<typeof initGenericUI>[0])
         .then(() => debugLog(`${integrationId} UI initialized successfully`))
         .catch((err: unknown) => debugLog(`Error initializing ${integrationId} UI:`, err));
     } catch (error) {

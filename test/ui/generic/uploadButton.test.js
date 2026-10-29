@@ -8,7 +8,7 @@ import { darkenColor } from '../../../src/ui/generic/components/uploadButton';
 describe('Generic Upload Button Component', () => {
   describe('createUploadButton', () => {
     it('creates an upload button when authenticated', () => {
-      const onUploadClick = jest.fn();
+      const onUploadClick = vi.fn();
       const container = createUploadButton({
         isAuthenticated: true,
         institutionName: 'MBNA',
@@ -25,7 +25,7 @@ describe('Generic Upload Button Component', () => {
     });
 
     it('calls onUploadClick when button is clicked', () => {
-      const onUploadClick = jest.fn();
+      const onUploadClick = vi.fn();
       const container = createUploadButton({
         isAuthenticated: true,
         institutionName: 'MBNA',
@@ -74,7 +74,7 @@ describe('Generic Upload Button Component', () => {
       const container = createUploadButton({
         isAuthenticated: true,
         institutionName: 'MBNA',
-        onUploadClick: jest.fn(),
+        onUploadClick: vi.fn(),
       });
 
       const infoText = container.querySelector('#generic-upload-info');

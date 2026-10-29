@@ -6,12 +6,12 @@ import { convertCanadaLifeTransactionsToMonarchCSV } from '../../../src/services
 import * as csvModule from '../../../src/utils/csv';
 
 // Mock dependencies
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../../src/utils/csv', () => ({
-  convertToCSV: jest.fn((rows, columns) => {
+vi.mock('../../../src/utils/csv', () => ({
+  convertToCSV: vi.fn((rows, columns) => {
     // Simple faithful mock: return header + rows as pipe-separated strings
     const header = columns.join('|');
     const dataRows = rows.map((row) => columns.map((col) => String(row[col] ?? '')).join('|'));
@@ -20,7 +20,7 @@ jest.mock('../../../src/utils/csv', () => ({
 }));
 
 afterEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 });
 
 describe('convertCanadaLifeTransactionsToMonarchCSV', () => {

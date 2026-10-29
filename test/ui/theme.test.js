@@ -3,8 +3,8 @@
  */
 
 // Mock debugLog
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
 // We need to test the module in isolation, so we'll import after setting up DOM
@@ -23,7 +23,7 @@ describe('Theme Module', () => {
     if (existing) existing.remove();
 
     // Reset module state by re-requiring
-    jest.resetModules();
+    vi.resetModules();
     const theme = await import('../../src/ui/theme');
     initTheme = theme.initTheme;
     getCurrentTheme = theme.getCurrentTheme;
@@ -269,7 +269,7 @@ describe('Theme Module', () => {
       const lightVars = lightCss.match(/--mu-[\w-]+/g) || [];
 
       // Switch to dark theme
-      jest.resetModules();
+      vi.resetModules();
       const darkTheme = await import('../../src/ui/theme');
       document.documentElement.setAttribute('data-appearance', 'dark');
       darkTheme.initTheme();

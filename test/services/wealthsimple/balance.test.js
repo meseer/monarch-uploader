@@ -18,12 +18,12 @@ import {
 import { formatDate } from '../../../src/core/utils';
 
 // Mock GM_getValue
-global.GM_getValue = jest.fn((key, defaultValue) => defaultValue);
+global.GM_getValue = vi.fn((key, defaultValue) => defaultValue);
 
 describe('Wealthsimple Balance Service', () => {
   describe('getDefaultDateRange', () => {
     beforeEach(() => {
-      global.GM_getValue = jest.fn((key, defaultValue) => defaultValue);
+      global.GM_getValue = vi.fn((key, defaultValue) => defaultValue);
     });
 
     test('uses account creation date for first sync', () => {
@@ -76,7 +76,7 @@ describe('Wealthsimple Balance Service', () => {
 
     test('uses lastSyncDate minus lookback days for subsequent sync', () => {
       // Mock lookback days to 2 via configStore (wealthsimple_config key)
-      global.GM_getValue = jest.fn((key, defaultValue) => {
+      global.GM_getValue = vi.fn((key, defaultValue) => {
         if (key === 'wealthsimple_config') return JSON.stringify({ settings: { lookbackDays: 2 } });
         return defaultValue;
       });
@@ -96,7 +96,7 @@ describe('Wealthsimple Balance Service', () => {
     });
 
     test('never returns date before account creation', () => {
-      global.GM_getValue = jest.fn((key, defaultValue) => {
+      global.GM_getValue = vi.fn((key, defaultValue) => {
         if (key === 'wealthsimple_config') return JSON.stringify({ settings: { lookbackDays: 10 } });
         return defaultValue;
       });

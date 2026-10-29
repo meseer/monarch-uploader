@@ -10,99 +10,99 @@
 
 import accountService from '../../../src/services/common/accountService';
 
-jest.mock('../../../src/api/questrade', () => ({
+vi.mock('../../../src/api/questrade', () => ({
   __esModule: true,
-  default: { fetchAccounts: jest.fn(), makeApiCall: jest.fn(), getAccount: jest.fn() },
-  fetchAccounts: jest.fn(),
-  makeApiCall: jest.fn(),
+  default: { fetchAccounts: vi.fn(), makeApiCall: vi.fn(), getAccount: vi.fn() },
+  fetchAccounts: vi.fn(),
+  makeApiCall: vi.fn(),
 }));
 
-jest.mock('../../../src/api/monarch', () => ({
+vi.mock('../../../src/api/monarch', () => ({
   __esModule: true,
-  default: { uploadBalance: jest.fn(), uploadTransactions: jest.fn(), listAccounts: jest.fn() },
-  uploadBalance: jest.fn(),
-  uploadTransactions: jest.fn(),
+  default: { uploadBalance: vi.fn(), uploadTransactions: vi.fn(), listAccounts: vi.fn() },
+  uploadBalance: vi.fn(),
+  uploadTransactions: vi.fn(),
 }));
 
-jest.mock('../../../src/services/common/accountService', () => ({
+vi.mock('../../../src/services/common/accountService', () => ({
   __esModule: true,
   default: {
-    getAccounts: jest.fn(),
-    getAccountData: jest.fn(),
-    getMonarchAccountMapping: jest.fn(),
-    upsertAccount: jest.fn(),
-    updateAccountInList: jest.fn(),
+    getAccounts: vi.fn(),
+    getAccountData: vi.fn(),
+    getMonarchAccountMapping: vi.fn(),
+    upsertAccount: vi.fn(),
+    updateAccountInList: vi.fn(),
   },
 }));
 
-jest.mock('../../../src/ui/components/progressDialog', () => ({
-  showProgressDialog: jest.fn(),
+vi.mock('../../../src/ui/components/progressDialog', () => ({
+  showProgressDialog: vi.fn(),
 }));
 
-jest.mock('../../../src/ui/components/monarchLoginLink', () => ({
-  ensureMonarchAuthentication: jest.fn(),
+vi.mock('../../../src/ui/components/monarchLoginLink', () => ({
+  ensureMonarchAuthentication: vi.fn(),
 }));
 
-jest.mock('../../../src/ui/toast', () => ({
+vi.mock('../../../src/ui/toast', () => ({
   __esModule: true,
-  default: { show: jest.fn() },
-  show: jest.fn(),
+  default: { show: vi.fn() },
+  show: vi.fn(),
 }));
 
-jest.mock('../../../src/core/state', () => ({
+vi.mock('../../../src/core/state', () => ({
   __esModule: true,
   default: {
-    setAccount: jest.fn(),
-    getState: jest.fn(() => ({ currentAccount: { nickname: 'Test Account' } })),
+    setAccount: vi.fn(),
+    getState: vi.fn(() => ({ currentAccount: { nickname: 'Test Account' } })),
   },
 }));
 
-jest.mock('../../../src/core/utils', () => {
-  const actual = jest.requireActual('../../../src/core/utils');
+vi.mock('../../../src/core/utils', async () => {
+  const actual = await vi.importActual('../../../src/core/utils');
   return {
     ...actual,
-    saveLastUploadDate: jest.fn(),
-    getLastUpdateDate: jest.fn(() => '2025-01-01'),
-    calculateFromDateWithLookback: jest.fn(() => '2025-01-01'),
-    getTodayLocal: jest.fn(() => '2025-02-01'),
+    saveLastUploadDate: vi.fn(),
+    getLastUpdateDate: vi.fn(() => '2025-01-01'),
+    calculateFromDateWithLookback: vi.fn(() => '2025-01-01'),
+    getTodayLocal: vi.fn(() => '2025-02-01'),
   };
 });
 
-jest.mock('../../../src/services/questrade/accountMapping', () => ({
-  ensureAccountMapping: jest.fn(),
-  ensureAllAccountMappings: jest.fn(),
+vi.mock('../../../src/services/questrade/accountMapping', () => ({
+  ensureAccountMapping: vi.fn(),
+  ensureAllAccountMappings: vi.fn(),
 }));
 
-jest.mock('../../../src/services/questrade/positions', () => ({
+vi.mock('../../../src/services/questrade/positions', () => ({
   __esModule: true,
-  default: { processAccountPositions: jest.fn() },
+  default: { processAccountPositions: vi.fn() },
 }));
 
-jest.mock('../../../src/services/questrade/transactions', () => ({
+vi.mock('../../../src/services/questrade/transactions', () => ({
   __esModule: true,
   default: {
-    processAndUploadOrders: jest.fn(),
-    processAndUploadActivityTransactions: jest.fn(),
+    processAndUploadOrders: vi.fn(),
+    processAndUploadActivityTransactions: vi.fn(),
   },
 }));
 
 // The balance module is mocked except for storeDateRange: the real one must run so the
 // tests assert on the actual watermark write (saveLastUploadDate) rather than on a stub.
-jest.mock('../../../src/services/questrade/balance', () => {
-  const actual = jest.requireActual('../../../src/services/questrade/balance');
+vi.mock('../../../src/services/questrade/balance', async () => {
+  const actual = await vi.importActual('../../../src/services/questrade/balance');
   return {
     ...actual,
     __esModule: true,
-    default: { processAndUploadBalance: jest.fn() },
-    fetchBalanceHistory: jest.fn(),
-    extractBalanceChange: jest.fn(() => null),
-    getAccountsForSync: jest.fn(),
-    markAccountAsClosed: jest.fn(),
+    default: { processAndUploadBalance: vi.fn() },
+    fetchBalanceHistory: vi.fn(),
+    extractBalanceChange: vi.fn(() => null),
+    getAccountsForSync: vi.fn(),
+    markAccountAsClosed: vi.fn(),
   };
 });
 
-globalThis.GM_getValue = jest.fn();
-globalThis.GM_setValue = jest.fn();
+globalThis.GM_getValue = vi.fn();
+globalThis.GM_setValue = vi.fn();
 
 import * as utils from '../../../src/core/utils';
 import * as balanceModule from '../../../src/services/questrade/balance';
@@ -120,20 +120,20 @@ const TO_DATE = '2025-02-01';
 
 function makeProgressDialog() {
   return {
-    updateProgress: jest.fn(),
-    updateBalanceChange: jest.fn(),
-    updateStepStatus: jest.fn(),
-    initSteps: jest.fn(),
-    hideCancel: jest.fn(),
-    showSummary: jest.fn(),
-    showError: jest.fn().mockResolvedValue(undefined),
-    onCancel: jest.fn(),
-    close: jest.fn(),
+    updateProgress: vi.fn(),
+    updateBalanceChange: vi.fn(),
+    updateStepStatus: vi.fn(),
+    initSteps: vi.fn(),
+    hideCancel: vi.fn(),
+    showSummary: vi.fn(),
+    showError: vi.fn().mockResolvedValue(undefined),
+    onCancel: vi.fn(),
+    close: vi.fn(),
   };
 }
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 
   // Happy path: balance uploads, positions sync, both transaction steps succeed
   balanceModule.default.processAndUploadBalance.mockResolvedValue(true);

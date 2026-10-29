@@ -45,19 +45,19 @@ describe('Rogers Bank startup at document-start', () => {
   let gmStore;
 
   beforeEach(() => {
-    jest.resetModules();
-    jest.useFakeTimers();
+    vi.resetModules();
+    vi.useFakeTimers();
     gmStore = useInMemoryGmStorage();
     installFakeXhr();
-    globalThis.fetch = jest.fn();
+    globalThis.fetch = vi.fn();
     page = simulateDocumentStart();
   });
 
   afterEach(() => {
     // Restore while fake timers are on, so the startup it may trigger is cleared
     page.restore();
-    jest.clearAllTimers();
-    jest.useRealTimers();
+    vi.clearAllTimers();
+    vi.useRealTimers();
     document.getElementById('monarch-uploader-theme')?.remove();
     document.documentElement.removeAttribute('data-mu-theme');
   });
@@ -86,10 +86,10 @@ describe('Rogers Bank startup at document-start', () => {
     // document-idle + 1 s, which is when the hooks used to be installed
     sendPageXhr(ACCOUNT_DETAIL_URL);
     page.finishParsing(LANDING_PAGE_HTML);
-    jest.advanceTimersByTime(999);
+    vi.advanceTimersByTime(999);
     expect(uploaderContainer()).toBeNull();
 
-    jest.advanceTimersByTime(1);
+    vi.advanceTimersByTime(1);
 
     expect(uploadButton()).not.toBeNull();
     expect(document.querySelector('.rogersbank-status').textContent).toBe('Rogers Bank: Connected');
@@ -101,7 +101,7 @@ describe('Rogers Bank startup at document-start', () => {
     const hookedSend = XMLHttpRequest.prototype.send;
 
     page.finishParsing(LANDING_PAGE_HTML);
-    jest.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(1000);
 
     expect(uploaderContainer()).not.toBeNull();
     expect(XMLHttpRequest.prototype.send).toBe(hookedSend);
@@ -111,7 +111,7 @@ describe('Rogers Bank startup at document-start', () => {
     await injectUserscript();
     sendPageXhr(ACCOUNT_DETAIL_URL);
     page.finishParsing(LANDING_PAGE_HTML);
-    jest.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(1000);
 
     expect(uploadButton()).not.toBeNull();
     expectNoCredentialsInStorage(gmStore);
@@ -121,8 +121,8 @@ describe('Rogers Bank startup at document-start', () => {
 
   test('a boot request captured before the page has a body does not break it, even with debug toasts on', async () => {
     gmStore = useInMemoryGmStorage({ debug_log_level: 'debug' });
-    const consoleLog = jest.spyOn(console, 'log').mockImplementation(() => {});
-    const sendSpy = jest.spyOn(XMLHttpRequest.prototype, 'send');
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const sendSpy = vi.spyOn(XMLHttpRequest.prototype, 'send');
     await injectUserscript();
 
     expect(() => sendPageXhr(ACCOUNT_DETAIL_URL)).not.toThrow();
@@ -136,14 +136,14 @@ describe('Rogers Bank startup at document-start', () => {
     await injectUserscript();
     page.finishParsing(LANDING_PAGE_HTML);
 
-    jest.advanceTimersByTime(0);
+    vi.advanceTimersByTime(0);
     expect(GM_registerMenuCommand).toHaveBeenCalled();
     expect(themeApplied()).toBe(false);
 
-    jest.advanceTimersByTime(999);
+    vi.advanceTimersByTime(999);
     expect(themeApplied()).toBe(false);
 
-    jest.advanceTimersByTime(1);
+    vi.advanceTimersByTime(1);
     expect(themeApplied()).toBe(true);
     expect(uploaderContainer()).not.toBeNull();
   });

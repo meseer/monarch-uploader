@@ -9,26 +9,26 @@ import {
 } from '../../../src/services/common/deduplication';
 
 // Mock dependencies
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../../src/services/common/accountService', () => ({
+vi.mock('../../../src/services/common/accountService', () => ({
   __esModule: true,
   default: {
-    getAccountData: jest.fn(),
+    getAccountData: vi.fn(),
   },
 }));
 
-jest.mock('../../../src/utils/transactionStorage', () => ({
-  getTransactionIdsFromArray: jest.fn((arr) => new Set(arr.map((item) => (typeof item === 'string' ? item : item.id)))),
+vi.mock('../../../src/utils/transactionStorage', () => ({
+  getTransactionIdsFromArray: vi.fn((arr) => new Set(arr.map((item) => (typeof item === 'string' ? item : item.id)))),
 }));
 
 import accountService from '../../../src/services/common/accountService';
 
 describe('Transaction Deduplication Service', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     accountService.getAccountData.mockReturnValue(null);
   });
 

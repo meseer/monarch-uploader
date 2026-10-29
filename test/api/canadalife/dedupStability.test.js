@@ -28,16 +28,16 @@ import {
   wrapAuraSuccess,
 } from './fixtures';
 
-jest.mock('../../../src/core/state', () => {
-  const { buildStateMock: build } = jest.requireActual('./harness');
+vi.mock('../../../src/core/state', async () => {
+  const { buildStateMock: build } = await vi.importActual('./harness');
   return build();
 });
-jest.mock('../../../src/core/utils', () => {
-  const { buildUtilsMock: build } = jest.requireActual('./harness');
+vi.mock('../../../src/core/utils', async () => {
+  const { buildUtilsMock: build } = await vi.importActual('./harness');
   return build();
 });
-jest.mock('../../../src/ui/toast', () => {
-  const { buildToastMock: build } = jest.requireActual('./harness');
+vi.mock('../../../src/ui/toast', async () => {
+  const { buildToastMock: build } = await vi.importActual('./harness');
   return build();
 });
 
@@ -64,7 +64,7 @@ function buildLegacyReportResponse(activities) {
 
 describe('Canada Life dedup - hash stability across API versions', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     stateManager.getState.mockReturnValue({
       auth: { canadalife: { token: 'valid-aura-token' } },
     });
@@ -135,7 +135,7 @@ describe('Canada Life dedup - hash stability across API versions', () => {
 
 describe('Canada Life dedup - end-to-end transaction processing', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     stateManager.getState.mockReturnValue({
       auth: { canadalife: { token: 'valid-aura-token' } },
     });

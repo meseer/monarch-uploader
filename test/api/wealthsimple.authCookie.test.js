@@ -20,16 +20,16 @@ import {
   useInMemoryGmStorage,
 } from '../helpers/wealthsimpleAuthCookie';
 
-jest.mock('../../src/core/state', () => ({
+vi.mock('../../src/core/state', () => ({
   __esModule: true,
   default: {
-    setWealthsimpleAuth: jest.fn(),
+    setWealthsimpleAuth: vi.fn(),
   },
 }));
 
-jest.mock('../../src/core/utils', () => ({
-  ...jest.requireActual('../../src/core/utils'),
-  debugLog: jest.fn(),
+vi.mock('../../src/core/utils', async () => ({
+  ...await vi.importActual('../../src/core/utils'),
+  debugLog: vi.fn(),
 }));
 
 Object.defineProperty(document, 'cookie', {
@@ -43,7 +43,7 @@ const ONE_HOUR_MS = 3600000;
  * Load a fresh copy of the Wealthsimple API module and its mocked collaborators
  */
 async function loadFreshModule() {
-  jest.resetModules();
+  vi.resetModules();
   const api = await import('../../src/api/wealthsimple');
   const stateManager = (await import('../../src/core/state')).default;
   const { debugLog } = await import('../../src/core/utils');
@@ -66,15 +66,15 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
   let store;
 
   beforeEach(() => {
-    jest.clearAllMocks();
-    jest.useFakeTimers();
+    vi.clearAllMocks();
+    vi.useFakeTimers();
     clearWealthsimpleAuthCookie();
     store = useInMemoryGmStorage();
   });
 
   afterEach(() => {
-    jest.clearAllTimers();
-    jest.useRealTimers();
+    vi.clearAllTimers();
+    vi.useRealTimers();
   });
 
   describe('checkAuth reads the cookie on demand', () => {
@@ -205,17 +205,17 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
       const cookieBefore = document.cookie;
       // jsdom's localStorage uses Storage.prototype; test/setup.js replaces
       // sessionStorage with a mock whose setItem is already a jest.fn
-      const localSetItem = jest.spyOn(Storage.prototype, 'setItem');
+      const localSetItem = vi.spyOn(Storage.prototype, 'setItem');
       const { api } = await loadFreshModule();
 
       api.setupTokenMonitoring();
-      jest.advanceTimersByTime(5000);
+      vi.advanceTimersByTime(5000);
       api.checkAuth();
       respondWith(200);
       await api.makeGraphQLQuery('TestQuery', 'query { test }', {});
       respondWith(401);
       await expect(api.makeGraphQLQuery('TestQuery', 'query { test }', {})).rejects.toThrow();
-      jest.advanceTimersByTime(5000);
+      vi.advanceTimersByTime(5000);
 
       expect(store.size).toBe(0);
       expect(GM_setValue).not.toHaveBeenCalled();
@@ -250,7 +250,7 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
       const { api, stateManager } = await loadFreshModule();
 
       api.setupTokenMonitoring();
-      jest.advanceTimersByTime(30000);
+      vi.advanceTimersByTime(30000);
 
       expect(stateManager.setWealthsimpleAuth).toHaveBeenCalledTimes(1);
     });
@@ -262,20 +262,20 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
 
       const firstExpiry = new Date(Date.now() + ONE_HOUR_MS).toISOString();
       setWealthsimpleAuthCookie({ expiresAt: firstExpiry });
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
       expect(stateManager.setWealthsimpleAuth).toHaveBeenLastCalledWith(
         expect.objectContaining({ authenticated: true, expiresAt: firstExpiry }),
       );
 
       const refreshedExpiry = new Date(Date.now() + 2 * ONE_HOUR_MS).toISOString();
       setWealthsimpleAuthCookie({ expiresAt: refreshedExpiry });
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
       expect(stateManager.setWealthsimpleAuth).toHaveBeenLastCalledWith(
         expect.objectContaining({ authenticated: true, expiresAt: refreshedExpiry }),
       );
 
       clearWealthsimpleAuthCookie();
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
       expect(stateManager.setWealthsimpleAuth).toHaveBeenLastCalledWith(null);
       expect(stateManager.setWealthsimpleAuth).toHaveBeenCalledTimes(4);
     });
@@ -288,7 +288,7 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
         expect.objectContaining({ authenticated: true }),
       );
 
-      jest.advanceTimersByTime(6000);
+      vi.advanceTimersByTime(6000);
 
       expect(stateManager.setWealthsimpleAuth).toHaveBeenLastCalledWith(null);
     });
@@ -306,7 +306,7 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
     });
 
     it('starts only once when called again', async () => {
-      const setIntervalSpy = jest.spyOn(global, 'setInterval');
+      const setIntervalSpy = vi.spyOn(global, 'setInterval');
       setWealthsimpleAuthCookie();
       const { api, stateManager } = await loadFreshModule();
 
@@ -326,7 +326,7 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
 
       expect(() => api.setupTokenMonitoring()).not.toThrow();
       setWealthsimpleAuthCookie();
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
 
       expect(stateManager.setWealthsimpleAuth).toHaveBeenLastCalledWith(
         expect.objectContaining({ authenticated: true }),
@@ -372,11 +372,11 @@ describe('Wealthsimple auth read from the OAuth cookie', () => {
       const { api, stateManager } = await loadFreshModule();
       api.setupTokenMonitoring();
       await expect(api.makeGraphQLQuery('TestQuery', 'query { test }', {})).rejects.toThrow();
-      jest.advanceTimersByTime(3000);
+      vi.advanceTimersByTime(3000);
       expect(stateManager.setWealthsimpleAuth).toHaveBeenLastCalledWith(null);
 
       setWealthsimpleAuthCookie({ accessToken: 'refreshed-token' });
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
 
       expect(stateManager.setWealthsimpleAuth).toHaveBeenLastCalledWith(
         expect.objectContaining({ authenticated: true }),

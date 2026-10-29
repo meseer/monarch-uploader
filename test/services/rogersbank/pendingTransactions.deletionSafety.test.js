@@ -26,29 +26,29 @@ import {
   formatReconciliationMessage,
 } from '../../../src/services/rogersbank/pendingTransactions';
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  formatDate: jest.fn((date) => {
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  formatDate: vi.fn((date) => {
     const d = date instanceof Date ? date : new Date(date);
     return d.toISOString().split('T')[0];
   }),
 }));
 
-jest.mock('../../../src/api/monarch', () => ({
+vi.mock('../../../src/api/monarch', () => ({
   __esModule: true,
   default: {
-    getTagByName: jest.fn(),
-    getTransactionsList: jest.fn(),
-    updateTransaction: jest.fn(),
-    setTransactionTags: jest.fn(),
-    deleteTransaction: jest.fn(),
+    getTagByName: vi.fn(),
+    getTransactionsList: vi.fn(),
+    updateTransaction: vi.fn(),
+    setTransactionTags: vi.fn(),
+    deleteTransaction: vi.fn(),
   },
 }));
 
 // Real SHA-256 via Node crypto so the hash IDs match production
 import * as nodeCrypto from 'crypto';
 
-const mockDigest = jest.fn();
+const mockDigest = vi.fn();
 Object.defineProperty(global, 'crypto', {
   value: { subtle: { digest: mockDigest } },
 });
@@ -69,7 +69,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 });
 
 const pendingTag = { id: 'tag-pending', name: 'Pending' };

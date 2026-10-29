@@ -13,92 +13,107 @@ import { INTEGRATIONS } from '../../../src/core/integrationCapabilities';
 import { ACCOUNT_STATUS } from '../../../src/core/config';
 
 // Mock all external dependencies
-jest.mock('../../../src/api/questrade', () => ({
-  fetchAccounts: jest.fn(),
-  makeApiCall: jest.fn(),
+vi.mock('../../../src/api/questrade', () => {
+  const mock = {
+    fetchAccounts: vi.fn(),
+    makeApiCall: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
+
+vi.mock('../../../src/api/monarch', () => {
+  const mock = {
+    uploadBalance: vi.fn(),
+    listAccounts: vi.fn(),
+    validateAndRefreshAccountMapping: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
+
+vi.mock('../../../src/services/common/accountService', () => {
+  const mock = {
+    getAccounts: vi.fn(),
+    getMonarchAccountMapping: vi.fn(),
+    getAccountData: vi.fn(),
+    upsertAccount: vi.fn(),
+    updateAccountInList: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
+
+vi.mock('../../../src/ui/components/progressDialog', () => ({
+  showProgressDialog: vi.fn(),
 }));
 
-jest.mock('../../../src/api/monarch', () => ({
-  uploadBalance: jest.fn(),
-  listAccounts: jest.fn(),
-  validateAndRefreshAccountMapping: jest.fn(),
+vi.mock('../../../src/ui/components/monarchLoginLink', () => ({
+  ensureMonarchAuthentication: vi.fn(),
 }));
 
-jest.mock('../../../src/services/common/accountService', () => ({
-  getAccounts: jest.fn(),
-  getMonarchAccountMapping: jest.fn(),
-  getAccountData: jest.fn(),
-  upsertAccount: jest.fn(),
-  updateAccountInList: jest.fn(),
+vi.mock('../../../src/ui/components/accountSelectorWithCreate', () => ({
+  showMonarchAccountSelectorWithCreate: vi.fn(),
 }));
 
-jest.mock('../../../src/ui/components/progressDialog', () => ({
-  showProgressDialog: jest.fn(),
+vi.mock('../../../src/ui/components/datePicker', () => ({
+  showDatePickerPromise: vi.fn(),
 }));
 
-jest.mock('../../../src/ui/components/monarchLoginLink', () => ({
-  ensureMonarchAuthentication: jest.fn(),
-}));
+vi.mock('../../../src/core/state', () => {
+  const mock = {
+    setAccount: vi.fn(),
+    getState: vi.fn().mockReturnValue({ currentAccount: { name: 'Test' } }),
+  };
+  return { ...mock, default: mock };
+});
 
-jest.mock('../../../src/ui/components/accountSelectorWithCreate', () => ({
-  showMonarchAccountSelectorWithCreate: jest.fn(),
-}));
+vi.mock('../../../src/ui/toast', () => {
+  const mock = {
+    show: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
 
-jest.mock('../../../src/ui/components/datePicker', () => ({
-  showDatePickerPromise: jest.fn(),
-}));
-
-jest.mock('../../../src/core/state', () => ({
-  setAccount: jest.fn(),
-  getState: jest.fn().mockReturnValue({ currentAccount: { name: 'Test' } }),
-}));
-
-jest.mock('../../../src/ui/toast', () => ({
-  show: jest.fn(),
-}));
-
-jest.mock('../../../src/core/utils', () => {
-  const actual = jest.requireActual('../../../src/core/utils');
+vi.mock('../../../src/core/utils', async () => {
+  const actual = await vi.importActual('../../../src/core/utils');
   return {
     ...actual,
-    getLastUpdateDate: jest.fn().mockReturnValue('2025-01-01'),
-    calculateFromDateWithLookback: jest.fn().mockReturnValue('2025-01-01'),
-    saveLastUploadDate: jest.fn(),
-    getTodayLocal: jest.fn().mockReturnValue('2025-02-01'),
-    formatDaysAgoLocal: jest.fn().mockReturnValue('2025-01-15'),
+    getLastUpdateDate: vi.fn().mockReturnValue('2025-01-01'),
+    calculateFromDateWithLookback: vi.fn().mockReturnValue('2025-01-01'),
+    saveLastUploadDate: vi.fn(),
+    getTodayLocal: vi.fn().mockReturnValue('2025-02-01'),
+    formatDaysAgoLocal: vi.fn().mockReturnValue('2025-01-15'),
   };
 });
 
-jest.mock('../../../src/services/questrade/positions', () => ({
-  default: { processAccountPositions: jest.fn() },
-  processAccountPositions: jest.fn(),
+vi.mock('../../../src/services/questrade/positions', () => ({
+  default: { processAccountPositions: vi.fn() },
+  processAccountPositions: vi.fn(),
 }));
 
-jest.mock('../../../src/services/questrade/transactions', () => ({
+vi.mock('../../../src/services/questrade/transactions', () => ({
   default: {
-    processAndUploadOrders: jest.fn(),
-    processAndUploadActivityTransactions: jest.fn(),
+    processAndUploadOrders: vi.fn(),
+    processAndUploadActivityTransactions: vi.fn(),
   },
-  processAndUploadOrders: jest.fn(),
-  processAndUploadActivityTransactions: jest.fn(),
+  processAndUploadOrders: vi.fn(),
+  processAndUploadActivityTransactions: vi.fn(),
 }));
 
 // We need to partially mock balance to test syncAllAccountsToMonarch without real API calls
 // but let getAccountsForSync run through for the propagation tests
-jest.mock('../../../src/services/questrade/balance', () => {
-  const actual = jest.requireActual('../../../src/services/questrade/balance');
+vi.mock('../../../src/services/questrade/balance', async () => {
+  const actual = await vi.importActual('../../../src/services/questrade/balance');
   return {
     ...actual,
-    fetchBalanceHistory: jest.fn(),
-    extractBalanceChange: jest.fn().mockReturnValue(null),
-    processBalanceData: jest.fn().mockReturnValue('"Date","Total"\n"2025-01-01","100"\n'),
-    uploadBalanceToMonarch: jest.fn().mockResolvedValue(true),
-    markAccountAsClosed: jest.fn(),
+    fetchBalanceHistory: vi.fn(),
+    extractBalanceChange: vi.fn().mockReturnValue(null),
+    processBalanceData: vi.fn().mockReturnValue('"Date","Total"\n"2025-01-01","100"\n'),
+    uploadBalanceToMonarch: vi.fn().mockResolvedValue(true),
+    markAccountAsClosed: vi.fn(),
   };
 });
 
-globalThis.GM_getValue = jest.fn();
-globalThis.GM_setValue = jest.fn();
+globalThis.GM_getValue = vi.fn();
+globalThis.GM_setValue = vi.fn();
 
 import { showProgressDialog } from '../../../src/ui/components/progressDialog';
 import { ensureMonarchAuthentication } from '../../../src/ui/components/monarchLoginLink';
@@ -111,15 +126,15 @@ import * as transactionsModule from '../../../src/services/questrade/transaction
 // Helper: build a minimal progress dialog mock
 function makeProgressDialog() {
   return {
-    updateProgress: jest.fn(),
-    updateBalanceChange: jest.fn(),
-    updateStepStatus: jest.fn(),
-    initSteps: jest.fn(),
-    hideCancel: jest.fn(),
-    showSummary: jest.fn(),
-    showError: jest.fn().mockResolvedValue(undefined),
-    onCancel: jest.fn(),
-    close: jest.fn(),
+    updateProgress: vi.fn(),
+    updateBalanceChange: vi.fn(),
+    updateStepStatus: vi.fn(),
+    initSteps: vi.fn(),
+    hideCancel: vi.fn(),
+    showSummary: vi.fn(),
+    showError: vi.fn().mockResolvedValue(undefined),
+    onCancel: vi.fn(),
+    close: vi.fn(),
   };
 }
 
@@ -138,7 +153,7 @@ function makeApiAccount(id, syncEnabled = true) {
 }
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   ensureMonarchAuthentication.mockResolvedValue(true);
 });
 

@@ -5,11 +5,11 @@
  * must resolve its target account when clicked rather than when it was built.
  */
 
-jest.mock('../../../src/api/wealthsimple', () => ({
+vi.mock('../../../src/api/wealthsimple', () => ({
   __esModule: true,
   default: {
-    checkAuth: jest.fn(() => ({ authenticated: true, expiresAt: '2099-01-01T00:00:00Z' })),
-    fetchAccountBalances: jest.fn(async () => ({
+    checkAuth: vi.fn(() => ({ authenticated: true, expiresAt: '2099-01-01T00:00:00Z' })),
+    fetchAccountBalances: vi.fn(async () => ({
       success: true,
       balances: new Map([
         ['acct-a', { balance: 100 }],
@@ -19,45 +19,45 @@ jest.mock('../../../src/api/wealthsimple', () => ({
   },
 }));
 
-jest.mock('../../../src/services/wealthsimple-upload', () => ({
-  uploadAllWealthsimpleAccountsToMonarch: jest.fn(async () => ({ success: 2 })),
-  uploadWealthsimpleAccountToMonarchWithSteps: jest.fn(async () => ({ success: true })),
-  buildSyncStepsForAccount: jest.fn(() => []),
+vi.mock('../../../src/services/wealthsimple-upload', () => ({
+  uploadAllWealthsimpleAccountsToMonarch: vi.fn(async () => ({ success: 2 })),
+  uploadWealthsimpleAccountToMonarchWithSteps: vi.fn(async () => ({ success: true })),
+  buildSyncStepsForAccount: vi.fn(() => []),
 }));
 
-jest.mock('../../../src/services/wealthsimple/account', () => ({
-  syncAccountListWithAPI: jest.fn(async () => [
+vi.mock('../../../src/services/wealthsimple/account', () => ({
+  syncAccountListWithAPI: vi.fn(async () => [
     { wealthsimpleAccount: { id: 'acct-a', nickname: 'Chequing A' } },
     { wealthsimpleAccount: { id: 'acct-b', nickname: 'Chequing B' } },
   ]),
 }));
 
-jest.mock('../../../src/services/wealthsimple/balance', () => ({
-  getDefaultDateRange: jest.fn(() => ({ fromDate: '2026-01-01', toDate: '2026-01-31' })),
+vi.mock('../../../src/services/wealthsimple/balance', () => ({
+  getDefaultDateRange: vi.fn(() => ({ fromDate: '2026-01-01', toDate: '2026-01-31' })),
 }));
 
-jest.mock('../../../src/ui/components/monarchLoginLink', () => ({
-  ensureMonarchAuthentication: jest.fn(async () => true),
-  createMonarchLoginLink: jest.fn(() => globalThis.document.createElement('a')),
+vi.mock('../../../src/ui/components/monarchLoginLink', () => ({
+  ensureMonarchAuthentication: vi.fn(async () => true),
+  createMonarchLoginLink: vi.fn(() => globalThis.document.createElement('a')),
 }));
 
-jest.mock('../../../src/ui/components/progressDialog', () => ({
-  showProgressDialog: jest.fn(() => ({
-    onCancel: jest.fn(),
-    updateProgress: jest.fn(),
-    initSteps: jest.fn(),
-    showSummary: jest.fn(),
-    hideCancel: jest.fn(),
+vi.mock('../../../src/ui/components/progressDialog', () => ({
+  showProgressDialog: vi.fn(() => ({
+    onCancel: vi.fn(),
+    updateProgress: vi.fn(),
+    initSteps: vi.fn(),
+    showSummary: vi.fn(),
+    hideCancel: vi.fn(),
   })),
 }));
 
-jest.mock('../../../src/ui/toast', () => ({
+vi.mock('../../../src/ui/toast', () => ({
   __esModule: true,
-  default: { show: jest.fn() },
+  default: { show: vi.fn() },
 }));
 
-global.GM_getValue = jest.fn();
-global.GM_setValue = jest.fn();
+global.GM_getValue = vi.fn();
+global.GM_setValue = vi.fn();
 
 import { createWealthsimpleUploadButton } from '../../../src/ui/wealthsimple/components/uploadButton';
 import {
@@ -91,7 +91,7 @@ function syncedAccountIds() {
 
 describe('Wealthsimple upload button target resolution', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     navigateTo('/app/home');
     document.body.innerHTML = '';
   });

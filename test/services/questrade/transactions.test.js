@@ -9,20 +9,20 @@ import { convertQuestradeOrdersToMonarchCSV } from '../../../src/utils/csv';
 import accountService from '../../../src/services/common/accountService';
 
 // Mock dependencies
-jest.mock('../../../src/api/questrade');
-jest.mock('../../../src/api/monarch');
-jest.mock('../../../src/utils/csv');
-jest.mock('../../../src/ui/toast');
-jest.mock('../../../src/mappers/category');
-jest.mock('../../../src/ui/components/categorySelector');
+vi.mock('../../../src/api/questrade');
+vi.mock('../../../src/api/monarch');
+vi.mock('../../../src/utils/csv');
+vi.mock('../../../src/ui/toast');
+vi.mock('../../../src/mappers/category');
+vi.mock('../../../src/ui/components/categorySelector');
 // Questrade now uses consolidated storage via accountService, not transactionStorage
-jest.mock('../../../src/utils/transactionStorage', () => ({
-  getTransactionIdsFromArray: jest.fn((transactions) => {
+vi.mock('../../../src/utils/transactionStorage', () => ({
+  getTransactionIdsFromArray: vi.fn((transactions) => {
     if (!transactions || !Array.isArray(transactions)) return new Set();
     return new Set(transactions.map((t) => (typeof t === 'string' ? t : t.id)));
   }),
-  getRetentionSettingsFromAccount: jest.fn(() => ({ days: 91, count: 1000 })),
-  mergeAndRetainTransactions: jest.fn((existing, newTx, _settings) => {
+  getRetentionSettingsFromAccount: vi.fn(() => ({ days: 91, count: 1000 })),
+  mergeAndRetainTransactions: vi.fn((existing, newTx, _settings) => {
     const existingIds = new Set((existing || []).map((t) => t.id));
     const result = [...(existing || [])];
     for (const tx of newTx) {
@@ -34,22 +34,22 @@ jest.mock('../../../src/utils/transactionStorage', () => ({
     return result;
   }),
 }));
-jest.mock('../../../src/services/common/accountService', () => ({
+vi.mock('../../../src/services/common/accountService', () => ({
   __esModule: true,
   default: {
-    getMonarchAccountMapping: jest.fn(),
-    getAccountData: jest.fn(),
-    upsertAccount: jest.fn(),
-    updateAccountInList: jest.fn(),
+    getMonarchAccountMapping: vi.fn(),
+    getAccountData: vi.fn(),
+    upsertAccount: vi.fn(),
+    updateAccountInList: vi.fn(),
   },
 }));
 // saveLastUploadDate is mocked so the sync-date (watermark) tests can assert on it
-jest.mock('../../../src/core/utils', () => {
-  const actual = jest.requireActual('../../../src/core/utils');
+vi.mock('../../../src/core/utils', async () => {
+  const actual = await vi.importActual('../../../src/core/utils');
   return {
     ...actual,
-    saveLastUploadDate: jest.fn(),
-    getTodayLocal: jest.fn(() => '2025-02-01'),
+    saveLastUploadDate: vi.fn(),
+    getTodayLocal: vi.fn(() => '2025-02-01'),
   };
 });
 
@@ -59,10 +59,10 @@ import * as categorySelectorModule from '../../../src/ui/components/categorySele
 
 describe('Questrade Transactions Service', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     // Clear GM storage
-    global.GM_getValue = jest.fn(() => []);
-    global.GM_setValue = jest.fn();
+    global.GM_getValue = vi.fn(() => []);
+    global.GM_setValue = vi.fn();
 
     // Reset accountService mocks to default state
     accountService.getAccountData.mockReturnValue(null);
@@ -151,7 +151,7 @@ describe('Questrade Transactions Service', () => {
         ],
       };
 
-      questradeApi.fetchOrders = jest.fn().mockResolvedValue(mockResponse);
+      questradeApi.fetchOrders = vi.fn().mockResolvedValue(mockResponse);
 
       const result = await transactionsService.fetchQuestradeOrders('account-uuid', '2025-01-01');
 
@@ -167,7 +167,7 @@ describe('Questrade Transactions Service', () => {
         data: [{ orderUuid: '1', status: 'Executed' }],
       };
 
-      questradeApi.fetchOrders = jest.fn().mockResolvedValue(mockResponse);
+      questradeApi.fetchOrders = vi.fn().mockResolvedValue(mockResponse);
 
       await transactionsService.fetchQuestradeOrders('account-uuid', '2025-01-01T10:00:00.000Z');
 
@@ -178,7 +178,7 @@ describe('Questrade Transactions Service', () => {
     });
 
     it('should throw error when API returns no data', async () => {
-      questradeApi.fetchOrders = jest.fn().mockResolvedValue({});
+      questradeApi.fetchOrders = vi.fn().mockResolvedValue({});
 
       await expect(
         transactionsService.fetchQuestradeOrders('account-uuid', '2025-01-01'),
@@ -199,12 +199,12 @@ describe('Questrade Transactions Service', () => {
     };
 
     beforeEach(() => {
-      questradeApi.getAccount = jest.fn().mockReturnValue({ key: 'account123', nickname: 'Test Account' });
-      questradeApi.fetchOrders = jest.fn().mockResolvedValue({ data: [executedOrder] });
-      questradeApi.fetchTransactionsSinceDate = jest.fn().mockResolvedValue([]);
+      questradeApi.getAccount = vi.fn().mockReturnValue({ key: 'account123', nickname: 'Test Account' });
+      questradeApi.fetchOrders = vi.fn().mockResolvedValue({ data: [executedOrder] });
+      questradeApi.fetchTransactionsSinceDate = vi.fn().mockResolvedValue([]);
       convertQuestradeOrdersToMonarchCSV.mockReturnValue('mock,csv,data');
       accountService.getMonarchAccountMapping.mockReturnValue({ id: 'monarch-account-id' });
-      monarchApi.uploadTransactions = jest.fn().mockResolvedValue(true);
+      monarchApi.uploadTransactions = vi.fn().mockResolvedValue(true);
       const { applyCategoryMapping } = categoryModule;
       applyCategoryMapping.mockReturnValue('Investment');
     });
@@ -247,7 +247,7 @@ describe('Questrade Transactions Service', () => {
     });
 
     test('processAndUploadTransactions does NOT advance the sync date when the orders upload fails', async () => {
-      monarchApi.uploadTransactions = jest.fn().mockResolvedValue(false);
+      monarchApi.uploadTransactions = vi.fn().mockResolvedValue(false);
 
       const result = await transactionsService.processAndUploadTransactions(
         'account123',
@@ -296,12 +296,12 @@ describe('Questrade Transactions Service', () => {
     };
 
     beforeEach(() => {
-      questradeApi.getAccount = jest.fn().mockReturnValue(mockAccount);
-      global.GM_getValue = jest.fn(() => []); // No duplicates by default
+      questradeApi.getAccount = vi.fn().mockReturnValue(mockAccount);
+      global.GM_getValue = vi.fn(() => []); // No duplicates by default
       convertQuestradeOrdersToMonarchCSV.mockReturnValue('mock,csv,data');
       // Mock accountService.getMonarchAccountMapping
       accountService.getMonarchAccountMapping.mockReturnValue({ id: 'monarch-account-id' });
-      monarchApi.uploadTransactions = jest.fn().mockResolvedValue(true);
+      monarchApi.uploadTransactions = vi.fn().mockResolvedValue(true);
     });
 
     it('should process and upload orders successfully', async () => {
@@ -315,7 +315,7 @@ describe('Questrade Transactions Service', () => {
         },
       ];
 
-      questradeApi.fetchOrders = jest.fn().mockResolvedValue({ data: mockOrders });
+      questradeApi.fetchOrders = vi.fn().mockResolvedValue({ data: mockOrders });
 
       // Mock category mapping to return a simple string category
       const { applyCategoryMapping } = categoryModule;
@@ -333,9 +333,9 @@ describe('Questrade Transactions Service', () => {
     });
 
     it('should return success with message when no orders found', async () => {
-      questradeApi.fetchOrders = jest.fn().mockResolvedValue({ data: [] });
+      questradeApi.fetchOrders = vi.fn().mockResolvedValue({ data: [] });
       // Mock activity API to also return empty (no transactions from either source)
-      questradeApi.fetchAccountTransactionsSinceDate = jest.fn().mockResolvedValue([]);
+      questradeApi.fetchAccountTransactionsSinceDate = vi.fn().mockResolvedValue([]);
 
       const result = await transactionsService.processAndUploadTransactions(
         'account123',
@@ -354,9 +354,9 @@ describe('Questrade Transactions Service', () => {
         { orderUuid: 'uuid2', status: 'Cancelled', action: 'Sell' },
       ];
 
-      questradeApi.fetchOrders = jest.fn().mockResolvedValue({ data: mockOrders });
+      questradeApi.fetchOrders = vi.fn().mockResolvedValue({ data: mockOrders });
       // Mock activity API to also return empty (no transactions from either source)
-      questradeApi.fetchAccountTransactionsSinceDate = jest.fn().mockResolvedValue([]);
+      questradeApi.fetchAccountTransactionsSinceDate = vi.fn().mockResolvedValue([]);
 
       const result = await transactionsService.processAndUploadTransactions(
         'account123',
@@ -375,7 +375,7 @@ describe('Questrade Transactions Service', () => {
         { orderUuid: 'uuid2', status: 'Executed', action: 'Sell' },
       ];
 
-      questradeApi.fetchOrders = jest.fn().mockResolvedValue({ data: mockOrders });
+      questradeApi.fetchOrders = vi.fn().mockResolvedValue({ data: mockOrders });
       // Mock consolidated storage with uuid1 already uploaded
       accountService.getAccountData.mockReturnValue({
         uploadedTransactions: [{ id: 'uuid1', date: '2025-01-01' }],
@@ -392,7 +392,7 @@ describe('Questrade Transactions Service', () => {
     });
 
     it('should throw error when account not found', async () => {
-      questradeApi.getAccount = jest.fn().mockReturnValue(null);
+      questradeApi.getAccount = vi.fn().mockReturnValue(null);
 
       await expect(
         transactionsService.processAndUploadTransactions('account123', 'Test Account', '2025-01-01'),
@@ -417,7 +417,7 @@ describe('Questrade Transactions Service', () => {
         },
       ];
 
-      questradeApi.fetchOrders = jest.fn().mockResolvedValue({ data: mockOrders });
+      questradeApi.fetchOrders = vi.fn().mockResolvedValue({ data: mockOrders });
 
       // Enable skipCategorization in account data
       accountService.getAccountData.mockReturnValue({
@@ -460,7 +460,7 @@ describe('Questrade Transactions Service', () => {
         },
       ];
 
-      questradeApi.fetchOrders = jest.fn().mockResolvedValue({ data: mockOrders });
+      questradeApi.fetchOrders = vi.fn().mockResolvedValue({ data: mockOrders });
 
       // skipCategorization is false (manual prompts appear)
       accountService.getAccountData.mockReturnValue({
@@ -514,7 +514,7 @@ describe('Questrade Transactions Service', () => {
         },
       ];
 
-      questradeApi.fetchOrders = jest.fn().mockResolvedValue({ data: mockOrders });
+      questradeApi.fetchOrders = vi.fn().mockResolvedValue({ data: mockOrders });
       accountService.getAccountData.mockReturnValue({
         skipCategorization: false,
         uploadedTransactions: [],
@@ -565,7 +565,7 @@ describe('Questrade Transactions Service', () => {
         },
       ];
 
-      questradeApi.fetchOrders = jest.fn().mockResolvedValue({ data: mockOrders });
+      questradeApi.fetchOrders = vi.fn().mockResolvedValue({ data: mockOrders });
       accountService.getAccountData.mockReturnValue({
         skipCategorization: false,
         uploadedTransactions: [],
@@ -604,7 +604,7 @@ describe('Questrade Transactions Service', () => {
         },
       ];
 
-      questradeApi.fetchOrders = jest.fn().mockResolvedValue({ data: mockOrders });
+      questradeApi.fetchOrders = vi.fn().mockResolvedValue({ data: mockOrders });
       // Mock empty consolidated storage
       accountService.getAccountData.mockReturnValue({
         uploadedTransactions: [],

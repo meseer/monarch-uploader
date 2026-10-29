@@ -35,32 +35,35 @@ import * as accountServiceModule from '../../src/services/common/accountService'
 import * as configStoreModule from '../../src/services/common/configStore';
 
 // Mock the toast module since the utils depend on it
-jest.mock('../../src/ui/toast', () => ({
-  show: jest.fn(),
-}));
+vi.mock('../../src/ui/toast', () => {
+  const mock = {
+    show: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
 
 // Mock the accountService module since utils now reads from consolidated storage
-jest.mock('../../src/services/common/accountService', () => ({
+vi.mock('../../src/services/common/accountService', () => ({
   __esModule: true,
   default: {
-    getAccountData: jest.fn(() => null), // Default: no account data found
-    updateAccountInList: jest.fn(() => false), // Default: account not found
+    getAccountData: vi.fn(() => null), // Default: no account data found
+    updateAccountInList: vi.fn(() => false), // Default: account not found
   },
 }));
 
 // Mock the configStore module since getLookbackForInstitution uses getSetting/setSetting
-jest.mock('../../src/services/common/configStore', () => ({
-  getSetting: jest.fn(() => undefined), // Default: no config value
-  setSetting: jest.fn(),
-  saveCategoryMappings: jest.fn(), // Used by clearCategoryMappings
+vi.mock('../../src/services/common/configStore', () => ({
+  getSetting: vi.fn(() => undefined), // Default: no config value
+  setSetting: vi.fn(),
+  saveCategoryMappings: vi.fn(), // Used by clearCategoryMappings
 }));
 
 // Mock console methods before running tests
 beforeEach(() => {
-  console.log = jest.fn();
-  console.info = jest.fn();
-  console.warn = jest.fn();
-  console.error = jest.fn();
+  console.log = vi.fn();
+  console.info = vi.fn();
+  console.warn = vi.fn();
+  console.error = vi.fn();
 });
 
 describe('Utility Functions', () => {
@@ -78,7 +81,7 @@ describe('Utility Functions', () => {
     it('should use fallback date for invalid dates', () => {
       const invalidDate = new Date('invalid-date');
       // Mock current date to ensure stable test
-      jest.spyOn(Date, 'now').mockImplementation(() => new Date(2025, 0, 15).getTime());
+      vi.spyOn(Date, 'now').mockImplementation(() => new Date(2025, 0, 15).getTime());
 
       // The fallback is 2 weeks ago from now
       const result = formatDate(invalidDate);
@@ -87,7 +90,7 @@ describe('Utility Functions', () => {
       expect(result).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
       // Restore the original implementation
-      jest.restoreAllMocks();
+      vi.restoreAllMocks();
     });
   });
 

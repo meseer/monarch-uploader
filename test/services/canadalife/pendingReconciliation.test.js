@@ -9,26 +9,26 @@ import {
 } from '../../../src/services/canadalife/pendingReconciliation';
 
 // Mock dependencies
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  formatDate: jest.fn((date) => {
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  formatDate: vi.fn((date) => {
     const d = date instanceof Date ? date : new Date(date);
     return d.toISOString().split('T')[0];
   }),
 }));
 
-jest.mock('../../../src/api/monarch', () => ({
+vi.mock('../../../src/api/monarch', () => ({
   __esModule: true,
   default: {
-    getTagByName: jest.fn(),
-    getTransactionsList: jest.fn(),
-    deleteTransaction: jest.fn(),
+    getTagByName: vi.fn(),
+    getTransactionsList: vi.fn(),
+    deleteTransaction: vi.fn(),
   },
 }));
 
 // Mock generateActivityHash to return deterministic values
-jest.mock('../../../src/services/canadalife/transactions', () => ({
-  generateActivityHash: jest.fn(async (activity) => {
+vi.mock('../../../src/services/canadalife/transactions', () => ({
+  generateActivityHash: vi.fn(async (activity) => {
     // Return a predictable hash based on the activity's Activity field
     return `cl-tx:${(activity.Activity || 'unknown').slice(0, 16).padEnd(16, '0').toLowerCase().replace(/[^a-f0-9]/g, '0')}`;
   }),
@@ -39,7 +39,7 @@ import * as nodeCrypto from 'crypto';
 import * as monarchModule from '../../../src/api/monarch';
 import * as transactionsModule from '../../../src/services/canadalife/transactions';
 
-const mockDigest = jest.fn();
+const mockDigest = vi.fn();
 Object.defineProperty(global, 'crypto', {
   value: {
     subtle: {
@@ -63,7 +63,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 });
 
 // Helper to get mocked monarch API

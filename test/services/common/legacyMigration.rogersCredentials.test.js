@@ -15,8 +15,8 @@ import {
 
 import { useInMemoryGmStorage } from '../../helpers/rogersBankPage';
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
 const LEGACY_CREDENTIAL_KEYS = {
@@ -41,7 +41,7 @@ function storedConfig(store) {
 
 describe('purgeStoredRogersBankCredentials', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   test('deletes the auth section of rogersbank_config and keeps everything else', () => {
@@ -108,7 +108,7 @@ describe('purgeStoredRogersBankCredentials', () => {
       rogersbank_config: JSON.stringify({ auth: { authToken: 'Bearer stored-token' }, settings: SETTINGS }),
     });
     purgeStoredRogersBankCredentials();
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     expect(purgeStoredRogersBankCredentials()).toBe(0);
     expect(GM_setValue).not.toHaveBeenCalled();

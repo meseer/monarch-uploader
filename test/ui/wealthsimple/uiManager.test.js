@@ -5,8 +5,8 @@
 import { WEALTHSIMPLE_UI } from '../../../src/core/config';
 
 // Mock GM_getValue/GM_setValue
-global.GM_getValue = jest.fn();
-global.GM_setValue = jest.fn();
+global.GM_getValue = vi.fn();
+global.GM_setValue = vi.fn();
 
 describe('Wealthsimple UI Injection Points', () => {
   describe('WEALTHSIMPLE_UI config', () => {

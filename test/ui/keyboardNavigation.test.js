@@ -33,8 +33,8 @@ describe('Keyboard Navigation Utilities', () => {
 
     beforeEach(() => {
       overlay = document.createElement('div');
-      onEscape = jest.fn();
-      onEnter = jest.fn();
+      onEscape = vi.fn();
+      onEnter = vi.fn();
       container.appendChild(overlay);
     });
 
@@ -124,8 +124,8 @@ describe('Keyboard Navigation Utilities', () => {
       cleanup = addModalKeyboardHandlers(overlay, onEscape, onEnter);
 
       const event = new KeyboardEvent('keydown', { key: 'Escape' });
-      event.preventDefault = jest.fn();
-      event.stopPropagation = jest.fn();
+      event.preventDefault = vi.fn();
+      event.stopPropagation = vi.fn();
       overlay.dispatchEvent(event);
 
       expect(event.preventDefault).toHaveBeenCalled();
@@ -136,8 +136,8 @@ describe('Keyboard Navigation Utilities', () => {
       cleanup = addModalKeyboardHandlers(overlay, onEscape, onEnter);
 
       const event = new KeyboardEvent('keydown', { key: 'Enter' });
-      event.preventDefault = jest.fn();
-      event.stopPropagation = jest.fn();
+      event.preventDefault = vi.fn();
+      event.stopPropagation = vi.fn();
       overlay.dispatchEvent(event);
 
       expect(event.preventDefault).toHaveBeenCalled();
@@ -164,7 +164,7 @@ describe('Keyboard Navigation Utilities', () => {
     let cleanup;
 
     beforeEach(() => {
-      onSelect = jest.fn();
+      onSelect = vi.fn();
       items = [];
       for (let i = 0; i < 3; i++) {
         const item = document.createElement('div');
@@ -190,56 +190,55 @@ describe('Keyboard Navigation Utilities', () => {
       cleanup(); // Should not throw
     });
 
-    test('should set initial focus on first item by default', (done) => {
+    test('should set initial focus on first item by default', async () => {
       cleanup = makeItemsKeyboardNavigable(items, onSelect);
 
-      // Use setTimeout to wait for the async focus
-      setTimeout(() => {
-        expect(items[0].getAttribute('tabindex')).toBe('0');
-        expect(items[1].getAttribute('tabindex')).toBe('-1');
-        expect(items[2].getAttribute('tabindex')).toBe('-1');
-        done();
-      }, 10);
+      // Wait for the async initial focus
+      await new Promise((resolve) => { setTimeout(resolve, 10); });
+
+      expect(items[0].getAttribute('tabindex')).toBe('0');
+      expect(items[1].getAttribute('tabindex')).toBe('-1');
+      expect(items[2].getAttribute('tabindex')).toBe('-1');
     });
 
-    test('should set initial focus on specified item', (done) => {
+    test('should set initial focus on specified item', async () => {
       cleanup = makeItemsKeyboardNavigable(items, onSelect, 1);
 
-      setTimeout(() => {
-        expect(items[0].getAttribute('tabindex')).toBe('-1');
-        expect(items[1].getAttribute('tabindex')).toBe('0');
-        expect(items[2].getAttribute('tabindex')).toBe('-1');
-        done();
-      }, 10);
+      // Wait for the async initial focus
+      await new Promise((resolve) => { setTimeout(resolve, 10); });
+
+      expect(items[0].getAttribute('tabindex')).toBe('-1');
+      expect(items[1].getAttribute('tabindex')).toBe('0');
+      expect(items[2].getAttribute('tabindex')).toBe('-1');
     });
 
-    test('should handle initial focus index out of bounds', (done) => {
+    test('should handle initial focus index out of bounds', async () => {
       cleanup = makeItemsKeyboardNavigable(items, onSelect, 10);
 
-      setTimeout(() => {
-        expect(items[2].getAttribute('tabindex')).toBe('0'); // Should focus last item
-        done();
-      }, 10);
+      // Wait for the async initial focus
+      await new Promise((resolve) => { setTimeout(resolve, 10); });
+
+      expect(items[2].getAttribute('tabindex')).toBe('0'); // Should focus last item
     });
 
-    test('should handle negative initial focus index', (done) => {
+    test('should handle negative initial focus index', async () => {
       cleanup = makeItemsKeyboardNavigable(items, onSelect, -1);
 
-      setTimeout(() => {
-        expect(items[0].getAttribute('tabindex')).toBe('0'); // Should focus first item
-        done();
-      }, 10);
+      // Wait for the async initial focus
+      await new Promise((resolve) => { setTimeout(resolve, 10); });
+
+      expect(items[0].getAttribute('tabindex')).toBe('0'); // Should focus first item
     });
 
     test('should move focus down on ArrowDown', () => {
       cleanup = makeItemsKeyboardNavigable(items, onSelect, 0);
 
       const event = new KeyboardEvent('keydown', { key: 'ArrowDown' });
-      event.preventDefault = jest.fn();
+      event.preventDefault = vi.fn();
 
       // Mock focus to simulate JSDOM behavior
       const originalFocus = items[1].focus;
-      items[1].focus = jest.fn();
+      items[1].focus = vi.fn();
 
       items[0].dispatchEvent(event);
 
@@ -254,11 +253,11 @@ describe('Keyboard Navigation Utilities', () => {
       cleanup = makeItemsKeyboardNavigable(items, onSelect, 1);
 
       const event = new KeyboardEvent('keydown', { key: 'ArrowUp' });
-      event.preventDefault = jest.fn();
+      event.preventDefault = vi.fn();
 
       // Mock focus to simulate JSDOM behavior
       const originalFocus = items[0].focus;
-      items[0].focus = jest.fn();
+      items[0].focus = vi.fn();
 
       items[1].dispatchEvent(event);
 
@@ -273,11 +272,11 @@ describe('Keyboard Navigation Utilities', () => {
       cleanup = makeItemsKeyboardNavigable(items, onSelect, 0);
 
       const event = new KeyboardEvent('keydown', { key: 'ArrowUp' });
-      event.preventDefault = jest.fn();
+      event.preventDefault = vi.fn();
 
       // Mock focus to ensure it's not called on any other items
-      items[1].focus = jest.fn();
-      items[2].focus = jest.fn();
+      items[1].focus = vi.fn();
+      items[2].focus = vi.fn();
 
       items[0].dispatchEvent(event);
 
@@ -291,11 +290,11 @@ describe('Keyboard Navigation Utilities', () => {
       cleanup = makeItemsKeyboardNavigable(items, onSelect, 2);
 
       const event = new KeyboardEvent('keydown', { key: 'ArrowDown' });
-      event.preventDefault = jest.fn();
+      event.preventDefault = vi.fn();
 
       // Mock focus to ensure it's not called on any other items
-      items[0].focus = jest.fn();
-      items[1].focus = jest.fn();
+      items[0].focus = vi.fn();
+      items[1].focus = vi.fn();
 
       items[2].dispatchEvent(event);
 
@@ -309,8 +308,8 @@ describe('Keyboard Navigation Utilities', () => {
       cleanup = makeItemsKeyboardNavigable(items, onSelect, 0);
 
       const event = new KeyboardEvent('keydown', { key: 'Enter' });
-      event.preventDefault = jest.fn();
-      event.stopPropagation = jest.fn();
+      event.preventDefault = vi.fn();
+      event.stopPropagation = vi.fn();
       items[0].dispatchEvent(event);
 
       expect(event.preventDefault).toHaveBeenCalled();
@@ -322,8 +321,8 @@ describe('Keyboard Navigation Utilities', () => {
       cleanup = makeItemsKeyboardNavigable(items, onSelect, 1);
 
       const event = new KeyboardEvent('keydown', { key: ' ' });
-      event.preventDefault = jest.fn();
-      event.stopPropagation = jest.fn();
+      event.preventDefault = vi.fn();
+      event.stopPropagation = vi.fn();
       items[1].dispatchEvent(event);
 
       expect(event.preventDefault).toHaveBeenCalled();
@@ -336,7 +335,7 @@ describe('Keyboard Navigation Utilities', () => {
 
       // Mock focus for Tab forward
       const originalFocus1 = items[1].focus;
-      items[1].focus = jest.fn();
+      items[1].focus = vi.fn();
 
       const tabEvent = new KeyboardEvent('keydown', { key: 'Tab' });
       items[0].dispatchEvent(tabEvent);
@@ -345,7 +344,7 @@ describe('Keyboard Navigation Utilities', () => {
 
       // Mock focus for Shift+Tab backward
       const originalFocus0 = items[0].focus;
-      items[0].focus = jest.fn();
+      items[0].focus = vi.fn();
 
       const shiftTabEvent = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true });
       items[1].dispatchEvent(shiftTabEvent);
@@ -419,7 +418,7 @@ describe('Keyboard Navigation Utilities', () => {
     let cleanup;
 
     beforeEach(() => {
-      onActivate = jest.fn();
+      onActivate = vi.fn();
       buttons = [];
       for (let i = 0; i < 3; i++) {
         const button = document.createElement('button');
@@ -437,8 +436,8 @@ describe('Keyboard Navigation Utilities', () => {
       cleanup = addButtonKeyboardHandlers(buttons, onActivate);
 
       const event = new KeyboardEvent('keydown', { key: 'Enter' });
-      event.preventDefault = jest.fn();
-      event.stopPropagation = jest.fn();
+      event.preventDefault = vi.fn();
+      event.stopPropagation = vi.fn();
       buttons[0].dispatchEvent(event);
 
       expect(event.preventDefault).toHaveBeenCalled();
@@ -450,8 +449,8 @@ describe('Keyboard Navigation Utilities', () => {
       cleanup = addButtonKeyboardHandlers(buttons, onActivate);
 
       const event = new KeyboardEvent('keydown', { key: ' ' });
-      event.preventDefault = jest.fn();
-      event.stopPropagation = jest.fn();
+      event.preventDefault = vi.fn();
+      event.stopPropagation = vi.fn();
       buttons[1].dispatchEvent(event);
 
       expect(event.preventDefault).toHaveBeenCalled();
@@ -524,10 +523,10 @@ describe('Keyboard Navigation Utilities', () => {
 
       // Mock focus method to track calls
       const originalFocus = firstButton.focus;
-      firstButton.focus = jest.fn();
+      firstButton.focus = vi.fn();
 
       const event = new KeyboardEvent('keydown', { key: 'Tab' });
-      event.preventDefault = jest.fn();
+      event.preventDefault = vi.fn();
       Object.defineProperty(document, 'activeElement', { value: lastButton, configurable: true });
 
       focusContainer.dispatchEvent(event);
@@ -544,10 +543,10 @@ describe('Keyboard Navigation Utilities', () => {
 
       // Mock focus method to track calls
       const originalFocus = lastButton.focus;
-      lastButton.focus = jest.fn();
+      lastButton.focus = vi.fn();
 
       const event = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true });
-      event.preventDefault = jest.fn();
+      event.preventDefault = vi.fn();
 
       // Mock document.activeElement to return firstButton during the test
       Object.defineProperty(document, 'activeElement', {
@@ -570,7 +569,7 @@ describe('Keyboard Navigation Utilities', () => {
 
       middleButton.focus();
       const event = new KeyboardEvent('keydown', { key: 'Tab' });
-      event.preventDefault = jest.fn();
+      event.preventDefault = vi.fn();
       Object.defineProperty(document, 'activeElement', { value: middleButton, configurable: true });
 
       focusContainer.dispatchEvent(event);
@@ -585,7 +584,7 @@ describe('Keyboard Navigation Utilities', () => {
       cleanup = trapFocus(emptyContainer);
 
       const event = new KeyboardEvent('keydown', { key: 'Tab' });
-      event.preventDefault = jest.fn();
+      event.preventDefault = vi.fn();
 
       emptyContainer.dispatchEvent(event);
 
@@ -603,7 +602,7 @@ describe('Keyboard Navigation Utilities', () => {
 
       singleButton.focus();
       const event = new KeyboardEvent('keydown', { key: 'Tab' });
-      event.preventDefault = jest.fn();
+      event.preventDefault = vi.fn();
       Object.defineProperty(document, 'activeElement', { value: singleButton, configurable: true });
 
       singleContainer.dispatchEvent(event);
@@ -633,10 +632,10 @@ describe('Keyboard Navigation Utilities', () => {
 
       // Mock focus method to track calls
       const originalFocus = link.focus;
-      link.focus = jest.fn();
+      link.focus = vi.fn();
 
       const event = new KeyboardEvent('keydown', { key: 'Tab' });
-      event.preventDefault = jest.fn();
+      event.preventDefault = vi.fn();
       Object.defineProperty(document, 'activeElement', { value: tabindexDiv, configurable: true });
 
       diverseContainer.dispatchEvent(event);
@@ -662,7 +661,7 @@ describe('Keyboard Navigation Utilities', () => {
 
       normalButton.focus();
       const event = new KeyboardEvent('keydown', { key: 'Tab' });
-      event.preventDefault = jest.fn();
+      event.preventDefault = vi.fn();
       Object.defineProperty(document, 'activeElement', { value: normalButton, configurable: true });
 
       containerWithNegativeTabindex.dispatchEvent(event);
@@ -675,7 +674,7 @@ describe('Keyboard Navigation Utilities', () => {
       cleanup = trapFocus(focusContainer);
 
       const event = new KeyboardEvent('keydown', { key: 'Enter' });
-      event.preventDefault = jest.fn();
+      event.preventDefault = vi.fn();
 
       focusContainer.dispatchEvent(event);
 
@@ -690,7 +689,7 @@ describe('Keyboard Navigation Utilities', () => {
 
       lastButton.focus();
       const event = new KeyboardEvent('keydown', { key: 'Tab' });
-      event.preventDefault = jest.fn();
+      event.preventDefault = vi.fn();
       Object.defineProperty(document, 'activeElement', { value: lastButton, configurable: true });
 
       focusContainer.dispatchEvent(event);
@@ -703,8 +702,8 @@ describe('Keyboard Navigation Utilities', () => {
     // Note: isInputElement is not exported, but we can test it indirectly through addModalKeyboardHandlers
     test('should identify input elements correctly through modal handlers', () => {
       const overlay = document.createElement('div');
-      const onEscape = jest.fn();
-      const onEnter = jest.fn();
+      const onEscape = vi.fn();
+      const onEnter = vi.fn();
       container.appendChild(overlay);
 
       const cleanup = addModalKeyboardHandlers(overlay, onEscape, onEnter);
@@ -755,8 +754,8 @@ describe('Keyboard Navigation Utilities', () => {
 
     test('should handle null target element', () => {
       const overlay = document.createElement('div');
-      const onEscape = jest.fn();
-      const onEnter = jest.fn();
+      const onEscape = vi.fn();
+      const onEnter = vi.fn();
       container.appendChild(overlay);
 
       const cleanup = addModalKeyboardHandlers(overlay, onEscape, onEnter);
@@ -775,8 +774,8 @@ describe('Keyboard Navigation Utilities', () => {
   describe('Edge cases and error handling', () => {
     test('should handle null event targets', () => {
       const overlay = document.createElement('div');
-      const onEscape = jest.fn();
-      const onEnter = jest.fn();
+      const onEscape = vi.fn();
+      const onEnter = vi.fn();
       container.appendChild(overlay);
 
       const cleanup = addModalKeyboardHandlers(overlay, onEscape, onEnter);
@@ -799,7 +798,7 @@ describe('Keyboard Navigation Utilities', () => {
       }
 
       // Should not throw when working with real DOM elements
-      const cleanup = makeItemsKeyboardNavigable(items, jest.fn());
+      const cleanup = makeItemsKeyboardNavigable(items, vi.fn());
       expect(typeof cleanup).toBe('function');
       cleanup();
     });
@@ -811,7 +810,7 @@ describe('Keyboard Navigation Utilities', () => {
       const cleanup = trapFocus(emptyContainer);
 
       const event = new KeyboardEvent('keydown', { key: 'Tab' });
-      event.preventDefault = jest.fn();
+      event.preventDefault = vi.fn();
       emptyContainer.dispatchEvent(event);
 
       // Should work without errors

@@ -18,16 +18,16 @@ import { debugLog } from '../../../src/core/utils';
 import { STORAGE } from '../../../src/core/config';
 import { installCanadaLifeTestGlobals } from './harness';
 
-jest.mock('../../../src/core/state', () => {
-  const { buildStateMock: build } = jest.requireActual('./harness');
+vi.mock('../../../src/core/state', async () => {
+  const { buildStateMock: build } = await vi.importActual('./harness');
   return build();
 });
-jest.mock('../../../src/core/utils', () => {
-  const { buildUtilsMock: build } = jest.requireActual('./harness');
+vi.mock('../../../src/core/utils', async () => {
+  const { buildUtilsMock: build } = await vi.importActual('./harness');
   return build();
 });
-jest.mock('../../../src/ui/toast', () => {
-  const { buildToastMock: build } = jest.requireActual('./harness');
+vi.mock('../../../src/ui/toast', async () => {
+  const { buildToastMock: build } = await vi.importActual('./harness');
   return build();
 });
 
@@ -35,7 +35,7 @@ const { localStorageMock } = installCanadaLifeTestGlobals();
 
 describe('Canada Life API - getCanadaLifeToken', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   test('returns the token from localStorage when available', () => {
@@ -72,7 +72,7 @@ describe('Canada Life API - getCanadaLifeToken', () => {
 
 describe('Canada Life API - checkCanadaLifeAuth', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   test('reports connected when a token exists', () => {
@@ -100,7 +100,7 @@ describe('Canada Life API - checkCanadaLifeAuth', () => {
 
 describe('Canada Life API - checkTokenStatus', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   test('pushes the token into state and returns the status', () => {
@@ -126,7 +126,7 @@ describe('Canada Life API - checkTokenStatus', () => {
 
 describe('Canada Life API - setupTokenMonitoring', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   test('registers a polling interval and a storage listener', () => {
@@ -166,7 +166,7 @@ describe('Canada Life API - setupTokenMonitoring', () => {
     });
 
     setupTokenMonitoring();
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     storageEventHandler({ key: 'other_key' });
 
@@ -176,7 +176,7 @@ describe('Canada Life API - setupTokenMonitoring', () => {
 
 describe('Canada Life API - extractCookies', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   test('returns document.cookie', () => {
@@ -205,7 +205,7 @@ describe('Canada Life API - extractCookies', () => {
 
 describe('Canada Life API - attemptTokenRefresh', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   test('returns and stores the new token when it differs', () => {

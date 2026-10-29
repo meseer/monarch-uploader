@@ -8,16 +8,16 @@ import stateManager from '../../../src/core/state';
 import { installCanadaLifeTestGlobals } from './harness';
 import { DPSP_AGREEMENT_ID, buildActivityReportResponse, mockFetchResponse } from './fixtures';
 
-jest.mock('../../../src/core/state', () => {
-  const { buildStateMock: build } = jest.requireActual('./harness');
+vi.mock('../../../src/core/state', async () => {
+  const { buildStateMock: build } = await vi.importActual('./harness');
   return build();
 });
-jest.mock('../../../src/core/utils', () => {
-  const { buildUtilsMock: build } = jest.requireActual('./harness');
+vi.mock('../../../src/core/utils', async () => {
+  const { buildUtilsMock: build } = await vi.importActual('./harness');
   return build();
 });
-jest.mock('../../../src/ui/toast', () => {
-  const { buildToastMock: build } = jest.requireActual('./harness');
+vi.mock('../../../src/ui/toast', async () => {
+  const { buildToastMock: build } = await vi.importActual('./harness');
   return build();
 });
 
@@ -51,7 +51,7 @@ function mockAllReports(openingBalance, closingBalance) {
 
 describe('Canada Life API - loadAccountBalanceHistory weekend-only ranges', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     stateManager.getState.mockReturnValue({
       auth: { canadalife: { token: 'valid-aura-token' } },
     });
@@ -75,7 +75,7 @@ describe('Canada Life API - loadAccountBalanceHistory weekend-only ranges', () =
 
 describe('Canada Life API - loadAccountBalanceHistory single day', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     stateManager.getState.mockReturnValue({
       auth: { canadalife: { token: 'valid-aura-token' } },
     });
@@ -94,7 +94,7 @@ describe('Canada Life API - loadAccountBalanceHistory single day', () => {
 
   test('reports progress at start and completion', async () => {
     mockReport(10000, 10100);
-    const progress = jest.fn();
+    const progress = vi.fn();
 
     await loadAccountBalanceHistory(mockAccount, '2024-01-15', '2024-01-15', progress);
 
@@ -105,7 +105,7 @@ describe('Canada Life API - loadAccountBalanceHistory single day', () => {
 
 describe('Canada Life API - loadAccountBalanceHistory paired-call optimisation', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     stateManager.getState.mockReturnValue({
       auth: { canadalife: { token: 'valid-aura-token' } },
     });
@@ -155,7 +155,7 @@ describe('Canada Life API - loadAccountBalanceHistory paired-call optimisation',
 
   test('reports progress across the range', async () => {
     mockAllReports(9900, 10000);
-    const progress = jest.fn();
+    const progress = vi.fn();
 
     await loadAccountBalanceHistory(mockAccount, '2024-01-15', '2024-01-19', progress);
 
@@ -198,7 +198,7 @@ describe('Canada Life API - loadAccountBalanceHistory paired-call optimisation',
 
 describe('Canada Life API - loadAccountBalanceHistory weekend extension', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     stateManager.getState.mockReturnValue({
       auth: { canadalife: { token: 'valid-aura-token' } },
     });
@@ -236,7 +236,7 @@ describe('Canada Life API - loadAccountBalanceHistory weekend extension', () => 
 
 describe('Canada Life API - loadAccountBalanceHistory validation and cancellation', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     stateManager.getState.mockReturnValue({
       auth: { canadalife: { token: 'valid-aura-token' } },
     });

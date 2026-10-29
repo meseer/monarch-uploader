@@ -12,8 +12,8 @@ import {
 } from '../../../src/services/common/categorySelection';
 
 // Silence debug logging
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
 describe('categorySelection helper', () => {
@@ -47,7 +47,7 @@ describe('categorySelection helper', () => {
     beforeEach(() => {
       sessionMappings = new Map();
       oneTimeAssignments = new Map();
-      persist = jest.fn();
+      persist = vi.fn();
     });
 
     it('persists a rule and records it in sessionMappings', () => {

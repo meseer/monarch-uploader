@@ -12,29 +12,32 @@ import {
 import stateManager from '../../../src/core/state';
 
 // Mock stateManager
-jest.mock('../../../src/core/state', () => ({
-  setQuestradeAuth: jest.fn(),
-}));
+vi.mock('../../../src/core/state', () => {
+  const mock = {
+    setQuestradeAuth: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
 
 // Mock debugLog
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
 describe('Questrade Auth Service', () => {
   beforeEach(() => {
     // Clear all mocks before each test
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     // Mock sessionStorage
     Object.defineProperty(window, 'sessionStorage', {
       value: {
         length: 0,
-        key: jest.fn(),
-        getItem: jest.fn(),
-        setItem: jest.fn(),
-        removeItem: jest.fn(),
-        clear: jest.fn(),
+        key: vi.fn(),
+        getItem: vi.fn(),
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+        clear: vi.fn(),
       },
       writable: true,
     });
@@ -229,11 +232,11 @@ describe('Questrade Auth Service', () => {
 
   describe('waitForQuestradeToken', () => {
     beforeEach(() => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
     });
 
     afterEach(() => {
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
 
     test('should return token immediately if available on first check', async () => {
@@ -266,14 +269,14 @@ describe('Questrade Auth Service', () => {
       const promise = waitForQuestradeToken(undefined, { retryDelays: [100, 200] });
 
       // After first delay (100ms), still no token
-      await jest.advanceTimersByTimeAsync(100);
+      await vi.advanceTimersByTimeAsync(100);
 
       // After second delay (200ms), token appears
       window.sessionStorage.length = 1;
       window.sessionStorage.key.mockReturnValue('oidc.user:https://login.questrade.com/:qtweb');
       window.sessionStorage.getItem.mockReturnValue(JSON.stringify(mockSessionData));
 
-      await jest.advanceTimersByTimeAsync(200);
+      await vi.advanceTimersByTimeAsync(200);
 
       const result = await promise;
 
@@ -288,8 +291,8 @@ describe('Questrade Auth Service', () => {
       const promise = waitForQuestradeToken(undefined, { retryDelays: [50, 50] });
 
       // Advance through all delays
-      await jest.advanceTimersByTimeAsync(50);
-      await jest.advanceTimersByTimeAsync(50);
+      await vi.advanceTimersByTimeAsync(50);
+      await vi.advanceTimersByTimeAsync(50);
 
       const result = await promise;
 
@@ -318,7 +321,7 @@ describe('Questrade Auth Service', () => {
 
       const promise = waitForQuestradeToken(undefined, { retryDelays: [10] });
 
-      await jest.advanceTimersByTimeAsync(10);
+      await vi.advanceTimersByTimeAsync(10);
 
       const result = await promise;
 

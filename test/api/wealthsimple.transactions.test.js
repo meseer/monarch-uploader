@@ -7,34 +7,34 @@
 import wealthsimpleApi from '../../src/api/wealthsimple';
 import { setupWealthsimpleAuth } from '../helpers/wealthsimpleAuthCookie';
 
-global.GM_getValue = jest.fn();
-global.GM_setValue = jest.fn();
-global.GM_deleteValue = jest.fn();
-global.GM_xmlhttpRequest = jest.fn();
+global.GM_getValue = vi.fn();
+global.GM_setValue = vi.fn();
+global.GM_deleteValue = vi.fn();
+global.GM_xmlhttpRequest = vi.fn();
 
 Object.defineProperty(document, 'cookie', {
   writable: true,
   value: '',
 });
 
-jest.mock('../../src/core/state', () => ({
+vi.mock('../../src/core/state', () => ({
   __esModule: true,
   default: {
-    setWealthsimpleAuth: jest.fn(),
+    setWealthsimpleAuth: vi.fn(),
   },
 }));
 
 describe('Wealthsimple API Client - Transactions', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     document.cookie = '';
-    jest.clearAllTimers();
+    vi.clearAllTimers();
   });
 
   describe('fetchTransactions', () => {
     beforeEach(() => {
       // Mock Date.now() to return a consistent timestamp
-      jest.spyOn(Date, 'now').mockReturnValue(new Date('2026-01-03T16:00:00.000Z').getTime());
+      vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-01-03T16:00:00.000Z').getTime());
 
       const futureDate = new Date(Date.now() + 3600000).toISOString();
       setupWealthsimpleAuth({
@@ -45,7 +45,7 @@ describe('Wealthsimple API Client - Transactions', () => {
     });
 
     afterEach(() => {
-      jest.restoreAllMocks();
+      vi.restoreAllMocks();
     });
 
     it('should require accountId parameter', async () => {

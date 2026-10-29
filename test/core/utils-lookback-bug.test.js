@@ -13,34 +13,34 @@ import * as accountServiceModule from '../../src/services/common/accountService'
 import * as configStoreModule from '../../src/services/common/configStore';
 
 // Mock GM functions
-global.GM_getValue = jest.fn();
-global.GM_setValue = jest.fn();
+global.GM_getValue = vi.fn();
+global.GM_setValue = vi.fn();
 
 // Mock toast
-jest.mock('../../src/ui/toast', () => ({
-  show: jest.fn(),
+vi.mock('../../src/ui/toast', () => ({
+  show: vi.fn(),
 }));
 
 // Mock accountService for consolidated storage reads
-jest.mock('../../src/services/common/accountService', () => ({
+vi.mock('../../src/services/common/accountService', () => ({
   __esModule: true,
   default: {
-    getAccountData: jest.fn(() => null),
-    updateAccountInList: jest.fn(() => false),
+    getAccountData: vi.fn(() => null),
+    updateAccountInList: vi.fn(() => false),
   },
 }));
 
 // Mock configStore for getLookbackForInstitution
-jest.mock('../../src/services/common/configStore', () => ({
-  getSetting: jest.fn(() => undefined),
-  setSetting: jest.fn(),
+vi.mock('../../src/services/common/configStore', () => ({
+  getSetting: vi.fn(() => undefined),
+  setSetting: vi.fn(),
 }));
 
 describe('Canada Life Lookback Bug', () => {
   let accountService;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     accountService = accountServiceModule.default;
   });
 

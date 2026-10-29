@@ -15,11 +15,11 @@ import {
 } from '../../../src/services/common/legacyMigration';
 
 // Mock dependencies
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../../src/core/config', () => ({
+vi.mock('../../../src/core/config', () => ({
   STORAGE: {
     // Rogers Bank auth
     ROGERSBANK_AUTH_TOKEN: 'rogersbank_auth_token',
@@ -39,7 +39,7 @@ jest.mock('../../../src/core/config', () => ({
   TRANSACTION_RETENTION_DEFAULTS: { DAYS: 91, COUNT: 1000 },
 }));
 
-jest.mock('../../../src/core/integrationCapabilities', () => ({
+vi.mock('../../../src/core/integrationCapabilities', () => ({
   INTEGRATIONS: {
     WEALTHSIMPLE: 'wealthsimple',
     QUESTRADE: 'questrade',
@@ -51,42 +51,42 @@ jest.mock('../../../src/core/integrationCapabilities', () => ({
 // Mock configStore — track calls via simple in-memory store
 const mockConfigData = {};
 
-jest.mock('../../../src/services/common/configStore', () => ({
-  getConfig: jest.fn((id) => mockConfigData[`${id}_config`] || {}),
-  clearAuth: jest.fn((id) => {
+vi.mock('../../../src/services/common/configStore', () => ({
+  getConfig: vi.fn((id) => mockConfigData[`${id}_config`] || {}),
+  clearAuth: vi.fn((id) => {
     if (mockConfigData[`${id}_config`]) delete mockConfigData[`${id}_config`].auth;
     return true;
   }),
-  getSetting: jest.fn((id, key, defaultVal) => {
+  getSetting: vi.fn((id, key, defaultVal) => {
     const config = mockConfigData[`${id}_config`];
     return config?.settings?.[key] !== undefined ? config.settings[key] : defaultVal;
   }),
-  setSetting: jest.fn((id, key, value) => {
+  setSetting: vi.fn((id, key, value) => {
     if (!mockConfigData[`${id}_config`]) mockConfigData[`${id}_config`] = {};
     if (!mockConfigData[`${id}_config`].settings) mockConfigData[`${id}_config`].settings = {};
     mockConfigData[`${id}_config`].settings[key] = value;
   }),
-  getCategoryMappings: jest.fn((id) => {
+  getCategoryMappings: vi.fn((id) => {
     const config = mockConfigData[`${id}_config`];
     return config?.categoryMappings || {};
   }),
-  saveCategoryMappings: jest.fn((id, mappings) => {
+  saveCategoryMappings: vi.fn((id, mappings) => {
     if (!mockConfigData[`${id}_config`]) mockConfigData[`${id}_config`] = {};
     mockConfigData[`${id}_config`].categoryMappings = mappings;
   }),
 }));
 
 // Mock GM functions
-globalThis.GM_getValue = jest.fn();
-globalThis.GM_setValue = jest.fn();
-globalThis.GM_deleteValue = jest.fn();
+globalThis.GM_getValue = vi.fn();
+globalThis.GM_setValue = vi.fn();
+globalThis.GM_deleteValue = vi.fn();
 
 // Import mocks for assertions
 import * as configStore from '../../../src/services/common/configStore';
 
 describe('Legacy Storage Migration', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     // Clear mock config data
     Object.keys(mockConfigData).forEach((key) => delete mockConfigData[key]);
     // Default: no legacy data

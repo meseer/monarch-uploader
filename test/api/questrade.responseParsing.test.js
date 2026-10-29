@@ -14,36 +14,36 @@ import { makeQuestradeApiCall } from '../../src/api/questrade';
 import { settlementOf } from '../helpers/promiseSettlement';
 import * as authModule from '../../src/services/questrade/auth';
 
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../src/core/state', () => ({
+vi.mock('../../src/core/state', () => ({
   __esModule: true,
   default: {
-    setQuestradeAuth: jest.fn(),
+    setQuestradeAuth: vi.fn(),
   },
 }));
 
-jest.mock('../../src/services/questrade/auth', () => ({
+vi.mock('../../src/services/questrade/auth', () => ({
   __esModule: true,
   default: {
-    checkQuestradeAuth: jest.fn(),
-    getQuestradeToken: jest.fn(),
-    waitForQuestradeToken: jest.fn(),
-    saveQuestradeToken: jest.fn(),
+    checkQuestradeAuth: vi.fn(),
+    getQuestradeToken: vi.fn(),
+    waitForQuestradeToken: vi.fn(),
+    saveQuestradeToken: vi.fn(),
   },
 }));
 
-globalThis.GM_getValue = jest.fn();
-globalThis.GM_setValue = jest.fn();
-globalThis.GM_xmlhttpRequest = jest.fn();
+globalThis.GM_getValue = vi.fn();
+globalThis.GM_setValue = vi.fn();
+globalThis.GM_xmlhttpRequest = vi.fn();
 
 describe('Questrade API - response parsing and settlement', () => {
   let authService;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     authService = authModule.default;
     globalThis.GM_getValue.mockReturnValue('[]');
     authService.checkQuestradeAuth.mockReturnValue({

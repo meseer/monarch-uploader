@@ -7,7 +7,7 @@ global.TextEncoder = TextEncoder;
 // Mock for Web Crypto API (crypto.subtle)
 // JSDOM has a crypto object but without subtle, so we need to add it
 // Use Node.js built-in crypto for real SHA-256 hashing to avoid collisions
-const mockDigest = jest.fn(async (algorithm, data) => {
+const mockDigest = vi.fn(async (algorithm, data) => {
   const algoName = algorithm.replace('-', '').toLowerCase(); // 'SHA-256' -> 'sha256'
   const hash = nodeCrypto.createHash(algoName).update(Buffer.from(data)).digest();
   return hash.buffer.slice(hash.byteOffset, hash.byteOffset + hash.byteLength);
@@ -27,15 +27,15 @@ if (typeof crypto !== 'undefined') {
 }
 
 // Mock for Tampermonkey GM functions
-global.GM_addElement = jest.fn();
-global.GM_deleteValue = jest.fn(() => Promise.resolve());
-global.GM_download = jest.fn();
-global.GM_getValue = jest.fn((key, defaultValue) => defaultValue);
-global.GM_listValues = jest.fn(() => Promise.resolve([]));
-global.GM_log = jest.fn();
-global.GM_registerMenuCommand = jest.fn();
-global.GM_setValue = jest.fn();
-global.GM_xmlhttpRequest = jest.fn();
+global.GM_addElement = vi.fn();
+global.GM_deleteValue = vi.fn(() => Promise.resolve());
+global.GM_download = vi.fn();
+global.GM_getValue = vi.fn((key, defaultValue) => defaultValue);
+global.GM_listValues = vi.fn(() => Promise.resolve([]));
+global.GM_log = vi.fn();
+global.GM_registerMenuCommand = vi.fn();
+global.GM_setValue = vi.fn();
+global.GM_xmlhttpRequest = vi.fn();
 
 // Mock for sessionStorage
 class MockStorage {
@@ -43,25 +43,25 @@ class MockStorage {
     this.store = {};
     this.length = 0;
 
-    // Make methods jest functions so they can be mocked
-    this.key = jest.fn((n) => Object.keys(this.store)[n] || null);
-    this.getItem = jest.fn((key) => this.store[key] || null);
-    this.setItem = jest.fn((key, value) => {
+    // Make methods mock functions so they can be mocked
+    this.key = vi.fn((n) => Object.keys(this.store)[n] || null);
+    this.getItem = vi.fn((key) => this.store[key] || null);
+    this.setItem = vi.fn((key, value) => {
       this.store[key] = String(value);
       this.length = Object.keys(this.store).length;
     });
-    this.removeItem = jest.fn((key) => {
+    this.removeItem = vi.fn((key) => {
       delete this.store[key];
       this.length = Object.keys(this.store).length;
     });
-    this.clear = jest.fn(() => {
+    this.clear = vi.fn(() => {
       this.store = {};
       this.length = 0;
     });
   }
 }
 
-// Location mocking utility using Jest spies - works reliably with JSDOM
+// Location mocking utility using vi spies - works reliably with JSDOM
 global.mockLocation = (locationProps) => {
   // Create properties with defaults
   const href = locationProps.href || 'http://localhost/';
@@ -95,7 +95,7 @@ global.mockLocation = (locationProps) => {
     global.locationSpies = {};
   }
 
-  // Use Jest spies to mock individual location properties
+  // Use vi spies to mock individual location properties
   Object.keys(mockLocationObj).forEach((key) => {
     if (key !== 'toString' && key !== 'valueOf') {
       try {
@@ -103,7 +103,7 @@ global.mockLocation = (locationProps) => {
         if (global.locationSpies[key]) {
           global.locationSpies[key].mockReturnValue(mockLocationObj[key]);
         } else {
-          global.locationSpies[key] = jest.spyOn(window.location, key, 'get').mockReturnValue(mockLocationObj[key]);
+          global.locationSpies[key] = vi.spyOn(window.location, key, 'get').mockReturnValue(mockLocationObj[key]);
         }
       } catch (e) {
         // If we can't spy on the property, try a direct approach
@@ -150,8 +150,13 @@ global.restoreLocation = () => {
 
 // Set up mocked DOM elements and localStorage
 beforeEach(() => {
-  // Mock sessionStorage
-  global.sessionStorage = new MockStorage();
+  // Mock sessionStorage. The jsdom environment exposes it as a getter-only
+  // global, so it has to be redefined rather than assigned.
+  Object.defineProperty(globalThis, 'sessionStorage', {
+    value: new MockStorage(),
+    configurable: true,
+    writable: true,
+  });
 
   // Mock DOM elements
   document.body.innerHTML = '<div></div>';
@@ -162,7 +167,7 @@ beforeEach(() => {
 
 // Clean up after each test
 afterEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   document.body.innerHTML = '';
 
   // Restore original location after each test

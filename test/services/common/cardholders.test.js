@@ -22,15 +22,15 @@ import {
   syncCardholders,
 } from '../../../src/services/common/cardholders';
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  toTitleCase: jest.fn((name) => {
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  toTitleCase: vi.fn((name) => {
     if (!name) return '';
     return name.toLowerCase().replace(/(^|[\s\-'])([a-z])/g, (_m, p, l) => p + l.toUpperCase());
   }),
 }));
 
-jest.mock('../../../src/core/config', () => ({
+vi.mock('../../../src/core/config', () => ({
   CARDHOLDER: {
     SHARED_OWNER: 'Shared',
     OWNER_MODE: { OFF: 'off', ON: 'on' },
@@ -38,33 +38,33 @@ jest.mock('../../../src/core/config', () => ({
   },
 }));
 
-jest.mock('../../../src/core/integrationCapabilities', () => ({
+vi.mock('../../../src/core/integrationCapabilities', () => ({
   ACCOUNT_SETTINGS: {
     CARDHOLDER_OWNER_MODE: 'cardholderOwnerMode',
     CARDHOLDER_TAG_MODE: 'cardholderTagMode',
   },
-  getSettingDefault: jest.fn(() => undefined),
-  hasCapability: jest.fn(() => true),
+  getSettingDefault: vi.fn(() => undefined),
+  hasCapability: vi.fn(() => true),
 }));
 
-jest.mock('../../../src/services/common/accountService', () => ({
+vi.mock('../../../src/services/common/accountService', () => ({
   __esModule: true,
   default: {
-    getAccountData: jest.fn(() => ({})),
-    updateAccountInList: jest.fn(() => true),
+    getAccountData: vi.fn(() => ({})),
+    updateAccountInList: vi.fn(() => true),
   },
 }));
 
-jest.mock('../../../src/api/monarchHousehold', () => ({
-  getHouseholdMembers: jest.fn(() => Promise.resolve({
+vi.mock('../../../src/api/monarchHousehold', () => ({
+  getHouseholdMembers: vi.fn(() => Promise.resolve({
     currentUserId: 'user-1',
     householdId: 'hh-1',
     members: [],
   })),
 }));
 
-jest.mock('../../../src/services/common/cardholderMatching', () => ({
-  findBestMemberMatch: jest.fn(() => null),
+vi.mock('../../../src/services/common/cardholderMatching', () => ({
+  findBestMemberMatch: vi.fn(() => null),
 }));
 
 import accountService from '../../../src/services/common/accountService';
@@ -109,7 +109,7 @@ const member = (overrides = {}) => ({
 });
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   hasCapability.mockReturnValue(true);
   getSettingDefault.mockReturnValue(undefined);
   accountService.getAccountData.mockReturnValue({});
@@ -425,7 +425,7 @@ describe('getUnmappedCardholders', () => {
 
 describe('promptForUnmappedCardholders', () => {
   it('does not prompt when everything is already mapped', async () => {
-    const prompt = jest.fn();
+    const prompt = vi.fn();
     const cardholders = { A: entry({ monarchUserId: 'user-1', monarchUserName: 'Mykhailo Delegan' }) };
 
     const result = await promptForUnmappedCardholders(cardholders, [member()], prompt);
@@ -435,7 +435,7 @@ describe('promptForUnmappedCardholders', () => {
   });
 
   it('persists a selected member as a manual mapping', async () => {
-    const prompt = jest.fn(() => Promise.resolve({ member: member() }));
+    const prompt = vi.fn(() => Promise.resolve({ member: member() }));
     const cardholders = { 'MYKHAILO DELEGAN': entry() };
 
     const result = await promptForUnmappedCardholders(cardholders, [member()], prompt);
@@ -450,7 +450,7 @@ describe('promptForUnmappedCardholders', () => {
   });
 
   it('persists an explicit Shared choice so the user is not asked again', async () => {
-    const prompt = jest.fn(() => Promise.resolve({ member: null }));
+    const prompt = vi.fn(() => Promise.resolve({ member: null }));
     const cardholders = { 'MYKHAILO DELEGAN': entry() };
 
     const result = await promptForUnmappedCardholders(cardholders, [member()], prompt);
@@ -464,7 +464,7 @@ describe('promptForUnmappedCardholders', () => {
   });
 
   it('does NOT persist anything when the prompt is cancelled', async () => {
-    const prompt = jest.fn(() => Promise.resolve(null));
+    const prompt = vi.fn(() => Promise.resolve(null));
     const cardholders = { 'MYKHAILO DELEGAN': entry() };
 
     const result = await promptForUnmappedCardholders(cardholders, [member()], prompt);
@@ -476,7 +476,7 @@ describe('promptForUnmappedCardholders', () => {
 
   it('passes the suggested match to the prompt for pre-selection', async () => {
     findBestMemberMatch.mockReturnValue({ member: member(), matchType: 'exact-name' });
-    const prompt = jest.fn(() => Promise.resolve({ member: member() }));
+    const prompt = vi.fn(() => Promise.resolve({ member: member() }));
 
     await promptForUnmappedCardholders({ 'MYKHAILO DELEGAN': entry() }, [member()], prompt);
 
@@ -490,7 +490,7 @@ describe('promptForUnmappedCardholders', () => {
 
   it('passes a null suggestion when nothing matched', async () => {
     findBestMemberMatch.mockReturnValue(null);
-    const prompt = jest.fn(() => Promise.resolve({ member: null }));
+    const prompt = vi.fn(() => Promise.resolve({ member: null }));
 
     await promptForUnmappedCardholders({ 'LIUBOV MONSAR': entry() }, [member()], prompt);
 
@@ -501,7 +501,7 @@ describe('promptForUnmappedCardholders', () => {
   });
 
   it('continues to the next cardholder when a prompt rejects', async () => {
-    const prompt = jest.fn()
+    const prompt = vi.fn()
       .mockRejectedValueOnce(new Error('render failed'))
       .mockResolvedValueOnce({ member: member() });
 
@@ -513,7 +513,7 @@ describe('promptForUnmappedCardholders', () => {
   });
 
   it('prompts once per unmapped cardholder', async () => {
-    const prompt = jest.fn(() => Promise.resolve({ member: null }));
+    const prompt = vi.fn(() => Promise.resolve({ member: null }));
     const cardholders = { A: entry(), B: entry(), C: entry() };
 
     await promptForUnmappedCardholders(cardholders, [member()], prompt);
@@ -743,7 +743,7 @@ describe('syncCardholders', () => {
     accountService.getAccountData.mockReturnValue({ cardholderOwnerMode: 'on', cardholderTagMode: 'off' });
     getHouseholdMembers.mockResolvedValue({ currentUserId: 'user-1', householdId: 'hh-1', members: [member()] });
     findBestMemberMatch.mockReturnValue({ member: member(), matchType: 'exact-name' });
-    const promptForMember = jest.fn(() => Promise.resolve({ member: member() }));
+    const promptForMember = vi.fn(() => Promise.resolve({ member: member() }));
 
     const result = await syncCardholders({ ...baseParams, promptForMember });
 
@@ -762,7 +762,7 @@ describe('syncCardholders', () => {
       },
     });
     getHouseholdMembers.mockResolvedValue({ currentUserId: 'user-1', householdId: 'hh-1', members: [member()] });
-    const promptForMember = jest.fn();
+    const promptForMember = vi.fn();
 
     await syncCardholders({ ...baseParams, promptForMember });
 

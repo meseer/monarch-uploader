@@ -19,7 +19,7 @@ import * as utilsModule from '../../src/core/utils';
 import * as transactionStorageModule from '../../src/utils/transactionStorage';
 
 // Mock global fetch
-global.fetch = jest.fn();
+global.fetch = vi.fn();
 
 // Create RogersBankUploadError class for tests
 class RogersBankUploadError extends Error {
@@ -32,29 +32,29 @@ class RogersBankUploadError extends Error {
 
 // Mock DOM elements for getRogersAccountName testing
 Object.defineProperty(global.document, 'querySelector', {
-  value: jest.fn(),
+  value: vi.fn(),
   writable: true,
 });
 
 // Mock dependencies
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  formatDate: jest.fn((date) => {
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  formatDate: vi.fn((date) => {
     if (date instanceof Date) {
       return date.toISOString().split('T')[0];
     }
     return '2024-01-15';
   }),
-  getTodayLocal: jest.fn(() => '2024-01-15'),
-  getYesterdayLocal: jest.fn(() => '2024-01-14'),
-  formatDaysAgoLocal: jest.fn(() => '2023-10-15'),
-  parseLocalDate: jest.fn((dateString) => new Date(dateString)),
-  calculateFromDateWithLookback: jest.fn(),
-  saveLastUploadDate: jest.fn(),
-  getLastUpdateDate: jest.fn(),
+  getTodayLocal: vi.fn(() => '2024-01-15'),
+  getYesterdayLocal: vi.fn(() => '2024-01-14'),
+  formatDaysAgoLocal: vi.fn(() => '2023-10-15'),
+  parseLocalDate: vi.fn((dateString) => new Date(dateString)),
+  calculateFromDateWithLookback: vi.fn(),
+  saveLastUploadDate: vi.fn(),
+  getLastUpdateDate: vi.fn(),
 }));
 
-jest.mock('../../src/core/config', () => ({
+vi.mock('../../src/core/config', () => ({
   STORAGE: {
     ROGERSBANK_ACCOUNT_MAPPING_PREFIX: 'rogersbank_account_',
     ROGERSBANK_UPLOADED_REFS_PREFIX: 'rogersbank_uploaded_refs_',
@@ -81,102 +81,102 @@ jest.mock('../../src/core/config', () => ({
   },
 }));
 
-jest.mock('../../src/core/state', () => ({
+vi.mock('../../src/core/state', () => ({
   __esModule: true,
   default: {
-    getState: jest.fn(() => ({
+    getState: vi.fn(() => ({
       currentAccount: { nickname: 'Rogers Card', name: 'Rogers Card' },
     })),
-    setAccount: jest.fn(),
-    setRogersBankAuth: jest.fn(),
+    setAccount: vi.fn(),
+    setRogersBankAuth: vi.fn(),
   },
 }));
 
-jest.mock('../../src/api/rogersbank', () => ({
-  getRogersBankCredentials: jest.fn(),
-  checkRogersBankAuth: jest.fn(),
-  fetchRogersBankAccountDetails: jest.fn(),
+vi.mock('../../src/api/rogersbank', () => ({
+  getRogersBankCredentials: vi.fn(),
+  checkRogersBankAuth: vi.fn(),
+  fetchRogersBankAccountDetails: vi.fn(),
 }));
 
-jest.mock('../../src/api/monarch', () => ({
+vi.mock('../../src/api/monarch', () => ({
   __esModule: true,
   default: {
-    listAccounts: jest.fn(),
-    uploadTransactions: jest.fn(),
-    uploadBalance: jest.fn(),
-    getCategoriesAndGroups: jest.fn(),
-    setCreditLimit: jest.fn().mockResolvedValue(true),
-    setAccountLogo: jest.fn().mockResolvedValue(true),
-    validateAndRefreshAccountMapping: jest.fn(),
+    listAccounts: vi.fn(),
+    uploadTransactions: vi.fn(),
+    uploadBalance: vi.fn(),
+    getCategoriesAndGroups: vi.fn(),
+    setCreditLimit: vi.fn().mockResolvedValue(true),
+    setAccountLogo: vi.fn().mockResolvedValue(true),
+    validateAndRefreshAccountMapping: vi.fn(),
   },
 }));
 
-jest.mock('../../src/ui/toast', () => ({
+vi.mock('../../src/ui/toast', () => ({
   __esModule: true,
   default: {
-    show: jest.fn(),
+    show: vi.fn(),
   },
 }));
 
-jest.mock('../../src/ui/components/progressDialog', () => ({
-  showProgressDialog: jest.fn(() => ({
-    updateProgress: jest.fn(),
-    hideCancel: jest.fn(),
-    showSummary: jest.fn(),
-    onCancel: jest.fn(),
-    initSteps: jest.fn(),
-    updateStepStatus: jest.fn(),
-    updateBalanceChange: jest.fn(),
+vi.mock('../../src/ui/components/progressDialog', () => ({
+  showProgressDialog: vi.fn(() => ({
+    updateProgress: vi.fn(),
+    hideCancel: vi.fn(),
+    showSummary: vi.fn(),
+    onCancel: vi.fn(),
+    initSteps: vi.fn(),
+    updateStepStatus: vi.fn(),
+    updateBalanceChange: vi.fn(),
   })),
 }));
 
-jest.mock('../../src/ui/components/datePicker', () => ({
-  showDatePickerWithOptionsPromise: jest.fn(),
+vi.mock('../../src/ui/components/datePicker', () => ({
+  showDatePickerWithOptionsPromise: vi.fn(),
 }));
 
-jest.mock('../../src/ui/components/accountSelectorWithCreate', () => ({
-  showMonarchAccountSelectorWithCreate: jest.fn(),
+vi.mock('../../src/ui/components/accountSelectorWithCreate', () => ({
+  showMonarchAccountSelectorWithCreate: vi.fn(),
 }));
 
-jest.mock('../../src/ui/components/monarchLoginLink', () => ({
-  ensureMonarchAuthentication: jest.fn(),
+vi.mock('../../src/ui/components/monarchLoginLink', () => ({
+  ensureMonarchAuthentication: vi.fn(),
 }));
 
-jest.mock('../../src/utils/csv', () => ({
-  convertTransactionsToMonarchCSV: jest.fn(() => 'csv,data'),
+vi.mock('../../src/utils/csv', () => ({
+  convertTransactionsToMonarchCSV: vi.fn(() => 'csv,data'),
 }));
 
-jest.mock('../../src/mappers/category', () => ({
-  applyCategoryMapping: jest.fn(),
-  saveUserCategorySelection: jest.fn(),
-  calculateAllCategorySimilarities: jest.fn(),
+vi.mock('../../src/mappers/category', () => ({
+  applyCategoryMapping: vi.fn(),
+  saveUserCategorySelection: vi.fn(),
+  calculateAllCategorySimilarities: vi.fn(),
 }));
 
 // Shared factory keeps the mock in step with the real module — see the helper for
 // why the pure ordering functions delegate to the actual implementation.
-jest.mock('../../src/utils/transactionStorage', () => {
-  const { buildTransactionStorageMock } = require('../helpers/transactionStorageMock');
+vi.mock('../../src/utils/transactionStorage', async () => {
+  const { buildTransactionStorageMock } = await import('../helpers/transactionStorageMock');
   return buildTransactionStorageMock();
 });
 
-jest.mock('../../src/ui/components/categorySelector', () => ({
-  showMonarchCategorySelector: jest.fn(),
+vi.mock('../../src/ui/components/categorySelector', () => ({
+  showMonarchCategorySelector: vi.fn(),
 }));
 
-jest.mock('../../src/services/common/accountService', () => ({
+vi.mock('../../src/services/common/accountService', () => ({
   __esModule: true,
   default: {
-    getMonarchAccountMapping: jest.fn(),
-    upsertAccount: jest.fn(),
-    getAccountData: jest.fn(),
-    updateAccountInList: jest.fn(),
-    incrementSyncCount: jest.fn(),
-    isReadyForLegacyCleanup: jest.fn(),
-    cleanupLegacyStorage: jest.fn(),
+    getMonarchAccountMapping: vi.fn(),
+    upsertAccount: vi.fn(),
+    getAccountData: vi.fn(),
+    updateAccountInList: vi.fn(),
+    incrementSyncCount: vi.fn(),
+    isReadyForLegacyCleanup: vi.fn(),
+    cleanupLegacyStorage: vi.fn(),
   },
 }));
 
-jest.mock('../../src/core/integrationCapabilities', () => ({
+vi.mock('../../src/core/integrationCapabilities', () => ({
   INTEGRATIONS: {
     ROGERSBANK: 'rogersbank',
     WEALTHSIMPLE: 'wealthsimple',
@@ -196,12 +196,12 @@ jest.mock('../../src/core/integrationCapabilities', () => ({
   },
   // The cardholder service reads these to decide whether owner mapping is on.
   // Returning the "off" defaults keeps the feature inactive in these tests.
-  getSettingDefault: jest.fn(() => undefined),
-  hasCapability: jest.fn(() => false),
+  getSettingDefault: vi.fn(() => undefined),
+  hasCapability: vi.fn(() => false),
 }));
 
-jest.mock('../../src/services/rogersbank/pendingTransactions', () => ({
-  separateAndDeduplicateTransactions: jest.fn(async (transactions) => {
+vi.mock('../../src/services/rogersbank/pendingTransactions', () => ({
+  separateAndDeduplicateTransactions: vi.fn(async (transactions) => {
     const settled = (transactions || []).filter((tx) => tx.activityStatus === 'APPROVED').map((tx) => {
       // Attach generatedId to settled transactions without referenceNumber (mirrors real behavior)
       if (!tx.referenceNumber) {
@@ -215,20 +215,20 @@ jest.mock('../../src/services/rogersbank/pendingTransactions', () => ({
     }));
     return { settled, pending, pendingIdMap: new Map(), settledIdMap: new Map(), duplicatesRemoved: 0 };
   }),
-  reconcileRogersPendingTransactions: jest.fn(async () => ({
+  reconcileRogersPendingTransactions: vi.fn(async () => ({
     success: true, settled: 0, cancelled: 0, failed: 0, noPendingTransactions: true,
   })),
-  reconcileRogersFetchedPending: jest.fn(async () => ({
+  reconcileRogersFetchedPending: vi.fn(async () => ({
     success: true, settled: 0, cancelled: 0, failed: 0, settledRefIds: [], noPendingTransactions: true,
   })),
-  formatReconciliationMessage: jest.fn(() => 'No pending transactions'),
-  formatPendingIdForNotes: jest.fn((id) => id || ''),
+  formatReconciliationMessage: vi.fn(() => 'No pending transactions'),
+  formatPendingIdForNotes: vi.fn((id) => id || ''),
 }));
 
 // Mock GM functions
-globalThis.GM_getValue = jest.fn();
-globalThis.GM_setValue = jest.fn();
-globalThis.GM_xmlhttpRequest = jest.fn();
+globalThis.GM_getValue = vi.fn();
+globalThis.GM_setValue = vi.fn();
+globalThis.GM_xmlhttpRequest = vi.fn();
 
 
 describe('Rogers Bank Upload Service - Core - Error Handling, Balance Upload, Transactions, Categories', () => {
@@ -247,7 +247,7 @@ describe('Rogers Bank Upload Service - Core - Error Handling, Balance Upload, Tr
   let accountServiceMock;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     // Get all the mocked modules
     const rogersbankMock = rogersbankModule;
@@ -287,7 +287,7 @@ describe('Rogers Bank Upload Service - Core - Error Handling, Balance Upload, Tr
 
     // Setup DOM mocks
     global.document.querySelector.mockReturnValue({
-      querySelectorAll: jest.fn(() => [
+      querySelectorAll: vi.fn(() => [
         { textContent: 'Rogers' },
         { textContent: 'Mastercard' },
       ]),

@@ -32,22 +32,22 @@ describe('Account Service', () => {
     gmStorage = {};
 
     // Mock GM_getValue to read from our storage
-    global.GM_getValue = jest.fn(
+    global.GM_getValue = vi.fn(
       (key, defaultValue) => (gmStorage[key] !== undefined ? gmStorage[key] : defaultValue),
     );
 
     // Mock GM_setValue to write to our storage
-    global.GM_setValue = jest.fn((key, value) => {
+    global.GM_setValue = vi.fn((key, value) => {
       gmStorage[key] = value;
     });
 
     // Mock GM_deleteValue to delete from our storage
-    global.GM_deleteValue = jest.fn((key) => {
+    global.GM_deleteValue = vi.fn((key) => {
       delete gmStorage[key];
     });
 
     // Mock GM_listValues to return keys from our storage (synchronous array)
-    global.GM_listValues = jest.fn(() => Object.keys(gmStorage));
+    global.GM_listValues = vi.fn(() => Object.keys(gmStorage));
   });
 
   describe('getStorageKey', () => {

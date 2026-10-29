@@ -6,24 +6,24 @@ import transactionsService from '../../../src/services/questrade/transactions';
 import { cleanString } from '../../../src/services/questrade/transactionRules';
 
 // Mock dependencies (same as transactions.test.js)
-jest.mock('../../../src/api/questrade');
-jest.mock('../../../src/api/monarch');
-jest.mock('../../../src/utils/csv');
-jest.mock('../../../src/ui/toast');
-jest.mock('../../../src/mappers/category');
-jest.mock('../../../src/ui/components/categorySelector');
-jest.mock('../../../src/utils/transactionStorage', () => ({
-  getTransactionIdsFromArray: jest.fn(() => new Set()),
-  getRetentionSettingsFromAccount: jest.fn(() => ({ days: 91, count: 1000 })),
-  mergeAndRetainTransactions: jest.fn((existing, newTx) => [...(existing || []), ...newTx]),
+vi.mock('../../../src/api/questrade');
+vi.mock('../../../src/api/monarch');
+vi.mock('../../../src/utils/csv');
+vi.mock('../../../src/ui/toast');
+vi.mock('../../../src/mappers/category');
+vi.mock('../../../src/ui/components/categorySelector');
+vi.mock('../../../src/utils/transactionStorage', () => ({
+  getTransactionIdsFromArray: vi.fn(() => new Set()),
+  getRetentionSettingsFromAccount: vi.fn(() => ({ days: 91, count: 1000 })),
+  mergeAndRetainTransactions: vi.fn((existing, newTx) => [...(existing || []), ...newTx]),
 }));
-jest.mock('../../../src/services/common/accountService', () => ({
+vi.mock('../../../src/services/common/accountService', () => ({
   __esModule: true,
   default: {
-    getMonarchAccountMapping: jest.fn(),
-    getAccountData: jest.fn(),
-    upsertAccount: jest.fn(),
-    updateAccountInList: jest.fn(),
+    getMonarchAccountMapping: vi.fn(),
+    getAccountData: vi.fn(),
+    upsertAccount: vi.fn(),
+    updateAccountInList: vi.fn(),
   },
 }));
 

@@ -25,7 +25,7 @@ describe('Wealthsimple Transaction Rules Engine - Cash Payments', () => {
           type: acc.type,
         },
       }));
-      global.GM_getValue = jest.fn((key, defaultValue) => {
+      global.GM_getValue = vi.fn((key, defaultValue) => {
         if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
           return JSON.stringify(consolidatedAccounts);
         }
@@ -141,7 +141,7 @@ describe('Wealthsimple Transaction Rules Engine - Cash Payments', () => {
             },
           },
         ];
-        global.GM_getValue = jest.fn((key, defaultValue) => {
+        global.GM_getValue = vi.fn((key, defaultValue) => {
           if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
             return JSON.stringify(consolidatedAccounts);
           }
@@ -200,7 +200,7 @@ describe('Wealthsimple Transaction Rules Engine - Cash Payments', () => {
 
     describe('edge cases', () => {
       it('should handle invalid JSON in storage', () => {
-        global.GM_getValue = jest.fn((key, defaultValue) => {
+        global.GM_getValue = vi.fn((key, defaultValue) => {
           if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
             return 'invalid-json{';
           }
@@ -1111,7 +1111,7 @@ describe('Wealthsimple Transaction Rules Engine - Cash Payments', () => {
           nickname: acc.nickname,
         },
       }));
-      global.GM_getValue = jest.fn((key, defaultValue) => {
+      global.GM_getValue = vi.fn((key, defaultValue) => {
         if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
           return JSON.stringify(consolidatedAccounts);
         }

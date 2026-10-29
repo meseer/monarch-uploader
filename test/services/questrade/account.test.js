@@ -20,68 +20,80 @@ import { STORAGE } from '../../../src/core/config';
 import { INTEGRATIONS } from '../../../src/core/integrationCapabilities';
 
 // Mock dependencies
-jest.mock('../../../src/api/questrade', () => ({
-  fetchAccounts: jest.fn(),
-}));
+vi.mock('../../../src/api/questrade', () => {
+  const mock = {
+    fetchAccounts: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
 
-jest.mock('../../../src/services/common/accountService', () => ({
-  getAccounts: jest.fn(),
-  getAccountData: jest.fn(),
-  upsertAccount: jest.fn(),
-}));
+vi.mock('../../../src/services/common/accountService', () => {
+  const mock = {
+    getAccounts: vi.fn(),
+    getAccountData: vi.fn(),
+    upsertAccount: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
 
-jest.mock('../../../src/services/questrade/auth', () => ({
-  checkQuestradeAuth: jest.fn(),
-}));
+vi.mock('../../../src/services/questrade/auth', () => {
+  const mock = {
+    checkQuestradeAuth: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
 
-jest.mock('../../../src/services/questrade/balance', () => ({
+vi.mock('../../../src/services/questrade/balance', () => ({
   default: {
-    processAndUploadBalance: jest.fn(),
-    bulkProcessAccounts: jest.fn(),
-    getDefaultDateRange: jest.fn(),
-    fetchBalanceHistory: jest.fn(),
-    extractBalanceChange: jest.fn(),
+    processAndUploadBalance: vi.fn(),
+    bulkProcessAccounts: vi.fn(),
+    getDefaultDateRange: vi.fn(),
+    fetchBalanceHistory: vi.fn(),
+    extractBalanceChange: vi.fn(),
   },
-  processAndUploadBalance: jest.fn(),
-  bulkProcessAccounts: jest.fn(),
-  getDefaultDateRange: jest.fn(),
-  fetchBalanceHistory: jest.fn(),
-  extractBalanceChange: jest.fn(),
+  processAndUploadBalance: vi.fn(),
+  bulkProcessAccounts: vi.fn(),
+  getDefaultDateRange: vi.fn(),
+  fetchBalanceHistory: vi.fn(),
+  extractBalanceChange: vi.fn(),
 }));
 
-jest.mock('../../../src/services/questrade/sync', () => ({
+vi.mock('../../../src/services/questrade/sync', () => ({
   default: {
-    syncAccountToMonarch: jest.fn(),
-    syncAllAccountsToMonarch: jest.fn(),
+    syncAccountToMonarch: vi.fn(),
+    syncAllAccountsToMonarch: vi.fn(),
   },
-  syncAccountToMonarch: jest.fn(),
-  syncAllAccountsToMonarch: jest.fn(),
+  syncAccountToMonarch: vi.fn(),
+  syncAllAccountsToMonarch: vi.fn(),
 }));
 
-jest.mock('../../../src/core/state', () => ({
-  setAccount: jest.fn(),
-  setQuestradeAuth: jest.fn(),
-  setMonarchAuth: jest.fn(),
-  setCanadaLifeAuth: jest.fn(),
-  setRogersBankAuth: jest.fn(),
-  setUiElement: jest.fn(),
-  addListener: jest.fn(),
-  getState: jest.fn().mockReturnValue({
-    currentAccount: { name: 'Test Account' },
-  }),
-}));
+vi.mock('../../../src/core/state', () => {
+  const mock = {
+    setAccount: vi.fn(),
+    setQuestradeAuth: vi.fn(),
+    setMonarchAuth: vi.fn(),
+    setCanadaLifeAuth: vi.fn(),
+    setRogersBankAuth: vi.fn(),
+    setUiElement: vi.fn(),
+    addListener: vi.fn(),
+    getState: vi.fn().mockReturnValue({
+      currentAccount: { name: 'Test Account' },
+    }),
+  };
+  return { ...mock, default: mock };
+});
 
 // Mock GM storage functions
-globalThis.GM_getValue = jest.fn();
-globalThis.GM_setValue = jest.fn();
+globalThis.GM_getValue = vi.fn();
+globalThis.GM_setValue = vi.fn();
 
 describe('Account Service', () => {
   beforeEach(() => {
     // Clear all mocks before each test
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     // Set up console mocks for debugLog
-    globalThis.console = { log: jest.fn() };
+    globalThis.console = { log: vi.fn() };
   });
 
   describe('URL extraction and account loading logic', () => {

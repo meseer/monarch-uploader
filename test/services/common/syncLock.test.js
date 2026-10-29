@@ -5,8 +5,8 @@
 
 import { acquireSyncLock, SYNC_LOCK_TTL_MS } from '../../../src/services/common/syncLock';
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
 const KEY = 'rogersbank_sync_lock_acc-1';
@@ -16,17 +16,17 @@ describe('syncLock', () => {
 
   beforeEach(() => {
     store = new Map();
-    globalThis.GM_getValue = jest.fn((key, defaultValue) => (store.has(key) ? store.get(key) : defaultValue));
-    globalThis.GM_setValue = jest.fn((key, value) => store.set(key, value));
-    globalThis.GM_deleteValue = jest.fn((key) => store.delete(key));
-    jest.spyOn(Date, 'now').mockReturnValue(1_000_000_000);
+    globalThis.GM_getValue = vi.fn((key, defaultValue) => (store.has(key) ? store.get(key) : defaultValue));
+    globalThis.GM_setValue = vi.fn((key, value) => store.set(key, value));
+    globalThis.GM_deleteValue = vi.fn((key) => store.delete(key));
+    vi.spyOn(Date, 'now').mockReturnValue(1_000_000_000);
   });
 
   afterEach(() => {
     // Release every lock a test left held, so no pagehide listener leaks into
     // the next test through the shared window.
     window.dispatchEvent(new Event('pagehide'));
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('stores the lock under {integration}_sync_lock_{accountId} and removes it on release', () => {
@@ -104,7 +104,7 @@ describe('syncLock', () => {
   it('stops listening for pagehide once released', () => {
     acquireSyncLock('rogersbank', 'acc-1').release();
     acquireSyncLock('rogersbank', 'acc-2');
-    const removeSpy = jest.spyOn(window, 'removeEventListener');
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
 
     window.dispatchEvent(new Event('pagehide'));
 

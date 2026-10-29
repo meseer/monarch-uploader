@@ -12,11 +12,11 @@ import * as stateModule from '../../src/core/state';
 import * as monarchLoginLinkModule from '../../src/ui/components/monarchLoginLink';
 
 // Mock dependencies
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../src/core/config', () => ({
+vi.mock('../../src/core/config', () => ({
   STORAGE: {
     MONARCH_CSRF_TOKEN: 'monarch_csrf_token', MONARCH_SESSION_EXPIRES_AT: 'monarch_session_expires_at',
   },
@@ -25,28 +25,31 @@ jest.mock('../../src/core/config', () => ({
   },
 }));
 
-jest.mock('../../src/core/state', () => ({
-  notifyListeners: jest.fn(),
-}));
+vi.mock('../../src/core/state', () => {
+  const mock = {
+    notifyListeners: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
 
-jest.mock('../../src/ui/toast', () => ({
+vi.mock('../../src/ui/toast', () => ({
   __esModule: true,
   default: {
-    show: jest.fn(),
+    show: vi.fn(),
   },
 }));
 
 // Mock global functions
-global.GM_getValue = jest.fn();
+global.GM_getValue = vi.fn();
 global.window = Object.create(window);
 
 describe('Monarch Login Link Component', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
-    jest.useFakeTimers();
+    vi.clearAllMocks();
+    vi.useFakeTimers();
 
     // Mock window.open
-    global.window.open = jest.fn();
+    global.window.open = vi.fn();
 
     // Mock window.screen
     global.window.screen = {
@@ -59,8 +62,8 @@ describe('Monarch Login Link Component', () => {
   });
 
   afterEach(() => {
-    jest.useRealTimers();
-    jest.restoreAllMocks();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   describe('createMonarchLoginLink', () => {
@@ -98,16 +101,16 @@ describe('Monarch Login Link Component', () => {
     test('should handle click events and open popup', () => {
       const mockPopup = {
         closed: false,
-        close: jest.fn(),
+        close: vi.fn(),
       };
       global.window.open.mockReturnValue(mockPopup);
 
-      const onSuccess = jest.fn();
+      const onSuccess = vi.fn();
       const link = createMonarchLoginLink('Test Link', onSuccess);
 
       const clickEvent = new Event('click');
-      clickEvent.preventDefault = jest.fn();
-      clickEvent.stopPropagation = jest.fn();
+      clickEvent.preventDefault = vi.fn();
+      clickEvent.stopPropagation = vi.fn();
 
       link.dispatchEvent(clickEvent);
 
@@ -126,8 +129,8 @@ describe('Monarch Login Link Component', () => {
 
       const link = createMonarchLoginLink();
       const clickEvent = new Event('click');
-      clickEvent.preventDefault = jest.fn();
-      clickEvent.stopPropagation = jest.fn();
+      clickEvent.preventDefault = vi.fn();
+      clickEvent.stopPropagation = vi.fn();
 
       link.dispatchEvent(clickEvent);
 
@@ -146,8 +149,8 @@ describe('Monarch Login Link Component', () => {
 
       const link = createMonarchLoginLink();
       const clickEvent = new Event('click');
-      clickEvent.preventDefault = jest.fn();
-      clickEvent.stopPropagation = jest.fn();
+      clickEvent.preventDefault = vi.fn();
+      clickEvent.stopPropagation = vi.fn();
 
       link.dispatchEvent(clickEvent);
 
@@ -155,13 +158,13 @@ describe('Monarch Login Link Component', () => {
     });
 
     test('should calculate popup position correctly', () => {
-      const mockPopup = { closed: false, close: jest.fn() };
+      const mockPopup = { closed: false, close: vi.fn() };
       global.window.open.mockReturnValue(mockPopup);
 
       const link = createMonarchLoginLink();
       const clickEvent = new Event('click');
-      clickEvent.preventDefault = jest.fn();
-      clickEvent.stopPropagation = jest.fn();
+      clickEvent.preventDefault = vi.fn();
+      clickEvent.stopPropagation = vi.fn();
 
       link.dispatchEvent(clickEvent);
 
@@ -221,7 +224,7 @@ describe('Monarch Login Link Component', () => {
   describe('ensureMonarchAuthentication', () => {
     test('should resolve immediately if already connected', async () => {
       global.GM_getValue.mockReturnValue('existing-token');
-      const onSuccess = jest.fn();
+      const onSuccess = vi.fn();
 
       const result = await ensureMonarchAuthentication(onSuccess, 'test upload');
 
@@ -232,7 +235,7 @@ describe('Monarch Login Link Component', () => {
     test('should show toast and open popup if not connected', async () => {
       global.GM_getValue.mockReturnValue(null);
       const toast = toastModule.default;
-      const mockPopup = { closed: false, close: jest.fn() };
+      const mockPopup = { closed: false, close: vi.fn() };
       global.window.open.mockReturnValue(mockPopup);
 
       ensureMonarchAuthentication(null, 'test upload');
@@ -250,7 +253,7 @@ describe('Monarch Login Link Component', () => {
     test('should use default context message', async () => {
       global.GM_getValue.mockReturnValue(null);
       const toast = toastModule.default;
-      const mockPopup = { closed: false, close: jest.fn() };
+      const mockPopup = { closed: false, close: vi.fn() };
       global.window.open.mockReturnValue(mockPopup);
 
       ensureMonarchAuthentication();
@@ -264,12 +267,12 @@ describe('Monarch Login Link Component', () => {
 
     test('should resolve true once the login popup reports credentials', async () => {
       global.GM_getValue.mockReturnValue(null);
-      const mockPopup = { closed: false, close: jest.fn() };
+      const mockPopup = { closed: false, close: vi.fn() };
       global.window.open.mockReturnValue(mockPopup);
 
       const pending = ensureMonarchAuthentication(null, 'test upload');
       global.GM_getValue.mockReturnValue('new-token');
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
 
       await expect(pending).resolves.toBe(true);
     });
@@ -285,23 +288,23 @@ describe('Monarch Login Link Component', () => {
 
     test('should resolve false when the popup is closed without logging in', async () => {
       global.GM_getValue.mockReturnValue(null);
-      const mockPopup = { closed: false, close: jest.fn() };
+      const mockPopup = { closed: false, close: vi.fn() };
       global.window.open.mockReturnValue(mockPopup);
 
       const pending = ensureMonarchAuthentication(null, 'test upload');
       mockPopup.closed = true;
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
 
       await expect(pending).resolves.toBe(false);
     });
 
     test('should resolve false when the login times out', async () => {
       global.GM_getValue.mockReturnValue(null);
-      const mockPopup = { closed: false, close: jest.fn() };
+      const mockPopup = { closed: false, close: vi.fn() };
       global.window.open.mockReturnValue(mockPopup);
 
       const pending = ensureMonarchAuthentication(null, 'test upload');
-      jest.advanceTimersByTime(600000);
+      vi.advanceTimersByTime(600000);
 
       await expect(pending).resolves.toBe(false);
     });
@@ -318,9 +321,9 @@ describe('Monarch Login Link Component', () => {
 
   describe('popup monitoring', () => {
     test('should detect successful login when token becomes available', () => {
-      const mockPopup = { closed: false, close: jest.fn() };
+      const mockPopup = { closed: false, close: vi.fn() };
       global.window.open.mockReturnValue(mockPopup);
-      const onSuccess = jest.fn();
+      const onSuccess = vi.fn();
       const toast = toastModule.default;
       const stateManager = stateModule;
 
@@ -329,8 +332,8 @@ describe('Monarch Login Link Component', () => {
 
       const link = createMonarchLoginLink('Test', onSuccess);
       const clickEvent = new Event('click');
-      clickEvent.preventDefault = jest.fn();
-      clickEvent.stopPropagation = jest.fn();
+      clickEvent.preventDefault = vi.fn();
+      clickEvent.stopPropagation = vi.fn();
 
       link.dispatchEvent(clickEvent);
 
@@ -338,7 +341,7 @@ describe('Monarch Login Link Component', () => {
       global.GM_getValue.mockReturnValue('new-token');
 
       // Advance timer to trigger interval check
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
 
       expect(mockPopup.close).toHaveBeenCalled();
       expect(toast.show).toHaveBeenCalledWith(
@@ -351,16 +354,16 @@ describe('Monarch Login Link Component', () => {
     });
 
     test('should handle popup closure without token', () => {
-      const mockPopup = { closed: false, close: jest.fn() };
+      const mockPopup = { closed: false, close: vi.fn() };
       global.window.open.mockReturnValue(mockPopup);
-      const onSuccess = jest.fn();
+      const onSuccess = vi.fn();
 
       global.GM_getValue.mockReturnValue(null);
 
       const link = createMonarchLoginLink('Test', onSuccess);
       const clickEvent = new Event('click');
-      clickEvent.preventDefault = jest.fn();
-      clickEvent.stopPropagation = jest.fn();
+      clickEvent.preventDefault = vi.fn();
+      clickEvent.stopPropagation = vi.fn();
 
       link.dispatchEvent(clickEvent);
 
@@ -368,24 +371,24 @@ describe('Monarch Login Link Component', () => {
       mockPopup.closed = true;
 
       // Advance timer to trigger interval check
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
 
       // Should check for token one final time when popup closes
       expect(global.GM_getValue).toHaveBeenCalled();
     });
 
     test('should handle popup closure with token detected', () => {
-      const mockPopup = { closed: false, close: jest.fn() };
+      const mockPopup = { closed: false, close: vi.fn() };
       global.window.open.mockReturnValue(mockPopup);
-      const onSuccess = jest.fn();
+      const onSuccess = vi.fn();
       const toast = toastModule.default;
 
       global.GM_getValue.mockReturnValue(null);
 
       const link = createMonarchLoginLink('Test', onSuccess);
       const clickEvent = new Event('click');
-      clickEvent.preventDefault = jest.fn();
-      clickEvent.stopPropagation = jest.fn();
+      clickEvent.preventDefault = vi.fn();
+      clickEvent.stopPropagation = vi.fn();
 
       link.dispatchEvent(clickEvent);
 
@@ -394,7 +397,7 @@ describe('Monarch Login Link Component', () => {
       global.GM_getValue.mockReturnValue('final-token');
 
       // Advance timer to trigger interval check
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
 
       expect(toast.show).toHaveBeenCalledWith(
         'Successfully connected to Monarch Money!',
@@ -405,7 +408,7 @@ describe('Monarch Login Link Component', () => {
     });
 
     test('should handle timeout after 10 minutes', () => {
-      const mockPopup = { closed: false, close: jest.fn() };
+      const mockPopup = { closed: false, close: vi.fn() };
       global.window.open.mockReturnValue(mockPopup);
       const toast = toastModule.default;
 
@@ -413,13 +416,13 @@ describe('Monarch Login Link Component', () => {
 
       const link = createMonarchLoginLink();
       const clickEvent = new Event('click');
-      clickEvent.preventDefault = jest.fn();
-      clickEvent.stopPropagation = jest.fn();
+      clickEvent.preventDefault = vi.fn();
+      clickEvent.stopPropagation = vi.fn();
 
       link.dispatchEvent(clickEvent);
 
       // Advance timer to 10 minutes
-      jest.advanceTimersByTime(600000);
+      vi.advanceTimersByTime(600000);
 
       expect(mockPopup.close).toHaveBeenCalled();
       expect(toast.show).toHaveBeenCalledWith(
@@ -429,7 +432,7 @@ describe('Monarch Login Link Component', () => {
     });
 
     test('should handle popup close error during timeout', () => {
-      const mockPopup = { closed: false, close: jest.fn(() => { throw new Error('Close error'); }) };
+      const mockPopup = { closed: false, close: vi.fn(() => { throw new Error('Close error'); }) };
       global.window.open.mockReturnValue(mockPopup);
       const toast = toastModule.default;
 
@@ -437,14 +440,14 @@ describe('Monarch Login Link Component', () => {
 
       const link = createMonarchLoginLink();
       const clickEvent = new Event('click');
-      clickEvent.preventDefault = jest.fn();
-      clickEvent.stopPropagation = jest.fn();
+      clickEvent.preventDefault = vi.fn();
+      clickEvent.stopPropagation = vi.fn();
 
       link.dispatchEvent(clickEvent);
 
       // Should not throw when close fails
       expect(() => {
-        jest.advanceTimersByTime(600000);
+        vi.advanceTimersByTime(600000);
       }).not.toThrow();
 
       expect(toast.show).toHaveBeenCalledWith(
@@ -454,17 +457,17 @@ describe('Monarch Login Link Component', () => {
     });
 
     test('should handle popup close error during success', () => {
-      const mockPopup = { closed: false, close: jest.fn(() => { throw new Error('Close error'); }) };
+      const mockPopup = { closed: false, close: vi.fn(() => { throw new Error('Close error'); }) };
       global.window.open.mockReturnValue(mockPopup);
-      const onSuccess = jest.fn();
+      const onSuccess = vi.fn();
       const toast = toastModule.default;
 
       global.GM_getValue.mockReturnValue(null);
 
       const link = createMonarchLoginLink('Test', onSuccess);
       const clickEvent = new Event('click');
-      clickEvent.preventDefault = jest.fn();
-      clickEvent.stopPropagation = jest.fn();
+      clickEvent.preventDefault = vi.fn();
+      clickEvent.stopPropagation = vi.fn();
 
       link.dispatchEvent(clickEvent);
 
@@ -473,7 +476,7 @@ describe('Monarch Login Link Component', () => {
 
       // Should not throw when close fails
       expect(() => {
-        jest.advanceTimersByTime(1000);
+        vi.advanceTimersByTime(1000);
       }).not.toThrow();
 
       expect(toast.show).toHaveBeenCalledWith(
@@ -485,7 +488,7 @@ describe('Monarch Login Link Component', () => {
     });
 
     test('should handle monitoring errors gracefully', () => {
-      const mockPopup = { closed: false, close: jest.fn() };
+      const mockPopup = { closed: false, close: vi.fn() };
       global.window.open.mockReturnValue(mockPopup);
 
       // Mock GM_getValue to throw error
@@ -495,31 +498,31 @@ describe('Monarch Login Link Component', () => {
 
       const link = createMonarchLoginLink();
       const clickEvent = new Event('click');
-      clickEvent.preventDefault = jest.fn();
-      clickEvent.stopPropagation = jest.fn();
+      clickEvent.preventDefault = vi.fn();
+      clickEvent.stopPropagation = vi.fn();
 
       link.dispatchEvent(clickEvent);
 
       // Should not throw when GM_getValue fails
       expect(() => {
-        jest.advanceTimersByTime(1000);
+        vi.advanceTimersByTime(1000);
       }).not.toThrow();
     });
   });
 
   describe('success callback error handling', () => {
     test('should handle success callback errors gracefully', () => {
-      const mockPopup = { closed: false, close: jest.fn() };
+      const mockPopup = { closed: false, close: vi.fn() };
       global.window.open.mockReturnValue(mockPopup);
-      const onSuccess = jest.fn(() => { throw new Error('Callback error'); });
+      const onSuccess = vi.fn(() => { throw new Error('Callback error'); });
       const toast = toastModule.default;
 
       global.GM_getValue.mockReturnValue(null);
 
       const link = createMonarchLoginLink('Test', onSuccess);
       const clickEvent = new Event('click');
-      clickEvent.preventDefault = jest.fn();
-      clickEvent.stopPropagation = jest.fn();
+      clickEvent.preventDefault = vi.fn();
+      clickEvent.stopPropagation = vi.fn();
 
       link.dispatchEvent(clickEvent);
 
@@ -528,7 +531,7 @@ describe('Monarch Login Link Component', () => {
 
       // Should not throw when callback fails
       expect(() => {
-        jest.advanceTimersByTime(1000);
+        vi.advanceTimersByTime(1000);
       }).not.toThrow();
 
       expect(toast.show).toHaveBeenCalledWith(
@@ -540,7 +543,7 @@ describe('Monarch Login Link Component', () => {
     });
 
     test('should handle missing onSuccess callback', () => {
-      const mockPopup = { closed: false, close: jest.fn() };
+      const mockPopup = { closed: false, close: vi.fn() };
       global.window.open.mockReturnValue(mockPopup);
       const toast = toastModule.default;
 
@@ -548,8 +551,8 @@ describe('Monarch Login Link Component', () => {
 
       const link = createMonarchLoginLink();
       const clickEvent = new Event('click');
-      clickEvent.preventDefault = jest.fn();
-      clickEvent.stopPropagation = jest.fn();
+      clickEvent.preventDefault = vi.fn();
+      clickEvent.stopPropagation = vi.fn();
 
       link.dispatchEvent(clickEvent);
 
@@ -557,7 +560,7 @@ describe('Monarch Login Link Component', () => {
       global.GM_getValue.mockReturnValue('success-token');
 
       expect(() => {
-        jest.advanceTimersByTime(1000);
+        vi.advanceTimersByTime(1000);
       }).not.toThrow();
 
       expect(toast.show).toHaveBeenCalledWith(
@@ -570,13 +573,13 @@ describe('Monarch Login Link Component', () => {
 
   describe('popup window features', () => {
     test('should include all required popup features', () => {
-      const mockPopup = { closed: false, close: jest.fn() };
+      const mockPopup = { closed: false, close: vi.fn() };
       global.window.open.mockReturnValue(mockPopup);
 
       const link = createMonarchLoginLink();
       const clickEvent = new Event('click');
-      clickEvent.preventDefault = jest.fn();
-      clickEvent.stopPropagation = jest.fn();
+      clickEvent.preventDefault = vi.fn();
+      clickEvent.stopPropagation = vi.fn();
 
       link.dispatchEvent(clickEvent);
 
@@ -604,14 +607,14 @@ describe('Monarch Login Link Component', () => {
 
   describe('toast notifications', () => {
     test('should show loading toast when opening popup', () => {
-      const mockPopup = { closed: false, close: jest.fn() };
+      const mockPopup = { closed: false, close: vi.fn() };
       global.window.open.mockReturnValue(mockPopup);
       const toast = toastModule.default;
 
       const link = createMonarchLoginLink();
       const clickEvent = new Event('click');
-      clickEvent.preventDefault = jest.fn();
-      clickEvent.stopPropagation = jest.fn();
+      clickEvent.preventDefault = vi.fn();
+      clickEvent.stopPropagation = vi.fn();
 
       link.dispatchEvent(clickEvent);
 
@@ -635,8 +638,8 @@ describe('Monarch Login Link Component', () => {
 
   describe('edge cases', () => {
     test('should handle multiple popup monitoring sessions', () => {
-      const mockPopup1 = { closed: false, close: jest.fn() };
-      const mockPopup2 = { closed: false, close: jest.fn() };
+      const mockPopup1 = { closed: false, close: vi.fn() };
+      const mockPopup2 = { closed: false, close: vi.fn() };
       global.window.open.mockReturnValueOnce(mockPopup1).mockReturnValueOnce(mockPopup2);
 
       global.GM_getValue.mockReturnValue(null);
@@ -646,12 +649,12 @@ describe('Monarch Login Link Component', () => {
       const link2 = createMonarchLoginLink();
 
       const clickEvent1 = new Event('click');
-      clickEvent1.preventDefault = jest.fn();
-      clickEvent1.stopPropagation = jest.fn();
+      clickEvent1.preventDefault = vi.fn();
+      clickEvent1.stopPropagation = vi.fn();
 
       const clickEvent2 = new Event('click');
-      clickEvent2.preventDefault = jest.fn();
-      clickEvent2.stopPropagation = jest.fn();
+      clickEvent2.preventDefault = vi.fn();
+      clickEvent2.stopPropagation = vi.fn();
 
       link1.dispatchEvent(clickEvent1);
       link2.dispatchEvent(clickEvent2);
@@ -660,7 +663,7 @@ describe('Monarch Login Link Component', () => {
 
       // Simulate token becoming available - should affect both
       global.GM_getValue.mockReturnValue('shared-token');
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
 
       expect(mockPopup1.close).toHaveBeenCalled();
       expect(mockPopup2.close).toHaveBeenCalled();
@@ -668,13 +671,13 @@ describe('Monarch Login Link Component', () => {
 
     test('should handle screen size edge cases', () => {
       global.window.screen = { width: 400, height: 300 };
-      const mockPopup = { closed: false, close: jest.fn() };
+      const mockPopup = { closed: false, close: vi.fn() };
       global.window.open.mockReturnValue(mockPopup);
 
       const link = createMonarchLoginLink();
       const clickEvent = new Event('click');
-      clickEvent.preventDefault = jest.fn();
-      clickEvent.stopPropagation = jest.fn();
+      clickEvent.preventDefault = vi.fn();
+      clickEvent.stopPropagation = vi.fn();
 
       link.dispatchEvent(clickEvent);
 

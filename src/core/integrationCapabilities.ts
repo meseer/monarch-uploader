@@ -6,6 +6,7 @@
  */
 
 import { STORAGE, TRANSACTION_RETENTION_DEFAULTS, CARDHOLDER } from './config';
+import { getManifest } from './integrationRegistry';
 import type { IntegrationManifest } from '../integrations/types';
 
 /**
@@ -242,9 +243,10 @@ export function getCapabilities(integrationId: string): LegacyIntegrationCapabil
     return INTEGRATION_CAPABILITIES[integrationId];
   }
 
-  // Fall back to modular integration registry manifest (lazy require to avoid circular dependency)
-  // Chain: integrationCapabilities → integrationRegistry → utils → configStore → integrationCapabilities
-  const { getManifest } = require('./integrationRegistry');
+  // Fall back to modular integration registry manifest. This import is part of the
+  // cycle integrationCapabilities → integrationRegistry → utils → configStore →
+  // integrationCapabilities; ESM live bindings resolve it because getManifest is
+  // only called at runtime, never during module evaluation.
   const manifest = getManifest(integrationId);
   if (manifest) {
     return buildCapabilitiesFromManifest(manifest);
@@ -346,8 +348,7 @@ function getFaviconDomain(integrationId: string): string | null {
     return FAVICON_DOMAINS[integrationId];
   }
 
-  // Fall back to modular integration registry manifest (lazy require to avoid circular dependency)
-  const { getManifest } = require('./integrationRegistry');
+  // Fall back to modular integration registry manifest
   const manifest = getManifest(integrationId);
   return manifest?.faviconDomain || null;
 }

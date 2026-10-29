@@ -19,18 +19,18 @@ import {
   stripTxIdFromNotes,
 } from '../../../src/services/common/ownerSync';
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  formatDate: jest.fn((d) => d.toISOString().split('T')[0]),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  formatDate: vi.fn((d) => d.toISOString().split('T')[0]),
 }));
 
-jest.mock('../../../src/api/monarch', () => ({
+vi.mock('../../../src/api/monarch', () => ({
   __esModule: true,
   default: {
-    getTagByName: jest.fn(),
-    getTransactionsList: jest.fn(),
-    updateTransaction: jest.fn(),
-    setTransactionTags: jest.fn(),
+    getTagByName: vi.fn(),
+    getTransactionsList: vi.fn(),
+    updateTransaction: vi.fn(),
+    setTransactionTags: vi.fn(),
   },
 }));
 
@@ -62,14 +62,14 @@ const queuedRow = (overrides = {}) => ({
 const params = (overrides = {}) => ({
   monarchAccountId: 'monarch-acct-1',
   txIdPrefix: 'rb-tx',
-  resolveOwnerForTxId: jest.fn(() => OWNER_ID),
+  resolveOwnerForTxId: vi.fn(() => OWNER_ID),
   lookbackDays: 91,
-  sleep: jest.fn(() => Promise.resolve()),
+  sleep: vi.fn(() => Promise.resolve()),
   ...overrides,
 });
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   monarchApi.getTagByName.mockResolvedValue(MARKER_TAG);
   monarchApi.getTransactionsList.mockResolvedValue({ results: [queuedRow()] });
   monarchApi.updateTransaction.mockResolvedValue({ id: 'monarch-tx-1' });
@@ -333,7 +333,7 @@ describe('syncTransactionOwners — never overwrites an explicit choice', () => 
 describe('syncTransactionOwners — self-healing queue', () => {
   it('keeps the marker on an unmatched row so a later sync retries it', async () => {
     const result = await syncTransactionOwners(params({
-      resolveOwnerForTxId: jest.fn(() => null),
+      resolveOwnerForTxId: vi.fn(() => null),
     }));
 
     expect(monarchApi.setTransactionTags).not.toHaveBeenCalled();
@@ -412,7 +412,7 @@ describe('syncTransactionOwners — marker tag propagation', () => {
   });
 
   it('waits between lookup attempts', async () => {
-    const sleep = jest.fn(() => Promise.resolve());
+    const sleep = vi.fn(() => Promise.resolve());
     monarchApi.getTagByName.mockResolvedValueOnce(null).mockResolvedValueOnce(MARKER_TAG);
 
     await syncTransactionOwners(params({ sleep }));
@@ -431,7 +431,7 @@ describe('syncTransactionOwners — marker tag propagation', () => {
   });
 
   it('does not retry once the tag resolves on the first attempt', async () => {
-    const sleep = jest.fn(() => Promise.resolve());
+    const sleep = vi.fn(() => Promise.resolve());
 
     await syncTransactionOwners(params({ sleep }));
 

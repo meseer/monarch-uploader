@@ -12,7 +12,7 @@
  * @module core/integrationRegistry
  */
 
-import { debugLog } from './utils';
+import { debugLog } from './logger';
 import type {
   IntegrationManifest,
   IntegrationApi,

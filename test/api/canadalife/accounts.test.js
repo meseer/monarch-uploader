@@ -24,16 +24,16 @@ import {
   wrapAuraSuccess,
 } from './fixtures';
 
-jest.mock('../../../src/core/state', () => {
-  const { buildStateMock: build } = jest.requireActual('./harness');
+vi.mock('../../../src/core/state', async () => {
+  const { buildStateMock: build } = await vi.importActual('./harness');
   return build();
 });
-jest.mock('../../../src/core/utils', () => {
-  const { buildUtilsMock: build } = jest.requireActual('./harness');
+vi.mock('../../../src/core/utils', async () => {
+  const { buildUtilsMock: build } = await vi.importActual('./harness');
   return build();
 });
-jest.mock('../../../src/ui/toast', () => {
-  const { buildToastMock: build } = jest.requireActual('./harness');
+vi.mock('../../../src/ui/toast', async () => {
+  const { buildToastMock: build } = await vi.importActual('./harness');
   return build();
 });
 
@@ -65,7 +65,7 @@ function buildLegacyMemberPlansResponse(apiAccounts) {
 
 describe('Canada Life API - getSponsorInfo', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     clearSponsorInfoCache();
     stateManager.getState.mockReturnValue({
       auth: { canadalife: { token: 'valid-aura-token' } },
@@ -154,7 +154,7 @@ describe('Canada Life API - getSponsorInfo', () => {
 
 describe('Canada Life API - loadCanadaLifeAccounts request shape', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     clearSponsorInfoCache();
     global.GM_getValue.mockReturnValue('[]');
     stateManager.getState.mockReturnValue({
@@ -191,7 +191,7 @@ describe('Canada Life API - loadCanadaLifeAccounts request shape', () => {
 
 describe('Canada Life API - loadCanadaLifeAccounts mapping', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     clearSponsorInfoCache();
     stateManager.getState.mockReturnValue({
       auth: { canadalife: { token: 'valid-aura-token' } },
@@ -253,7 +253,7 @@ describe('Canada Life API - loadCanadaLifeAccounts mapping', () => {
 
 describe('Canada Life API - loadCanadaLifeAccounts caching', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     clearSponsorInfoCache();
     stateManager.getState.mockReturnValue({
       auth: { canadalife: { token: 'valid-aura-token' } },
@@ -309,7 +309,7 @@ describe('Canada Life API - loadCanadaLifeAccounts caching', () => {
 
 describe('Canada Life API - loadCanadaLifeAccounts merge behaviour', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     clearSponsorInfoCache();
     stateManager.getState.mockReturnValue({
       auth: { canadalife: { token: 'valid-aura-token' } },
@@ -385,7 +385,7 @@ describe('Canada Life API - loadCanadaLifeAccounts merge behaviour', () => {
 
 describe('Canada Life API - loadCanadaLifeAccounts options and errors', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     clearSponsorInfoCache();
     global.GM_getValue.mockReturnValue('[]');
     stateManager.getState.mockReturnValue({

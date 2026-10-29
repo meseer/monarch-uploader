@@ -17,20 +17,23 @@ import { applyWealthsimpleCategoryMapping } from '../../../src/mappers/category'
 import { showManualTransactionCategorization } from '../../../src/ui/components/categorySelector';
 
 // Mock dependencies
-jest.mock('../../../src/api/wealthsimple');
-jest.mock('../../../src/api/monarch');
-jest.mock('../../../src/mappers/category');
-jest.mock('../../../src/ui/toast', () => ({
-  show: jest.fn(),
-}));
-jest.mock('../../../src/ui/components/categorySelector', () => ({
-  showMonarchCategorySelector: jest.fn(),
-  showManualTransactionCategorization: jest.fn(),
+vi.mock('../../../src/api/wealthsimple');
+vi.mock('../../../src/api/monarch');
+vi.mock('../../../src/mappers/category');
+vi.mock('../../../src/ui/toast', () => {
+  const mock = {
+    show: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
+vi.mock('../../../src/ui/components/categorySelector', () => ({
+  showMonarchCategorySelector: vi.fn(),
+  showManualTransactionCategorization: vi.fn(),
 }));
 
 // Set up default mock for fetchSpendTransactions to return empty Map
 beforeEach(() => {
-  wealthsimpleApi.fetchSpendTransactions = jest.fn().mockResolvedValue(new Map());
+  wealthsimpleApi.fetchSpendTransactions = vi.fn().mockResolvedValue(new Map());
 });
 
 // Real Youth Cash account ID shape (`ca-cash-msb-*`, same raw type as CASH)
@@ -46,7 +49,7 @@ describe('Wealthsimple Transaction Service - Cash', () => {
   };
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('fetchAndProcessTransactions', () => {
@@ -211,7 +214,7 @@ describe('Wealthsimple Transaction Service - Cash', () => {
           unifiedStatus: 'COMPLETED',
         },
       ]);
-      wealthsimpleApi.fetchInternalTransfer = jest.fn().mockResolvedValue(null);
+      wealthsimpleApi.fetchInternalTransfer = vi.fn().mockResolvedValue(null);
       monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [] });
 
       const result = await fetchAndProcessTransactions(
@@ -278,7 +281,7 @@ describe('Wealthsimple Transaction Service - Cash', () => {
           unifiedStatus: 'COMPLETED',
         },
       ]);
-      wealthsimpleApi.fetchInternalTransfer = jest.fn().mockResolvedValue(null);
+      wealthsimpleApi.fetchInternalTransfer = vi.fn().mockResolvedValue(null);
       monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [] });
 
       const result = await fetchAndProcessTransactions(
@@ -329,7 +332,7 @@ describe('Wealthsimple Transaction Service - Cash', () => {
     const mockPendingTagId = 'pending-tag-456';
 
     beforeEach(() => {
-      jest.clearAllMocks();
+      vi.clearAllMocks();
     });
 
     it('should return early if Pending tag does not exist in Monarch', async () => {
@@ -894,7 +897,7 @@ describe('Wealthsimple Transaction Service - Cash', () => {
     };
 
     beforeEach(() => {
-      jest.clearAllMocks();
+      vi.clearAllMocks();
     });
 
     it('should process E_TRANSFER deposit transactions', async () => {

@@ -118,7 +118,7 @@ describe('Wealthsimple Transaction Rules Engine - Investment Fees & Tax', () => 
           nickname: acc.nickname,
         },
       }));
-      global.GM_getValue = jest.fn((key, defaultValue) => {
+      global.GM_getValue = vi.fn((key, defaultValue) => {
         if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
           return JSON.stringify(consolidatedAccounts);
         }
@@ -462,7 +462,7 @@ describe('Wealthsimple Transaction Rules Engine - Investment Fees & Tax', () => 
           nickname: acc.nickname,
         },
       }));
-      global.GM_getValue = jest.fn((key, defaultValue) => {
+      global.GM_getValue = vi.fn((key, defaultValue) => {
         if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
           return JSON.stringify(consolidatedAccounts);
         }
@@ -743,7 +743,7 @@ describe('Wealthsimple Transaction Rules Engine - Investment Fees & Tax', () => 
           nickname: acc.nickname,
         },
       }));
-      global.GM_getValue = jest.fn((key, defaultValue) => {
+      global.GM_getValue = vi.fn((key, defaultValue) => {
         if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
           return JSON.stringify(consolidatedAccounts);
         }

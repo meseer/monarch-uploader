@@ -10,14 +10,14 @@
 import { escapeHtml } from '../../src/core/utils';
 
 // utils pulls in toast/accountService at module load; stub them out
-jest.mock('../../src/ui/toast', () => ({
-  show: jest.fn(),
+vi.mock('../../src/ui/toast', () => ({
+  show: vi.fn(),
 }));
 
-jest.mock('../../src/services/common/accountService', () => ({
+vi.mock('../../src/services/common/accountService', () => ({
   __esModule: true,
   default: {
-    getAccounts: jest.fn(() => []),
+    getAccounts: vi.fn(() => []),
   },
 }));
 

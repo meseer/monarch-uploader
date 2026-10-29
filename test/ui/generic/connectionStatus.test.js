@@ -95,7 +95,7 @@ describe('Generic Connection Status Component', () => {
     });
 
     it('renders a clickable login link when not connected and onLoginClick is provided', () => {
-      const onLoginClick = jest.fn();
+      const onLoginClick = vi.fn();
       updateMonarchStatus(container, false, onLoginClick);
 
       const indicator = container.querySelector('.monarch-status');
@@ -109,7 +109,7 @@ describe('Generic Connection Status Component', () => {
     });
 
     it('does not render a login link when connected', () => {
-      const onLoginClick = jest.fn();
+      const onLoginClick = vi.fn();
       updateMonarchStatus(container, true, onLoginClick);
 
       const indicator = container.querySelector('.monarch-status');

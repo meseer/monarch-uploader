@@ -9,11 +9,11 @@
 import { showCardholderSelector } from '../../src/ui/components/cardholderSelector';
 import * as keyboardNavigationModule from '../../src/ui/keyboardNavigation';
 
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../src/core/config', () => ({
+vi.mock('../../src/core/config', () => ({
   CARDHOLDER: {
     SHARED_OWNER: 'Shared',
     OWNER_MODE: { OFF: 'off', ON: 'on' },
@@ -21,12 +21,12 @@ jest.mock('../../src/core/config', () => ({
   },
 }));
 
-jest.mock('../../src/ui/keyboardNavigation', () => ({
-  addModalKeyboardHandlers: jest.fn(() => jest.fn()),
+vi.mock('../../src/ui/keyboardNavigation', () => ({
+  addModalKeyboardHandlers: vi.fn(() => vi.fn()),
 }));
 
-jest.mock('../../src/services/common/cardholderMatching', () => ({
-  describeMatchType: jest.fn((t) => `described:${t}`),
+vi.mock('../../src/services/common/cardholderMatching', () => ({
+  describeMatchType: vi.fn((t) => `described:${t}`),
 }));
 
 const member = (overrides = {}) => ({
@@ -52,7 +52,7 @@ const $ = (id) => document.getElementById(id);
 
 beforeEach(() => {
   document.body.innerHTML = '';
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 });
 
 describe('showCardholderSelector', () => {

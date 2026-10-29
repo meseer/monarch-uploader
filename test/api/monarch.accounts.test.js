@@ -5,7 +5,6 @@
  * getCreditLimit, getTransactionsList, getHouseholdTransactionTags, getTagByName
  */
 
-import { jest } from '@jest/globals';
 import '../setup';
 import {
   setAccountLogo,
@@ -22,24 +21,30 @@ import stateManager from '../../src/core/state';
 import { debugLog } from '../../src/core/utils';
 
 // Mock all external dependencies
-jest.mock('../../src/services/auth', () => ({
-  checkMonarchAuth: jest.fn(),
-  getMonarchCredentials: jest.fn(),
-  setupMonarchTokenCapture: jest.fn(),
-  clearMonarchCredentials: jest.fn(),
+vi.mock('../../src/services/auth', () => {
+  const mock = {
+    checkMonarchAuth: vi.fn(),
+    getMonarchCredentials: vi.fn(),
+    setupMonarchTokenCapture: vi.fn(),
+    clearMonarchCredentials: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
+
+vi.mock('../../src/core/state', () => {
+  const mock = {
+    setMonarchAuth: vi.fn(),
+    getState: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
+
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../src/core/state', () => ({
-  setMonarchAuth: jest.fn(),
-  getState: jest.fn(),
-}));
-
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-}));
-
-jest.mock('../../src/ui/components/accountSelectorWithCreate', () => ({
-  showMonarchAccountSelectorWithCreate: jest.fn(),
+vi.mock('../../src/ui/components/accountSelectorWithCreate', () => ({
+  showMonarchAccountSelectorWithCreate: vi.fn(),
 }));
 
 describe('Monarch API - Accounts', () => {
@@ -48,10 +53,10 @@ describe('Monarch API - Accounts', () => {
   let mockGMGetValue;
 
   beforeEach(() => {
-    jest.clearAllMocks();
-    mockGMXmlHttpRequest = jest.fn();
-    mockGMSetValue = jest.fn();
-    mockGMGetValue = jest.fn();
+    vi.clearAllMocks();
+    mockGMXmlHttpRequest = vi.fn();
+    mockGMSetValue = vi.fn();
+    mockGMGetValue = vi.fn();
     globalThis.GM_xmlhttpRequest = mockGMXmlHttpRequest;
     globalThis.GM_setValue = mockGMSetValue;
     globalThis.GM_getValue = mockGMGetValue;
@@ -63,7 +68,7 @@ describe('Monarch API - Accounts', () => {
     stateManager.getState.mockReturnValue({
       currentAccount: { nickname: 'Test Account', name: 'Test Name' },
     });
-    jest.spyOn(global, 'setTimeout').mockImplementation((callback) => {
+    vi.spyOn(global, 'setTimeout').mockImplementation((callback) => {
       callback();
       return 1;
     });

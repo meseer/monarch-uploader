@@ -67,7 +67,7 @@ describe('MBNA Balance Reconstruction', () => {
     });
 
     it('should include current balance as today entry using local timezone', () => {
-      jest.spyOn(utils, 'getTodayLocal').mockReturnValue('2026-02-19');
+      vi.spyOn(utils, 'getTodayLocal').mockReturnValue('2026-02-19');
 
       const result = buildBalanceHistory({
         currentBalance: 93.12,
@@ -90,7 +90,7 @@ describe('MBNA Balance Reconstruction', () => {
     it('should use local timezone date, not UTC, for current cycle reconstruction', () => {
       // Simulate a scenario where UTC date differs from local date
       // e.g., 8 PM PST on Feb 19 = 4 AM UTC on Feb 20
-      jest.spyOn(utils, 'getTodayLocal').mockReturnValue('2026-02-19');
+      vi.spyOn(utils, 'getTodayLocal').mockReturnValue('2026-02-19');
 
       const result = buildBalanceHistory({
         currentBalance: 84.55,

@@ -6,8 +6,8 @@ import { showProgressDialog } from '../../src/ui/components/progressDialog';
 import * as progressDialogModule from '../../src/ui/components/progressDialog';
 
 // Mock debugLog function
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
 describe('Progress Dialog Component', () => {
@@ -26,28 +26,28 @@ describe('Progress Dialog Component', () => {
     ];
 
     // Mock DOM methods
-    jest.spyOn(document, 'createElement').mockImplementation((tagName) => {
+    vi.spyOn(document, 'createElement').mockImplementation((tagName) => {
       const element = {
         tagName: tagName.toUpperCase(),
         style: {},
-        appendChild: jest.fn(),
-        remove: jest.fn(),
+        appendChild: vi.fn(),
+        remove: vi.fn(),
         onclick: null,
         textContent: '',
         innerHTML: '',
         id: '',
         dataset: {},
         disabled: false,
-        addEventListener: jest.fn(),
-        querySelector: jest.fn(() => null),
-        querySelectorAll: jest.fn(() => []),
-        scrollIntoView: jest.fn(), // Mock scrollIntoView for auto-scroll functionality
-        scrollTo: jest.fn(), // Mock scrollTo for direct scroll manipulation
+        addEventListener: vi.fn(),
+        querySelector: vi.fn(() => null),
+        querySelectorAll: vi.fn(() => []),
+        scrollIntoView: vi.fn(), // Mock scrollIntoView for auto-scroll functionality
+        scrollTo: vi.fn(), // Mock scrollTo for direct scroll manipulation
         classList: {
-          add: jest.fn(),
-          remove: jest.fn(),
-          toggle: jest.fn(),
-          contains: jest.fn(() => false),
+          add: vi.fn(),
+          remove: vi.fn(),
+          toggle: vi.fn(),
+          contains: vi.fn(() => false),
         },
       };
 
@@ -73,8 +73,8 @@ describe('Progress Dialog Component', () => {
       return element;
     });
 
-    jest.spyOn(document.body, 'appendChild').mockImplementation(() => {});
-    jest.spyOn(document, 'getElementById').mockImplementation((id) => {
+    vi.spyOn(document.body, 'appendChild').mockImplementation(() => {});
+    vi.spyOn(document, 'getElementById').mockImplementation((id) => {
       if (id === 'error-ack-button') {
         return { onclick: null };
       }
@@ -86,7 +86,7 @@ describe('Progress Dialog Component', () => {
   });
 
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
     if (dialog && typeof dialog.close === 'function') {
       try {
         dialog.close();
@@ -617,14 +617,14 @@ describe('Progress Dialog Component', () => {
     });
 
     test('should register cancel callback', () => {
-      const cancelCallback = jest.fn();
+      const cancelCallback = vi.fn();
       dialog.onCancel(cancelCallback);
 
       expect(dialog.isCancelled()).toBe(false);
     });
 
     test('should execute cancel callback when cancelled', () => {
-      const cancelCallback = jest.fn();
+      const cancelCallback = vi.fn();
       dialog.onCancel(cancelCallback);
 
       // Get the cancel button that was created
@@ -667,7 +667,7 @@ describe('Progress Dialog Component', () => {
     });
 
     test('should prevent multiple cancel operations', () => {
-      const cancelCallback = jest.fn();
+      const cancelCallback = vi.fn();
       dialog.onCancel(cancelCallback);
 
       const createElementCalls = document.createElement.mock.calls;
@@ -689,7 +689,7 @@ describe('Progress Dialog Component', () => {
     });
 
     test('should handle callback execution errors gracefully', () => {
-      const errorCallback = jest.fn(() => {
+      const errorCallback = vi.fn(() => {
         throw new Error('Callback error');
       });
       dialog.onCancel(errorCallback);
@@ -930,7 +930,7 @@ describe('Progress Dialog Component', () => {
       document.body.innerHTML = '';
 
       // jsdom doesn't implement scrollTo, so polyfill it
-      Element.prototype.scrollTo = Element.prototype.scrollTo || jest.fn();
+      Element.prototype.scrollTo = Element.prototype.scrollTo || vi.fn();
 
       const accounts = [
         { key: 'acc1', nickname: 'Account 1' },
@@ -975,7 +975,7 @@ describe('Progress Dialog Component', () => {
       document.body.innerHTML = '';
 
       // jsdom doesn't implement scrollTo, so polyfill it
-      Element.prototype.scrollTo = Element.prototype.scrollTo || jest.fn();
+      Element.prototype.scrollTo = Element.prototype.scrollTo || vi.fn();
 
       const singleAccount = [{ key: 'only-acc', nickname: 'Only Account' }];
       dialog = showProgressDialog(singleAccount);
@@ -1007,11 +1007,11 @@ describe('Progress Dialog Component', () => {
       document.body.innerHTML = '';
 
       // jsdom doesn't implement scrollTo, so polyfill it
-      Element.prototype.scrollTo = Element.prototype.scrollTo || jest.fn();
+      Element.prototype.scrollTo = Element.prototype.scrollTo || vi.fn();
     });
 
     test('should expand and collapse all accounts in a 4-account sequential sync', () => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
 
       const accounts = [
         { key: 'acc1', nickname: 'Account 1' },
@@ -1049,7 +1049,7 @@ describe('Progress Dialog Component', () => {
       // Advance past the collapse timer (150ms) — this is the race condition scenario
       // The 150ms timer fires but should NOT clear isProgrammaticAction because
       // the 600ms expand timer is still active
-      jest.advanceTimersByTime(200);
+      vi.advanceTimersByTime(200);
 
       // Fire a scroll event on the account list — this simulates what the browser does
       // during smooth scrolling. With the old boolean flag, this would disable auto-scroll.
@@ -1057,7 +1057,7 @@ describe('Progress Dialog Component', () => {
       accountList.dispatchEvent(new Event('scroll'));
 
       // Advance past the expand timer (600ms total, 400ms remaining)
-      jest.advanceTimersByTime(500);
+      vi.advanceTimersByTime(500);
 
       // Account 2: complete
       dialog.updateStepStatus('acc2', 'balance', 'success', 'Done');
@@ -1069,7 +1069,7 @@ describe('Progress Dialog Component', () => {
       dialog.updateStepStatus('acc3', 'balance', 'processing', 'Working...');
       expect(getStepsContainer('acc3').style.display).toBe('block'); // expanded
 
-      jest.advanceTimersByTime(700); // clear all timers
+      vi.advanceTimersByTime(700); // clear all timers
 
       // Account 3: complete
       dialog.updateStepStatus('acc3', 'balance', 'success', 'Done');
@@ -1080,18 +1080,18 @@ describe('Progress Dialog Component', () => {
       dialog.updateStepStatus('acc4', 'balance', 'processing', 'Working...');
       expect(getStepsContainer('acc4').style.display).toBe('block');
 
-      jest.advanceTimersByTime(700);
+      vi.advanceTimersByTime(700);
 
       dialog.updateStepStatus('acc4', 'balance', 'success', 'Done');
       dialog.updateStepStatus('acc4', 'positions', 'success', 'Done');
       // Last account stays expanded
       expect(getStepsContainer('acc4').style.display).toBe('block');
 
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
 
     test('should not disable auto-scroll from scroll events during programmatic actions', () => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
 
       const accounts = [
         { key: 'acc1', nickname: 'Account 1' },
@@ -1110,10 +1110,10 @@ describe('Progress Dialog Component', () => {
       dialog.updateStepStatus('acc1', 'step1', 'processing', 'Working...');
 
       // Fire scroll events at various points during the programmatic action window
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
       accountList.dispatchEvent(new Event('scroll'));
 
-      jest.advanceTimersByTime(200);
+      vi.advanceTimersByTime(200);
       accountList.dispatchEvent(new Event('scroll'));
 
       // Complete acc1
@@ -1125,12 +1125,12 @@ describe('Progress Dialog Component', () => {
       dialog.updateStepStatus('acc2', 'step1', 'processing', 'Working...');
       expect(getStepsContainer('acc2').style.display).toBe('block'); // expanded
 
-      jest.advanceTimersByTime(700);
-      jest.useRealTimers();
+      vi.advanceTimersByTime(700);
+      vi.useRealTimers();
     });
 
     test('should disable auto-scroll from scroll events AFTER programmatic action ends', () => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
 
       const accounts = [
         { key: 'acc1', nickname: 'Account 1' },
@@ -1149,7 +1149,7 @@ describe('Progress Dialog Component', () => {
       dialog.updateStepStatus('acc1', 'step1', 'processing', 'Working...');
 
       // Wait for all programmatic action timers to complete
-      jest.advanceTimersByTime(700);
+      vi.advanceTimersByTime(700);
 
       // Now fire a scroll event — this represents genuine user scrolling
       accountList.dispatchEvent(new Event('scroll'));
@@ -1163,7 +1163,7 @@ describe('Progress Dialog Component', () => {
       dialog.updateStepStatus('acc2', 'step1', 'processing', 'Working...');
       expect(getStepsContainer('acc2').style.display).toBe('none'); // stays collapsed
 
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
   });
 

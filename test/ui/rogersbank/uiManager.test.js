@@ -22,40 +22,40 @@ function mockElement(tag) {
   return document.createElement(tag);
 }
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../../src/services/auth', () => ({
+vi.mock('../../../src/services/auth', () => ({
   __esModule: true,
-  default: { getMonarchCredentials: jest.fn(() => ({ csrfToken: 'monarch-session' })) },
+  default: { getMonarchCredentials: vi.fn(() => ({ csrfToken: 'monarch-session' })) },
 }));
 
-jest.mock('../../../src/ui/toast', () => ({
+vi.mock('../../../src/ui/toast', () => ({
   __esModule: true,
-  default: { show: jest.fn() },
+  default: { show: vi.fn() },
 }));
 
-jest.mock('../../../src/ui/components/settingsModal', () => ({
-  showSettingsModal: jest.fn(),
+vi.mock('../../../src/ui/components/settingsModal', () => ({
+  showSettingsModal: vi.fn(),
 }));
 
-jest.mock('../../../src/ui/components/monarchLoginLink', () => ({
-  createMonarchLoginLink: jest.fn(() => mockElement('a')),
-  ensureMonarchAuthentication: jest.fn(),
+vi.mock('../../../src/ui/components/monarchLoginLink', () => ({
+  createMonarchLoginLink: vi.fn(() => mockElement('a')),
+  ensureMonarchAuthentication: vi.fn(),
 }));
 
-jest.mock('../../../src/ui/components/versionBadge', () => ({
-  createVersionBadge: jest.fn(() => mockElement('span')),
+vi.mock('../../../src/ui/components/versionBadge', () => ({
+  createVersionBadge: vi.fn(() => mockElement('span')),
 }));
 
-jest.mock('../../../src/services/rogersbank-upload', () => ({
-  uploadRogersBankToMonarch: jest.fn(),
+vi.mock('../../../src/services/rogersbank-upload', () => ({
+  uploadRogersBankToMonarch: vi.fn(),
 }));
 
 /** Load fresh module instances, as a new page load would */
 async function loadPage() {
-  jest.resetModules();
+  vi.resetModules();
   return {
     api: await import('../../../src/api/rogersbank'),
     ui: await import('../../../src/ui/rogersbank/uiManager'),
@@ -70,16 +70,16 @@ describe('Rogers Bank UI credential states', () => {
   let gmStore;
 
   beforeEach(() => {
-    jest.useFakeTimers();
-    jest.clearAllMocks();
+    vi.useFakeTimers();
+    vi.clearAllMocks();
     gmStore = useInMemoryGmStorage();
     installFakeXhr();
-    globalThis.fetch = jest.fn();
+    globalThis.fetch = vi.fn();
     document.body.innerHTML = '<section aria-labelledby="master-card-section"></section>';
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
     document.body.innerHTML = '';
   });
 
@@ -152,7 +152,7 @@ describe('Rogers Bank UI credential states', () => {
       await ui.initRogersBankUI();
       debugLog.mockClear();
 
-      jest.advanceTimersByTime(500);
+      vi.advanceTimersByTime(500);
 
       expect(debugLog).not.toHaveBeenCalledWith('Rogers Bank URL changed to:', expect.anything());
     } finally {
