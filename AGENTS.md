@@ -69,10 +69,10 @@ See `VERSIONING.md` for full details and examples.
 npm run build:full
 ```
 
-This single command runs: clean → lint → typecheck → test → webpack production build.
+This single command runs: clean → lint → typecheck → test → Vite production build.
 
 All steps must complete with **zero errors**. Fix warnings even when the build
-succeeds — the only expected warnings are webpack's bundle-size notices.
+succeeds.
 
 If it fails, fix the root cause and re-run.
 
@@ -82,8 +82,8 @@ If it fails, fix the root cause and re-run.
 |---------|---------|
 | `npm run lint` | ESLint checks (`npm run lint:fix` for auto-fixable issues) |
 | `npm run typecheck` | TypeScript type checking (`tsc --noEmit`) |
-| `npm test` | Jest test suite |
-| `npm run build` | Production webpack build only |
+| `npm test` | Vitest test suite |
+| `npm run build` | Production Vite build only |
 | `npm run build:full` | All of the above in sequence |
 
 ---

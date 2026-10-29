@@ -1,6 +1,6 @@
 /**
  * Main entry point for the Questrade to Monarch balance uploader userscript
- * This file is the entry point for the webpack build process
+ * This file is the entry point for the Vite build process
  * It imports all modules and initializes the application
  */
 

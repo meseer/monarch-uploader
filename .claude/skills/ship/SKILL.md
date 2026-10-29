@@ -74,7 +74,7 @@ example edits confined to `.claude/`, `.github/`, or `docs/`.
 npm run build:full
 ```
 
-This is clean → lint → typecheck → test → production webpack build. It must pass
+This is clean → lint → typecheck → test → production Vite build. It must pass
 with zero errors. Fix the root cause and re-run; do not push a red build hoping
 CI disagrees.
 
