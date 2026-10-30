@@ -40,6 +40,14 @@ function userscriptBannerPlugin() {
 export default defineConfig(({ mode }) => {
   const isProduction = mode === 'production';
 
+  if (mode === 'test') {
+    // Pin the test timezone in the parent process before worker threads spawn
+    // so V8/ICU initializes Date in America/Vancouver (test.env.TZ runs too
+    // late for V8's timezone cache, and guarding on mode === 'test' keeps
+    // vite build from mutating process.env.TZ).
+    process.env.TZ = 'America/Vancouver';
+  }
+
   return {
     build: {
       // Target modern evergreen browsers running Violentmonkey/Tampermonkey
@@ -94,7 +102,6 @@ export default defineConfig(({ mode }) => {
       globals: true,
       include: ['test/**/*.test.{js,ts}', 'src/**/*.test.{js,ts}'],
       setupFiles: ['test/setup.js'],
-      env: { TZ: 'America/Vancouver' },
       coverage: {
         provider: 'v8',
         include: ['src/**/*.{ts,js}'],
