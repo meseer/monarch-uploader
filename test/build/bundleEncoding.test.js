@@ -25,6 +25,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 // jsdom does not expose TextDecoder, so take Node's implementation directly.
 import { TextDecoder } from 'node:util';
+import { JSDOM } from 'jsdom';
 import viteConfigFn from '../../vite.config.mjs';
 import scriptInfo from '../../src/scriptInfo.json';
 
@@ -40,13 +41,6 @@ function loadProductionConfig() {
     : viteConfigFn;
 }
 
-/** Load the development Vite config */
-function loadDevConfig() {
-  return typeof viteConfigFn === 'function'
-    ? viteConfigFn({ mode: 'development', command: 'build' })
-    : viteConfigFn;
-}
-
 /**
  * Read the Terser `format` options out of the configured Vite build.
  */
@@ -55,27 +49,70 @@ function getTerserFormatOptions(config) {
 }
 
 /**
- * Build the production bundle into a scratch directory and return its bytes.
+ * Build a Vite bundle (`production` or `development`) into a scratch directory
+ * and return its raw bytes.
  *
  * Spawned as a child process using Node's loader to match what `npm run build`
- * actually does.
+ * and `npm run build:dev` actually do.
  */
-function buildProductionBundle() {
-  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mu-bundle-encoding-'));
+function buildBundle(mode = 'production') {
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), `mu-bundle-${mode}-`));
   const viteCli = path.join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js');
   try {
     execFileSync(
       process.execPath,
-      [viteCli, 'build', '--mode', 'production', '--outDir', outDir],
+      [viteCli, 'build', '--mode', mode, '--outDir', outDir],
       { cwd: ROOT, stdio: 'pipe', encoding: 'utf8' },
     );
     return fs.readFileSync(path.join(outDir, BUNDLE_NAME));
   } catch (err) {
     const detail = [err.stdout, err.stderr, err.message].filter(Boolean).join('\n');
-    throw new Error(`production Vite build failed:\n${detail.slice(0, 4000)}`);
+    throw new Error(`${mode} Vite build failed:\n${detail.slice(0, 4000)}`);
   } finally {
     fs.rmSync(outDir, { recursive: true, force: true });
   }
+}
+
+/**
+ * Decode a Source Map v3 VLQ mappings string and return the original
+ * `{ source, line }` (1-based) mapped at the first segment of `targetGenLine`
+ * (1-based generated line number).
+ */
+function resolveGeneratedLine(map, targetGenLine) {
+  const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const genLines = map.mappings.split(';');
+  let sourceIdx = 0;
+  let origLine = 0; // 0-based in VLQ state
+
+  for (let lineIdx = 0; lineIdx < targetGenLine && lineIdx < genLines.length; lineIdx++) {
+    const lineStr = genLines[lineIdx];
+    if (!lineStr) continue;
+    const segments = lineStr.split(',');
+    for (let segIdx = 0; segIdx < segments.length; segIdx++) {
+      const seg = segments[segIdx];
+      let i = 0;
+      const fields = [];
+      while (i < seg.length) {
+        let result = 0;
+        let shift = 0;
+        let digit;
+        do {
+          digit = B64.indexOf(seg[i++]);
+          result += (digit & 31) << shift;
+          shift += 5;
+        } while (digit & 32);
+        fields.push(result & 1 ? -(result >> 1) : result >> 1);
+      }
+      if (fields.length >= 4) {
+        sourceIdx += fields[1];
+        origLine += fields[2];
+        if (lineIdx === targetGenLine - 1 && segIdx === 0) {
+          return { source: map.sources[sourceIdx], line: origLine + 1 };
+        }
+      }
+    }
+  }
+  return null;
 }
 
 describe('built userscript encoding', () => {
@@ -83,7 +120,7 @@ describe('built userscript encoding', () => {
   let text;
 
   beforeAll(() => {
-    bytes = buildProductionBundle();
+    bytes = buildBundle('production');
     text = bytes.toString('latin1'); // byte-preserving, so no decode can hide a high byte
   }, 300000);
 
@@ -177,22 +214,85 @@ describe('built userscript encoding', () => {
 
   describe('runtime boot smoke test (jsdom)', () => {
     it.each([
-      ['Monarch', 'https://app.monarch.com/accounts'],
-      ['Wealthsimple', 'https://my.wealthsimple.com/app/home'],
-      ['MBNA', 'https://service.mbna.ca/waw/mbna/account'],
-      ['Neo Financial', 'https://member.neofinancial.com/accounts'],
-      ['Rogers Bank', 'https://rbaccess.rogersbank.com/'],
-      ['Unrelated site', 'https://example.com/'],
-    ])('boots without throwing on %s (%s)', (_label, url) => {
-      vi.useFakeTimers();
+      ['Monarch', 'https://app.monarch.com/accounts', 'Running on Monarch site'],
+      ['Wealthsimple', 'https://my.wealthsimple.com/app/home', 'Running on Wealthsimple site'],
+      ['MBNA', 'https://service.mbna.ca/waw/mbna/account', 'Running on modular integration site: MBNA'],
+      ['Neo Financial', 'https://member.neofinancial.com/accounts', 'Running on modular integration site: Neo Financial'],
+      ['Rogers Bank', 'https://rbaccess.rogersbank.com/', 'Running on Rogers Bank site'],
+      ['Unrelated site', 'https://example.com/', 'Running on unsupported site: example.com'],
+    ])('boots cleanly through DOMContentLoaded and initApp on %s (%s)', (_label, url, expectedInitLog) => {
+      const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
+        url,
+        runScripts: 'outside-only',
+      });
       try {
-        global.mockLocation(url);
-        // eslint-disable-next-line no-new-func
-        expect(() => new Function(text)()).not.toThrow();
+        const win = dom.window;
+        expect(win.location.hostname).toBe(new URL(url).hostname);
+
+        const errors = [];
+        const consoleErrors = [];
+        const debugLogs = [];
+        const menuCommands = [];
+        const timeouts = [];
+
+        win.addEventListener('error', (evt) => errors.push(evt.error || evt.message));
+        win.addEventListener('unhandledrejection', (evt) => errors.push(evt.reason));
+        win.console.log = (...args) => debugLogs.push(args.join(' '));
+        win.console.error = (...args) => consoleErrors.push(args);
+
+        // Simulate @run-at document-start and intercept timers so we can drive
+        // both the document-idle callback (0ms) and initApp (1000ms) without
+        // leaving background intervals running after the test.
+        let readyState = 'loading';
+        Object.defineProperty(win.document, 'readyState', {
+          configurable: true,
+          get: () => readyState,
+        });
+        win.setTimeout = (fn, delay = 0) => {
+          timeouts.push({ fn, delay });
+          return timeouts.length;
+        };
+        win.clearTimeout = () => {};
+        win.setInterval = () => 1;
+        win.clearInterval = () => {};
+
+        Object.assign(win, {
+          GM_addElement: (parentOrTag, tagOrAttrs) => {
+            const tag = typeof parentOrTag === 'string' ? parentOrTag : tagOrAttrs;
+            return win.document.createElement(typeof tag === 'string' ? tag : 'div');
+          },
+          GM_deleteValue: () => Promise.resolve(),
+          GM_download: () => {},
+          GM_getValue: (k, def) => (k === 'debug_log_level' ? 'debug' : def),
+          GM_listValues: () => Promise.resolve([]),
+          GM_log: () => {},
+          GM_registerMenuCommand: (name) => menuCommands.push(name),
+          GM_setValue: () => {},
+          GM_xmlhttpRequest: () => ({ abort: () => {} }),
+        });
+
+        // 1. Evaluate the bundle at document-start
+        win.eval(text);
+
+        // 2. Finish parsing and dispatch DOMContentLoaded
+        readyState = 'complete';
+        win.document.dispatchEvent(new win.Event('DOMContentLoaded', { bubbles: true }));
+
+        // 3. Flush queued timeouts up to 1000ms (runs startMonarchUploader -> initApp)
+        while (timeouts.length > 0) {
+          const next = timeouts.shift();
+          if (next.delay <= 1000) {
+            next.fn();
+          }
+        }
+
+        expect(errors).toEqual([]);
+        expect(consoleErrors).toEqual([]);
+        expect(menuCommands).toHaveLength(5);
+        expect(win.document.getElementById('monarch-uploader-theme')).not.toBeNull();
+        expect(debugLogs.some((msg) => msg.includes(expectedInitLog))).toBe(true);
       } finally {
-        vi.clearAllTimers();
-        vi.useRealTimers();
-        global.restoreLocation();
+        dom.window.close();
       }
     });
   });
@@ -268,11 +368,26 @@ describe('Vite Terser configuration', () => {
     expect(comments(null, { value: ' just an ordinary comment ' })).toBe(false);
   });
 
-  it('uses rollupOptions.output.banner in development mode so inline source maps include the banner line offset', () => {
-    const devConfig = loadDevConfig();
-    const bannerFn = devConfig?.build?.rollupOptions?.output?.banner;
-    expect(typeof bannerFn).toBe('function');
-    expect(bannerFn()).toContain('// ==UserScript==');
-    expect(devConfig.plugins).toEqual([]);
+  it('aligns inline source map line numbers after the userscript banner in development builds', () => {
+    const devText = buildBundle('development').toString('utf8');
+    expect(devText.startsWith('// ==UserScript==')).toBe(true);
+
+    const mapMatch = devText.match(
+      /\/\/# sourceMappingURL=data:application\/json;charset=utf-8;base64,([A-Za-z0-9+/=]+)/,
+    );
+    expect(mapMatch).not.toBeNull();
+    const map = JSON.parse(Buffer.from(mapMatch[1], 'base64').toString('utf8'));
+
+    const bundleLines = devText.split('\n');
+    const genLine = bundleLines.findIndex((l) => l.includes('Script loaded successfully')) + 1;
+    expect(genLine).toBeGreaterThan(30);
+
+    const indexSrcLines = fs.readFileSync(path.join(ROOT, 'src', 'index.ts'), 'utf8').split('\n');
+    const expectedSrcLine = indexSrcLines.findIndex((l) => l.includes('Script loaded successfully')) + 1;
+
+    const resolved = resolveGeneratedLine(map, genLine);
+    expect(resolved).not.toBeNull();
+    expect(resolved.source).toMatch(/src\/index\.ts$/);
+    expect(resolved.line).toBe(expectedSrcLine);
   });
 });

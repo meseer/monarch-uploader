@@ -51,8 +51,8 @@ export default defineConfig(({ mode }) => {
   return {
     build: {
       // Target modern evergreen browsers running Violentmonkey/Tampermonkey
-      // so native ES2022 syntax (?. / ?? / async-await) is preserved without
-      // legacy polyfill bloat.
+      // (raised from the legacy .babelrc Chrome 61 / Firefox 60 floor) so Vite
+      // keeps native ES2022 syntax (?. / ?? / async-await) without downleveling.
       target: ['chrome100', 'firefox100', 'safari16.4'],
       outDir: 'dist',
       emptyOutDir: false,
