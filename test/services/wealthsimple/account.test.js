@@ -18,18 +18,18 @@ import toast from '../../../src/ui/toast';
 import { STORAGE, TRANSACTION_RETENTION_DEFAULTS } from '../../../src/core/config';
 
 // Mock dependencies
-jest.mock('../../../src/api/wealthsimple');
-jest.mock('../../../src/api/monarch');
-jest.mock('../../../src/ui/toast');
+vi.mock('../../../src/api/wealthsimple');
+vi.mock('../../../src/api/monarch');
+vi.mock('../../../src/ui/toast');
 
 // Mock GM functions
-global.GM_getValue = jest.fn();
-global.GM_setValue = jest.fn();
-global.GM_deleteValue = jest.fn();
+global.GM_getValue = vi.fn();
+global.GM_setValue = vi.fn();
+global.GM_deleteValue = vi.fn();
 
 describe('Wealthsimple Account Service', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     // Default empty accounts list
     GM_getValue.mockReturnValue('[]');
   });

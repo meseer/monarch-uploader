@@ -18,15 +18,18 @@ import wealthsimpleApi from '../../../src/api/wealthsimple';
 import { showManualTransactionCategorization } from '../../../src/ui/components/categorySelector';
 import { STORAGE } from '../../../src/core/config';
 
-jest.mock('../../../src/api/wealthsimple');
-jest.mock('../../../src/api/monarch');
-jest.mock('../../../src/mappers/category');
-jest.mock('../../../src/ui/toast', () => ({
-  show: jest.fn(),
-}));
-jest.mock('../../../src/ui/components/categorySelector', () => ({
-  showMonarchCategorySelector: jest.fn(),
-  showManualTransactionCategorization: jest.fn(),
+vi.mock('../../../src/api/wealthsimple');
+vi.mock('../../../src/api/monarch');
+vi.mock('../../../src/mappers/category');
+vi.mock('../../../src/ui/toast', () => {
+  const mock = {
+    show: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
+vi.mock('../../../src/ui/components/categorySelector', () => ({
+  showMonarchCategorySelector: vi.fn(),
+  showManualTransactionCategorization: vi.fn(),
 }));
 
 const CASH_ID = 'ca-cash-msb-iusfagkx';
@@ -62,8 +65,8 @@ const plocLeg = {
 };
 
 beforeEach(() => {
-  jest.clearAllMocks();
-  global.GM_getValue = jest.fn((key, defaultValue) => {
+  vi.clearAllMocks();
+  global.GM_getValue = vi.fn((key, defaultValue) => {
     if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
       return JSON.stringify([
         { wealthsimpleAccount: { id: CASH_ID, nickname: 'Chequing' } },
@@ -72,7 +75,7 @@ beforeEach(() => {
     }
     return defaultValue;
   });
-  wealthsimpleApi.fetchSpendTransactions = jest.fn().mockResolvedValue(new Map());
+  wealthsimpleApi.fetchSpendTransactions = vi.fn().mockResolvedValue(new Map());
 });
 
 describe('Wealthsimple OVERDRAFT_TRANSFER', () => {

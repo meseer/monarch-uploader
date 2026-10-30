@@ -2,31 +2,29 @@
  * Test suite for Security Selector Component
  */
 
-import { jest } from '@jest/globals';
 
 // Import after mocks
 import { showMonarchSecuritySelector } from '../../src/ui/components/securitySelector';
 import monarchApi from '../../src/api/monarch';
 
 // Mock dependencies
-jest.mock('../../src/core/utils', () => {
-  const { realEscapeHtml } = require('../helpers/escapeHtmlMock');
+vi.mock('../../src/core/utils', async () => {
+  const { realEscapeHtml } = await import('../helpers/escapeHtmlMock');
   return {
-    debugLog: jest.fn(),
+    debugLog: vi.fn(),
     escapeHtml: realEscapeHtml(),
   };
 });
 
-jest.mock('../../src/api/monarch', () => ({
-  __esModule: true,
+vi.mock('../../src/api/monarch', () => ({
   default: {
-    searchSecurities: jest.fn(),
+    searchSecurities: vi.fn(),
   },
 }));
 
-jest.mock('../../src/ui/keyboardNavigation', () => ({
-  addModalKeyboardHandlers: jest.fn(() => jest.fn()),
-  makeItemsKeyboardNavigable: jest.fn(() => jest.fn()),
+vi.mock('../../src/ui/keyboardNavigation', () => ({
+  addModalKeyboardHandlers: vi.fn(() => vi.fn()),
+  makeItemsKeyboardNavigable: vi.fn(() => vi.fn()),
 }));
 
 describe('Security Selector Component', () => {
@@ -34,20 +32,20 @@ describe('Security Selector Component', () => {
 
   beforeEach(() => {
     // Clear mocks
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     // Set up DOM
     document.body.innerHTML = '';
 
     // Mock callback
-    mockCallback = jest.fn();
+    mockCallback = vi.fn();
 
     // Mock setTimeout to execute immediately for testing
-    jest.useFakeTimers();
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   describe('showMonarchSecuritySelector', () => {
@@ -65,7 +63,7 @@ describe('Security Selector Component', () => {
       showMonarchSecuritySelector(position, mockCallback);
 
       // Fast-forward timers
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
 
       // Check modal was created
       const overlay = document.getElementById('security-selector-overlay');
@@ -96,7 +94,7 @@ describe('Security Selector Component', () => {
       monarchApi.searchSecurities.mockResolvedValue([]);
 
       showMonarchSecuritySelector(position, mockCallback);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
 
       const searchInput = document.getElementById('security-selector-search-input');
       expect(searchInput.value).toBe('BRK'); // Should use part before dot
@@ -121,11 +119,11 @@ describe('Security Selector Component', () => {
       monarchApi.searchSecurities.mockResolvedValue(mockSecurities);
 
       showMonarchSecuritySelector(position, mockCallback);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
 
       // Wait for async operations
       await Promise.resolve();
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       expect(monarchApi.searchSecurities).toHaveBeenCalledWith('GOOGL', { limit: 5 });
     });
@@ -150,10 +148,10 @@ describe('Security Selector Component', () => {
       monarchApi.searchSecurities.mockResolvedValue(mockSecurities);
 
       showMonarchSecuritySelector(position, mockCallback);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
 
       await Promise.resolve();
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       const securityItem = document.getElementById('security-item-sec1');
       expect(securityItem).toBeTruthy();
@@ -183,10 +181,10 @@ describe('Security Selector Component', () => {
       monarchApi.searchSecurities.mockResolvedValue(mockSecurities);
 
       showMonarchSecuritySelector(position, mockCallback);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
 
       await Promise.resolve();
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       const securityItem = document.getElementById('security-item-sec1');
       securityItem.click();
@@ -204,7 +202,7 @@ describe('Security Selector Component', () => {
       monarchApi.searchSecurities.mockResolvedValue([]);
 
       showMonarchSecuritySelector(position, mockCallback);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
 
       const cancelBtn = document.getElementById('security-selector-cancel');
       expect(cancelBtn).toBeTruthy();
@@ -225,7 +223,7 @@ describe('Security Selector Component', () => {
       monarchApi.searchSecurities.mockResolvedValue([]);
 
       showMonarchSecuritySelector(position, mockCallback);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
 
       const searchInput = document.getElementById('security-selector-search-input');
 
@@ -237,7 +235,7 @@ describe('Security Selector Component', () => {
       expect(monarchApi.searchSecurities).toHaveBeenCalledTimes(1); // Only initial search
 
       // Fast-forward debounce timer
-      jest.advanceTimersByTime(300);
+      vi.advanceTimersByTime(300);
       await Promise.resolve();
 
       expect(monarchApi.searchSecurities).toHaveBeenCalledWith('AAPL', { limit: 5 });
@@ -253,10 +251,10 @@ describe('Security Selector Component', () => {
       monarchApi.searchSecurities.mockResolvedValue([]);
 
       showMonarchSecuritySelector(position, mockCallback);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
 
       await Promise.resolve();
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       const results = document.getElementById('security-selector-results');
       expect(results.innerHTML).toContain('No securities found');
@@ -272,10 +270,10 @@ describe('Security Selector Component', () => {
       monarchApi.searchSecurities.mockRejectedValue(new Error('API Error'));
 
       showMonarchSecuritySelector(position, mockCallback);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
 
       await Promise.resolve();
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       const results = document.getElementById('security-selector-results');
       expect(results.innerHTML).toContain('Error searching securities');
@@ -300,10 +298,10 @@ describe('Security Selector Component', () => {
       monarchApi.searchSecurities.mockResolvedValue(mockSecurities);
 
       showMonarchSecuritySelector(position, mockCallback);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
 
       await Promise.resolve();
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       const logoImg = document.getElementById('security-logo-img-sec1');
       expect(logoImg).toBeTruthy();
@@ -329,10 +327,10 @@ describe('Security Selector Component', () => {
       monarchApi.searchSecurities.mockResolvedValue(mockSecurities);
 
       showMonarchSecuritySelector(position, mockCallback);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
 
       await Promise.resolve();
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       const fallback = document.getElementById('security-logo-fallback-sec1');
       expect(fallback).toBeTruthy();
@@ -359,10 +357,10 @@ describe('Security Selector Component', () => {
       monarchApi.searchSecurities.mockResolvedValue(mockSecurities);
 
       showMonarchSecuritySelector(position, mockCallback);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
 
       await Promise.resolve();
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       const price = document.getElementById('security-price-sec1');
       expect(price).toBeTruthy();
@@ -393,10 +391,10 @@ describe('Security Selector Component', () => {
       monarchApi.searchSecurities.mockResolvedValue(mockSecurities);
 
       showMonarchSecuritySelector(position, mockCallback);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
 
       await Promise.resolve();
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       const change = document.getElementById('security-price-change-sec1');
       expect(change.textContent).toBe('-2.50%');
@@ -412,7 +410,7 @@ describe('Security Selector Component', () => {
       monarchApi.searchSecurities.mockResolvedValue([]);
 
       showMonarchSecuritySelector(position, mockCallback);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
 
       const overlay = document.getElementById('security-selector-overlay');
 
@@ -432,7 +430,7 @@ describe('Security Selector Component', () => {
       monarchApi.searchSecurities.mockResolvedValue([]);
 
       showMonarchSecuritySelector(position, mockCallback);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
 
       const details = document.getElementById('security-selector-details');
       expect(details).toBeTruthy();
@@ -453,7 +451,7 @@ describe('Security Selector Component', () => {
       monarchApi.searchSecurities.mockReturnValue(searchPromise);
 
       showMonarchSecuritySelector(position, mockCallback);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
 
       await Promise.resolve();
 
@@ -463,7 +461,7 @@ describe('Security Selector Component', () => {
       // Resolve and check loading is hidden
       resolveSearch([]);
       await Promise.resolve();
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       expect(loading.style.display).toBe('none');
     });
@@ -487,10 +485,10 @@ describe('Security Selector Component', () => {
       monarchApi.searchSecurities.mockResolvedValue(mockSecurities);
 
       showMonarchSecuritySelector(position, mockCallback);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
 
       await Promise.resolve();
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       const details = document.getElementById('security-details-sec1');
       expect(details.textContent).toContain('ETF');
@@ -514,10 +512,10 @@ describe('Security Selector Component', () => {
       monarchApi.searchSecurities.mockResolvedValue(mockSecurities);
 
       showMonarchSecuritySelector(position, mockCallback);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
 
       await Promise.resolve();
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       const fallback = document.getElementById('security-logo-fallback-sec1');
       expect(fallback).toBeTruthy();

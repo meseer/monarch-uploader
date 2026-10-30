@@ -3,8 +3,8 @@
  */
 
 // Mock debugLog
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
 // We need to test the module in isolation, so we'll import after setting up DOM
@@ -12,7 +12,7 @@ let initTheme;
 let getCurrentTheme;
 
 describe('Theme Module', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     // Reset DOM
     document.documentElement.removeAttribute('data-appearance');
     document.documentElement.removeAttribute('data-mu-theme');
@@ -23,8 +23,8 @@ describe('Theme Module', () => {
     if (existing) existing.remove();
 
     // Reset module state by re-requiring
-    jest.resetModules();
-    const theme = require('../../src/ui/theme');
+    vi.resetModules();
+    const theme = await import('../../src/ui/theme');
     initTheme = theme.initTheme;
     getCurrentTheme = theme.getCurrentTheme;
   });
@@ -261,7 +261,7 @@ describe('Theme Module', () => {
       expect(css).toContain('--mu-ws-button-text: rgb(13, 13, 13)');
     });
 
-    test('light and dark themes define the same set of variables', () => {
+    test('light and dark themes define the same set of variables', async () => {
       // Get light theme variables
       initTheme();
       const lightStyleEl = document.getElementById('monarch-uploader-theme');
@@ -269,8 +269,8 @@ describe('Theme Module', () => {
       const lightVars = lightCss.match(/--mu-[\w-]+/g) || [];
 
       // Switch to dark theme
-      jest.resetModules();
-      const darkTheme = require('../../src/ui/theme');
+      vi.resetModules();
+      const darkTheme = await import('../../src/ui/theme');
       document.documentElement.setAttribute('data-appearance', 'dark');
       darkTheme.initTheme();
       const darkStyleEl = document.getElementById('monarch-uploader-theme');

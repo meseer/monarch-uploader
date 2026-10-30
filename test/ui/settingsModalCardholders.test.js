@@ -8,11 +8,11 @@
 
 import { renderCardholderMappingsSection } from '../../src/ui/components/settingsModalCardholders';
 
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../src/core/config', () => ({
+vi.mock('../../src/core/config', () => ({
   CARDHOLDER: {
     SHARED_OWNER: 'Shared',
     OWNER_MODE: { OFF: 'off', ON: 'on' },
@@ -20,40 +20,38 @@ jest.mock('../../src/core/config', () => ({
   },
 }));
 
-jest.mock('../../src/core/integrationCapabilities', () => ({
+vi.mock('../../src/core/integrationCapabilities', () => ({
   ACCOUNT_SETTINGS: {
     CARDHOLDER_OWNER_MODE: 'cardholderOwnerMode',
     CARDHOLDER_TAG_MODE: 'cardholderTagMode',
   },
-  hasCapability: jest.fn(() => true),
+  hasCapability: vi.fn(() => true),
 }));
 
-jest.mock('../../src/services/common/accountService', () => ({
-  __esModule: true,
+vi.mock('../../src/services/common/accountService', () => ({
   default: {
-    getAccountData: jest.fn(() => ({})),
-    updateAccountInList: jest.fn(() => true),
+    getAccountData: vi.fn(() => ({})),
+    updateAccountInList: vi.fn(() => true),
   },
 }));
 
-jest.mock('../../src/api/monarchHousehold', () => ({
-  getHouseholdMembers: jest.fn(() => Promise.resolve({ currentUserId: 'user-1', householdId: 'hh-1', members: [] })),
+vi.mock('../../src/api/monarchHousehold', () => ({
+  getHouseholdMembers: vi.fn(() => Promise.resolve({ currentUserId: 'user-1', householdId: 'hh-1', members: [] })),
 }));
 
-jest.mock('../../src/services/common/cardholderMatching', () => ({
-  describeMatchType: jest.fn((t) => `described:${t}`),
+vi.mock('../../src/services/common/cardholderMatching', () => ({
+  describeMatchType: vi.fn((t) => `described:${t}`),
 }));
 
-jest.mock('../../src/ui/toast', () => ({
-  __esModule: true,
-  default: { show: jest.fn() },
+vi.mock('../../src/ui/toast', () => ({
+  default: { show: vi.fn() },
 }));
 
 // Minimal stand-in for the shared toggle switch: a checkbox that invokes the
 // change handler, which is all this widget depends on. `globalThis.document` is
 // used because jest.mock factories may not close over outer-scope variables.
-jest.mock('../../src/ui/components/settingsModalHelpers', () => ({
-  createToggleSwitch: jest.fn((isEnabled, onChange) => {
+vi.mock('../../src/ui/components/settingsModalHelpers', () => ({
+  createToggleSwitch: vi.fn((isEnabled, onChange) => {
     const input = globalThis.document.createElement('input');
     input.type = 'checkbox';
     input.checked = isEnabled;
@@ -62,10 +60,10 @@ jest.mock('../../src/ui/components/settingsModalHelpers', () => ({
   }),
 }));
 
-const { hasCapability } = require('../../src/core/integrationCapabilities');
-const accountService = require('../../src/services/common/accountService').default;
-const { getHouseholdMembers } = require('../../src/api/monarchHousehold');
-const toast = require('../../src/ui/toast').default;
+import { hasCapability } from '../../src/core/integrationCapabilities';
+import accountService from '../../src/services/common/accountService';
+import { getHouseholdMembers } from '../../src/api/monarchHousehold';
+import toast from '../../src/ui/toast';
 
 const INTEGRATION = 'rogersbank';
 const ACCOUNT_ID = 'acc-1';
@@ -105,7 +103,7 @@ const flush = () => new Promise((resolve) => { setTimeout(resolve, 0); });
 
 beforeEach(() => {
   document.body.innerHTML = '';
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   hasCapability.mockReturnValue(true);
   accountService.getAccountData.mockReturnValue({});
   accountService.updateAccountInList.mockReturnValue(true);

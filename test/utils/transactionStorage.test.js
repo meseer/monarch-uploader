@@ -15,12 +15,12 @@ import { TRANSACTION_RETENTION_DEFAULTS } from '../../src/core/config';
 import * as utils from '../../src/core/utils';
 
 // Mock date utilities to use a fixed date for consistent tests
-jest.spyOn(utils, 'getTodayLocal').mockReturnValue('2025-10-24');
-jest.spyOn(utils, 'parseLocalDate').mockImplementation((dateString) => new Date(dateString));
+vi.spyOn(utils, 'getTodayLocal').mockReturnValue('2025-10-24');
+vi.spyOn(utils, 'parseLocalDate').mockImplementation((dateString) => new Date(dateString));
 
 describe('Transaction Storage Utilities', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('getRetentionSettingsFromAccount', () => {

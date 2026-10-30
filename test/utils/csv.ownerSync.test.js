@@ -23,16 +23,16 @@ import {
   convertMbnaTransactionsToMonarchCSV,
 } from '../../src/utils/csv';
 
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../src/mappers/merchant', () => ({
-  applyMerchantMapping: jest.fn((m) => m || 'Unknown Merchant'),
+vi.mock('../../src/mappers/merchant', () => ({
+  applyMerchantMapping: vi.fn((m) => m || 'Unknown Merchant'),
 }));
 
-jest.mock('../../src/mappers/category', () => ({
-  applyCategoryMapping: jest.fn((c) => c || 'Uncategorized'),
+vi.mock('../../src/mappers/category', () => ({
+  applyCategoryMapping: vi.fn((c) => c || 'Uncategorized'),
 }));
 
 const OWNER_ID = '162625044845828370';

@@ -17,29 +17,29 @@ import {
 } from '../../../src/services/rogersbank/pendingTransactions';
 
 // Mock dependencies
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  formatDate: jest.fn((date) => {
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  formatDate: vi.fn((date) => {
     const d = date instanceof Date ? date : new Date(date);
     return d.toISOString().split('T')[0];
   }),
 }));
 
-jest.mock('../../../src/api/monarch', () => ({
-  __esModule: true,
+vi.mock('../../../src/api/monarch', () => ({
   default: {
-    getTagByName: jest.fn(),
-    getTransactionsList: jest.fn(),
-    updateTransaction: jest.fn(),
-    setTransactionTags: jest.fn(),
-    deleteTransaction: jest.fn(),
+    getTagByName: vi.fn(),
+    getTransactionsList: vi.fn(),
+    updateTransaction: vi.fn(),
+    setTransactionTags: vi.fn(),
+    deleteTransaction: vi.fn(),
   },
 }));
 
 // Use Node.js crypto for real SHA-256 in the Web Crypto API mock
-const nodeCrypto = require('crypto');
+import * as nodeCrypto from 'crypto';
+import * as monarchModule from '../../../src/api/monarch';
 
-const mockDigest = jest.fn();
+const mockDigest = vi.fn();
 Object.defineProperty(global, 'crypto', {
   value: {
     subtle: {
@@ -64,7 +64,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 });
 
 // A Rogers transaction whose hash never matches any rb-tx ID used below.
@@ -700,10 +700,10 @@ describe('separateAndDeduplicateTransactions', () => {
 // ============================================================
 
 describe('reconcileRogersPendingTransactions', () => {
-  const monarchApi = require('../../../src/api/monarch').default;
+  const monarchApi = monarchModule.default;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it('returns early when no Pending tag exists', async () => {
@@ -1020,10 +1020,10 @@ describe('buildFxNotes', () => {
 // ============================================================
 
 describe('reconcileRogersPendingTransactions - FX enrichment', () => {
-  const monarchApi = require('../../../src/api/monarch').default;
+  const monarchApi = monarchModule.default;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it('adds FX notes when settling a foreign transaction', async () => {
@@ -1177,10 +1177,10 @@ describe('reconcileRogersPendingTransactions - FX enrichment', () => {
 // ============================================================
 
 describe('reconcileRogersPendingTransactions — settled ref shape', () => {
-  const monarchApi = require('../../../src/api/monarch').default;
+  const monarchApi = monarchModule.default;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it('returns records carrying the settled date and merchant, not bare IDs', async () => {

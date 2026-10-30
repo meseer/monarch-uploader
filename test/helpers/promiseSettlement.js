@@ -34,7 +34,7 @@
  *   The observed outcome. `state: 'pending'` means the promise never settled —
  *   the hang this helper exists to catch.
  */
-function settlementOf(promise, deadlineMs = 250) {
+export function settlementOf(promise, deadlineMs = 250) {
   return Promise.race([
     promise.then(
       (value) => ({ state: 'resolved', value }),
@@ -45,5 +45,3 @@ function settlementOf(promise, deadlineMs = 250) {
     }),
   ]);
 }
-
-module.exports = { settlementOf };

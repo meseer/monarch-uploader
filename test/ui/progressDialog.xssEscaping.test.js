@@ -11,8 +11,8 @@
 
 import { showProgressDialog } from '../../src/ui/components/progressDialog';
 
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
 const PAYLOAD = '<img src=x onerror=alert(1)>';

@@ -1,5 +1,5 @@
 /**
- * @jest-environment-options {"url": "https://selfserve.rogersbank.com/home"}
+ * @vitest-environment-options {"url": "https://selfserve.rogersbank.com/home"}
  */
 
 /**
@@ -15,7 +15,8 @@
  * bank page (its XHR requests and its DOM) is simulated.
  */
 
-const {
+import { createRequire } from 'node:module';
+import {
   ACCOUNT_DETAIL_URL,
   CAPTURED,
   installFakeXhr,
@@ -24,13 +25,15 @@ const {
   expectNoCredentialsInStorage,
   expectNoCredentialsInCalls,
   simulateDocumentStart,
-} = require('../helpers/rogersBankPage');
+} from '../helpers/rogersBankPage';
+
+const require = createRequire(import.meta.url);
 
 const LANDING_PAGE_HTML = '<section aria-labelledby="master-card-section"></section>';
 
 /** Evaluate the userscript bundle entry point, as the userscript manager does */
-function injectUserscript() {
-  require('../../src/index');
+async function injectUserscript() {
+  await import('../../src/index');
 }
 
 const uploadButton = () => document.getElementById('rogersbank-upload-button');
@@ -42,19 +45,19 @@ describe('Rogers Bank startup at document-start', () => {
   let gmStore;
 
   beforeEach(() => {
-    jest.resetModules();
-    jest.useFakeTimers();
+    vi.resetModules();
+    vi.useFakeTimers();
     gmStore = useInMemoryGmStorage();
     installFakeXhr();
-    globalThis.fetch = jest.fn();
+    globalThis.fetch = vi.fn();
     page = simulateDocumentStart();
   });
 
   afterEach(() => {
     // Restore while fake timers are on, so the startup it may trigger is cleared
     page.restore();
-    jest.clearAllTimers();
-    jest.useRealTimers();
+    vi.clearAllTimers();
+    vi.useRealTimers();
     document.getElementById('monarch-uploader-theme')?.remove();
     document.documentElement.removeAttribute('data-mu-theme');
   });
@@ -65,10 +68,10 @@ describe('Rogers Bank startup at document-start', () => {
     expect(generateMetadata()).toMatch(/^\/\/ @run-at\s+document-start$/m);
   });
 
-  test('installs only the network hooks before the page has loaded', () => {
+  test('installs only the network hooks before the page has loaded', async () => {
     const pageSend = XMLHttpRequest.prototype.send;
 
-    injectUserscript();
+    await injectUserscript();
 
     expect(XMLHttpRequest.prototype.send).not.toBe(pageSend);
     expect(GM_registerMenuCommand).not.toHaveBeenCalled();
@@ -76,39 +79,39 @@ describe('Rogers Bank startup at document-start', () => {
     expect(themeApplied()).toBe(false);
   });
 
-  test('captures the landing page boot requests and shows the upload button when the UI starts', () => {
-    injectUserscript();
+  test('captures the landing page boot requests and shows the upload button when the UI starts', async () => {
+    await injectUserscript();
 
     // The bank page boots and loads the account shown on /home, long before
     // document-idle + 1 s, which is when the hooks used to be installed
     sendPageXhr(ACCOUNT_DETAIL_URL);
     page.finishParsing(LANDING_PAGE_HTML);
-    jest.advanceTimersByTime(999);
+    vi.advanceTimersByTime(999);
     expect(uploaderContainer()).toBeNull();
 
-    jest.advanceTimersByTime(1);
+    vi.advanceTimersByTime(1);
 
     expect(uploadButton()).not.toBeNull();
     expect(document.querySelector('.rogersbank-status').textContent).toBe('Rogers Bank: Connected');
-    expect(require('../../src/api/rogersbank').getRogersBankCredentials()).toEqual(expect.objectContaining(CAPTURED));
+    expect((await import('../../src/api/rogersbank')).getRogersBankCredentials()).toEqual(expect.objectContaining(CAPTURED));
   });
 
-  test('does not wrap XMLHttpRequest a second time when the Rogers Bank app starts', () => {
-    injectUserscript();
+  test('does not wrap XMLHttpRequest a second time when the Rogers Bank app starts', async () => {
+    await injectUserscript();
     const hookedSend = XMLHttpRequest.prototype.send;
 
     page.finishParsing(LANDING_PAGE_HTML);
-    jest.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(1000);
 
     expect(uploaderContainer()).not.toBeNull();
     expect(XMLHttpRequest.prototype.send).toBe(hookedSend);
   });
 
-  test('stores no credential captured during boot', () => {
-    injectUserscript();
+  test('stores no credential captured during boot', async () => {
+    await injectUserscript();
     sendPageXhr(ACCOUNT_DETAIL_URL);
     page.finishParsing(LANDING_PAGE_HTML);
-    jest.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(1000);
 
     expect(uploadButton()).not.toBeNull();
     expectNoCredentialsInStorage(gmStore);
@@ -116,11 +119,11 @@ describe('Rogers Bank startup at document-start', () => {
     expectNoCredentialsInCalls(GM_setValue);
   });
 
-  test('a boot request captured before the page has a body does not break it, even with debug toasts on', () => {
+  test('a boot request captured before the page has a body does not break it, even with debug toasts on', async () => {
     gmStore = useInMemoryGmStorage({ debug_log_level: 'debug' });
-    const consoleLog = jest.spyOn(console, 'log').mockImplementation(() => {});
-    const sendSpy = jest.spyOn(XMLHttpRequest.prototype, 'send');
-    injectUserscript();
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const sendSpy = vi.spyOn(XMLHttpRequest.prototype, 'send');
+    await injectUserscript();
 
     expect(() => sendPageXhr(ACCOUNT_DETAIL_URL)).not.toThrow();
 
@@ -129,18 +132,18 @@ describe('Rogers Bank startup at document-start', () => {
     consoleLog.mockRestore();
   });
 
-  test('starts the Rogers Bank UI at the same time as before: 1 s after DOMContentLoaded', () => {
-    injectUserscript();
+  test('starts the Rogers Bank UI at the same time as before: 1 s after DOMContentLoaded', async () => {
+    await injectUserscript();
     page.finishParsing(LANDING_PAGE_HTML);
 
-    jest.advanceTimersByTime(0);
+    vi.advanceTimersByTime(0);
     expect(GM_registerMenuCommand).toHaveBeenCalled();
     expect(themeApplied()).toBe(false);
 
-    jest.advanceTimersByTime(999);
+    vi.advanceTimersByTime(999);
     expect(themeApplied()).toBe(false);
 
-    jest.advanceTimersByTime(1);
+    vi.advanceTimersByTime(1);
     expect(themeApplied()).toBe(true);
     expect(uploaderContainer()).not.toBeNull();
   });

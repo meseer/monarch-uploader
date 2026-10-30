@@ -15,22 +15,22 @@
 import { makeGraphQLQuery } from '../../src/api/wealthsimple';
 import { settlementOf } from '../helpers/promiseSettlement';
 
-const { setWealthsimpleAuthCookie } = require('../helpers/wealthsimpleAuthCookie');
+import { setWealthsimpleAuthCookie } from '../helpers/wealthsimpleAuthCookie';
+import * as stateModule from '../../src/core/state';
 
-global.GM_getValue = jest.fn();
-global.GM_setValue = jest.fn();
-global.GM_deleteValue = jest.fn();
-global.GM_xmlhttpRequest = jest.fn();
+global.GM_getValue = vi.fn();
+global.GM_setValue = vi.fn();
+global.GM_deleteValue = vi.fn();
+global.GM_xmlhttpRequest = vi.fn();
 
 Object.defineProperty(document, 'cookie', {
   writable: true,
   value: '',
 });
 
-jest.mock('../../src/core/state', () => ({
-  __esModule: true,
+vi.mock('../../src/core/state', () => ({
   default: {
-    setWealthsimpleAuth: jest.fn(),
+    setWealthsimpleAuth: vi.fn(),
   },
 }));
 
@@ -38,8 +38,8 @@ describe('Wealthsimple API - response parsing and settlement', () => {
   let stateManager;
 
   beforeEach(() => {
-    jest.clearAllMocks();
-    stateManager = jest.requireMock('../../src/core/state').default;
+    vi.clearAllMocks();
+    stateManager = stateModule.default;
 
     // The token is read from the page's OAuth cookie on every request, so
     // authentication is established by setting that cookie.

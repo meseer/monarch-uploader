@@ -6,8 +6,8 @@
 
 import { convertMbnaTransactionsToMonarchCSV } from '../../../../../src/integrations/mbna/sinks/monarch/csvFormatter';
 
-jest.mock('../../../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
 /**
@@ -25,7 +25,7 @@ const field = (csv, rowIndex, columnName) => {
 
 describe('MBNA CSV Formatter', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('convertMbnaTransactionsToMonarchCSV', () => {

@@ -5,9 +5,16 @@
 
 import { createSettingsModal, showSettingsModal } from '../../src/ui/components/settingsModal';
 import stateManager from '../../src/core/state';
+import * as toastModule from '../../src/ui/toast';
+import * as authModule from '../../src/services/auth';
+import * as authModule2 from '../../src/services/questrade/auth';
+import * as monarchLoginLinkModule from '../../src/ui/components/monarchLoginLink';
+import * as configStoreModule from '../../src/services/common/configStore';
+import * as utilsModule from '../../src/core/utils';
+import * as accountServiceModule from '../../src/services/common/accountService';
 
 // Mock dependencies
-jest.mock('../../src/core/config', () => ({
+vi.mock('../../src/core/config', () => ({
   STORAGE: {
     DEVELOPMENT_MODE: 'development_mode',
     CANADALIFE_TOKEN_KEY: 'canadalife_token',
@@ -42,10 +49,10 @@ jest.mock('../../src/core/config', () => ({
   },
 }));
 
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  escapeHtml: require('../helpers/escapeHtmlMock').realEscapeHtml(),
-  getDefaultLookbackDays: jest.fn((institutionType) => {
+vi.mock('../../src/core/utils', async () => ({
+  debugLog: vi.fn(),
+  escapeHtml: (await import('../helpers/escapeHtmlMock')).realEscapeHtml(),
+  getDefaultLookbackDays: vi.fn((institutionType) => {
     switch (institutionType) {
     case 'questrade': return 3;
     case 'canadalife': return 5;
@@ -53,77 +60,78 @@ jest.mock('../../src/core/utils', () => ({
     default: return 3;
     }
   }),
-  validateLookbackVsRetention: jest.fn(() => ({ valid: true })),
-  getMinRetentionForInstitution: jest.fn(() => 91),
-  getLookbackForInstitution: jest.fn(() => 7),
-  getCurrentInstitution: jest.fn(() => 'unknown'),
+  validateLookbackVsRetention: vi.fn(() => ({ valid: true })),
+  getMinRetentionForInstitution: vi.fn(() => 91),
+  getLookbackForInstitution: vi.fn(() => 7),
+  getCurrentInstitution: vi.fn(() => 'unknown'),
 }));
 
-jest.mock('../../src/services/auth', () => ({
-  checkMonarchAuth: jest.fn(() => ({ authenticated: false })),
+vi.mock('../../src/services/auth', () => ({
+  checkMonarchAuth: vi.fn(() => ({ authenticated: false })),
 }));
 
-jest.mock('../../src/services/questrade/auth', () => ({
-  checkQuestradeAuth: jest.fn(() => ({ authenticated: false })),
+vi.mock('../../src/services/questrade/auth', () => ({
+  checkQuestradeAuth: vi.fn(() => ({ authenticated: false })),
 }));
 
-jest.mock('../../src/ui/toast', () => ({
-  __esModule: true,
+vi.mock('../../src/ui/toast', () => ({
   default: {
-    show: jest.fn(),
+    show: vi.fn(),
   },
 }));
 
-jest.mock('../../src/ui/components/monarchLoginLink', () => ({
-  createMonarchLoginLink: jest.fn(),
+vi.mock('../../src/ui/components/monarchLoginLink', () => ({
+  createMonarchLoginLink: vi.fn(),
 }));
 
-jest.mock('../../src/services/wealthsimple/account', () => ({
-  isAccountSkipped: jest.fn(() => false),
-  markAccountAsSkipped: jest.fn(() => true),
-  getWealthsimpleAccounts: jest.fn(() => []),
-  updateAccountInList: jest.fn(() => true),
+vi.mock('../../src/services/wealthsimple/account', () => ({
+  isAccountSkipped: vi.fn(() => false),
+  markAccountAsSkipped: vi.fn(() => true),
+  getWealthsimpleAccounts: vi.fn(() => []),
+  updateAccountInList: vi.fn(() => true),
 }));
 
-jest.mock('../../src/mappers/wealthsimple-account-types', () => ({
-  getMonarchAccountTypeMapping: jest.fn(() => ({ type: 'credit' })),
+vi.mock('../../src/mappers/wealthsimple-account-types', () => ({
+  getMonarchAccountTypeMapping: vi.fn(() => ({ type: 'credit' })),
 }));
 
-jest.mock('../../src/services/common/accountService', () => ({
-  __esModule: true,
+vi.mock('../../src/services/common/accountService', () => ({
   default: {
-    getAccounts: jest.fn(() => []),
-    getAccountData: jest.fn(() => null),
-    saveAccounts: jest.fn(() => true),
-    updateAccountInList: jest.fn(() => true),
-    removeAccount: jest.fn(() => true),
-    markAccountAsSkipped: jest.fn(() => true),
-    isAccountSkipped: jest.fn(() => false),
+    getAccounts: vi.fn(() => []),
+    getAccountData: vi.fn(() => null),
+    saveAccounts: vi.fn(() => true),
+    updateAccountInList: vi.fn(() => true),
+    removeAccount: vi.fn(() => true),
+    markAccountAsSkipped: vi.fn(() => true),
+    isAccountSkipped: vi.fn(() => false),
   },
-  getAccounts: jest.fn(() => []),
-  getAccountData: jest.fn(() => null),
-  saveAccounts: jest.fn(() => true),
-  updateAccountInList: jest.fn(() => true),
-  removeAccount: jest.fn(() => true),
-  markAccountAsSkipped: jest.fn(() => true),
-  isAccountSkipped: jest.fn(() => false),
+  getAccounts: vi.fn(() => []),
+  getAccountData: vi.fn(() => null),
+  saveAccounts: vi.fn(() => true),
+  updateAccountInList: vi.fn(() => true),
+  removeAccount: vi.fn(() => true),
+  markAccountAsSkipped: vi.fn(() => true),
+  isAccountSkipped: vi.fn(() => false),
 }));
 
-jest.mock('../../src/scriptInfo.json', () => ({
-  version: '5.60.0',
-  gistUrl: 'https://gist.github.com/meseer/f00fb552c96efeb3eb4e4e1fd520d4e7/raw/monarch-uploader.user.js',
-}), { virtual: true });
+vi.mock('../../src/scriptInfo.json', () => {
+  const mock = {
+    version: '5.60.0',
+    gistUrl: 'https://gist.github.com/meseer/f00fb552c96efeb3eb4e4e1fd520d4e7/raw/monarch-uploader.user.js',
+  };
+  return { ...mock, default: mock };
+}, { virtual: true });
 
 // configStore write helpers return a boolean success status; the UI now surfaces
 // a failure instead of toasting success, so the mocks must return true by default.
-jest.mock('../../src/services/common/configStore', () => ({
-  getAuth: jest.fn(() => ({})),
-  setSetting: jest.fn(() => true),
-  getSetting: jest.fn(() => undefined),
-  saveCategoryMappings: jest.fn(() => true),
+vi.mock('../../src/services/common/configStore', () => ({
+  getAuth: vi.fn(() => ({})),
+  setSetting: vi.fn(() => true),
+  getSetting: vi.fn(() => undefined),
+  saveCategoryMappings: vi.fn(() => true),
 }));
 
-jest.mock('../../src/core/integrationCapabilities', () => ({
+vi.mock('../../src/core/integrationCapabilities', () => ({
   INTEGRATIONS: {
     WEALTHSIMPLE: 'wealthsimple',
     QUESTRADE: 'questrade',
@@ -137,7 +145,7 @@ jest.mock('../../src/core/integrationCapabilities', () => ({
     STRIP_STORE_NUMBERS: 'stripStoreNumbers',
     INCLUDE_PENDING_TRANSACTIONS: 'includePendingTransactions',
   },
-  getCapabilities: jest.fn((integrationId) => ({
+  getCapabilities: vi.fn((integrationId) => ({
     id: integrationId,
     displayName: integrationId.charAt(0).toUpperCase() + integrationId.slice(1),
     accountKeyName: `${integrationId}Account`,
@@ -150,12 +158,12 @@ jest.mock('../../src/core/integrationCapabilities', () => ({
     settings: [],
     settingDefaults: {},
   })),
-  getAccountKeyName: jest.fn((integrationId) => `${integrationId}Account`),
-  getDisplayName: jest.fn((integrationId) => integrationId.charAt(0).toUpperCase() + integrationId.slice(1)),
-  getFaviconUrl: jest.fn(() => 'https://www.google.com/s2/favicons?domain=example.com&sz=128'),
-  hasSetting: jest.fn(() => false),
-  getSettingDefault: jest.fn(() => null),
-  hasCapability: jest.fn((integrationId, capability) => {
+  getAccountKeyName: vi.fn((integrationId) => `${integrationId}Account`),
+  getDisplayName: vi.fn((integrationId) => integrationId.charAt(0).toUpperCase() + integrationId.slice(1)),
+  getFaviconUrl: vi.fn(() => 'https://www.google.com/s2/favicons?domain=example.com&sz=128'),
+  hasSetting: vi.fn(() => false),
+  getSettingDefault: vi.fn(() => null),
+  hasCapability: vi.fn((integrationId, capability) => {
     if (capability === 'hasHoldings') {
       return integrationId === 'questrade' || integrationId === 'wealthsimple';
     }
@@ -164,7 +172,7 @@ jest.mock('../../src/core/integrationCapabilities', () => ({
     }
     return false;
   }),
-  getCategoryMappingsConfig: jest.fn((integrationId) => {
+  getCategoryMappingsConfig: vi.fn((integrationId) => {
     if (integrationId === 'rogersbank') {
       return { storageKey: 'rogersbank_config', sourceLabel: 'Bank Category' };
     }
@@ -177,9 +185,9 @@ jest.mock('../../src/core/integrationCapabilities', () => ({
 
 // Mock localStorage
 const localStorageMock = {
-  getItem: jest.fn(),
-  setItem: jest.fn(),
-  removeItem: jest.fn(),
+  getItem: vi.fn(),
+  setItem: vi.fn(),
+  removeItem: vi.fn(),
 };
 Object.defineProperty(global, 'localStorage', {
   value: localStorageMock,
@@ -187,11 +195,11 @@ Object.defineProperty(global, 'localStorage', {
 });
 
 // Mock Greasemonkey functions
-globalThis.GM_getValue = jest.fn();
-globalThis.GM_setValue = jest.fn();
-globalThis.GM_deleteValue = jest.fn();
-globalThis.GM_listValues = jest.fn(() => []);
-globalThis.GM_addElement = jest.fn((parent, tagName, attributes) => {
+globalThis.GM_getValue = vi.fn();
+globalThis.GM_setValue = vi.fn();
+globalThis.GM_deleteValue = vi.fn();
+globalThis.GM_listValues = vi.fn(() => []);
+globalThis.GM_addElement = vi.fn((parent, tagName, attributes) => {
   const element = document.createElement(tagName);
   if (attributes) {
     Object.entries(attributes).forEach(([key, value]) => {
@@ -214,13 +222,13 @@ describe('Settings Modal Component', () => {
   let createMonarchLoginLink;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     document.body.innerHTML = '';
 
-    toast = jest.requireMock('../../src/ui/toast').default;
-    checkMonarchAuth = jest.requireMock('../../src/services/auth').checkMonarchAuth;
-    checkQuestradeAuth = jest.requireMock('../../src/services/questrade/auth').checkQuestradeAuth;
-    createMonarchLoginLink = jest.requireMock('../../src/ui/components/monarchLoginLink').createMonarchLoginLink;
+    toast = toastModule.default;
+    checkMonarchAuth = authModule.checkMonarchAuth;
+    checkQuestradeAuth = authModule2.checkQuestradeAuth;
+    createMonarchLoginLink = monarchLoginLinkModule.createMonarchLoginLink;
 
     // Setup default mock values
     localStorageMock.getItem.mockReturnValue(null);
@@ -397,7 +405,7 @@ describe('Settings Modal Component', () => {
 
       afterEach(() => {
         stateManager.setRogersBankAuth(null);
-        jest.requireMock('../../src/services/common/configStore').getAuth.mockImplementation(() => ({}));
+        configStoreModule.getAuth.mockImplementation(() => ({}));
       });
 
       test('should show connected status when a token was captured on this page', () => {
@@ -409,7 +417,7 @@ describe('Settings Modal Component', () => {
       });
 
       test('should ignore a Rogers Bank token left in storage by an older version', () => {
-        const { getAuth } = jest.requireMock('../../src/services/common/configStore');
+        const { getAuth } = configStoreModule;
         getAuth.mockImplementation((integrationId) => (
           integrationId === 'rogersbank' ? { authToken: 'stored-token' } : {}
         ));
@@ -427,7 +435,7 @@ describe('Settings Modal Component', () => {
 
       afterEach(() => {
         stateManager.setWealthsimpleAuth(null);
-        jest.requireMock('../../src/services/common/configStore').getAuth.mockImplementation(() => ({}));
+        configStoreModule.getAuth.mockImplementation(() => ({}));
       });
 
       test('should show connected status when this page has a valid token', () => {
@@ -449,7 +457,7 @@ describe('Settings Modal Component', () => {
       });
 
       test('should ignore a Wealthsimple token left in storage by an older version', () => {
-        const { getAuth } = jest.requireMock('../../src/services/common/configStore');
+        const { getAuth } = configStoreModule;
         getAuth.mockImplementation((integrationId) => (
           integrationId === 'wealthsimple' ? { accessToken: 'stored-token' } : {}
         ));
@@ -713,7 +721,7 @@ describe('Settings Modal Component', () => {
     });
 
     test('should load current lookback value for institution', () => {
-      const { getLookbackForInstitution } = jest.requireMock('../../src/core/utils');
+      const { getLookbackForInstitution } = utilsModule;
       getLookbackForInstitution.mockReturnValue(5);
 
       globalThis.GM_getValue.mockImplementation((key, defaultValue) => {
@@ -732,7 +740,7 @@ describe('Settings Modal Component', () => {
     });
 
     test('should save lookback days on blur via configStore', () => {
-      const { setSetting } = jest.requireMock('../../src/services/common/configStore');
+      const { setSetting } = configStoreModule;
 
       modal = createSettingsModal();
 
@@ -756,7 +764,7 @@ describe('Settings Modal Component', () => {
     // Regression: a dropped configStore write used to still toast success, which
     // hid the fact that the lookback period was never persisted.
     test('should report an error instead of success when the write fails', () => {
-      const { setSetting } = jest.requireMock('../../src/services/common/configStore');
+      const { setSetting } = configStoreModule;
       setSetting.mockReturnValueOnce(false);
 
       modal = createSettingsModal();
@@ -781,7 +789,7 @@ describe('Settings Modal Component', () => {
     });
 
     test('should save lookback days on enter key via configStore', () => {
-      const { setSetting } = jest.requireMock('../../src/services/common/configStore');
+      const { setSetting } = configStoreModule;
 
       modal = createSettingsModal();
 
@@ -818,7 +826,7 @@ describe('Settings Modal Component', () => {
     });
 
     test('should reset to default when reset button clicked via configStore', () => {
-      const { setSetting } = jest.requireMock('../../src/services/common/configStore');
+      const { setSetting } = configStoreModule;
 
       modal = createSettingsModal();
 
@@ -878,7 +886,7 @@ describe('Settings Modal Component', () => {
 
     test('should display account mappings when available', () => {
       // Mock accountService to return accounts
-      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      const accountService = accountServiceModule.default;
       accountService.getAccounts.mockReturnValue([{
         questradeAccount: {
           id: '12345',
@@ -906,7 +914,7 @@ describe('Settings Modal Component', () => {
 
     test('should handle account mapping card expansion', () => {
       // Mock accountService to return accounts
-      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      const accountService = accountServiceModule.default;
       accountService.getAccounts.mockReturnValue([{
         questradeAccount: {
           id: '12345',
@@ -938,7 +946,7 @@ describe('Settings Modal Component', () => {
 
     test('should handle account mapping deletion with confirmation', () => {
       // Mock accountService to return accounts
-      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      const accountService = accountServiceModule.default;
       accountService.getAccounts.mockReturnValue([{
         questradeAccount: {
           id: '12345',
@@ -967,7 +975,7 @@ describe('Settings Modal Component', () => {
   describe('Last Update Date Management', () => {
     test('should display last synced date when available', () => {
       // Mock accountService to return accounts with lastSyncDate
-      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      const accountService = accountServiceModule.default;
       accountService.getAccounts.mockReturnValue([{
         questradeAccount: {
           id: '12345',
@@ -994,7 +1002,7 @@ describe('Settings Modal Component', () => {
 
     test('should not show last sync info when no date exists', () => {
       // Mock accountService to return accounts without lastSyncDate
-      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      const accountService = accountServiceModule.default;
       accountService.getAccounts.mockReturnValue([{
         questradeAccount: {
           id: '12345',
@@ -1021,7 +1029,7 @@ describe('Settings Modal Component', () => {
 
     test('should show delete button for accounts', () => {
       // Mock accountService to return accounts
-      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      const accountService = accountServiceModule.default;
       accountService.getAccounts.mockReturnValue([{
         questradeAccount: {
           id: '12345',
@@ -1048,7 +1056,7 @@ describe('Settings Modal Component', () => {
 
     test('should handle accounts without sync date', () => {
       // Mock accountService to return accounts
-      const accountService = jest.requireMock('../../src/services/common/accountService').default;
+      const accountService = accountServiceModule.default;
       accountService.getAccounts.mockReturnValue([{
         questradeAccount: {
           id: '12345',

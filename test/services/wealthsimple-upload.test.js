@@ -12,56 +12,57 @@ import toast from '../../src/ui/toast';
 import * as accountService from '../../src/services/wealthsimple/account';
 import wealthsimpleApi from '../../src/api/wealthsimple';
 import { showProgressDialog } from '../../src/ui/components/progressDialog';
+import * as positionsModule from '../../src/services/wealthsimple/positions';
 
 // Mock dependencies
-jest.mock('../../src/ui/toast');
-jest.mock('../../src/services/wealthsimple/account');
-jest.mock('../../src/api/wealthsimple');
-jest.mock('../../src/ui/components/progressDialog');
-jest.mock('../../src/services/wealthsimple/balance', () => ({
-  getDefaultDateRange: jest.fn(() => ({
+vi.mock('../../src/ui/toast');
+vi.mock('../../src/services/wealthsimple/account');
+vi.mock('../../src/api/wealthsimple');
+vi.mock('../../src/ui/components/progressDialog');
+vi.mock('../../src/services/wealthsimple/balance', () => ({
+  getDefaultDateRange: vi.fn(() => ({
     fromDate: '2025-10-05',
     toDate: '2026-01-03',
   })),
-  extractDateFromISO: jest.fn((date) => date),
-  accountNeedsBalanceReconstruction: jest.fn(() => false),
-  calculateCheckpointDate: jest.fn(() => '2025-12-31'),
-  getBalanceAtDate: jest.fn(() => 0),
-  reconstructBalanceFromTransactions: jest.fn(() => []),
+  extractDateFromISO: vi.fn((date) => date),
+  accountNeedsBalanceReconstruction: vi.fn(() => false),
+  calculateCheckpointDate: vi.fn(() => '2025-12-31'),
+  getBalanceAtDate: vi.fn(() => 0),
+  reconstructBalanceFromTransactions: vi.fn(() => []),
 }));
-jest.mock('../../src/services/wealthsimple/positions', () => ({
-  isInvestmentAccount: jest.fn(() => false), // Default to non-investment to simplify tests
-  processAccountPositions: jest.fn(() => Promise.resolve({ success: true, positionsProcessed: 0 })),
-  processCashPositions: jest.fn(() => Promise.resolve({ success: true, cashSynced: 0, cashSkipped: 0 })),
+vi.mock('../../src/services/wealthsimple/positions', () => ({
+  isInvestmentAccount: vi.fn(() => false), // Default to non-investment to simplify tests
+  processAccountPositions: vi.fn(() => Promise.resolve({ success: true, positionsProcessed: 0 })),
+  processCashPositions: vi.fn(() => Promise.resolve({ success: true, cashSynced: 0, cashSkipped: 0 })),
 }));
-jest.mock('../../src/services/wealthsimple/transactions', () => ({
-  fetchAndProcessTransactions: jest.fn(() => Promise.resolve([])),
-  reconcilePendingTransactions: jest.fn(() => Promise.resolve({ success: true, deleted: 0, pending: 0 })),
-  formatReconciliationMessage: jest.fn(() => 'No changes'),
+vi.mock('../../src/services/wealthsimple/transactions', () => ({
+  fetchAndProcessTransactions: vi.fn(() => Promise.resolve([])),
+  reconcilePendingTransactions: vi.fn(() => Promise.resolve({ success: true, deleted: 0, pending: 0 })),
+  formatReconciliationMessage: vi.fn(() => 'No changes'),
 }));
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  getDefaultLookbackDays: jest.fn(() => 2),
-  getTodayLocal: jest.fn(() => '2026-01-03'),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  getDefaultLookbackDays: vi.fn(() => 2),
+  getTodayLocal: vi.fn(() => '2026-01-03'),
 }));
 
 describe('Wealthsimple Upload Service', () => {
   // Mock progress dialog object
   const mockProgressDialog = {
-    updateProgress: jest.fn(),
-    showSummary: jest.fn(),
-    showError: jest.fn(),
-    hideCancel: jest.fn(),
-    close: jest.fn(),
-    onCancel: jest.fn(),
-    isCancelled: jest.fn(() => false),
-    initSteps: jest.fn(),
-    updateStepStatus: jest.fn(),
-    updateBalanceChange: jest.fn(),
+    updateProgress: vi.fn(),
+    showSummary: vi.fn(),
+    showError: vi.fn(),
+    hideCancel: vi.fn(),
+    close: vi.fn(),
+    onCancel: vi.fn(),
+    isCancelled: vi.fn(() => false),
+    initSteps: vi.fn(),
+    updateStepStatus: vi.fn(),
+    updateBalanceChange: vi.fn(),
   };
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     showProgressDialog.mockReturnValue(mockProgressDialog);
   });
 
@@ -496,7 +497,7 @@ describe('Wealthsimple Upload Service', () => {
   });
 
   describe('buildSyncStepsForAccount', () => {
-    const { isInvestmentAccount } = require('../../src/services/wealthsimple/positions');
+    const { isInvestmentAccount } = positionsModule;
 
     it('includes all steps for SELF_DIRECTED_NON_REGISTERED_MARGIN', () => {
       isInvestmentAccount.mockReturnValue(true);

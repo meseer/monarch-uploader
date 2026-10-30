@@ -16,11 +16,12 @@ import {
   clearSavedWealthsimpleCategoryMappings,
   getAllSavedWealthsimpleCategoryMappings,
 } from '../../src/mappers/category';
+import * as utilsModule from '../../src/core/utils';
 
 // Mock dependencies
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  stringSimilarity: jest.fn((str1, str2) => {
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  stringSimilarity: vi.fn((str1, str2) => {
     // Simple mock similarity function
     if (str1 === str2) return 1.0;
     if (str1.includes(str2) || str2.includes(str1)) return 0.8;
@@ -29,7 +30,7 @@ jest.mock('../../src/core/utils', () => ({
   }),
 }));
 
-jest.mock('../../src/core/config', () => ({
+vi.mock('../../src/core/config', () => ({
   CARDHOLDER: {
     SHARED_OWNER: 'Shared',
     OWNER_MODE: { OFF: 'off', ON: 'on' },
@@ -49,17 +50,17 @@ jest.mock('../../src/core/config', () => ({
 }));
 
 // Mock Greasemonkey functions
-globalThis.GM_getValue = jest.fn();
-globalThis.GM_setValue = jest.fn();
-globalThis.GM_deleteValue = jest.fn();
+globalThis.GM_getValue = vi.fn();
+globalThis.GM_setValue = vi.fn();
+globalThis.GM_deleteValue = vi.fn();
 
 describe('Category Mapper', () => {
   let mockAvailableCategories;
   let stringSimilarity;
 
   beforeEach(() => {
-    jest.clearAllMocks();
-    stringSimilarity = jest.requireMock('../../src/core/utils').stringSimilarity;
+    vi.clearAllMocks();
+    stringSimilarity = utilsModule.stringSimilarity;
 
     // Mock available categories
     mockAvailableCategories = [
@@ -705,7 +706,7 @@ describe('Category Mapper', () => {
           expect.any(String),
         );
 
-        jest.clearAllMocks();
+        vi.clearAllMocks();
 
         // Save Wealthsimple mapping
         globalThis.GM_getValue.mockImplementation((key, defaultVal) => {

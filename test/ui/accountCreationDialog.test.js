@@ -16,11 +16,11 @@
 
 import { showAccountCreationDialog } from '../../src/ui/components/accountCreationDialog';
 
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../src/core/config', () => ({
+vi.mock('../../src/core/config', () => ({
   CARDHOLDER: {
     SHARED_OWNER: 'Shared',
     OWNER_MODE: { OFF: 'off', ON: 'on' },
@@ -28,33 +28,31 @@ jest.mock('../../src/core/config', () => ({
   },
 }));
 
-jest.mock('../../src/ui/keyboardNavigation', () => ({
-  addModalKeyboardHandlers: jest.fn(() => jest.fn()),
+vi.mock('../../src/ui/keyboardNavigation', () => ({
+  addModalKeyboardHandlers: vi.fn(() => vi.fn()),
 }));
 
-jest.mock('../../src/ui/toast', () => ({
-  __esModule: true,
-  default: { show: jest.fn() },
+vi.mock('../../src/ui/toast', () => ({
+  default: { show: vi.fn() },
 }));
 
-jest.mock('../../src/api/monarch', () => ({
-  __esModule: true,
+vi.mock('../../src/api/monarch', () => ({
   default: {
-    getAccountTypeOptions: jest.fn(),
-    createManualAccount: jest.fn(),
-    createManualInvestmentsAccount: jest.fn(),
-    listAccounts: jest.fn(),
-    updateAccount: jest.fn(),
+    getAccountTypeOptions: vi.fn(),
+    createManualAccount: vi.fn(),
+    createManualInvestmentsAccount: vi.fn(),
+    listAccounts: vi.fn(),
+    updateAccount: vi.fn(),
   },
 }));
 
-jest.mock('../../src/api/monarchHousehold', () => ({
-  getHouseholdMembers: jest.fn(),
+vi.mock('../../src/api/monarchHousehold', () => ({
+  getHouseholdMembers: vi.fn(),
 }));
 
-const monarchApi = require('../../src/api/monarch').default;
-const toast = require('../../src/ui/toast').default;
-const { getHouseholdMembers } = require('../../src/api/monarchHousehold');
+import monarchApi from '../../src/api/monarch';
+import toast from '../../src/ui/toast';
+import { getHouseholdMembers } from '../../src/api/monarchHousehold';
 
 const ACCOUNT_ID = 'monarch-acct-new';
 
@@ -118,7 +116,7 @@ const submitForm = async () => {
 
 beforeEach(() => {
   document.body.innerHTML = '';
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 
   monarchApi.getAccountTypeOptions.mockResolvedValue([
     {

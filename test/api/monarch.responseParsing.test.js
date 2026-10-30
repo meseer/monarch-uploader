@@ -17,36 +17,38 @@
  * because the deadline in `settlementOf` needs a real timer to fire.
  */
 
-import { jest } from '@jest/globals';
 import '../setup';
 import { callMonarchGraphQL } from '../../src/api/monarch';
 import authService from '../../src/services/auth';
 import { settlementOf } from '../helpers/promiseSettlement';
 
-jest.mock('../../src/services/auth', () => ({
-  checkMonarchAuth: jest.fn(),
-  getMonarchCredentials: jest.fn(),
-  setupMonarchTokenCapture: jest.fn(),
-  clearMonarchCredentials: jest.fn(),
+vi.mock('../../src/services/auth', () => {
+  const mock = {
+    checkMonarchAuth: vi.fn(),
+    getMonarchCredentials: vi.fn(),
+    setupMonarchTokenCapture: vi.fn(),
+    clearMonarchCredentials: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
+
+vi.mock('../../src/core/state', () => ({
+  setMonarchAuth: vi.fn(),
+  getState: vi.fn(),
 }));
 
-jest.mock('../../src/core/state', () => ({
-  setMonarchAuth: jest.fn(),
-  getState: jest.fn(),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-}));
-
-jest.mock('../../src/ui/components/accountSelectorWithCreate', () => ({
-  showMonarchAccountSelectorWithCreate: jest.fn(),
+vi.mock('../../src/ui/components/accountSelectorWithCreate', () => ({
+  showMonarchAccountSelectorWithCreate: vi.fn(),
 }));
 
 describe('Monarch API - response parsing and settlement', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
-    globalThis.GM_xmlhttpRequest = jest.fn();
+    vi.clearAllMocks();
+    globalThis.GM_xmlhttpRequest = vi.fn();
     authService.checkMonarchAuth.mockReturnValue({
       authenticated: true,
       credentials: { csrfToken: 'test-csrf-token-123', sessionExpiresAt: '2099-12-31T23:59:59Z' },

@@ -2,7 +2,6 @@
  * Tests for Canada Life Upload Service
  */
 
-import { jest } from '@jest/globals';
 import '../setup';
 
 // Mirrors the real parseLocalDate: local midnight, not UTC midnight. A UTC parse
@@ -14,7 +13,7 @@ function mockParseLocalDate(dateString) {
 }
 
 // Mock all dependencies before importing the module under test
-jest.mock('../../src/core/config', () => ({
+vi.mock('../../src/core/config', () => ({
   CARDHOLDER: {
     SHARED_OWNER: 'Shared',
     OWNER_MODE: { OFF: 'off', ON: 'on' },
@@ -30,104 +29,99 @@ jest.mock('../../src/core/config', () => ({
   },
 }));
 
-jest.mock('../../src/services/common/accountService', () => ({
-  __esModule: true,
+vi.mock('../../src/services/common/accountService', () => ({
   default: {
-    getAccountData: jest.fn(),
-    getMonarchAccountMapping: jest.fn(),
-    upsertAccount: jest.fn(),
-    updateAccountInList: jest.fn(),
-    cleanupLegacyStorage: jest.fn(() => ({ cleaned: true, keysDeleted: 0, keys: [] })),
+    getAccountData: vi.fn(),
+    getMonarchAccountMapping: vi.fn(),
+    upsertAccount: vi.fn(),
+    updateAccountInList: vi.fn(),
+    cleanupLegacyStorage: vi.fn(() => ({ cleaned: true, keysDeleted: 0, keys: [] })),
   },
 }));
 
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  formatDate: jest.fn((date) => {
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  formatDate: vi.fn((date) => {
     if (date instanceof Date && !isNaN(date.getTime())) {
       return date.toISOString().split('T')[0];
     }
     return 'Invalid Date';
   }),
-  getTodayLocal: jest.fn(() => '2024-01-15'),
-  getYesterdayLocal: jest.fn(() => '2024-01-14'),
-  formatDaysAgoLocal: jest.fn((days) => {
+  getTodayLocal: vi.fn(() => '2024-01-15'),
+  getYesterdayLocal: vi.fn(() => '2024-01-14'),
+  formatDaysAgoLocal: vi.fn((days) => {
     const date = new Date('2024-01-15');
     date.setDate(date.getDate() - days);
     return date.toISOString().split('T')[0];
   }),
-  parseLocalDate: jest.fn(mockParseLocalDate),
-  calculateFromDateWithLookback: jest.fn(),
-  saveLastUploadDate: jest.fn(),
-  getLastUpdateDate: jest.fn(),
+  parseLocalDate: vi.fn(mockParseLocalDate),
+  calculateFromDateWithLookback: vi.fn(),
+  saveLastUploadDate: vi.fn(),
+  getLastUpdateDate: vi.fn(),
 }));
 
-jest.mock('../../src/core/state', () => ({
-  __esModule: true,
+vi.mock('../../src/core/state', () => ({
   default: {
-    getState: jest.fn(() => ({
+    getState: vi.fn(() => ({
       currentAccount: { nickname: 'Test Account', name: 'Test Account' },
     })),
-    setAccount: jest.fn(),
+    setAccount: vi.fn(),
   },
 }));
 
-jest.mock('../../src/api/canadalife', () => ({
-  __esModule: true,
+vi.mock('../../src/api/canadalife', () => ({
   default: {
-    loadCanadaLifeAccounts: jest.fn(),
-    loadAccountBalanceHistory: jest.fn(),
+    loadCanadaLifeAccounts: vi.fn(),
+    loadAccountBalanceHistory: vi.fn(),
     // Must be mocked: the real fetchActivitiesForDateRange calls this, and an
     // undefined function makes every chunk fail, which now reports the fetch as
     // incomplete and correctly holds back the sync date.
-    loadAccountActivityReport: jest.fn(),
+    loadAccountActivityReport: vi.fn(),
   },
 }));
 
-jest.mock('../../src/api/monarch', () => ({
-  __esModule: true,
+vi.mock('../../src/api/monarch', () => ({
   default: {
-    listAccounts: jest.fn(),
-    uploadBalance: jest.fn(),
-    validateAndRefreshAccountMapping: jest.fn(),
+    listAccounts: vi.fn(),
+    uploadBalance: vi.fn(),
+    validateAndRefreshAccountMapping: vi.fn(),
   },
 }));
 
-jest.mock('../../src/ui/toast', () => ({
-  __esModule: true,
+vi.mock('../../src/ui/toast', () => ({
   default: {
-    show: jest.fn(),
+    show: vi.fn(),
   },
 }));
 
-jest.mock('../../src/ui/components/progressDialog', () => ({
-  showProgressDialog: jest.fn(() => ({
-    updateProgress: jest.fn(),
-    updateBalanceChange: jest.fn(),
-    hideCancel: jest.fn(),
-    showSummary: jest.fn(),
-    onCancel: jest.fn(),
-    showError: jest.fn(),
-    initSteps: jest.fn(),
-    updateStepStatus: jest.fn(),
+vi.mock('../../src/ui/components/progressDialog', () => ({
+  showProgressDialog: vi.fn(() => ({
+    updateProgress: vi.fn(),
+    updateBalanceChange: vi.fn(),
+    hideCancel: vi.fn(),
+    showSummary: vi.fn(),
+    onCancel: vi.fn(),
+    showError: vi.fn(),
+    initSteps: vi.fn(),
+    updateStepStatus: vi.fn(),
   })),
 }));
 
-jest.mock('../../src/ui/components/datePicker', () => ({
-  showDatePickerPromise: jest.fn(),
+vi.mock('../../src/ui/components/datePicker', () => ({
+  showDatePickerPromise: vi.fn(),
 }));
 
-jest.mock('../../src/ui/components/accountSelectorWithCreate', () => ({
-  showMonarchAccountSelectorWithCreate: jest.fn(),
+vi.mock('../../src/ui/components/accountSelectorWithCreate', () => ({
+  showMonarchAccountSelectorWithCreate: vi.fn(),
 }));
 
-jest.mock('../../src/ui/components/monarchLoginLink', () => ({
-  ensureMonarchAuthentication: jest.fn(),
+vi.mock('../../src/ui/components/monarchLoginLink', () => ({
+  ensureMonarchAuthentication: vi.fn(),
 }));
 
 // Mock GM functions
-globalThis.GM_getValue = jest.fn();
-globalThis.GM_setValue = jest.fn();
+globalThis.GM_getValue = vi.fn();
+globalThis.GM_setValue = vi.fn();
 
 // Import the module under test after mocking all dependencies
 // eslint-disable-next-line import/first
@@ -137,16 +131,25 @@ import {
   convertCanadaLifeDataToCSV,
   CanadaLifeUploadError,
 } from '../../src/services/canadalife-upload';
+import * as utilsModule from '../../src/core/utils';
+import * as canadalifeModule from '../../src/api/canadalife';
+import * as monarchLoginLinkModule from '../../src/ui/components/monarchLoginLink';
+import * as monarchModule from '../../src/api/monarch';
+import * as accountServiceModule from '../../src/services/common/accountService';
+import * as toastModule from '../../src/ui/toast';
+import * as progressDialogModule from '../../src/ui/components/progressDialog';
+import * as datePickerModule from '../../src/ui/components/datePicker';
+import * as stateModule from '../../src/core/state';
 
 describe('Canada Life Upload Service', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     // clearAllMocks keeps implementations, so a per-test override would otherwise
     // leak into every later test in this file.
-    jest.requireMock('../../src/core/utils').parseLocalDate.mockImplementation(mockParseLocalDate);
+    utilsModule.parseLocalDate.mockImplementation(mockParseLocalDate);
     // Default to a successful, complete activity fetch so the sync-date gate does not
     // hold the watermark back in tests that are not about an incomplete fetch.
-    jest.requireMock('../../src/api/canadalife').default
+    canadalifeModule.default
       .loadAccountActivityReport.mockResolvedValue({ activities: [] });
     document.body.innerHTML = '';
   });
@@ -190,8 +193,8 @@ describe('Canada Life Upload Service', () => {
       expect(lines).toHaveLength(4);
     });
 
-    test('should call debugLog during conversion', () => {
-      const utils = jest.requireMock('../../src/core/utils');
+    test('should call debugLog during conversion', async () => {
+      const utils = utilsModule;
       const historicalData = {
         data: [
           ['Date', 'Balance', 'Account Name'],
@@ -200,17 +203,17 @@ describe('Canada Life Upload Service', () => {
       };
 
       // Import after mocking to ensure the mocks are applied
-      const { convertCanadaLifeDataToCSV: convert } = jest.requireActual('../../src/services/canadalife-upload');
+      const { convertCanadaLifeDataToCSV: convert } = await vi.importActual('../../src/services/canadalife-upload');
       convert(historicalData);
 
       expect(utils.debugLog).toHaveBeenCalledWith(expect.stringContaining('Converted 1 balance records to CSV format'));
     });
 
-    test('should call debugLog on error', () => {
-      const utils = jest.requireMock('../../src/core/utils');
+    test('should call debugLog on error', async () => {
+      const utils = utilsModule;
 
       // Import after mocking to ensure the mocks are applied
-      const { convertCanadaLifeDataToCSV: convert } = jest.requireActual('../../src/services/canadalife-upload');
+      const { convertCanadaLifeDataToCSV: convert } = await vi.importActual('../../src/services/canadalife-upload');
 
       expect(() => convert(null)).toThrow('Invalid historical data format');
       expect(utils.debugLog).toHaveBeenCalledWith('Error converting Canada Life data to CSV:', expect.any(Error));
@@ -298,10 +301,10 @@ describe('Canada Life Upload Service', () => {
 
     beforeEach(() => {
       // Get the mocked modules that were set up at the top level
-      ensureMonarchAuthentication = require('../../src/ui/components/monarchLoginLink').ensureMonarchAuthentication;
-      canadalife = require('../../src/api/canadalife').default;
-      monarchApi = require('../../src/api/monarch').default;
-      accountService = require('../../src/services/common/accountService').default;
+      ensureMonarchAuthentication = monarchLoginLinkModule.ensureMonarchAuthentication;
+      canadalife = canadalifeModule.default;
+      monarchApi = monarchModule.default;
+      accountService = accountServiceModule.default;
 
       // Default: accountService.getMonarchAccountMapping returns stored monarch account
       // This simulates having an existing account mapping in consolidated storage
@@ -312,21 +315,21 @@ describe('Canada Life Upload Service', () => {
         valid: true,
         account: { id: 'monarch123', displayName: 'Investment Account' },
       });
-      toast = require('../../src/ui/toast').default;
-      showProgressDialog = require('../../src/ui/components/progressDialog').showProgressDialog;
-      utils = require('../../src/core/utils');
-      showDatePickerPromise = require('../../src/ui/components/datePicker').showDatePickerPromise;
-      stateManager = require('../../src/core/state').default;
+      toast = toastModule.default;
+      showProgressDialog = progressDialogModule.showProgressDialog;
+      utils = utilsModule;
+      showDatePickerPromise = datePickerModule.showDatePickerPromise;
+      stateManager = stateModule.default;
 
       mockProgressDialog = {
-        updateProgress: jest.fn(),
-        updateBalanceChange: jest.fn(),
-        hideCancel: jest.fn(),
-        showSummary: jest.fn(),
-        onCancel: jest.fn(),
-        showError: jest.fn().mockResolvedValue(),
-        initSteps: jest.fn(),
-        updateStepStatus: jest.fn(),
+        updateProgress: vi.fn(),
+        updateBalanceChange: vi.fn(),
+        hideCancel: vi.fn(),
+        showSummary: vi.fn(),
+        onCancel: vi.fn(),
+        showError: vi.fn().mockResolvedValue(),
+        initSteps: vi.fn(),
+        updateStepStatus: vi.fn(),
       };
       showProgressDialog.mockReturnValue(mockProgressDialog);
 
@@ -718,16 +721,16 @@ describe('Canada Life Upload Service', () => {
       const mockMonarchAccount = { id: 'monarchTxDate', displayName: 'TxDate Account' };
 
       // Mock for transaction fetching - return transactions with various dates
-      const mockFetchAndProcessTransactions = jest.fn().mockResolvedValue([
+      const mockFetchAndProcessTransactions = vi.fn().mockResolvedValue([
         { id: 'tx-1', date: '2024-01-10', merchant: 'Fund A', amount: 100 },
         { id: 'tx-2', date: '2024-01-12', merchant: 'Fund B', amount: 200 },
         { id: 'tx-3', date: '2024-01-14', merchant: 'Fund C', amount: 300 },
       ]);
 
       // Temporarily mock the transactions module
-      jest.doMock('../../src/services/canadalife/transactions', () => ({
+      vi.doMock('../../src/services/canadalife/transactions', () => ({
         fetchAndProcessTransactions: mockFetchAndProcessTransactions,
-        convertTransactionsToCSV: jest.fn().mockReturnValue('csv data'),
+        convertTransactionsToCSV: vi.fn().mockReturnValue('csv data'),
       }));
 
       ensureMonarchAuthentication.mockResolvedValue(true);
@@ -737,7 +740,7 @@ describe('Canada Life Upload Service', () => {
       globalThis.GM_getValue.mockReturnValue(JSON.stringify(mockMonarchAccount));
       canadalife.loadAccountBalanceHistory.mockResolvedValue(mockHistoricalData);
       monarchApi.uploadBalance.mockResolvedValue(true);
-      monarchApi.uploadTransactions = jest.fn().mockResolvedValue(true);
+      monarchApi.uploadTransactions = vi.fn().mockResolvedValue(true);
       stateManager.setAccount.mockImplementation(() => {});
 
       // Reset accountService mock to track calls
@@ -1068,9 +1071,9 @@ describe('Canada Life Upload Service', () => {
     let toast;
 
     beforeEach(() => {
-      ensureMonarchAuthentication = jest.requireMock('../../src/ui/components/monarchLoginLink').ensureMonarchAuthentication;
-      canadalife = jest.requireMock('../../src/api/canadalife').default;
-      toast = jest.requireMock('../../src/ui/toast').default;
+      ensureMonarchAuthentication = monarchLoginLinkModule.ensureMonarchAuthentication;
+      canadalife = canadalifeModule.default;
+      toast = toastModule.default;
     });
 
     test('should return early if authentication fails', async () => {
@@ -1092,7 +1095,7 @@ describe('Canada Life Upload Service', () => {
     });
 
     test('should handle error during process', async () => {
-      const mockToast = jest.requireMock('../../src/ui/toast').default;
+      const mockToast = toastModule.default;
       ensureMonarchAuthentication.mockResolvedValue(true);
       canadalife.loadCanadaLifeAccounts.mockRejectedValue(new Error('API error'));
 
@@ -1102,7 +1105,7 @@ describe('Canada Life Upload Service', () => {
     });
 
     test('should show loading toast', async () => {
-      const mockToast = jest.requireMock('../../src/ui/toast').default;
+      const mockToast = toastModule.default;
       ensureMonarchAuthentication.mockResolvedValue(true);
       canadalife.loadCanadaLifeAccounts.mockResolvedValue([]);
 

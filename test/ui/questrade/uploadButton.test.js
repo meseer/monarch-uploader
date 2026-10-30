@@ -7,14 +7,16 @@
  */
 
 import { calculateSingleAccountStartDate } from '../../../src/ui/questrade/components/uploadButton';
+import * as utilsModule from '../../../src/core/utils';
+import * as balanceModule from '../../../src/services/questrade/balance';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  calculateFromDateWithLookback: jest.fn(),
-  getTodayLocal: jest.fn(() => '2025-04-29'),
-  formatDate: jest.fn((date) => {
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  calculateFromDateWithLookback: vi.fn(),
+  getTodayLocal: vi.fn(() => '2025-04-29'),
+  formatDate: vi.fn((date) => {
     const d = new Date(date);
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -23,67 +25,65 @@ jest.mock('../../../src/core/utils', () => ({
   }),
 }));
 
-jest.mock('../../../src/core/config', () => ({
+vi.mock('../../../src/core/config', () => ({
   STORAGE: {
     MONARCH_CSRF_TOKEN: 'monarch_csrf_token', MONARCH_SESSION_EXPIRES_AT: 'monarch_session_expires_at',
     DEVELOPMENT_MODE: 'development_mode',
   },
 }));
 
-jest.mock('../../../src/core/state', () => ({
-  __esModule: true,
+vi.mock('../../../src/core/state', () => ({
   default: {
-    getState: jest.fn(() => ({
+    getState: vi.fn(() => ({
       currentAccount: { id: null, nickname: 'unknown' },
     })),
   },
 }));
 
-jest.mock('../../../src/ui/toast', () => ({
-  __esModule: true,
-  default: { show: jest.fn() },
+vi.mock('../../../src/ui/toast', () => ({
+  default: { show: vi.fn() },
 }));
 
-jest.mock('../../../src/services/questrade/account', () => ({
-  processAccountBalanceHistory: jest.fn(),
+vi.mock('../../../src/services/questrade/account', () => ({
+  processAccountBalanceHistory: vi.fn(),
 }));
 
-jest.mock('../../../src/ui/components/monarchLoginLink', () => ({
-  ensureMonarchAuthentication: jest.fn(),
+vi.mock('../../../src/ui/components/monarchLoginLink', () => ({
+  ensureMonarchAuthentication: vi.fn(),
 }));
 
-jest.mock('../../../src/services/questrade/sync', () => ({
-  syncAllAccountsToMonarch: jest.fn(),
+vi.mock('../../../src/services/questrade/sync', () => ({
+  syncAllAccountsToMonarch: vi.fn(),
 }));
 
-jest.mock('../../../src/services/questrade/transactions', () => ({
-  uploadAllAccountsActivityToMonarch: jest.fn(),
-  uploadSingleAccountActivityToMonarch: jest.fn(),
+vi.mock('../../../src/services/questrade/transactions', () => ({
+  uploadAllAccountsActivityToMonarch: vi.fn(),
+  uploadSingleAccountActivityToMonarch: vi.fn(),
 }));
 
-jest.mock('../../../src/services/questrade/balance', () => ({
-  getAccountCreationDate: jest.fn(),
-  uploadFullBalanceHistoryForAccount: jest.fn(),
-  uploadFullBalanceHistoryForAllAccounts: jest.fn(),
+vi.mock('../../../src/services/questrade/balance', () => ({
+  getAccountCreationDate: vi.fn(),
+  uploadFullBalanceHistoryForAccount: vi.fn(),
+  uploadFullBalanceHistoryForAllAccounts: vi.fn(),
 }));
 
-jest.mock('../../../src/ui/components/datePicker', () => ({
-  showDatePickerPromise: jest.fn(),
+vi.mock('../../../src/ui/components/datePicker', () => ({
+  showDatePickerPromise: vi.fn(),
 }));
 
 // ── GM globals ────────────────────────────────────────────────────────────────
 
-globalThis.GM_getValue = jest.fn(() => null);
-globalThis.GM_setValue = jest.fn();
+globalThis.GM_getValue = vi.fn(() => null);
+globalThis.GM_setValue = vi.fn();
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('calculateSingleAccountStartDate', () => {
-  const { calculateFromDateWithLookback } = require('../../../src/core/utils');
-  const { getAccountCreationDate } = require('../../../src/services/questrade/balance');
+  const { calculateFromDateWithLookback } = utilsModule;
+  const { getAccountCreationDate } = balanceModule;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('subsequent sync (has last sync date)', () => {
@@ -138,7 +138,7 @@ describe('calculateSingleAccountStartDate', () => {
 
       // Mock Date.now to get predictable fallback
       const mockNow = new Date('2025-04-29T12:00:00Z').getTime();
-      jest.spyOn(Date, 'now').mockReturnValue(mockNow);
+      vi.spyOn(Date, 'now').mockReturnValue(mockNow);
 
       const result = calculateSingleAccountStartDate('accXYZ');
 
@@ -147,7 +147,7 @@ describe('calculateSingleAccountStartDate', () => {
       expect(calculateFromDateWithLookback).toHaveBeenCalledWith('questrade', 'accXYZ');
       expect(getAccountCreationDate).toHaveBeenCalledWith('accXYZ');
 
-      jest.spyOn(Date, 'now').mockRestore();
+      vi.spyOn(Date, 'now').mockRestore();
     });
 
     test('returns fallback when creation date is invalid format', () => {
@@ -155,14 +155,14 @@ describe('calculateSingleAccountStartDate', () => {
       getAccountCreationDate.mockReturnValue('invalid-date');
 
       const mockNow = new Date('2025-04-29T12:00:00Z').getTime();
-      jest.spyOn(Date, 'now').mockReturnValue(mockNow);
+      vi.spyOn(Date, 'now').mockReturnValue(mockNow);
 
       const result = calculateSingleAccountStartDate('accBad');
 
       // Should fall through to the fallback
       expect(result).toBe('2025-04-15');
 
-      jest.spyOn(Date, 'now').mockRestore();
+      vi.spyOn(Date, 'now').mockRestore();
     });
   });
 
@@ -182,13 +182,13 @@ describe('calculateSingleAccountStartDate', () => {
       getAccountCreationDate.mockReturnValue('March 10, 2022'); // wrong format
 
       const mockNow = new Date('2025-04-29T12:00:00Z').getTime();
-      jest.spyOn(Date, 'now').mockReturnValue(mockNow);
+      vi.spyOn(Date, 'now').mockReturnValue(mockNow);
 
       const result = calculateSingleAccountStartDate('accEdge2');
 
       expect(result).toBe('2025-04-15');
 
-      jest.spyOn(Date, 'now').mockRestore();
+      vi.spyOn(Date, 'now').mockRestore();
     });
   });
 });

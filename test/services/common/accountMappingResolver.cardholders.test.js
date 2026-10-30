@@ -16,46 +16,41 @@
 
 import { resolveAccountMapping } from '../../../src/services/common/accountMappingResolver';
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../../src/core/integrationCapabilities', () => ({
+vi.mock('../../../src/core/integrationCapabilities', () => ({
   ACCOUNT_SETTINGS: {
     CARDHOLDER_OWNER_MODE: 'cardholderOwnerMode',
     CARDHOLDER_TAG_MODE: 'cardholderTagMode',
   },
-  hasCapability: jest.fn(),
+  hasCapability: vi.fn(),
 }));
 
-jest.mock('../../../src/api/monarch', () => ({
-  __esModule: true,
-  default: { setAccountLogo: jest.fn() },
+vi.mock('../../../src/api/monarch', () => ({
+  default: { setAccountLogo: vi.fn() },
 }));
 
-jest.mock('../../../src/ui/toast', () => ({
-  __esModule: true,
-  default: { show: jest.fn() },
+vi.mock('../../../src/ui/toast', () => ({
+  default: { show: vi.fn() },
 }));
 
-jest.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
+vi.mock('../../../src/services/common/accountService', () => ({
   default: {
-    getMonarchAccountMapping: jest.fn(() => null),
-    getAccountData: jest.fn(() => null),
-    upsertAccount: jest.fn(),
+    getMonarchAccountMapping: vi.fn(() => null),
+    getAccountData: vi.fn(() => null),
+    upsertAccount: vi.fn(),
   },
 }));
 
-jest.mock('../../../src/ui/components/accountSelectorWithCreate', () => ({
-  showMonarchAccountSelectorWithCreate: jest.fn(),
+vi.mock('../../../src/ui/components/accountSelectorWithCreate', () => ({
+  showMonarchAccountSelectorWithCreate: vi.fn(),
 }));
 
-const accountService = require('../../../src/services/common/accountService').default;
-const { hasCapability } = require('../../../src/core/integrationCapabilities');
-const {
-  showMonarchAccountSelectorWithCreate,
-} = require('../../../src/ui/components/accountSelectorWithCreate');
+import accountService from '../../../src/services/common/accountService';
+import { hasCapability } from '../../../src/core/integrationCapabilities';
+import { showMonarchAccountSelectorWithCreate } from '../../../src/ui/components/accountSelectorWithCreate';
 
 const MANIFEST = {
   accountKeyName: 'rogersbankAccount',
@@ -85,7 +80,7 @@ const upsertPayload = () => accountService.upsertAccount.mock.calls[0][1];
 const createDefaults = () => showMonarchAccountSelectorWithCreate.mock.calls[0][4];
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   accountService.getMonarchAccountMapping.mockReturnValue(null);
   accountService.getAccountData.mockReturnValue(null);
   hasCapability.mockReturnValue(true);

@@ -26,7 +26,7 @@ describe('Wealthsimple Transaction Rules Engine - Cash Internal', () => {
           nickname: acc.nickname,
         },
       }));
-      global.GM_getValue = jest.fn((key, defaultValue) => {
+      global.GM_getValue = vi.fn((key, defaultValue) => {
         if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
           return JSON.stringify(consolidatedAccounts);
         }
@@ -287,7 +287,7 @@ describe('Wealthsimple Transaction Rules Engine - Cash Internal', () => {
           nickname: acc.nickname,
         },
       }));
-      global.GM_getValue = jest.fn((key, defaultValue) => {
+      global.GM_getValue = vi.fn((key, defaultValue) => {
         if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
           return JSON.stringify(consolidatedAccounts);
         }
@@ -334,7 +334,7 @@ describe('Wealthsimple Transaction Rules Engine - Cash Internal', () => {
           },
         },
       ];
-      global.GM_getValue = jest.fn((key, defaultValue) => {
+      global.GM_getValue = vi.fn((key, defaultValue) => {
         if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
           return JSON.stringify(consolidatedAccounts);
         }
@@ -346,7 +346,7 @@ describe('Wealthsimple Transaction Rules Engine - Cash Internal', () => {
     });
 
     it('should return "Unknown Account" when storage has invalid JSON', () => {
-      global.GM_getValue = jest.fn((key, defaultValue) => {
+      global.GM_getValue = vi.fn((key, defaultValue) => {
         if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
           return 'invalid-json{';
         }
@@ -635,7 +635,7 @@ describe('Wealthsimple Transaction Rules Engine - Cash Internal', () => {
           nickname: acc.nickname,
         },
       }));
-      global.GM_getValue = jest.fn((key, defaultValue) => {
+      global.GM_getValue = vi.fn((key, defaultValue) => {
         if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
           return JSON.stringify(consolidatedAccounts);
         }
@@ -899,7 +899,7 @@ describe('Wealthsimple Transaction Rules Engine - Cash Internal', () => {
           nickname: acc.nickname,
         },
       }));
-      global.GM_getValue = jest.fn((key, defaultValue) => {
+      global.GM_getValue = vi.fn((key, defaultValue) => {
         if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
           return JSON.stringify(consolidatedAccounts);
         }
@@ -1080,7 +1080,7 @@ describe('Wealthsimple Transaction Rules Engine - Cash Internal', () => {
           type: acc.type,
         },
       }));
-      global.GM_getValue = jest.fn((key, defaultValue) => {
+      global.GM_getValue = vi.fn((key, defaultValue) => {
         if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
           return JSON.stringify(consolidatedAccounts);
         }
@@ -1135,7 +1135,7 @@ describe('Wealthsimple Transaction Rules Engine - Cash Internal', () => {
           },
         },
       ];
-      global.GM_getValue = jest.fn((key, defaultValue) => {
+      global.GM_getValue = vi.fn((key, defaultValue) => {
         if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
           return JSON.stringify(consolidatedAccounts);
         }
@@ -1147,7 +1147,7 @@ describe('Wealthsimple Transaction Rules Engine - Cash Internal', () => {
     });
 
     it('should return null when storage has invalid JSON', () => {
-      global.GM_getValue = jest.fn((key, defaultValue) => {
+      global.GM_getValue = vi.fn((key, defaultValue) => {
         if (key === STORAGE.WEALTHSIMPLE_ACCOUNTS_LIST) {
           return 'invalid-json{';
         }

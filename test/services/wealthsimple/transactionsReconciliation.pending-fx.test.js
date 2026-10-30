@@ -18,61 +18,59 @@ import { reconcileWealthsimpleFetchedPending } from '../../../src/services/wealt
 
 // ── Mocks ───────────────────────────────────────────────────
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  formatDate: jest.fn((d) => d.toISOString().split('T')[0]),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  formatDate: vi.fn((d) => d.toISOString().split('T')[0]),
   formatAmount: (amount) => {
     if (amount === null || amount === undefined || isNaN(Number(amount))) return '0';
     return parseFloat(String(amount)).toString().replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
   },
 }));
 
-jest.mock('../../../src/api/monarch', () => ({
-  __esModule: true,
+vi.mock('../../../src/api/monarch', () => ({
   default: {
-    getTagByName: jest.fn(),
-    getTransactionsList: jest.fn(),
-    updateTransaction: jest.fn(),
-    setTransactionTags: jest.fn(),
-    deleteTransaction: jest.fn(),
+    getTagByName: vi.fn(),
+    getTransactionsList: vi.fn(),
+    updateTransaction: vi.fn(),
+    setTransactionTags: vi.fn(),
+    deleteTransaction: vi.fn(),
   },
 }));
 
-jest.mock('../../../src/api/wealthsimple', () => ({
-  __esModule: true,
+vi.mock('../../../src/api/wealthsimple', () => ({
   default: {
-    fetchExtendedOrder: jest.fn(),
-    fetchActivityByOrdersServiceOrderId: jest.fn(),
-    fetchCryptoOrder: jest.fn(),
-    fetchCorporateActionChildActivities: jest.fn(),
-    fetchShortOptionPositionExpiryDetail: jest.fn(),
-    fetchSecurity: jest.fn(),
-    fetchCreditCardActivity: jest.fn(),
-    fetchSpendTransactions: jest.fn(),
+    fetchExtendedOrder: vi.fn(),
+    fetchActivityByOrdersServiceOrderId: vi.fn(),
+    fetchCryptoOrder: vi.fn(),
+    fetchCorporateActionChildActivities: vi.fn(),
+    fetchShortOptionPositionExpiryDetail: vi.fn(),
+    fetchSecurity: vi.fn(),
+    fetchCreditCardActivity: vi.fn(),
+    fetchSpendTransactions: vi.fn(),
   },
 }));
 
 // Mock merchant mapper to avoid deep dependency chain (integrationCapabilities → config)
-jest.mock('../../../src/mappers/merchant', () => ({
-  applyMerchantMapping: jest.fn((name) => name),
+vi.mock('../../../src/mappers/merchant', () => ({
+  applyMerchantMapping: vi.fn((name) => name),
 }));
 
-jest.mock('../../../src/mappers/category', () => ({
-  resolveCategoryForTransaction: jest.fn(),
-  getCategoryMappings: jest.fn(() => ({})),
+vi.mock('../../../src/mappers/category', () => ({
+  resolveCategoryForTransaction: vi.fn(),
+  getCategoryMappings: vi.fn(() => ({})),
 }));
 
 // The pure computeSettledTagIds helper keeps its real implementation so the
 // settle path exercises the production tag logic.
-jest.mock('../../../src/services/common/pendingReconciliation', () => ({
-  ...jest.requireActual('../../../src/services/common/pendingReconciliation'),
-  fetchMonarchPendingTransactions: jest.fn(),
+vi.mock('../../../src/services/common/pendingReconciliation', async () => ({
+  ...await vi.importActual('../../../src/services/common/pendingReconciliation'),
+  fetchMonarchPendingTransactions: vi.fn(),
 }));
 
-global.GM_getValue = jest.fn(() => '[]');
+global.GM_getValue = vi.fn(() => '[]');
 
-const mockMonarchApi = require('../../../src/api/monarch').default;
-const mockWealthsimpleApi = require('../../../src/api/wealthsimple').default;
+import mockMonarchApi from '../../../src/api/monarch';
+import mockWealthsimpleApi from '../../../src/api/wealthsimple';
 
 // ── Fixtures ────────────────────────────────────────────────
 
@@ -141,7 +139,7 @@ const getUpdatedNotes = (monarchTxId) => {
 };
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   mockMonarchApi.updateTransaction.mockResolvedValue({});
   mockMonarchApi.setTransactionTags.mockResolvedValue({});
   mockMonarchApi.deleteTransaction.mockResolvedValue(true);

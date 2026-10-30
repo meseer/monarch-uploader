@@ -2,10 +2,9 @@
  * Tests for syncEnabled flag enforcement in Canada Life upload flow
  */
 
-import { jest } from '@jest/globals';
 import '../../setup';
 
-jest.mock('../../../src/core/config', () => ({
+vi.mock('../../../src/core/config', () => ({
   CARDHOLDER: {
     SHARED_OWNER: 'Shared',
     OWNER_MODE: { OFF: 'off', ON: 'on' },
@@ -17,110 +16,105 @@ jest.mock('../../../src/core/config', () => ({
   INTEGRATIONS: { CANADALIFE: 'canadalife' },
 }));
 
-jest.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
+vi.mock('../../../src/services/common/accountService', () => ({
   default: {
-    getAccountData: jest.fn(),
-    getMonarchAccountMapping: jest.fn(),
-    upsertAccount: jest.fn(),
-    updateAccountInList: jest.fn(),
-    cleanupLegacyStorage: jest.fn(() => ({ cleaned: true, keysDeleted: 0, keys: [] })),
+    getAccountData: vi.fn(),
+    getMonarchAccountMapping: vi.fn(),
+    upsertAccount: vi.fn(),
+    updateAccountInList: vi.fn(),
+    cleanupLegacyStorage: vi.fn(() => ({ cleaned: true, keysDeleted: 0, keys: [] })),
   },
 }));
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  formatDate: jest.fn((date) => {
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  formatDate: vi.fn((date) => {
     if (date instanceof Date && !Number.isNaN(date.getTime())) {
       return date.toISOString().split('T')[0];
     }
     return 'Invalid Date';
   }),
-  getTodayLocal: jest.fn(() => '2024-01-15'),
-  getYesterdayLocal: jest.fn(() => '2024-01-14'),
-  formatDaysAgoLocal: jest.fn(() => '2024-01-01'),
-  parseLocalDate: jest.fn((s) => new Date(s)),
-  calculateFromDateWithLookback: jest.fn(() => '2024-01-01'),
-  saveLastUploadDate: jest.fn(),
-  getLastUpdateDate: jest.fn(() => '2024-01-01'),
+  getTodayLocal: vi.fn(() => '2024-01-15'),
+  getYesterdayLocal: vi.fn(() => '2024-01-14'),
+  formatDaysAgoLocal: vi.fn(() => '2024-01-01'),
+  parseLocalDate: vi.fn((s) => new Date(s)),
+  calculateFromDateWithLookback: vi.fn(() => '2024-01-01'),
+  saveLastUploadDate: vi.fn(),
+  getLastUpdateDate: vi.fn(() => '2024-01-01'),
 }));
 
-jest.mock('../../../src/core/state', () => ({
-  __esModule: true,
+vi.mock('../../../src/core/state', () => ({
   default: {
-    getState: jest.fn(() => ({ currentAccount: { nickname: 'Test', name: 'Test' } })),
-    setAccount: jest.fn(),
+    getState: vi.fn(() => ({ currentAccount: { nickname: 'Test', name: 'Test' } })),
+    setAccount: vi.fn(),
   },
 }));
 
-jest.mock('../../../src/api/canadalife', () => ({
-  __esModule: true,
+vi.mock('../../../src/api/canadalife', () => ({
   default: {
-    loadCanadaLifeAccounts: jest.fn(),
-    loadAccountBalanceHistory: jest.fn(),
+    loadCanadaLifeAccounts: vi.fn(),
+    loadAccountBalanceHistory: vi.fn(),
   },
 }));
 
-jest.mock('../../../src/api/monarch', () => ({
-  __esModule: true,
+vi.mock('../../../src/api/monarch', () => ({
   default: {
-    listAccounts: jest.fn(),
-    uploadBalance: jest.fn(),
-    uploadTransactions: jest.fn(),
-    validateAndRefreshAccountMapping: jest.fn(),
-    setAccountLogo: jest.fn(),
+    listAccounts: vi.fn(),
+    uploadBalance: vi.fn(),
+    uploadTransactions: vi.fn(),
+    validateAndRefreshAccountMapping: vi.fn(),
+    setAccountLogo: vi.fn(),
   },
 }));
 
-jest.mock('../../../src/ui/toast', () => ({
-  __esModule: true,
-  default: { show: jest.fn() },
+vi.mock('../../../src/ui/toast', () => ({
+  default: { show: vi.fn() },
 }));
 
-jest.mock('../../../src/ui/components/progressDialog', () => ({
-  showProgressDialog: jest.fn(),
+vi.mock('../../../src/ui/components/progressDialog', () => ({
+  showProgressDialog: vi.fn(),
 }));
 
-jest.mock('../../../src/ui/components/datePicker', () => ({
-  showDatePickerPromise: jest.fn(),
+vi.mock('../../../src/ui/components/datePicker', () => ({
+  showDatePickerPromise: vi.fn(),
 }));
 
-jest.mock('../../../src/ui/components/accountSelectorWithCreate', () => ({
-  showMonarchAccountSelectorWithCreate: jest.fn(),
+vi.mock('../../../src/ui/components/accountSelectorWithCreate', () => ({
+  showMonarchAccountSelectorWithCreate: vi.fn(),
 }));
 
-jest.mock('../../../src/ui/components/monarchLoginLink', () => ({
-  ensureMonarchAuthentication: jest.fn(),
+vi.mock('../../../src/ui/components/monarchLoginLink', () => ({
+  ensureMonarchAuthentication: vi.fn(),
 }));
 
-jest.mock('../../../src/services/canadalife/transactions', () => ({
-  fetchAndProcessTransactions: jest.fn().mockResolvedValue([]),
-  convertTransactionsToCSV: jest.fn().mockReturnValue(''),
+vi.mock('../../../src/services/canadalife/transactions', () => ({
+  fetchAndProcessTransactions: vi.fn().mockResolvedValue([]),
+  convertTransactionsToCSV: vi.fn().mockReturnValue(''),
 }));
 
-globalThis.GM_getValue = jest.fn();
-globalThis.GM_setValue = jest.fn();
+globalThis.GM_getValue = vi.fn();
+globalThis.GM_setValue = vi.fn();
 
 // eslint-disable-next-line import/first
 import { uploadAllCanadaLifeAccountsToMonarch } from '../../../src/services/canadalife-upload';
 
-const { showProgressDialog } = require('../../../src/ui/components/progressDialog');
-const { ensureMonarchAuthentication } = require('../../../src/ui/components/monarchLoginLink');
-const canadalife = require('../../../src/api/canadalife').default;
-const monarchApi = require('../../../src/api/monarch').default;
-const accountService = require('../../../src/services/common/accountService').default;
+import { showProgressDialog } from '../../../src/ui/components/progressDialog';
+import { ensureMonarchAuthentication } from '../../../src/ui/components/monarchLoginLink';
+import canadalife from '../../../src/api/canadalife';
+import monarchApi from '../../../src/api/monarch';
+import accountService from '../../../src/services/common/accountService';
 
 // Helpers
 function makeProgressDialog() {
   return {
-    updateProgress: jest.fn(),
-    updateBalanceChange: jest.fn(),
-    hideCancel: jest.fn(),
-    showSummary: jest.fn(),
-    showError: jest.fn().mockResolvedValue(undefined),
-    onCancel: jest.fn(),
-    initSteps: jest.fn(),
-    updateStepStatus: jest.fn(),
+    updateProgress: vi.fn(),
+    updateBalanceChange: vi.fn(),
+    hideCancel: vi.fn(),
+    showSummary: vi.fn(),
+    showError: vi.fn().mockResolvedValue(undefined),
+    onCancel: vi.fn(),
+    initSteps: vi.fn(),
+    updateStepStatus: vi.fn(),
   };
 }
 
@@ -148,7 +142,7 @@ function makeBalanceHistoryData() {
 }
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   ensureMonarchAuthentication.mockResolvedValue(true);
   monarchApi.uploadBalance.mockResolvedValue(true);
   monarchApi.uploadTransactions.mockResolvedValue(true);

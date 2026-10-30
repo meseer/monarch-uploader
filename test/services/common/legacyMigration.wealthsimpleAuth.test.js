@@ -14,10 +14,10 @@ import {
   migrateAllLegacyStorage,
 } from '../../../src/services/common/legacyMigration';
 
-const { useInMemoryGmStorage } = require('../../helpers/wealthsimpleAuthCookie');
+import { useInMemoryGmStorage } from '../../helpers/wealthsimpleAuthCookie';
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
 const STORED_AUTH = {
@@ -50,7 +50,7 @@ function storedConfig(store) {
 
 describe('purgeStoredWealthsimpleAuth', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   test('deletes the auth section of wealthsimple_config and keeps everything else', () => {
@@ -105,7 +105,7 @@ describe('purgeStoredWealthsimpleAuth', () => {
       wealthsimple_config: JSON.stringify({ auth: STORED_AUTH, settings: SETTINGS }),
     });
     purgeStoredWealthsimpleAuth();
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     expect(purgeStoredWealthsimpleAuth()).toBe(0);
     expect(GM_setValue).not.toHaveBeenCalled();

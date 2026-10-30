@@ -31,8 +31,8 @@ function createMockIntegration(overrides = {}) {
       capabilities: overrides.capabilities || {},
       ...overrides.manifest,
     },
-    api: overrides.api || { fetch: jest.fn() },
-    auth: overrides.auth || { getToken: jest.fn() },
+    api: overrides.api || { fetch: vi.fn() },
+    auth: overrides.auth || { getToken: vi.fn() },
     enrichment: overrides.enrichment || null,
     injectionPoint: overrides.injectionPoint || { selectors: [] },
     monarchMapper: overrides.monarchMapper || null,
@@ -102,8 +102,8 @@ describe('integrationRegistry', () => {
     });
 
     it('should store enrichment and monarchMapper when provided', () => {
-      const enrichment = { fetchDetails: jest.fn() };
-      const monarchMapper = { mapTransactions: jest.fn() };
+      const enrichment = { fetchDetails: vi.fn() };
+      const monarchMapper = { mapTransactions: vi.fn() };
 
       registerIntegration({
         manifest: { id: 'full', displayName: 'Full' },

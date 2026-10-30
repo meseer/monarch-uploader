@@ -8,10 +8,13 @@ import {
   VERSION_LABEL,
 } from '../../src/ui/components/versionBadge';
 
-jest.mock('../../src/scriptInfo.json', () => ({
-  version: '5.60.0',
-  gistUrl: 'https://gist.github.com/meseer/f00fb552c96efeb3eb4e4e1fd520d4e7/raw/monarch-uploader.user.js',
-}));
+vi.mock('../../src/scriptInfo.json', () => {
+  const mock = {
+    version: '5.60.0',
+    gistUrl: 'https://gist.github.com/meseer/f00fb552c96efeb3eb4e4e1fd520d4e7/raw/monarch-uploader.user.js',
+  };
+  return { ...mock, default: mock };
+});
 
 describe('Version Badge Component', () => {
   describe('VERSION_LABEL', () => {

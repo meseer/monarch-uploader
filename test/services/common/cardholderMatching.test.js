@@ -6,8 +6,8 @@
 
 import { findBestMemberMatch, describeMatchType } from '../../../src/services/common/cardholderMatching';
 
-jest.mock('../../../src/core/utils', () => ({
-  normalizePersonName: jest.fn((name) => {
+vi.mock('../../../src/core/utils', () => ({
+  normalizePersonName: vi.fn((name) => {
     if (!name || typeof name !== 'string') return '';
     return name.trim().replace(/\s+/g, ' ').toLowerCase();
   }),

@@ -23,32 +23,30 @@ import { resolveNotesTransactionId } from '../../../src/core/markerTags';
 
 // ── Mocks ───────────────────────────────────────────────────
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  formatDate: jest.fn((d) => d.toISOString().split('T')[0]),
-  toTitleCase: jest.fn((name) => name || ''),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  formatDate: vi.fn((d) => d.toISOString().split('T')[0]),
+  toTitleCase: vi.fn((name) => name || ''),
 }));
 
-jest.mock('../../../src/api/monarch', () => ({
-  __esModule: true,
+vi.mock('../../../src/api/monarch', () => ({
   default: {
-    getTagByName: jest.fn(),
-    getTransactionsList: jest.fn(),
-    updateTransaction: jest.fn(),
-    setTransactionTags: jest.fn(),
-    deleteTransaction: jest.fn(),
+    getTagByName: vi.fn(),
+    getTransactionsList: vi.fn(),
+    updateTransaction: vi.fn(),
+    setTransactionTags: vi.fn(),
+    deleteTransaction: vi.fn(),
   },
 }));
 
-jest.mock('../../../src/api/monarchHousehold', () => ({
-  getHouseholdMembers: jest.fn(() => Promise.resolve({ currentUserId: null, members: [] })),
+vi.mock('../../../src/api/monarchHousehold', () => ({
+  getHouseholdMembers: vi.fn(() => Promise.resolve({ currentUserId: null, members: [] })),
 }));
 
-jest.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
+vi.mock('../../../src/services/common/accountService', () => ({
   default: {
-    getAccountData: jest.fn(() => ({})),
-    updateAccountInList: jest.fn(() => true),
+    getAccountData: vi.fn(() => ({})),
+    updateAccountInList: vi.fn(() => true),
   },
 }));
 
@@ -90,7 +88,7 @@ const lunch = {
 const collidingHash = () => generatePendingTransactionId(TX_PREFIX, getPendingIdFields(coffeeA));
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 });
 
 // ── Tests ───────────────────────────────────────────────────

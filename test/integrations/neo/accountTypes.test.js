@@ -10,7 +10,7 @@ import manifest from '../../../src/integrations/neo/manifest';
 
 // The manifest is a declaration and must load without the API client. If it
 // imports source/api again, importing it in this file throws.
-jest.mock('../../../src/integrations/neo/source/api', () => {
+vi.mock('../../../src/integrations/neo/source/api', () => {
   throw new Error('neo/manifest must not import source/api');
 });
 

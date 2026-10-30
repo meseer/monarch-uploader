@@ -25,12 +25,14 @@
  * what it must and must not report.
  */
 
-const fs = require('fs');
-const path = require('path');
-const ts = require('typescript');
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 
-const { STORAGE } = require('../../src/core/config');
+import { STORAGE } from '../../src/core/config';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
 const SRC_DIR = path.join(ROOT, 'src');
 const SOURCE_EXTENSIONS = new Set(['.ts', '.js', '.cjs', '.mjs']);

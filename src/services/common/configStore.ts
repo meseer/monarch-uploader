@@ -21,6 +21,7 @@
 
 import { debugLog } from '../../core/utils';
 import { STORAGE } from '../../core/config';
+import { getManifest } from '../../core/integrationRegistry';
 import { INTEGRATIONS } from '../../core/integrationCapabilities';
 
 /** Shape of a single holding mapping entry */
@@ -62,8 +63,7 @@ export function getConfigStorageKey(integrationId: string): string | null {
     return CONFIG_STORAGE_KEYS[integrationId];
   }
 
-  // Fall back to modular integration registry manifest (lazy require to avoid circular dependency)
-  const { getManifest } = require('../../core/integrationRegistry');
+  // Fall back to modular integration registry manifest
   const manifest = getManifest(integrationId);
   return manifest?.storageKeys?.config || null;
 }

@@ -1,5 +1,5 @@
 /**
- * @jest-environment jsdom
+ * @vitest-environment jsdom
  */
 
 import { FONTS } from '../../../src/core/config';
@@ -9,45 +9,43 @@ import {
   createCanadaLifeButton,
   createCanadaLifeUploadButton,
 } from '../../../src/ui/canadalife/components/uploadButton';
+import * as canadalifeModule from '../../../src/api/canadalife';
 
 // ── Dependency mocks ──────────────────────────────────────────────────────────
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  escapeHtml: jest.fn((str) => String(str)),
-  getTodayLocal: jest.fn(() => '2026-10-14'),
-  formatDaysAgoLocal: jest.fn(() => '2026-10-07'),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  escapeHtml: vi.fn((str) => String(str)),
+  getTodayLocal: vi.fn(() => '2026-10-14'),
+  formatDaysAgoLocal: vi.fn(() => '2026-10-07'),
 }));
 
-jest.mock('../../../src/api/canadalife', () => ({
-  __esModule: true,
+vi.mock('../../../src/api/canadalife', () => ({
   default: {
-    checkAuth: jest.fn(() => ({ authenticated: true })),
-    loadCanadaLifeAccounts: jest.fn(() => Promise.resolve([])),
+    checkAuth: vi.fn(() => ({ authenticated: true })),
+    loadCanadaLifeAccounts: vi.fn(() => Promise.resolve([])),
   },
 }));
 
-jest.mock('../../../src/services/auth', () => ({
-  __esModule: true,
+vi.mock('../../../src/services/auth', () => ({
   default: {
-    getMonarchCredentials: jest.fn(() => ({ token: 'mock-token' })),
+    getMonarchCredentials: vi.fn(() => ({ token: 'mock-token' })),
   },
 }));
 
-jest.mock('../../../src/ui/toast', () => ({
-  __esModule: true,
-  default: { show: jest.fn() },
+vi.mock('../../../src/ui/toast', () => ({
+  default: { show: vi.fn() },
 }));
 
-jest.mock('../../../src/ui/components/settingsModal', () => ({
-  showSettingsModal: jest.fn(),
+vi.mock('../../../src/ui/components/settingsModal', () => ({
+  showSettingsModal: vi.fn(),
 }));
 
 describe('Canada Life UI typography and styling', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
-    jest.clearAllMocks();
-    global.GM_getValue = jest.fn((key) => {
+    vi.clearAllMocks();
+    global.GM_getValue = vi.fn((key) => {
       if (key === 'development_mode') return true;
       return null;
     });
@@ -133,7 +131,7 @@ describe('Canada Life UI typography and styling', () => {
     });
 
     it('renders auth message with Canada Life font when unauthenticated', () => {
-      const canadalife = require('../../../src/api/canadalife').default;
+      const canadalife = canadalifeModule.default;
       canadalife.checkAuth.mockReturnValueOnce({ authenticated: false });
 
       const uploadContainer = createCanadaLifeUploadButton();

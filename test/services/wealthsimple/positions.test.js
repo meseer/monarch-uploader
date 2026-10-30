@@ -18,58 +18,62 @@ import accountService from '../../../src/services/common/accountService';
 import { showMonarchSecuritySelector } from '../../../src/ui/components/securitySelector';
 
 // Mock the Wealthsimple API
-jest.mock('../../../src/api/wealthsimple', () => ({
-  fetchAccountsWithBalance: jest.fn(),
-  fetchIdentityPositions: jest.fn(),
-  fetchAccountCurrentFinancialPositions: jest.fn(),
-}));
+vi.mock('../../../src/api/wealthsimple', () => {
+  const mock = {
+    fetchAccountsWithBalance: vi.fn(),
+    fetchIdentityPositions: vi.fn(),
+    fetchAccountCurrentFinancialPositions: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
 
 // Mock the Monarch API
-jest.mock('../../../src/api/monarch', () => ({
-  getHoldings: jest.fn(),
-  createManualHolding: jest.fn(),
-  updateHolding: jest.fn(),
-  deleteHolding: jest.fn(),
-  searchSecurities: jest.fn(),
-}));
+vi.mock('../../../src/api/monarch', () => {
+  const mock = {
+    getHoldings: vi.fn(),
+    createManualHolding: vi.fn(),
+    updateHolding: vi.fn(),
+    deleteHolding: vi.fn(),
+    searchSecurities: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
 
 // Mock accountService
-jest.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
+vi.mock('../../../src/services/common/accountService', () => ({
   default: {
-    getAccountData: jest.fn(),
-    updateAccountInList: jest.fn(),
-    getHoldingMapping: jest.fn(),
-    getHoldingsMappings: jest.fn(),
-    saveHoldingMapping: jest.fn(),
-    deleteHoldingMapping: jest.fn(),
-    clearHoldingsMappings: jest.fn(),
+    getAccountData: vi.fn(),
+    updateAccountInList: vi.fn(),
+    getHoldingMapping: vi.fn(),
+    getHoldingsMappings: vi.fn(),
+    saveHoldingMapping: vi.fn(),
+    deleteHoldingMapping: vi.fn(),
+    clearHoldingsMappings: vi.fn(),
   },
 }));
 
 // Mock integrationCapabilities
-jest.mock('../../../src/core/integrationCapabilities', () => ({
+vi.mock('../../../src/core/integrationCapabilities', () => ({
   INTEGRATIONS: {
     WEALTHSIMPLE: 'wealthsimple',
   },
 }));
 
 // Mock toast
-jest.mock('../../../src/ui/toast', () => ({
-  __esModule: true,
+vi.mock('../../../src/ui/toast', () => ({
   default: {
-    show: jest.fn(),
+    show: vi.fn(),
   },
 }));
 
 // Mock security selector
-jest.mock('../../../src/ui/components/securitySelector', () => ({
-  showMonarchSecuritySelector: jest.fn(),
+vi.mock('../../../src/ui/components/securitySelector', () => ({
+  showMonarchSecuritySelector: vi.fn(),
 }));
 
 describe('Wealthsimple Positions Service', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     accountService.getAccountData.mockReturnValue(null);
     accountService.getHoldingMapping.mockReturnValue(null);
     accountService.getHoldingsMappings.mockReturnValue({});
@@ -395,7 +399,7 @@ describe('Wealthsimple Positions Service', () => {
 
   describe('processCashPositions', () => {
     const mockProgressDialog = {
-      updateStepStatus: jest.fn(),
+      updateStepStatus: vi.fn(),
     };
 
     beforeEach(() => {

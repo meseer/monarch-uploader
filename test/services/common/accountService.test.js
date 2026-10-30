@@ -21,6 +21,7 @@ import {
 } from '../../../src/services/common/accountService';
 import { INTEGRATIONS, ACCOUNT_SETTINGS } from '../../../src/core/integrationCapabilities';
 import { STORAGE, TRANSACTION_RETENTION_DEFAULTS } from '../../../src/core/config';
+import * as accountServiceModule from '../../../src/services/common/accountService';
 
 describe('Account Service', () => {
   // Create local storage simulation for GM functions
@@ -31,22 +32,22 @@ describe('Account Service', () => {
     gmStorage = {};
 
     // Mock GM_getValue to read from our storage
-    global.GM_getValue = jest.fn(
+    global.GM_getValue = vi.fn(
       (key, defaultValue) => (gmStorage[key] !== undefined ? gmStorage[key] : defaultValue),
     );
 
     // Mock GM_setValue to write to our storage
-    global.GM_setValue = jest.fn((key, value) => {
+    global.GM_setValue = vi.fn((key, value) => {
       gmStorage[key] = value;
     });
 
     // Mock GM_deleteValue to delete from our storage
-    global.GM_deleteValue = jest.fn((key) => {
+    global.GM_deleteValue = vi.fn((key) => {
       delete gmStorage[key];
     });
 
     // Mock GM_listValues to return keys from our storage (synchronous array)
-    global.GM_listValues = jest.fn(() => Object.keys(gmStorage));
+    global.GM_listValues = vi.fn(() => Object.keys(gmStorage));
   });
 
   describe('getStorageKey', () => {
@@ -510,7 +511,7 @@ describe('Account Service', () => {
   });
 
   describe('getMonarchAccountMapping', () => {
-    const { getMonarchAccountMapping } = require('../../../src/services/common/accountService');
+    const { getMonarchAccountMapping } = accountServiceModule;
 
     test('should return mapping from consolidated storage when available', () => {
       // Set up consolidated storage with mapping

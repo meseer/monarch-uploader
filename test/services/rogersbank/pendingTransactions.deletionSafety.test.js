@@ -26,29 +26,28 @@ import {
   formatReconciliationMessage,
 } from '../../../src/services/rogersbank/pendingTransactions';
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  formatDate: jest.fn((date) => {
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  formatDate: vi.fn((date) => {
     const d = date instanceof Date ? date : new Date(date);
     return d.toISOString().split('T')[0];
   }),
 }));
 
-jest.mock('../../../src/api/monarch', () => ({
-  __esModule: true,
+vi.mock('../../../src/api/monarch', () => ({
   default: {
-    getTagByName: jest.fn(),
-    getTransactionsList: jest.fn(),
-    updateTransaction: jest.fn(),
-    setTransactionTags: jest.fn(),
-    deleteTransaction: jest.fn(),
+    getTagByName: vi.fn(),
+    getTransactionsList: vi.fn(),
+    updateTransaction: vi.fn(),
+    setTransactionTags: vi.fn(),
+    deleteTransaction: vi.fn(),
   },
 }));
 
 // Real SHA-256 via Node crypto so the hash IDs match production
-const nodeCrypto = require('crypto');
+import * as nodeCrypto from 'crypto';
 
-const mockDigest = jest.fn();
+const mockDigest = vi.fn();
 Object.defineProperty(global, 'crypto', {
   value: { subtle: { digest: mockDigest } },
 });
@@ -59,7 +58,7 @@ global.TextEncoder = class {
   }
 };
 
-const monarchApi = require('../../../src/api/monarch').default;
+import monarchApi from '../../../src/api/monarch';
 
 beforeEach(() => {
   mockDigest.mockImplementation((_algo, data) => {
@@ -69,7 +68,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 });
 
 const pendingTag = { id: 'tag-pending', name: 'Pending' };

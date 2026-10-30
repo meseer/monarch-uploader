@@ -86,7 +86,7 @@ describe('MBNA API Client', () => {
 
   function createMockHttpClient(responseOverrides = {}) {
     return {
-      request: jest.fn().mockResolvedValue({
+      request: vi.fn().mockResolvedValue({
         status: 200,
         responseText: JSON.stringify(SAMPLE_ACCOUNT_RESPONSE),
         responseHeaders: '',
@@ -96,7 +96,7 @@ describe('MBNA API Client', () => {
   }
 
   function createMockAuth() {
-    return { getCredentials: jest.fn().mockReturnValue({ autoManaged: true }) };
+    return { getCredentials: vi.fn().mockReturnValue({ autoManaged: true }) };
   }
 
   beforeEach(() => {
@@ -521,7 +521,7 @@ describe('MBNA API Client', () => {
      */
     function createRoutedMockHttpClient(routes) {
       return {
-        request: jest.fn().mockImplementation((opts) => {
+        request: vi.fn().mockImplementation((opts) => {
           for (const [pattern, response] of Object.entries(routes)) {
             if (opts.url.includes(pattern)) {
               return Promise.resolve({
@@ -726,7 +726,7 @@ describe('MBNA API Client', () => {
       });
       api = createApi(mockHttpClient, mockAuth);
 
-      const onProgress = jest.fn();
+      const onProgress = vi.fn();
       await api.getTransactions('00240691635', '2025-11-01', { onProgress });
 
       expect(onProgress).toHaveBeenCalledTimes(2);

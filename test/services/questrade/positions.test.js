@@ -2,7 +2,6 @@
  * Test suite for Questrade Positions Service
  */
 
-import { jest } from '@jest/globals';
 
 // Import after mocks
 import {
@@ -22,69 +21,65 @@ import toast from '../../../src/ui/toast';
 import accountService from '../../../src/services/common/accountService';
 
 // Mock all dependencies first
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../../src/core/config', () => ({
+vi.mock('../../../src/core/config', () => ({
   STORAGE: {
     ACCOUNTS_LIST: 'questrade_accounts_list',
   },
 }));
 
-jest.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
+vi.mock('../../../src/services/common/accountService', () => ({
   default: {
-    getAccountData: jest.fn(),
-    updateAccountInList: jest.fn(),
-    getHoldingMapping: jest.fn(),
-    getHoldingsMappings: jest.fn(),
-    saveHoldingMapping: jest.fn(),
-    deleteHoldingMapping: jest.fn(),
-    clearHoldingsMappings: jest.fn(),
+    getAccountData: vi.fn(),
+    updateAccountInList: vi.fn(),
+    getHoldingMapping: vi.fn(),
+    getHoldingsMappings: vi.fn(),
+    saveHoldingMapping: vi.fn(),
+    deleteHoldingMapping: vi.fn(),
+    clearHoldingsMappings: vi.fn(),
   },
 }));
 
-jest.mock('../../../src/core/integrationCapabilities', () => ({
+vi.mock('../../../src/core/integrationCapabilities', () => ({
   INTEGRATIONS: {
     QUESTRADE: 'questrade',
   },
 }));
 
-jest.mock('../../../src/api/questrade', () => ({
-  __esModule: true,
+vi.mock('../../../src/api/questrade', () => ({
   default: {
-    fetchPositions: jest.fn(),
+    fetchPositions: vi.fn(),
   },
 }));
 
-jest.mock('../../../src/api/monarch', () => ({
-  __esModule: true,
+vi.mock('../../../src/api/monarch', () => ({
   default: {
-    createManualHolding: jest.fn(),
-    updateHolding: jest.fn(),
-    getHoldings: jest.fn(),
-    deleteHolding: jest.fn(),
+    createManualHolding: vi.fn(),
+    updateHolding: vi.fn(),
+    getHoldings: vi.fn(),
+    deleteHolding: vi.fn(),
   },
 }));
 
-jest.mock('../../../src/ui/components/securitySelector', () => ({
-  showMonarchSecuritySelector: jest.fn(),
+vi.mock('../../../src/ui/components/securitySelector', () => ({
+  showMonarchSecuritySelector: vi.fn(),
 }));
 
-jest.mock('../../../src/ui/toast', () => ({
-  __esModule: true,
+vi.mock('../../../src/ui/toast', () => ({
   default: {
-    show: jest.fn(),
+    show: vi.fn(),
   },
 }));
 
 describe('Questrade Positions Service', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     // Reset GM storage
-    global.GM_getValue = jest.fn((key, defaultValue) => defaultValue);
-    global.GM_setValue = jest.fn();
+    global.GM_getValue = vi.fn((key, defaultValue) => defaultValue);
+    global.GM_setValue = vi.fn();
     // Reset accountService mocks
     accountService.getAccountData.mockReturnValue(null);
     accountService.updateAccountInList.mockReturnValue(true);
@@ -1200,7 +1195,7 @@ describe('Questrade Positions Service', () => {
 
     test('should update progress dialog', async () => {
       const progressDialog = {
-        updateProgress: jest.fn(),
+        updateProgress: vi.fn(),
       };
 
       questradeApi.fetchPositions.mockResolvedValue({ data: [] });

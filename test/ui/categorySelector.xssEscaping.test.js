@@ -7,31 +7,28 @@
  * must be rendered as inert text, never parsed as markup.
  */
 
-import { jest } from '@jest/globals';
 import categorySelector from '../../src/ui/components/categorySelector';
 
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../src/core/utils', async () => ({
+  debugLog: vi.fn(),
   // Real implementation: escaping is exactly what these tests assert on
-  escapeHtml: require('../helpers/escapeHtmlMock').realEscapeHtml(),
-  stringSimilarity: jest.fn(() => 0.5),
+  escapeHtml: (await import('../helpers/escapeHtmlMock')).realEscapeHtml(),
+  stringSimilarity: vi.fn(() => 0.5),
 }));
 
-jest.mock('../../src/api/monarch', () => ({
-  __esModule: true,
+vi.mock('../../src/api/monarch', () => ({
   default: {
-    getCategoriesAndGroups: jest.fn(),
+    getCategoriesAndGroups: vi.fn(),
   },
 }));
 
-jest.mock('../../src/ui/toast', () => ({
-  __esModule: true,
-  default: { show: jest.fn() },
+vi.mock('../../src/ui/toast', () => ({
+  default: { show: vi.fn() },
 }));
 
-jest.mock('../../src/ui/keyboardNavigation', () => ({
-  addModalKeyboardHandlers: jest.fn(() => jest.fn()),
-  makeItemsKeyboardNavigable: jest.fn(() => jest.fn()),
+vi.mock('../../src/ui/keyboardNavigation', () => ({
+  addModalKeyboardHandlers: vi.fn(() => vi.fn()),
+  makeItemsKeyboardNavigable: vi.fn(() => vi.fn()),
 }));
 
 const PAYLOAD = '<img src=x onerror=alert(1)>';
@@ -56,7 +53,7 @@ describe('Category Selector XSS escaping', () => {
 
   beforeEach(async () => {
     document.body.innerHTML = '';
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     monarchApi = (await import('../../src/api/monarch')).default;
     monarchApi.getCategoriesAndGroups.mockResolvedValue(mockCategoryData);
   });
@@ -66,7 +63,7 @@ describe('Category Selector XSS escaping', () => {
 
   describe('counterparty-supplied transaction details', () => {
     it('renders an e-Transfer originator name as text, not an element', async () => {
-      await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', jest.fn(), null, {
+      await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', vi.fn(), null, {
         merchant: 'Interac e-Transfer',
         aftDetails: { aftOriginatorName: PAYLOAD },
       });
@@ -78,7 +75,7 @@ describe('Category Selector XSS escaping', () => {
     });
 
     it('renders a P2P handle as text, not an element', async () => {
-      await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', jest.fn(), null, {
+      await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', vi.fn(), null, {
         p2pDetails: { type: 'P2P', subType: PAYLOAD, p2pHandle: PAYLOAD },
       });
 
@@ -88,7 +85,7 @@ describe('Category Selector XSS escaping', () => {
     });
 
     it('renders a merchant name as text, not an element', async () => {
-      await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', jest.fn(), null, {
+      await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', vi.fn(), null, {
         merchant: `EVIL${PAYLOAD}`,
       });
 
@@ -98,7 +95,7 @@ describe('Category Selector XSS escaping', () => {
     });
 
     it('escapes remaining detail fields (date, AFT type/category, amount)', async () => {
-      await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', jest.fn(), null, {
+      await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', vi.fn(), null, {
         date: `2024-01-10${PAYLOAD}`,
         amount: `$5.00 ${PAYLOAD}`,
         aftDetails: {
@@ -113,7 +110,7 @@ describe('Category Selector XSS escaping', () => {
     });
 
     it('preserves the label/value layout while escaping', async () => {
-      await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', jest.fn(), null, {
+      await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', vi.fn(), null, {
         merchant: 'Tim & Tom',
         date: '2024-01-10',
       });
@@ -130,7 +127,7 @@ describe('Category Selector XSS escaping', () => {
 
   describe('institution-supplied bank category', () => {
     it('renders the bank category as text, not an element', async () => {
-      await categorySelector.showMonarchCategorySelector(PAYLOAD, jest.fn(), null, null);
+      await categorySelector.showMonarchCategorySelector(PAYLOAD, vi.fn(), null, null);
 
       const modal = getModal();
       expect(modal.querySelector('img')).toBeNull();
@@ -138,7 +135,7 @@ describe('Category Selector XSS escaping', () => {
     });
 
     it('renders the similarity best match as text, not an element', async () => {
-      await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', jest.fn(), {
+      await categorySelector.showMonarchCategorySelector('TEST_CATEGORY', vi.fn(), {
         score: 0.8,
         bestMatch: PAYLOAD,
         categoryGroups: mockCategoryData.categoryGroups.map((group) => ({

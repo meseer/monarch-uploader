@@ -11,23 +11,24 @@ import {
   convertQuestradeOrdersToMonarchCSV,
   parseCSV,
 } from '../../src/utils/csv';
+import * as categoryModule from '../../src/mappers/category';
 
 // Mock dependencies
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../src/mappers/merchant', () => ({
-  applyMerchantMapping: jest.fn((merchant) => merchant || 'Unknown Merchant'),
+vi.mock('../../src/mappers/merchant', () => ({
+  applyMerchantMapping: vi.fn((merchant) => merchant || 'Unknown Merchant'),
 }));
 
-jest.mock('../../src/mappers/category', () => ({
-  applyCategoryMapping: jest.fn((category) => category || 'Uncategorized'),
+vi.mock('../../src/mappers/category', () => ({
+  applyCategoryMapping: vi.fn((category) => category || 'Uncategorized'),
 }));
 
 describe('CSV Conversion Utilities', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('convertToCSV', () => {
@@ -300,7 +301,7 @@ describe('CSV Conversion Utilities', () => {
     });
 
     test('should handle category mapping fallback', () => {
-      const { applyCategoryMapping } = jest.requireMock('../../src/mappers/category');
+      const { applyCategoryMapping } = categoryModule;
       applyCategoryMapping.mockReturnValue({ id: 'cat123', name: 'Test Category' });
 
       const transactions = [

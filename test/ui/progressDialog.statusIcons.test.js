@@ -22,8 +22,8 @@
 
 import { showProgressDialog } from '../../src/ui/components/progressDialog';
 
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
 // The four glyphs `getStepIcon` maps onto, by the status that produces them.
@@ -46,7 +46,7 @@ describe('Progress Dialog status icons', () => {
   beforeEach(() => {
     // jsdom implements no scrolling, and the auto-scroll path calls scrollTo on
     // the account list when a step starts processing. Real browsers have it.
-    Element.prototype.scrollTo = jest.fn();
+    Element.prototype.scrollTo = vi.fn();
     document.body.innerHTML = '';
     dialog = showProgressDialog([{ key: 'acc1', nickname: 'Joint' }]);
   });

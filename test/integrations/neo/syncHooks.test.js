@@ -1,26 +1,26 @@
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  formatDate: jest.fn((date) => date.toISOString().slice(0, 10)),
-  getTodayLocal: jest.fn(() => '2026-01-31'),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  formatDate: vi.fn((date) => date.toISOString().slice(0, 10)),
+  getTodayLocal: vi.fn(() => '2026-01-31'),
 }));
 
 import syncHooks from '../../../src/integrations/neo/sinks/monarch/syncHooks';
 
 describe('Neo sync hooks', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it('returns confirmed transactions oldest-first and excludes declined activity', async () => {
     const api = {
-      getTransactions: jest.fn().mockResolvedValue([
+      getTransactions: vi.fn().mockResolvedValue([
         { id: 'new', status: 'CONFIRMED', authorizationProcessedAt: '2026-01-20T12:00:00Z' },
         { id: 'declined', status: 'DECLINED', authorizationProcessedAt: '2026-01-15T12:00:00Z' },
         { id: 'old', status: 'CONFIRMED', authorizationProcessedAt: '2026-01-02T12:00:00Z' },
       ]),
     };
 
-    const result = await syncHooks.fetchTransactions(api, 'account-1', '2026-01-01', { onProgress: jest.fn() });
+    const result = await syncHooks.fetchTransactions(api, 'account-1', '2026-01-01', { onProgress: vi.fn() });
 
     expect(api.getTransactions).toHaveBeenCalledWith('account-1', '2026-01-01', '2026-01-31');
     expect(result.settled.map((transaction) => transaction.id)).toEqual(['old', 'new']);
@@ -29,9 +29,9 @@ describe('Neo sync hooks', () => {
   });
 
   it('always honours the date picked by the user', async () => {
-    const api = { getTransactions: jest.fn().mockResolvedValue([]) };
+    const api = { getTransactions: vi.fn().mockResolvedValue([]) };
 
-    await syncHooks.fetchTransactions(api, 'account-1', '2026-01-20', { onProgress: jest.fn() });
+    await syncHooks.fetchTransactions(api, 'account-1', '2026-01-20', { onProgress: vi.fn() });
 
     expect(api.getTransactions).toHaveBeenCalledWith('account-1', '2026-01-20', '2026-01-31');
   });

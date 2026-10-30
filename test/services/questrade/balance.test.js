@@ -20,59 +20,75 @@ import accountService from '../../../src/services/common/accountService';
 import stateManager from '../../../src/core/state';
 import toast from '../../../src/ui/toast';
 import * as utils from '../../../src/core/utils';
+import * as accountSelectorWithCreateModule from '../../../src/ui/components/accountSelectorWithCreate';
 
 // Mock dependencies
-jest.mock('../../../src/api/questrade', () => ({
-  makeApiCall: jest.fn(),
+vi.mock('../../../src/api/questrade', () => {
+  const mock = {
+    makeApiCall: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
+
+vi.mock('../../../src/api/monarch', () => {
+  const mock = {
+    uploadBalance: vi.fn(),
+    listAccounts: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
+
+vi.mock('../../../src/services/common/accountService', () => {
+  const mock = {
+    getMonarchAccountMapping: vi.fn(),
+    getAccountData: vi.fn(),
+    upsertAccount: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
+
+vi.mock('../../../src/ui/components/accountSelectorWithCreate', () => ({
+  showMonarchAccountSelectorWithCreate: vi.fn(),
 }));
 
-jest.mock('../../../src/api/monarch', () => ({
-  uploadBalance: jest.fn(),
-  listAccounts: jest.fn(),
-}));
+vi.mock('../../../src/core/state', () => {
+  const mock = {
+    setAccount: vi.fn(),
+    getState: vi.fn().mockReturnValue({
+      currentAccount: { name: 'Test Account' },
+    }),
+  };
+  return { ...mock, default: mock };
+});
 
-jest.mock('../../../src/services/common/accountService', () => ({
-  getMonarchAccountMapping: jest.fn(),
-  getAccountData: jest.fn(),
-  upsertAccount: jest.fn(),
-}));
-
-jest.mock('../../../src/ui/components/accountSelectorWithCreate', () => ({
-  showMonarchAccountSelectorWithCreate: jest.fn(),
-}));
-
-jest.mock('../../../src/core/state', () => ({
-  setAccount: jest.fn(),
-  getState: jest.fn().mockReturnValue({
-    currentAccount: { name: 'Test Account' },
-  }),
-}));
-
-jest.mock('../../../src/ui/toast', () => ({
-  show: jest.fn(),
-}));
+vi.mock('../../../src/ui/toast', () => {
+  const mock = {
+    show: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
 
 // Mock utils functions for date storage
-jest.mock('../../../src/core/utils', () => {
-  const actual = jest.requireActual('../../../src/core/utils');
+vi.mock('../../../src/core/utils', async () => {
+  const actual = await vi.importActual('../../../src/core/utils');
   return {
     ...actual,
-    getLastUpdateDate: jest.fn(),
-    saveLastUploadDate: jest.fn(),
+    getLastUpdateDate: vi.fn(),
+    saveLastUploadDate: vi.fn(),
   };
 });
 
 // Mock GM storage functions
-globalThis.GM_getValue = jest.fn();
-globalThis.GM_setValue = jest.fn();
+globalThis.GM_getValue = vi.fn();
+globalThis.GM_setValue = vi.fn();
 
 describe('Balance Service', () => {
   beforeEach(() => {
     // Clear all mocks before each test
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     // Set up console mocks for debugLog
-    globalThis.console = { log: jest.fn() };
+    globalThis.console = { log: vi.fn() };
   });
 
   describe('fetchBalanceHistory', () => {
@@ -277,7 +293,7 @@ describe('Balance Service', () => {
     });
 
     test('should trigger account mapping when mapping exists but has no id', async () => {
-      const { showMonarchAccountSelectorWithCreate } = require('../../../src/ui/components/accountSelectorWithCreate');
+      const { showMonarchAccountSelectorWithCreate } = accountSelectorWithCreateModule;
 
       // First call from uploadBalanceToMonarch returns mapping without id
       // Second call from ensureAccountMapping also returns mapping without id (same stored data)
@@ -322,7 +338,7 @@ describe('Balance Service', () => {
     });
 
     test('should throw BalanceError when mapping has no id and user cancels re-mapping', async () => {
-      const { showMonarchAccountSelectorWithCreate } = require('../../../src/ui/components/accountSelectorWithCreate');
+      const { showMonarchAccountSelectorWithCreate } = accountSelectorWithCreateModule;
 
       // Return mapping without id
       accountService.getMonarchAccountMapping.mockReturnValue({ displayName: 'Bad Mapping' });
@@ -495,7 +511,7 @@ describe('Balance Service', () => {
   describe('Real Code Path Tests', () => {
     beforeEach(() => {
       // Mock only the external dependencies, let internal logic execute
-      jest.clearAllMocks();
+      vi.clearAllMocks();
     });
 
     test('should handle real date parsing and validation in getDefaultDateRange', () => {
@@ -703,7 +719,7 @@ describe('Balance Service', () => {
   describe('getAccountCreationDate', () => {
     beforeEach(() => {
       // Need to mock questradeApi.getAccount for this test
-      questradeApi.getAccount = jest.fn();
+      questradeApi.getAccount = vi.fn();
     });
 
     test('should return creation date from account data', () => {
@@ -888,7 +904,7 @@ describe('Balance Service', () => {
       await expect(fetchBalanceHistory('account123', '2024-01-01', '2024-12-31')).rejects.toThrow('Failed to fetch current balance data');
 
       // Clear previous calls
-      jest.clearAllMocks();
+      vi.clearAllMocks();
 
       // Test with successful first call but null second call
       questradeApi.makeApiCall

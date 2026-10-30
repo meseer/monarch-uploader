@@ -20,15 +20,18 @@ import stateManager from '../../src/core/state';
 import { STORAGE } from '../../src/core/config';
 
 // Mock dependencies
-jest.mock('../../src/core/state', () => ({
-  setQuestradeAuth: jest.fn(),
-  setMonarchAuth: jest.fn(),
-  getState: jest.fn().mockReturnValue({}),
-}));
+vi.mock('../../src/core/state', () => {
+  const mock = {
+    setQuestradeAuth: vi.fn(),
+    setMonarchAuth: vi.fn(),
+    getState: vi.fn().mockReturnValue({}),
+  };
+  return { ...mock, default: mock };
+});
 
 // Mock GM storage functions
-global.GM_getValue = jest.fn();
-global.GM_setValue = jest.fn();
+global.GM_getValue = vi.fn();
+global.GM_setValue = vi.fn();
 
 // Mock sessionStorage will be set up in beforeEach using the global setup
 
@@ -41,17 +44,17 @@ describe('Auth Service', () => {
     stateManager.setMonarchAuth.mockClear();
 
     // Set up console mocks for debugLog
-    global.console = { log: jest.fn() };
+    global.console = { log: vi.fn() };
 
     // Invalidate any token cache by mocking Date.now to be far in future
     // This ensures each test starts with a fresh cache lookup
     const mockNow = Date.now() + 10000; // 10 seconds in future
-    jest.spyOn(Date, 'now').mockReturnValue(mockNow);
+    vi.spyOn(Date, 'now').mockReturnValue(mockNow);
   });
 
   afterEach(() => {
     // Restore Date.now mock after each test
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   describe('Questrade Authentication', () => {
@@ -67,7 +70,7 @@ describe('Auth Service', () => {
     test('getQuestradeToken should find and format a valid token', () => {
       // Use a specific time for this test
       const mockNow = 1640995200000; // 2022-01-01 00:00:00
-      jest.spyOn(Date, 'now').mockReturnValue(mockNow);
+      vi.spyOn(Date, 'now').mockReturnValue(mockNow);
 
       // Mock sessionStorage with valid token data
       const mockTokenData = {
@@ -79,13 +82,13 @@ describe('Auth Service', () => {
       // Setup sessionStorage mock
       const mockSessionStorage = {
         length: 1,
-        key: jest.fn((index) => {
+        key: vi.fn((index) => {
           if (index === 0) {
             return 'oidc.user:https://login.questrade.com/user123';
           }
           return null;
         }),
-        getItem: jest.fn((key) => {
+        getItem: vi.fn((key) => {
           if (key === 'oidc.user:https://login.questrade.com/user123') {
             return JSON.stringify(mockTokenData);
           }
@@ -109,7 +112,7 @@ describe('Auth Service', () => {
     test('checkQuestradeAuth should return status when authenticated', () => {
       // Use a different time for this test to invalidate any previous cache
       const mockNow = 1641081600000; // 2022-01-02 00:00:00 (24 hours later)
-      jest.spyOn(Date, 'now').mockReturnValue(mockNow);
+      vi.spyOn(Date, 'now').mockReturnValue(mockNow);
 
       // Mock sessionStorage with valid token data
       const mockTokenData = {
@@ -121,13 +124,13 @@ describe('Auth Service', () => {
       // Setup sessionStorage mock
       const mockSessionStorage = {
         length: 1,
-        key: jest.fn((index) => {
+        key: vi.fn((index) => {
           if (index === 0) {
             return 'oidc.user:https://login.questrade.com/active123';
           }
           return null;
         }),
-        getItem: jest.fn((key) => {
+        getItem: vi.fn((key) => {
           if (key === 'oidc.user:https://login.questrade.com/active123') {
             return JSON.stringify(mockTokenData);
           }
@@ -215,7 +218,7 @@ describe('Auth Service', () => {
       test('should return true when session expires within 60-second buffer', () => {
         // Set Date.now to a known time
         const mockNow = 1700000000000;
-        jest.spyOn(Date, 'now').mockReturnValue(mockNow);
+        vi.spyOn(Date, 'now').mockReturnValue(mockNow);
 
         // Session expires in 30 seconds (within 60-second buffer)
         const nearExpiry = new Date(mockNow + 30000).toISOString();
@@ -224,7 +227,7 @@ describe('Auth Service', () => {
 
       test('should return false when session expires beyond 60-second buffer', () => {
         const mockNow = 1700000000000;
-        jest.spyOn(Date, 'now').mockReturnValue(mockNow);
+        vi.spyOn(Date, 'now').mockReturnValue(mockNow);
 
         // Session expires in 120 seconds (beyond 60-second buffer)
         const safeExpiry = new Date(mockNow + 120000).toISOString();

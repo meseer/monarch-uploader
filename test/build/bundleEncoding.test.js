@@ -12,74 +12,107 @@
  *
  * `ascii_only: true` in the Terser format options escapes every non-ASCII
  * character as \uXXXX, which makes the bundle immune to the consumer's charset
- * guess. This suite runs the REAL production webpack build and asserts the
- * emitted artifact byte-wise, so it also covers the BannerPlugin metadata block
- * (injected with `raw: true`, which bypasses Terser entirely).
+ * guess. This suite runs the REAL production Vite build and asserts the
+ * emitted artifact byte-wise, so it also covers the userscript metadata banner
+ * (prepended post-minify, which bypasses Terser entirely).
  */
 
-const { execFileSync } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import { createRequire } from 'node:module';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 // jsdom does not expose TextDecoder, so take Node's implementation directly.
-const { TextDecoder } = require('util');
+import { TextDecoder } from 'node:util';
+import { JSDOM } from 'jsdom';
+import viteConfigFn from '../../vite.config.mjs';
+import scriptInfo from '../../src/scriptInfo.json';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
 const ROOT = path.resolve(__dirname, '..', '..');
-const CONFIG_PATH = path.join(ROOT, 'webpack.config.cjs');
 const BUNDLE_NAME = 'monarch-uploader.user.js';
 
-/** Load the production webpack config fresh */
+/** Load the production Vite config */
 function loadProductionConfig() {
-  delete require.cache[CONFIG_PATH];
-  // eslint-disable-next-line import/no-dynamic-require, global-require
-  return require(CONFIG_PATH)({}, { mode: 'production' });
+  return typeof viteConfigFn === 'function'
+    ? viteConfigFn({ mode: 'production', command: 'build' })
+    : viteConfigFn;
 }
 
 /**
- * Read the Terser `format` options out of the configured minimizer.
- *
- * terser-webpack-plugin normalizes the `terserOptions` it is constructed with
- * onto `options.minimizer.options`, so accept either shape rather than pinning
- * this guard to the plugin's current internals.
+ * Read the Terser `format` options out of the configured Vite build.
  */
 function getTerserFormatOptions(config) {
-  const plugins = config.optimization.minimizer || [];
-  for (const plugin of plugins) {
-    const opts = plugin && plugin.options;
-    if (!opts) continue;
-    const format = (opts.terserOptions && opts.terserOptions.format)
-      || (opts.minimizer && opts.minimizer.options && opts.minimizer.options.format);
-    if (format) return format;
-  }
-  return undefined;
+  return config?.build?.terserOptions?.format;
 }
 
 /**
- * Build the production bundle into a scratch directory and return its bytes.
+ * Build a Vite bundle (`production` or `development`) into a scratch directory
+ * and return its raw bytes.
  *
- * Deliberately spawned as a child process rather than calling webpack in-process.
- * Under Jest, babel-loader's `require('@babel/core')` resolves through Jest's
- * CommonJS module registry, and @babel/core v8 is ESM-only — so an in-process
- * build fails with "Must use import to load ES Module" on any Node older than
- * v24.9. A child process uses Node's own loader and matches what `npm run build`
- * actually does.
+ * Spawned as a child process using Node's loader to match what `npm run build`
+ * and `npm run build:dev` actually do.
  */
-function buildProductionBundle() {
-  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mu-bundle-encoding-'));
-  const webpackCli = require.resolve('webpack-cli/bin/cli.js');
+function buildBundle(mode = 'production') {
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), `mu-bundle-${mode}-`));
+  const viteCli = path.join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js');
   try {
     execFileSync(
       process.execPath,
-      [webpackCli, '--mode', 'production', '--output-path', outDir],
+      [viteCli, 'build', '--mode', mode, '--outDir', outDir],
       { cwd: ROOT, stdio: 'pipe', encoding: 'utf8' },
     );
     return fs.readFileSync(path.join(outDir, BUNDLE_NAME));
   } catch (err) {
     const detail = [err.stdout, err.stderr, err.message].filter(Boolean).join('\n');
-    throw new Error(`production webpack build failed:\n${detail.slice(0, 4000)}`);
+    throw new Error(`${mode} Vite build failed:\n${detail.slice(0, 4000)}`);
   } finally {
     fs.rmSync(outDir, { recursive: true, force: true });
   }
+}
+
+/**
+ * Decode a Source Map v3 VLQ mappings string and return the original
+ * `{ source, line }` (1-based) mapped at the first segment of `targetGenLine`
+ * (1-based generated line number).
+ */
+function resolveGeneratedLine(map, targetGenLine) {
+  const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const genLines = map.mappings.split(';');
+  let sourceIdx = 0;
+  let origLine = 0; // 0-based in VLQ state
+
+  for (let lineIdx = 0; lineIdx < targetGenLine && lineIdx < genLines.length; lineIdx++) {
+    const lineStr = genLines[lineIdx];
+    if (!lineStr) continue;
+    const segments = lineStr.split(',');
+    for (let segIdx = 0; segIdx < segments.length; segIdx++) {
+      const seg = segments[segIdx];
+      let i = 0;
+      const fields = [];
+      while (i < seg.length) {
+        let result = 0;
+        let shift = 0;
+        let digit;
+        do {
+          digit = B64.indexOf(seg[i++]);
+          result += (digit & 31) << shift;
+          shift += 5;
+        } while (digit & 32);
+        fields.push(result & 1 ? -(result >> 1) : result >> 1);
+      }
+      if (fields.length >= 4) {
+        sourceIdx += fields[1];
+        origLine += fields[2];
+        if (lineIdx === targetGenLine - 1 && segIdx === 0) {
+          return { source: map.sources[sourceIdx], line: origLine + 1 };
+        }
+      }
+    }
+  }
+  return null;
 }
 
 describe('built userscript encoding', () => {
@@ -87,7 +120,7 @@ describe('built userscript encoding', () => {
   let text;
 
   beforeAll(() => {
-    bytes = buildProductionBundle();
+    bytes = buildBundle('production');
     text = bytes.toString('latin1'); // byte-preserving, so no decode can hide a high byte
   }, 300000);
 
@@ -164,8 +197,7 @@ describe('built userscript encoding', () => {
     });
 
     it('declares the version from scriptInfo.json', () => {
-      // eslint-disable-next-line global-require
-      const { version } = require('../../src/scriptInfo.json');
+      const { version } = scriptInfo;
       expect(text).toContain(`@version      ${version}`);
     });
 
@@ -179,13 +211,134 @@ describe('built userscript encoding', () => {
       }
     });
   });
+
+  describe('runtime boot smoke test (jsdom)', () => {
+    const flushAsyncTicks = async (count = 3) => {
+      for (let i = 0; i < count; i++) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((resolve) => {
+          setImmediate(resolve);
+        });
+      }
+    };
+
+    it.each([
+      ['Monarch', 'https://app.monarch.com/accounts', 'Running on Monarch site'],
+      ['Questrade', 'https://myportal.questrade.com/investing/summary', 'Running on Questrade site'],
+      ['Canada Life', 'https://my.canadalife.com/accounts', 'Running on CanadaLife site'],
+      ['Wealthsimple', 'https://my.wealthsimple.com/app/home', 'Running on Wealthsimple site'],
+      ['MBNA', 'https://service.mbna.ca/waw/mbna/account', 'Running on modular integration site: MBNA'],
+      ['Neo Financial', 'https://member.neofinancial.com/accounts', 'Running on modular integration site: Neo Financial'],
+      ['Rogers Bank', 'https://selfserve.rogersbank.com/home', 'Running on Rogers Bank site'],
+      ['Unrelated site', 'https://example.com/', 'Running on unsupported site: example.com'],
+    ])('boots cleanly through DOMContentLoaded and initApp on %s (%s)', async (_label, url, expectedInitLog) => {
+      const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
+        url,
+        runScripts: 'outside-only',
+      });
+      const errors = [];
+      const onUnhandledRejection = (reason) => {
+        errors.push(reason);
+      };
+      process.on('unhandledRejection', onUnhandledRejection);
+
+      try {
+        const win = dom.window;
+        expect(win.location.hostname).toBe(new URL(url).hostname);
+
+        const consoleErrors = [];
+        const debugLogs = [];
+        const menuCommands = [];
+        const timeouts = [];
+        let currentTime = 0;
+        let nextTimerId = 1;
+
+        win.addEventListener('error', (evt) => errors.push(evt.error || evt.message));
+        win.console.log = (...args) => debugLogs.push(args.join(' '));
+        win.console.error = (...args) => consoleErrors.push(args);
+
+        // Simulate @run-at document-start and intercept timers with a virtual
+        // clock so callbacks run in delay order up to 1000ms without spinning
+        // on self-rescheduling polls (e.g. Questrade's 500ms auth check) or
+        // leaving background intervals running after the test.
+        let readyState = 'loading';
+        Object.defineProperty(win.document, 'readyState', {
+          configurable: true,
+          get: () => readyState,
+        });
+        win.setTimeout = (fn, delay = 0) => {
+          const id = nextTimerId++;
+          const ms = Math.max(0, Number(delay) || 0);
+          timeouts.push({ id, fn, dueAt: currentTime + ms });
+          return id;
+        };
+        win.clearTimeout = (id) => {
+          const idx = timeouts.findIndex((t) => t.id === id);
+          if (idx !== -1) timeouts.splice(idx, 1);
+        };
+        win.setInterval = () => nextTimerId++;
+        win.clearInterval = () => {};
+
+        Object.assign(win, {
+          GM_addElement: (parentOrTag, tagOrAttrs) => {
+            const tag = typeof parentOrTag === 'string' ? parentOrTag : tagOrAttrs;
+            return win.document.createElement(typeof tag === 'string' ? tag : 'div');
+          },
+          GM_deleteValue: () => Promise.resolve(),
+          GM_download: () => {},
+          GM_getValue: (k, def) => (k === 'debug_log_level' ? 'debug' : def),
+          GM_listValues: () => Promise.resolve([]),
+          GM_log: () => {},
+          GM_registerMenuCommand: (name) => menuCommands.push(name),
+          GM_setValue: () => {},
+          GM_xmlhttpRequest: () => ({ abort: () => {} }),
+        });
+
+        // 1. Evaluate the bundle at document-start
+        win.eval(text);
+        await flushAsyncTicks();
+
+        // 2. Finish parsing and dispatch DOMContentLoaded
+        readyState = 'complete';
+        win.document.dispatchEvent(new win.Event('DOMContentLoaded', { bubbles: true }));
+        await flushAsyncTicks();
+
+        // 3. Advance virtual clock up to 1000ms in dueAt order with a hard
+        // iteration cap so a runaway 0ms timer fails the test instead of hanging.
+        const MAX_TIMER_STEPS = 100;
+        let steps = 0;
+        while (steps < MAX_TIMER_STEPS && timeouts.length > 0) {
+          timeouts.sort((a, b) => (a.dueAt - b.dueAt) || (a.id - b.id));
+          if (timeouts[0].dueAt > 1000) break;
+          const next = timeouts.shift();
+          currentTime = next.dueAt;
+          steps += 1;
+          next.fn();
+          // eslint-disable-next-line no-await-in-loop
+          await flushAsyncTicks();
+        }
+        expect(steps).toBeLessThan(MAX_TIMER_STEPS);
+
+        // 4. Flush any async work kicked off by initApp (e.g. initUI().catch(...))
+        await flushAsyncTicks(5);
+
+        expect(errors).toEqual([]);
+        expect(consoleErrors).toEqual([]);
+        expect(menuCommands).toContain('Clear All Cached Data');
+        expect(win.document.getElementById('monarch-uploader-theme')).not.toBeNull();
+        expect(debugLogs.some((msg) => msg.includes(expectedInitLog))).toBe(true);
+      } finally {
+        process.off('unhandledRejection', onUnhandledRejection);
+        dom.window.close();
+      }
+    });
+  });
 });
 
 describe('generated userscript metadata block', () => {
-  // The banner is injected with `raw: true`, so Terser never sees it and
+  // The banner is injected post-minify, so Terser never sees it and
   // `ascii_only` cannot rescue it. It must be ASCII at the source.
   it('is pure ASCII for every build type', () => {
-    // eslint-disable-next-line global-require
     const generateMetadata = require('../../src/userscript-metadata.cjs');
     for (const buildType of ['local', 'dev', 'stable']) {
       const metadata = generateMetadata(buildType);
@@ -196,7 +349,6 @@ describe('generated userscript metadata block', () => {
   });
 
   it('matches the Neo portal and grants access to its GraphQL API', () => {
-    // eslint-disable-next-line global-require
     const generateMetadata = require('../../src/userscript-metadata.cjs');
     const metadata = generateMetadata();
 
@@ -238,7 +390,7 @@ describe('source file encoding', () => {
   });
 });
 
-describe('webpack Terser configuration', () => {
+describe('Vite Terser configuration', () => {
   it('sets ascii_only so non-ASCII is escaped at minification', () => {
     const format = getTerserFormatOptions(loadProductionConfig());
     expect(format).toBeDefined();
@@ -251,5 +403,28 @@ describe('webpack Terser configuration', () => {
     expect(comments(null, { value: ' ==UserScript== ' })).toBe(true);
     expect(comments(null, { value: ' @grant GM_getValue ' })).toBe(true);
     expect(comments(null, { value: ' just an ordinary comment ' })).toBe(false);
+  });
+
+  it('aligns inline source map line numbers after the userscript banner in development builds', () => {
+    const devText = buildBundle('development').toString('utf8');
+    expect(devText.startsWith('// ==UserScript==')).toBe(true);
+
+    const mapMatch = devText.match(
+      /\/\/# sourceMappingURL=data:application\/json;charset=utf-8;base64,([A-Za-z0-9+/=]+)/,
+    );
+    expect(mapMatch).not.toBeNull();
+    const map = JSON.parse(Buffer.from(mapMatch[1], 'base64').toString('utf8'));
+
+    const bundleLines = devText.split('\n');
+    const genLine = bundleLines.findIndex((l) => l.includes('Script loaded successfully')) + 1;
+    expect(genLine).toBeGreaterThan(30);
+
+    const indexSrcLines = fs.readFileSync(path.join(ROOT, 'src', 'index.ts'), 'utf8').split('\n');
+    const expectedSrcLine = indexSrcLines.findIndex((l) => l.includes('Script loaded successfully')) + 1;
+
+    const resolved = resolveGeneratedLine(map, genLine);
+    expect(resolved).not.toBeNull();
+    expect(resolved.source).toMatch(/src\/index\.ts$/);
+    expect(resolved.line).toBe(expectedSrcLine);
   });
 });

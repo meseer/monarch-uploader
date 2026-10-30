@@ -5,11 +5,10 @@
  * than hard-coded light colors) and the basic save/cancel flow.
  */
 
-import { jest } from '@jest/globals';
 import { showManualCategorizationDialog } from '../../src/ui/components/categorySelectorManual';
 
-jest.mock('../../src/ui/keyboardNavigation', () => ({
-  addModalKeyboardHandlers: jest.fn(() => jest.fn()),
+vi.mock('../../src/ui/keyboardNavigation', () => ({
+  addModalKeyboardHandlers: vi.fn(() => vi.fn()),
 }));
 
 const transaction = {
@@ -29,8 +28,8 @@ const HARDCODED_LIGHT_COLORS = ['white', '#fff3cd', '#856404', '#f8f9fa', '#f4f4
 /** Strip var(--name, fallback) so only colors outside theme variables remain */
 const stripThemeVars = (style) => style.replace(/var\(--mu-[a-z-]+(?:,[^)]*)?\)/g, '');
 
-const openDialog = (showCategoryGroupSelectorFn = jest.fn()) => {
-  const callback = jest.fn();
+const openDialog = (showCategoryGroupSelectorFn = vi.fn()) => {
+  const callback = vi.fn();
   showManualCategorizationDialog(transaction, [], callback, showCategoryGroupSelectorFn);
   return callback;
 };
@@ -72,7 +71,7 @@ describe('showManualCategorizationDialog', () => {
     });
 
     it('themes the selected category text after selection', () => {
-      const selector = jest.fn((groups, label, cb) => cb({ id: 'cat-1', name: 'Transfer' }));
+      const selector = vi.fn((groups, label, cb) => cb({ id: 'cat-1', name: 'Transfer' }));
       openDialog(selector);
 
       document.getElementById('manual-categorization-category-display').click();
@@ -85,7 +84,7 @@ describe('showManualCategorizationDialog', () => {
 
   describe('save and cancel', () => {
     it('returns merchant and category once both are provided', () => {
-      const selector = jest.fn((groups, label, cb) => cb({ id: 'cat-1', name: 'Transfer' }));
+      const selector = vi.fn((groups, label, cb) => cb({ id: 'cat-1', name: 'Transfer' }));
       const callback = openDialog(selector);
 
       const input = document.getElementById('manual-categorization-merchant-input');

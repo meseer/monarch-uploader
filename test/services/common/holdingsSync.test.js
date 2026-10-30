@@ -17,20 +17,22 @@ import monarchApi from '../../../src/api/monarch';
 import accountService from '../../../src/services/common/accountService';
 
 // Mock Monarch API
-jest.mock('../../../src/api/monarch', () => ({
-  getHoldings: jest.fn(),
-  createManualHolding: jest.fn(),
-  updateHolding: jest.fn(),
-  deleteHolding: jest.fn(),
-}));
+vi.mock('../../../src/api/monarch', () => {
+  const mock = {
+    getHoldings: vi.fn(),
+    createManualHolding: vi.fn(),
+    updateHolding: vi.fn(),
+    deleteHolding: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
 
 // Mock accountService
-jest.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
+vi.mock('../../../src/services/common/accountService', () => ({
   default: {
-    getHoldingMapping: jest.fn(),
-    getHoldingsMappings: jest.fn(),
-    saveHoldingMapping: jest.fn(),
+    getHoldingMapping: vi.fn(),
+    getHoldingsMappings: vi.fn(),
+    saveHoldingMapping: vi.fn(),
   },
 }));
 
@@ -43,7 +45,7 @@ function buildMockHooks(overrides = {}) {
     getDisplaySymbol: (p) => p.symbol || null,
     getQuantity: (p) => Number(p.quantity) || 0,
     buildHoldingUpdate: (p) => ({ quantity: Number(p.quantity), costBasis: Number(p.costBasis) || 0 }),
-    resolveSecurityMapping: jest.fn().mockResolvedValue('monarch-sec-default'),
+    resolveSecurityMapping: vi.fn().mockResolvedValue('monarch-sec-default'),
     ...overrides,
   };
 }
@@ -65,7 +67,7 @@ function buildHoldings(entries) {
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   accountService.getHoldingMapping.mockReturnValue(null);
   accountService.getHoldingsMappings.mockReturnValue({});
   accountService.saveHoldingMapping.mockReturnValue(true);
@@ -613,7 +615,7 @@ describe('processAccountPositions', () => {
     ];
 
     const hooks = buildMockHooks({
-      resolveSecurityMapping: jest.fn()
+      resolveSecurityMapping: vi.fn()
         .mockResolvedValueOnce('monarch-sec-aapl')
         .mockResolvedValueOnce('monarch-sec-googl'),
     });
@@ -640,7 +642,7 @@ describe('processAccountPositions', () => {
     ];
 
     const hooks = buildMockHooks({
-      resolveSecurityMapping: jest.fn()
+      resolveSecurityMapping: vi.fn()
         .mockResolvedValueOnce('monarch-sec-aapl')
         .mockResolvedValueOnce(null), // user cancelled
     });
@@ -660,7 +662,7 @@ describe('processAccountPositions', () => {
     const positions = [{ id: 'pos-1', symbol: 'FAIL', quantity: '10' }];
 
     const hooks = buildMockHooks({
-      resolveSecurityMapping: jest.fn().mockRejectedValue(new Error('Resolve error')),
+      resolveSecurityMapping: vi.fn().mockRejectedValue(new Error('Resolve error')),
     });
 
     monarchApi.getHoldings.mockResolvedValue({ aggregateHoldings: { edges: [] } });
@@ -696,14 +698,14 @@ describe('processAccountPositions', () => {
     const positions = [{ id: 'pos-1', symbol: 'AAPL', quantity: '10' }];
 
     const hooks = buildMockHooks({
-      resolveSecurityMapping: jest.fn().mockResolvedValue('monarch-sec-aapl'),
+      resolveSecurityMapping: vi.fn().mockResolvedValue('monarch-sec-aapl'),
     });
 
     monarchApi.getHoldings.mockResolvedValue({ aggregateHoldings: { edges: [] } });
     monarchApi.createManualHolding.mockResolvedValue({ id: 'h-1' });
     monarchApi.updateHolding.mockResolvedValue(true);
 
-    const progress = { updateStatus: jest.fn() };
+    const progress = { updateStatus: vi.fn() };
 
     await processAccountPositions('int', 'acc', 'macc', positions, hooks, progress);
 
@@ -718,7 +720,7 @@ describe('processAccountPositions', () => {
     const positions = [{ id: 'pos-1', symbol: 'AAPL', quantity: '10' }];
 
     const hooks = buildMockHooks({
-      resolveSecurityMapping: jest.fn().mockResolvedValue('monarch-sec-aapl'),
+      resolveSecurityMapping: vi.fn().mockResolvedValue('monarch-sec-aapl'),
     });
 
     // First call for initial fetch, second call for deletion detection
@@ -735,7 +737,7 @@ describe('processAccountPositions', () => {
 
     accountService.getHoldingsMappings.mockReturnValue({});
 
-    const progress = { updateStatus: jest.fn() };
+    const progress = { updateStatus: vi.fn() };
 
     await processAccountPositions('int', 'acc', 'macc', positions, hooks, progress);
 
@@ -753,7 +755,7 @@ describe('processAccountPositions', () => {
 
     monarchApi.getHoldings.mockRejectedValue(new Error('Holdings fetch failed'));
 
-    const progress = { updateStatus: jest.fn() };
+    const progress = { updateStatus: vi.fn() };
 
     const result = await processAccountPositions('int', 'acc', 'macc', positions, hooks, progress);
 
@@ -766,7 +768,7 @@ describe('processAccountPositions', () => {
     const positions = [{ id: 'pos-1', symbol: 'AAPL', quantity: '10' }];
 
     const hooks = buildMockHooks({
-      resolveSecurityMapping: jest.fn().mockResolvedValue('monarch-sec-aapl'),
+      resolveSecurityMapping: vi.fn().mockResolvedValue('monarch-sec-aapl'),
     });
 
     monarchApi.getHoldings.mockResolvedValue({ aggregateHoldings: { edges: [] } });

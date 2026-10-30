@@ -1185,7 +1185,7 @@ describe('mybank API', () => {
 
   beforeEach(() => {
     mockHttpClient = {
-      request: jest.fn(),
+      request: vi.fn(),
     };
     api = createApi(mockHttpClient, null);
   });

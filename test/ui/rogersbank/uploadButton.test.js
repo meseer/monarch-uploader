@@ -11,26 +11,24 @@ import { uploadRogersBankToMonarch } from '../../../src/services/rogersbank-uplo
 import { ensureMonarchAuthentication } from '../../../src/ui/components/monarchLoginLink';
 import rogersbank from '../../../src/api/rogersbank';
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../../src/api/rogersbank', () => ({
-  __esModule: true,
-  default: { checkRogersBankAuth: jest.fn(() => ({ authenticated: true })) },
+vi.mock('../../../src/api/rogersbank', () => ({
+  default: { checkRogersBankAuth: vi.fn(() => ({ authenticated: true })) },
 }));
 
-jest.mock('../../../src/ui/toast', () => ({
-  __esModule: true,
-  default: { show: jest.fn() },
+vi.mock('../../../src/ui/toast', () => ({
+  default: { show: vi.fn() },
 }));
 
-jest.mock('../../../src/services/rogersbank-upload', () => ({
-  uploadRogersBankToMonarch: jest.fn(),
+vi.mock('../../../src/services/rogersbank-upload', () => ({
+  uploadRogersBankToMonarch: vi.fn(),
 }));
 
-jest.mock('../../../src/ui/components/monarchLoginLink', () => ({
-  ensureMonarchAuthentication: jest.fn(),
+vi.mock('../../../src/ui/components/monarchLoginLink', () => ({
+  ensureMonarchAuthentication: vi.fn(),
 }));
 
 /** Let pending promise callbacks run */
@@ -42,13 +40,13 @@ describe('Rogers Bank upload button', () => {
   let button;
 
   beforeEach(() => {
-    jest.clearAllMocks();
-    jest.spyOn(console, 'log').mockImplementation(() => {});
+    vi.clearAllMocks();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
     button = createRogersBankUploadButton().querySelector('button');
   });
 
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('starts only one upload when clicked again while the Monarch login is pending', async () => {
@@ -95,7 +93,7 @@ describe('Rogers Bank upload button', () => {
 
 describe('Rogers Bank upload button before credentials are captured', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     rogersbank.checkRogersBankAuth.mockReturnValueOnce({ authenticated: false, credentials: {} });
   });
 

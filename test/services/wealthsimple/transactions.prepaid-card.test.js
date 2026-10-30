@@ -22,15 +22,15 @@ import monarchApi from '../../../src/api/monarch';
 import { applyWealthsimpleCategoryMapping } from '../../../src/mappers/category';
 import { showManualTransactionCategorization } from '../../../src/ui/components/categorySelector';
 
-jest.mock('../../../src/api/wealthsimple');
-jest.mock('../../../src/api/monarch');
-jest.mock('../../../src/mappers/category');
-jest.mock('../../../src/ui/toast', () => ({
-  show: jest.fn(),
+vi.mock('../../../src/api/wealthsimple');
+vi.mock('../../../src/api/monarch');
+vi.mock('../../../src/mappers/category');
+vi.mock('../../../src/ui/toast', () => ({
+  show: vi.fn(),
 }));
-jest.mock('../../../src/ui/components/categorySelector', () => ({
-  showMonarchCategorySelector: jest.fn(),
-  showManualTransactionCategorization: jest.fn(),
+vi.mock('../../../src/ui/components/categorySelector', () => ({
+  showMonarchCategorySelector: vi.fn(),
+  showManualTransactionCategorization: vi.fn(),
 }));
 
 const YOUTH_CASH_ACCOUNT_ID = 'ca-cash-msb-qiVT16TVQQ';
@@ -61,8 +61,8 @@ const buildPrepaidCardPurchase = (overrides = {}) => ({
 });
 
 beforeEach(() => {
-  jest.clearAllMocks();
-  wealthsimpleApi.fetchSpendTransactions = jest.fn().mockResolvedValue(new Map());
+  vi.clearAllMocks();
+  wealthsimpleApi.fetchSpendTransactions = vi.fn().mockResolvedValue(new Map());
   monarchApi.getCategoriesAndGroups.mockResolvedValue({ categories: [], categoryGroups: [] });
   applyWealthsimpleCategoryMapping.mockReturnValue('Restaurants & Bars');
 });

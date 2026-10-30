@@ -9,33 +9,31 @@ import {
 } from '../../../src/services/common/transactionUpload';
 
 // Mock dependencies
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  getTodayLocal: jest.fn(() => '2025-02-17'),
-  saveLastUploadDate: jest.fn(),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  getTodayLocal: vi.fn(() => '2025-02-17'),
+  saveLastUploadDate: vi.fn(),
 }));
 
-jest.mock('../../../src/api/monarch', () => ({
-  __esModule: true,
+vi.mock('../../../src/api/monarch', () => ({
   default: {
-    uploadTransactions: jest.fn(),
+    uploadTransactions: vi.fn(),
   },
 }));
 
-jest.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
+vi.mock('../../../src/services/common/accountService', () => ({
   default: {
-    getAccountData: jest.fn(),
-    updateAccountInList: jest.fn(() => true),
+    getAccountData: vi.fn(),
+    updateAccountInList: vi.fn(() => true),
   },
 }));
 
-jest.mock('../../../src/utils/transactionStorage', () => ({
-  mergeAndRetainTransactions: jest.fn((existing, newRefs, settings, date) => [
+vi.mock('../../../src/utils/transactionStorage', () => ({
+  mergeAndRetainTransactions: vi.fn((existing, newRefs, settings, date) => [
     ...existing,
     ...newRefs.map((id) => ({ id, date })),
   ]),
-  getRetentionSettingsFromAccount: jest.fn(() => ({
+  getRetentionSettingsFromAccount: vi.fn(() => ({
     retentionDays: 91,
     retentionCount: 1000,
   })),
@@ -48,7 +46,7 @@ import { mergeAndRetainTransactions } from '../../../src/utils/transactionStorag
 
 describe('Transaction Upload Service', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     accountService.getAccountData.mockReturnValue(null);
   });
 
@@ -74,7 +72,7 @@ describe('Transaction Upload Service', () => {
 
     it('should pass the processing progress callback through to the upload', async () => {
       monarchApi.uploadTransactions.mockResolvedValue(true);
-      const onProcessingUpdate = jest.fn();
+      const onProcessingUpdate = vi.fn();
 
       await uploadTransactionsAndSaveRefs({
         integrationId: 'mbna',

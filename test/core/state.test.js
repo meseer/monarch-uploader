@@ -3,10 +3,12 @@
  */
 
 import stateManager, { StateManager } from '../../src/core/state';
+import * as utilsModule from '../../src/core/utils';
+import * as stateModule from '../../src/core/state';
 
 // Mock the utils module
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
 describe('StateManager', () => {
@@ -16,7 +18,7 @@ describe('StateManager', () => {
     // Create fresh instance for each test
     testStateManager = new StateManager();
     // Clear all mocks
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('constructor', () => {
@@ -105,7 +107,7 @@ describe('StateManager', () => {
     });
 
     it('should notify listeners', () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       testStateManager.addListener('account', listener);
 
       testStateManager.setAccount('account789', 'Listener Test');
@@ -149,7 +151,7 @@ describe('StateManager', () => {
 
     it('should warn about unknown UI elements', () => {
       const mockElement = document.createElement('div');
-      const mockDebugLog = require('../../src/core/utils').debugLog;
+      const mockDebugLog = utilsModule.debugLog;
 
       testStateManager.setUiElement('unknownElement', mockElement);
 
@@ -157,7 +159,7 @@ describe('StateManager', () => {
     });
 
     it('should notify UI listeners', () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       testStateManager.addListener('ui', listener);
 
       const mockElement = document.createElement('div');
@@ -194,7 +196,7 @@ describe('StateManager', () => {
     });
 
     it('should notify auth listeners', () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       testStateManager.addListener('auth', listener);
 
       const tokenInfo = { token: 'test-token', expires_at: 1640995200 };
@@ -226,7 +228,7 @@ describe('StateManager', () => {
     });
 
     it('should notify auth listeners', () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       testStateManager.addListener('auth', listener);
 
       testStateManager.setMonarchAuth({ csrfToken: 'monarch-csrf-test', sessionExpiresAt: null });
@@ -255,7 +257,7 @@ describe('StateManager', () => {
     });
 
     it('should notify auth listeners', () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       testStateManager.addListener('auth', listener);
 
       testStateManager.setCanadaLifeAuth('canadalife-token-test');
@@ -290,7 +292,7 @@ describe('StateManager', () => {
     });
 
     it('should notify auth listeners', () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       testStateManager.addListener('auth', listener);
 
       const credentials = { username: 'test', password: 'test' };
@@ -338,7 +340,7 @@ describe('StateManager', () => {
     });
 
     it('should notify auth listeners', () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       testStateManager.addListener('auth', listener);
 
       const authInfo = {
@@ -372,7 +374,7 @@ describe('StateManager', () => {
 
   describe('addListener', () => {
     it('should add listener for specific event type', () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       const removeListener = testStateManager.addListener('account', listener);
 
       expect(typeof removeListener).toBe('function');
@@ -380,8 +382,8 @@ describe('StateManager', () => {
     });
 
     it('should add multiple listeners for same event type', () => {
-      const listener1 = jest.fn();
-      const listener2 = jest.fn();
+      const listener1 = vi.fn();
+      const listener2 = vi.fn();
 
       testStateManager.addListener('account', listener1);
       testStateManager.addListener('account', listener2);
@@ -392,14 +394,14 @@ describe('StateManager', () => {
     });
 
     it('should add wildcard listeners', () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       testStateManager.addListener('*', listener);
 
       expect(testStateManager.listeners['*']).toContain(listener);
     });
 
     it('should return function that removes the listener', () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       const removeListener = testStateManager.addListener('account', listener);
 
       expect(testStateManager.listeners.account).toContain(listener);
@@ -412,8 +414,8 @@ describe('StateManager', () => {
 
   describe('notifyListeners', () => {
     it('should call specific listeners', () => {
-      const accountListener = jest.fn();
-      const authListener = jest.fn();
+      const accountListener = vi.fn();
+      const authListener = vi.fn();
 
       testStateManager.addListener('account', accountListener);
       testStateManager.addListener('auth', authListener);
@@ -425,7 +427,7 @@ describe('StateManager', () => {
     });
 
     it('should call wildcard listeners for any event', () => {
-      const wildcardListener = jest.fn();
+      const wildcardListener = vi.fn();
       testStateManager.addListener('*', wildcardListener);
 
       testStateManager.setAccount('test-account', 'Test Account');
@@ -435,8 +437,8 @@ describe('StateManager', () => {
     });
 
     it('should call both specific and wildcard listeners', () => {
-      const specificListener = jest.fn();
-      const wildcardListener = jest.fn();
+      const specificListener = vi.fn();
+      const wildcardListener = vi.fn();
 
       testStateManager.addListener('account', specificListener);
       testStateManager.addListener('*', wildcardListener);
@@ -448,7 +450,7 @@ describe('StateManager', () => {
     });
 
     it('should pass correct arguments to listeners', () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       testStateManager.addListener('account', listener);
 
       testStateManager.setAccount('test-account', 'Test Account');
@@ -465,9 +467,9 @@ describe('StateManager', () => {
 
   describe('integration tests', () => {
     it('should handle complex state changes with multiple listeners', () => {
-      const accountListener = jest.fn();
-      const authListener = jest.fn();
-      const wildcardListener = jest.fn();
+      const accountListener = vi.fn();
+      const authListener = vi.fn();
+      const wildcardListener = vi.fn();
 
       testStateManager.addListener('account', accountListener);
       testStateManager.addListener('auth', authListener);
@@ -504,7 +506,7 @@ describe('StateManager', () => {
   describe('singleton instance', () => {
     it('should export the same singleton instance', () => {
       // Import again to get the same singleton
-      const stateManager2 = require('../../src/core/state').default;
+      const stateManager2 = stateModule.default;
 
       expect(stateManager).toBe(stateManager2);
     });
@@ -513,7 +515,7 @@ describe('StateManager', () => {
       stateManager.setAccount('singleton-test', 'Singleton Test');
 
       // Import again to get the same singleton
-      const stateManager2 = require('../../src/core/state').default;
+      const stateManager2 = stateModule.default;
       const state = stateManager2.getState();
 
       expect(state.currentAccount.id).toBe('singleton-test');

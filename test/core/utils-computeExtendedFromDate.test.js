@@ -4,10 +4,10 @@
 
 import { computeExtendedFromDate, formatDate } from '../../src/core/utils';
 
-jest.mock('../../src/core/storageAdapter', () => ({
-  getValue: jest.fn(),
-  setValue: jest.fn(),
-  deleteValue: jest.fn(),
+vi.mock('../../src/core/storageAdapter', () => ({
+  getValue: vi.fn(),
+  setValue: vi.fn(),
+  deleteValue: vi.fn(),
 }));
 
 describe('computeExtendedFromDate', () => {

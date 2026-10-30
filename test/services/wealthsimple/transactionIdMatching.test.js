@@ -15,8 +15,8 @@ import {
   resolveWsTransactionByPendingId,
 } from '../../../src/services/wealthsimple/transactionIdMatching';
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
 const PENDING_ID = 'card-activity-00000000527000993851-VI-00-0306231535741989-QIRIAS';

@@ -8,23 +8,23 @@
  */
 
 import { fetchActivitiesForDateRange, fetchAndProcessTransactions } from '../../../src/services/canadalife/transactions';
+import * as canadalifeModule from '../../../src/api/canadalife';
+import * as toastModule from '../../../src/ui/toast';
 
-jest.mock('../../../src/api/canadalife', () => ({
-  __esModule: true,
+vi.mock('../../../src/api/canadalife', () => ({
   default: {
-    loadAccountActivityReport: jest.fn(),
+    loadAccountActivityReport: vi.fn(),
   },
 }));
 
-jest.mock('../../../src/ui/toast', () => ({
-  __esModule: true,
+vi.mock('../../../src/ui/toast', () => ({
   default: {
-    show: jest.fn(),
+    show: vi.fn(),
   },
 }));
 
-const getCanadaLifeApi = () => require('../../../src/api/canadalife').default;
-const getToast = () => require('../../../src/ui/toast').default;
+const getCanadaLifeApi = () => canadalifeModule.default;
+const getToast = () => toastModule.default;
 
 const account = {
   EnglishShortName: 'RRSP',
@@ -41,7 +41,7 @@ const makeActivity = (name, amount) => ({
 });
 
 afterEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 });
 
 describe('fetchActivitiesForDateRange', () => {
@@ -140,7 +140,7 @@ describe('fetchActivitiesForDateRange', () => {
     canadalife.loadAccountActivityReport.mockResolvedValue({
       activities: [makeActivity('New contribution', 100)],
     });
-    const onProgress = jest.fn();
+    const onProgress = vi.fn();
 
     await fetchActivitiesForDateRange(account, '2026-01-01', '2026-02-01', { onProgress });
 

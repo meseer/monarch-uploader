@@ -13,21 +13,24 @@ import { applyWealthsimpleCategoryMapping, saveUserWealthsimpleCategorySelection
 import { showMonarchCategorySelector } from '../../../src/ui/components/categorySelector';
 
 // Mock dependencies
-jest.mock('../../../src/api/wealthsimple');
-jest.mock('../../../src/api/monarch');
-jest.mock('../../../src/mappers/category');
-jest.mock('../../../src/ui/toast', () => ({
-  show: jest.fn(),
-}));
-jest.mock('../../../src/ui/components/categorySelector', () => ({
-  showMonarchCategorySelector: jest.fn(),
-  showManualTransactionCategorization: jest.fn(),
+vi.mock('../../../src/api/wealthsimple');
+vi.mock('../../../src/api/monarch');
+vi.mock('../../../src/mappers/category');
+vi.mock('../../../src/ui/toast', () => {
+  const mock = {
+    show: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
+vi.mock('../../../src/ui/components/categorySelector', () => ({
+  showMonarchCategorySelector: vi.fn(),
+  showManualTransactionCategorization: vi.fn(),
 }));
 
 // Set up default mocks for the card enrichment APIs
 beforeEach(() => {
-  wealthsimpleApi.fetchSpendTransactions = jest.fn().mockResolvedValue(new Map());
-  wealthsimpleApi.fetchCreditCardActivity = jest.fn().mockResolvedValue(null);
+  wealthsimpleApi.fetchSpendTransactions = vi.fn().mockResolvedValue(new Map());
+  wealthsimpleApi.fetchCreditCardActivity = vi.fn().mockResolvedValue(null);
 });
 
 describe('Wealthsimple Transaction Service - Credit Card', () => {
@@ -40,7 +43,7 @@ describe('Wealthsimple Transaction Service - Credit Card', () => {
   };
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('fetchAndProcessCreditCardTransactions', () => {
@@ -1012,7 +1015,7 @@ describe('Wealthsimple Transaction Service - Credit Card', () => {
     it('reports card activity fetch progress', async () => {
       wealthsimpleApi.fetchTransactions.mockResolvedValue([buildPurchase('tx-fx', 'settled')]);
       wealthsimpleApi.fetchCreditCardActivity.mockResolvedValue(FOREIGN_ACTIVITY);
-      const onProgress = jest.fn();
+      const onProgress = vi.fn();
 
       await fetchAndProcessCreditCardTransactions(
         mockConsolidatedAccount,

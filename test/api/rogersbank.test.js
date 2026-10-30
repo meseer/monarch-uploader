@@ -19,43 +19,27 @@ import {
   fetchRogersBankBalance,
 } from '../../src/api/rogersbank';
 
-const {
-  ACCOUNT_ID,
-  CUSTOMER_ID,
-  TRANSACTIONS_URL,
-  REGENERATE_TOKEN_URL,
-  ACCOUNT_DETAIL_URL,
-  PROFILE_URL,
-  PAGE_HEADERS,
-  CAPTURED,
-  installFakeXhr,
-  sendPageXhr,
-  useInMemoryGmStorage,
-  expectNoCredentialsInStorage,
-  expectNoCredentialsInCalls,
-} = require('../helpers/rogersBankPage');
+import { ACCOUNT_ID, CUSTOMER_ID, TRANSACTIONS_URL, REGENERATE_TOKEN_URL, ACCOUNT_DETAIL_URL, PROFILE_URL, PAGE_HEADERS, CAPTURED, installFakeXhr, sendPageXhr, useInMemoryGmStorage, expectNoCredentialsInStorage, expectNoCredentialsInCalls } from '../helpers/rogersBankPage';
 
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../src/core/state', () => ({
-  __esModule: true,
+vi.mock('../../src/core/state', () => ({
   default: {
-    setRogersBankAuth: jest.fn(),
+    setRogersBankAuth: vi.fn(),
   },
 }));
 
-jest.mock('../../src/ui/toast', () => ({
-  __esModule: true,
+vi.mock('../../src/ui/toast', () => ({
   default: {
-    show: jest.fn(),
+    show: vi.fn(),
   },
 }));
 
-const stateManager = jest.requireMock('../../src/core/state').default;
-const { debugLog } = jest.requireMock('../../src/core/utils');
-const toast = jest.requireMock('../../src/ui/toast').default;
+import stateManager from '../../src/core/state';
+import { debugLog } from '../../src/core/utils';
+import toast from '../../src/ui/toast';
 
 /** The per-request diagnostics logged by the network hooks */
 const observedRequestLogs = () => debugLog.mock.calls
@@ -86,11 +70,11 @@ describe('Rogers Bank API Client', () => {
 
   beforeEach(() => {
     clearRogersBankCredentials();
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     gmStore = useInMemoryGmStorage();
 
     installFakeXhr();
-    pageFetch = jest.fn().mockResolvedValue({ ok: true, status: 200 });
+    pageFetch = vi.fn().mockResolvedValue({ ok: true, status: 200 });
     globalThis.fetch = pageFetch;
   });
 
@@ -137,16 +121,14 @@ describe('Rogers Bank API Client', () => {
       expect(getRogersBankCredentials().authToken).toBe(CAPTURED.authToken);
     });
 
-    test('are gone after a page reload, because nothing was persisted', () => {
+    test('are gone after a page reload, because nothing was persisted', async () => {
       setupCredentialInterception();
       sendPageXhr(TRANSACTIONS_URL);
       expect(checkRogersBankAuth().authenticated).toBe(true);
 
       // A page reload re-evaluates the module against the same GM storage
-      let reloaded;
-      jest.isolateModules(() => {
-        reloaded = require('../../src/api/rogersbank');
-      });
+      vi.resetModules();
+      const reloaded = await import('../../src/api/rogersbank');
 
       expect(reloaded.checkRogersBankAuth().authenticated).toBe(false);
       expect(reloaded.getRogersBankCredentials().authToken).toBeNull();
@@ -247,7 +229,7 @@ describe('Rogers Bank API Client', () => {
     });
 
     test('still sends the page request and keeps the capture when a listener throws', () => {
-      const sendSpy = jest.spyOn(XMLHttpRequest.prototype, 'send');
+      const sendSpy = vi.spyOn(XMLHttpRequest.prototype, 'send');
       setupCredentialInterception();
       stateManager.setRogersBankAuth.mockImplementationOnce(() => {
         throw new Error('listener failed');
@@ -267,7 +249,7 @@ describe('Rogers Bank API Client', () => {
     });
 
     test('passes the page request through to the original XHR send', () => {
-      const sendSpy = jest.spyOn(XMLHttpRequest.prototype, 'send');
+      const sendSpy = vi.spyOn(XMLHttpRequest.prototype, 'send');
       setupCredentialInterception();
 
       sendPageXhr(TRANSACTIONS_URL);
@@ -457,7 +439,7 @@ describe('Rogers Bank API Client', () => {
     });
 
     test('keeps sending the page request when capture itself fails', () => {
-      const sendSpy = jest.spyOn(XMLHttpRequest.prototype, 'send');
+      const sendSpy = vi.spyOn(XMLHttpRequest.prototype, 'send');
       setupCredentialInterception();
       debugLog.mockImplementationOnce(() => {
         throw new Error('logging failed');
@@ -513,7 +495,7 @@ describe('Rogers Bank API Client', () => {
 
     beforeEach(() => {
       // Keep log output deterministic, so it can't contain an ID by chance
-      performanceNow = jest.spyOn(performance, 'now').mockReturnValue(42);
+      performanceNow = vi.spyOn(performance, 'now').mockReturnValue(42);
     });
 
     afterEach(() => {
@@ -574,9 +556,9 @@ describe('Rogers Bank API Client', () => {
       regen.responseHeaders.Accesstoken = 'Bearer refreshed-token';
       regen.listeners.load.call(regen);
 
-      globalThis.fetch = jest.fn().mockResolvedValue({
+      globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: jest.fn().mockResolvedValue({ statusCode: '200', accountDetail: { currentBalance: { value: '1' } } }),
+        json: vi.fn().mockResolvedValue({ statusCode: '200', accountDetail: { currentBalance: { value: '1' } } }),
       });
       await fetchRogersBankAccountDetails();
 
@@ -589,7 +571,7 @@ describe('Rogers Bank API Client', () => {
     });
 
     test('reports Rogers Bank requests that completed before the hooks were installed', () => {
-      performance.getEntriesByType = jest.fn(() => [
+      performance.getEntriesByType = vi.fn(() => [
         { name: `${ACCOUNT_DETAIL_URL}?fromDate=2026-01-01` },
         { name: 'https://selfserve.rogersbank.com/main.js' },
         { name: PROFILE_URL },
@@ -629,12 +611,12 @@ describe('Rogers Bank API Client', () => {
     function captureCredentials() {
       setupCredentialInterception();
       sendPageXhr(TRANSACTIONS_URL);
-      apiFetch = jest.fn();
+      apiFetch = vi.fn();
       globalThis.fetch = apiFetch;
     }
 
     function respondWith(data, init = { ok: true, status: 200 }) {
-      apiFetch.mockResolvedValue({ ...init, json: jest.fn().mockResolvedValue(data) });
+      apiFetch.mockResolvedValue({ ...init, json: vi.fn().mockResolvedValue(data) });
     }
 
     test('calls the API with the captured credentials', async () => {
@@ -703,7 +685,7 @@ describe('Rogers Bank API Client', () => {
     beforeEach(() => {
       setupCredentialInterception();
       sendPageXhr(TRANSACTIONS_URL);
-      apiFetch = jest.fn();
+      apiFetch = vi.fn();
       globalThis.fetch = apiFetch;
     });
 
@@ -711,14 +693,14 @@ describe('Rogers Bank API Client', () => {
       apiFetch.mockResolvedValue({
         ok: true,
         status: 200,
-        json: jest.fn().mockResolvedValue({ statusCode: '200', accountDetail: { currentBalance: { value: 1234.56 } } }),
+        json: vi.fn().mockResolvedValue({ statusCode: '200', accountDetail: { currentBalance: { value: 1234.56 } } }),
       });
 
       await expect(fetchRogersBankBalance()).resolves.toBe(1234.56);
     });
 
     test('throws on an HTTP failure', async () => {
-      apiFetch.mockResolvedValue({ ok: false, status: 401, statusText: 'Unauthorized', json: jest.fn() });
+      apiFetch.mockResolvedValue({ ok: false, status: 401, statusText: 'Unauthorized', json: vi.fn() });
 
       await expect(fetchRogersBankBalance()).rejects.toThrow('API request failed: 401 Unauthorized');
     });
@@ -727,7 +709,7 @@ describe('Rogers Bank API Client', () => {
       apiFetch.mockResolvedValue({
         ok: true,
         status: 200,
-        json: jest.fn().mockResolvedValue({ statusCode: '500', message: 'Internal server error' }),
+        json: vi.fn().mockResolvedValue({ statusCode: '500', message: 'Internal server error' }),
       });
 
       await expect(fetchRogersBankBalance()).rejects.toThrow('API returned error status: 500');
@@ -737,7 +719,7 @@ describe('Rogers Bank API Client', () => {
       apiFetch.mockResolvedValue({
         ok: true,
         status: 200,
-        json: jest.fn().mockResolvedValue({ statusCode: '200', accountDetail: {} }),
+        json: vi.fn().mockResolvedValue({ statusCode: '200', accountDetail: {} }),
       });
 
       await expect(fetchRogersBankBalance()).rejects.toThrow('Current balance not found in API response');
@@ -747,7 +729,7 @@ describe('Rogers Bank API Client', () => {
       apiFetch.mockResolvedValue({
         ok: true,
         status: 200,
-        json: jest.fn().mockResolvedValue({ statusCode: '200', accountDetail: { currentBalance: { value: 'not-a-number' } } }),
+        json: vi.fn().mockResolvedValue({ statusCode: '200', accountDetail: { currentBalance: { value: 'not-a-number' } } }),
       });
 
       await expect(fetchRogersBankBalance()).rejects.toThrow('Invalid balance value received from API');

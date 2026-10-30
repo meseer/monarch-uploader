@@ -15,42 +15,43 @@ import {
   checkTokenStatus,
   getToken,
 } from '../../src/api/questrade';
+import * as authModule from '../../src/services/questrade/auth';
+import * as stateModule from '../../src/core/state';
+import * as questradeModule from '../../src/api/questrade';
 
 // Mock dependencies
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../src/core/state', () => ({
-  __esModule: true,
+vi.mock('../../src/core/state', () => ({
   default: {
-    setQuestradeAuth: jest.fn(),
+    setQuestradeAuth: vi.fn(),
   },
 }));
 
-jest.mock('../../src/services/questrade/auth', () => ({
-  __esModule: true,
+vi.mock('../../src/services/questrade/auth', () => ({
   default: {
-    checkQuestradeAuth: jest.fn(),
-    getQuestradeToken: jest.fn(),
-    waitForQuestradeToken: jest.fn(),
-    saveQuestradeToken: jest.fn(),
+    checkQuestradeAuth: vi.fn(),
+    getQuestradeToken: vi.fn(),
+    waitForQuestradeToken: vi.fn(),
+    saveQuestradeToken: vi.fn(),
   },
 }));
 
 // Mock Greasemonkey functions
-globalThis.GM_getValue = jest.fn();
-globalThis.GM_setValue = jest.fn();
-globalThis.GM_xmlhttpRequest = jest.fn();
+globalThis.GM_getValue = vi.fn();
+globalThis.GM_setValue = vi.fn();
+globalThis.GM_xmlhttpRequest = vi.fn();
 
 describe('Questrade API', () => {
   let authService;
   let stateManager;
 
   beforeEach(() => {
-    jest.clearAllMocks();
-    authService = jest.requireMock('../../src/services/questrade/auth').default;
-    stateManager = jest.requireMock('../../src/core/state').default;
+    vi.clearAllMocks();
+    authService = authModule.default;
+    stateManager = stateModule.default;
 
     // Default mock values
     globalThis.GM_getValue.mockReturnValue('[]');
@@ -696,7 +697,7 @@ describe('Questrade API', () => {
 
   describe('Default Export includes new transaction methods', () => {
     test('should export new transaction methods in default object', () => {
-      const questradeApi = require('../../src/api/questrade').default;
+      const questradeApi = questradeModule.default;
 
       // Verify new methods exist
       expect(questradeApi).toHaveProperty('fetchTransactionsPage');
@@ -712,13 +713,13 @@ describe('Questrade API', () => {
     });
 
     test('default export methods should match named exports', () => {
-      const questradeApi = require('../../src/api/questrade').default;
+      const questradeApi = questradeModule.default;
       const {
         fetchAccountTransactionsPage: namedFetchTransactionsPage,
         fetchTransactionDetails: namedFetchTransactionDetails,
         fetchAccountTransactionsSinceDate: namedFetchTransactionsSinceDate,
         fetchAllAccountTransactions: namedFetchAllTransactions,
-      } = require('../../src/api/questrade');
+      } = questradeModule;
 
       expect(questradeApi.fetchTransactionsPage).toBe(namedFetchTransactionsPage);
       expect(questradeApi.fetchTransactionDetails).toBe(namedFetchTransactionDetails);

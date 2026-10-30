@@ -19,20 +19,23 @@ import { applyWealthsimpleCategoryMapping } from '../../../src/mappers/category'
 import { showManualTransactionCategorization, showMonarchCategorySelector } from '../../../src/ui/components/categorySelector';
 
 // Mock dependencies
-jest.mock('../../../src/api/wealthsimple');
-jest.mock('../../../src/api/monarch');
-jest.mock('../../../src/mappers/category');
-jest.mock('../../../src/ui/toast', () => ({
-  show: jest.fn(),
-}));
-jest.mock('../../../src/ui/components/categorySelector', () => ({
-  showMonarchCategorySelector: jest.fn(),
-  showManualTransactionCategorization: jest.fn(),
+vi.mock('../../../src/api/wealthsimple');
+vi.mock('../../../src/api/monarch');
+vi.mock('../../../src/mappers/category');
+vi.mock('../../../src/ui/toast', () => {
+  const mock = {
+    show: vi.fn(),
+  };
+  return { ...mock, default: mock };
+});
+vi.mock('../../../src/ui/components/categorySelector', () => ({
+  showMonarchCategorySelector: vi.fn(),
+  showManualTransactionCategorization: vi.fn(),
 }));
 
 // Set up default mock for fetchSpendTransactions to return empty Map
 beforeEach(() => {
-  wealthsimpleApi.fetchSpendTransactions = jest.fn().mockResolvedValue(new Map());
+  wealthsimpleApi.fetchSpendTransactions = vi.fn().mockResolvedValue(new Map());
 });
 
 describe('Wealthsimple Transaction Service - Crypto, Skip & Format', () => {
@@ -46,8 +49,8 @@ describe('Wealthsimple Transaction Service - Crypto, Skip & Format', () => {
     };
 
     beforeEach(() => {
-      jest.clearAllMocks();
-      global.GM_getValue = jest.fn().mockReturnValue(JSON.stringify([
+      vi.clearAllMocks();
+      global.GM_getValue = vi.fn().mockReturnValue(JSON.stringify([
         {
           wealthsimpleAccount: {
             id: 'crypto-account-id',
@@ -483,7 +486,7 @@ describe('Wealthsimple Transaction Service - Crypto, Skip & Format', () => {
     const mockPendingTagId = 'pending-tag-456';
 
     beforeEach(() => {
-      jest.clearAllMocks();
+      vi.clearAllMocks();
     });
 
     it('should reconcile CRYPTO_BUY transactions using unifiedStatus field', async () => {
@@ -792,7 +795,7 @@ describe('Wealthsimple Transaction Service - Crypto, Skip & Format', () => {
       };
 
       beforeEach(() => {
-        global.GM_getValue = jest.fn().mockReturnValue(JSON.stringify([
+        global.GM_getValue = vi.fn().mockReturnValue(JSON.stringify([
           {
             wealthsimpleAccount: {
               id: 'investment-account-id',

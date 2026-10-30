@@ -9,13 +9,13 @@ import {
 } from '../../../../../src/integrations/mbna/sinks/monarch/transactions';
 
 // Mock dependencies
-jest.mock('../../../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  stringSimilarity: jest.fn(() => 0),
+vi.mock('../../../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  stringSimilarity: vi.fn(() => 0),
 }));
 
-jest.mock('../../../../../src/mappers/merchant', () => ({
-  applyMerchantMapping: jest.fn((desc) => {
+vi.mock('../../../../../src/mappers/merchant', () => ({
+  applyMerchantMapping: vi.fn((desc) => {
     // Simplified merchant mapping for tests
     if (!desc) return '';
     // Strip asterisk suffix (like Amazon.ca*RA6HH70U3 → Amazon.ca)
@@ -28,42 +28,40 @@ jest.mock('../../../../../src/mappers/merchant', () => ({
   }),
 }));
 
-jest.mock('../../../../../src/core/integrationCapabilities', () => ({
+vi.mock('../../../../../src/core/integrationCapabilities', () => ({
   INTEGRATIONS: { MBNA: 'mbna' },
-  getCapabilities: jest.fn(() => ({
+  getCapabilities: vi.fn(() => ({
     categoryMappings: true,
     categoryMappingsStorageKey: 'mbna_config',
   })),
 }));
 
-jest.mock('../../../../../src/services/common/configStore', () => ({
-  getCategoryMapping: jest.fn(() => null),
-  setCategoryMapping: jest.fn(),
+vi.mock('../../../../../src/services/common/configStore', () => ({
+  getCategoryMapping: vi.fn(() => null),
+  setCategoryMapping: vi.fn(),
 }));
 
-jest.mock('../../../../../src/mappers/category', () => ({
-  calculateAllCategorySimilarities: jest.fn(() => ({
+vi.mock('../../../../../src/mappers/category', () => ({
+  calculateAllCategorySimilarities: vi.fn(() => ({
     bankCategory: 'test',
     categoryGroups: [],
     totalCategories: 0,
   })),
 }));
 
-jest.mock('../../../../../src/ui/components/categorySelector', () => ({
-  showMonarchCategorySelector: jest.fn(),
+vi.mock('../../../../../src/ui/components/categorySelector', () => ({
+  showMonarchCategorySelector: vi.fn(),
 }));
 
-jest.mock('../../../../../src/api/monarch', () => ({
-  __esModule: true,
+vi.mock('../../../../../src/api/monarch', () => ({
   default: {
-    getCategoriesAndGroups: jest.fn(() => Promise.resolve({ categories: [] })),
+    getCategoriesAndGroups: vi.fn(() => Promise.resolve({ categories: [] })),
   },
 }));
 
-jest.mock('../../../../../src/services/common/accountService', () => ({
-  __esModule: true,
+vi.mock('../../../../../src/services/common/accountService', () => ({
   default: {
-    getAccountData: jest.fn(() => null),
+    getAccountData: vi.fn(() => null),
   },
 }));
 
@@ -180,7 +178,7 @@ describe('MBNA Transaction Processing', () => {
 
   describe('resolveMbnaCategories', () => {
     beforeEach(() => {
-      jest.clearAllMocks();
+      vi.clearAllMocks();
       accountService.getAccountData.mockReturnValue(null);
       getCategoryMapping.mockReturnValue(null);
       stringSimilarity.mockReturnValue(0);

@@ -6,41 +6,38 @@ import { resolveAccountMapping } from '../../../src/services/common/accountMappi
 
 // ── Mocks ───────────────────────────────────────────────────
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../../src/api/monarch', () => ({
-  __esModule: true,
+vi.mock('../../../src/api/monarch', () => ({
   default: {
-    setAccountLogo: jest.fn().mockResolvedValue(true),
+    setAccountLogo: vi.fn().mockResolvedValue(true),
   },
 }));
 
-jest.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
+vi.mock('../../../src/services/common/accountService', () => ({
   default: {
-    getMonarchAccountMapping: jest.fn(),
-    getAccountData: jest.fn(),
-    updateAccountInList: jest.fn(),
-    upsertAccount: jest.fn(() => true),
+    getMonarchAccountMapping: vi.fn(),
+    getAccountData: vi.fn(),
+    updateAccountInList: vi.fn(),
+    upsertAccount: vi.fn(() => true),
   },
 }));
 
-jest.mock('../../../src/ui/toast', () => ({
-  __esModule: true,
+vi.mock('../../../src/ui/toast', () => ({
   default: {
-    show: jest.fn(),
+    show: vi.fn(),
   },
 }));
 
-jest.mock('../../../src/ui/components/accountSelectorWithCreate', () => ({
-  showMonarchAccountSelectorWithCreate: jest.fn(),
+vi.mock('../../../src/ui/components/accountSelectorWithCreate', () => ({
+  showMonarchAccountSelectorWithCreate: vi.fn(),
 }));
 
-const monarchApi = require('../../../src/api/monarch').default;
-const accountService = require('../../../src/services/common/accountService').default;
-const { showMonarchAccountSelectorWithCreate } = require('../../../src/ui/components/accountSelectorWithCreate');
+import monarchApi from '../../../src/api/monarch';
+import accountService from '../../../src/services/common/accountService';
+import { showMonarchAccountSelectorWithCreate } from '../../../src/ui/components/accountSelectorWithCreate';
 
 // ── Test data ───────────────────────────────────────────────
 
@@ -73,7 +70,7 @@ const buildAccountEntry = (account) => ({
 // ── Tests ───────────────────────────────────────────────────
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 });
 
 describe('resolveAccountMapping', () => {
@@ -433,7 +430,7 @@ describe('resolveAccountMapping', () => {
     accountService.getMonarchAccountMapping.mockReturnValue(null);
     accountService.getAccountData.mockReturnValue(null);
 
-    const customBuildEntry = jest.fn((account) => ({
+    const customBuildEntry = vi.fn((account) => ({
       id: account.accountId,
       custom: 'field',
     }));

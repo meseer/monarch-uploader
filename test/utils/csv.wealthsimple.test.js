@@ -15,16 +15,16 @@
 import { convertWealthsimpleTransactionsToMonarchCSV } from '../../src/utils/csv';
 
 // Mock dependencies
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../src/mappers/merchant', () => ({
-  applyMerchantMapping: jest.fn((merchant) => merchant || 'Unknown Merchant'),
+vi.mock('../../src/mappers/merchant', () => ({
+  applyMerchantMapping: vi.fn((merchant) => merchant || 'Unknown Merchant'),
 }));
 
-jest.mock('../../src/mappers/category', () => ({
-  applyCategoryMapping: jest.fn((category) => category || 'Uncategorized'),
+vi.mock('../../src/mappers/category', () => ({
+  applyCategoryMapping: vi.fn((category) => category || 'Uncategorized'),
 }));
 
 /**
@@ -69,7 +69,7 @@ const field = (csv, rowIndex, columnName) => {
 
 describe('CSV Conversion Utilities - Wealthsimple', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('convertWealthsimpleTransactionsToMonarchCSV', () => {
@@ -641,7 +641,7 @@ describe('CSV Conversion Utilities - Wealthsimple', () => {
         });
 
         test('is not called for a transaction with no id', () => {
-          const resolveUploadedId = jest.fn();
+          const resolveUploadedId = vi.fn();
           const transaction = wsTx();
           delete transaction.id;
 

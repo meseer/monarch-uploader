@@ -13,9 +13,9 @@
  */
 export function installCanadaLifeTestGlobals() {
   const localStorageMock = {
-    getItem: jest.fn(),
-    setItem: jest.fn(),
-    clear: jest.fn(),
+    getItem: vi.fn(),
+    setItem: vi.fn(),
+    clear: vi.fn(),
   };
   Object.defineProperty(global, 'localStorage', {
     value: localStorageMock,
@@ -38,19 +38,19 @@ export function installCanadaLifeTestGlobals() {
 
   if (!global.window) {
     Object.defineProperty(global, 'window', {
-      value: { addEventListener: jest.fn() },
+      value: { addEventListener: vi.fn() },
       writable: true,
       configurable: true,
     });
   } else {
-    global.window.addEventListener = jest.fn();
+    global.window.addEventListener = vi.fn();
   }
 
-  global.GM_getValue = jest.fn();
-  global.GM_setValue = jest.fn();
-  global.GM_deleteValue = jest.fn();
-  global.setInterval = jest.fn();
-  global.fetch = jest.fn();
+  global.GM_getValue = vi.fn();
+  global.GM_setValue = vi.fn();
+  global.GM_deleteValue = vi.fn();
+  global.setInterval = vi.fn();
+  global.fetch = vi.fn();
 
   return { localStorageMock };
 }
@@ -61,12 +61,11 @@ export function installCanadaLifeTestGlobals() {
  */
 export function buildStateMock() {
   return {
-    __esModule: true,
     default: {
-      getState: jest.fn().mockReturnValue({
+      getState: vi.fn().mockReturnValue({
         auth: { canadalife: { token: 'mock-aura-token' } },
       }),
-      setCanadaLifeAuth: jest.fn(),
+      setCanadaLifeAuth: vi.fn(),
     },
   };
 }
@@ -78,12 +77,12 @@ export function buildStateMock() {
  */
 export function buildUtilsMock() {
   return {
-    debugLog: jest.fn(),
-    parseLocalDate: jest.fn((dateString) => {
+    debugLog: vi.fn(),
+    parseLocalDate: vi.fn((dateString) => {
       const [year, month, day] = dateString.split('-').map(Number);
       return new Date(year, month - 1, day);
     }),
-    formatDate: jest.fn((date) => {
+    formatDate: vi.fn((date) => {
       const year = date.getFullYear();
       const month = String(date.getMonth() + 1).padStart(2, '0');
       const day = String(date.getDate()).padStart(2, '0');
@@ -98,8 +97,7 @@ export function buildUtilsMock() {
  */
 export function buildToastMock() {
   return {
-    __esModule: true,
-    default: { show: jest.fn() },
+    default: { show: vi.fn() },
   };
 }
 

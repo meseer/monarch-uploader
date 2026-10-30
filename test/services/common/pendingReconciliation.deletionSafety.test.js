@@ -34,36 +34,36 @@ import {
 
 // ── Mocks ───────────────────────────────────────────────────
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  formatDate: jest.fn((d) => d.toISOString().split('T')[0]),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  formatDate: vi.fn((d) => d.toISOString().split('T')[0]),
 }));
 
-jest.mock('../../../src/api/monarch', () => ({
-  __esModule: true,
+vi.mock('../../../src/api/monarch', () => ({
   default: {
-    getTagByName: jest.fn(),
-    getTransactionsList: jest.fn(),
-    updateTransaction: jest.fn(),
-    setTransactionTags: jest.fn(),
-    deleteTransaction: jest.fn(),
+    getTagByName: vi.fn(),
+    getTransactionsList: vi.fn(),
+    updateTransaction: vi.fn(),
+    setTransactionTags: vi.fn(),
+    deleteTransaction: vi.fn(),
   },
 }));
 
 // ── Setup ───────────────────────────────────────────────────
 
-const mockMonarchApi = require('../../../src/api/monarch').default;
+import mockMonarchApi from '../../../src/api/monarch';
+import * as cryptoModule from 'crypto';
 
 // Real SHA-256 via Node's webcrypto so the hash IDs match production
 beforeAll(() => {
   if (typeof globalThis.crypto === 'undefined' || !globalThis.crypto.subtle) {
-    const { webcrypto } = require('crypto');
+    const { webcrypto } = cryptoModule;
     globalThis.crypto = webcrypto;
   }
 });
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 });
 
 // ── Fixtures ────────────────────────────────────────────────

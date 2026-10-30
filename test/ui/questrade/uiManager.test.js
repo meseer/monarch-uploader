@@ -4,70 +4,70 @@
  */
 
 import { initSingleAccountUI, initAllAccountsUI } from '../../../src/ui/questrade/uiManager';
+import * as uploadButtonModule from '../../../src/ui/questrade/components/uploadButton';
+import * as toastModule from '../../../src/ui/toast';
+import * as utilsModule from '../../../src/core/utils';
 
 // ── Dependency mocks ──────────────────────────────────────────────────────────
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  isQuestradeAllAccountsPage: jest.fn(() => false),
-  getLastUpdateDate: jest.fn(() => null),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  isQuestradeAllAccountsPage: vi.fn(() => false),
+  getLastUpdateDate: vi.fn(() => null),
 }));
 
-jest.mock('../../../src/core/config', () => ({
+vi.mock('../../../src/core/config', () => ({
   STORAGE: {
     MONARCH_CSRF_TOKEN: 'monarch_csrf_token', MONARCH_SESSION_EXPIRES_AT: 'monarch_session_expires_at',
     DEVELOPMENT_MODE: 'development_mode',
   },
 }));
 
-jest.mock('../../../src/core/state', () => ({
-  getState: jest.fn(() => ({
+vi.mock('../../../src/core/state', () => ({
+  getState: vi.fn(() => ({
     currentAccount: { id: null, nickname: 'unknown' },
     ui: { indicators: {} },
   })),
-  setUiElement: jest.fn(),
-  addListener: jest.fn(() => jest.fn()), // returns unsubscribe fn
+  setUiElement: vi.fn(),
+  addListener: vi.fn(() => vi.fn()), // returns unsubscribe fn
 }));
 
-jest.mock('../../../src/api/questrade', () => ({
-  __esModule: true,
+vi.mock('../../../src/api/questrade', () => ({
   default: {
-    getToken: jest.fn(() => null),
+    getToken: vi.fn(() => null),
   },
 }));
 
-jest.mock('../../../src/ui/toast', () => ({
-  __esModule: true,
-  default: { show: jest.fn() },
+vi.mock('../../../src/ui/toast', () => ({
+  default: { show: vi.fn() },
 }));
 
-jest.mock('../../../src/ui/components/settingsModal', () => ({
-  showSettingsModal: jest.fn(),
+vi.mock('../../../src/ui/components/settingsModal', () => ({
+  showSettingsModal: vi.fn(),
 }));
 
-jest.mock('../../../src/ui/components/monarchLoginLink', () => ({
-  createMonarchLoginLink: jest.fn(() => null),
+vi.mock('../../../src/ui/components/monarchLoginLink', () => ({
+  createMonarchLoginLink: vi.fn(() => null),
 }));
 
-jest.mock('../../../src/ui/questrade/components/uploadButton', () => ({
-  __esModule: true,
+vi.mock('../../../src/ui/questrade/components/uploadButton', () => ({
   default: {
-    createSingleAccountUploadButton: jest.fn(),
-    createBulkUploadButton: jest.fn(),
+    createSingleAccountUploadButton: vi.fn(),
+    createBulkUploadButton: vi.fn(),
   },
-  createTestingSection: jest.fn(() => null),
+  createTestingSection: vi.fn(() => null),
 }));
 
-jest.mock('../../../src/services/questrade/balance', () => ({
-  getAccountsForSync: jest.fn(async () => [
+vi.mock('../../../src/services/questrade/balance', () => ({
+  getAccountsForSync: vi.fn(async () => [
     { questradeAccount: { id: 'acc1', nickname: 'TFSA', type: 'TFSA' } },
   ]),
 }));
 
 // ── GM globals ────────────────────────────────────────────────────────────────
 
-globalThis.GM_getValue = jest.fn(() => null);
-globalThis.GM_setValue = jest.fn();
+globalThis.GM_getValue = vi.fn(() => null);
+globalThis.GM_setValue = vi.fn();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -83,12 +83,12 @@ function setPathname(pathname) {
 
 describe('Questrade UI Manager — injection point', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     document.body.innerHTML = '';
     setPathname('/accounts/12345');
 
     // Return real DOM elements from upload button mocks (can't use document in jest.mock factory)
-    const uploadButtonMock = jest.requireMock('../../../src/ui/questrade/components/uploadButton').default;
+    const uploadButtonMock = uploadButtonModule.default;
     uploadButtonMock.createSingleAccountUploadButton.mockReturnValue(document.createElement('button'));
     uploadButtonMock.createBulkUploadButton.mockReturnValue(document.createElement('button'));
   });
@@ -141,7 +141,7 @@ describe('Questrade UI Manager — injection point', () => {
     });
 
     test('shows toast and returns early when .sidebar__content is never found', async () => {
-      const toast = jest.requireMock('../../../src/ui/toast').default;
+      const toast = toastModule.default;
 
       const OriginalMutationObserver = global.MutationObserver;
       global.MutationObserver = class {
@@ -150,10 +150,10 @@ describe('Questrade UI Manager — injection point', () => {
         disconnect() {}
       };
 
-      jest.useFakeTimers();
+      vi.useFakeTimers();
 
       const promise = initSingleAccountUI();
-      jest.runAllTimers();
+      vi.runAllTimers();
       await promise;
 
       expect(toast.show).toHaveBeenCalledWith(
@@ -161,7 +161,7 @@ describe('Questrade UI Manager — injection point', () => {
         'warning',
       );
 
-      jest.useRealTimers();
+      vi.useRealTimers();
       global.MutationObserver = OriginalMutationObserver;
     });
 
@@ -196,7 +196,7 @@ describe('Questrade UI Manager — injection point', () => {
 
   describe('initAllAccountsUI', () => {
     beforeEach(() => {
-      const { isQuestradeAllAccountsPage } = jest.requireMock('../../../src/core/utils');
+      const { isQuestradeAllAccountsPage } = utilsModule;
       isQuestradeAllAccountsPage.mockReturnValue(true);
     });
 
@@ -228,7 +228,7 @@ describe('Questrade UI Manager — injection point', () => {
     });
 
     test('does nothing when isQuestradeAllAccountsPage returns false', async () => {
-      const { isQuestradeAllAccountsPage } = jest.requireMock('../../../src/core/utils');
+      const { isQuestradeAllAccountsPage } = utilsModule;
       isQuestradeAllAccountsPage.mockReturnValue(false);
 
       const sidebar = document.createElement('div');
@@ -241,7 +241,7 @@ describe('Questrade UI Manager — injection point', () => {
     });
 
     test('shows toast and returns early when .sidebar__content is never found', async () => {
-      const toast = jest.requireMock('../../../src/ui/toast').default;
+      const toast = toastModule.default;
 
       const OriginalMutationObserver = global.MutationObserver;
       global.MutationObserver = class {
@@ -249,10 +249,10 @@ describe('Questrade UI Manager — injection point', () => {
         disconnect() {}
       };
 
-      jest.useFakeTimers();
+      vi.useFakeTimers();
 
       const promise = initAllAccountsUI();
-      jest.runAllTimers();
+      vi.runAllTimers();
       await promise;
 
       expect(toast.show).toHaveBeenCalledWith(
@@ -260,7 +260,7 @@ describe('Questrade UI Manager — injection point', () => {
         'warning',
       );
 
-      jest.useRealTimers();
+      vi.useRealTimers();
       global.MutationObserver = OriginalMutationObserver;
     });
   });

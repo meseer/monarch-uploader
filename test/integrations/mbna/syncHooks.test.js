@@ -4,13 +4,15 @@
 
 import mbnaSyncHooks from '../../../src/integrations/mbna/sinks/monarch/syncHooks';
 import { generatePendingTransactionId } from '../../../src/services/common/pendingReconciliation';
+import * as balanceReconstructionModule from '../../../src/integrations/mbna/source/balanceReconstruction';
+import * as balanceFormatterModule from '../../../src/integrations/mbna/sinks/monarch/balanceFormatter';
 
 // ── Mocks ───────────────────────────────────────────────────
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  stringSimilarity: jest.fn(() => 0),
-  formatDate: jest.fn((date) => {
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  stringSimilarity: vi.fn(() => 0),
+  formatDate: vi.fn((date) => {
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, '0');
     const d = String(date.getDate()).padStart(2, '0');
@@ -18,60 +20,58 @@ jest.mock('../../../src/core/utils', () => ({
   }),
 }));
 
-jest.mock('../../../src/core/integrationCapabilities', () => ({
+vi.mock('../../../src/core/integrationCapabilities', () => ({
   INTEGRATIONS: { MBNA: 'mbna' },
 }));
 
-jest.mock('../../../src/mappers/merchant', () => ({
-  applyMerchantMapping: jest.fn((name) => name ? name.trim() : ''),
+vi.mock('../../../src/mappers/merchant', () => ({
+  applyMerchantMapping: vi.fn((name) => name ? name.trim() : ''),
 }));
 
-jest.mock('../../../src/services/common/configStore', () => ({
-  getCategoryMapping: jest.fn(() => null),
-  setCategoryMapping: jest.fn(),
+vi.mock('../../../src/services/common/configStore', () => ({
+  getCategoryMapping: vi.fn(() => null),
+  setCategoryMapping: vi.fn(),
 }));
 
-jest.mock('../../../src/mappers/category', () => ({
-  calculateAllCategorySimilarities: jest.fn(() => []),
+vi.mock('../../../src/mappers/category', () => ({
+  calculateAllCategorySimilarities: vi.fn(() => []),
 }));
 
-jest.mock('../../../src/ui/components/categorySelector', () => ({
-  showMonarchCategorySelector: jest.fn(),
+vi.mock('../../../src/ui/components/categorySelector', () => ({
+  showMonarchCategorySelector: vi.fn(),
 }));
 
-jest.mock('../../../src/api/monarch', () => ({
-  __esModule: true,
+vi.mock('../../../src/api/monarch', () => ({
   default: {
-    getCategoriesAndGroups: jest.fn(() => Promise.resolve({ categories: [] })),
+    getCategoriesAndGroups: vi.fn(() => Promise.resolve({ categories: [] })),
   },
 }));
 
-jest.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
+vi.mock('../../../src/services/common/accountService', () => ({
   default: {
-    getAccountData: jest.fn(() => ({ skipCategorization: true })),
+    getAccountData: vi.fn(() => ({ skipCategorization: true })),
   },
 }));
 
-jest.mock('../../../src/integrations/mbna/source/balanceReconstruction', () => ({
-  buildBalanceHistory: jest.fn(() => [{ date: '2024-01-10', balance: 100 }]),
+vi.mock('../../../src/integrations/mbna/source/balanceReconstruction', () => ({
+  buildBalanceHistory: vi.fn(() => [{ date: '2024-01-10', balance: 100 }]),
 }));
 
-jest.mock('../../../src/integrations/mbna/sinks/monarch/balanceFormatter', () => ({
-  formatBalanceHistoryForMonarch: jest.fn((history) => history.map((h) => ({ date: h.date, amount: -h.balance }))),
+vi.mock('../../../src/integrations/mbna/sinks/monarch/balanceFormatter', () => ({
+  formatBalanceHistoryForMonarch: vi.fn((history) => history.map((h) => ({ date: h.date, amount: -h.balance }))),
 }));
 
 // ── Tests ───────────────────────────────────────────────────
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 });
 
 describe('MBNA SyncHooks', () => {
   describe('fetchTransactions', () => {
     it('should call api.getTransactions and return normalized result', async () => {
       const mockApi = {
-        getTransactions: jest.fn(() => Promise.resolve({
+        getTransactions: vi.fn(() => Promise.resolve({
           allSettled: [{ referenceNumber: 'REF1', description: 'Amazon', amount: 42.50 }],
           allPending: [{ referenceNumber: 'TEMP', description: 'Starbucks', amount: 5.25 }],
           statements: [{ closingDate: '2024-01-01' }],
@@ -80,7 +80,7 @@ describe('MBNA SyncHooks', () => {
       };
 
       const result = await mbnaSyncHooks.fetchTransactions(mockApi, 'acc-1', '2024-01-01', {
-        onProgress: jest.fn(),
+        onProgress: vi.fn(),
       });
 
       expect(result.settled).toHaveLength(1);
@@ -93,7 +93,7 @@ describe('MBNA SyncHooks', () => {
       // MBNA assembles current-cycle transactions first, then statements by
       // descending closing date, so its lists arrive newest-first.
       const mockApi = {
-        getTransactions: jest.fn(() => Promise.resolve({
+        getTransactions: vi.fn(() => Promise.resolve({
           allSettled: [
             { referenceNumber: 'REF_NEW', transactionDate: '2024-01-20' },
             { referenceNumber: 'REF_MID', transactionDate: '2024-01-15' },
@@ -109,7 +109,7 @@ describe('MBNA SyncHooks', () => {
       };
 
       const result = await mbnaSyncHooks.fetchTransactions(mockApi, 'acc-1', '2024-01-01', {
-        onProgress: jest.fn(),
+        onProgress: vi.fn(),
       });
 
       expect(result.settled.map((t) => t.referenceNumber)).toEqual(['REF_OLD', 'REF_MID', 'REF_NEW']);
@@ -122,7 +122,7 @@ describe('MBNA SyncHooks', () => {
         { referenceNumber: 'REF_OLD', transactionDate: '2024-01-10' },
       ];
       const mockApi = {
-        getTransactions: jest.fn(() => Promise.resolve({
+        getTransactions: vi.fn(() => Promise.resolve({
           allSettled,
           allPending: [],
           statements: [],
@@ -130,7 +130,7 @@ describe('MBNA SyncHooks', () => {
         })),
       };
 
-      await mbnaSyncHooks.fetchTransactions(mockApi, 'acc-1', '2024-01-01', { onProgress: jest.fn() });
+      await mbnaSyncHooks.fetchTransactions(mockApi, 'acc-1', '2024-01-01', { onProgress: vi.fn() });
 
       expect(allSettled.map((t) => t.referenceNumber)).toEqual(['REF_NEW', 'REF_OLD']);
     });
@@ -139,7 +139,7 @@ describe('MBNA SyncHooks', () => {
       // `complete: false` means the statement list could not be read, so the feed
       // is the current cycle only — absence is not evidence of cancellation.
       const mockApi = {
-        getTransactions: jest.fn(() => Promise.resolve({
+        getTransactions: vi.fn(() => Promise.resolve({
           allSettled: [{ referenceNumber: 'REF1' }],
           allPending: [],
           statements: [],
@@ -149,7 +149,7 @@ describe('MBNA SyncHooks', () => {
       };
 
       const result = await mbnaSyncHooks.fetchTransactions(mockApi, 'acc-1', '2024-01-01', {
-        onProgress: jest.fn(),
+        onProgress: vi.fn(),
       });
 
       expect(result.sourceDataComplete).toBe(false);
@@ -157,7 +157,7 @@ describe('MBNA SyncHooks', () => {
 
     it('should report a complete MBNA fetch as trustworthy', async () => {
       const mockApi = {
-        getTransactions: jest.fn(() => Promise.resolve({
+        getTransactions: vi.fn(() => Promise.resolve({
           allSettled: [{ referenceNumber: 'REF1' }],
           allPending: [],
           statements: [{ closingDate: '2024-01-01' }],
@@ -167,7 +167,7 @@ describe('MBNA SyncHooks', () => {
       };
 
       const result = await mbnaSyncHooks.fetchTransactions(mockApi, 'acc-1', '2024-01-01', {
-        onProgress: jest.fn(),
+        onProgress: vi.fn(),
       });
 
       expect(result.sourceDataComplete).toBe(true);
@@ -317,8 +317,8 @@ describe('MBNA SyncHooks', () => {
 
   describe('buildBalanceHistory', () => {
     it('should call balance reconstruction and format for Monarch', () => {
-      const { buildBalanceHistory } = require('../../../src/integrations/mbna/source/balanceReconstruction');
-      const { formatBalanceHistoryForMonarch } = require('../../../src/integrations/mbna/sinks/monarch/balanceFormatter');
+      const { buildBalanceHistory } = balanceReconstructionModule;
+      const { formatBalanceHistoryForMonarch } = balanceFormatterModule;
 
       const result = mbnaSyncHooks.buildBalanceHistory({
         currentBalance: 500,
@@ -333,7 +333,7 @@ describe('MBNA SyncHooks', () => {
     });
 
     it('should skip formatting when invertBalance is true', () => {
-      const { formatBalanceHistoryForMonarch } = require('../../../src/integrations/mbna/sinks/monarch/balanceFormatter');
+      const { formatBalanceHistoryForMonarch } = balanceFormatterModule;
 
       const result = mbnaSyncHooks.buildBalanceHistory({
         currentBalance: 500,
@@ -347,7 +347,7 @@ describe('MBNA SyncHooks', () => {
     });
 
     it('should return null when no history', () => {
-      const { buildBalanceHistory } = require('../../../src/integrations/mbna/source/balanceReconstruction');
+      const { buildBalanceHistory } = balanceReconstructionModule;
       buildBalanceHistory.mockReturnValueOnce([]);
 
       const result = mbnaSyncHooks.buildBalanceHistory({
@@ -364,7 +364,7 @@ describe('MBNA SyncHooks', () => {
   describe('suggestStartDate', () => {
     it('should return date 30 days before oldest closing date', async () => {
       const mockApi = {
-        getClosingDates: jest.fn(() => Promise.resolve([
+        getClosingDates: vi.fn(() => Promise.resolve([
           '2024-03-15', '2024-02-15', '2024-01-15',
         ])),
       };
@@ -378,7 +378,7 @@ describe('MBNA SyncHooks', () => {
 
     it('should return null when no closing dates available', async () => {
       const mockApi = {
-        getClosingDates: jest.fn(() => Promise.resolve([])),
+        getClosingDates: vi.fn(() => Promise.resolve([])),
       };
 
       const result = await mbnaSyncHooks.suggestStartDate(mockApi, 'acc-1');
@@ -388,7 +388,7 @@ describe('MBNA SyncHooks', () => {
 
     it('should return null when API call fails', async () => {
       const mockApi = {
-        getClosingDates: jest.fn(() => Promise.reject(new Error('API error'))),
+        getClosingDates: vi.fn(() => Promise.reject(new Error('API error'))),
       };
 
       const result = await mbnaSyncHooks.suggestStartDate(mockApi, 'acc-1');

@@ -8,60 +8,56 @@
  * only the bank page's requests are simulated.
  */
 
-const {
+import {
   TRANSACTIONS_URL,
   installFakeXhr,
   sendPageXhr,
   useInMemoryGmStorage,
   expectNoCredentialsInStorage,
-} = require('../../helpers/rogersBankPage');
+} from '../../helpers/rogersBankPage';
+import * as utilsModule from '../../../src/core/utils';
 
 /** Element factory for the mocks below (jest.mock factories may only reference `mock*` names) */
 function mockElement(tag) {
   return document.createElement(tag);
 }
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
 }));
 
-jest.mock('../../../src/services/auth', () => ({
-  __esModule: true,
-  default: { getMonarchCredentials: jest.fn(() => ({ csrfToken: 'monarch-session' })) },
+vi.mock('../../../src/services/auth', () => ({
+  default: { getMonarchCredentials: vi.fn(() => ({ csrfToken: 'monarch-session' })) },
 }));
 
-jest.mock('../../../src/ui/toast', () => ({
-  __esModule: true,
-  default: { show: jest.fn() },
+vi.mock('../../../src/ui/toast', () => ({
+  default: { show: vi.fn() },
 }));
 
-jest.mock('../../../src/ui/components/settingsModal', () => ({
-  showSettingsModal: jest.fn(),
+vi.mock('../../../src/ui/components/settingsModal', () => ({
+  showSettingsModal: vi.fn(),
 }));
 
-jest.mock('../../../src/ui/components/monarchLoginLink', () => ({
-  createMonarchLoginLink: jest.fn(() => mockElement('a')),
-  ensureMonarchAuthentication: jest.fn(),
+vi.mock('../../../src/ui/components/monarchLoginLink', () => ({
+  createMonarchLoginLink: vi.fn(() => mockElement('a')),
+  ensureMonarchAuthentication: vi.fn(),
 }));
 
-jest.mock('../../../src/ui/components/versionBadge', () => ({
-  createVersionBadge: jest.fn(() => mockElement('span')),
+vi.mock('../../../src/ui/components/versionBadge', () => ({
+  createVersionBadge: vi.fn(() => mockElement('span')),
 }));
 
-jest.mock('../../../src/services/rogersbank-upload', () => ({
-  uploadRogersBankToMonarch: jest.fn(),
+vi.mock('../../../src/services/rogersbank-upload', () => ({
+  uploadRogersBankToMonarch: vi.fn(),
 }));
 
 /** Load fresh module instances, as a new page load would */
-function loadPage() {
-  let modules;
-  jest.isolateModules(() => {
-    modules = {
-      api: require('../../../src/api/rogersbank'),
-      ui: require('../../../src/ui/rogersbank/uiManager'),
-    };
-  });
-  return modules;
+async function loadPage() {
+  vi.resetModules();
+  return {
+    api: await import('../../../src/api/rogersbank'),
+    ui: await import('../../../src/ui/rogersbank/uiManager'),
+  };
 }
 
 const uploadButton = () => document.getElementById('rogersbank-upload-button');
@@ -72,21 +68,21 @@ describe('Rogers Bank UI credential states', () => {
   let gmStore;
 
   beforeEach(() => {
-    jest.useFakeTimers();
-    jest.clearAllMocks();
+    vi.useFakeTimers();
+    vi.clearAllMocks();
     gmStore = useInMemoryGmStorage();
     installFakeXhr();
-    globalThis.fetch = jest.fn();
+    globalThis.fetch = vi.fn();
     document.body.innerHTML = '<section aria-labelledby="master-card-section"></section>';
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
     document.body.innerHTML = '';
   });
 
   test('switches from waiting to the upload button when the page request is captured', async () => {
-    const { api, ui } = loadPage();
+    const { api, ui } = await loadPage();
     api.setupCredentialInterception();
     await ui.initRogersBankUI();
 
@@ -103,7 +99,7 @@ describe('Rogers Bank UI credential states', () => {
   });
 
   test('stores nothing while capturing credentials and updating the UI', async () => {
-    const { api, ui } = loadPage();
+    const { api, ui } = await loadPage();
     api.setupCredentialInterception();
     await ui.initRogersBankUI();
 
@@ -115,7 +111,7 @@ describe('Rogers Bank UI credential states', () => {
   });
 
   test('shows the upload button straight away when capture happened before the UI was built', async () => {
-    const { api, ui } = loadPage();
+    const { api, ui } = await loadPage();
     api.setupCredentialInterception();
     sendPageXhr(TRANSACTIONS_URL);
 
@@ -126,7 +122,7 @@ describe('Rogers Bank UI credential states', () => {
   });
 
   test('starts in the waiting state again after a reload', async () => {
-    const firstPage = loadPage();
+    const firstPage = await loadPage();
     firstPage.api.setupCredentialInterception();
     await firstPage.ui.initRogersBankUI();
     sendPageXhr(TRANSACTIONS_URL);
@@ -135,7 +131,7 @@ describe('Rogers Bank UI credential states', () => {
     // Reload: same GM storage, fresh page and fresh modules
     document.body.innerHTML = '<section aria-labelledby="master-card-section"></section>';
     installFakeXhr();
-    const reloaded = loadPage();
+    const reloaded = await loadPage();
     reloaded.api.setupCredentialInterception();
     await reloaded.ui.initRogersBankUI();
 
@@ -144,17 +140,17 @@ describe('Rogers Bank UI credential states', () => {
   });
 
   test('does not treat a URL change from before monitoring started as a navigation', async () => {
-    const { debugLog } = jest.requireMock('../../../src/core/utils');
+    const { debugLog } = utilsModule;
     window.history.replaceState({}, '', '/');
     try {
       // The module loads at document-start; the bank page then redirects while booting
-      const { api, ui } = loadPage();
+      const { api, ui } = await loadPage();
       window.history.replaceState({}, '', '/home');
       api.setupCredentialInterception();
       await ui.initRogersBankUI();
       debugLog.mockClear();
 
-      jest.advanceTimersByTime(500);
+      vi.advanceTimersByTime(500);
 
       expect(debugLog).not.toHaveBeenCalledWith('Rogers Bank URL changed to:', expect.anything());
     } finally {

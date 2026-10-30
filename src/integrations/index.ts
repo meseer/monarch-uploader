@@ -2,7 +2,7 @@
  * Integration Modules — Build-time Barrel
  *
  * Imports all available integration modules and exports them as an array.
- * In the future, build-time configuration (e.g., webpack DefinePlugin)
+ * In the future, build-time configuration (e.g., Vite `define`)
  * can select which integrations to include in the bundle.
  *
  * @module integrations
@@ -29,7 +29,7 @@ const ALL: Record<string, IntegrationModule> = {
 
 /**
  * Build-time integration selection.
- * When __ENABLED_INTEGRATIONS__ is defined by webpack DefinePlugin,
+ * When __ENABLED_INTEGRATIONS__ is defined at build time (e.g. via Vite `define`),
  * only the specified integrations are bundled. Otherwise, all are included.
  */
 const enabled: string[] | 'all' = typeof __ENABLED_INTEGRATIONS__ !== 'undefined'

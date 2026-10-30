@@ -12,23 +12,22 @@
 
 import { reconcileFetchedPendingTransactions } from '../../../src/services/common/pendingReconciliation';
 
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  formatDate: jest.fn((d) => d.toISOString().split('T')[0]),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  formatDate: vi.fn((d) => d.toISOString().split('T')[0]),
 }));
 
-jest.mock('../../../src/api/monarch', () => ({
-  __esModule: true,
+vi.mock('../../../src/api/monarch', () => ({
   default: {
-    getTagByName: jest.fn(),
-    getTransactionsList: jest.fn(),
-    updateTransaction: jest.fn(),
-    setTransactionTags: jest.fn(),
-    deleteTransaction: jest.fn(),
+    getTagByName: vi.fn(),
+    getTransactionsList: vi.fn(),
+    updateTransaction: vi.fn(),
+    setTransactionTags: vi.fn(),
+    deleteTransaction: vi.fn(),
   },
 }));
 
-const monarchApi = require('../../../src/api/monarch').default;
+import monarchApi from '../../../src/api/monarch';
 
 const PENDING_TAG = { id: 'tag-pending', name: 'Pending' };
 const OWNER_TAG = { id: 'tag-owner', name: 'pendingOwnerUpdate' };
@@ -76,7 +75,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   monarchApi.updateTransaction.mockResolvedValue({ id: 'monarch-1' });
   monarchApi.setTransactionTags.mockResolvedValue({ id: 'monarch-1' });
   monarchApi.deleteTransaction.mockResolvedValue(true);

@@ -1,5 +1,5 @@
 /**
- * @jest-environment jsdom
+ * @vitest-environment jsdom
  */
 
 import {
@@ -14,6 +14,7 @@ import {
   validateDateRange,
   addBlurValidation,
 } from '../../src/ui/components/formValidation';
+import * as formValidationModule from '../../src/ui/components/formValidation';
 
 describe('formValidation', () => {
   let container;
@@ -546,7 +547,7 @@ describe('formValidation', () => {
 
   describe('addBlurValidation', () => {
     test('calls validation function on blur', () => {
-      const validationFn = jest.fn();
+      const validationFn = vi.fn();
       addBlurValidation(inputElement, validationFn);
 
       inputElement.dispatchEvent(new Event('blur'));
@@ -575,7 +576,7 @@ describe('formValidation', () => {
 
   describe('default export', () => {
     test('exports all functions', () => {
-      const formValidation = require('../../src/ui/components/formValidation').default;
+      const formValidation = formValidationModule.default;
 
       expect(formValidation.showFieldError).toBeDefined();
       expect(formValidation.clearFieldError).toBeDefined();

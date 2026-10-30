@@ -8,6 +8,7 @@
 
 import { debugLog } from '../../core/utils';
 import { STORAGE } from '../../core/config';
+import { getManifest } from '../../core/integrationRegistry';
 import {
   INTEGRATIONS,
   getAccountKeyName,
@@ -75,8 +76,7 @@ export function getStorageKey(integrationId: string): string | null {
     return ACCOUNT_LIST_STORAGE_KEYS[integrationId];
   }
 
-  // Fall back to modular integration registry manifest (lazy require to avoid circular dependency)
-  const { getManifest } = require('../../core/integrationRegistry');
+  // Fall back to modular integration registry manifest
   const manifest = getManifest(integrationId);
   return manifest?.storageKeys?.accountsList || null;
 }

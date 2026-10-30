@@ -29,12 +29,13 @@ import {
 import { registerIntegration, clearRegistry } from '../../../src/core/integrationRegistry';
 import { getLookbackForInstitution } from '../../../src/core/utils';
 import mbnaManifest from '../../../src/integrations/mbna/manifest';
+import * as configStoreModule2 from '../../../src/services/common/configStore';
 
 describe('configStore', () => {
   let gmStore;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     // Set up in-memory GM storage for realistic testing
     gmStore = {};
     GM_getValue.mockImplementation((key, defaultValue) => {
@@ -140,7 +141,7 @@ describe('configStore', () => {
 
   describe('legacy auth cleanup', () => {
     it('has no function that writes or reads an auth section (ADR-010)', () => {
-      const configStoreModule = require('../../../src/services/common/configStore');
+      const configStoreModule = configStoreModule2;
 
       expect(configStoreModule.setAuth).toBeUndefined();
       expect(configStoreModule.getAuth).toBeUndefined();
@@ -424,8 +425,8 @@ describe('configStore', () => {
     /** Register a modular integration with the minimum the registry requires */
     const register = (manifest) => registerIntegration({
       manifest,
-      api: { fetch: jest.fn() },
-      auth: { checkStatus: jest.fn() },
+      api: { fetch: vi.fn() },
+      auth: { checkStatus: vi.fn() },
       injectionPoint: { selectors: [] },
     });
 

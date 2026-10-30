@@ -5,9 +5,21 @@
 import {
   uploadRogersBankToMonarch,
 } from '../../src/services/rogersbank-upload';
+import * as rogersbankModule from '../../src/api/rogersbank';
+import * as monarchModule from '../../src/api/monarch';
+import * as accountServiceModule from '../../src/services/common/accountService';
+import * as toastModule from '../../src/ui/toast';
+import * as datePickerModule from '../../src/ui/components/datePicker';
+import * as accountSelectorWithCreateModule from '../../src/ui/components/accountSelectorWithCreate';
+import * as progressDialogModule from '../../src/ui/components/progressDialog';
+import * as csvModule from '../../src/utils/csv';
+import * as categoryModule from '../../src/mappers/category';
+import * as categorySelectorModule from '../../src/ui/components/categorySelector';
+import * as utilsModule from '../../src/core/utils';
+import * as transactionStorageModule from '../../src/utils/transactionStorage';
 
 // Mock global fetch
-global.fetch = jest.fn();
+global.fetch = vi.fn();
 
 // Create RogersBankUploadError class for tests
 class RogersBankUploadError extends Error {
@@ -20,29 +32,29 @@ class RogersBankUploadError extends Error {
 
 // Mock DOM elements for getRogersAccountName testing
 Object.defineProperty(global.document, 'querySelector', {
-  value: jest.fn(),
+  value: vi.fn(),
   writable: true,
 });
 
 // Mock dependencies
-jest.mock('../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  formatDate: jest.fn((date) => {
+vi.mock('../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  formatDate: vi.fn((date) => {
     if (date instanceof Date) {
       return date.toISOString().split('T')[0];
     }
     return '2024-01-15';
   }),
-  getTodayLocal: jest.fn(() => '2024-01-15'),
-  getYesterdayLocal: jest.fn(() => '2024-01-14'),
-  formatDaysAgoLocal: jest.fn(() => '2023-10-15'),
-  parseLocalDate: jest.fn((dateString) => new Date(dateString)),
-  calculateFromDateWithLookback: jest.fn(),
-  saveLastUploadDate: jest.fn(),
-  getLastUpdateDate: jest.fn(),
+  getTodayLocal: vi.fn(() => '2024-01-15'),
+  getYesterdayLocal: vi.fn(() => '2024-01-14'),
+  formatDaysAgoLocal: vi.fn(() => '2023-10-15'),
+  parseLocalDate: vi.fn((dateString) => new Date(dateString)),
+  calculateFromDateWithLookback: vi.fn(),
+  saveLastUploadDate: vi.fn(),
+  getLastUpdateDate: vi.fn(),
 }));
 
-jest.mock('../../src/core/config', () => ({
+vi.mock('../../src/core/config', () => ({
   STORAGE: {
     ROGERSBANK_ACCOUNT_MAPPING_PREFIX: 'rogersbank_account_',
     ROGERSBANK_UPLOADED_REFS_PREFIX: 'rogersbank_uploaded_refs_',
@@ -69,102 +81,98 @@ jest.mock('../../src/core/config', () => ({
   },
 }));
 
-jest.mock('../../src/core/state', () => ({
-  __esModule: true,
+vi.mock('../../src/core/state', () => ({
   default: {
-    getState: jest.fn(() => ({
+    getState: vi.fn(() => ({
       currentAccount: { nickname: 'Rogers Card', name: 'Rogers Card' },
     })),
-    setAccount: jest.fn(),
-    setRogersBankAuth: jest.fn(),
+    setAccount: vi.fn(),
+    setRogersBankAuth: vi.fn(),
   },
 }));
 
-jest.mock('../../src/api/rogersbank', () => ({
-  getRogersBankCredentials: jest.fn(),
-  checkRogersBankAuth: jest.fn(),
-  fetchRogersBankAccountDetails: jest.fn(),
+vi.mock('../../src/api/rogersbank', () => ({
+  getRogersBankCredentials: vi.fn(),
+  checkRogersBankAuth: vi.fn(),
+  fetchRogersBankAccountDetails: vi.fn(),
 }));
 
-jest.mock('../../src/api/monarch', () => ({
-  __esModule: true,
+vi.mock('../../src/api/monarch', () => ({
   default: {
-    listAccounts: jest.fn(),
-    uploadTransactions: jest.fn(),
-    uploadBalance: jest.fn(),
-    getCategoriesAndGroups: jest.fn(),
-    setCreditLimit: jest.fn().mockResolvedValue(true),
-    setAccountLogo: jest.fn().mockResolvedValue(true),
-    validateAndRefreshAccountMapping: jest.fn(),
+    listAccounts: vi.fn(),
+    uploadTransactions: vi.fn(),
+    uploadBalance: vi.fn(),
+    getCategoriesAndGroups: vi.fn(),
+    setCreditLimit: vi.fn().mockResolvedValue(true),
+    setAccountLogo: vi.fn().mockResolvedValue(true),
+    validateAndRefreshAccountMapping: vi.fn(),
   },
 }));
 
-jest.mock('../../src/ui/toast', () => ({
-  __esModule: true,
+vi.mock('../../src/ui/toast', () => ({
   default: {
-    show: jest.fn(),
+    show: vi.fn(),
   },
 }));
 
-jest.mock('../../src/ui/components/progressDialog', () => ({
-  showProgressDialog: jest.fn(() => ({
-    updateProgress: jest.fn(),
-    hideCancel: jest.fn(),
-    showSummary: jest.fn(),
-    onCancel: jest.fn(),
-    initSteps: jest.fn(),
-    updateStepStatus: jest.fn(),
-    updateBalanceChange: jest.fn(),
+vi.mock('../../src/ui/components/progressDialog', () => ({
+  showProgressDialog: vi.fn(() => ({
+    updateProgress: vi.fn(),
+    hideCancel: vi.fn(),
+    showSummary: vi.fn(),
+    onCancel: vi.fn(),
+    initSteps: vi.fn(),
+    updateStepStatus: vi.fn(),
+    updateBalanceChange: vi.fn(),
   })),
 }));
 
-jest.mock('../../src/ui/components/datePicker', () => ({
-  showDatePickerWithOptionsPromise: jest.fn(),
+vi.mock('../../src/ui/components/datePicker', () => ({
+  showDatePickerWithOptionsPromise: vi.fn(),
 }));
 
-jest.mock('../../src/ui/components/accountSelectorWithCreate', () => ({
-  showMonarchAccountSelectorWithCreate: jest.fn(),
+vi.mock('../../src/ui/components/accountSelectorWithCreate', () => ({
+  showMonarchAccountSelectorWithCreate: vi.fn(),
 }));
 
-jest.mock('../../src/ui/components/monarchLoginLink', () => ({
-  ensureMonarchAuthentication: jest.fn(),
+vi.mock('../../src/ui/components/monarchLoginLink', () => ({
+  ensureMonarchAuthentication: vi.fn(),
 }));
 
-jest.mock('../../src/utils/csv', () => ({
-  convertTransactionsToMonarchCSV: jest.fn(() => 'csv,data'),
+vi.mock('../../src/utils/csv', () => ({
+  convertTransactionsToMonarchCSV: vi.fn(() => 'csv,data'),
 }));
 
-jest.mock('../../src/mappers/category', () => ({
-  applyCategoryMapping: jest.fn(),
-  saveUserCategorySelection: jest.fn(),
-  calculateAllCategorySimilarities: jest.fn(),
+vi.mock('../../src/mappers/category', () => ({
+  applyCategoryMapping: vi.fn(),
+  saveUserCategorySelection: vi.fn(),
+  calculateAllCategorySimilarities: vi.fn(),
 }));
 
 // Shared factory keeps the mock in step with the real module — see the helper for
 // why the pure ordering functions delegate to the actual implementation.
-jest.mock('../../src/utils/transactionStorage', () => {
-  const { buildTransactionStorageMock } = require('../helpers/transactionStorageMock');
+vi.mock('../../src/utils/transactionStorage', async () => {
+  const { buildTransactionStorageMock } = await import('../helpers/transactionStorageMock');
   return buildTransactionStorageMock();
 });
 
-jest.mock('../../src/ui/components/categorySelector', () => ({
-  showMonarchCategorySelector: jest.fn(),
+vi.mock('../../src/ui/components/categorySelector', () => ({
+  showMonarchCategorySelector: vi.fn(),
 }));
 
-jest.mock('../../src/services/common/accountService', () => ({
-  __esModule: true,
+vi.mock('../../src/services/common/accountService', () => ({
   default: {
-    getMonarchAccountMapping: jest.fn(),
-    upsertAccount: jest.fn(),
-    getAccountData: jest.fn(),
-    updateAccountInList: jest.fn(),
-    incrementSyncCount: jest.fn(),
-    isReadyForLegacyCleanup: jest.fn(),
-    cleanupLegacyStorage: jest.fn(),
+    getMonarchAccountMapping: vi.fn(),
+    upsertAccount: vi.fn(),
+    getAccountData: vi.fn(),
+    updateAccountInList: vi.fn(),
+    incrementSyncCount: vi.fn(),
+    isReadyForLegacyCleanup: vi.fn(),
+    cleanupLegacyStorage: vi.fn(),
   },
 }));
 
-jest.mock('../../src/core/integrationCapabilities', () => ({
+vi.mock('../../src/core/integrationCapabilities', () => ({
   INTEGRATIONS: {
     ROGERSBANK: 'rogersbank',
     WEALTHSIMPLE: 'wealthsimple',
@@ -184,12 +192,12 @@ jest.mock('../../src/core/integrationCapabilities', () => ({
   },
   // The cardholder service reads these to decide whether owner mapping is on.
   // Returning the "off" defaults keeps the feature inactive in these tests.
-  getSettingDefault: jest.fn(() => undefined),
-  hasCapability: jest.fn(() => false),
+  getSettingDefault: vi.fn(() => undefined),
+  hasCapability: vi.fn(() => false),
 }));
 
-jest.mock('../../src/services/rogersbank/pendingTransactions', () => ({
-  separateAndDeduplicateTransactions: jest.fn(async (transactions) => {
+vi.mock('../../src/services/rogersbank/pendingTransactions', () => ({
+  separateAndDeduplicateTransactions: vi.fn(async (transactions) => {
     const settled = (transactions || []).filter((tx) => tx.activityStatus === 'APPROVED');
     const pending = (transactions || []).filter((tx) => tx.activityStatus === 'PENDING').map((tx) => ({
       ...tx,
@@ -197,20 +205,20 @@ jest.mock('../../src/services/rogersbank/pendingTransactions', () => ({
     }));
     return { settled, pending, pendingIdMap: new Map(), settledIdMap: new Map(), duplicatesRemoved: 0 };
   }),
-  reconcileRogersPendingTransactions: jest.fn(async () => ({
+  reconcileRogersPendingTransactions: vi.fn(async () => ({
     success: true, settled: 0, cancelled: 0, failed: 0, noPendingTransactions: true,
   })),
-  reconcileRogersFetchedPending: jest.fn(async () => ({
+  reconcileRogersFetchedPending: vi.fn(async () => ({
     success: true, settled: 0, cancelled: 0, failed: 0, settledRefIds: [], noPendingTransactions: true,
   })),
-  formatReconciliationMessage: jest.fn(() => 'No pending transactions'),
-  formatPendingIdForNotes: jest.fn((id) => id || ''),
+  formatReconciliationMessage: vi.fn(() => 'No pending transactions'),
+  formatPendingIdForNotes: vi.fn((id) => id || ''),
 }));
 
 // Mock GM functions
-globalThis.GM_getValue = jest.fn();
-globalThis.GM_setValue = jest.fn();
-globalThis.GM_xmlhttpRequest = jest.fn();
+globalThis.GM_getValue = vi.fn();
+globalThis.GM_setValue = vi.fn();
+globalThis.GM_xmlhttpRequest = vi.fn();
 
 
 describe('Rogers Bank Upload Service - Balance Inversion, Skip Categorization, Data Storage, Balance Correction', () => {
@@ -230,14 +238,14 @@ describe('Rogers Bank Upload Service - Balance Inversion, Skip Categorization, D
   let accountServiceMock;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     // Get all the mocked modules
-    const rogersbankMock = jest.requireMock('../../src/api/rogersbank');
+    const rogersbankMock = rogersbankModule;
     getRogersBankCredentials = rogersbankMock.getRogersBankCredentials;
     fetchRogersBankAccountDetails = rogersbankMock.fetchRogersBankAccountDetails;
 
-    monarchApi = jest.requireMock('../../src/api/monarch').default;
+    monarchApi = monarchModule.default;
 
     // Default: validateAndRefreshAccountMapping returns valid existing account (not newlyCreated)
     monarchApi.validateAndRefreshAccountMapping.mockResolvedValue({
@@ -246,7 +254,7 @@ describe('Rogers Bank Upload Service - Balance Inversion, Skip Categorization, D
     });
 
     // Default: accountService returns valid account mapping
-    accountServiceMock = jest.requireMock('../../src/services/common/accountService').default;
+    accountServiceMock = accountServiceModule.default;
     accountServiceMock.getMonarchAccountMapping.mockReturnValue({ id: 'monarch123', displayName: 'Rogers Card' });
     accountServiceMock.getAccountData.mockReturnValue({ lastSyncedCreditLimit: null, balanceCheckpoint: null, uploadedTransactions: [] });
     accountServiceMock.upsertAccount.mockReturnValue(true);
@@ -254,28 +262,28 @@ describe('Rogers Bank Upload Service - Balance Inversion, Skip Categorization, D
     accountServiceMock.incrementSyncCount.mockReturnValue(1);
     accountServiceMock.isReadyForLegacyCleanup.mockReturnValue(false);
     accountServiceMock.cleanupLegacyStorage.mockReturnValue({ cleaned: false, keysDeleted: 0, keys: [] });
-    toast = jest.requireMock('../../src/ui/toast').default;
-    showDatePickerWithOptionsPromise = jest.requireMock('../../src/ui/components/datePicker').showDatePickerWithOptionsPromise;
-    showMonarchAccountSelectorWithCreate = jest.requireMock('../../src/ui/components/accountSelectorWithCreate').showMonarchAccountSelectorWithCreate;
-    showProgressDialog = jest.requireMock('../../src/ui/components/progressDialog').showProgressDialog;
-    convertTransactionsToMonarchCSV = jest.requireMock('../../src/utils/csv').convertTransactionsToMonarchCSV;
-    applyCategoryMapping = jest.requireMock('../../src/mappers/category').applyCategoryMapping;
-    showMonarchCategorySelector = jest.requireMock('../../src/ui/components/categorySelector').showMonarchCategorySelector;
-    calculateFromDateWithLookback = jest.requireMock('../../src/core/utils').calculateFromDateWithLookback;
-    saveLastUploadDate = jest.requireMock('../../src/core/utils').saveLastUploadDate;
-    getLastUpdateDate = jest.requireMock('../../src/core/utils').getLastUpdateDate;
+    toast = toastModule.default;
+    showDatePickerWithOptionsPromise = datePickerModule.showDatePickerWithOptionsPromise;
+    showMonarchAccountSelectorWithCreate = accountSelectorWithCreateModule.showMonarchAccountSelectorWithCreate;
+    showProgressDialog = progressDialogModule.showProgressDialog;
+    convertTransactionsToMonarchCSV = csvModule.convertTransactionsToMonarchCSV;
+    applyCategoryMapping = categoryModule.applyCategoryMapping;
+    showMonarchCategorySelector = categorySelectorModule.showMonarchCategorySelector;
+    calculateFromDateWithLookback = utilsModule.calculateFromDateWithLookback;
+    saveLastUploadDate = utilsModule.saveLastUploadDate;
+    getLastUpdateDate = utilsModule.getLastUpdateDate;
 
     // Default: not first sync (has previous upload date)
     // Tests that need first sync should override with getLastUpdateDate.mockReturnValue(null)
     getLastUpdateDate.mockReturnValue('2024-01-01');
 
     // Reset getTransactionIdsFromArray to return empty Set by default
-    const transactionStorageMock = jest.requireMock('../../src/utils/transactionStorage');
+    const transactionStorageMock = transactionStorageModule;
     transactionStorageMock.getTransactionIdsFromArray.mockReturnValue(new Set());
 
     // Setup DOM mocks
     global.document.querySelector.mockReturnValue({
-      querySelectorAll: jest.fn(() => [
+      querySelectorAll: vi.fn(() => [
         { textContent: 'Rogers' },
         { textContent: 'Mastercard' },
       ]),
@@ -731,7 +739,7 @@ describe('Rogers Bank Upload Service - Balance Inversion, Skip Categorization, D
         bankCategory: 'Unknown Category',
       });
 
-      const calculateAllCategorySimilarities = jest.requireMock('../../src/mappers/category').calculateAllCategorySimilarities;
+      const calculateAllCategorySimilarities = categoryModule.calculateAllCategorySimilarities;
       calculateAllCategorySimilarities.mockReturnValue({
         topMatches: [{ category: 'Shopping', score: 0.5 }],
         allScores: [{ category: 'Shopping', score: 0.5 }],
@@ -815,7 +823,7 @@ describe('Rogers Bank Upload Service - Balance Inversion, Skip Categorization, D
         bankCategory: 'Category A',
       });
 
-      const calculateAllCategorySimilarities = jest.requireMock('../../src/mappers/category').calculateAllCategorySimilarities;
+      const calculateAllCategorySimilarities = categoryModule.calculateAllCategorySimilarities;
       calculateAllCategorySimilarities.mockReturnValue({
         topMatches: [],
         allScores: [],
@@ -942,7 +950,7 @@ describe('Rogers Bank Upload Service - Balance Inversion, Skip Categorization, D
       });
 
       // Mock that OLD_REF1 and OLD_REF2 are already uploaded
-      const transactionStorageMock = jest.requireMock('../../src/utils/transactionStorage');
+      const transactionStorageMock = transactionStorageModule;
       transactionStorageMock.getTransactionIdsFromArray.mockReturnValue(new Set(['OLD_REF1', 'OLD_REF2']));
 
       fetchRogersBankAccountDetails.mockResolvedValue({ balance: -1000, creditLimit: 5000, openedDate: '2023-01-01' });
@@ -1453,7 +1461,7 @@ describe('Rogers Bank Upload Service - Balance Inversion, Skip Categorization, D
     });
 
     test('should log correction factor when applied', async () => {
-      const debugLog = jest.requireMock('../../src/core/utils').debugLog;
+      const debugLog = utilsModule.debugLog;
 
       getRogersBankCredentials.mockReturnValue({
         authToken: 'test-token',

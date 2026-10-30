@@ -15,24 +15,22 @@ import balanceUploadDefault from '../../../src/services/common/balanceUpload';
 const { extractBalanceChange } = balanceUploadDefault;
 
 // Mock dependencies
-jest.mock('../../../src/core/utils', () => ({
-  debugLog: jest.fn(),
-  getTodayLocal: jest.fn(() => '2025-02-17'),
-  saveLastUploadDate: jest.fn(),
+vi.mock('../../../src/core/utils', () => ({
+  debugLog: vi.fn(),
+  getTodayLocal: vi.fn(() => '2025-02-17'),
+  saveLastUploadDate: vi.fn(),
 }));
 
-jest.mock('../../../src/api/monarch', () => ({
-  __esModule: true,
+vi.mock('../../../src/api/monarch', () => ({
   default: {
-    uploadBalance: jest.fn(),
+    uploadBalance: vi.fn(),
   },
 }));
 
-jest.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
+vi.mock('../../../src/services/common/accountService', () => ({
   default: {
-    getAccountData: jest.fn(() => null),
-    updateAccountInList: jest.fn(),
+    getAccountData: vi.fn(() => null),
+    updateAccountInList: vi.fn(),
   },
 }));
 
@@ -42,7 +40,7 @@ import accountService from '../../../src/services/common/accountService';
 
 describe('Balance Upload Service', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     accountService.getAccountData.mockReturnValue(null);
   });
 
@@ -187,8 +185,8 @@ describe('Balance Upload Service', () => {
 
     beforeEach(() => {
       mockProgressDialog = {
-        updateStepStatus: jest.fn(),
-        updateBalanceChange: jest.fn(),
+        updateStepStatus: vi.fn(),
+        updateBalanceChange: vi.fn(),
       };
       monarchApi.uploadBalance.mockResolvedValue(true);
     });

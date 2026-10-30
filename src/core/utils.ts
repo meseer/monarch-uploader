@@ -4,7 +4,9 @@
  */
 
 import { STORAGE, TRANSACTION_RETENTION_DEFAULTS } from './config';
+import { debugLog } from './logger';
 import { INTEGRATIONS } from './integrationCapabilities';
+import { getIntegration, isRegistered } from './integrationRegistry';
 import { getSetting, setSetting } from '../services/common/configStore';
 import toast from '../ui/toast';
 import accountService from '../services/common/accountService';
@@ -16,49 +18,10 @@ export function getLocalToday(): Date {
   return new Date();
 }
 
-/**
- * Formats the current time as a timestamp string
- */
-function formatTimestamp(): string {
-  const now = new Date();
-  const hours = String(now.getHours()).padStart(2, '0');
-  const minutes = String(now.getMinutes()).padStart(2, '0');
-  const seconds = String(now.getSeconds()).padStart(2, '0');
-  const ms = String(now.getMilliseconds()).padStart(3, '0');
-  return `${hours}:${minutes}:${seconds}.${ms}`;
-}
-
-type LogLevel = 'debug' | 'info' | 'warning' | 'error';
-
-/**
- * Debug logging function
- */
-export function debugLog(...args: unknown[]): void {
-  const level: LogLevel = args.length > 0 && typeof args[args.length - 1] === 'string'
-    && ['debug', 'info', 'warning', 'error'].includes(args[args.length - 1] as string)
-    ? args.pop() as LogLevel : 'debug';
-
-  const currentLogLevel = GM_getValue('debug_log_level', 'info') as string;
-  const logLevels: Record<string, number> = {
-    debug: 0, info: 1, warning: 2, error: 3,
-  };
-
-  // Only log if the message level is at or above the current log level
-  if (logLevels[level] >= logLevels[currentLogLevel]) {
-    const timestamp = `[${formatTimestamp()}]`;
-    const prefix = `${timestamp}[${level.toUpperCase()}][Monarch Uploader]`;
-
-    if (level === 'error') {
-      console.error(prefix, ...args);
-    } else if (level === 'warning') {
-      console.warn(prefix, ...args);
-    } else if (level === 'info') {
-      console.info(prefix, ...args);
-    } else {
-      console.log(prefix, ...args);
-    }
-  }
-}
+// debugLog lives in the dependency-free logger module so low-level modules
+// (e.g. integrationRegistry) can log without importing utils; re-exported here
+// for the existing call sites.
+export { debugLog };
 
 /**
  * Helper functions for specific log levels
@@ -212,9 +175,7 @@ export function getDefaultLookbackDays(institutionType: string): number {
     return 7; // 7 day lookback for balance checkpoints
   default: {
     // Check registry for modular integrations (e.g. 'mbna').
-    // Lazy require to avoid circular dependency (integrationRegistry → utils).
-    const reg = require('./integrationRegistry');
-    const entry = reg.getIntegration ? reg.getIntegration(institutionType) : undefined;
+    const entry = getIntegration(institutionType);
     if (entry?.manifest?.defaultLookbackDays !== undefined) {
       return entry.manifest.defaultLookbackDays;
     }
@@ -239,10 +200,7 @@ function getIntegrationIdFromType(institutionType: string): string | null {
     return 'wealthsimple';
   default: {
     // Check registry for modular integrations (e.g. 'mbna').
-    // Lazy require to avoid circular dependency (integrationRegistry → utils).
-    const reg = require('./integrationRegistry');
-    const isRegistered = reg.isRegistered ? reg.isRegistered(institutionType) : false;
-    if (isRegistered) {
+    if (isRegistered(institutionType)) {
       return institutionType;
     }
     return null;
