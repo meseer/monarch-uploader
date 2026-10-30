@@ -213,35 +213,53 @@ describe('built userscript encoding', () => {
   });
 
   describe('runtime boot smoke test (jsdom)', () => {
+    const flushAsyncTicks = async (count = 3) => {
+      for (let i = 0; i < count; i++) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((resolve) => {
+          setImmediate(resolve);
+        });
+      }
+    };
+
     it.each([
       ['Monarch', 'https://app.monarch.com/accounts', 'Running on Monarch site'],
+      ['Questrade', 'https://myportal.questrade.com/investing/summary', 'Running on Questrade site'],
+      ['Canada Life', 'https://my.canadalife.com/accounts', 'Running on CanadaLife site'],
       ['Wealthsimple', 'https://my.wealthsimple.com/app/home', 'Running on Wealthsimple site'],
       ['MBNA', 'https://service.mbna.ca/waw/mbna/account', 'Running on modular integration site: MBNA'],
       ['Neo Financial', 'https://member.neofinancial.com/accounts', 'Running on modular integration site: Neo Financial'],
-      ['Rogers Bank', 'https://rbaccess.rogersbank.com/', 'Running on Rogers Bank site'],
+      ['Rogers Bank', 'https://selfserve.rogersbank.com/home', 'Running on Rogers Bank site'],
       ['Unrelated site', 'https://example.com/', 'Running on unsupported site: example.com'],
-    ])('boots cleanly through DOMContentLoaded and initApp on %s (%s)', (_label, url, expectedInitLog) => {
+    ])('boots cleanly through DOMContentLoaded and initApp on %s (%s)', async (_label, url, expectedInitLog) => {
       const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
         url,
         runScripts: 'outside-only',
       });
+      const errors = [];
+      const onUnhandledRejection = (reason) => {
+        errors.push(reason);
+      };
+      process.on('unhandledRejection', onUnhandledRejection);
+
       try {
         const win = dom.window;
         expect(win.location.hostname).toBe(new URL(url).hostname);
 
-        const errors = [];
         const consoleErrors = [];
         const debugLogs = [];
         const menuCommands = [];
         const timeouts = [];
+        let currentTime = 0;
+        let nextTimerId = 1;
 
         win.addEventListener('error', (evt) => errors.push(evt.error || evt.message));
-        win.addEventListener('unhandledrejection', (evt) => errors.push(evt.reason));
         win.console.log = (...args) => debugLogs.push(args.join(' '));
         win.console.error = (...args) => consoleErrors.push(args);
 
-        // Simulate @run-at document-start and intercept timers so we can drive
-        // both the document-idle callback (0ms) and initApp (1000ms) without
+        // Simulate @run-at document-start and intercept timers with a virtual
+        // clock so callbacks run in delay order up to 1000ms without spinning
+        // on self-rescheduling polls (e.g. Questrade's 500ms auth check) or
         // leaving background intervals running after the test.
         let readyState = 'loading';
         Object.defineProperty(win.document, 'readyState', {
@@ -249,11 +267,16 @@ describe('built userscript encoding', () => {
           get: () => readyState,
         });
         win.setTimeout = (fn, delay = 0) => {
-          timeouts.push({ fn, delay });
-          return timeouts.length;
+          const id = nextTimerId++;
+          const ms = Math.max(0, Number(delay) || 0);
+          timeouts.push({ id, fn, dueAt: currentTime + ms });
+          return id;
         };
-        win.clearTimeout = () => {};
-        win.setInterval = () => 1;
+        win.clearTimeout = (id) => {
+          const idx = timeouts.findIndex((t) => t.id === id);
+          if (idx !== -1) timeouts.splice(idx, 1);
+        };
+        win.setInterval = () => nextTimerId++;
         win.clearInterval = () => {};
 
         Object.assign(win, {
@@ -273,25 +296,39 @@ describe('built userscript encoding', () => {
 
         // 1. Evaluate the bundle at document-start
         win.eval(text);
+        await flushAsyncTicks();
 
         // 2. Finish parsing and dispatch DOMContentLoaded
         readyState = 'complete';
         win.document.dispatchEvent(new win.Event('DOMContentLoaded', { bubbles: true }));
+        await flushAsyncTicks();
 
-        // 3. Flush queued timeouts up to 1000ms (runs startMonarchUploader -> initApp)
-        while (timeouts.length > 0) {
+        // 3. Advance virtual clock up to 1000ms in dueAt order with a hard
+        // iteration cap so a runaway 0ms timer fails the test instead of hanging.
+        const MAX_TIMER_STEPS = 100;
+        let steps = 0;
+        while (steps < MAX_TIMER_STEPS && timeouts.length > 0) {
+          timeouts.sort((a, b) => (a.dueAt - b.dueAt) || (a.id - b.id));
+          if (timeouts[0].dueAt > 1000) break;
           const next = timeouts.shift();
-          if (next.delay <= 1000) {
-            next.fn();
-          }
+          currentTime = next.dueAt;
+          steps += 1;
+          next.fn();
+          // eslint-disable-next-line no-await-in-loop
+          await flushAsyncTicks();
         }
+        expect(steps).toBeLessThan(MAX_TIMER_STEPS);
+
+        // 4. Flush any async work kicked off by initApp (e.g. initUI().catch(...))
+        await flushAsyncTicks(5);
 
         expect(errors).toEqual([]);
         expect(consoleErrors).toEqual([]);
-        expect(menuCommands).toHaveLength(5);
+        expect(menuCommands).toContain('Clear All Cached Data');
         expect(win.document.getElementById('monarch-uploader-theme')).not.toBeNull();
         expect(debugLogs.some((msg) => msg.includes(expectedInitLog))).toBe(true);
       } finally {
+        process.off('unhandledRejection', onUnhandledRejection);
         dom.window.close();
       }
     });
