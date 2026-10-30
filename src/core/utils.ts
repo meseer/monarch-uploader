@@ -6,7 +6,7 @@
 import { STORAGE, TRANSACTION_RETENTION_DEFAULTS } from './config';
 import { debugLog } from './logger';
 import { INTEGRATIONS } from './integrationCapabilities';
-import * as integrationRegistry from './integrationRegistry';
+import { getIntegration, isRegistered } from './integrationRegistry';
 import { getSetting, setSetting } from '../services/common/configStore';
 import toast from '../ui/toast';
 import accountService from '../services/common/accountService';
@@ -175,9 +175,7 @@ export function getDefaultLookbackDays(institutionType: string): number {
     return 7; // 7 day lookback for balance checkpoints
   default: {
     // Check registry for modular integrations (e.g. 'mbna').
-    // integrationRegistry imports utils too; the cycle is safe because the
-    // registry is only read at runtime, never during module evaluation.
-    const entry = integrationRegistry.getIntegration(institutionType);
+    const entry = getIntegration(institutionType);
     if (entry?.manifest?.defaultLookbackDays !== undefined) {
       return entry.manifest.defaultLookbackDays;
     }
@@ -202,8 +200,7 @@ function getIntegrationIdFromType(institutionType: string): string | null {
     return 'wealthsimple';
   default: {
     // Check registry for modular integrations (e.g. 'mbna').
-    const isRegistered = integrationRegistry.isRegistered(institutionType);
-    if (isRegistered) {
+    if (isRegistered(institutionType)) {
       return institutionType;
     }
     return null;

@@ -36,12 +36,10 @@ vi.mock('../../src/ui/keyboardNavigation', () => ({
 }));
 
 vi.mock('../../src/ui/toast', () => ({
-  __esModule: true,
   default: { show: vi.fn() },
 }));
 
 vi.mock('../../src/api/monarch', () => ({
-  __esModule: true,
   default: {
     getAccountTypeOptions: vi.fn(),
     createManualAccount: vi.fn(),

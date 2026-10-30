@@ -26,14 +26,12 @@ vi.mock('../../src/core/utils', () => ({
 }));
 
 vi.mock('../../src/core/state', () => ({
-  __esModule: true,
   default: {
     setRogersBankAuth: vi.fn(),
   },
 }));
 
 vi.mock('../../src/ui/toast', () => ({
-  __esModule: true,
   default: {
     show: vi.fn(),
   },

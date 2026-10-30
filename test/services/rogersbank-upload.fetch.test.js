@@ -87,7 +87,6 @@ vi.mock('../../src/core/config', () => ({
 }));
 
 vi.mock('../../src/core/state', () => ({
-  __esModule: true,
   default: {
     getState: vi.fn(() => ({
       currentAccount: { nickname: 'Rogers Card', name: 'Rogers Card' },
@@ -104,7 +103,6 @@ vi.mock('../../src/api/rogersbank', () => ({
 }));
 
 vi.mock('../../src/api/monarch', () => ({
-  __esModule: true,
   default: {
     listAccounts: vi.fn(),
     uploadTransactions: vi.fn(),
@@ -117,7 +115,6 @@ vi.mock('../../src/api/monarch', () => ({
 }));
 
 vi.mock('../../src/ui/toast', () => ({
-  __esModule: true,
   default: {
     show: vi.fn(),
   },
@@ -169,7 +166,6 @@ vi.mock('../../src/ui/components/categorySelector', () => ({
 }));
 
 vi.mock('../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     getMonarchAccountMapping: vi.fn(),
     upsertAccount: vi.fn(),

@@ -6,7 +6,6 @@
  */
 
 vi.mock('../../../src/api/wealthsimple', () => ({
-  __esModule: true,
   default: {
     checkAuth: vi.fn(() => ({ authenticated: true, expiresAt: '2099-01-01T00:00:00Z' })),
     fetchAccountBalances: vi.fn(async () => ({
@@ -52,7 +51,6 @@ vi.mock('../../../src/ui/components/progressDialog', () => ({
 }));
 
 vi.mock('../../../src/ui/toast', () => ({
-  __esModule: true,
   default: { show: vi.fn() },
 }));
 

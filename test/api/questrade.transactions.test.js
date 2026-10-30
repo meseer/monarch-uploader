@@ -25,14 +25,12 @@ vi.mock('../../src/core/utils', () => ({
 }));
 
 vi.mock('../../src/core/state', () => ({
-  __esModule: true,
   default: {
     setQuestradeAuth: vi.fn(),
   },
 }));
 
 vi.mock('../../src/services/questrade/auth', () => ({
-  __esModule: true,
   default: {
     checkQuestradeAuth: vi.fn(),
     getQuestradeToken: vi.fn(),

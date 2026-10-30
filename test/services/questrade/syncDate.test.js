@@ -11,21 +11,18 @@
 import accountService from '../../../src/services/common/accountService';
 
 vi.mock('../../../src/api/questrade', () => ({
-  __esModule: true,
   default: { fetchAccounts: vi.fn(), makeApiCall: vi.fn(), getAccount: vi.fn() },
   fetchAccounts: vi.fn(),
   makeApiCall: vi.fn(),
 }));
 
 vi.mock('../../../src/api/monarch', () => ({
-  __esModule: true,
   default: { uploadBalance: vi.fn(), uploadTransactions: vi.fn(), listAccounts: vi.fn() },
   uploadBalance: vi.fn(),
   uploadTransactions: vi.fn(),
 }));
 
 vi.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     getAccounts: vi.fn(),
     getAccountData: vi.fn(),
@@ -44,13 +41,11 @@ vi.mock('../../../src/ui/components/monarchLoginLink', () => ({
 }));
 
 vi.mock('../../../src/ui/toast', () => ({
-  __esModule: true,
   default: { show: vi.fn() },
   show: vi.fn(),
 }));
 
 vi.mock('../../../src/core/state', () => ({
-  __esModule: true,
   default: {
     setAccount: vi.fn(),
     getState: vi.fn(() => ({ currentAccount: { nickname: 'Test Account' } })),
@@ -74,12 +69,10 @@ vi.mock('../../../src/services/questrade/accountMapping', () => ({
 }));
 
 vi.mock('../../../src/services/questrade/positions', () => ({
-  __esModule: true,
   default: { processAccountPositions: vi.fn() },
 }));
 
 vi.mock('../../../src/services/questrade/transactions', () => ({
-  __esModule: true,
   default: {
     processAndUploadOrders: vi.fn(),
     processAndUploadActivityTransactions: vi.fn(),
@@ -92,7 +85,6 @@ vi.mock('../../../src/services/questrade/balance', async () => {
   const actual = await vi.importActual('../../../src/services/questrade/balance');
   return {
     ...actual,
-    __esModule: true,
     default: { processAndUploadBalance: vi.fn() },
     fetchBalanceHistory: vi.fn(),
     extractBalanceChange: vi.fn(() => null),

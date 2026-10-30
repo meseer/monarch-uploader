@@ -44,7 +44,6 @@ vi.mock('../../src/ui/toast', () => {
 
 // Mock the accountService module since utils now reads from consolidated storage
 vi.mock('../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     getAccountData: vi.fn(() => null), // Default: no account data found
     updateAccountInList: vi.fn(() => false), // Default: account not found

@@ -40,7 +40,6 @@ vi.mock('../../../src/core/utils', () => ({
 }));
 
 vi.mock('../../../src/api/monarch', () => ({
-  __esModule: true,
   default: {
     getTagByName: vi.fn(),
     getTransactionsList: vi.fn(),

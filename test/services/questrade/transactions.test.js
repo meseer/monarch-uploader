@@ -35,7 +35,6 @@ vi.mock('../../../src/utils/transactionStorage', () => ({
   }),
 }));
 vi.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     getMonarchAccountMapping: vi.fn(),
     getAccountData: vi.fn(),

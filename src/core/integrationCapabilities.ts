@@ -243,10 +243,8 @@ export function getCapabilities(integrationId: string): LegacyIntegrationCapabil
     return INTEGRATION_CAPABILITIES[integrationId];
   }
 
-  // Fall back to modular integration registry manifest. This import is part of the
-  // cycle integrationCapabilities → integrationRegistry → utils → configStore →
-  // integrationCapabilities; ESM live bindings resolve it because getManifest is
-  // only called at runtime, never during module evaluation.
+  // Fall back to modular integration registry manifest (logger.ts keeps
+  // integrationRegistry free of import cycles with capabilities/utils).
   const manifest = getManifest(integrationId);
   if (manifest) {
     return buildCapabilitiesFromManifest(manifest);

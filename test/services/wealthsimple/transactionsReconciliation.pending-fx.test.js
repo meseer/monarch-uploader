@@ -28,7 +28,6 @@ vi.mock('../../../src/core/utils', () => ({
 }));
 
 vi.mock('../../../src/api/monarch', () => ({
-  __esModule: true,
   default: {
     getTagByName: vi.fn(),
     getTransactionsList: vi.fn(),
@@ -39,7 +38,6 @@ vi.mock('../../../src/api/monarch', () => ({
 }));
 
 vi.mock('../../../src/api/wealthsimple', () => ({
-  __esModule: true,
   default: {
     fetchExtendedOrder: vi.fn(),
     fetchActivityByOrdersServiceOrderId: vi.fn(),

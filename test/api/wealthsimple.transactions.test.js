@@ -18,7 +18,6 @@ Object.defineProperty(document, 'cookie', {
 });
 
 vi.mock('../../src/core/state', () => ({
-  __esModule: true,
   default: {
     setWealthsimpleAuth: vi.fn(),
   },

@@ -17,14 +17,12 @@ vi.mock('../../src/core/utils', async () => ({
 }));
 
 vi.mock('../../src/api/monarch', () => ({
-  __esModule: true,
   default: {
     getCategoriesAndGroups: vi.fn(),
   },
 }));
 
 vi.mock('../../src/ui/toast', () => ({
-  __esModule: true,
   default: { show: vi.fn() },
 }));
 

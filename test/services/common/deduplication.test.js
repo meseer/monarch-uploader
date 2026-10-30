@@ -14,7 +14,6 @@ vi.mock('../../../src/core/utils', () => ({
 }));
 
 vi.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     getAccountData: vi.fn(),
   },

@@ -22,14 +22,12 @@ vi.mock('../../../src/core/utils', () => ({
 }));
 
 vi.mock('../../../src/api/monarch', () => ({
-  __esModule: true,
   default: {
     uploadBalance: vi.fn(),
   },
 }));
 
 vi.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     getAccountData: vi.fn(() => null),
     updateAccountInList: vi.fn(),

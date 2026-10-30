@@ -15,7 +15,6 @@ vi.mock('../../src/ui/toast', () => ({
 }));
 
 vi.mock('../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     getAccounts: vi.fn(() => []),
   },

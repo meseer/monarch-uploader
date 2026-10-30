@@ -29,7 +29,6 @@ vi.mock('../../../src/api/monarch', () => {
 
 // Mock accountService
 vi.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     getHoldingMapping: vi.fn(),
     getHoldingsMappings: vi.fn(),

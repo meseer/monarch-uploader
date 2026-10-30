@@ -10,14 +10,12 @@ vi.mock('../../../src/core/utils', () => ({
 }));
 
 vi.mock('../../../src/api/monarch', () => ({
-  __esModule: true,
   default: {
     setCreditLimit: vi.fn(),
   },
 }));
 
 vi.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     getAccountData: vi.fn(),
     updateAccountInList: vi.fn(() => true),

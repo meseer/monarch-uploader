@@ -21,7 +21,7 @@ vi.mock('../../../src/core/utils', () => ({
   computeExtendedFromDate: vi.fn((from) => from),
 }));
 
-vi.mock('../../../src/core/state', () => ({ __esModule: true, default: { setAccount: vi.fn() } }));
+vi.mock('../../../src/core/state', () => ({ default: { setAccount: vi.fn() } }));
 
 vi.mock('../../../src/core/integrationCapabilities', () => ({
   ACCOUNT_SETTINGS: {
@@ -32,7 +32,6 @@ vi.mock('../../../src/core/integrationCapabilities', () => ({
 }));
 
 vi.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     getAccountData: vi.fn(() => ({ includePendingTransactions: false })),
     updateAccountInList: vi.fn(),

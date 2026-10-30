@@ -48,7 +48,6 @@ vi.mock('../../../src/core/integrationCapabilities', () => ({
 }));
 
 vi.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     getAccountData: vi.fn(() => ({})),
     updateAccountInList: vi.fn(() => true),

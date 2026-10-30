@@ -18,14 +18,12 @@ vi.mock('../../src/core/integrationCapabilities', () => ({
 }));
 
 vi.mock('../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     updateAccountInList: vi.fn(() => true),
   },
 }));
 
 vi.mock('../../src/ui/toast', () => ({
-  __esModule: true,
   default: { show: vi.fn() },
 }));
 

@@ -18,7 +18,6 @@ vi.mock('../../../src/core/utils', () => ({
 }));
 
 vi.mock('../../../src/api/wealthsimple', () => ({
-  __esModule: true,
   default: {
     fetchTransactions: vi.fn(),
   },

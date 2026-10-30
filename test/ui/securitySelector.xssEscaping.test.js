@@ -20,7 +20,6 @@ vi.mock('../../src/core/utils', async () => {
 });
 
 vi.mock('../../src/api/monarch', () => ({
-  __esModule: true,
   default: {
     searchSecurities: vi.fn(),
   },

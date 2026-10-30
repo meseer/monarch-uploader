@@ -33,14 +33,12 @@ vi.mock('../../../src/core/state', () => ({
 }));
 
 vi.mock('../../../src/api/questrade', () => ({
-  __esModule: true,
   default: {
     getToken: vi.fn(() => null),
   },
 }));
 
 vi.mock('../../../src/ui/toast', () => ({
-  __esModule: true,
   default: { show: vi.fn() },
 }));
 
@@ -53,7 +51,6 @@ vi.mock('../../../src/ui/components/monarchLoginLink', () => ({
 }));
 
 vi.mock('../../../src/ui/questrade/components/uploadButton', () => ({
-  __esModule: true,
   default: {
     createSingleAccountUploadButton: vi.fn(),
     createBulkUploadButton: vi.fn(),

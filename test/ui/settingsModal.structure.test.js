@@ -75,7 +75,6 @@ vi.mock('../../src/services/questrade/auth', () => ({
 }));
 
 vi.mock('../../src/ui/toast', () => ({
-  __esModule: true,
   default: {
     show: vi.fn(),
   },
@@ -97,7 +96,6 @@ vi.mock('../../src/mappers/wealthsimple-account-types', () => ({
 }));
 
 vi.mock('../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     getAccounts: vi.fn(() => []),
     getAccountData: vi.fn(() => null),

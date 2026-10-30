@@ -42,7 +42,6 @@ vi.mock('../../src/core/utils', () => ({
 }));
 
 vi.mock('../../src/core/state', () => ({
-  __esModule: true,
   default: {
     setAccount: vi.fn(),
     getState: vi.fn(() => ({ currentAccount: { nickname: 'Test RRSP' } })),
@@ -50,7 +49,6 @@ vi.mock('../../src/core/state', () => ({
 }));
 
 vi.mock('../../src/api/canadalife', () => ({
-  __esModule: true,
   default: {
     loadCanadaLifeAccounts: vi.fn(),
     loadAccountBalanceHistory: vi.fn(),
@@ -58,7 +56,6 @@ vi.mock('../../src/api/canadalife', () => ({
 }));
 
 vi.mock('../../src/api/monarch', () => ({
-  __esModule: true,
   default: {
     uploadBalance: vi.fn(),
     uploadTransactions: vi.fn(),
@@ -69,7 +66,6 @@ vi.mock('../../src/api/monarch', () => ({
 }));
 
 vi.mock('../../src/ui/toast', () => ({
-  __esModule: true,
   default: { show: vi.fn() },
 }));
 
@@ -90,7 +86,6 @@ vi.mock('../../src/ui/components/monarchLoginLink', () => ({
 }));
 
 vi.mock('../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     getAccountData: vi.fn(),
     getMonarchAccountMapping: vi.fn(),

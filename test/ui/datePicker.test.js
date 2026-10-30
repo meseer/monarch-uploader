@@ -18,7 +18,6 @@ vi.mock('../../src/ui/keyboardNavigation', () => ({
 }));
 
 vi.mock('../../src/ui/toast', () => ({
-  __esModule: true,
   default: {
     show: vi.fn(),
   },

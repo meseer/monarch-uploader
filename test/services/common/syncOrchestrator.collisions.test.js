@@ -27,7 +27,6 @@ vi.mock('../../../src/core/utils', () => ({
 // Real reconciliation runs, so the Monarch API is stubbed instead. No "Pending"
 // tag → Phase 1 short-circuits and no reconciliation writes are attempted.
 vi.mock('../../../src/api/monarch', () => ({
-  __esModule: true,
   default: {
     getTagByName: vi.fn(() => Promise.resolve(null)),
     getTransactionsList: vi.fn(() => Promise.resolve({ results: [] })),
@@ -38,7 +37,6 @@ vi.mock('../../../src/api/monarch', () => ({
 }));
 
 vi.mock('../../../src/core/state', () => ({
-  __esModule: true,
   default: { setAccount: vi.fn() },
 }));
 
@@ -65,7 +63,6 @@ vi.mock('../../../src/core/integrationCapabilities', () => ({
 }));
 
 vi.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     getAccountData: vi.fn(() => ({
       includePendingTransactions: true,

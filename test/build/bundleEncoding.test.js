@@ -40,6 +40,13 @@ function loadProductionConfig() {
     : viteConfigFn;
 }
 
+/** Load the development Vite config */
+function loadDevConfig() {
+  return typeof viteConfigFn === 'function'
+    ? viteConfigFn({ mode: 'development', command: 'build' })
+    : viteConfigFn;
+}
+
 /**
  * Read the Terser `format` options out of the configured Vite build.
  */
@@ -167,6 +174,28 @@ describe('built userscript encoding', () => {
       }
     });
   });
+
+  describe('runtime boot smoke test (jsdom)', () => {
+    it.each([
+      ['Monarch', 'https://app.monarch.com/accounts'],
+      ['Wealthsimple', 'https://my.wealthsimple.com/app/home'],
+      ['MBNA', 'https://service.mbna.ca/waw/mbna/account'],
+      ['Neo Financial', 'https://member.neofinancial.com/accounts'],
+      ['Rogers Bank', 'https://rbaccess.rogersbank.com/'],
+      ['Unrelated site', 'https://example.com/'],
+    ])('boots without throwing on %s (%s)', (_label, url) => {
+      vi.useFakeTimers();
+      try {
+        global.mockLocation(url);
+        // eslint-disable-next-line no-new-func
+        expect(() => new Function(text)()).not.toThrow();
+      } finally {
+        vi.clearAllTimers();
+        vi.useRealTimers();
+        global.restoreLocation();
+      }
+    });
+  });
 });
 
 describe('generated userscript metadata block', () => {
@@ -237,5 +266,13 @@ describe('Vite Terser configuration', () => {
     expect(comments(null, { value: ' ==UserScript== ' })).toBe(true);
     expect(comments(null, { value: ' @grant GM_getValue ' })).toBe(true);
     expect(comments(null, { value: ' just an ordinary comment ' })).toBe(false);
+  });
+
+  it('uses rollupOptions.output.banner in development mode so inline source maps include the banner line offset', () => {
+    const devConfig = loadDevConfig();
+    const bannerFn = devConfig?.build?.rollupOptions?.output?.banner;
+    expect(typeof bannerFn).toBe('function');
+    expect(bannerFn()).toContain('// ==UserScript==');
+    expect(devConfig.plugins).toEqual([]);
   });
 });

@@ -32,7 +32,6 @@ vi.mock('../../../src/core/config', () => ({
 }));
 
 vi.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     getAccountData: vi.fn(),
     updateAccountInList: vi.fn(),
@@ -51,14 +50,12 @@ vi.mock('../../../src/core/integrationCapabilities', () => ({
 }));
 
 vi.mock('../../../src/api/questrade', () => ({
-  __esModule: true,
   default: {
     fetchPositions: vi.fn(),
   },
 }));
 
 vi.mock('../../../src/api/monarch', () => ({
-  __esModule: true,
   default: {
     createManualHolding: vi.fn(),
     updateHolding: vi.fn(),
@@ -72,7 +69,6 @@ vi.mock('../../../src/ui/components/securitySelector', () => ({
 }));
 
 vi.mock('../../../src/ui/toast', () => ({
-  __esModule: true,
   default: {
     show: vi.fn(),
   },

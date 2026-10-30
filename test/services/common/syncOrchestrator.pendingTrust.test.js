@@ -27,7 +27,6 @@ vi.mock('../../../src/core/utils', () => ({
 }));
 
 vi.mock('../../../src/api/monarch', () => ({
-  __esModule: true,
   default: {
     getTagByName: vi.fn(),
     getTransactionsList: vi.fn(),
@@ -37,7 +36,7 @@ vi.mock('../../../src/api/monarch', () => ({
   },
 }));
 
-vi.mock('../../../src/core/state', () => ({ __esModule: true, default: { setAccount: vi.fn() } }));
+vi.mock('../../../src/core/state', () => ({ default: { setAccount: vi.fn() } }));
 
 vi.mock('../../../src/core/integrationCapabilities', () => ({
   ACCOUNT_SETTINGS: {
@@ -48,7 +47,6 @@ vi.mock('../../../src/core/integrationCapabilities', () => ({
 }));
 
 vi.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     getAccountData: vi.fn(() => ({
       includePendingTransactions: true,

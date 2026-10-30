@@ -61,7 +61,6 @@ export function installCanadaLifeTestGlobals() {
  */
 export function buildStateMock() {
   return {
-    __esModule: true,
     default: {
       getState: vi.fn().mockReturnValue({
         auth: { canadalife: { token: 'mock-aura-token' } },
@@ -98,7 +97,6 @@ export function buildUtilsMock() {
  */
 export function buildToastMock() {
   return {
-    __esModule: true,
     default: { show: vi.fn() },
   };
 }

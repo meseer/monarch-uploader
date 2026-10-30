@@ -29,17 +29,14 @@ vi.mock('../../../src/core/integrationCapabilities', () => ({
 }));
 
 vi.mock('../../../src/api/monarch', () => ({
-  __esModule: true,
   default: { setAccountLogo: vi.fn() },
 }));
 
 vi.mock('../../../src/ui/toast', () => ({
-  __esModule: true,
   default: { show: vi.fn() },
 }));
 
 vi.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     getMonarchAccountMapping: vi.fn(() => null),
     getAccountData: vi.fn(() => null),

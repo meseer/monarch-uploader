@@ -18,7 +18,6 @@ vi.mock('../../../src/utils/transactionStorage', () => ({
   mergeAndRetainTransactions: vi.fn((existing, newTx) => [...(existing || []), ...newTx]),
 }));
 vi.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     getMonarchAccountMapping: vi.fn(),
     getAccountData: vi.fn(),

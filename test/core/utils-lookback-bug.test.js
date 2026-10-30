@@ -23,7 +23,6 @@ vi.mock('../../src/ui/toast', () => ({
 
 // Mock accountService for consolidated storage reads
 vi.mock('../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     getAccountData: vi.fn(() => null),
     updateAccountInList: vi.fn(() => false),

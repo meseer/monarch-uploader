@@ -33,7 +33,6 @@ vi.mock('../../../src/core/config', () => ({
 }));
 
 vi.mock('../../../src/core/state', () => ({
-  __esModule: true,
   default: {
     getState: vi.fn(() => ({
       currentAccount: { id: null, nickname: 'unknown' },
@@ -42,7 +41,6 @@ vi.mock('../../../src/core/state', () => ({
 }));
 
 vi.mock('../../../src/ui/toast', () => ({
-  __esModule: true,
   default: { show: vi.fn() },
 }));
 

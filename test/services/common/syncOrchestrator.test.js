@@ -19,7 +19,6 @@ vi.mock('../../../src/core/utils', () => ({
 }));
 
 vi.mock('../../../src/core/state', () => ({
-  __esModule: true,
   default: {
     setAccount: vi.fn(),
   },
@@ -48,7 +47,6 @@ vi.mock('../../../src/core/integrationCapabilities', () => ({
 }));
 
 vi.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     getAccountData: vi.fn(() => ({
       includePendingTransactions: true,

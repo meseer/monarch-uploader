@@ -27,12 +27,10 @@ vi.mock('../../../src/core/utils', () => ({
 }));
 
 vi.mock('../../../src/services/auth', () => ({
-  __esModule: true,
   default: { getMonarchCredentials: vi.fn(() => ({ csrfToken: 'monarch-session' })) },
 }));
 
 vi.mock('../../../src/ui/toast', () => ({
-  __esModule: true,
   default: { show: vi.fn() },
 }));
 

@@ -11,14 +11,12 @@ vi.mock('../../../src/core/utils', () => ({
 }));
 
 vi.mock('../../../src/api/monarch', () => ({
-  __esModule: true,
   default: {
     setAccountLogo: vi.fn().mockResolvedValue(true),
   },
 }));
 
 vi.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     getMonarchAccountMapping: vi.fn(),
     getAccountData: vi.fn(),
@@ -28,7 +26,6 @@ vi.mock('../../../src/services/common/accountService', () => ({
 }));
 
 vi.mock('../../../src/ui/toast', () => ({
-  __esModule: true,
   default: {
     show: vi.fn(),
   },

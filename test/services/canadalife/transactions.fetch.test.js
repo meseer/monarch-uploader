@@ -12,14 +12,12 @@ import * as canadalifeModule from '../../../src/api/canadalife';
 import * as toastModule from '../../../src/ui/toast';
 
 vi.mock('../../../src/api/canadalife', () => ({
-  __esModule: true,
   default: {
     loadAccountActivityReport: vi.fn(),
   },
 }));
 
 vi.mock('../../../src/ui/toast', () => ({
-  __esModule: true,
   default: {
     show: vi.fn(),
   },

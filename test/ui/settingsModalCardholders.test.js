@@ -29,7 +29,6 @@ vi.mock('../../src/core/integrationCapabilities', () => ({
 }));
 
 vi.mock('../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     getAccountData: vi.fn(() => ({})),
     updateAccountInList: vi.fn(() => true),
@@ -45,7 +44,6 @@ vi.mock('../../src/services/common/cardholderMatching', () => ({
 }));
 
 vi.mock('../../src/ui/toast', () => ({
-  __esModule: true,
   default: { show: vi.fn() },
 }));
 

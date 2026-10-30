@@ -41,7 +41,6 @@ vi.mock('../../../src/api/monarch', () => {
 
 // Mock accountService
 vi.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     getAccountData: vi.fn(),
     updateAccountInList: vi.fn(),
@@ -62,7 +61,6 @@ vi.mock('../../../src/core/integrationCapabilities', () => ({
 
 // Mock toast
 vi.mock('../../../src/ui/toast', () => ({
-  __esModule: true,
   default: {
     show: vi.fn(),
   },

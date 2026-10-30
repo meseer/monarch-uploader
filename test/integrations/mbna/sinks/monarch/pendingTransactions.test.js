@@ -14,7 +14,6 @@ import {
 } from '../../../../../src/integrations/mbna/sinks/monarch/pendingTransactions';
 
 vi.mock('../../../../../src/api/monarch', () => ({
-  __esModule: true,
   default: {
     getTagByName: vi.fn(),
     getTransactionsList: vi.fn(),

@@ -42,14 +42,12 @@ vi.mock('../../../src/ui/components/categorySelector', () => ({
 }));
 
 vi.mock('../../../src/api/monarch', () => ({
-  __esModule: true,
   default: {
     getCategoriesAndGroups: vi.fn(() => Promise.resolve({ categories: [] })),
   },
 }));
 
 vi.mock('../../../src/services/common/accountService', () => ({
-  __esModule: true,
   default: {
     getAccountData: vi.fn(() => ({ skipCategorization: true })),
   },

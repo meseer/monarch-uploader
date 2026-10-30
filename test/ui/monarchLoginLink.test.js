@@ -33,7 +33,6 @@ vi.mock('../../src/core/state', () => {
 });
 
 vi.mock('../../src/ui/toast', () => ({
-  __esModule: true,
   default: {
     show: vi.fn(),
   },
@@ -41,7 +40,6 @@ vi.mock('../../src/ui/toast', () => ({
 
 // Mock global functions
 global.GM_getValue = vi.fn();
-global.window = Object.create(window);
 
 describe('Monarch Login Link Component', () => {
   beforeEach(() => {
@@ -49,13 +47,17 @@ describe('Monarch Login Link Component', () => {
     vi.useFakeTimers();
 
     // Mock window.open
-    global.window.open = vi.fn();
+    window.open = vi.fn();
 
     // Mock window.screen
-    global.window.screen = {
-      width: 1920,
-      height: 1080,
-    };
+    Object.defineProperty(window, 'screen', {
+      value: {
+        width: 1920,
+        height: 1080,
+      },
+      configurable: true,
+      writable: true,
+    });
 
     // Reset GM_getValue mock
     global.GM_getValue.mockReturnValue(null);

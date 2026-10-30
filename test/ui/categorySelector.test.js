@@ -40,14 +40,12 @@ vi.mock('../../src/core/utils', async () => ({
 }));
 
 vi.mock('../../src/api/monarch', () => ({
-  __esModule: true,
   default: {
     getCategoriesAndGroups: vi.fn(),
   },
 }));
 
 vi.mock('../../src/ui/toast', () => ({
-  __esModule: true,
   default: {
     show: vi.fn(),
   },
@@ -132,11 +130,6 @@ describe('Category Selector Component', () => {
   beforeEach(() => {
     // Clear the DOM
     document.body.innerHTML = '';
-
-    // Mock the monarch API
-    vi.doMock('../../src/api/monarch', () => ({
-      getCategoriesAndGroups: vi.fn().mockResolvedValue(mockCategoryData),
-    }));
   });
 
   describe('createCategorySelector', () => {

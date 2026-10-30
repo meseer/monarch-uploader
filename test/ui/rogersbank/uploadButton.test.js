@@ -16,12 +16,10 @@ vi.mock('../../../src/core/utils', () => ({
 }));
 
 vi.mock('../../../src/api/rogersbank', () => ({
-  __esModule: true,
   default: { checkRogersBankAuth: vi.fn(() => ({ authenticated: true })) },
 }));
 
 vi.mock('../../../src/ui/toast', () => ({
-  __esModule: true,
   default: { show: vi.fn() },
 }));
 

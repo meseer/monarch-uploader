@@ -21,7 +21,6 @@ import {
 } from '../helpers/wealthsimpleAuthCookie';
 
 vi.mock('../../src/core/state', () => ({
-  __esModule: true,
   default: {
     setWealthsimpleAuth: vi.fn(),
   },

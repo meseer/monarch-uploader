@@ -3,10 +3,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 
-// Pin the test timezone before workers spawn so date-boundary tests are
-// deterministic regardless of the host machine's locale.
-process.env.TZ = 'America/Vancouver';
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
@@ -23,7 +19,8 @@ function createBanner() {
 }
 
 /**
- * Vite plugin to prepend the userscript metadata block after minification.
+ * Vite plugin to prepend the userscript metadata block after Terser minification
+ * in production builds (where source maps are disabled).
  */
 function userscriptBannerPlugin() {
   return {
@@ -45,6 +42,10 @@ export default defineConfig(({ mode }) => {
 
   return {
     build: {
+      // Target modern evergreen browsers running Violentmonkey/Tampermonkey
+      // so native ES2022 syntax (?. / ?? / async-await) is preserved without
+      // legacy polyfill bloat.
+      target: ['chrome100', 'firefox100', 'safari16.4'],
       outDir: 'dist',
       emptyOutDir: false,
       sourcemap: isProduction ? false : 'inline',
@@ -69,19 +70,26 @@ export default defineConfig(({ mode }) => {
       },
       lib: {
         entry: path.resolve(__dirname, 'src/index.ts'),
+        // Required by Vite when formats includes 'iife' (even though src/index.ts has no exports)
         name: 'MonarchUploader',
         formats: ['iife'],
         fileName: () => 'monarch-uploader.user.js',
       },
-      rollupOptions: {
-        output: {
-          extend: true,
+      // In dev/watch builds (minify: false, sourcemap: 'inline'), inject the
+      // banner via Rollup/Rolldown's output.banner so inline source map line
+      // numbers account for the ~30-line metadata header.
+      rollupOptions: isProduction
+        ? undefined
+        : {
+          output: {
+            banner: createBanner,
+          },
         },
-      },
     },
-    plugins: [userscriptBannerPlugin()],
+    plugins: isProduction ? [userscriptBannerPlugin()] : [],
     test: {
       environment: 'jsdom',
+      pool: 'vmThreads',
       // Expose describe/it/expect/vi as globals, matching the Jest-era suite
       globals: true,
       include: ['test/**/*.test.{js,ts}', 'src/**/*.test.{js,ts}'],

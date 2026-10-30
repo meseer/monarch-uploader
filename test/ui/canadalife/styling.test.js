@@ -21,7 +21,6 @@ vi.mock('../../../src/core/utils', () => ({
 }));
 
 vi.mock('../../../src/api/canadalife', () => ({
-  __esModule: true,
   default: {
     checkAuth: vi.fn(() => ({ authenticated: true })),
     loadCanadaLifeAccounts: vi.fn(() => Promise.resolve([])),
@@ -29,14 +28,12 @@ vi.mock('../../../src/api/canadalife', () => ({
 }));
 
 vi.mock('../../../src/services/auth', () => ({
-  __esModule: true,
   default: {
     getMonarchCredentials: vi.fn(() => ({ token: 'mock-token' })),
   },
 }));
 
 vi.mock('../../../src/ui/toast', () => ({
-  __esModule: true,
   default: { show: vi.fn() },
 }));
 
