@@ -627,6 +627,20 @@ describe('Wealthsimple Upload Service', () => {
       expect(stepKeys).not.toContain('cashSync');
       expect(stepKeys).not.toContain('creditLimit');
     });
+
+    it.each(['MANAGED_JOINT_RESP_FAMILY', 'SELF_DIRECTED_JOINT_RESP_FAMILY', 'SELF_DIRECTED_JOIN_RESP_FAMILY'])(
+      'builds full investment steps for %s',
+      (accountType) => {
+        isInvestmentAccount.mockReturnValue(true);
+
+        const consolidatedAccount = {
+          wealthsimpleAccount: { id: 'resp-joint-1', type: accountType },
+        };
+        const stepKeys = buildSyncStepsForAccount(consolidatedAccount).map((s) => s.key);
+
+        expect(stepKeys).toEqual(['pendingReconciliation', 'transactions', 'balance', 'positions', 'cashSync']);
+      },
+    );
   });
 
   describe('clearLastUploadDate', () => {

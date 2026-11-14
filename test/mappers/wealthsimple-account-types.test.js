@@ -159,19 +159,38 @@ describe('Wealthsimple account type capability sets', () => {
     });
   });
 
-  describe('SELF_DIRECTED_NON_REGISTERED_MARGIN registration', () => {
-    test('supports transaction upload', () => {
-      expect(WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has('SELF_DIRECTED_NON_REGISTERED_MARGIN')).toBe(true);
+    describe('SELF_DIRECTED_NON_REGISTERED_MARGIN registration', () => {
+      test('supports transaction upload', () => {
+        expect(WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has('SELF_DIRECTED_NON_REGISTERED_MARGIN')).toBe(true);
+      });
+
+      test('supports pending reconciliation', () => {
+        expect(WEALTHSIMPLE_PENDING_RECONCILIATION_TYPES.has('SELF_DIRECTED_NON_REGISTERED_MARGIN')).toBe(true);
+      });
+
+      test('is an investment account', () => {
+        expect(isInvestmentAccount('SELF_DIRECTED_NON_REGISTERED_MARGIN')).toBe(true);
+      });
     });
 
-    test('supports pending reconciliation', () => {
-      expect(WEALTHSIMPLE_PENDING_RECONCILIATION_TYPES.has('SELF_DIRECTED_NON_REGISTERED_MARGIN')).toBe(true);
-    });
+    describe('Joint Family RESP registration (MANAGED_JOINT_RESP_FAMILY, SELF_DIRECTED_JOINT_RESP_FAMILY, SELF_DIRECTED_JOIN_RESP_FAMILY)', () => {
+      const jointRespTypes = [
+        { type: 'MANAGED_JOINT_RESP_FAMILY', displayName: 'Managed Family RESP' },
+        { type: 'SELF_DIRECTED_JOINT_RESP_FAMILY', displayName: 'Self Directed Family RESP' },
+        { type: 'SELF_DIRECTED_JOIN_RESP_FAMILY', displayName: 'Self Directed Family RESP' },
+      ];
 
-    test('is an investment account', () => {
-      expect(isInvestmentAccount('SELF_DIRECTED_NON_REGISTERED_MARGIN')).toBe(true);
+      test.each(jointRespTypes)('$type maps to brokerage resp and has display name', ({ type, displayName }) => {
+        expect(getMonarchAccountTypeMapping(type)).toEqual({ type: 'brokerage', subtype: 'resp' });
+        expect(getAccountTypeDisplayName(type)).toBe(displayName);
+      });
+
+      test.each(jointRespTypes)('$type supports transactions, pending reconciliation, and investment position sync', ({ type }) => {
+        expect(WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(type)).toBe(true);
+        expect(WEALTHSIMPLE_PENDING_RECONCILIATION_TYPES.has(type)).toBe(true);
+        expect(isInvestmentAccount(type)).toBe(true);
+      });
     });
-  });
 
   describe('cross-set consistency', () => {
     test('every cash-like type supports transactions', () => {

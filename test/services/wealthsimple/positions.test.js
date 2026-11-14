@@ -140,7 +140,7 @@ describe('Wealthsimple Positions Service', () => {
     });
 
     test('routes all MANAGED_* types to fetchAccountCurrentFinancialPositions', async () => {
-      const managedTypes = ['MANAGED_RESP', 'MANAGED_NON_REGISTERED', 'MANAGED_TFSA', 'MANAGED_RRSP'];
+      const managedTypes = ['MANAGED_RESP', 'MANAGED_JOINT_RESP_FAMILY', 'MANAGED_NON_REGISTERED', 'MANAGED_TFSA', 'MANAGED_RRSP'];
 
       for (const accountType of managedTypes) {
         wealthsimpleApi.fetchAccountCurrentFinancialPositions.mockResolvedValueOnce([]);
