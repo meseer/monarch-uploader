@@ -578,9 +578,8 @@ Storage key examples: `wealthsimple_accounts_list`, `questrade_accounts_list`.
 
 ### Integration Capabilities Configuration
 
-**All integrations MUST be registered in `src/core/integrationCapabilities.ts`:**
-- Add to `INTEGRATIONS` enum
-- Add configuration to `INTEGRATION_CONFIG` with: `displayName`, `storageKeys`, `accountKeyName`, `faviconDomain`, capability flags (`hasDeduplication`, `hasTransactions`, `hasBalance`, `hasHoldings`, `hasCreditLimit`), `settings` array, and `categoryMappings` config
+- **Modular integrations (`src/integrations/{name}/`)**: Declare `capabilities`, `storageKeys`, `accountKeyName`, `faviconDomain`, `settings`, and `categoryConfig` in `src/integrations/{name}/manifest.ts`. **Do NOT** add new integrations to `src/core/integrationCapabilities.ts`, `src/core/config.ts`, or `src/ui/components/settingsModal.ts` — the integration registry and generic UI discover them automatically from `src/integrations/index.ts`.
+- **Legacy integrations (`questrade`, `wealthsimple`, `canadalife`, `rogersbank`)**: Registered in `src/core/integrationCapabilities.ts` until migrated to `src/integrations/`.
 
 ### Account Service Usage
 
@@ -619,32 +618,25 @@ When migrating from legacy storage to consolidated:
 
 ### Modular Integration Architecture
 
-New integrations should follow the modular pattern in `src/integrations/`:
-- `manifest.ts` — declares capabilities, storage keys, account shape
-- `source/` — data fetching from the institution
-- `sinks/` — output adapters (e.g., writing to Monarch)
+All new integrations MUST follow the modular pattern in `src/integrations/{name}/`:
+- `manifest.ts` — single source of truth for capabilities, storage keys, settings, branding, and account defaults
+- `source/` — institution-specific auth (`auth.ts`), API client (`api.ts`), and UI injection config (`injectionPoint.ts`)
+- `sinks/monarch/` — Monarch transformation and `SyncHooks` (`syncHooks.ts`)
 
-See `docs/runbooks/adding-a-new-integration.md` for the step-by-step guide and `src/integrations/mbna/` for the reference implementation.
+Follow `.claude/skills/add-integration/SKILL.md` and [`docs/runbooks/adding-a-new-integration.md`](docs/runbooks/adding-a-new-integration.md) for the step-by-step guide, and see `src/integrations/mbna/`, `src/integrations/pcfinancial/`, and `src/integrations/neo/` for reference implementations.
 
 ### Checklist for Adding New Integrations
 
-- [ ] Add to `INTEGRATIONS` enum in `integrationCapabilities.ts`
-- [ ] Add configuration object in `INTEGRATION_CONFIG`
-- [ ] Define all storage keys in `STORAGE` config
-- [ ] Add storage key constants to `src/core/config.ts`
-- [ ] Verify `accountService` supports the new integration
-- [ ] Implement migration logic if needed, in `migrateFromLegacyStorage`
-- [ ] Add cleanup logic in `cleanupLegacyStorage` if applicable
-- [ ] Add tab definition in `createSettingsModal`
-- [ ] Add a favicon to the tab button
-- [ ] Implement `render{Integration}Tab` function
-- [ ] Use `createGenericAccountCards` for account display
-- [ ] Use `accountService.getMonarchAccountMapping()` for lookups
-- [ ] Use `accountService.upsertAccount()` for saving
-- [ ] Use `getLastUpdateDate()` / `saveLastUploadDate()` from `src/core/utils`
-- [ ] Implement deduplication using `uploadedTransactions` array
-- [ ] Read credentials on demand or hold them in memory; never store them ([ADR-010](docs/decisions/010-credentials-are-never-stored.md))
-- [ ] Add tests for capabilities, account service, upload/sync, and settings UI
+- [ ] Read [`docs/runbooks/adding-a-new-integration.md`](docs/runbooks/adding-a-new-integration.md) before writing code
+- [ ] Discover deterministic backend APIs for accounts, balances, credit limits, and transactions (avoid DOM scraping)
+- [ ] Read credentials on demand from cookies/`sessionStorage`/`localStorage` (or rely on `HttpOnly` cookies); never store credentials ([ADR-010](docs/decisions/010-credentials-are-never-stored.md))
+- [ ] Minimize required request headers by elimination
+- [ ] Create `src/integrations/{name}/` (`manifest.ts`, `source/auth.ts`, `source/api.ts`, `source/injectionPoint.ts`, `sinks/monarch/syncHooks.ts`, `sinks/monarch/index.ts`, `index.ts`)
+- [ ] Register in `src/integrations/index.ts` (and do **NOT** touch `src/core/config.ts`, `src/core/integrationCapabilities.ts`, or `src/ui/components/settingsModal.ts`)
+- [ ] Add `@match`, `@connect`, and `@description` in `src/userscript-metadata.cjs`
+- [ ] Add unit tests under `test/integrations/{name}/` (`manifest.test.js`, `auth.test.js`, `api.test.js`, `syncHooks.test.js`)
+- [ ] Update the Supported Institutions table in `README.md` (alphabetical order)
+- [ ] Bump major version via `npm run version:bump -- X.0.0` and run `npm run build:full`
 
 ### Important Notes
 
