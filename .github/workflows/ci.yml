@@ -38,6 +38,9 @@ jobs:
     - name: Run typecheck
       run: npm run typecheck
 
+    - name: Check unused files and dependencies
+      run: npm run knip
+
     - name: Run tests with coverage
       run: npm run test:coverage
 

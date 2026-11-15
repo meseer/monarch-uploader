@@ -13,6 +13,7 @@
     "watch:dev": "BUILD_TYPE=dev vite build --mode development --watch",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
+    "knip": "knip --include files,dependencies,unlisted,unresolved",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
