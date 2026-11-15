@@ -179,6 +179,15 @@ export interface IntegrationInjectionPoint {
   skipPatterns: RegExp[];
   /** DOM ID for the injected UI container */
   containerId: string;
+  /** Optional custom CSS overrides for the injected UI container */
+  containerStyle?: {
+    background?: string;
+    border?: string;
+    borderRadius?: string;
+    boxShadow?: string;
+    padding?: string;
+    margin?: string;
+  };
 }
 
 export interface InjectionSelector {

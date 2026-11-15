@@ -52,6 +52,14 @@ interface InjectionPoint {
   selectors: SelectorEntry[];
   pageModes?: PageMode[];
   skipPatterns?: RegExp[];
+  containerStyle?: {
+    background?: string;
+    border?: string;
+    borderRadius?: string;
+    boxShadow?: string;
+    padding?: string;
+    margin?: string;
+  };
 }
 
 interface Manifest {
@@ -89,6 +97,8 @@ interface UIState {
   cachedAccounts: AccountSummary[];
   institutionConnected: boolean;
   navigationManager: GenericNavigationManager | null;
+  initGeneration: number;
+  cancelInitialObserver: (() => void) | null;
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -111,6 +121,8 @@ function getUIState(integrationId: string): UIState {
       cachedAccounts: [],
       institutionConnected: false,
       navigationManager: null,
+      initGeneration: 0,
+      cancelInitialObserver: null,
     });
   }
   return uiStateMap.get(integrationId) as UIState;
@@ -133,6 +145,7 @@ class GenericNavigationManager {
   isInitialized: boolean;
   pollInterval: ReturnType<typeof setInterval> | null;
   uiInitialized: boolean;
+  reinitializingPromise: Promise<void> | null;
   logPrefix: string;
 
   constructor(registryEntry: RegistryEntry) {
@@ -140,10 +153,11 @@ class GenericNavigationManager {
     this.injectionPoint = registryEntry.injectionPoint;
     this.containerId = this.injectionPoint.containerId;
     this.currentUrl = window.location.href;
-    this.currentPageModeId = null;
+    this.currentPageModeId = getActivePageMode(this.injectionPoint)?.id || null;
     this.isInitialized = false;
     this.pollInterval = null;
     this.uiInitialized = false;
+    this.reinitializingPromise = null;
     this.logPrefix = `[${registryEntry.manifest.displayName}]`;
   }
 
@@ -184,6 +198,7 @@ class GenericNavigationManager {
   /** Handle a navigation event */
   async handleNavigation(): Promise<void> {
     try {
+      this.currentUrl = window.location.href;
       const url = window.location.hash || window.location.pathname;
       debugLog(`${this.logPrefix} Navigation detected:`, url);
 
@@ -209,19 +224,36 @@ class GenericNavigationManager {
     }
   }
 
-  /** Reinitialize UI after SPA navigation */
+  /** Reinitialize UI after SPA navigation (deduplicated across concurrent triggers) */
   async reinitializeUI(): Promise<void> {
-    try {
-      await waitForTargetElementAsync(this.injectionPoint, this.logPrefix);
-      const container = createUIContainer(this.registryEntry);
-      if (container) {
-        await initializeUIComponents(container, this.registryEntry);
-        this.uiInitialized = true;
-        debugLog(`${this.logPrefix} UI re-initialized after navigation`);
-      }
-    } catch (error) {
-      debugLog(`${this.logPrefix} Error reinitializing UI:`, error);
+    if (this.reinitializingPromise) {
+      debugLog(`${this.logPrefix} Re-initialization already in progress, skipping duplicate trigger`);
+      return this.reinitializingPromise;
     }
+
+    const state = getUIState(this.registryEntry.manifest.id);
+    if (state.cancelInitialObserver) {
+      state.cancelInitialObserver();
+    }
+
+    this.reinitializingPromise = (async () => {
+      try {
+        await waitForTargetElementAsync(this.injectionPoint, this.logPrefix);
+        if (!this.shouldShowUI()) return;
+        const container = createUIContainer(this.registryEntry);
+        if (container) {
+          await initializeUIComponents(container, this.registryEntry);
+          this.uiInitialized = true;
+          debugLog(`${this.logPrefix} UI re-initialized after navigation`);
+        }
+      } catch (error) {
+        debugLog(`${this.logPrefix} Error reinitializing UI:`, error);
+      } finally {
+        this.reinitializingPromise = null;
+      }
+    })();
+
+    return this.reinitializingPromise;
   }
 
   /**
@@ -345,18 +377,19 @@ function createUIContainer(registryEntry: RegistryEntry): HTMLElement | null {
   let container = document.getElementById(containerId);
   if (container) return container;
 
+  const style = injectionPoint.containerStyle;
   container = document.createElement('div');
   container.id = containerId;
   container.style.cssText = `
     position: relative;
-    margin: 20px 0;
-    padding: 12px;
-    background-color: #f8f9fa;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
+    margin: ${style?.margin || '20px 0'};
+    padding: ${style?.padding || '12px'};
+    background: ${style?.background || '#f8f9fa'};
+    border: ${style?.border || '1px solid #e0e0e0'};
+    border-radius: ${style?.borderRadius || '8px'};
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     font-size: 14px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    box-shadow: ${style?.boxShadow || '0 2px 4px rgba(0,0,0,0.1)'};
     max-width: 480px;
     width: 100%;
     box-sizing: border-box;
@@ -503,11 +536,11 @@ async function initializeUIComponents(container: HTMLElement, registryEntry: Reg
   const { manifest } = registryEntry;
   const state = getUIState(manifest.id);
   const logPrefix = `[${manifest.displayName}]`;
+  const generation = ++state.initGeneration;
 
   try {
     // Clear existing dynamic content (keep header)
-    const children = Array.from(container.children).slice(1);
-    children.forEach((child) => child.remove());
+    Array.from(container.children).slice(1).forEach((child) => child.remove());
 
     // Connection status (show "Checking..." initially)
     const connectionStatus = createConnectionStatus(manifest.displayName);
@@ -515,6 +548,16 @@ async function initializeUIComponents(container: HTMLElement, registryEntry: Reg
 
     // Run connection probe
     await probeConnection(registryEntry);
+
+    // Abort if a newer initialization started or the container was removed while probing
+    if (generation !== state.initGeneration || !container.isConnected) {
+      debugLog(`${logPrefix} Aborting stale UI initialization (gen ${generation} vs ${state.initGeneration})`);
+      return;
+    }
+
+    // Defensive cleanup: remove any duplicate upload button container before inserting
+    container.querySelectorAll('#generic-upload-button-container, .generic-upload-button-container')
+      .forEach((el) => el.remove());
 
     // Upload button
     const uploadButton = createUploadButton({
@@ -623,16 +666,33 @@ function waitForTargetElement(registryEntry: RegistryEntry): void {
   const state = getUIState(manifest.id);
   const logPrefix = `[${manifest.displayName}]`;
 
+  if (state.cancelInitialObserver) {
+    state.cancelInitialObserver();
+  }
+
   let observer: MutationObserver | null = null;
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
   let initialized = false;
 
-  observer = new MutationObserver((_mutations, obs) => {
+  const stopObserver = (): void => {
+    initialized = true;
+    if (observer) {
+      observer.disconnect();
+      observer = null;
+    }
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+    state.cancelInitialObserver = null;
+  };
+
+  state.cancelInitialObserver = stopObserver;
+
+  observer = new MutationObserver(() => {
     const target = findInjectionTarget(injectionPoint);
     if (target && !initialized) {
-      initialized = true;
-      obs.disconnect();
-      if (timeoutId) clearTimeout(timeoutId);
+      stopObserver();
 
       const container = createUIContainer(registryEntry);
       if (container) {
@@ -649,7 +709,7 @@ function waitForTargetElement(registryEntry: RegistryEntry): void {
   timeoutId = setTimeout(() => {
     if (!initialized) {
       debugLog(`${logPrefix} Timeout waiting for injection target (30s)`);
-      if (observer) observer.disconnect();
+      stopObserver();
       toast.show(`${manifest.displayName} UI element not found`, 'warning');
     }
   }, 30000);
