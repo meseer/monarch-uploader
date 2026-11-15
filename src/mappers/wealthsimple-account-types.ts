@@ -25,7 +25,6 @@ const WEALTHSIMPLE_ACCOUNT_TYPE_DISPLAY_NAMES = {
   // Investment accounts - Self-directed
   SELF_DIRECTED_RESP_FAMILY: 'Self Directed Family RESP',
   SELF_DIRECTED_JOINT_RESP_FAMILY: 'Self Directed Family RESP',
-  SELF_DIRECTED_JOIN_RESP_FAMILY: 'Self Directed Family RESP',
   SELF_DIRECTED_RESP: 'Self Directed RESP',
   SELF_DIRECTED_NON_REGISTERED: 'Self Directed Non-Registered',
   SELF_DIRECTED_NON_REGISTERED_MARGIN: 'Self Directed Non-Registered Margin',
@@ -67,7 +66,6 @@ const WEALTHSIMPLE_TO_MONARCH_ACCOUNT_TYPES: Record<string, MonarchAccountTypeMa
   // Investment accounts - Self-directed
   SELF_DIRECTED_RESP_FAMILY: { type: 'brokerage', subtype: 'resp' },
   SELF_DIRECTED_JOINT_RESP_FAMILY: { type: 'brokerage', subtype: 'resp' },
-  SELF_DIRECTED_JOIN_RESP_FAMILY: { type: 'brokerage', subtype: 'resp' },
   SELF_DIRECTED_RESP: { type: 'brokerage', subtype: 'resp' },
   SELF_DIRECTED_NON_REGISTERED: { type: 'brokerage', subtype: 'brokerage' },
   SELF_DIRECTED_NON_REGISTERED_MARGIN: { type: 'brokerage', subtype: 'brokerage' },
