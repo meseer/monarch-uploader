@@ -80,7 +80,7 @@ const manifest: IntegrationManifest = {
 
   // ── Brand theming ─────────────────────────────────────────
   brandColor: '#003087',
-  logoCloudinaryId: 'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/mpyiskjxkwjoceqz00ll',
+  logoCloudinaryId: 'production/account_logos/7f697890-7cb5-4294-9354-faf58db54b69/pcllpibad6ber8o27eru',
 
   /*
   // DO NOT DELETE:
