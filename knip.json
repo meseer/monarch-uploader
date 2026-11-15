@@ -1,7 +1,7 @@
 {
   "$schema": "https://unpkg.com/knip@latest/schema.json",
   "project": ["src/**/*.{ts,js}"],
-  "ignore": ["src/integrations/mbna/**", "src/sinks/types.ts"],
+  "ignore": ["src/sinks/types.ts"],
   "vite": {
     "config": ["vite.config.mjs"]
   },
