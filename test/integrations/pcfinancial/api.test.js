@@ -116,6 +116,82 @@ describe('PC Financial API client', () => {
     expect(httpClient.request).toHaveBeenCalledTimes(4);
   });
 
+  it('uses ledgerAccountNumber as stable accountId and maps it to session accountId for API calls', async () => {
+    const ledgerCreditId = '400012345678';
+    const ledgerMoneyId = '800099993456';
+
+    httpClient.request
+      .mockResolvedValueOnce(jsonResponse({
+        accountConfigurationList: [
+          { accountId, pastDueFlag: false },
+          { accountId: 's1d-money-9876', pastDueFlag: false },
+        ],
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        numRetrieved: 1,
+        cards: [{
+          accountId,
+          maskedCardNumber: '5570',
+          productType: 'CREDIT-CARD',
+          productCode: 'MX-PCE',
+        }],
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        accountId,
+        ledgerAccountNumber: ledgerCreditId,
+        productType: 'CREDIT-CARD',
+        productCode: 'MX-PCE',
+        maskedCardNumber: '5570',
+        dateOpened: '2026-11-14',
+        balance: 142.75,
+        currency: 'CAD',
+        creditLimit: 15000,
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        accountId: 's1d-money-9876',
+        ledgerAccountNumber: `  ${ledgerMoneyId}  `,
+        productType: 'PC-MONEY',
+        productCode: 'PCM',
+        balance: 850.25,
+        currency: 'CAD',
+      }))
+      .mockResolvedValueOnce(jsonResponse(page([transaction('tx-1', '2026-09-20', -10)], 1)));
+
+    const accounts = await api.getAccountsSummary();
+
+    expect(accounts).toEqual([
+      {
+        accountId: ledgerCreditId,
+        accountType: 'credit',
+        accountSubtype: 'credit_card',
+        productType: 'CREDIT-CARD',
+        productCode: 'MX-PCE',
+        maskedCardNumber: '5570',
+        endingIn: '5570',
+        dateOpened: '2026-11-14',
+        displayName: 'PC Mastercard (5570)',
+      },
+      {
+        accountId: ledgerMoneyId,
+        accountType: 'depository',
+        accountSubtype: 'checking',
+        productType: 'PC-MONEY',
+        productCode: 'PCM',
+        displayName: 'PC Money (3456)',
+      },
+    ]);
+
+    await expect(api.getAccountOpenedDate(ledgerCreditId)).resolves.toBe('2026-11-14');
+    await expect(api.getBalance(ledgerCreditId)).resolves.toEqual({ currentBalance: 142.75, currency: 'CAD' });
+    await expect(api.getCreditLimit(ledgerCreditId)).resolves.toBe(15000);
+    await expect(api.getBalance(ledgerMoneyId)).resolves.toEqual({ currentBalance: 850.25, currency: 'CAD' });
+
+    const transactions = await api.getPostedTransactions(ledgerCreditId, '2026-09-01');
+    expect(transactions).toHaveLength(1);
+    expect(httpClient.request).toHaveBeenCalledTimes(5);
+    expect(httpClient.request.mock.calls[4][0].url).toContain(`/${accountId}/posted-transactions?`);
+  });
+
   it('fetches balance and credit limit directly when not yet cached', async () => {
     httpClient.request.mockResolvedValueOnce(jsonResponse({
       accountId,
