@@ -174,31 +174,12 @@ export function createRogersBankUploadButton(): HTMLElement {
       const result: UploadResult = await uploadRogersBankToMonarch();
 
       if (result.success && result.data) {
-        debugLog('Transaction upload completed:', result);
-
-        // Display summary in console
-        if (result.data.transactions) {
-          console.log('====================================');
-          console.log('Rogers Bank Transaction Upload Summary');
-          console.log('====================================');
-          console.log(`Date Range: ${result.data.fromDate} to ${result.data.toDate}`);
-          console.log(`Approved Transactions Uploaded: ${result.data.transactions.length}`);
-
-          if (result.data.monarchAccountName) {
-            console.log(`Monarch Account: ${result.data.monarchAccountName}`);
-          }
-
-          console.log('\nFirst 3 Uploaded Transactions:');
-          result.data.transactions.slice(0, 3).forEach((tx, index) => {
-            console.log(`\n${index + 1}. ${tx.date} - ${tx.merchant?.name || 'N/A'}`);
-            console.log(`   Amount: $${tx.amount?.value} ${tx.amount?.currency}`);
-            console.log(`   Category: ${tx.merchant?.categoryDescription || tx.merchant?.category || 'N/A'}`);
-            console.log(`   Status: ${tx.activityStatus}`);
-            console.log(`   Type: ${tx.activityType}`);
-            console.log(`   Reference: ${tx.referenceNumber}`);
-          });
-          console.log('====================================');
-        }
+        debugLog('Transaction upload completed', {
+          fromDate: result.data.fromDate,
+          toDate: result.data.toDate,
+          transactionCount: result.data.transactions?.length ?? 0,
+          monarchAccountName: result.data.monarchAccountName,
+        });
       }
     } catch (error) {
       debugLog('Error during transaction upload:', error);

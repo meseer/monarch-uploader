@@ -9,6 +9,7 @@
 import { createRogersBankUploadButton } from '../../../src/ui/rogersbank/components/uploadButton';
 import { uploadRogersBankToMonarch } from '../../../src/services/rogersbank-upload';
 import { ensureMonarchAuthentication } from '../../../src/ui/components/monarchLoginLink';
+import { debugLog } from '../../../src/core/utils';
 import rogersbank from '../../../src/api/rogersbank';
 
 vi.mock('../../../src/core/utils', () => ({
@@ -88,6 +89,39 @@ describe('Rogers Bank upload button', () => {
 
     expect(uploadRogersBankToMonarch).toHaveBeenCalledTimes(1);
     expect(button.disabled).toBe(false);
+  });
+
+  it('logs upload summary via debugLog without calling console.log', async () => {
+    ensureMonarchAuthentication.mockResolvedValue(true);
+    uploadRogersBankToMonarch.mockResolvedValue({
+      success: true,
+      data: {
+        fromDate: '2026-01-01',
+        toDate: '2026-01-31',
+        monarchAccountName: 'Rogers Red',
+        transactions: [
+          {
+            date: '2026-01-15',
+            merchant: { name: 'Coffee Shop', categoryDescription: 'Dining' },
+            amount: { value: '5.50', currency: 'CAD' },
+            activityStatus: 'APPROVED',
+            activityType: 'PURCHASE',
+            referenceNumber: 'REF-123',
+          },
+        ],
+      },
+    });
+
+    button.click();
+    await flush();
+
+    expect(console.log).not.toHaveBeenCalled();
+    expect(debugLog).toHaveBeenCalledWith('Transaction upload completed', {
+      fromDate: '2026-01-01',
+      toDate: '2026-01-31',
+      transactionCount: 1,
+      monarchAccountName: 'Rogers Red',
+    });
   });
 });
 
