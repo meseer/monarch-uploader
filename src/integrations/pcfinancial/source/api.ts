@@ -181,6 +181,16 @@ export function parseTransactionPage(value: unknown, accountId: string): Transac
 }
 
 /**
+ * Extract a trimmed `ledgerAccountNumber` from account details, if present.
+ *
+ * @param details - Account details payload
+ * @returns Trimmed ledger account number or empty string
+ */
+function extractLedgerAccountNumber(details: PcFinancialAccountDetails): string {
+  return typeof details.ledgerAccountNumber === 'string' ? details.ledgerAccountNumber.trim() : '';
+}
+
+/**
  * Build a human-readable display name for a PC Financial account.
  *
  * @param details - Account details payload
@@ -192,7 +202,8 @@ function buildAccountDisplayName(
   card?: PcFinancialCardSummary,
 ): string {
   const isCredit = details.productType === 'CREDIT-CARD';
-  const suffix = details.maskedCardNumber || card?.maskedCardNumber || details.accountId.slice(-4);
+  const fallbackId = extractLedgerAccountNumber(details) || details.accountId;
+  const suffix = details.maskedCardNumber || card?.maskedCardNumber || fallbackId.slice(-4);
   const label = isCredit ? 'PC Mastercard' : 'PC Money';
   return `${label} (${suffix})`;
 }
@@ -206,6 +217,12 @@ function buildAccountDisplayName(
  */
 export function createApi(httpClient: HttpClient, _storage?: unknown): PcFinancialApiClient {
   const detailsCache = new Map<string, PcFinancialAccountDetails>();
+  // Maps stable accountId (ledgerAccountNumber) -> ephemeral session accountId (s1d-...)
+  const sessionAccountIds = new Map<string, string>();
+
+  function resolveSessionAccountId(accountId: string): string {
+    return sessionAccountIds.get(accountId) ?? accountId;
+  }
 
   async function requestJson<T>(path: string, label: string): Promise<T> {
     let response: HttpResponse | null = null;
@@ -304,16 +321,23 @@ export function createApi(httpClient: HttpClient, _storage?: unknown): PcFinanci
 
     const allAccountIds = [...new Set([...configuredIds, ...cardsByAccountId.keys()])];
     detailsCache.clear();
+    sessionAccountIds.clear();
 
     const accounts: PcFinancialAccount[] = [];
-    for (const accountId of allAccountIds) {
-      const details = await fetchAccountDetails(accountId, false);
-      const card = cardsByAccountId.get(accountId);
+    for (const sessionAccountId of allAccountIds) {
+      const details = await fetchAccountDetails(sessionAccountId, false);
+      const card = cardsByAccountId.get(sessionAccountId);
       const isCredit = details.productType === 'CREDIT-CARD';
       const maskedCardNumber = details.maskedCardNumber || card?.maskedCardNumber;
+      const ledgerAccountNumber = extractLedgerAccountNumber(details);
+      const stableAccountId = ledgerAccountNumber || sessionAccountId;
+      if (!ledgerAccountNumber) {
+        debugLog(`[PC Financial] Account ${sessionAccountId} missing ledgerAccountNumber; falling back to session accountId`);
+      }
+      sessionAccountIds.set(stableAccountId, sessionAccountId);
 
       accounts.push({
-        accountId,
+        accountId: stableAccountId,
         accountType: isCredit ? 'credit' : 'depository',
         accountSubtype: isCredit ? 'credit_card' : 'checking',
         productType: details.productType,
@@ -334,7 +358,7 @@ export function createApi(httpClient: HttpClient, _storage?: unknown): PcFinanci
     getAccountsSummary: getAccounts,
 
     async getAccountOpenedDate(accountId: string): Promise<string | null> {
-      const details = await fetchAccountDetails(accountId, true);
+      const details = await fetchAccountDetails(resolveSessionAccountId(accountId), true);
       if (typeof details.dateOpened === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(details.dateOpened)) {
         return details.dateOpened;
       }
@@ -342,7 +366,7 @@ export function createApi(httpClient: HttpClient, _storage?: unknown): PcFinanci
     },
 
     async getBalance(accountId: string): Promise<{ currentBalance: number; currency: string }> {
-      const details = await fetchAccountDetails(accountId, true);
+      const details = await fetchAccountDetails(resolveSessionAccountId(accountId), true);
       return {
         currentBalance: details.balance,
         currency: details.currency || 'CAD',
@@ -350,7 +374,7 @@ export function createApi(httpClient: HttpClient, _storage?: unknown): PcFinanci
     },
 
     async getCreditLimit(accountId: string): Promise<number | null> {
-      const details = await fetchAccountDetails(accountId, true);
+      const details = await fetchAccountDetails(resolveSessionAccountId(accountId), true);
       if (details.productType !== 'CREDIT-CARD') {
         return null;
       }
@@ -361,6 +385,7 @@ export function createApi(httpClient: HttpClient, _storage?: unknown): PcFinanci
     },
 
     async getPostedTransactions(accountId: string, fromDate: string): Promise<PcFinancialTransaction[]> {
+      const sessionAccountId = resolveSessionAccountId(accountId);
       const transactions: PcFinancialTransaction[] = [];
       const cutoffDate = subtractDays(fromDate, LATE_POSTING_BUFFER_DAYS);
       let offset = 0;
@@ -368,7 +393,7 @@ export function createApi(httpClient: HttpClient, _storage?: unknown): PcFinanci
       let freezeMarker: string | undefined;
 
       do {
-        const page = await getPage(accountId, offset, PAGE_SIZE, freezeMarker);
+        const page = await getPage(sessionAccountId, offset, PAGE_SIZE, freezeMarker);
         transactions.push(...page.transactions);
         totalCount = page.pagination.totalCount;
         freezeMarker = page.pagination.freezeMarker;
