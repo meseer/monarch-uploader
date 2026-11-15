@@ -1,10 +1,10 @@
 # Adding a New Integration — Step-by-Step Runbook
 
 > **Status:** Active  
-> **Updated:** 2026-10-16  
+> **Updated:** 2026-11-14  
 > **Author:** @meseer  
 
-> **Reference implementation:** All examples use the MBNA integration (`src/integrations/mbna/`).
+> **Reference implementations:** See `src/integrations/mbna/`, `src/integrations/pcfinancial/`, and `src/integrations/neo/`.
 > All patterns here are derived from working code — not aspirational designs.
 >
 > **Architecture reference:** See [`design/modular-integration-architecture.md`](../design/modular-integration-architecture.md) for the "why" behind each pattern.
@@ -15,27 +15,27 @@
 
 ## Overview
 
-Each integration lives entirely in `src/integrations/{name}/` and is registered via the build-time barrel. The rest of the system discovers it through the registry — you do **not** modify any shared service maps or config files.
+Each integration lives entirely in `src/integrations/{name}/` and is registered via the build-time barrel (`src/integrations/index.ts`) and userscript metadata (`src/userscript-metadata.cjs`). The rest of the system discovers it through the registry — you do **not** modify any shared service maps or config files.
 
 ```
 src/integrations/{name}/
-├── manifest.js                    # Single source of truth for all metadata
-├── index.js                       # Barrel: exports manifest + factories + hooks
+├── manifest.ts                    # Single source of truth for all metadata
+├── index.ts                       # Barrel: exports manifest + factories + hooks
 ├── source/                        # Institution-specific, sink-agnostic
-│   ├── api.js                     # API client factory
-│   ├── auth.js                    # Auth/session handler factory
-│   ├── injectionPoint.js          # UI injection config (selectors, page modes)
-│   └── balanceReconstruction.js   # (optional) Balance reconstruction logic
+│   ├── api.ts                     # API client factory
+│   ├── auth.ts                    # Auth/session handler factory
+│   ├── injectionPoint.ts          # UI injection config (selectors, page modes, containerStyle)
+│   └── balanceReconstruction.ts   # (optional) Balance reconstruction logic
 └── sinks/
     └── monarch/                   # Monarch-specific transformation
-        ├── index.js               # Barrel re-export
-        ├── transactions.js        # Transaction processing + category resolution
-        ├── balanceFormatter.js    # (optional) Balance history sign convention
-        ├── pendingTransactions.js # (optional) Pending TX dedup utilities
-        └── syncHooks.js           # SyncHooks implementation for the orchestrator
+        ├── index.ts               # Barrel re-export
+        ├── transactions.ts        # Transaction processing + category resolution
+        ├── balanceFormatter.ts    # (optional) Balance history sign convention
+        ├── pendingTransactions.ts # (optional) Pending TX dedup utilities
+        └── syncHooks.ts           # SyncHooks implementation for the orchestrator
 ```
 
-**The golden rule:** Do NOT add entries to `src/core/config.js`, `src/core/integrationCapabilities.js`, `src/services/common/accountService.js`, or `src/services/common/configStore.js`. All metadata lives in the manifest and is discovered via the registry.
+**The golden rule:** Do NOT add entries to `src/core/config.ts`, `src/core/integrationCapabilities.ts`, `src/services/common/accountService.ts`, or `src/services/common/configStore.ts`. All metadata lives in the manifest and is discovered via the registry.
 
 ---
 
@@ -45,6 +45,7 @@ Build the integration in stages. Each stage ends with a concrete, browser-testab
 
 | Stage | What you build | What you can validate |
 |-------|---------------|----------------------|
+| 0 | API & page discovery | Auth mechanism, minimal headers, and deterministic API endpoints identified |
 | 1 | Manifest + stubs + registration | UI container appears on institution site; settings tab appears |
 | 2 | Auth detection | Connection status shows "Connected" |
 | 3 | Account discovery | Accounts listed and mappable in settings |
@@ -58,17 +59,70 @@ Build the integration in stages. Each stage ends with a concrete, browser-testab
 
 ---
 
+## Stage 0 — API & page discovery
+
+**Goal:** Before writing code, identify how the institution's web app authenticates, which backend API endpoints return account and transaction data, and where the uploader card belongs on the page.
+
+### 0.1 Prefer deterministic backend APIs over DOM scraping
+
+Modern banking web apps are SPAs backed by JSON or GraphQL APIs. **Always query the backend API endpoints directly** to discover accounts, balances, credit limits, account open dates, and transactions:
+
+- **Do NOT scrape the DOM** (e.g., querying `h1` for account names or regex-matching `$1,234.56` in `document.body.innerText`) or rely on passively intercepting page navigation traffic to discover accounts when an API endpoint exists. DOM scraping is fragile and strictly a last resort when no backend endpoint exists.
+- Open browser DevTools → **Network** tab (Filter: `Fetch/XHR`) while logging in and navigating the dashboard and account views. Look for endpoints returning:
+  1. Account list / configuration (product types, account IDs, nicknames)
+  2. Card list (masked card numbers / last 4 digits, cardholder info)
+  3. Account details / summary (current balance, credit limit, `dateOpened`)
+  4. Posted and pending/authorized transactions (pagination parameters, date fields, unique IDs, debit/credit sign convention)
+
+### 0.2 Determine the auth mechanism (simplest first)
+
+Check how API requests are authenticated in this order (see [Stage 2](#stage-2--auth-detection) and [ADR-010](../decisions/010-credentials-are-never-stored.md)):
+
+1. **HttpOnly cookies (Approach A):** If the request has no `Authorization` or custom token headers (or uses only cookies sent automatically by the browser), no token extraction is needed.
+2. **Page storage or readable cookies (Approach B):** If the request includes a bearer token, CSRF token, or correlation ID header, inspect DevTools → **Application** → `Session Storage`, `Local Storage`, and `Cookies`. Often the SPA stores a JSON object in `sessionStorage` or `localStorage` containing the access token and CSRF token (e.g., PC Financial's `CREDENTIALS` and `UVCRLID` keys in `sessionStorage`). Reading these on demand requires zero network hooks and works immediately on page load.
+3. **In-memory request capture (Approach C):** Only intercept `unsafeWindow.fetch` / `XMLHttpRequest` if the required auth header is nowhere in cookies or Web Storage.
+
+### 0.3 Minimize request headers by elimination
+
+Banking SPAs often attach 15–30 custom headers to every request (analytics IDs, device fingerprints, marketing group IDs, trace IDs). Do not blindly copy or intercept all of them:
+
+1. Copy a working API request from DevTools as `curl`.
+2. Strip suspect headers (`fingerprint`, `mcid`, `groupid`, `origin`, `referer`, analytics headers) one by one or in batches and replay the request.
+3. Keep only the headers that the backend actually validates (plus standard correlation/trace UUIDs that you can generate via `crypto.randomUUID()`).
+4. If the backend validates a per-request nonce or timestamp header and occasionally returns a transient verification error (e.g., `HTTP 400 invalid_verifier`), implement a small retry loop (2–3 attempts) that regenerates a fresh nonce per attempt.
+
+### 0.4 Inspect the dashboard DOM for the injection point
+
+While in DevTools → **Elements**, locate a stable container on the dashboard where the uploader card fits naturally (e.g., right after a quick-actions bar or sidebar summary). Copy the computed CSS rules (`background`, `border`, `border-radius`, `box-shadow`, `padding`) of adjacent cards on the page so you can match the native look via `containerStyle` in `injectionPoint.ts`.
+
+---
+
 ## Stage 1 — Manifest + stubs + registration
 
 **Goal:** Get the extension to load on the institution's website and the tab to appear in the settings modal. Nothing needs to work yet — this validates the wiring.
 
 ### 1.1 Create the manifest
 
-`src/integrations/{name}/manifest.js` is the **single source of truth** for everything the core needs about this integration.
+`src/integrations/{name}/manifest.ts` is the **single source of truth** for everything the core needs about this integration.
 
-```js
-/** @type {import('../types').IntegrationManifest} */
-const manifest = {
+```ts
+import type { IntegrationAccountDefaults, IntegrationManifest } from '../types';
+
+const CREDIT_DEFAULTS: IntegrationAccountDefaults = {
+  defaultType: 'credit',
+  defaultSubtype: 'credit_card',
+  accountType: 'credit',
+  invertBalance: false,
+};
+
+const DEPOSITORY_DEFAULTS: IntegrationAccountDefaults = {
+  defaultType: 'depository',
+  defaultSubtype: 'checking',
+  accountType: 'depository',
+  invertBalance: true,
+};
+
+const manifest: IntegrationManifest = {
   // ── Identity ──────────────────────────────────────────────
   id: 'mybank',            // lowercase, no spaces, used as storage key prefix
   displayName: 'My Bank',  // shown in settings modal tab and UI
@@ -77,10 +131,10 @@ const manifest = {
   // ── Site matching ─────────────────────────────────────────
   // matchDomains is used for site detection (window.location.hostname).
   matchDomains: ['online.mybank.ca'],
-  matchUrls: ['https://online.mybank.ca/*'], // informational, not used for runtime matching
+  matchUrls: ['https://online.mybank.ca/*'], // informational, also add to src/userscript-metadata.cjs
 
   // ── Storage keys ──────────────────────────────────────────
-  // Declare ALL storage keys here. Do NOT add them to src/core/config.js.
+  // Declare ALL storage keys here. Do NOT add them to src/core/config.ts.
   storageKeys: {
     accountsList: 'mybank_accounts_list',
     config: 'mybank_config',
@@ -127,13 +181,20 @@ const manifest = {
   // Checking/savings:  defaultType: 'depository', defaultSubtype: 'checking'/'savings'
   // Credit cards:      defaultType: 'credit', defaultSubtype: 'credit_card', accountType: 'credit'
   // Investment:        defaultType: 'investment', defaultSubtype: 'brokerage'
-  accountCreateDefaults: {
-    defaultType: 'depository',
-    defaultSubtype: 'checking',
+  accountCreateDefaults: CREDIT_DEFAULTS,
+
+  // Optional: when an institution offers multiple account types (e.g. both
+  // checking/depository and credit card accounts), resolve defaults per account:
+  accountDefaultsForAccount(account: Record<string, any> | null | undefined): IntegrationAccountDefaults {
+    const type = String(account?.type || account?.raw?.type || '').toUpperCase();
+    if (type === 'CHECKING' || type === 'DEPOSITORY') {
+      return DEPOSITORY_DEFAULTS;
+    }
+    return CREDIT_DEFAULTS;
   },
 
-  brandColor: '#004A97',
-  logoCloudinaryId: null,
+  brandColor: '#333333',
+  logoCloudinaryId: null, // see note below on capturing the Cloudinary logo ID
 
   uiExtensions: {
     showTokenExpiry: false,
@@ -143,6 +204,12 @@ const manifest = {
 
 export default manifest;
 ```
+
+**Multi-account-type institutions (`accountDefaultsForAccount`):** If an institution supports only one account type (e.g., credit cards only), `accountCreateDefaults` alone is sufficient. If it supports both depository and credit card accounts (like PC Financial or Neo Financial), implement `accountDefaultsForAccount(account)` so new Monarch accounts get the right type/subtype and per-account `invertBalance` default automatically.
+
+**Setting `logoCloudinaryId` and `brandColor`:**
+- `brandColor` sets the header background color of the injected uploader card. Pick a dark or brand-appropriate hex color that contrasts well with white text and blends with the institution's dashboard.
+- `logoCloudinaryId` applies an account icon in Monarch when the user creates a new Monarch account during first sync. To obtain one: upload the institution's logo to an account in Monarch Money while watching DevTools → Network (`graphql`), inspect the `Common_SetAccountLogo` mutation payload, and copy `variables.input.cloudinaryPublicId` (e.g., `'production/account_logos/.../...'`).
 
 **Capability flags decision guide:**
 
@@ -159,7 +226,7 @@ export default manifest;
 **`txIdPrefix`** — only add when implementing Stage 8. Format: `'{id}-tx'` (e.g., `'mbna-tx'`).
 
 **`categoryConfig`** — only add when enabling `hasCategorization: true` in Stage 9:
-```js
+```ts
 categoryConfig: {
   sourceLabel: 'Bank Category',
 },
@@ -167,11 +234,12 @@ categoryConfig: {
 
 ### 1.2 Create the injection point
 
-`src/integrations/{name}/source/injectionPoint.js` tells the generic UI manager where to inject the uploader UI on the institution's page.
+`src/integrations/{name}/source/injectionPoint.ts` tells the generic UI manager where to inject the uploader UI on the institution's page and how to style the card wrapper.
 
-```js
-/** @type {import('../../types').IntegrationInjectionPoint} */
-const injectionPoint = {
+```ts
+import type { IntegrationInjectionPoint } from '../../types';
+
+const injectionPoint: IntegrationInjectionPoint = {
   selectors: [], // global fallback; prefer pageModes
 
   isSPA: true, // true for Angular/React/Vue SPAs (nearly all modern bank sites)
@@ -182,16 +250,8 @@ const injectionPoint = {
       urlPattern: /dashboard/,  // regex matched against window.location.href
       uiType: 'all-accounts',   // 'all-accounts' | 'single-account'
       selectors: [
-        { selector: '.header-actions', insertMethod: 'insertAfter' },
+        { selector: '.quick-actions-container', insertMethod: 'insertAfter' },
         { selector: 'header', insertMethod: 'append' }, // fallback
-      ],
-    },
-    {
-      id: 'account',
-      urlPattern: /account\/details/,
-      uiType: 'single-account',
-      selectors: [
-        { selector: '.account-header', insertMethod: 'insertAfter' },
       ],
     },
   ],
@@ -201,27 +261,41 @@ const injectionPoint = {
 
   // DOM ID for the injected UI container — must be globally unique
   containerId: 'monarch-uploader-mybank',
+
+  // Optional: override outer card styles to match the institution's native cards
+  containerStyle: {
+    borderRadius: '12px',
+    border: '1px solid rgba(0, 0, 0, 0.1)',
+    boxShadow: 'none',
+    padding: '12px',
+  },
 };
 
 export default injectionPoint;
 ```
 
-**Finding the right selectors:** Open browser DevTools on the institution's site while logged in. Prefer `data-testid` attributes or semantic elements over minified class names. List multiple fallback selectors in priority order — the UI manager tries them top-to-bottom.
+**Finding the right selectors:** Open browser DevTools on the institution's site while logged in. Prefer `data-testid` attributes or semantic elements over framework-generated attributes (such as Angular's `[_ngcontent-...]`). List multiple fallback selectors in priority order — the UI manager tries them top-to-bottom.
+
+**Matching native card styling (`containerStyle`):** Use `containerStyle` to override the default white box (`borderRadius`, `border`, `background`, `boxShadow`, `padding`) so the injected card matches adjacent widgets on the page.
 
 **`pageModes`:** Use multiple modes when different pages need different injection targets. `'all-accounts'` shows all mapped accounts; `'single-account'` focuses on the account currently on screen. If the entire site uses one injection point, one mode is sufficient.
 
 ### 1.3 Create stub files
 
-**`src/integrations/{name}/source/api.js`:**
-```js
-export function createApi(_httpClient, _auth) {
+**`src/integrations/{name}/source/api.ts`:**
+```ts
+import type { HttpClient, IntegrationApi, IntegrationAuth } from '../../types';
+
+export function createApi(_httpClient: HttpClient, _auth: IntegrationAuth | null): IntegrationApi {
   return {};
 }
 ```
 
-**`src/integrations/{name}/source/auth.js`:**
-```js
-export function createAuth(_storage) {
+**`src/integrations/{name}/source/auth.ts`:**
+```ts
+import type { IntegrationAuth, StorageAdapter } from '../../types';
+
+export function createAuth(_storage?: StorageAdapter): IntegrationAuth {
   return {
     checkStatus() { return { authenticated: false }; },
     getCredentials() { return null; },
@@ -229,12 +303,13 @@ export function createAuth(_storage) {
 }
 ```
 
-**`src/integrations/{name}/sinks/monarch/syncHooks.js`** — all six required hooks must exist even as stubs:
-```js
-/** @type {import('../../../types').SyncHooks} */
-const syncHooks = {
+**`src/integrations/{name}/sinks/monarch/syncHooks.ts`** — all six required hooks must exist even as stubs:
+```ts
+import type { SyncHooks } from '../../../types';
+
+const syncHooks: SyncHooks = {
   async fetchTransactions(_api, _accountId, _fromDate, { onProgress }) {
-    onProgress('Fetching...');
+    onProgress?.('Fetching...');
     return { settled: [], pending: [], metadata: {} };
   },
   processTransactions(_settled, _pending, _options) {
@@ -248,15 +323,15 @@ const syncHooks = {
 export default syncHooks;
 ```
 
-**`src/integrations/{name}/sinks/monarch/index.js`:**
-```js
+**`src/integrations/{name}/sinks/monarch/index.ts`:**
+```ts
 export { default as syncHooks } from './syncHooks';
 ```
 
 ### 1.4 Create the integration barrel
 
-`src/integrations/{name}/index.js`:
-```js
+`src/integrations/{name}/index.ts`:
+```ts
 import * as monarchMapperNs from './sinks/monarch';
 
 export { default as manifest }       from './manifest';
@@ -270,17 +345,24 @@ export { default as syncHooks }      from './sinks/monarch/syncHooks';
 
 ### 1.5 Register in the build barrel
 
-Edit `src/integrations/index.js` — add exactly two lines:
+Edit `src/integrations/index.ts` — add the import and entry in `ALL`:
 
-```js
+```ts
 import * as mbna from './mbna';
 import * as mybank from './mybank';    // ← ADD
 
-const ALL = {
+const ALL: Record<string, IntegrationModule> = {
   mbna,
   mybank,                             // ← ADD
 };
 ```
+
+### 1.6 Add userscript metadata (`@match` and `@connect`)
+
+Edit `src/userscript-metadata.cjs`:
+1. Add the institution name to `@description`.
+2. Add `@match https://<institution-web-domain>/*` so Tampermonkey injects the userscript on the institution's site.
+3. Add `@connect <institution-api-domain>` so `GM_xmlhttpRequest` is permitted to call the institution's backend API (especially important when the API lives on a separate subdomain like `api.mybank.ca` or `app.pcfinancial.ca` while the web app is on `secure.pcfinancial.ca`).
 
 ### ✅ Milestone 1 validation
 
@@ -307,7 +389,7 @@ one. `test/guards/noStoredCredentials.test.js` fails the build if you do.
 | Approach | Use when | Example |
 |---|---|---|
 | A. Probe-based | The session is in HttpOnly cookies the browser sends by itself | MBNA, Neo Financial |
-| B. Read from the page on demand | The token is in a readable cookie or in the page's own storage | Wealthsimple (cookie), Questrade (`sessionStorage`), Canada Life (`localStorage`) |
+| B. Read from the page on demand | The token is in a readable cookie or in the page's own storage (`sessionStorage` / `localStorage`) | PC Financial (`sessionStorage`), Wealthsimple (cookie), Questrade (`sessionStorage`), Canada Life (`localStorage`) |
 | C. Capture in memory | The token only appears in headers of the page's own requests | Rogers Bank |
 
 ### Approach A: Probe-based (HttpOnly cookies)
@@ -636,6 +718,10 @@ async getTransactions(accountId, startDate, { onProgress } = {}) {
 ```
 
 For paginated endpoints, iterate pages inside this method. For statement-by-statement fetching (like MBNA), accumulate across statements and call `onProgress(current, total, label)` for each statement fetched.
+
+**Cursor pagination and late-posting buffers:** When paginating reverse-chronological posted transactions using a continuation token or cursor, do not stop pagination the instant a transaction's date is older than `startDate`. Because transactions often post several days after their original transaction date, subtract a buffer (e.g., 7 days before `startDate`) before stopping pagination early, then filter the returned array to `date >= startDate`.
+
+**Suggesting a default first-sync start date (`suggestStartDate`):** Even when an integration does not implement full balance reconstruction (Stage 7), you can implement `suggestStartDate(api, accountId)` on `syncHooks` if the institution's account details endpoint returns the date the account was opened (e.g., `dateOpened: "2024-03-15"`). Returning `{ date: openedDate, description: 'Account open date' }` pre-populates the date picker on the user's first sync instead of defaulting to 90 days ago.
 
 ### 6.3 Create `sinks/monarch/transactions.js`
 
@@ -1230,12 +1316,12 @@ The following files must remain unchanged when adding a new modular integration.
 
 | File | Why not to touch |
 |------|-----------------|
-| `src/core/config.js` | Storage key constants are for legacy integrations only. New integrations declare keys in `manifest.storageKeys`. |
-| `src/core/integrationCapabilities.js` | The static `INTEGRATION_CAPABILITIES` map is for legacy integrations. Modular integrations are resolved via `getCapabilities()` → registry fallback. |
-| `src/services/common/accountService.js` | `ACCOUNT_LIST_STORAGE_KEYS` is a legacy static map. Modular integrations resolve their key from `manifest.storageKeys.accountsList`. |
-| `src/services/common/configStore.js` | `CONFIG_STORAGE_KEYS` is a legacy static map. Modular integrations resolve their config key from `manifest.storageKeys.config`. |
-| `src/index.js` | No new `if (siteFlags.isMyBank)` blocks. Modular integrations are detected automatically via `getIntegrationForHostname(window.location.hostname)` using `manifest.matchDomains`. |
-| `src/ui/components/settingsModal.js` | No new hardcoded tab entries. Modular integration tabs appear automatically via `getAllManifests()` filtered against the legacy tab set. |
+| `src/core/config.ts` | Storage key constants are for legacy integrations only. New integrations declare keys in `manifest.storageKeys`. |
+| `src/core/integrationCapabilities.ts` | The static `INTEGRATION_CAPABILITIES` map is for legacy integrations. Modular integrations are resolved via `getCapabilities()` → registry fallback. |
+| `src/services/common/accountService.ts` | `ACCOUNT_LIST_STORAGE_KEYS` is a legacy static map. Modular integrations resolve their key from `manifest.storageKeys.accountsList`. |
+| `src/services/common/configStore.ts` | `CONFIG_STORAGE_KEYS` is a legacy static map. Modular integrations resolve their config key from `manifest.storageKeys.config`. |
+| `src/index.ts` | No new `if (siteFlags.isMyBank)` blocks. Modular integrations are detected automatically via `getIntegrationForHostname(window.location.hostname)` using `manifest.matchDomains`. |
+| `src/ui/components/settingsModal.ts` | No new hardcoded tab entries. Modular integration tabs appear automatically via `getAllManifests()` filtered against the legacy tab set. |
 
 ---
 
@@ -1244,33 +1330,36 @@ The following files must remain unchanged when adding a new modular integration.
 Before calling the integration done, verify every item:
 
 ### Files created
-- [ ] `src/integrations/{name}/manifest.js`
-- [ ] `src/integrations/{name}/index.js`
-- [ ] `src/integrations/{name}/source/api.js`
-- [ ] `src/integrations/{name}/source/auth.js`
-- [ ] `src/integrations/{name}/source/injectionPoint.js`
-- [ ] `src/integrations/{name}/sinks/monarch/syncHooks.js`
-- [ ] `src/integrations/{name}/sinks/monarch/index.js`
-- [ ] `src/integrations/{name}/sinks/monarch/transactions.js` *(Stage 6+)*
-- [ ] `src/integrations/{name}/source/balanceReconstruction.js` *(Stage 7 only)*
-- [ ] `src/integrations/{name}/sinks/monarch/balanceFormatter.js` *(Stage 7 only)*
-- [ ] `src/integrations/{name}/sinks/monarch/pendingTransactions.js` *(Stage 8 only)*
+- [ ] `src/integrations/{name}/manifest.ts`
+- [ ] `src/integrations/{name}/index.ts`
+- [ ] `src/integrations/{name}/source/api.ts`
+- [ ] `src/integrations/{name}/source/auth.ts`
+- [ ] `src/integrations/{name}/source/injectionPoint.ts`
+- [ ] `src/integrations/{name}/sinks/monarch/syncHooks.ts`
+- [ ] `src/integrations/{name}/sinks/monarch/index.ts`
+- [ ] `src/integrations/{name}/sinks/monarch/transactions.ts` *(Stage 6+, or inline in `syncHooks.ts`)*
+- [ ] `src/integrations/{name}/source/balanceReconstruction.ts` *(Stage 7 only)*
+- [ ] `src/integrations/{name}/sinks/monarch/balanceFormatter.ts` *(Stage 7 only)*
+- [ ] `src/integrations/{name}/sinks/monarch/pendingTransactions.ts` *(Stage 8 only)*
 
-### Registration
-- [ ] Added `import * as {name}` and `{name}` entry to `src/integrations/index.js`
+### Registration & userscript metadata
+- [ ] Added `import * as {name}` and `{name}` entry to `src/integrations/index.ts`
+- [ ] Added `@match`, `@connect`, and updated `@description` in `src/userscript-metadata.cjs`
 
 ### Tests created
 - [ ] `test/integrations/{name}/manifest.test.js`
 - [ ] `test/integrations/{name}/api.test.js`
 - [ ] `test/integrations/{name}/auth.test.js`
-- [ ] `test/integrations/{name}/sinks/transactions.test.js` *(Stage 6+)*
+- [ ] `test/integrations/{name}/syncHooks.test.js` (or `sinks/transactions.test.js`)
 
 ### Correctness
+- [ ] Account discovery uses deterministic backend APIs (no DOM scraping)
+- [ ] Request headers minimized by elimination
 - [ ] Amount signs correct: purchases negative, payments positive
 - [ ] Deduplication works: re-uploading same range produces no duplicates
 - [ ] `getSettledRefId` returns a stable, unique ID for every transaction
 - [ ] No credential is stored: auth is read from the page on demand or held in memory ([ADR-010](../decisions/010-credentials-are-never-stored.md))
-- [ ] Manifest has NO entries in `config.js`, `integrationCapabilities.js`, or static service maps
+- [ ] Manifest has NO entries in `config.ts`, `integrationCapabilities.ts`, or static service maps
 - [ ] Tests do NOT reference `INTEGRATION_CAPABILITIES` or `STORAGE` constants
 
 ### Build validation
@@ -1289,4 +1378,4 @@ Before calling the integration done, verify every item:
       - Notes column: account type (credit card, investment, etc.) and any notable constraints
 
 ### Version bump
-- [ ] `npm run version:bump -- X.Y.Z` (new integration = minor version bump)
+- [ ] `npm run version:bump -- X.Y.Z` (new financial institution = **major** version bump `X+1.0.0`)
