@@ -131,28 +131,24 @@ jobs:
       run: |
         echo "Updating GitHub Gist with latest development build..."
         
-        # Read the built userscript content
-        USERSCRIPT_CONTENT=$(cat dist/monarch-uploader.user.js)
-        
-        # Escape the content for JSON
-        ESCAPED_CONTENT=$(echo "$USERSCRIPT_CONTENT" | jq -Rs .)
-        
         # Get version and commit info
         VERSION="${{ steps.version.outputs.VERSION }}"
         COMMIT_SHA=$(git rev-parse --short HEAD)
         COMMIT_MSG=$(git log -1 --pretty=format:"%s")
-        
-        # Create the JSON payload
-        cat > gist_update.json << EOF
-        {
-          "description": "Monarch Money Balance Uploader v${VERSION}-dev (commit ${COMMIT_SHA}) - Tampermonkey userscript | Latest: ${COMMIT_MSG}",
-          "files": {
-            "monarch-uploader.user.js": {
-              "content": $ESCAPED_CONTENT
+        DESCRIPTION="Monarch Money Balance Uploader v${VERSION}-dev (commit ${COMMIT_SHA}) - Tampermonkey userscript | Latest: ${COMMIT_MSG}"
+
+        # Build the JSON payload safely with jq so quotes/newlines cannot break JSON
+        jq -n \
+          --arg description "$DESCRIPTION" \
+          --rawfile content dist/monarch-uploader.user.js \
+          '{
+            description: $description,
+            files: {
+              "monarch-uploader.user.js": {
+                content: $content
+              }
             }
-          }
-        }
-        EOF
+          }' > gist_update.json
         
         # Update the gist using GitHub API
         response=$(curl -s -w "\n%{http_code}" -X PATCH \
