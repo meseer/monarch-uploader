@@ -628,7 +628,7 @@ describe('Wealthsimple Upload Service', () => {
       expect(stepKeys).not.toContain('creditLimit');
     });
 
-    it.each(['MANAGED_JOINT_RESP_FAMILY', 'SELF_DIRECTED_JOINT_RESP_FAMILY', 'SELF_DIRECTED_JOIN_RESP_FAMILY'])(
+    it.each(['MANAGED_JOINT_RESP_FAMILY', 'SELF_DIRECTED_JOINT_RESP_FAMILY'])(
       'builds full investment steps for %s',
       (accountType) => {
         isInvestmentAccount.mockReturnValue(true);

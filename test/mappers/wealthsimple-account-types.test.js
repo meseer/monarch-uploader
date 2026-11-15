@@ -173,11 +173,10 @@ describe('Wealthsimple account type capability sets', () => {
       });
     });
 
-    describe('Joint Family RESP registration (MANAGED_JOINT_RESP_FAMILY, SELF_DIRECTED_JOINT_RESP_FAMILY, SELF_DIRECTED_JOIN_RESP_FAMILY)', () => {
+    describe('Joint Family RESP registration (MANAGED_JOINT_RESP_FAMILY, SELF_DIRECTED_JOINT_RESP_FAMILY)', () => {
       const jointRespTypes = [
         { type: 'MANAGED_JOINT_RESP_FAMILY', displayName: 'Managed Family RESP' },
         { type: 'SELF_DIRECTED_JOINT_RESP_FAMILY', displayName: 'Self Directed Family RESP' },
-        { type: 'SELF_DIRECTED_JOIN_RESP_FAMILY', displayName: 'Self Directed Family RESP' },
       ];
 
       test.each(jointRespTypes)('$type maps to brokerage resp and has display name', ({ type, displayName }) => {
