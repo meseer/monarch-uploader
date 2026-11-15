@@ -53,6 +53,7 @@
   "overrides": {
     "rimraf": "^5.0.0",
     "glob": "^10.0.0",
-    "inflight": "npm:@isaacs/inflight@^1.0.6"
+    "inflight": "npm:@isaacs/inflight@^1.0.6",
+    "minimatch": "^11.0.8"
   }
 }
