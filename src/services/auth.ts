@@ -12,6 +12,7 @@
  */
 
 import { debugLog } from '../core/utils';
+import { isHostnameMatch } from '../core/domainMatch';
 import { STORAGE } from '../core/config';
 import stateManager from '../core/state';
 import toast from '../ui/toast';
@@ -149,7 +150,7 @@ export function checkMonarchAuth(): {
  * Should be called when running on app.monarch.com.
  */
 function setupMonarchTokenCapture(): void {
-  if (!window.location.hostname.includes('monarch.com')) return;
+  if (!isHostnameMatch(window.location.hostname, 'monarch.com')) return;
 
   debugLog('Running on Monarch site. Setting up session credential capture.');
 

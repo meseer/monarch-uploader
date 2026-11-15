@@ -604,6 +604,17 @@ describe('Utility Functions', () => {
       const result = isQuestradeAllAccountsPage(mockLoc);
       expect(result).toBe(false);
     });
+
+    it('should return false for lookalike Questrade domains', () => {
+      expect(isQuestradeAllAccountsPage({
+        hostname: 'evilquestrade.com',
+        pathname: '/investing/summary/',
+      })).toBe(false);
+      expect(isQuestradeAllAccountsPage({
+        hostname: 'questrade.com.evil.com',
+        pathname: '/investing/summary/',
+      })).toBe(false);
+    });
   });
 
   describe('getCurrentInstitution', () => {
@@ -630,6 +641,13 @@ describe('Utility Functions', () => {
     it('should return unknown for other domains', () => {
       const mockLoc = { hostname: 'example.com' };
       expect(getCurrentInstitution(mockLoc)).toBe('unknown');
+    });
+
+    it('should return unknown for spoofed or lookalike domains', () => {
+      expect(getCurrentInstitution({ hostname: 'evilquestrade.com' })).toBe('unknown');
+      expect(getCurrentInstitution({ hostname: 'questrade.com.evil.com' })).toBe('unknown');
+      expect(getCurrentInstitution({ hostname: 'monarch.com.attacker.ca' })).toBe('unknown');
+      expect(getCurrentInstitution({ hostname: 'notrogersbank.com' })).toBe('unknown');
     });
   });
 

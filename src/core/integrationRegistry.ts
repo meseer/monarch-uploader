@@ -13,6 +13,7 @@
  */
 
 import { debugLog } from './logger';
+import { isHostnameMatch } from './domainMatch';
 import type {
   IntegrationManifest,
   IntegrationApi,
@@ -119,7 +120,7 @@ export function getIntegrationForHostname(hostname: string): RegisteredIntegrati
 
   for (const integration of registry.values()) {
     const { matchDomains } = integration.manifest;
-    if (matchDomains && matchDomains.some((domain) => hostname.includes(domain))) {
+    if (matchDomains && matchDomains.some((domain) => isHostnameMatch(hostname, domain))) {
       return integration;
     }
   }
