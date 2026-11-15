@@ -215,7 +215,7 @@ describe('integrationRegistry', () => {
       expect(result.manifest.id).toBe('wealthsimple');
     });
 
-    it('should match when hostname contains the domain', () => {
+    it('should match when hostname is a subdomain of the domain', () => {
       const result = getIntegrationForHostname('sub.my.questrade.com');
       expect(result).not.toBeNull();
       expect(result.manifest.id).toBe('questrade');
@@ -225,6 +225,12 @@ describe('integrationRegistry', () => {
       const result = getIntegrationForHostname('questrade.com');
       expect(result).not.toBeNull();
       expect(result.manifest.id).toBe('questrade');
+    });
+
+    it('should reject lookalike and suffix-spoofed hostnames', () => {
+      expect(getIntegrationForHostname('evilquestrade.com')).toBeNull();
+      expect(getIntegrationForHostname('questrade.com.evil.com')).toBeNull();
+      expect(getIntegrationForHostname('my.wealthsimple.com.attacker.ca')).toBeNull();
     });
   });
 

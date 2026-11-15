@@ -16,6 +16,7 @@ import {
   clearAccountMapping,
   clearLastUploadedDate,
 } from './core/utils';
+import { isHostnameMatch } from './core/domainMatch';
 import { clearSavedCategoryMappings } from './mappers/category';
 import { migrateAllLegacyStorage } from './services/common/legacyMigration';
 import stateManager from './core/state';
@@ -49,7 +50,7 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
   // credentials and are made while the page boots. Nothing else runs this
   // early: everything below starts at the point document-idle used to start
   // the whole script, on every site.
-  if (window.location.hostname.includes('rogersbank.com')) {
+  if (isHostnameMatch(window.location.hostname, 'rogersbank.com')) {
     installRogersBankNetworkHooks();
   }
 
@@ -128,7 +129,7 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
     initTheme();
 
     // Check which site we're on and take appropriate action
-    if (window.location.hostname.includes('monarch.com')) {
+    if (isHostnameMatch(window.location.hostname, 'monarch.com')) {
       debugLog('Running on Monarch site');
       // Set up token capture on Monarch's site
       monarchApi.setupTokenCapture();
@@ -136,7 +137,7 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
     }
 
     // When running on Questrade, initialize the full application
-    if (window.location.hostname.includes('questrade.com')) {
+    if (isHostnameMatch(window.location.hostname, 'questrade.com')) {
       debugLog('Running on Questrade site');
 
       // Initialize components
@@ -149,7 +150,7 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
     }
 
     // When running on CanadaLife, initialize CanadaLife application
-    if (window.location.hostname.includes('canadalife.com')) {
+    if (isHostnameMatch(window.location.hostname, 'canadalife.com')) {
       debugLog('Running on CanadaLife site');
 
       // Initialize CanadaLife components
@@ -161,7 +162,7 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
     }
 
     // When running on Rogers Bank, initialize Rogers Bank application
-    if (window.location.hostname.includes('rogersbank.com')) {
+    if (isHostnameMatch(window.location.hostname, 'rogersbank.com')) {
       debugLog('Running on Rogers Bank site');
 
       // Initialize Rogers Bank components
@@ -182,7 +183,7 @@ import { loadCurrentAccountInfo } from './services/questrade/account';
     }
 
     // When running on Wealthsimple, initialize Wealthsimple application
-    if (window.location.hostname.includes('wealthsimple.com')) {
+    if (isHostnameMatch(window.location.hostname, 'wealthsimple.com')) {
       debugLog('Running on Wealthsimple site');
 
       // Initialize Wealthsimple components

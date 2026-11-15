@@ -5,6 +5,7 @@
 
 import { STORAGE, TRANSACTION_RETENTION_DEFAULTS } from './config';
 import { debugLog } from './logger';
+import { isHostnameMatch } from './domainMatch';
 import { INTEGRATIONS } from './integrationCapabilities';
 import { getIntegration, isRegistered } from './integrationRegistry';
 import { getSetting, setSetting } from '../services/common/configStore';
@@ -530,7 +531,7 @@ export function getAccountIdFromUrl(location: Location = window.location): strin
  */
 export function isQuestradeAllAccountsPage(location: Location = window.location): boolean {
   // Check that we're on the Questrade domain
-  const isQuestradeDomain = location.hostname.endsWith('questrade.com');
+  const isQuestradeDomain = isHostnameMatch(location.hostname, 'questrade.com');
   // Match the 'all accounts' page URL path (with or without trailing slash)
   const { pathname } = location;
   const isAllAccountsPath = pathname === '/investing/summary' || pathname === '/investing/summary/';
@@ -550,17 +551,21 @@ export async function clearAllGmStorage(): Promise<void> {
   }
 }
 
+const INSTITUTION_DOMAINS: ReadonlyArray<readonly [string, string]> = [
+  ['questrade.com', 'questrade'],
+  ['canadalife.com', 'canadalife'],
+  ['rogersbank.com', 'rogersbank'],
+  ['wealthsimple.com', 'wealthsimple'],
+  ['monarch.com', 'monarch'],
+];
+
 /**
  * Gets the financial institution from hostname
  */
 export function getCurrentInstitution(location: Location = window.location): string {
   const { hostname } = location;
-  if (hostname.includes('questrade.com')) return 'questrade';
-  if (hostname.includes('canadalife.com')) return 'canadalife';
-  if (hostname.includes('rogersbank.com')) return 'rogersbank';
-  if (hostname.includes('wealthsimple.com')) return 'wealthsimple';
-  if (hostname.includes('monarch.com')) return 'monarch';
-  return 'unknown';
+  const match = INSTITUTION_DOMAINS.find(([domain]) => isHostnameMatch(hostname, domain));
+  return match ? match[1] : 'unknown';
 }
 
 /**
