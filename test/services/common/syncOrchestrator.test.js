@@ -549,6 +549,36 @@ describe('syncAccount', () => {
     expect(hooks.fetchTransactions).not.toHaveBeenCalled();
   });
 
+  it('should omit pending step from progress dialog when manifest has no txIdPrefix or getPendingIdFields hook', async () => {
+    const progressDialog = createMockProgressDialog();
+    const hooks = createMockHooks();
+    delete hooks.getPendingIdFields;
+    const api = createMockApi();
+
+    const manifest = {
+      ...defaultManifest,
+      txIdPrefix: undefined,
+    };
+
+    await syncAccount({
+      integrationId: 'test',
+      manifest,
+      hooks,
+      api,
+      account: { accountId: 'acc-1' },
+      accountDisplayName: 'Test Card',
+      monarchAccount: { id: 'monarch-1' },
+      fromDate: '2024-01-01',
+      progressDialog,
+    });
+
+    expect(progressDialog.initSteps).toHaveBeenCalledWith('acc-1', [
+      { key: 'creditLimit', name: 'Credit limit sync' },
+      { key: 'transactions', name: 'Transaction sync' },
+      { key: 'balance', name: 'Balance upload' },
+    ]);
+  });
+
   it('should handle sync errors gracefully', async () => {
     const progressDialog = createMockProgressDialog();
     const hooks = createMockHooks();

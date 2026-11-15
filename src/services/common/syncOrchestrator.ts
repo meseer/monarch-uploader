@@ -606,12 +606,13 @@ export async function syncAccount({
   // Retention window doubles as the Monarch scan window for follow-up passes
   const retentionLookbackDays = (accountData?.transactionRetentionDays as number | undefined)
     ?? TRANSACTION_RETENTION_DEFAULTS.DAYS;
+  const pendingEnabled = Boolean(includePendingTransactions && txIdPrefix && hooks.getPendingIdFields);
 
   // Initialize progress dialog steps
   progressDialog.initSteps(accountId, buildSyncSteps({
     hasCreditLimit: capabilities.hasCreditLimit,
     includeTransactions: capabilities.hasTransactions,
-    includePending: includePendingTransactions,
+    includePending: pendingEnabled,
     includeOwnerSync: ownerSyncEnabled,
   }));
 
@@ -635,7 +636,6 @@ export async function syncAccount({
     // Runs BEFORE source fetch so we can extend the fetch window if needed.
     let phase1Result = null;
     let effectiveFromDate = fromDate;
-    const pendingEnabled = includePendingTransactions && txIdPrefix && hooks.getPendingIdFields;
 
     if (pendingEnabled && capabilities.hasTransactions) {
       if (abortController.signal.aborted) throw new Error('Cancelled');

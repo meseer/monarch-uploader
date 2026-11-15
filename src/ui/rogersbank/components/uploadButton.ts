@@ -214,17 +214,6 @@ export function createRogersBankUploadButton(): HTMLElement {
 
   container.appendChild(uploadButton);
 
-  // Add informational text
-  const infoText = document.createElement('div');
-  infoText.textContent = 'Click to upload current balance and approved transactions to Monarch Money.';
-  infoText.style.cssText = `
-    padding: 4px 0;
-    font-size: 12px;
-    color: #666;
-    font-style: italic;
-  `;
-  container.appendChild(infoText);
-
   return container;
 }
 

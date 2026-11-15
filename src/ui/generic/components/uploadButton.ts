@@ -135,17 +135,6 @@ export function createUploadButton({ isAuthenticated, institutionName, onUploadC
 
   container.appendChild(uploadButton);
 
-  const infoText = document.createElement('div');
-  infoText.id = 'generic-upload-info';
-  infoText.textContent = 'Click to upload balance and transactions to Monarch Money.';
-  infoText.style.cssText = `
-    padding: 4px 0;
-    font-size: 12px;
-    color: #666;
-    font-style: italic;
-  `;
-  container.appendChild(infoText);
-
   return container;
 }
 

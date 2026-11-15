@@ -69,18 +69,6 @@ describe('Generic Upload Button Component', () => {
       const helpText = container.querySelector('#generic-auth-help-text');
       expect(helpText.textContent).toContain('Rogers Bank');
     });
-
-    it('includes info text when authenticated', () => {
-      const container = createUploadButton({
-        isAuthenticated: true,
-        institutionName: 'MBNA',
-        onUploadClick: vi.fn(),
-      });
-
-      const infoText = container.querySelector('#generic-upload-info');
-      expect(infoText).not.toBeNull();
-      expect(infoText.textContent).toContain('Monarch Money');
-    });
   });
 
   describe('darkenColor', () => {
