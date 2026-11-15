@@ -107,6 +107,13 @@ export default defineConfig(({ mode }) => {
         include: ['src/**/*.{ts,js}'],
         reporter: ['text', 'lcov', 'html'],
         reportsDirectory: 'coverage',
+        // Current baseline (72.7% stmts, 69.01% branches, 73.95% funcs, 73.24% lines)
+        thresholds: {
+          statements: 72,
+          branches: 69,
+          functions: 73,
+          lines: 73,
+        },
       },
     },
   };
