@@ -372,7 +372,7 @@ describe('Keyboard Navigation Utilities', () => {
       cleanup = makeItemsKeyboardNavigable(items, onSelect, 0);
 
       items[0].dispatchEvent(new Event('focus'));
-      expect(items[0].style.boxShadow).toBe('0 0 0 2px #007bff');
+      expect(items[0].style.boxShadow).toBe('rgb(0, 123, 255) 0px 0px 0px 2px');
     });
 
     test('should remove focus styling on blur', () => {
@@ -394,7 +394,7 @@ describe('Keyboard Navigation Utilities', () => {
       cleanup = makeItemsKeyboardNavigable(items, onSelect);
 
       items.forEach((item) => {
-        expect(item.style.outline).toBe('none');
+        expect(item.style.outlineStyle).toBe('none');
       });
     });
 
