@@ -14,7 +14,7 @@ function toTitleCase(str: string): string {
     .split(' ')
     .map((word, index) => {
       // Keep small words lowercase unless they're the first word
-      const smallWords = ['of', 'the', 'and', 'or', 'in', 'at', 'on', 'to', 'for'];
+      const smallWords = ['of', 'the', 'and', 'or', 'in', 'at', 'on', 'to', 'for', 'by'];
       if (smallWords.includes(word) && index !== 0) {
         return word;
       }
@@ -49,6 +49,8 @@ const PREFIXES_TO_REMOVE: PrefixConfig[] = [
   { prefix: 'pp *', description: 'PayPal short-form transactions' },
   { prefix: 'cpi*cpi*', description: 'CPI double-prefix vending transactions' },
   { prefix: 'cpi*', description: 'CPI vending transactions' },
+  { prefix: 'google*', description: 'Google Play / Google transactions' },
+  { prefix: 'google *', description: 'Google Play / Google transactions (spaced)' },
 ];
 
 /**

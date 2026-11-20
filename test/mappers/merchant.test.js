@@ -101,6 +101,26 @@ describe('Merchant Mapping Utilities', () => {
       expect(applyMerchantMapping('NOTCPI*SOMETHING')).toBe('Notcpi*something');
     });
 
+    test('should remove GOOGLE* prefix (Google Play / Google transactions)', () => {
+      expect(applyMerchantMapping('GOOGLE*FLOWX WEATHER')).toBe('Flowx Weather');
+      expect(applyMerchantMapping('GOOGLE*CLAUDE BY ANTH')).toBe('Claude by Anth');
+      expect(applyMerchantMapping('google*some app')).toBe('Some App');
+      expect(applyMerchantMapping('Google*Another App')).toBe('Another App');
+      // Bare Google and non-asterisk Google merchants are preserved
+      expect(applyMerchantMapping('GOOGLE')).toBe('Google');
+      expect(applyMerchantMapping('GOOGLE CLOUD')).toBe('Google Cloud');
+      // Should not affect merchants that don't start with GOOGLE*
+      expect(applyMerchantMapping('NOTGOOGLE*SOMETHING')).toBe('Notgoogle*something');
+    });
+
+    test('should remove GOOGLE * prefix (spaced Google transactions)', () => {
+      expect(applyMerchantMapping('GOOGLE *YOUTUBE PREMIUM')).toBe('Youtube Premium');
+      expect(applyMerchantMapping('google *google one')).toBe('Google One');
+      expect(applyMerchantMapping('Google *Cloud Storage')).toBe('Cloud Storage');
+      // Should not affect merchants that merely contain Google
+      expect(applyMerchantMapping('NOTGOOGLE *SOMETHING')).toBe('Notgoogle *something');
+    });
+
     test('should transform Impark variants to standardized name', () => {
       expect(applyMerchantMapping('Impark00661600u')).toBe('Impark');
       expect(applyMerchantMapping('IMPARK12345678')).toBe('Impark');
@@ -220,11 +240,13 @@ describe('Merchant Mapping Utilities', () => {
       expect(applyMerchantMapping('BANK of AMERICA')).toBe('Bank of America');
       expect(applyMerchantMapping('STORE and RESTAURANT')).toBe('Store and Restaurant');
       expect(applyMerchantMapping('SHOP in THE MALL')).toBe('Shop in the Mall');
+      expect(applyMerchantMapping('CLAUDE BY ANTH')).toBe('Claude by Anth');
     });
 
     test('should capitalize first word even if it\'s a small word', () => {
       expect(applyMerchantMapping('THE STORE')).toBe('The Store');
       expect(applyMerchantMapping('OF MICE AND MEN')).toBe('Of Mice and Men');
+      expect(applyMerchantMapping('BY THE WAY')).toBe('By the Way');
     });
 
     test('should remove trailing QPS suffix', () => {
@@ -262,6 +284,8 @@ describe('Merchant Mapping Utilities', () => {
       expect(applyMerchantMapping('A')).toBe('A');
       expect(applyMerchantMapping('TST-')).toBe('');
       expect(applyMerchantMapping('SQ *')).toBe('');
+      expect(applyMerchantMapping('GOOGLE*')).toBe('');
+      expect(applyMerchantMapping('GOOGLE *')).toBe('');
     });
   });
 
@@ -351,8 +375,11 @@ describe('Merchant Mapping Utilities', () => {
         { input: 'AMZN MKTP US*ABC123DEF', expected: 'Amzn Mktp Us' },
         // PAYPAL * prefix removed, leaving the underlying merchant
         { input: 'PAYPAL *MERCHANTNAME', expected: 'Merchantname' },
-        // Not Amazon/AMZN so asterisk NOT stripped, title case applied
-        { input: 'GOOGLE *YOUTUBE PREMIUM', expected: 'Google *youtube Premium' },
+        // GOOGLE * prefix removed, leaving the underlying merchant
+        { input: 'GOOGLE *YOUTUBE PREMIUM', expected: 'Youtube Premium' },
+        // GOOGLE* prefix removed, leaving the underlying merchant
+        { input: 'GOOGLE*FLOWX WEATHER', expected: 'Flowx Weather' },
+        { input: 'GOOGLE*CLAUDE BY ANTH', expected: 'Claude by Anth' },
       ];
 
       testCases.forEach(({ input, expected }) => {
