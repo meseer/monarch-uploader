@@ -191,6 +191,26 @@ describe('Wealthsimple account type capability sets', () => {
       });
     });
 
+  describe('Managed Portfolio RESP registration (MANAGED_PORTFOLIO_* RESP types)', () => {
+    const managedPortfolioRespTypes = [
+      { type: 'MANAGED_PORTFOLIO_RESP', displayName: 'Managed RESP' },
+      { type: 'MANAGED_PORTFOLIO_RESP_FAMILY', displayName: 'Managed Family RESP' },
+      { type: 'MANAGED_PORTFOLIO_JOINT_RESP', displayName: 'Managed RESP' },
+      { type: 'MANAGED_PORTFOLIO_JOINT_RESP_FAMILY', displayName: 'Managed Family RESP' },
+    ];
+
+    test.each(managedPortfolioRespTypes)('$type maps to brokerage resp and has display name', ({ type, displayName }) => {
+      expect(getMonarchAccountTypeMapping(type)).toEqual({ type: 'brokerage', subtype: 'resp' });
+      expect(getAccountTypeDisplayName(type)).toBe(displayName);
+    });
+
+    test.each(managedPortfolioRespTypes)('$type supports transactions, pending reconciliation, and investment position sync', ({ type }) => {
+      expect(WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(type)).toBe(true);
+      expect(WEALTHSIMPLE_PENDING_RECONCILIATION_TYPES.has(type)).toBe(true);
+      expect(isInvestmentAccount(type)).toBe(true);
+    });
+  });
+
   describe('cross-set consistency', () => {
     test('every cash-like type supports transactions', () => {
       for (const type of WEALTHSIMPLE_CASH_LIKE_TYPES) {

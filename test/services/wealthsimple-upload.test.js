@@ -641,6 +641,25 @@ describe('Wealthsimple Upload Service', () => {
         expect(stepKeys).toEqual(['pendingReconciliation', 'transactions', 'balance', 'positions', 'cashSync']);
       },
     );
+
+    it.each([
+      'MANAGED_PORTFOLIO_RESP',
+      'MANAGED_PORTFOLIO_RESP_FAMILY',
+      'MANAGED_PORTFOLIO_JOINT_RESP',
+      'MANAGED_PORTFOLIO_JOINT_RESP_FAMILY',
+    ])(
+      'builds full investment steps for %s',
+      (accountType) => {
+        isInvestmentAccount.mockReturnValue(true);
+
+        const consolidatedAccount = {
+          wealthsimpleAccount: { id: 'resp-managed-portfolio-1', type: accountType },
+        };
+        const stepKeys = buildSyncStepsForAccount(consolidatedAccount).map((s) => s.key);
+
+        expect(stepKeys).toEqual(['pendingReconciliation', 'transactions', 'balance', 'positions', 'cashSync']);
+      },
+    );
   });
 
   describe('clearLastUploadDate', () => {

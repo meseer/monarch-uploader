@@ -550,6 +550,45 @@ describe('reconcileWealthsimpleFetchedPending', () => {
       expect(updatedNotes).not.toContain('ws-tx:');
     });
 
+    it.each([
+      'MANAGED_PORTFOLIO_RESP',
+      'MANAGED_PORTFOLIO_RESP_FAMILY',
+      'MANAGED_PORTFOLIO_JOINT_RESP',
+      'MANAGED_PORTFOLIO_JOINT_RESP_FAMILY',
+    ])('settles completed investment transaction via unifiedStatus for %s', async (accountType) => {
+      const pendingNotes = 'Upcoming dividend on ZHY\nExpected dividends: CAD$2.06\nHoldings on record date: 34.3537 shares\nGross dividend rate: CAD$0.06 per share\nws-tx:div-456';
+      const monarchTx = makeMonarchTx(
+        'mtx-div-mp',
+        pendingNotes,
+        { amount: 0 },
+      );
+
+      mockMonarchApi.updateTransaction.mockResolvedValue({});
+      mockMonarchApi.setTransactionTags.mockResolvedValue({});
+
+      const wsTx = makeWsTx('div-456', {
+        type: 'DIVIDEND',
+        subType: 'CASH_DIVIDEND',
+        status: null,
+        unifiedStatus: 'COMPLETED',
+        amount: 2.06,
+        currency: 'CAD',
+        assetSymbol: 'ZHY',
+        assetQuantity: 34.3537,
+        grossDividendRate: 0.06,
+        amountSign: 'positive',
+      });
+
+      const result = await reconcileWealthsimpleFetchedPending(
+        pendingTag,
+        [monarchTx],
+        [wsTx],
+        accountType,
+      );
+
+      expect(result.settled).toBe(1);
+    });
+
     it('updates date to extendedOrder.filledAt when limit order settles later', async () => {
       const monarchTx = makeMonarchTx(
         'mtx-date',
