@@ -44,6 +44,9 @@ export interface CanadaLifeConsolidatedAccount {
   lastSyncBalance: number | null;
   uploadedTransactions: Array<{ id: string; date?: string }>;
   successfulSyncCount: number;
+  status?: 'active' | 'closed';
+  closedDate?: string | null;
+  isOrphanedFromApi?: boolean;
 }
 
 /** Historical balance data with CSV-ready rows (first row is the header) */
@@ -113,9 +116,18 @@ export interface AuraApiCallOptions {
 
 /** Sponsor details, including the encrypted participant id used as adminSystemId */
 export interface SponsorInfo {
-  adminSystemId: string;
+  adminSystemId: string | null;
   sponsorName: string;
   sponsorId: string;
+  isMultiSponsor: boolean;
+  hasSavingsPlans: boolean;
+  grsPlanId: string | null;
+}
+
+/** Options accepted by `getSponsorInfo` */
+export interface GetSponsorInfoOptions {
+  /** Bypass the session-level sponsor cache (e.g., when switching sponsors). Default: false */
+  forceRefresh?: boolean;
 }
 
 /** Options accepted by `loadCanadaLifeAccounts` */

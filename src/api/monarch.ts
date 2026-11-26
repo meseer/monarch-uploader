@@ -24,6 +24,7 @@ import {
   setAccountLogo,
   getFilteredAccounts,
   updateAccount,
+  closeAccount,
   getAccountsByType,
   validateAndRefreshAccountMapping,
   getCreditLimit,
@@ -1165,6 +1166,7 @@ export {
   setAccountLogo,
   getFilteredAccounts,
   updateAccount,
+  closeAccount,
   getAccountsByType,
 
   getCreditLimit,
@@ -1197,6 +1199,7 @@ export default {
   getFilteredAccounts,
   getAccountsByType,
   updateAccount,
+  closeAccount,
   updateTransaction,
   setTransactionTags,
   deleteTransaction,

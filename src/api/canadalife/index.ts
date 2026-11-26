@@ -21,7 +21,12 @@ import {
 } from './auth';
 import { clearHarvestedAuraContext, getAuraContext, harvestAuraContext } from './auraContext';
 import { buildApexActionPayload, makeAuraApiCall } from './auraClient';
-import { clearSponsorInfoCache, getSponsorInfo, loadCanadaLifeAccounts } from './accounts';
+import {
+  clearSponsorInfoCache,
+  getCachedSponsorInfo,
+  getSponsorInfo,
+  loadCanadaLifeAccounts,
+} from './accounts';
 import { loadAccountActivityReport } from './activityReports';
 import { loadAccountBalanceHistory } from './balanceHistory';
 
@@ -33,6 +38,7 @@ export type {
   CanadaLifeActivity,
   CanadaLifeAuthStatus,
   CanadaLifeConsolidatedAccount,
+  GetSponsorInfoOptions,
   LoadAccountsOptions,
   SponsorInfo,
 } from './types';
@@ -52,6 +58,7 @@ export {
   buildApexActionPayload,
   makeAuraApiCall,
   clearSponsorInfoCache,
+  getCachedSponsorInfo,
   getSponsorInfo,
   loadCanadaLifeAccounts,
   loadAccountActivityReport,
@@ -66,6 +73,7 @@ export default {
   extractCookies,
   getAuraContext,
   getSponsorInfo,
+  getCachedSponsorInfo,
   clearSponsorInfoCache,
   makeAuraApiCall,
   loadCanadaLifeAccounts,

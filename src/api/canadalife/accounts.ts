@@ -9,7 +9,7 @@
  * @module api/canadalife/accounts
  */
 
-import { STORAGE } from '../../core/config';
+import { ACCOUNT_STATUS, STORAGE } from '../../core/config';
 import { debugLog } from '../../core/utils';
 import toast from '../../ui/toast';
 import { CanadaLifeApiError } from './errors';
@@ -17,6 +17,7 @@ import { buildApexActionPayload, makeAuraApiCall } from './auraClient';
 import type {
   CanadaLifeAccount,
   CanadaLifeConsolidatedAccount,
+  GetSponsorInfoOptions,
   LoadAccountsOptions,
   SponsorInfo,
 } from './types';
@@ -40,18 +41,25 @@ let cachedSponsorInfo: SponsorInfo | null = null;
  * Fetch sponsor info from Canada Life via `IMSCommunityHelperSfiLwc.getSponsorInfo`.
  *
  * The response contains `GRS_ParticId__c` — the encrypted participant id used
- * as `adminSystemId` when requesting the plan list. It is user/session-specific
- * and cannot be hardcoded.
+ * as `adminSystemId` when requesting the plan list — when the selected sponsor
+ * has savings plans. Sponsors without savings plans (e.g., after a Group Plan
+ * transfer to NextSteps) omit `GRS_ParticId__c` while still returning valid
+ * sponsor identity fields (`SponsorId__c`, `Id`, `User__c`).
  *
- * Results are cached in memory for the lifetime of the page.
+ * Results are cached in memory for the lifetime of the page unless `forceRefresh`
+ * is set.
  *
- * @returns Sponsor info including `adminSystemId`
- * @throws `CanadaLifeApiError` if `GRS_ParticId__c` is absent from the response
+ * @param options - Options controlling cache usage
+ * @returns Sponsor info including `hasSavingsPlans` and `adminSystemId`
+ * @throws `CanadaLifeApiError` if the response lacks sponsor identity (not logged in / malformed)
  */
-export async function getSponsorInfo(): Promise<SponsorInfo> {
-  if (cachedSponsorInfo) {
+export async function getSponsorInfo(options: GetSponsorInfoOptions = {}): Promise<SponsorInfo> {
+  if (!options.forceRefresh && cachedSponsorInfo) {
     debugLog('Using cached sponsor info', {
-      adminSystemId: `${cachedSponsorInfo.adminSystemId.substring(0, 20)}...`,
+      adminSystemId: cachedSponsorInfo.adminSystemId
+        ? `${cachedSponsorInfo.adminSystemId.substring(0, 20)}...`
+        : null,
+      hasSavingsPlans: cachedSponsorInfo.hasSavingsPlans,
     });
     return cachedSponsorInfo;
   }
@@ -68,27 +76,46 @@ export async function getSponsorInfo(): Promise<SponsorInfo> {
   const response = await makeAuraApiCall(payload, { extractNestedResponse: true });
 
   const sponsorData = response?.getSponsorInfo;
+  const hasSponsorIdentity = Boolean(
+    sponsorData?.GRS_ParticId__c
+    || sponsorData?.SponsorId__c
+    || sponsorData?.Id
+    || sponsorData?.User__c,
+  );
 
-  if (!sponsorData?.GRS_ParticId__c) {
-    debugLog('getSponsorInfo response missing GRS_ParticId__c:', response);
+  if (!sponsorData || !hasSponsorIdentity) {
+    debugLog('getSponsorInfo response missing sponsor identity:', response);
     throw new CanadaLifeApiError(
-      'Could not extract adminSystemId (GRS_ParticId__c) from getSponsorInfo response. '
+      'Could not extract sponsor info from getSponsorInfo response. '
       + 'Please ensure you are logged in to Canada Life.',
       response,
     );
   }
 
   cachedSponsorInfo = {
-    adminSystemId: sponsorData.GRS_ParticId__c,
+    adminSystemId: sponsorData.GRS_ParticId__c || null,
     sponsorName: sponsorData.User_Sponsor_Name__c || '',
     sponsorId: sponsorData.SponsorId__c || '',
+    isMultiSponsor: Boolean(sponsorData.isMultiSponsor__c),
+    hasSavingsPlans: Boolean(sponsorData.GRS_ParticId__c),
+    grsPlanId: sponsorData.GRSPlan__c || null,
   };
 
   debugLog('Fetched sponsor info successfully', {
-    adminSystemId: `${cachedSponsorInfo.adminSystemId.substring(0, 20)}...`,
+    adminSystemId: cachedSponsorInfo.adminSystemId
+      ? `${cachedSponsorInfo.adminSystemId.substring(0, 20)}...`
+      : null,
     sponsorName: cachedSponsorInfo.sponsorName,
+    hasSavingsPlans: cachedSponsorInfo.hasSavingsPlans,
   });
 
+  return cachedSponsorInfo;
+}
+
+/**
+ * Return the most recently fetched in-memory sponsor info, if any.
+ */
+export function getCachedSponsorInfo(): SponsorInfo | null {
   return cachedSponsorInfo;
 }
 
@@ -106,11 +133,23 @@ export function clearSponsorInfoCache(): void {
  *  - current: `plansList[]` from `getPlanSelectionScreenData`
  *  - legacy:  `IPResult.MemberPlans[]` from `grsa_GetMemberPlans`
  *
+ * Returns an empty array when the current sponsor has no savings plans
+ * (`GRS_ParticId__c` absent).
+ *
+ * @param forceRefresh - Bypass cached sponsor info so sponsor switches are reflected
  * @returns Array of plan objects
  * @throws `CanadaLifeApiError` if no recognisable plan list is present
  */
-async function fetchPlansFromApi(): Promise<CanadaLifeAccount[]> {
-  const sponsorInfo = await getSponsorInfo();
+async function fetchPlansFromApi(forceRefresh = false): Promise<CanadaLifeAccount[]> {
+  const sponsorInfo = await getSponsorInfo({ forceRefresh });
+
+  if (!sponsorInfo.hasSavingsPlans || !sponsorInfo.adminSystemId) {
+    debugLog('Current Canada Life sponsor has no savings plans (GRS_ParticId__c absent)', {
+      sponsorName: sponsorInfo.sponsorName,
+      isMultiSponsor: sponsorInfo.isMultiSponsor,
+    });
+    return [];
+  }
 
   debugLog('Building getPlanSelectionScreenData payload', {
     adminSystemId: `${sponsorInfo.adminSystemId.substring(0, 20)}...`,
@@ -198,6 +237,9 @@ function mergeAccount(
     lastSyncBalance: existing?.lastSyncBalance ?? null,
     uploadedTransactions: existing?.uploadedTransactions || [],
     successfulSyncCount: existing?.successfulSyncCount || 0,
+    status: ACCOUNT_STATUS.ACTIVE,
+    closedDate: null,
+    isOrphanedFromApi: false,
   };
 }
 
@@ -205,7 +247,8 @@ function mergeAccount(
  * Append stored accounts that the API no longer returns.
  *
  * Closed or transferred plans keep their Monarch mapping and sync history so
- * historical data stays attributable.
+ * historical data stays attributable, and are tagged `isOrphanedFromApi: true`
+ * so the sync flow can offer to close them.
  *
  * @param mergedAccounts - Accounts built from the API response (mutated)
  * @param existingAccounts - Accounts currently in storage
@@ -220,7 +263,10 @@ function appendOrphanedAccounts(
     const existingId = existing.canadalifeAccount?.id || existing.canadalifeAccount?.agreementId;
     if (existingId && !apiAccountIds.has(existingId)) {
       debugLog(`Preserving orphaned account: ${existingId} (${existing.canadalifeAccount?.nickname || 'Unknown'})`);
-      mergedAccounts.push(existing);
+      mergedAccounts.push({
+        ...existing,
+        isOrphanedFromApi: true,
+      });
     }
   });
 }
@@ -256,7 +302,7 @@ export async function loadCanadaLifeAccounts(
       toast.show('Loading Canada Life accounts...', 'debug');
     }
 
-    const apiAccounts = await fetchPlansFromApi();
+    const apiAccounts = await fetchPlansFromApi(forceRefresh);
     debugLog(`Loaded ${apiAccounts.length} Canada Life accounts from API`);
 
     const existingMap = indexExistingAccounts(existingAccounts);
@@ -276,11 +322,15 @@ export async function loadCanadaLifeAccounts(
     }
 
     if (!silent) {
-      const accountNames = mergedAccounts
-        .filter((acc) => acc.canadalifeAccount !== null)
-        .map((acc) => acc.canadalifeAccount.EnglishShortName)
-        .join(', ');
-      toast.show(`Loaded Canada Life accounts: ${accountNames}`, 'debug');
+      if (apiAccounts.length === 0) {
+        toast.show('No active savings plans found on current Canada Life sponsor', 'debug');
+      } else {
+        const accountNames = mergedAccounts
+          .filter((acc) => acc.canadalifeAccount !== null)
+          .map((acc) => acc.canadalifeAccount.EnglishShortName)
+          .join(', ');
+        toast.show(`Loaded Canada Life accounts: ${accountNames}`, 'debug');
+      }
     }
 
     return mergedAccounts;

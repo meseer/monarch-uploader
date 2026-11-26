@@ -19,6 +19,10 @@ vi.mock('../../src/core/config', () => ({
     OWNER_MODE: { OFF: 'off', ON: 'on' },
     TAG_MODE: { OFF: 'off', AUTO: 'auto', ALWAYS: 'always' },
   },
+  ACCOUNT_STATUS: {
+    ACTIVE: 'active',
+    CLOSED: 'closed',
+  },
 }));
 
 vi.mock('../../src/core/integrationCapabilities', () => ({
@@ -51,6 +55,7 @@ vi.mock('../../src/core/state', () => ({
 vi.mock('../../src/api/canadalife', () => ({
   default: {
     loadCanadaLifeAccounts: vi.fn(),
+    getCachedSponsorInfo: vi.fn(() => null),
     loadAccountBalanceHistory: vi.fn(),
   },
 }));

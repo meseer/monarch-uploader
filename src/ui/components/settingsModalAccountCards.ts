@@ -44,6 +44,8 @@ interface AccountEntry {
   skipCategorization?: boolean;
   syncEnabled?: boolean;
   lastSyncDate?: string;
+  status?: string;
+  closedDate?: string | null;
   monarchAccount?: {
     displayName?: string;
     name?: string;
@@ -526,11 +528,25 @@ export function createGenericAccountCards(
     infoContainer.id = `${integrationId}-info-${accountId}`;
     infoContainer.style.cssText = 'flex-grow: 1;';
 
+    const nameRow = document.createElement('div');
+    nameRow.style.cssText = 'display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 2px;';
+
     const nameDiv = document.createElement('div');
     nameDiv.id = `${integrationId}-name-${accountId}`;
-    nameDiv.style.cssText = `font-weight: bold; font-size: 1.1em; margin-bottom: 2px; color: ${!syncEnabled ? 'var(--mu-text-muted, #999)' : 'var(--mu-text-primary, #333)'};`;
+    nameDiv.style.cssText = `font-weight: bold; font-size: 1.1em; color: ${!syncEnabled ? 'var(--mu-text-muted, #999)' : 'var(--mu-text-primary, #333)'};`;
     nameDiv.textContent = sourceAccount.nickname || sourceAccount.name || 'Unknown Account';
-    infoContainer.appendChild(nameDiv);
+    nameRow.appendChild(nameDiv);
+
+    const isClosed = accountEntry.status === 'closed';
+    if (isClosed) {
+      const closedBadge = document.createElement('span');
+      closedBadge.id = `${integrationId}-closed-badge-${accountId}`;
+      closedBadge.textContent = 'Closed';
+      closedBadge.style.cssText = 'background: var(--mu-closed-badge-bg, #9e9e9e); color: white; font-size: 0.7em; padding: 2px 6px; border-radius: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px;';
+      nameRow.appendChild(closedBadge);
+    }
+
+    infoContainer.appendChild(nameRow);
 
     if (sourceAccount.type) {
       const typeDiv = document.createElement('div');
@@ -558,6 +574,14 @@ export function createGenericAccountCards(
       infoContainer.appendChild(syncDiv);
     }
 
+    if (isClosed && accountEntry.closedDate) {
+      const closedDateDiv = document.createElement('div');
+      closedDateDiv.id = `${integrationId}-closed-date-${accountId}`;
+      closedDateDiv.style.cssText = 'font-size: 0.8em; color: var(--mu-text-secondary, #666); margin-top: 2px;';
+      closedDateDiv.textContent = `Closed: ${formatLastUpdateDate(accountEntry.closedDate)}`;
+      infoContainer.appendChild(closedDateDiv);
+    }
+
     cardHeader.appendChild(infoContainer);
 
     const toggleContainer = document.createElement('div');
@@ -565,6 +589,12 @@ export function createGenericAccountCards(
     toggleContainer.style.cssText = 'margin-left: auto; margin-right: 10px; flex-shrink: 0;';
     const toggle = createToggleSwitch(syncEnabled, (isEnabled: boolean) => {
       const success = accountService.markAccountAsSkipped(integrationId, accountId, !isEnabled);
+      if (success && isEnabled && accountEntry.status === 'closed') {
+        accountService.updateAccountInList(integrationId, accountId, {
+          status: 'active',
+          closedDate: null,
+        });
+      }
       if (success) {
         toast.show(`Account ${sourceAccount.nickname || sourceAccount.name} ${isEnabled ? 'enabled' : 'disabled'}`, 'info');
         setTimeout(onRefresh, 500);
