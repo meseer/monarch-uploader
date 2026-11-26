@@ -22,10 +22,22 @@ export interface CloseSingleAccountResult {
   monarchError?: string;
 }
 
-export interface HandleClosedAccountsOutcome {
+export interface ClosedAccountsActionPlan {
   prompted: boolean;
-  closedIds: Set<string>;
+  accountsToClose: CanadaLifeConsolidatedAccount[];
+  closeInMonarch: boolean;
+  closedDate: string;
   skippedOrphanIds: Set<string>;
+}
+
+export interface ProgressReporter {
+  initSteps: (accountId: string, steps: Array<{ key: string; name: string }>) => void;
+  updateStepStatus: (
+    accountId: string,
+    stepKey: string,
+    status: 'pending' | 'processing' | 'success' | 'error' | 'skipped',
+    message?: string,
+  ) => void;
 }
 
 function getConsolidatedAccountId(account: CanadaLifeConsolidatedAccount): string {
@@ -213,7 +225,7 @@ export async function closeCanadaLifeAccount(
   }
 }
 
-function reportClosedAccountOutcomes(results: CloseSingleAccountResult[], closeInMonarch: boolean): void {
+export function reportClosedAccountOutcomes(results: CloseSingleAccountResult[], closeInMonarch: boolean): void {
   const closedInUploader = results.filter((r) => r.closedInUploader);
   const failed = results.filter((r) => !r.closedInUploader);
   const notFound = results.filter((r) => r.monarchNotFound);
@@ -251,15 +263,21 @@ function toDialogCandidates(accounts: CanadaLifeConsolidatedAccount[]): ClosedAc
 }
 
 /**
- * Prompt the user about orphaned Canada Life accounts and process their selection.
+ * Prompt the user about orphaned Canada Life accounts and return the closure action plan.
  */
-export async function handlePotentialClosedAccounts(
+export async function promptForClosedAccounts(
   consolidatedAccounts: CanadaLifeConsolidatedAccount[],
   sponsorInfo: SponsorInfo | null,
-): Promise<HandleClosedAccountsOutcome> {
+): Promise<ClosedAccountsActionPlan> {
   const candidates = findPotentialClosedAccounts(consolidatedAccounts);
   if (candidates.length === 0) {
-    return { prompted: false, closedIds: new Set(), skippedOrphanIds: new Set() };
+    return {
+      prompted: false,
+      accountsToClose: [],
+      closeInMonarch: false,
+      closedDate: '',
+      skippedOrphanIds: new Set(),
+    };
   }
 
   const allCandidateIds = candidates.map(getConsolidatedAccountId);
@@ -274,23 +292,58 @@ export async function handlePotentialClosedAccounts(
   });
 
   if (!dialogResult.confirmed || dialogResult.selectedAccountIds.length === 0) {
-    return { prompted: true, closedIds: new Set(), skippedOrphanIds: new Set(allCandidateIds) };
+    return {
+      prompted: true,
+      accountsToClose: [],
+      closeInMonarch: false,
+      closedDate: '',
+      skippedOrphanIds: new Set(allCandidateIds),
+    };
   }
 
   const selectedSet = new Set(dialogResult.selectedAccountIds);
-  const results: CloseSingleAccountResult[] = [];
-  for (const account of candidates) {
-    if (selectedSet.has(getConsolidatedAccountId(account))) {
-      results.push(await closeCanadaLifeAccount(account, {
-        closeInMonarch: dialogResult.closeInMonarch,
-        closedDate: dialogResult.closedDate,
-      }));
-    }
+  const accountsToClose = candidates.filter((acc) => selectedSet.has(getConsolidatedAccountId(acc)));
+  const skippedOrphanIds = new Set(allCandidateIds.filter((id) => !selectedSet.has(id)));
+
+  return {
+    prompted: true,
+    accountsToClose,
+    closeInMonarch: dialogResult.closeInMonarch,
+    closedDate: dialogResult.closedDate,
+    skippedOrphanIds,
+  };
+}
+
+/**
+ * Close a single Canada Life account while updating a single `closeAccount` step
+ * in the progress dialog.
+ */
+export async function closeAccountWithProgress(
+  consolidatedAccount: CanadaLifeConsolidatedAccount,
+  options: { closeInMonarch: boolean; closedDate: string },
+  progressDialog: ProgressReporter | null,
+): Promise<CloseSingleAccountResult> {
+  const accountId = getConsolidatedAccountId(consolidatedAccount);
+
+  progressDialog?.initSteps(accountId, [{ key: 'closeAccount', name: 'Close account' }]);
+  progressDialog?.updateStepStatus(
+    accountId,
+    'closeAccount',
+    'processing',
+    options.closeInMonarch ? 'Closing in Monarch...' : 'Marking closed...',
+  );
+
+  const result = await closeCanadaLifeAccount(consolidatedAccount, options);
+
+  if (result.closedInUploader && result.closedInMonarch) {
+    progressDialog?.updateStepStatus(accountId, 'closeAccount', 'success', `Closed (${options.closedDate})`);
+  } else if (result.closedInUploader && result.monarchNotFound) {
+    progressDialog?.updateStepStatus(accountId, 'closeAccount', 'success', 'Closed in uploader (not in Monarch)');
+  } else if (result.closedInUploader) {
+    progressDialog?.updateStepStatus(accountId, 'closeAccount', 'success', `Closed in uploader (${options.closedDate})`);
+  } else {
+    progressDialog?.updateStepStatus(accountId, 'closeAccount', 'error', result.monarchError || 'Failed to close');
   }
 
-  reportClosedAccountOutcomes(results, dialogResult.closeInMonarch);
-
-  const closedIds = new Set(results.filter((r) => r.closedInUploader).map((r) => r.accountId));
-  const skippedOrphanIds = new Set(allCandidateIds.filter((id) => !closedIds.has(id)));
-  return { prompted: true, closedIds, skippedOrphanIds };
+  return result;
 }

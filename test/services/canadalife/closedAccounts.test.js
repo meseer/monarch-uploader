@@ -113,7 +113,9 @@ import {
   inferDefaultClosureDate,
   buildClosedAccountsPromptText,
   closeCanadaLifeAccount,
-  handlePotentialClosedAccounts,
+  promptForClosedAccounts,
+  closeAccountWithProgress,
+  reportClosedAccountOutcomes,
 } from '../../../src/services/canadalife/closedAccounts';
 // eslint-disable-next-line import/first
 import { uploadAllCanadaLifeAccountsToMonarch } from '../../../src/services/canadalife-upload';
@@ -353,7 +355,7 @@ describe('Canada Life Closed Accounts Service', () => {
     });
   });
 
-  describe('handlePotentialClosedAccounts & uploadAllCanadaLifeAccountsToMonarch integration', () => {
+  describe('promptForClosedAccounts, closeAccountWithProgress & uploadAllCanadaLifeAccountsToMonarch integration', () => {
     test('handles old no-savings sponsor with 0 plans and shows info toast instead of error', async () => {
       canadalife.loadCanadaLifeAccounts.mockResolvedValue([]);
       canadalife.getCachedSponsorInfo.mockReturnValue({
@@ -374,7 +376,7 @@ describe('Canada Life Closed Accounts Service', () => {
       expect(showProgressDialog).not.toHaveBeenCalled();
     });
 
-    test('pre-fills NextSteps opening date, forwards user-confirmed closure date, and syncs only active RRSP2', async () => {
+    test('shows closed accounts in progress dialog with single Close account step on NEXTSTEP transfer', async () => {
       const rrsp2 = {
         canadalifeAccount: {
           id: 'rrsp2',
@@ -415,16 +417,55 @@ describe('Canada Life Closed Accounts Service', () => {
       expect(showClosedAccountsDialog).toHaveBeenCalledWith(expect.objectContaining({
         defaultClosedDate: '2026-11-24',
       }));
-      expect(monarchApi.closeAccount).toHaveBeenCalledWith('monarch-old-rrsp', '2026-11-24');
-      expect(monarchApi.closeAccount).toHaveBeenCalledWith('monarch-old-dpsp', '2026-11-24');
       expect(showProgressDialog).toHaveBeenCalledWith(
-        [{ key: 'rrsp2', nickname: 'Long RRSP2', name: 'RRSP2' }],
+        [
+          { key: 'rrsp2', nickname: 'Long RRSP2', name: 'RRSP2' },
+          { key: 'old-rrsp', nickname: 'Long RRSP', name: 'RRSP', status: 'closed' },
+          { key: 'old-dpsp', nickname: 'Long DPSP', name: 'DPSP', status: 'closed' },
+        ],
         'Uploading Canada Life Balance & Transactions to Monarch',
       );
-      expect(dialog.showSummary).toHaveBeenCalledWith(expect.objectContaining({ success: 1, total: 1 }));
+      expect(dialog.initSteps).toHaveBeenCalledWith('old-rrsp', [{ key: 'closeAccount', name: 'Close account' }]);
+      expect(dialog.updateStepStatus).toHaveBeenCalledWith('old-rrsp', 'closeAccount', 'processing', 'Closing in Monarch...');
+      expect(dialog.updateStepStatus).toHaveBeenCalledWith('old-rrsp', 'closeAccount', 'success', 'Closed (2026-11-24)');
+      expect(dialog.initSteps).toHaveBeenCalledWith('old-dpsp', [{ key: 'closeAccount', name: 'Close account' }]);
+      expect(dialog.updateStepStatus).toHaveBeenCalledWith('old-dpsp', 'closeAccount', 'success', 'Closed (2026-11-24)');
+      expect(monarchApi.closeAccount).toHaveBeenCalledWith('monarch-old-rrsp', '2026-11-24');
+      expect(monarchApi.closeAccount).toHaveBeenCalledWith('monarch-old-dpsp', '2026-11-24');
+      expect(dialog.showSummary).toHaveBeenCalledWith(expect.objectContaining({ success: 3, failed: 0, total: 3 }));
     });
 
-    test('skips orphaned accounts cleanly without opening progress dialog when old sponsor has 0 active plans', async () => {
+    test('shows progress dialog when closing orphaned accounts on old no-savings sponsor (0 active accounts)', async () => {
+      const oldRrsp = makeAccount('old-rrsp', 'RRSP', { isOrphanedFromApi: true });
+      const oldDpsp = makeAccount('old-dpsp', 'DPSP', { isOrphanedFromApi: true });
+      canadalife.loadCanadaLifeAccounts.mockResolvedValue([oldRrsp, oldDpsp]);
+      showClosedAccountsDialog.mockResolvedValue({
+        confirmed: true,
+        selectedAccountIds: ['old-rrsp', 'old-dpsp'],
+        closeInMonarch: true,
+        closedDate: '2026-11-24',
+      });
+
+      const dialog = makeProgressDialog();
+      showProgressDialog.mockReturnValue(dialog);
+
+      await uploadAllCanadaLifeAccountsToMonarch();
+
+      expect(showProgressDialog).toHaveBeenCalledWith(
+        [
+          { key: 'old-rrsp', nickname: 'Long RRSP', name: 'RRSP', status: 'closed' },
+          { key: 'old-dpsp', nickname: 'Long DPSP', name: 'DPSP', status: 'closed' },
+        ],
+        'Uploading Canada Life Balance & Transactions to Monarch',
+      );
+      expect(dialog.initSteps).toHaveBeenCalledWith('old-rrsp', [{ key: 'closeAccount', name: 'Close account' }]);
+      expect(dialog.updateStepStatus).toHaveBeenCalledWith('old-rrsp', 'closeAccount', 'success', 'Closed (2026-11-24)');
+      expect(dialog.hideCancel).toHaveBeenCalled();
+      expect(dialog.showSummary).toHaveBeenCalledWith(expect.objectContaining({ success: 2, failed: 0, total: 2 }));
+      expect(toast.show).toHaveBeenCalledWith('Closed 2 account(s) in Monarch ($0 balance) and uploader', 'info');
+    });
+
+    test('skips orphaned accounts cleanly without opening progress dialog when old sponsor has 0 active plans and user skips', async () => {
       const oldRrsp = makeAccount('old-rrsp', 'RRSP', { isOrphanedFromApi: true });
       canadalife.loadCanadaLifeAccounts.mockResolvedValue([oldRrsp]);
       showClosedAccountsDialog.mockResolvedValue({
@@ -458,9 +499,10 @@ describe('Canada Life Closed Accounts Service', () => {
       );
     });
 
-    test('handlePotentialClosedAccounts reports partial warning when one Monarch close fails', async () => {
+    test('updates step to error and reports warning when one Monarch close fails', async () => {
       const a1 = makeAccount('a1', 'RRSP', { isOrphanedFromApi: true });
       const a2 = makeAccount('a2', 'DPSP', { isOrphanedFromApi: true });
+      canadalife.loadCanadaLifeAccounts.mockResolvedValue([a1, a2]);
       showClosedAccountsDialog.mockResolvedValue({
         confirmed: true,
         selectedAccountIds: ['a1', 'a2'],
@@ -471,11 +513,39 @@ describe('Canada Life Closed Accounts Service', () => {
         .mockResolvedValueOnce({ deactivatedAt: '2026-11-24' })
         .mockRejectedValueOnce(new Error('500 Server Error'));
 
-      const outcome = await handlePotentialClosedAccounts([a1, a2], null);
+      const dialog = makeProgressDialog();
+      showProgressDialog.mockReturnValue(dialog);
 
-      expect(outcome.closedIds).toEqual(new Set(['a1']));
-      expect(outcome.skippedOrphanIds).toEqual(new Set(['a2']));
+      await uploadAllCanadaLifeAccountsToMonarch();
+
+      expect(dialog.updateStepStatus).toHaveBeenCalledWith('a1', 'closeAccount', 'success', 'Closed (2026-11-24)');
+      expect(dialog.updateStepStatus).toHaveBeenCalledWith('a2', 'closeAccount', 'error', '500 Server Error');
+      expect(dialog.showSummary).toHaveBeenCalledWith(expect.objectContaining({ success: 1, failed: 1, total: 2 }));
       expect(toast.show).toHaveBeenCalledWith(expect.stringContaining('failed in Monarch'), 'warning');
+    });
+
+    test('promptForClosedAccounts, closeAccountWithProgress, and reportClosedAccountOutcomes work standalone', async () => {
+      const a1 = makeAccount('a1', 'RRSP', { isOrphanedFromApi: true });
+      const a2 = makeAccount('a2', 'DPSP', { isOrphanedFromApi: true });
+      showClosedAccountsDialog.mockResolvedValue({
+        confirmed: true,
+        selectedAccountIds: ['a1'],
+        closeInMonarch: false,
+        closedDate: '2026-11-24',
+      });
+
+      const plan = await promptForClosedAccounts([a1, a2], null);
+      expect(plan.prompted).toBe(true);
+      expect(plan.accountsToClose).toEqual([a1]);
+      expect(plan.skippedOrphanIds).toEqual(new Set(['a2']));
+
+      const dialog = makeProgressDialog();
+      const res = await closeAccountWithProgress(a1, { closeInMonarch: false, closedDate: '2026-11-24' }, dialog);
+      expect(dialog.updateStepStatus).toHaveBeenCalledWith('a1', 'closeAccount', 'processing', 'Marking closed...');
+      expect(dialog.updateStepStatus).toHaveBeenCalledWith('a1', 'closeAccount', 'success', 'Closed in uploader (2026-11-24)');
+
+      reportClosedAccountOutcomes([res], false);
+      expect(toast.show).toHaveBeenCalledWith('Marked 1 account(s) as closed in uploader', 'info');
     });
   });
 });
