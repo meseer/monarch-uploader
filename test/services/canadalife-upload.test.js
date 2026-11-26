@@ -27,6 +27,10 @@ vi.mock('../../src/core/config', () => ({
   INTEGRATIONS: {
     CANADALIFE: 'canadalife',
   },
+  ACCOUNT_STATUS: {
+    ACTIVE: 'active',
+    CLOSED: 'closed',
+  },
 }));
 
 vi.mock('../../src/services/common/accountService', () => ({
@@ -72,6 +76,7 @@ vi.mock('../../src/core/state', () => ({
 vi.mock('../../src/api/canadalife', () => ({
   default: {
     loadCanadaLifeAccounts: vi.fn(),
+    getCachedSponsorInfo: vi.fn(() => null),
     loadAccountBalanceHistory: vi.fn(),
     // Must be mocked: the real fetchActivitiesForDateRange calls this, and an
     // undefined function makes every chunk fail, which now reports the fetch as

@@ -807,5 +807,46 @@ describe('Settings Modal Component', () => {
       const tabContent = modal.querySelector('.settings-tab-content');
       expect(tabContent.textContent).toContain('Unknown Account');
     });
+
+    test('should display Closed badge and closedDate for closed accounts and reopen on toggle on', () => {
+      const accountService = accountServiceModule.default;
+      accountService.getAccounts.mockReturnValue([{
+        canadalifeAccount: {
+          id: 'cl-closed-1',
+          nickname: 'Amazon RRSP',
+        },
+        monarchAccount: {
+          id: 'monarch-cl-1',
+          displayName: 'Monarch RRSP',
+        },
+        syncEnabled: false,
+        status: 'closed',
+        closedDate: '2026-11-26',
+      }]);
+
+      modal = createSettingsModal();
+
+      const canadalifeTab = Array.from(modal.querySelectorAll('.settings-tab-button'))
+        .find((btn) => btn.textContent.includes('CanadaLife'));
+      canadalifeTab.click();
+
+      const closedBadge = modal.querySelector('#canadalife-closed-badge-cl-closed-1');
+      expect(closedBadge).toBeTruthy();
+      expect(closedBadge.textContent).toBe('Closed');
+
+      const closedDate = modal.querySelector('#canadalife-closed-date-cl-closed-1');
+      expect(closedDate).toBeTruthy();
+      expect(closedDate.textContent).toContain('Closed:');
+
+      const toggleInput = modal.querySelector('#canadalife-toggle-container-cl-closed-1 input[type="checkbox"]');
+      toggleInput.checked = true;
+      toggleInput.dispatchEvent(new Event('change'));
+
+      expect(accountService.markAccountAsSkipped).toHaveBeenCalledWith('canadalife', 'cl-closed-1', false);
+      expect(accountService.updateAccountInList).toHaveBeenCalledWith('canadalife', 'cl-closed-1', {
+        status: 'active',
+        closedDate: null,
+      });
+    });
   });
 });

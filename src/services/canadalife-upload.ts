@@ -7,7 +7,7 @@ import {
   debugLog, formatDate, getTodayLocal, getYesterdayLocal, formatDaysAgoLocal, parseLocalDate,
   calculateFromDateWithLookback, saveLastUploadDate, computeExtendedFromDate,
 } from '../core/utils';
-import { LOGO_CLOUDINARY_IDS, TRANSACTION_RETENTION_DEFAULTS } from '../core/config';
+import { LOGO_CLOUDINARY_IDS, TRANSACTION_RETENTION_DEFAULTS, ACCOUNT_STATUS } from '../core/config';
 import stateManager from '../core/state';
 import canadalife from '../api/canadalife';
 import monarchApi from '../api/monarch';
@@ -31,6 +31,12 @@ import {
   formatReconciliationMessage,
 } from './canadalife/pendingReconciliation';
 import { fetchMonarchPendingTransactions } from './common/pendingReconciliation';
+import {
+  promptForClosedAccounts,
+  closeAccountWithProgress,
+  reportClosedAccountOutcomes,
+  type CloseSingleAccountResult,
+} from './canadalife/closedAccounts';
 
 /**
  * Custom Canada Life upload error class
@@ -909,25 +915,56 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
       return; // User cancelled authentication
     }
 
-    // Load Canada Life accounts (returns consolidated structure)
+    // Load Canada Life accounts (force refresh to detect current sponsor and orphaned plans)
     toast.show('Loading Canada Life accounts...', 'info');
-    const consolidatedAccounts = await canadalife.loadCanadaLifeAccounts();
+    const consolidatedAccounts = await canadalife.loadCanadaLifeAccounts({ forceRefresh: true });
+    const sponsorInfo = canadalife.getCachedSponsorInfo?.() ?? null;
 
     if (!consolidatedAccounts || consolidatedAccounts.length === 0) {
-      toast.show('No Canada Life accounts found', 'error');
+      if (sponsorInfo && !sponsorInfo.hasSavingsPlans) {
+        const sponsorLabel = sponsorInfo.sponsorName || 'your current Canada Life sponsor';
+        toast.show(`No active savings plans found under ${sponsorLabel}`, 'info');
+      } else {
+        toast.show('No Canada Life accounts found', 'error');
+      }
       return;
     }
 
-    debugLog(`Found ${consolidatedAccounts.length} Canada Life accounts for upload`);
+    const closedPlan = await promptForClosedAccounts(consolidatedAccounts, sponsorInfo);
+    const accountsToCloseIds = new Set(
+      closedPlan.accountsToClose.map((acc) => extractSourceAccount(acc).agreementId),
+    );
+    const accountsToProcess = consolidatedAccounts.filter(
+      (acc) => acc.status !== ACCOUNT_STATUS.CLOSED,
+    );
+
+    if (accountsToProcess.length === 0) {
+      toast.show('All Canada Life accounts are marked as closed. No active accounts to sync.', 'info');
+      return;
+    }
+
+    const hasActionableAccount = accountsToProcess.some(
+      (acc) => !closedPlan.skippedOrphanIds.has(extractSourceAccount(acc).agreementId),
+    );
+    if (!hasActionableAccount) {
+      toast.show('No active Canada Life accounts to sync on current plan.', 'info');
+      return;
+    }
+
+    debugLog(`Found ${accountsToProcess.length} Canada Life accounts for upload`);
 
     // Create progress dialog - extract source account for display
-    const accountsForDialog = consolidatedAccounts.map((consolidated) => {
+    // Accounts being closed in this run carry status: 'closed' for the Closed badge
+    const accountsForDialog = accountsToProcess.map((consolidated) => {
       const sourceAccount = extractSourceAccount(consolidated);
-      return {
+      const base = {
         key: sourceAccount.agreementId,
         nickname: sourceAccount.LongNameEnglish || sourceAccount.EnglishShortName,
         name: sourceAccount.EnglishShortName,
       };
+      return accountsToCloseIds.has(sourceAccount.agreementId)
+        ? { ...base, status: ACCOUNT_STATUS.CLOSED }
+        : base;
     });
 
     const progressDialog = showProgressDialog(
@@ -939,10 +976,11 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
     const stats = {
       success: 0,
       failed: 0,
-      total: consolidatedAccounts.length,
+      total: accountsToProcess.length,
       transactionsUploaded: 0,
       transactionsSkipped: 0,
     };
+    const closeResults: CloseSingleAccountResult[] = [];
     const endDate = getTodayDate(); // Include today's balance in auto uploads
     const abortController = new AbortController();
 
@@ -954,7 +992,7 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
     });
 
     // Process each consolidated account
-    for (const consolidated of consolidatedAccounts) {
+    for (const consolidated of accountsToProcess) {
       // Check for cancellation before processing each account
       if (abortController.signal.aborted) {
         debugLog('Upload cancelled, stopping account processing');
@@ -964,6 +1002,30 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
       // Extract the source Canada Life account for processing
       const sourceAccount = extractSourceAccount(consolidated);
       const accountId = sourceAccount.agreementId;
+
+      // Close orphaned accounts selected by the user with a single progress step
+      if (accountsToCloseIds.has(accountId)) {
+        const closeResult = await closeAccountWithProgress(
+          consolidated,
+          { closeInMonarch: closedPlan.closeInMonarch, closedDate: closedPlan.closedDate },
+          progressDialog,
+        );
+        closeResults.push(closeResult);
+        if (closeResult.closedInUploader) {
+          stats.success += 1;
+        } else {
+          stats.failed += 1;
+        }
+        continue;
+      }
+
+      // Skip orphaned accounts that the user chose not to close this time
+      if (closedPlan.skippedOrphanIds.has(accountId)) {
+        stats.total -= 1;
+        progressDialog.updateProgress(accountId, 'skipped', 'Not on current plan');
+        debugLog(`Skipped orphaned Canada Life account ${accountId} - not on current plan`);
+        continue;
+      }
 
       // Skip accounts where sync has been disabled by the user
       if (consolidated.syncEnabled === false) {
@@ -1021,6 +1083,11 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
       }
     }
 
+    // Report closure results if any accounts were closed in this run
+    if (closeResults.length > 0) {
+      reportClosedAccountOutcomes(closeResults, closedPlan.closeInMonarch);
+    }
+
     // Always hide cancel button and show close button when upload processing is done
     progressDialog.hideCancel();
 
@@ -1032,9 +1099,13 @@ export async function uploadAllCanadaLifeAccountsToMonarch() {
       ? ` ${stats.transactionsUploaded} transactions uploaded.`
       : '';
 
-    // Show appropriate completion message
+    const hasUploadedAccounts = stats.total > closeResults.length;
+
+    // Show appropriate completion message (skip redundant upload toast when only closures ran)
     if (abortController.signal.aborted) {
       toast.show(`Upload cancelled. ${stats.success} accounts uploaded successfully.${txSummary}`, 'info');
+    } else if (!hasUploadedAccounts) {
+      // Closure summary toast was already shown above
     } else if (stats.success === stats.total) {
       toast.show(`Successfully uploaded all ${stats.total} Canada Life accounts!${txSummary}`, 'info');
     } else if (stats.success > 0) {
@@ -1199,8 +1270,9 @@ async function selectCanadaLifeAccount(consolidatedAccounts) {
         transition: background-color 0.2s;
       `;
 
+      const closedSuffix = consolidated.status === ACCOUNT_STATUS.CLOSED ? ' (Closed)' : '';
       const name = document.createElement('div');
-      name.textContent = account.LongNameEnglish || account.EnglishShortName;
+      name.textContent = `${account.LongNameEnglish || account.EnglishShortName}${closedSuffix}`;
       name.style.cssText = 'font-weight: bold; margin-bottom: 5px;';
       item.appendChild(name);
 

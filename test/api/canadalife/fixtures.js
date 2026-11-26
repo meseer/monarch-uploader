@@ -135,6 +135,89 @@ export function buildSponsorInfoResponse(adminSystemId = ADMIN_SYSTEM_ID) {
 }
 
 /**
+ * Real `IMSCommunityHelperSfiLwc.getSponsorInfo` response for a sponsor whose
+ * savings section disappeared (e.g., Group Plan closed and moved to NextSteps).
+ * Valid logged-in user, `isMultiSponsor__c: true`, no `GRS_ParticId__c`.
+ */
+export function buildNoSavingsSponsorInfoResponse() {
+  return wrapAuraSuccess({
+    getSponsorInfo: {
+      Id: 'aALOH000016OPO34AO',
+      SponsorId__c: 'ENC_MymyQ1Gdy5yOJy',
+      Order_Id__c: 1,
+      User_Sponsor_Name__c: 'AMAZON CANADA FULFILLMENT SERVICES',
+      isMultiSponsor__c: true,
+      isDefault__c: false,
+      GLH_PartyKey__c: 'ENC_UFJELVBSSS0yMDEzLjA3LjMwOkRYK056dG1pYjdqcVJQYWZLWWY0Q3c9PQ',
+      Name: 'USS-138557321',
+      User__c: '0050A000000XbUyQAK',
+      User__r: {
+        Data_Contact_EID__c: '0030A000003OxEWQA0',
+        Id: '0050A000000XbUyQAK',
+      },
+    },
+    pshcpLeftNavInfoHide: false,
+    isPSHCP: false,
+  }, '99;a');
+}
+
+/**
+ * Real `IMSCommunityHelperSfiLwc.getSponsorInfo` response for a NextSteps sponsor.
+ * @param {string} adminSystemId - Value for `GRS_ParticId__c`
+ * @returns {Object} Aura response body
+ */
+export function buildNextStepSponsorInfoResponse(adminSystemId = ADMIN_SYSTEM_ID) {
+  return wrapAuraSuccess({
+    getSponsorInfo: {
+      Id: 'aALOH000016OPO34AO',
+      SponsorId__c: 'ENC_Mp9zQgm4WqWdkL',
+      Order_Id__c: 2,
+      User_Sponsor_Name__c: 'NEXTSTEP',
+      isMultiSponsor__c: true,
+      isDefault__c: false,
+      GRS_ParticId__c: adminSystemId,
+      Name: 'USS-138557321',
+      GRSPlan__c: '62396',
+      User__c: '0050A000000XbUyQAK',
+    },
+    pshcpLeftNavInfoHide: false,
+    isPSHCP: false,
+  }, '132;a');
+}
+
+/**
+ * Real `getPlanSelectionScreenData` response for a NextSteps sponsor holding
+ * only the newly transferred RRSP2 account.
+ */
+export function buildNextStepPlanSelectionResponse() {
+  return wrapAuraSuccess({
+    defaultPlanCode: 'RRSP2',
+    planOptionsList: [
+      {
+        agreementId: 'ENC_MO8K1xZM7Lp7id7q',
+        label: "REG'D RETIREMENT SAVINGS PLAN 2 (RRSP2)",
+        languageAgnosticLabel: 'RRSP2',
+        value: 'RRSP2',
+        isSelected: true,
+      },
+    ],
+    plansList: [
+      {
+        PlanCode: '28',
+        StatusCode: 'A',
+        IsRegistered: true,
+        EnglishShortName: 'RRSP2',
+        EnrollmentDate: '2026-11-24T00:00:00',
+        Model: 'RSP',
+        LongNameEnglish: "REG'D RETIREMENT SAVINGS PLAN 2",
+        agreementId: 'ENC_MO8K1xZM7Lp7id7q',
+      },
+    ],
+    isSuccess: true,
+  }, '144;a');
+}
+
+/**
  * Real `MclawGrsaActivityPlansController.getPlanSelectionScreenData` response.
  *
  * `plansList[]` replaces the legacy `IPResult.MemberPlans[]`, carrying the same

@@ -917,6 +917,82 @@ export async function getCreditLimit(accountId: string): Promise<number | null> 
 }
 
 /**
+ * Build an `UpdateAccountInput` payload preserving all existing account configuration.
+ * @param account - Current filtered account from Monarch
+ * @param overrides - Fields to override
+ * @returns Input object for `Common_UpdateAccount`
+ */
+function buildUpdateAccountInput(
+  account: FilteredAccount,
+  overrides: Partial<UpdateAccountInput> = {},
+): UpdateAccountInput {
+  const input: UpdateAccountInput = {
+    id: account.id,
+    dataProvider: account.dataProvider || '',
+    dataProviderAccountId: null,
+    name: account.displayName,
+    type: account.type.name,
+    displayBalance: account.displayBalance,
+    invertSyncedBalance: account.invertSyncedBalance ?? false,
+    useAvailableBalance: account.useAvailableBalance ?? false,
+    hideFromList: account.hideFromList ?? false,
+    hideTransactionsFromReports: account.hideTransactionsFromReports ?? false,
+    synced: !account.isManual,
+    apr: account.apr ?? null,
+    interestRate: account.interestRate ?? null,
+    excludeFromDebtPaydown: account.excludeFromDebtPaydown ?? false,
+    deactivatedAt: account.deactivatedAt,
+    includeInNetWorth: account.includeBalanceInNetWorth,
+    limit: account.limit ?? null,
+    plannedPayment: account.plannedPayment ?? null,
+    minimumPayment: account.minimumPayment ?? null,
+    recurrence: {},
+    ownerUserId: account.ownedByUser ? account.ownedByUser.id : null,
+  };
+
+  if (account.subtype?.name) {
+    input.subtype = account.subtype.name;
+  }
+
+  return {
+    ...input,
+    ...overrides,
+  };
+}
+
+/**
+ * Close/deactivate a Monarch account as of the given `YYYY-MM-DD` date.
+ * Monarch automatically sets `syncDisabled: true`, `isHidden: true`,
+ * `currentBalance: 0`, `displayBalance: 0`, and `includeBalanceInNetWorth: false`.
+ * @param accountId - Monarch account ID
+ * @param deactivatedAt - Closure date in `YYYY-MM-DD` format
+ * @returns Updated account object
+ * @throws If account ID is missing, date is malformed, or the update fails
+ */
+export async function closeAccount(
+  accountId: string,
+  deactivatedAt: string,
+): Promise<UpdatedAccountResult> {
+  if (!accountId) {
+    throw new Error('Account ID is required');
+  }
+
+  if (!deactivatedAt || !/^\d{4}-\d{2}-\d{2}$/.test(deactivatedAt)) {
+    throw new Error('Closure date must be in YYYY-MM-DD format');
+  }
+
+  debugLog(`Closing Monarch account ${accountId} as of ${deactivatedAt}`);
+
+  const updatedAccount = await updateAccount({
+    id: accountId,
+    deactivatedAt,
+  });
+  debugLog(`Successfully closed Monarch account ${updatedAccount.displayName} (deactivatedAt=${updatedAccount.deactivatedAt})`);
+
+  return updatedAccount;
+}
+
+/**
  * Set a new credit limit for a credit card account
  * Fetches current account configuration and updates only the credit limit.
  * @param accountId - Monarch account ID
@@ -948,34 +1024,12 @@ export async function setCreditLimit(accountId: string, newLimit: number): Promi
     throw new Error(`Account ${accountId} is not a credit account (type: ${account.type.name})`);
   }
 
-  // Build update input preserving all existing account configuration.
-  // Only `limit` is intentionally changed; everything else must come from
-  // the current account state so user settings (e.g. invertSyncedBalance)
-  // are not silently reset to defaults.
-  const updateInput: UpdateAccountInput = {
-    id: accountId,
-    dataProvider: account.dataProvider || '',
-    dataProviderAccountId: null,
-    name: account.displayName,
-    type: account.type.name,
+  // Only `limit` is intentionally changed; everything else comes from the
+  // current account state so user settings are not silently reset to defaults.
+  const updateInput = buildUpdateAccountInput(account, {
     subtype: account.subtype?.name ?? 'credit_card',
-    displayBalance: account.displayBalance,
-    invertSyncedBalance: account.invertSyncedBalance ?? false,
-    useAvailableBalance: account.useAvailableBalance ?? false,
-    hideFromList: account.hideFromList ?? false,
-    hideTransactionsFromReports: account.hideTransactionsFromReports ?? false,
-    synced: !account.isManual,
-    apr: account.apr ?? null,
-    interestRate: account.interestRate ?? null,
-    excludeFromDebtPaydown: account.excludeFromDebtPaydown ?? false,
-    deactivatedAt: account.deactivatedAt,
-    includeInNetWorth: account.includeBalanceInNetWorth,
     limit: newLimit,
-    plannedPayment: account.plannedPayment ?? null,
-    minimumPayment: account.minimumPayment ?? null,
-    recurrence: {},
-    ownerUserId: account.ownedByUser ? account.ownedByUser.id : null,
-  };
+  });
 
   const updatedAccount = await updateAccount(updateInput);
   debugLog(`Successfully set credit limit for ${updatedAccount.displayName} to ${updatedAccount.limit}`);

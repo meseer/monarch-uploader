@@ -4,6 +4,7 @@
 
 import {
   getSponsorInfo,
+  getCachedSponsorInfo,
   clearSponsorInfoCache,
   loadCanadaLifeAccounts,
   CanadaLifeApiError,
@@ -18,6 +19,9 @@ import {
   DPSP_AGREEMENT_ID,
   RRSP_AGREEMENT_ID,
   buildLicenseExceptionResponse,
+  buildNextStepPlanSelectionResponse,
+  buildNextStepSponsorInfoResponse,
+  buildNoSavingsSponsorInfoResponse,
   buildPlanSelectionResponse,
   buildSponsorInfoResponse,
   mockFetchResponse,
@@ -128,12 +132,40 @@ describe('Canada Life API - getSponsorInfo', () => {
     expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 
-  test('throws when GRS_ParticId__c is missing', async () => {
+  test('throws when sponsor identity fields are all missing', async () => {
     global.fetch.mockResolvedValueOnce(mockFetchResponse(wrapAuraSuccess({
       getSponsorInfo: { User_Sponsor_Name__c: 'TEST' },
     }, '99;a')));
 
     await expect(getSponsorInfo()).rejects.toThrow(CanadaLifeApiError);
+  });
+
+  test('returns hasSavingsPlans: false without throwing when GRS_ParticId__c is absent on valid sponsor', async () => {
+    global.fetch.mockResolvedValueOnce(mockFetchResponse(buildNoSavingsSponsorInfoResponse()));
+
+    const result = await getSponsorInfo();
+
+    expect(result.hasSavingsPlans).toBe(false);
+    expect(result.adminSystemId).toBeNull();
+    expect(result.sponsorName).toBe('AMAZON CANADA FULFILLMENT SERVICES');
+    expect(result.sponsorId).toBe('ENC_MymyQ1Gdy5yOJy');
+    expect(result.isMultiSponsor).toBe(true);
+    expect(getCachedSponsorInfo()).toEqual(result);
+  });
+
+  test('extracts NEXTSTEP sponsor details and refreshes when forceRefresh is true', async () => {
+    global.fetch.mockResolvedValueOnce(mockFetchResponse(buildNoSavingsSponsorInfoResponse()));
+    const first = await getSponsorInfo();
+    expect(first.hasSavingsPlans).toBe(false);
+
+    global.fetch.mockResolvedValueOnce(mockFetchResponse(buildNextStepSponsorInfoResponse('ENC_NEXTSTEP_ID')));
+    const second = await getSponsorInfo({ forceRefresh: true });
+
+    expect(second.hasSavingsPlans).toBe(true);
+    expect(second.adminSystemId).toBe('ENC_NEXTSTEP_ID');
+    expect(second.sponsorName).toBe('NEXTSTEP');
+    expect(second.grsPlanId).toBe('62396');
+    expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 
   test('throws when the getSponsorInfo key is absent', async () => {
@@ -344,7 +376,7 @@ describe('Canada Life API - loadCanadaLifeAccounts merge behaviour', () => {
     expect(rrsp.syncEnabled).toBe(true);
   });
 
-  test('preserves accounts the API no longer returns', async () => {
+  test('preserves accounts the API no longer returns and marks them as orphaned', async () => {
     mockStoredAccounts([{
       canadalifeAccount: {
         id: '456', agreementId: '456', EnglishShortName: 'CLOSED-TFSA', nickname: 'Closed TFSA',
@@ -361,11 +393,61 @@ describe('Canada Life API - loadCanadaLifeAccounts merge behaviour', () => {
     // Two live plans plus the orphan
     expect(result).toHaveLength(3);
 
+    const liveDpsp = result.find((a) => a.canadalifeAccount.id === DPSP_AGREEMENT_ID);
+    expect(liveDpsp.isOrphanedFromApi).toBe(false);
+    expect(liveDpsp.status).toBe('active');
+
     const orphan = result.find((a) => a.canadalifeAccount.id === '456');
     expect(orphan.canadalifeAccount.EnglishShortName).toBe('CLOSED-TFSA');
     expect(orphan.monarchAccount).toEqual({ id: 'monarch-2', displayName: 'Monarch TFSA' });
     expect(orphan.syncEnabled).toBe(false);
     expect(orphan.uploadedTransactions).toHaveLength(1);
+    expect(orphan.isOrphanedFromApi).toBe(true);
+  });
+
+  test('marks all stored accounts orphaned without calling plan selection when sponsor has no savings plans', async () => {
+    mockStoredAccounts([
+      {
+        canadalifeAccount: { id: DPSP_AGREEMENT_ID, agreementId: DPSP_AGREEMENT_ID, EnglishShortName: 'DPSP' },
+        monarchAccount: { id: 'monarch-dpsp', displayName: 'Amazon DPSP' },
+        syncEnabled: true,
+      },
+      {
+        canadalifeAccount: { id: RRSP_AGREEMENT_ID, agreementId: RRSP_AGREEMENT_ID, EnglishShortName: 'RRSP' },
+        monarchAccount: { id: 'monarch-rrsp', displayName: 'Amazon RRSP' },
+        syncEnabled: true,
+      },
+    ]);
+    global.fetch.mockResolvedValueOnce(mockFetchResponse(buildNoSavingsSponsorInfoResponse()));
+
+    const result = await loadCanadaLifeAccounts({ forceRefresh: true });
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(result).toHaveLength(2);
+    expect(result.every((a) => a.isOrphanedFromApi === true)).toBe(true);
+    expect(toast.show).toHaveBeenCalledWith('No active savings plans found on current Canada Life sponsor', 'debug');
+  });
+
+  test('marks old accounts orphaned and new NextSteps account active on transfer', async () => {
+    mockStoredAccounts([
+      {
+        canadalifeAccount: { id: DPSP_AGREEMENT_ID, agreementId: DPSP_AGREEMENT_ID, EnglishShortName: 'DPSP' },
+        monarchAccount: { id: 'monarch-dpsp', displayName: 'Amazon DPSP' },
+        syncEnabled: true,
+      },
+    ]);
+    global.fetch
+      .mockResolvedValueOnce(mockFetchResponse(buildNextStepSponsorInfoResponse()))
+      .mockResolvedValueOnce(mockFetchResponse(buildNextStepPlanSelectionResponse()));
+
+    const result = await loadCanadaLifeAccounts(true);
+
+    expect(result).toHaveLength(2);
+    const rrsp2 = result.find((a) => a.canadalifeAccount.EnglishShortName === 'RRSP2');
+    const dpsp = result.find((a) => a.canadalifeAccount.id === DPSP_AGREEMENT_ID);
+    expect(rrsp2.isOrphanedFromApi).toBe(false);
+    expect(rrsp2.status).toBe('active');
+    expect(dpsp.isOrphanedFromApi).toBe(true);
   });
 
   test('does not duplicate entries that are already orphaned', async () => {

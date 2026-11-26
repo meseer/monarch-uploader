@@ -14,6 +14,7 @@ vi.mock('../../../src/core/config', () => ({
   LOGO_CLOUDINARY_IDS: { CANADALIFE: 'canadalife-logo' },
   TRANSACTION_RETENTION_DEFAULTS: { DAYS: 91, COUNT: 1000 },
   INTEGRATIONS: { CANADALIFE: 'canadalife' },
+  ACCOUNT_STATUS: { ACTIVE: 'active', CLOSED: 'closed' },
 }));
 
 vi.mock('../../../src/services/common/accountService', () => ({
@@ -53,6 +54,7 @@ vi.mock('../../../src/core/state', () => ({
 vi.mock('../../../src/api/canadalife', () => ({
   default: {
     loadCanadaLifeAccounts: vi.fn(),
+    getCachedSponsorInfo: vi.fn(() => null),
     loadAccountBalanceHistory: vi.fn(),
   },
 }));

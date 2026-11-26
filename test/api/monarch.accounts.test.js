@@ -11,6 +11,7 @@ import {
   getHoldings,
   getFilteredAccounts,
   updateAccount,
+  closeAccount,
   getCreditLimit,
   getTransactionsList,
   getHouseholdTransactionTags,
@@ -1345,6 +1346,90 @@ describe('Monarch API - Accounts', () => {
       const result = await getTagByName('Pending');
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe('closeAccount', () => {
+    const mockClosedAccountResponse = {
+      id: '235188117753593504',
+      displayName: 'RRSP M',
+      syncDisabled: true,
+      deactivatedAt: '2026-11-24',
+      isHidden: true,
+      isAsset: true,
+      currentBalance: 0.0,
+      displayBalance: 0.0,
+      includeBalanceInNetWorth: false,
+      type: { name: 'brokerage', display: 'Investments', group: 'asset' },
+      subtype: { name: 'rrsp', display: 'Registered Retirement Savings Plan (RRSP)' },
+    };
+
+    beforeEach(() => {
+      authService.checkMonarchAuth.mockReturnValue({
+        authenticated: true,
+        credentials: { csrfToken: 'test-csrf-token' },
+      });
+    });
+
+    test('sends exact Common_UpdateAccount payload with id and YYYY-MM-DD deactivatedAt', async () => {
+      let capturedInput = null;
+      let capturedOperationName = null;
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        const data = JSON.parse(options.data);
+        capturedOperationName = data.operationName;
+        capturedInput = data.variables.input;
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              updateAccount: {
+                account: mockClosedAccountResponse,
+                errors: null,
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      const updated = await closeAccount('235188117753593504', '2026-11-24');
+
+      expect(capturedOperationName).toBe('Common_UpdateAccount');
+      expect(capturedInput).toEqual({
+        id: '235188117753593504',
+        deactivatedAt: '2026-11-24',
+      });
+      expect(updated.deactivatedAt).toBe('2026-11-24');
+      expect(updated.displayBalance).toBe(0);
+      expect(updated.syncDisabled).toBe(true);
+    });
+
+    test('throws error when accountId is missing', async () => {
+      await expect(closeAccount('', '2026-11-24')).rejects.toThrow('Account ID is required');
+    });
+
+    test('throws error when deactivatedAt is missing or not YYYY-MM-DD', async () => {
+      await expect(closeAccount('235188117753593504', '')).rejects.toThrow('Closure date must be in YYYY-MM-DD format');
+      await expect(closeAccount('235188117753593504', '2026-11-24T00:00:00Z')).rejects.toThrow(
+        'Closure date must be in YYYY-MM-DD format',
+      );
+    });
+
+    test('propagates Monarch GraphQL update errors', async () => {
+      mockGMXmlHttpRequest.mockImplementation((options) => {
+        setTimeout(() => options.onload({
+          status: 200,
+          responseText: JSON.stringify({
+            data: {
+              updateAccount: {
+                account: null,
+                errors: { message: 'Account not found' },
+              },
+            },
+          }),
+        }), 0);
+      });
+
+      await expect(closeAccount('missing-id', '2026-11-24')).rejects.toThrow('Account not found');
     });
   });
 
