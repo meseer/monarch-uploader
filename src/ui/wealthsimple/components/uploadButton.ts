@@ -234,16 +234,20 @@ async function runBulkSync(
 }
 
 /**
- * Turn the main button and the "⌄" toggle into one split button: square off
- * the touching corners and draw a hairline divider between the halves.
+ * Turn the main button and the chevron toggle into one split button: the
+ * touching corners are squared off and a 2px gap separates the halves, which
+ * reads as a divider in both themes without drawing a line.
  */
 function styleAsSplitButton(uploadButton: HTMLButtonElement, toggle: HTMLButtonElement): void {
   toggle.style.cssText = uploadButton.style.cssText;
-  uploadButton.style.borderRadius = '12px 0 0 12px';
-  toggle.style.borderRadius = '0 12px 12px 0';
-  toggle.style.padding = '10px 12px';
-  // Tinted from the text colour so the divider contrasts in both themes
-  toggle.style.borderLeft = '1px solid color-mix(in srgb, currentColor 35%, transparent)';
+  uploadButton.style.borderRadius = '12px 4px 4px 12px';
+  toggle.style.borderRadius = '4px 12px 12px 4px';
+  // Centre the icon in a near-square half instead of padding around text
+  toggle.style.display = 'inline-flex';
+  toggle.style.alignItems = 'center';
+  toggle.style.justifyContent = 'center';
+  toggle.style.padding = '0';
+  toggle.style.width = '40px';
   toggle.addEventListener('mouseover', () => { if (!toggle.disabled) toggle.style.opacity = '0.85'; });
   toggle.addEventListener('mouseout', () => { toggle.style.opacity = '1'; });
 }
@@ -345,8 +349,8 @@ export function createWealthsimpleUploadButton(): HTMLElement {
 
   const splitButton = document.createElement('div');
   splitButton.id = 'wealthsimple-upload-split-button';
-  splitButton.style.cssText = 'position: relative; display: inline-flex; align-items: stretch;';
-  splitButton.append(uploadButton, groupMenu.toggle, groupMenu.menu);
+  splitButton.style.cssText = 'display: inline-flex; align-items: stretch; gap: 2px;';
+  splitButton.append(uploadButton, groupMenu.toggle);
   container.appendChild(splitButton);
 
   return container;
