@@ -45,8 +45,7 @@
       "Bash(test*)",
       "Bash(pwd)",
       "Bash(which*)",
-      "Read(*)",
-      "Write(*)"
+      "Write(./**)"
     ],
     "deny": [
       "Bash(git push --force*)",
