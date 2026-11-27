@@ -421,8 +421,8 @@ Not `SecuritySelectorModal` (PascalCase) and not `security_selector_modal`
 feature branch → PR → merge workflow. **You MUST manage this entire lifecycle
 automatically** — do not leave manual steps for the user.
 
-**Follow the `ship` procedure** in `.claude/skills/ship/SKILL.md` to execute this
-workflow (Claude Code loads it as the `ship` skill; other agents should read the
+**Follow the `ship-pr` procedure** in `.claude/skills/ship-pr/SKILL.md` to execute this
+workflow (Claude Code loads it as the `ship-pr` skill; other agents should read the
 file directly). It is the authoritative procedure and records the ruleset constraints
 that gate merging: squash-only merge, the required `test (24.x)` status check,
 strict up-to-date enforcement (a branch behind `main` must be updated and

@@ -1,5 +1,5 @@
 ---
-name: ship
+name: ship-pr
 description: Run the full PR-driven development lifecycle for this repo — feature branch, local validation, version bump, commit, push, PR, wait for CI, squash-merge, and clean up. Use this for ANY change to tracked files in monarch-uploader (code, tests, docs, config, dependencies), including one-line fixes. Triggers on "ship it", "make a PR", "open a PR", "merge this", or any request to implement/fix/update something in this repo.
 ---
 
