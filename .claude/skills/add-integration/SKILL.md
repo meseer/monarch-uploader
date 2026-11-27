@@ -48,4 +48,4 @@ During live testing with the user, verify and refine:
 - **Card injection & styling**: Adjust `injectionPoint.ts` selectors and `containerStyle` + `manifest.brandColor` so the injected uploader card blends naturally into the dashboard without duplicate initialization on SPA navigation.
 
 ### Phase 4: Ship
-Once live testing passes, run `.claude/skills/ship/SKILL.md` (`npm run build:full` → commit → push → PR → `gh pr checks --watch --fail-fast` → `gh pr merge --squash --delete-branch` → pull `main`). If superseding a contributor PR, preserve `Co-authored-by:` credit in the commit and PR body.
+Once live testing passes, run `.claude/skills/ship-pr/SKILL.md` (`npm run build:full` → commit → push → PR → `gh pr checks --watch --fail-fast` → `gh pr merge --squash --delete-branch` → pull `main`). If superseding a contributor PR, preserve `Co-authored-by:` credit in the commit and PR body.
