@@ -229,4 +229,54 @@ describe('Wealthsimple injection point resolution', () => {
       expect(result.selector).toBe('[role="radiogroup"][aria-label="Holdings or watchlist"]');
     });
   });
+
+  describe('credit card page', () => {
+    /**
+     * Credit card page, trimmed: no Add/Transfer money actions, just the
+     * wallet-style card image button that opens the card details dialog.
+     */
+    const CREDIT_CARD_HTML = `
+      <div id="main">
+        <div id="card-header"></div>
+        <div id="card-section">
+          <button type="button" aria-label="View card details" aria-haspopup="dialog" id="base-ui-_r_9e_">
+            <div data-column=""><span data-text-variant="body.small">•• 6903</span></div>
+          </button>
+        </div>
+      </div>
+    `;
+
+    test('resolves the View card details button when no quick actions exist', () => {
+      document.body.innerHTML = CREDIT_CARD_HTML;
+
+      const result = findInjectionPoint();
+
+      expect(result).not.toBeNull();
+      expect(result.element).toBe(document.querySelector('button[aria-label="View card details"]'));
+      expect(result.insertMethod).toBe('insertBefore');
+      expect(result.selector).toBe('button[aria-label="View card details"]');
+    });
+
+    test('inserting into the resolved target places the UI directly before the card button', () => {
+      document.body.innerHTML = CREDIT_CARD_HTML;
+      const { element, insertMethod } = findInjectionPoint();
+      const target = getTargetContainer(element, insertMethod);
+
+      const ui = document.createElement('div');
+      ui.id = 'wealthsimple-balance-uploader-container';
+      target.container.insertBefore(ui, target.referenceNode);
+
+      const section = document.getElementById('card-section');
+      expect(section.children[0]).toBe(ui);
+      expect(section.children[1]).toBe(element);
+    });
+
+    test('quick action anchors take priority over the card button', () => {
+      document.body.innerHTML = ACCOUNT_ACTIONS_HTML + CREDIT_CARD_HTML;
+
+      const result = findInjectionPoint();
+
+      expect(result.selector).toBe('button[aria-label="Add money"]');
+    });
+  });
 });
