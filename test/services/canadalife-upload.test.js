@@ -1118,5 +1118,39 @@ describe('Canada Life Upload Service', () => {
 
       expect(mockToast.show).toHaveBeenCalledWith('Loading Canada Life accounts...', 'info');
     });
+
+    test('should show (Closed) suffix for closed accounts in account selector', async () => {
+      ensureMonarchAuthentication.mockResolvedValue(true);
+      canadalife.loadCanadaLifeAccounts.mockResolvedValue([
+        {
+          canadalifeAccount: {
+            agreementId: 'agr-active',
+            EnglishShortName: 'RRSP2',
+            LongNameEnglish: 'NextSteps RRSP',
+          },
+          status: 'active',
+        },
+        {
+          canadalifeAccount: {
+            agreementId: 'agr-closed',
+            EnglishShortName: 'RRSP',
+          },
+          status: 'closed',
+        },
+      ]);
+
+      const uploadPromise = uploadCanadaLifeAccountWithDateRange();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(document.body.textContent).toContain('NextSteps RRSP');
+      expect(document.body.textContent).toContain('RRSP (Closed)');
+
+      const cancelBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Cancel');
+      cancelBtn.click();
+      await uploadPromise;
+
+      expect(toast.show).toHaveBeenCalledWith('Account selection cancelled', 'info');
+    });
   });
 });

@@ -847,6 +847,13 @@ describe('Settings Modal Component', () => {
         status: 'active',
         closedDate: null,
       });
+
+      // When markAccountAsSkipped fails, do not reopen closed account
+      accountService.updateAccountInList.mockClear();
+      accountService.markAccountAsSkipped.mockReturnValueOnce(false);
+      toggleInput.checked = true;
+      toggleInput.dispatchEvent(new Event('change'));
+      expect(accountService.updateAccountInList).not.toHaveBeenCalled();
     });
   });
 });

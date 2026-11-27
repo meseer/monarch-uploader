@@ -184,9 +184,10 @@ export async function closeCanadaLifeAccount(
   const accountId = getConsolidatedAccountId(consolidatedAccount);
   const accountName = getConsolidatedAccountName(consolidatedAccount);
   const closedDate = options.closedDate || getTodayLocal();
-  const monarchAccountId = (consolidatedAccount.monarchAccount as Record<string, unknown> | null)?.id as string | undefined;
+  const monarchAccount = consolidatedAccount.monarchAccount as Record<string, unknown> | null;
+  const monarchAccountId = monarchAccount?.id as string | undefined;
 
-  if (!options.closeInMonarch || !monarchAccountId) {
+  if (!options.closeInMonarch || !monarchAccount || !monarchAccountId) {
     markClosedInUploaderStorage(accountId, closedDate);
     return {
       accountId, accountName, closedInUploader: true, closedInMonarch: false, monarchNotFound: false,
@@ -200,7 +201,7 @@ export async function closeCanadaLifeAccount(
     markClosedInUploaderStorage(accountId, closedDate, {
       lastSyncBalance: 0,
       monarchAccount: {
-        ...(consolidatedAccount.monarchAccount || {}),
+        ...monarchAccount,
         currentBalance: 0,
         deactivatedAt: updatedMonarch.deactivatedAt,
       },
@@ -236,8 +237,7 @@ export function reportClosedAccountOutcomes(results: CloseSingleAccountResult[],
   }
 
   if (failed.length > 0 || notFound.length > 0) {
-    const parts: string[] = [];
-    if (closedInUploader.length > 0) parts.push(`Closed ${closedInUploader.length} account(s) in uploader`);
+    const parts: string[] = [`Closed ${closedInUploader.length} account(s) in uploader`];
     if (notFound.length > 0) parts.push(`${notFound.length} already missing from Monarch`);
     if (failed.length > 0) parts.push(`${failed.length} failed in Monarch (kept open to retry)`);
     toast.show(parts.join('; '), 'warning');
