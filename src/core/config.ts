@@ -340,6 +340,9 @@ export const WEALTHSIMPLE_UI = {
     { selector: 'button[aria-label="Add money"]', insertMethod: 'insertBefore', ancestorLevels: 2 },
     // Same block, for accounts that offer transfers but no deposits.
     { selector: 'button[aria-label="Transfer money"]', insertMethod: 'insertBefore', ancestorLevels: 2 },
+    // Credit card page: it has neither quick action above, so sit directly
+    // above the wallet-style card image button.
+    { selector: 'button[aria-label="View card details"]', insertMethod: 'insertBefore' },
     // Legacy hashed-class anchors, kept as a fallback for older layouts.
     // XPath: //*[@id="main"]/div/div/div[2]/div[2]
     { selector: 'last:.kOjAGq', insertMethod: 'prepend' },
