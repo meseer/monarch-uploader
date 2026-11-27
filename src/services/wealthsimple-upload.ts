@@ -37,6 +37,11 @@ import { isInvestmentAccount, processAccountPositions, processCashPositions } fr
 import { fetchAndProcessTransactions, formatReconciliationMessage } from './wealthsimple/transactions';
 import { fetchMonarchPendingTransactions, type FetchPendingResult } from './common/pendingReconciliation';
 import { acquireSyncLock, type SyncLock } from './common/syncLock';
+import {
+  getWealthsimpleSyncGroup,
+  WEALTHSIMPLE_SYNC_GROUP_LABELS,
+  type WealthsimpleSyncGroup,
+} from '../mappers/wealthsimple-account-types';
 import { showDatePickerWithOptionsPromise } from '../ui/components/datePicker';
 import { showProgressDialog } from '../ui/components/progressDialog';
 
@@ -363,15 +368,58 @@ export function buildSyncStepsForAccount(consolidatedAccount: ConsolidatedAccoun
   return steps;
 }
 
+interface AccountSelection {
+  accountsToSync: ConsolidatedAccount[];
+  /** Accounts in scope that are excluded because sync is disabled */
+  skippedCount: number;
+}
+
 /**
- * Upload all Wealthsimple accounts to Monarch
+ * Pick the accounts a bulk sync should process: those in the requested group
+ * (all groups when null) that are not marked as skipped. Returns null, after
+ * telling the user why, when nothing is left to sync.
  */
-export async function uploadAllWealthsimpleAccountsToMonarch(): Promise<void> {
+function selectAccountsToSync(
+  accounts: ConsolidatedAccount[],
+  group: WealthsimpleSyncGroup | null,
+): AccountSelection | null {
+  const inScope = group
+    ? accounts.filter((acc) => getWealthsimpleSyncGroup(acc.wealthsimpleAccount.type) === group)
+    : accounts;
+
+  if (group && inScope.length === 0) {
+    toast.show(`No ${WEALTHSIMPLE_SYNC_GROUP_LABELS[group]} accounts found`, 'info');
+    return null;
+  }
+
+  const accountsToSync = inScope.filter((acc) => acc.syncEnabled !== false);
+  const skippedCount = inScope.length - accountsToSync.length;
+
+  if (skippedCount > 0) {
+    debugLog(`Skipping ${skippedCount} account(s) marked as skipped`);
+  }
+
+  if (accountsToSync.length === 0) {
+    const scope = group ? `${WEALTHSIMPLE_SYNC_GROUP_LABELS[group]} accounts` : 'accounts';
+    toast.show(`All ${scope} are marked as skipped`, group ? 'info' : 'debug');
+    return null;
+  }
+
+  return { accountsToSync, skippedCount };
+}
+
+/**
+ * Upload Wealthsimple accounts to Monarch: every account, or only those in
+ * `group` when one is given.
+ */
+export async function uploadAllWealthsimpleAccountsToMonarch(
+  group: WealthsimpleSyncGroup | null = null,
+): Promise<void> {
   let progressDialog: ProgressDialog | null = null;
   let isCancelled = false;
 
   try {
-    debugLog('Starting fetch of all Wealthsimple accounts...');
+    debugLog(`Starting fetch of all Wealthsimple accounts (group: ${group ?? 'all'})...`);
 
     const accounts = await syncAccountListWithAPI();
 
@@ -380,17 +428,9 @@ export async function uploadAllWealthsimpleAccountsToMonarch(): Promise<void> {
       return;
     }
 
-    const accountsToSync = accounts.filter((acc) => acc.syncEnabled !== false);
-    const skippedCount = accounts.length - accountsToSync.length;
-
-    if (skippedCount > 0) {
-      debugLog(`Skipping ${skippedCount} account(s) marked as skipped`);
-    }
-
-    if (accountsToSync.length === 0) {
-      toast.show('All accounts are marked as skipped', 'debug');
-      return;
-    }
+    const selection = selectAccountsToSync(accounts, group);
+    if (!selection) return;
+    const { accountsToSync, skippedCount } = selection;
 
     debugLog(`Processing ${accountsToSync.length} Wealthsimple account(s):`, accountsToSync);
 
@@ -400,7 +440,10 @@ export async function uploadAllWealthsimpleAccountsToMonarch(): Promise<void> {
       name: acc.wealthsimpleAccount.nickname || acc.wealthsimpleAccount.id,
     }));
 
-    progressDialog = showProgressDialog(accountsForDialog, 'Uploading Wealthsimple Accounts to Monarch') as ProgressDialog;
+    const dialogTitle = group
+      ? `Uploading Wealthsimple ${WEALTHSIMPLE_SYNC_GROUP_LABELS[group]} Accounts to Monarch`
+      : 'Uploading Wealthsimple Accounts to Monarch';
+    progressDialog = showProgressDialog(accountsForDialog, dialogTitle) as ProgressDialog;
 
     progressDialog.onCancel(() => {
       debugLog('Upload cancellation requested');
@@ -495,7 +538,8 @@ export async function uploadAllWealthsimpleAccountsToMonarch(): Promise<void> {
     if (isCancelled) {
       toast.show('Upload process was cancelled', 'info');
     } else if (totalFailed === 0 && totalSkipped === 0) {
-      toast.show(`Successfully uploaded all ${stats.success} Wealthsimple account(s)`, 'info');
+      const scope = group ? `${WEALTHSIMPLE_SYNC_GROUP_LABELS[group]} ` : '';
+      toast.show(`Successfully uploaded all ${stats.success} Wealthsimple ${scope}account(s)`, 'info');
     } else if (stats.success > 0) {
       const parts: string[] = [];
       if (stats.success > 0) parts.push(`${stats.success} uploaded`);

@@ -9,6 +9,9 @@
 import {
   getMonarchAccountTypeMapping,
   getAccountTypeDisplayName,
+  getWealthsimpleSyncGroup,
+  WEALTHSIMPLE_SYNC_GROUPS,
+  WEALTHSIMPLE_SYNC_GROUP_LABELS,
 } from '../../src/mappers/wealthsimple-account-types';
 import {
   WEALTHSIMPLE_CASH_LIKE_TYPES,
@@ -254,5 +257,40 @@ describe('Wealthsimple account type capability sets', () => {
         expect(WEALTHSIMPLE_TRANSACTION_SUPPORTED_TYPES.has(type)).toBe(true);
       }
     });
+  });
+});
+
+describe('getWealthsimpleSyncGroup', () => {
+  test.each([
+    ['CASH'],
+    ['CASH_USD'],
+    ['YOUTH_CASH'],
+    ['HISA_PORTFOLIO_NON_REGISTERED'],
+    ['CREDIT_CARD'],
+    ['PORTFOLIO_LINE_OF_CREDIT'],
+  ])('puts %s in Spend & Save', (type) => {
+    expect(getWealthsimpleSyncGroup(type)).toBe('spendSave');
+  });
+
+  test.each([
+    ['MANAGED_TFSA'],
+    ['MANAGED_PORTFOLIO_RESP'],
+    ['SELF_DIRECTED_RRSP'],
+    ['SELF_DIRECTED_NON_REGISTERED_MARGIN'],
+    ['SELF_DIRECTED_CRYPTO'],
+  ])('puts %s in Investing', (type) => {
+    expect(getWealthsimpleSyncGroup(type)).toBe('investing');
+  });
+
+  test('returns null for unmapped and empty types', () => {
+    expect(getWealthsimpleSyncGroup('SOMETHING_NEW')).toBeNull();
+    expect(getWealthsimpleSyncGroup('')).toBeNull();
+  });
+
+  test('every group has a label', () => {
+    expect(WEALTHSIMPLE_SYNC_GROUPS).toEqual(['spendSave', 'investing']);
+    for (const group of WEALTHSIMPLE_SYNC_GROUPS) {
+      expect(WEALTHSIMPLE_SYNC_GROUP_LABELS[group]).toEqual(expect.any(String));
+    }
   });
 });
