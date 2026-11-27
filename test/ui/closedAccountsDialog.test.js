@@ -178,4 +178,47 @@ describe('Closed Accounts Dialog', () => {
     overlay3.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(await p3).toEqual(expectedCancel);
   });
+
+  test('omits shortName parenthetical when matching name, omits lastSyncDate when absent, and guards invalid/duplicate settlement', async () => {
+    const promise = showClosedAccountsDialog({
+      title: 'Closed Accounts',
+      description: 'Missing',
+      accounts: [
+        {
+          id: 'agr-plain',
+          name: 'RRSP',
+          shortName: 'RRSP',
+          monarchAccountName: null,
+          lastSyncDate: null,
+        },
+      ],
+      defaultClosedDate: '2026-11-24',
+    });
+
+    expect(document.getElementById('closed-accounts-name-agr-plain').textContent).toBe('RRSP');
+    expect(document.getElementById('closed-accounts-meta-agr-plain').textContent).toBe('Not mapped to Monarch');
+
+    const dateInput = document.getElementById('closed-accounts-date-input');
+    const confirmBtn = document.getElementById('closed-accounts-dialog-confirm-button');
+    dateInput.value = 'invalid';
+    dateInput.dispatchEvent(new Event('input'));
+    expect(confirmBtn.disabled).toBe(true);
+
+    // Force-enable button to exercise handleConfirm defensive validation guard
+    confirmBtn.disabled = false;
+    confirmBtn.click();
+    expect(document.getElementById('closed-accounts-dialog-overlay')).toBeTruthy();
+
+    const overlay = document.getElementById('closed-accounts-dialog-overlay');
+    document.getElementById('closed-accounts-dialog-skip-button').click();
+    // Second settlement attempt on detached overlay is a no-op
+    overlay.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(await promise).toEqual({
+      confirmed: false,
+      selectedAccountIds: [],
+      closeInMonarch: false,
+      closedDate: '',
+    });
+  });
 });

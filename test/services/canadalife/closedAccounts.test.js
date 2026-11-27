@@ -128,19 +128,20 @@ import { showProgressDialog } from '../../../src/ui/components/progressDialog';
 import { ensureMonarchAuthentication } from '../../../src/ui/components/monarchLoginLink';
 
 function makeAccount(id, shortName, overrides = {}) {
+  const { canadalifeAccount: canadalifeOverrides, ...restOverrides } = overrides;
   return {
+    monarchAccount: { id: `monarch-${id}`, displayName: `Monarch ${shortName}` },
+    syncEnabled: true,
+    lastSyncDate: '2026-11-20',
+    ...restOverrides,
     canadalifeAccount: {
       id,
       agreementId: id,
       EnglishShortName: shortName,
       LongNameEnglish: `Long ${shortName}`,
       EnrollmentDate: '2020-01-01T00:00:00',
-      ...(overrides.canadalifeAccount || {}),
+      ...(canadalifeOverrides || {}),
     },
-    monarchAccount: { id: `monarch-${id}`, displayName: `Monarch ${shortName}` },
-    syncEnabled: true,
-    lastSyncDate: '2026-11-20',
-    ...overrides,
   };
 }
 
@@ -189,11 +190,21 @@ describe('Canada Life Closed Accounts Service', () => {
         makeAccount('orphan-open', 'RRSP', { isOrphanedFromApi: true }),
         makeAccount('orphan-closed', 'DPSP', { isOrphanedFromApi: true, status: 'closed' }),
         makeAccount('orphan-disabled', 'TFSA', { isOrphanedFromApi: true, syncEnabled: false }),
+        {
+          canadalifeAccount: { id: 'id-only', EnglishShortName: 'IDONLY' },
+          syncEnabled: true,
+          isOrphanedFromApi: true,
+        },
+        {
+          canadalifeAccount: {},
+          syncEnabled: true,
+          isOrphanedFromApi: true,
+        },
       ];
 
       const result = findPotentialClosedAccounts(accounts);
 
-      expect(result.map((a) => a.canadalifeAccount.id)).toEqual(['orphan-open']);
+      expect(result.map((a) => a.canadalifeAccount.id)).toEqual(['orphan-open', 'id-only']);
     });
   });
 
@@ -220,6 +231,61 @@ describe('Canada Life Closed Accounts Service', () => {
       expect(result.hint).toContain('2026-11-24');
     });
 
+    test('treats mapped account without lastSyncDate as newly opened and falls back to LongNameEnglish when short name missing', () => {
+      const noShortName = {
+        canadalifeAccount: {
+          id: 'rrsp-new',
+          agreementId: 'rrsp-new',
+          LongNameEnglish: 'NextSteps Retirement Plan',
+          EnrollmentDate: '2026-11-23',
+        },
+        monarchAccount: { id: 'm-1', displayName: 'Monarch RRSP' },
+        syncEnabled: true,
+        lastSyncDate: null,
+        isOrphanedFromApi: false,
+      };
+      const missingDate = {
+        canadalifeAccount: { id: 'no-date', agreementId: 'no-date' },
+        monarchAccount: null,
+        syncEnabled: true,
+        isOrphanedFromApi: false,
+      };
+      const malformedDate = {
+        canadalifeAccount: { id: 'bad-date', agreementId: 'bad-date', EnrollmentDate: 'not-a-date' },
+        monarchAccount: null,
+        syncEnabled: true,
+        isOrphanedFromApi: false,
+      };
+
+      const result = inferDefaultClosureDate([missingDate, malformedDate, noShortName], null);
+
+      expect(result.date).toBe('2026-11-23');
+      expect(result.hint).toContain('NextSteps Retirement Plan');
+    });
+
+    test('uses most recent active account EnrollmentDate on NEXTSTEP sponsor when all active accounts are already synced', () => {
+      const earlier = makeAccount('ns-1', 'RRSP1', {
+        isOrphanedFromApi: false,
+        canadalifeAccount: { EnrollmentDate: '2026-10-01T00:00:00' },
+      });
+      const later = makeAccount('ns-2', 'RRSP2', {
+        isOrphanedFromApi: false,
+        canadalifeAccount: { EnrollmentDate: '2026-11-24T00:00:00' },
+      });
+
+      const result = inferDefaultClosureDate([earlier, later], {
+        adminSystemId: 'ENC_ID',
+        sponsorName: 'NEXTSTEP',
+        sponsorId: 'ENC_Y',
+        isMultiSponsor: true,
+        hasSavingsPlans: true,
+        grsPlanId: '62396',
+      });
+
+      expect(result.date).toBe('2026-11-24');
+      expect(result.hint).toContain('RRSP2');
+    });
+
     test('falls back to today when no active account EnrollmentDate is available', () => {
       const oldRrsp = makeAccount('old-rrsp', 'RRSP', { isOrphanedFromApi: true });
 
@@ -244,6 +310,20 @@ describe('Canada Life Closed Accounts Service', () => {
       expect(text.description).toContain('AMAZON CANADA FULFILLMENT SERVICES');
       expect(text.description).toContain('NextSteps');
       expect(text.note).toContain('multiple sponsors');
+    });
+
+    test('uses fallback sponsor label when no-savings sponsor has empty name', () => {
+      const text = buildClosedAccountsPromptText({
+        adminSystemId: null,
+        sponsorName: '',
+        sponsorId: 'ENC_X',
+        isMultiSponsor: false,
+        hasSavingsPlans: false,
+        grsPlanId: null,
+      });
+
+      expect(text.description).toContain('your current Canada Life sponsor');
+      expect(text.note).toBeUndefined();
     });
 
     test('mentions NextSteps when on NEXTSTEP sponsor', () => {
@@ -352,6 +432,42 @@ describe('Canada Life Closed Accounts Service', () => {
       expect(monarchApi.closeAccount).not.toHaveBeenCalled();
       expect(result.closedInUploader).toBe(true);
       expect(result.closedInMonarch).toBe(false);
+    });
+
+    test('defaults closedDate to today and handles fallback names and non-Error rejections', async () => {
+      const shortNameOnly = {
+        canadalifeAccount: { id: 'agr-short', EnglishShortName: 'RRSP' },
+        monarchAccount: null,
+      };
+      const idOnly = {
+        canadalifeAccount: { id: 'agr-id-only' },
+        monarchAccount: null,
+      };
+      const nameless = {
+        canadalifeAccount: {},
+        monarchAccount: null,
+      };
+
+      const r1 = await closeCanadaLifeAccount(shortNameOnly, { closeInMonarch: false });
+      const r2 = await closeCanadaLifeAccount(idOnly, { closeInMonarch: false });
+      const r3 = await closeCanadaLifeAccount(nameless, { closeInMonarch: false });
+
+      expect(r1.accountName).toBe('RRSP');
+      expect(r2.accountName).toBe('agr-id-only');
+      expect(r3.accountName).toBe('Account');
+      expect(accountService.updateAccountInList).toHaveBeenCalledWith(
+        'canadalife',
+        'agr-short',
+        expect.objectContaining({ closedDate: '2026-11-26' }),
+      );
+
+      monarchApi.closeAccount.mockRejectedValueOnce('string failure');
+      const r4 = await closeCanadaLifeAccount(makeAccount('agr-str', 'RRSP'), {
+        closeInMonarch: true,
+        closedDate: '2026-11-24',
+      });
+      expect(r4.closedInUploader).toBe(false);
+      expect(r4.monarchError).toBe('string failure');
     });
   });
 
@@ -525,7 +641,7 @@ describe('Canada Life Closed Accounts Service', () => {
     });
 
     test('promptForClosedAccounts, closeAccountWithProgress, and reportClosedAccountOutcomes work standalone', async () => {
-      const a1 = makeAccount('a1', 'RRSP', { isOrphanedFromApi: true });
+      const a1 = makeAccount('a1', 'RRSP', { isOrphanedFromApi: true, monarchAccount: null });
       const a2 = makeAccount('a2', 'DPSP', { isOrphanedFromApi: true });
       showClosedAccountsDialog.mockResolvedValue({
         confirmed: true,
@@ -538,6 +654,11 @@ describe('Canada Life Closed Accounts Service', () => {
       expect(plan.prompted).toBe(true);
       expect(plan.accountsToClose).toEqual([a1]);
       expect(plan.skippedOrphanIds).toEqual(new Set(['a2']));
+      expect(showClosedAccountsDialog).toHaveBeenCalledWith(expect.objectContaining({
+        accounts: expect.arrayContaining([
+          expect.objectContaining({ id: 'a1', monarchAccountName: null }),
+        ]),
+      }));
 
       const dialog = makeProgressDialog();
       const res = await closeAccountWithProgress(a1, { closeInMonarch: false, closedDate: '2026-11-24' }, dialog);
@@ -546,6 +667,66 @@ describe('Canada Life Closed Accounts Service', () => {
 
       reportClosedAccountOutcomes([res], false);
       expect(toast.show).toHaveBeenCalledWith('Marked 1 account(s) as closed in uploader', 'info');
+    });
+
+    test('closeAccountWithProgress and reportClosedAccountOutcomes handle Monarch not-found and all-failed outcomes', async () => {
+      const a1 = makeAccount('a1', 'RRSP', { isOrphanedFromApi: true });
+      const dialog = makeProgressDialog();
+
+      monarchApi.closeAccount.mockRejectedValueOnce(new Error('Account does not exist'));
+      const notFoundRes = await closeAccountWithProgress(a1, { closeInMonarch: true, closedDate: '2026-11-24' }, dialog);
+      expect(dialog.updateStepStatus).toHaveBeenCalledWith('a1', 'closeAccount', 'success', 'Closed in uploader (not in Monarch)');
+
+      reportClosedAccountOutcomes([notFoundRes], true);
+      expect(toast.show).toHaveBeenCalledWith(
+        'Closed 1 account(s) in uploader; 1 already missing from Monarch',
+        'warning',
+      );
+
+      monarchApi.closeAccount.mockRejectedValueOnce(new Error(''));
+      const emptyErrRes = await closeAccountWithProgress(a1, { closeInMonarch: true, closedDate: '2026-11-24' }, dialog);
+      expect(dialog.updateStepStatus).toHaveBeenCalledWith('a1', 'closeAccount', 'error', 'Failed to close');
+
+      reportClosedAccountOutcomes([emptyErrRes], true);
+      expect(toast.show).toHaveBeenCalledWith('Failed to close selected account(s) in Monarch: ', 'error');
+    });
+
+    test('handles no-savings sponsor with empty name and skips unchecked orphaned account while syncing active account', async () => {
+      canadalife.loadCanadaLifeAccounts.mockResolvedValueOnce([]);
+      canadalife.getCachedSponsorInfo.mockReturnValueOnce({
+        adminSystemId: null,
+        sponsorName: '',
+        sponsorId: 'ENC_X',
+        isMultiSponsor: false,
+        hasSavingsPlans: false,
+        grsPlanId: null,
+      });
+
+      await uploadAllCanadaLifeAccountsToMonarch();
+
+      expect(toast.show).toHaveBeenCalledWith(
+        'No active savings plans found under your current Canada Life sponsor',
+        'info',
+      );
+
+      const activeRrsp2 = makeAccount('rrsp2', 'RRSP2', { isOrphanedFromApi: false });
+      const skippedOrphan = makeAccount('old-rrsp', 'RRSP', { isOrphanedFromApi: true });
+      canadalife.loadCanadaLifeAccounts.mockResolvedValueOnce([activeRrsp2, skippedOrphan]);
+      canadalife.getCachedSponsorInfo.mockReturnValueOnce(null);
+      showClosedAccountsDialog.mockResolvedValueOnce({
+        confirmed: false,
+        selectedAccountIds: [],
+        closeInMonarch: false,
+        closedDate: '',
+      });
+
+      const dialog = makeProgressDialog();
+      showProgressDialog.mockReturnValue(dialog);
+
+      await uploadAllCanadaLifeAccountsToMonarch();
+
+      expect(dialog.updateProgress).toHaveBeenCalledWith('old-rrsp', 'skipped', 'Not on current plan');
+      expect(dialog.showSummary).toHaveBeenCalledWith(expect.objectContaining({ success: 1, failed: 0, total: 1 }));
     });
   });
 });

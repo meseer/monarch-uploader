@@ -1325,7 +1325,7 @@ describe('Monarch API - Transactions', () => {
         deactivatedAt: null,
         includeBalanceInNetWorth: true,
         type: { name: 'credit', display: 'Credit Cards' },
-        ownedByUser: null,
+        ownedByUser: { id: 'user-42', displayName: 'Alex' },
         // Missing: subtype, invertSyncedBalance, useAvailableBalance, etc.
       };
 
@@ -1370,6 +1370,7 @@ describe('Monarch API - Transactions', () => {
       expect(updateInput.interestRate).toBeNull();
       expect(updateInput.plannedPayment).toBeNull();
       expect(updateInput.minimumPayment).toBeNull();
+      expect(updateInput.ownerUserId).toBe('user-42');
       expect(updateInput.limit).toBe(5000);
     });
   });

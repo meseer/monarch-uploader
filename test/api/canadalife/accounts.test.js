@@ -151,6 +151,15 @@ describe('Canada Life API - getSponsorInfo', () => {
     expect(result.sponsorId).toBe('ENC_MymyQ1Gdy5yOJy');
     expect(result.isMultiSponsor).toBe(true);
     expect(getCachedSponsorInfo()).toEqual(result);
+
+    // Second call uses the cached null-adminSystemId sponsor info
+    const cached = await getSponsorInfo();
+    expect(cached).toEqual(result);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(debugLog).toHaveBeenCalledWith('Using cached sponsor info', {
+      adminSystemId: null,
+      hasSavingsPlans: false,
+    });
   });
 
   test('extracts NEXTSTEP sponsor details and refreshes when forceRefresh is true', async () => {
