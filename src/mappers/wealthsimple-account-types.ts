@@ -111,3 +111,39 @@ export function getAccountTypeDisplayName(wealthsimpleType: string): string {
   return (WEALTHSIMPLE_ACCOUNT_TYPE_DISPLAY_NAMES as Record<string, string>)[wealthsimpleType] || wealthsimpleType;
 }
 
+/**
+ * Account groups offered by the "Sync All" menu, so a user can sync one kind
+ * of account at a time. Spend & Save follows Wealthsimple's own grouping
+ * (chequing, savings, credit card and the line of credit); Investing also
+ * takes crypto, which Wealthsimple lists separately.
+ */
+export type WealthsimpleSyncGroup = 'spendSave' | 'investing';
+
+/** Groups in the order the sync menu lists them */
+export const WEALTHSIMPLE_SYNC_GROUPS: readonly WealthsimpleSyncGroup[] = ['spendSave', 'investing'];
+
+/** Human-readable group names for menus and notifications */
+export const WEALTHSIMPLE_SYNC_GROUP_LABELS: Record<WealthsimpleSyncGroup, string> = {
+  spendSave: 'Spend & Save',
+  investing: 'Investing',
+};
+
+/**
+ * Groups are derived from the Monarch type each account maps to, so a newly
+ * mapped Wealthsimple type joins the right group without a second list.
+ */
+const MONARCH_TYPE_TO_SYNC_GROUP: Record<string, WealthsimpleSyncGroup> = {
+  credit: 'spendSave',
+  depository: 'spendSave',
+  loan: 'spendSave',
+  brokerage: 'investing',
+};
+
+/**
+ * Get the sync group for a Wealthsimple account type.
+ * Returns null for unmapped types, which only a full sync includes.
+ */
+export function getWealthsimpleSyncGroup(wealthsimpleType: string): WealthsimpleSyncGroup | null {
+  const mapping = getMonarchAccountTypeMapping(wealthsimpleType);
+  return mapping ? MONARCH_TYPE_TO_SYNC_GROUP[mapping.type] ?? null : null;
+}

@@ -17,7 +17,9 @@ import {
 import { ensureMonarchAuthentication } from '../../components/monarchLoginLink';
 import { syncAccountListWithAPI, type ConsolidatedAccount } from '../../../services/wealthsimple/account';
 import { getDefaultDateRange } from '../../../services/wealthsimple/balance';
+import { WEALTHSIMPLE_SYNC_GROUP_LABELS, type WealthsimpleSyncGroup } from '../../../mappers/wealthsimple-account-types';
 import { showProgressDialog } from '../../components/progressDialog';
+import { createSyncGroupMenu, type SyncGroupMenu } from './syncGroupMenu';
 
 interface ButtonOptions {
   color?: string;
@@ -209,6 +211,44 @@ async function uploadSingleAccountWithProgress(accountId: string): Promise<void>
 }
 
 /**
+ * Run a bulk sync (every account, or one group) while the split button shows
+ * it is busy. The sync dialog takes a moment to appear, so the label changes
+ * first.
+ */
+async function runBulkSync(
+  uploadButton: HTMLButtonElement,
+  groupMenu: SyncGroupMenu | null,
+  group: WealthsimpleSyncGroup | null,
+): Promise<void> {
+  uploadButton.disabled = true;
+  groupMenu?.setDisabled(true);
+  uploadButton.textContent = group ? `Syncing ${WEALTHSIMPLE_SYNC_GROUP_LABELS[group]}...` : 'Syncing all...';
+  try {
+    await uploadAllWealthsimpleAccountsToMonarch(group);
+  } finally {
+    // Re-enable after the sync, relabelled for wherever we are now
+    uploadButton.disabled = false;
+    groupMenu?.setDisabled(false);
+    uploadButton.textContent = getButtonLabel();
+  }
+}
+
+/**
+ * Turn the main button and the "⌄" toggle into one split button: square off
+ * the touching corners and draw a hairline divider between the halves.
+ */
+function styleAsSplitButton(uploadButton: HTMLButtonElement, toggle: HTMLButtonElement): void {
+  toggle.style.cssText = uploadButton.style.cssText;
+  uploadButton.style.borderRadius = '12px 0 0 12px';
+  toggle.style.borderRadius = '0 12px 12px 0';
+  toggle.style.padding = '10px 12px';
+  // Tinted from the text colour so the divider contrasts in both themes
+  toggle.style.borderLeft = '1px solid color-mix(in srgb, currentColor 35%, transparent)';
+  toggle.addEventListener('mouseover', () => { if (!toggle.disabled) toggle.style.opacity = '0.85'; });
+  toggle.addEventListener('mouseout', () => { toggle.style.opacity = '1'; });
+}
+
+/**
  * Fixed height for upload button container to prevent UI jumps
  */
 const UPLOAD_BUTTON_CONTAINER_HEIGHT = '42px';
@@ -249,6 +289,9 @@ export function createWealthsimpleUploadButton(): HTMLElement {
   // Get context-aware button label
   const buttonLabel = getButtonLabel();
 
+  // Set once the button exists; only bulk-sync pages get the group menu
+  let groupMenu: SyncGroupMenu | null = null;
+
   // Create upload button
   const uploadButton = createWealthsimpleButton(buttonLabel, async () => {
     // Check Monarch authentication before proceeding
@@ -270,16 +313,7 @@ export function createWealthsimpleUploadButton(): HTMLElement {
         // Sync single account with progress dialog
         await uploadSingleAccountWithProgress(accountId);
       } else {
-        // Sync all accounts - show button state change since dialog takes a moment to appear
-        uploadButton.disabled = true;
-        uploadButton.textContent = 'Syncing all...';
-        try {
-          await uploadAllWealthsimpleAccountsToMonarch();
-        } finally {
-          // Re-enable button after bulk sync, relabelled for wherever we are now
-          uploadButton.disabled = false;
-          uploadButton.textContent = getButtonLabel();
-        }
+        await runBulkSync(uploadButton, groupMenu, null);
       }
     } catch (error) {
       debugLog('Error in Wealthsimple sync:', error);
@@ -287,7 +321,33 @@ export function createWealthsimpleUploadButton(): HTMLElement {
     }
   }, { id: 'wealthsimple-upload-button' });
 
-  container.appendChild(uploadButton);
+  // Account pages sync one account, so only the bulk-sync button splits.
+  // The uiManager rebuilds this button whenever the path changes.
+  if (getCurrentAccountId()) {
+    container.appendChild(uploadButton);
+    return container;
+  }
+
+  groupMenu = createSyncGroupMenu({
+    onSelect: async (group) => {
+      const authenticated = await ensureMonarchAuthentication(null, 'sync Wealthsimple accounts');
+      if (!authenticated) return;
+      try {
+        debugLog(`Starting Wealthsimple group sync (group: ${group})`);
+        await runBulkSync(uploadButton, groupMenu, group);
+      } catch (error) {
+        debugLog(`Error in Wealthsimple group sync (group: ${group}):`, error);
+        toast.show(`Sync failed: ${(error as Error).message}`, 'error');
+      }
+    },
+  });
+  styleAsSplitButton(uploadButton, groupMenu.toggle);
+
+  const splitButton = document.createElement('div');
+  splitButton.id = 'wealthsimple-upload-split-button';
+  splitButton.style.cssText = 'position: relative; display: inline-flex; align-items: stretch;';
+  splitButton.append(uploadButton, groupMenu.toggle, groupMenu.menu);
+  container.appendChild(splitButton);
 
   return container;
 }
